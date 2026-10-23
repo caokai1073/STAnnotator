@@ -598,21 +598,32 @@ class Session:
         return self._commit("rename_region", message or f"rename region {old} -> {new}",
                             regions=dict(cur["regions"], ops=ops), constraints=cons, expected_parent=cur["version"])
 
-    def delete_region(self, rid, message=None):
-        """Delete one drawn polygon. Refused if it is the last polygon of a region a constraint still uses."""
+    def region_users(self, rid):
+        """Priors that would lose their region if polygon rid were deleted (it is the region's last polygon)."""
         cur = self.state()
         ops = cur["regions"].get("ops", [])
         op = next((o for o in ops if o.get("id") == rid), None)
         if op is None:
             raise ValueError(f"no region polygon {rid}")
-        rest = [o for o in ops if o.get("id") != rid]
-        still = any(o.get("name") == op["name"] for o in rest) or op["name"] in regmod.assign(
+        still = any(o.get("name") == op["name"] for o in ops if o.get("id") != rid) or op["name"] in regmod.assign(
             self.cells, dict(cur["regions"], ops=[])).tolist()
-        users = [c["id"] for c in cur["constraints"] if op["name"] in c.get("regions_resolved", [])]
-        if users and not still:
-            raise vocab.VocabError(f"region {op['name']} is used by {', '.join(users)}; change or remove those priors first")
-        return self._commit("delete_region", message or f"delete {rid} (region {op['name']})",
-                            regions=dict(cur["regions"], ops=rest), expected_parent=cur["version"])
+        users = [] if still else [c for c in cur["constraints"] if op["name"] in c.get("regions_resolved", [])]
+        return op, users
+
+    def delete_region(self, rid, message=None, remove_priors=False):
+        """Delete one drawn polygon. If it is the last polygon of a region that priors use, it is refused unless
+        remove_priors, which removes those priors in the same version (Undo restores both)."""
+        cur = self.state()
+        op, users = self.region_users(rid)
+        if users and not remove_priors:
+            raise vocab.VocabError(f"region {op['name']} is used by {', '.join(c['id'] for c in users)}; "
+                                   "change or remove those priors first")
+        drop = {c["id"] for c in users}
+        msg = f"delete {rid} (region {op['name']})" + (f" and priors {', '.join(sorted(drop))}" if drop else "")
+        return self._commit("delete_region", message or msg,
+                            regions=dict(cur["regions"], ops=[o for o in cur["regions"]["ops"] if o.get("id") != rid]),
+                            constraints=[c for c in cur["constraints"] if c["id"] not in drop],
+                            expected_parent=cur["version"])
 
     def regions_info(self, version=None):
         """Drawn polygons and per-region cell counts of a version."""

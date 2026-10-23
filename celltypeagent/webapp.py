@@ -489,8 +489,13 @@ async def api_region_rename(req: Request):
 
 async def api_region_delete(req: Request):
     s = review_app._session(req.path_params["sid"])
+    body = await req.json() if await req.body() else {}
     try:
-        ver = s.delete_region(req.path_params["rid"])
+        op, users = s.region_users(req.path_params["rid"])
+        if users and not body.get("remove_priors"):  # the page asks before removing the priors too
+            return _json({"error": f"region {op['name']} is used by priors", "region": op["name"],
+                          "priors": [{"id": c["id"], "text": c.get("text", "")} for c in users]}, 409)
+        ver = s.delete_region(req.path_params["rid"], remove_priors=bool(body.get("remove_priors")))
     except ValueError as e:
         return _json({"error": str(e)}, 400)
     return _json({"new_version": ver})

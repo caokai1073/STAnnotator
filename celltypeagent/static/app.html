@@ -232,7 +232,7 @@ const st = { samples: [], sample: null, he: null, sid: null, version: null, mode
 const api = async (path, opts) => {
   const r = await fetch(path, opts);
   const body = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(body.error || r.statusText);
+  if (!r.ok) throw Object.assign(new Error(body.error || r.statusText), { status: r.status, body });
   return body;
 };
 const post = (path, data) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data || {}) });
@@ -587,7 +587,15 @@ async function renameRegion(old) {
 }
 async function deleteRegion(rid) {
   if (!confirm(`Delete polygon ${rid}? (This creates a new version; Undo brings it back.)`)) return;
-  try { await afterRegionChange(await post(`/api/s/${st.sid}/regions/${rid}/delete`)); } catch (e) { toast(e.message, 6000); }
+  try { await afterRegionChange(await post(`/api/s/${st.sid}/regions/${rid}/delete`)); }
+  catch (e) {
+    if (e.status !== 409) return toast(e.message, 6000);
+    const list = e.body.priors.map((c) => `  ${c.id}: ${c.text}`).join("\n");
+    if (!confirm(`This is the last polygon of region "${e.body.region}", which these priors use:\n\n${list}\n\n` +
+                 `Delete the region and these priors? (Undo brings both back.)`)) return;
+    try { await afterRegionChange(await post(`/api/s/${st.sid}/regions/${rid}/delete`, { remove_priors: true })); }
+    catch (e2) { toast(e2.message, 6000); }
+  }
 }
 
 function startDraw() {
