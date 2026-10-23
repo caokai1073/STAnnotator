@@ -17,11 +17,11 @@ Requirements: macOS (Apple silicon or Intel), Linux or Windows; about 8 GB of RA
    curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
 
-2. Unzip this repository somewhere permanent (for example `~/Applications/celltypeagent`; Claude Desktop is
+2. Unzip the downloaded `STCellTypeAgent-main.zip` somewhere permanent (for example into `~/Applications`; Claude Desktop is
    pointed at this folder, so do not move it afterwards) and install it:
 
    ```bash
-   cd ~/Applications/celltypeagent
+   cd ~/Applications/STCellTypeAgent-main
    uv venv .venv --python 3.12
    uv pip install --python .venv/bin/python -e .
    ```
