@@ -1,0 +1,220 @@
+"""Expression model: multinomial logistic regression on log-normalized counts, trained on the GPU.
+
+Two sources of training labels: the reference pool (reference mode) or the sample's own marker-annotation
+pseudo-labels (marker mode, no reference needed).
+
+Reference pool (work/reference/): a stratified sample of annotated cells from all slides (at most CAP cells
+per slide and type), plus the natural type counts per slide. Training for a sample excludes that sample's
+slide (leave-one-slide-out) and corrects the class prior back to the natural distribution, so the stratified
+sampling does not inflate rare types. User corrections enter as extra, up-weighted training cells.
+"""
+import json
+import numpy as np, pandas as pd, scipy.sparse as sp
+from . import config
+
+REF = config.HOME / "reference"  # reference pool (reference mode / benchmarks on the lab server only)
+CAP = 5000
+EPOCHS, BATCH, LR = 6, 8192, 3e-3
+CORRECTION_WEIGHT = 20.0
+# fine-tuning from the initial model when the user corrects cells: changes stay local to what was corrected
+# only the classes involved in the corrections may move, and an L2 pull keeps them near the initial model
+FT_STEPS, FT_LR, FT_REPLAY, FT_L2 = 100, 5e-4, 6144, 10.0
+
+
+def lognorm(m):
+    m = sp.csr_matrix(m, dtype=np.float32)
+    tot = np.asarray(m.sum(1)).ravel()
+    tot[tot == 0] = 1
+    m = sp.diags(100.0 / tot) @ m
+    m.data = np.log1p(m.data)
+    return m
+
+
+def build_reference():
+    """Write the reference pool from work/obs_all.parquet and work/counts.npz."""
+    W = config.WORK
+    obs = pd.read_parquet(W / "obs_all.parquet", columns=["celltype", "slide_id"])
+    types = list(np.load(W / "types.npy", allow_pickle=True))
+    X = sp.load_npz(W / "counts.npz").tocsr()
+    y = pd.Categorical(obs.celltype, categories=types).codes
+    rng = np.random.default_rng(0)
+    keep = []
+    for _, idx in pd.Series(np.arange(len(obs))).groupby([obs.slide_id.values, y]):
+        idx = idx.to_numpy()
+        keep.append(rng.choice(idx, min(CAP, len(idx)), replace=False))
+    keep = np.sort(np.concatenate(keep))
+    REF.mkdir(parents=True, exist_ok=True)
+    sp.save_npz(REF / "counts.npz", X[keep])
+    np.save(REF / "y.npy", y[keep].astype(np.int16))
+    np.save(REF / "slide.npy", obs.slide_id.values[keep])
+    natural = pd.crosstab(obs.slide_id, y).reindex(columns=range(len(types)), fill_value=0)
+    json.dump({"types": types, "slides": [int(s) for s in natural.index],
+               "natural_counts": natural.to_numpy().tolist()}, open(REF / "meta.json", "w"))
+    print("reference pool:", len(keep), "cells")
+
+
+class Reference:
+    def __init__(self):
+        self.X = lognorm(sp.load_npz(REF / "counts.npz"))
+        self.y = np.load(REF / "y.npy").astype(np.int64)
+        self.slide = np.load(REF / "slide.npy")
+        m = json.load(open(REF / "meta.json"))
+        self.types = m["types"]
+        self.natural = pd.DataFrame(m["natural_counts"], index=m["slides"])
+
+
+_ref = None
+
+
+def reference():
+    global _ref
+    if _ref is None:
+        _ref = Reference()
+    return _ref
+
+
+def _fit(X, y, T, pi_target, extra_X=None, extra_y=None, progress=None, seed=0):
+    """Core trainer. X: log-normalized CSR, y: class indices; 10% of (X, y) is held out for temperature scaling.
+    pi_target: class distribution to correct the prior back to (training data may be class-capped)."""
+    import torch
+    dev = config.device()
+    rng = np.random.default_rng(seed)
+    torch.manual_seed(seed)
+    perm = rng.permutation(len(y))
+    n_val = max(min(1000, len(y) // 5), len(y) // 10)
+    va, tr = perm[:n_val], perm[n_val:]
+    Xtr, ytr = X[tr], y[tr]
+    wtr = np.ones(len(ytr), np.float32)
+    if extra_X is not None and len(extra_y):
+        Xtr = sp.vstack([Xtr, lognorm(extra_X)]).tocsr()
+        ytr = np.concatenate([ytr, np.asarray(extra_y, np.int64)])
+        wtr = np.concatenate([wtr, np.full(len(extra_y), CORRECTION_WEIGHT, np.float32)])
+    pi_train = np.bincount(ytr, weights=wtr, minlength=T) + 1.0
+    pi_target = np.asarray(pi_target, float) + 1.0
+    prior_shift = np.log(pi_target / pi_target.sum()) - np.log(pi_train / pi_train.sum())
+
+    G = torch.tensor(Xtr.toarray(), dtype=torch.float16 if dev == "cuda" else torch.float32, device=dev)
+    Y = torch.tensor(ytr, device=dev)
+    Wt = torch.tensor(wtr, device=dev)
+    mu = G.float().mean(0); sd = G.float().std(0) + 1e-3
+    lin = torch.nn.Linear(G.shape[1], T).to(dev)
+    opt = torch.optim.Adam(lin.parameters(), lr=LR, weight_decay=1e-6)
+    steps = EPOCHS * ((len(Y) + BATCH - 1) // BATCH)
+    k = 0
+    for ep in range(EPOCHS):
+        idx = torch.randperm(len(Y), device=dev)
+        for b in range(0, len(Y), BATCH):
+            bi = idx[b:b + BATCH]
+            loss = (torch.nn.functional.cross_entropy(lin((G[bi].float() - mu) / sd), Y[bi], reduction="none") * Wt[bi]).sum() / Wt[bi].sum()
+            opt.zero_grad(); loss.backward(); opt.step()
+            k += 1
+            if progress and k % 20 == 0:
+                progress(k / steps, f"training expression model, epoch {ep + 1}/{EPOCHS}")
+    del G
+    model = {"W": lin.weight.detach().cpu().numpy(), "b": lin.bias.detach().cpu().numpy(),
+             "mu": mu.cpu().numpy(), "sd": sd.cpu().numpy(), "prior_shift": prior_shift.astype(np.float32), "temp": 1.0}
+    lv = torch.tensor(_logits(model, X[va]), dtype=torch.float32, device=dev)
+    yv = torch.tensor(y[va], device=dev)
+    logT = torch.zeros(1, device=dev, requires_grad=True)
+    o2 = torch.optim.LBFGS([logT], max_iter=100)
+    def closure():
+        o2.zero_grad(); l = torch.nn.functional.cross_entropy(lv / logT.exp(), yv); l.backward(); return l
+    o2.step(closure)
+    model["temp"] = float(logT.exp().item())
+    return model
+
+
+def train(exclude_slide, extra_X=None, extra_y=None, progress=None, seed=0):
+    """Reference mode: train on the reference pool without `exclude_slide`, plus optional corrected cells."""
+    ref = reference()
+    m = ref.slide != exclude_slide
+    pi_nat = ref.natural.drop(index=exclude_slide, errors="ignore").sum(0).to_numpy()
+    return _fit(ref.X[m], ref.y[m], len(ref.types), pi_nat, extra_X, extra_y, progress, seed)
+
+
+def pseudo_pool(counts, labels, T, seed=0):
+    """Marker mode: training pool from the sample's own pseudo-labeled cells (at most CAP per type).
+    Labels < 0 (cells the marker step left at a lineage or parent level) are not used for training."""
+    rng = np.random.default_rng(seed)
+    keep = np.concatenate([rng.choice(np.where(labels == t)[0], min(CAP, (labels == t).sum()), replace=False)
+                           for t in range(T) if (labels == t).any()])
+    keep.sort()
+    return lognorm(counts[keep]), np.asarray(labels[keep], np.int64), np.bincount(labels[labels >= 0], minlength=T)
+
+
+def train_pseudo(counts, labels, T, progress=None, seed=0):
+    """Marker mode: learn p(type | expression) from marker-annotation pseudo-labels of this sample."""
+    X, y, natural = pseudo_pool(counts, labels, T, seed)
+    return _fit(X, y, T, natural, progress=progress, seed=seed)
+
+
+def finetune(init, extra_X, extra_y, replay_X, replay_y, progress=None, seed=0):
+    """Start from `init` and adapt to corrected cells, replaying (replay_X, replay_y) so the rest is preserved.
+    Only the weights of involved classes (the corrected labels and what init predicted for those cells) are
+    updated, so unrelated cell types cannot drift. Normalization, prior correction and temperature are kept."""
+    import torch
+    dev = config.device()
+    rng = np.random.default_rng(seed)
+    torch.manual_seed(seed)
+    T = len(init["b"])
+    mu, sd = (torch.tensor(init[k], dtype=torch.float32, device=dev) for k in ("mu", "sd"))
+    lin = torch.nn.Linear(len(init["mu"]), T).to(dev)
+    with torch.no_grad():
+        lin.weight.copy_(torch.tensor(init["W"], dtype=torch.float32)); lin.bias.copy_(torch.tensor(init["b"], dtype=torch.float32))
+    opt = torch.optim.Adam(lin.parameters(), lr=FT_LR)
+    Xc = torch.tensor(lognorm(extra_X).toarray(), dtype=torch.float32, device=dev)
+    yc = torch.tensor(np.asarray(extra_y, np.int64), device=dev)
+    W0, b0 = lin.weight.detach().clone(), lin.bias.detach().clone()
+    shift = torch.tensor(init["prior_shift"], dtype=torch.float32, device=dev)
+    with torch.no_grad():
+        before = (lin((Xc - mu) / sd) + shift).argmax(1)  # the classes init actually predicted
+    involved = torch.zeros(T, dtype=torch.bool, device=dev)
+    involved[yc] = True
+    involved[before] = True
+    frozen = ~involved
+    n_rep = min(FT_REPLAY, len(replay_y))
+    for k in range(FT_STEPS):
+        rep = rng.choice(len(replay_y), n_rep, replace=False)
+        Xr = torch.tensor(replay_X[rep].toarray(), dtype=torch.float32, device=dev)
+        yr = torch.tensor(np.asarray(replay_y[rep], np.int64), device=dev)
+        lr_ = torch.nn.functional.cross_entropy(lin((Xr - mu) / sd), yr)
+        lc = torch.nn.functional.cross_entropy(lin((Xc - mu) / sd), yc)
+        n_c = len(yc) * CORRECTION_WEIGHT
+        loss = (lr_ * n_rep + lc * n_c) / (n_rep + n_c)
+        loss = loss + FT_L2 * (((lin.weight - W0) ** 2).sum() + ((lin.bias - b0) ** 2).sum())
+        opt.zero_grad(); loss.backward()
+        lin.weight.grad[frozen] = 0; lin.bias.grad[frozen] = 0
+        opt.step()
+        if progress and k % 10 == 0:
+            progress(k / FT_STEPS, f"updating expression model with your corrections ({k}/{FT_STEPS})")
+    return dict(init, W=lin.weight.detach().cpu().numpy(), b=lin.bias.detach().cpu().numpy())
+
+
+def reference_replay(exclude_slide):
+    ref = reference()
+    m = ref.slide != exclude_slide
+    return ref.X[m], ref.y[m]
+
+
+def save(model, path):
+    np.savez(path, **{k: np.asarray(v) for k, v in model.items()})
+
+
+def load(path):
+    z = np.load(path)
+    return {k: (float(z[k]) if z[k].ndim == 0 else z[k]) for k in z.files}
+
+
+def _logits(model, Xn, chunk=65536):
+    out = []
+    for i in range(0, Xn.shape[0], chunk):
+        a = (Xn[i:i + chunk].toarray() - model["mu"]) / model["sd"]
+        out.append(a @ model["W"].T + model["b"] + model["prior_shift"])
+    return np.concatenate(out).astype(np.float32)
+
+
+def predict(model, counts):
+    """Calibrated log-probabilities (float16) for raw counts."""
+    z = _logits(model, lognorm(counts)) / model["temp"]
+    z -= z.max(1, keepdims=True)
+    return (z - np.log(np.exp(z).sum(1, keepdims=True))).astype(np.float16)

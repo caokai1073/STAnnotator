@@ -1,0 +1,801 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spatial Annotator</title>
+<script src="/static/vendor/openseadragon.min.js"></script>
+<style>
+:root {
+  --bg: #f4f4f2; --panel: #ffffff; --ink: #1d1f21; --muted: #6b6f73; --line: #e0e0dc;
+  --accent: #0f7c86; --accent-soft: #e3f2f3; --warn: #b5541c; --user: #eef3f8;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #17191b; --panel: #212427; --ink: #e8e8e6; --muted: #9a9ea3; --line: #33373b;
+          --accent: #4fb6bf; --accent-soft: #1f3638; --warn: #e08a55; --user: #26303a; }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+       display: flex; flex-direction: column; }
+header { display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: var(--panel);
+         border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+header h1 { font-size: 16px; margin: 0 6px 0 0; font-weight: 650; }
+.f { display: flex; flex-direction: column; font-size: 11px; color: var(--muted); gap: 2px; }
+.path { font: 11px ui-monospace, monospace; color: var(--muted); max-width: 330px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+select, input[type=text], textarea { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 6px; padding: 5px 8px; }
+button { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+         padding: 5px 11px; cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+button:disabled { opacity: .45; cursor: default; }
+.spacer { flex: 1; }
+.progress { display: none; align-items: center; gap: 8px; min-width: 280px; }
+.progress.show { display: flex; }
+.pbar { flex: 1; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; min-width: 120px; }
+.pbar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+#pstage { font-size: 12px; color: var(--muted); white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+#vinfo { font-size: 12px; color: var(--muted); }
+main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 380px; min-height: 0; }
+#viewerwrap { position: relative; min-height: 0; }
+#osd { position: absolute; inset: 0; background: #ececea; }
+#osd.nohe { background: #ffffff; }
+@media (prefers-color-scheme: dark) { #osd.nohe { background: #111214; } }
+#legend .grp.clickable { cursor: pointer; }
+#legend .grp.clickable:hover { color: var(--accent); }
+#legend button:disabled { opacity: .4; }
+.float { position: absolute; background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+         box-shadow: 0 2px 8px rgba(0,0,0,.12); z-index: 5; }
+#tools { top: 10px; left: 10px; padding: 6px 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+#tools label { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+#legend { left: 10px; bottom: 10px; width: 270px; max-height: 45%; display: flex; flex-direction: column; }
+#legend .lh { display: flex; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 12px; gap: 6px; }
+#legend .items { overflow: auto; padding: 4px 6px; }
+#legend .it { display: flex; align-items: center; gap: 7px; padding: 2px 4px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+#legend .it:hover { background: var(--bg); }
+#legend .it.off { opacity: .35; }
+#legend .sw { width: 11px; height: 11px; border-radius: 50%; flex: none; }
+#legend .n { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+#legend .grp { font-size: 10px; text-transform: uppercase; color: var(--muted); margin: 6px 4px 2px; letter-spacing: .04em; }
+#legend.collapsed .items { display: none; }
+#cellcard { top: 10px; right: 10px; width: 290px; padding: 10px 12px; font-size: 13px; display: none; }
+#cellcard.show { display: block; }
+#cellcard dl { display: grid; grid-template-columns: 96px 1fr; gap: 3px 8px; margin: 6px 0 0; }
+#cellcard dt { color: var(--muted); }
+#cellcard dd { margin: 0; }
+#cellcard .lab { font-weight: 650; font-size: 14px; }
+#cellcard .x { float: right; border: 0; padding: 0 4px; background: none; }
+#empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none;
+         z-index: 4; color: var(--muted); }
+#empty div { background: var(--panel); padding: 12px 18px; border-radius: 8px; border: 1px solid var(--line); }
+.cellmark { pointer-events: none; }  /* drags that start on it must still pan the viewer */
+#regsvg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; }
+#regsvg text { font: 600 12px system-ui, sans-serif; paint-order: stroke; stroke: rgba(255,255,255,.85); stroke-width: 3px; }
+#regpanel { top: 62px; left: 10px; width: 310px; max-height: 38%; display: flex; flex-direction: column; }
+#regpanel .lh { display: flex; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 12px; gap: 6px; }
+#regpanel .items { overflow: auto; padding: 4px 6px; font-size: 12px; }
+#regpanel.collapsed .items { display: none; }
+.rg { display: flex; align-items: center; gap: 6px; padding: 3px 4px; }
+.rg .sw { width: 11px; height: 11px; border-radius: 2px; flex: none; }
+.rg .n { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+.rg button, .pg button { border: 0; background: none; padding: 0 4px; color: var(--muted); }
+.rg button:hover, .pg button:hover { color: var(--accent); }
+.pg { display: flex; gap: 6px; padding: 0 4px 2px 21px; color: var(--muted); font-size: 11px; }
+.cellmark { width: 26px; height: 26px; border: 3px solid #00e6ff; border-radius: 50%; box-shadow: 0 0 0 2px rgba(0,0,0,.5); }
+#side { border-left: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
+#side .sh { padding: 10px 14px; border-bottom: 1px solid var(--line); font-weight: 600; display: flex; align-items: center; }
+#msgs { flex: 1; overflow: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.m { padding: 8px 11px; border-radius: 8px; white-space: pre-wrap; word-break: break-word; font-size: 13.5px; }
+.m.user { background: var(--user); align-self: flex-end; max-width: 92%; }
+.m.assistant { background: var(--bg); align-self: flex-start; max-width: 96%; }
+.m.status { color: var(--muted); font-size: 12px; padding: 0 2px; }
+.m.error { color: var(--warn); font-size: 12px; }
+.hint { color: var(--muted); font-size: 12.5px; }
+#composer { border-top: 1px solid var(--line); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+#input { width: 100%; min-height: 64px; resize: vertical; }
+.row { display: flex; gap: 8px; align-items: center; }
+.toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--panel);
+         padding: 8px 14px; border-radius: 6px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 20; max-width: 80vw; }
+.toast.show { opacity: .94; }
+dialog { width: min(1100px, 95vw); border: 1px solid var(--line); border-radius: 10px; padding: 0; background: var(--panel); color: var(--ink); }
+dialog::backdrop { background: rgba(0,0,0,.35); }
+.dh { display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.dbody { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 14px; padding: 12px 14px 14px; }
+.col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.col.side { gap: 6px; }
+#mkText { font: 12.5px/1.5 ui-monospace, Menlo, monospace; min-height: 52vh; resize: vertical; white-space: pre; }
+.h { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-top: 6px; }
+.err { color: var(--warn); }
+.ok { color: #2f7d4f; }
+#mkMsgs { max-height: 22vh; overflow: auto; font-size: 12.5px; }
+@media (max-width: 1000px) { main { grid-template-columns: 1fr; grid-template-rows: 60vh auto; } #side { border-left: 0; border-top: 1px solid var(--line); } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Spatial Annotator</h1>
+  <label class="f">Sample <select id="sample"></select></label>
+  <div class="f">Data folder <span class="path" id="path">–</span></div>
+  <button id="openMarkers" title="Write, load, check or draft the marker gene list used for annotation">Markers…</button>
+  <label class="f">Start regions from <select id="regions" title="Regions are drawn by you; optionally start from the dataset annotation">
+    <option value="none">nothing (draw your own)</option><option value="pathologist">dataset pathologist annotation</option>
+  </select></label>
+  <button id="annotate" class="primary">Annotate</button>
+  <label class="hint" id="carryWrap" hidden title="Start the new annotation with the regions, priors and cell corrections of the one that is open (items naming types that no longer exist are dropped)">
+    <input type="checkbox" id="carry" checked> keep my regions &amp; priors</label>
+  <label class="f" id="sessWrap" hidden>Session <select id="session" title="Earlier annotations of this sample"></select></label>
+  <div class="progress" id="progress"><div class="pbar"><i id="pfill"></i></div><span id="pstage"></span></div>
+  <span class="spacer"></span>
+  <span id="vinfo"></span>
+  <button id="undo" disabled title="Undo the last change">Undo</button>
+  <button id="reset" disabled title="Remove every annotation and chat of this sample">Reset</button>
+  <button id="review" disabled title="Open the conflict review page">Review conflicts</button>
+  <button id="export" disabled title="Download a CSV with one row per cell: cell id, region, cell type, lineage, type levels, confidence…">Export CSV</button>
+</header>
+<main>
+  <section id="viewerwrap">
+    <div id="osd"></div>
+    <div id="empty"><div>No cell types yet. Check the marker list (<b>Markers…</b>) and click <b>Annotate</b>.</div></div>
+    <div id="tools" class="float">
+      <label>Color by <select id="mode" disabled><option value="">annotate first</option></select></label>
+      <label>Opacity <input type="range" id="opacity" min="0" max="100" value="85"></label>
+      <label title="Size of the cell dots">Dot size <input type="range" id="dotsize" min="20" max="300" value="100" step="10">
+        <span id="dotsizeVal" style="min-width:34px">1.0×</span></label>
+      <button id="hide" title="Show the H&amp;E only (h)">Hide cells</button>
+      <button id="hideHE" title="Show the cells only (e)">Hide H&amp;E</button>
+    </div>
+    <div id="legend" class="float" hidden>
+      <div class="lh"><b id="lgtitle">Cell types</b><span class="spacer"></span>
+        <button id="lgall" style="padding:1px 7px;font-size:11px">show all</button>
+        <button id="lgtoggle" style="padding:1px 7px;font-size:11px">−</button></div>
+      <div class="items" id="lgitems"></div>
+    </div>
+    <div id="cellcard" class="float"></div>
+    <svg id="regsvg"></svg>
+    <div id="regpanel" class="float" hidden>
+      <div class="lh"><b>Regions</b><span class="spacer"></span>
+        <label class="hint" title="Show region outlines"><input type="checkbox" id="outlines" checked> outlines</label>
+        <button id="draw" class="primary" style="padding:2px 9px;font-size:12px" title="Click points on the map; double-click, Enter or click the first point to close">Draw region</button>
+        <button id="rgtoggle" style="padding:1px 7px;font-size:11px">−</button></div>
+      <div class="items" id="rgitems"></div>
+      <div class="hint" id="drawhint" hidden style="padding:6px 10px;border-top:1px solid var(--line)">
+        Click to add points · double-click / Enter / first point to close · Backspace undo point · Esc cancel</div>
+    </div>
+  </section>
+  <aside id="side">
+    <div class="sh">Chat <span class="spacer"></span><span class="hint" id="agentstate"></span></div>
+    <div id="msgs">
+      <div class="hint">Tell the assistant what you know, in your own words. For example:<br>
+        • “Epithelial cells are only in the mucosa.”<br>
+        • Draw and name a region, then: “The smooth muscle in mucosa_2 is muscularis mucosae.”<br>
+        • “Tfh cells sit next to B cells.” · “Undo that.”</div>
+    </div>
+    <div id="composer">
+      <textarea id="input" placeholder="Type a prior or a correction… (Enter to send, Shift+Enter for a new line)" disabled></textarea>
+      <div class="row"><span class="hint" id="composerhint">Annotate a sample first.</span><span class="spacer"></span>
+        <button id="send" class="primary" disabled>Send</button></div>
+    </div>
+  </aside>
+</main>
+<dialog id="mkDlg">
+  <div class="dh"><b>Marker genes</b>
+    <select id="mkLib" title="Load a saved list"><option value="">load a list…</option></select>
+    <span class="spacer"></span>
+    <label class="hint" title="Try resolutions 0.5 / 1 / 2 / 4 at every level and keep the one the markers resolve best">
+      <input type="checkbox" id="mkAuto" checked> automatic Leiden resolution</label>
+    <input type="number" id="mkRes" value="1.0" min="0.1" max="10" step="0.1" style="width:60px" disabled title="Fixed Leiden resolution for every level">
+    <button id="mkClose">Done</button></div>
+  <div class="dbody">
+    <div class="col">
+      <textarea id="mkText" spellcheck="false" placeholder="# One type per line:  Name: GENE+ GENE- A|B+
+# + expressed, - not expressed, A|B+ = any of A or B. Indent two spaces for a subtype (any depth).
+Epithelial: EPCAM+ KRT8+
+  Goblet cells: SPINK4+ RETNLB+
+  Absorptive: CA1|SLC26A3+ SPINK4-
+    BEST4+ colonocytes: BEST4+ OTOP2+
+T and NK cells: CD3E|NKG7+ EPCAM-
+  CD4 T cells: CD4+ CD8A-
+  CD8 T cells: CD8A+ CD4-"></textarea>
+      <div class="row"><button id="mkCheck">Check</button>
+        <input type="text" id="mkName" placeholder="name" style="width:150px"><button id="mkSave">Save</button>
+        <span class="spacer"></span><span class="hint" id="mkSum"></span></div>
+    </div>
+    <div class="col side">
+      <div class="h">Check</div><div id="mkMsgs" class="hint">Not checked yet.</div>
+      <div class="h">Draft with the agent</div>
+      <textarea id="mkInstr" placeholder="e.g. Full list for colon IBD; split T cells into CD4 / CD8 / Tregs; ignore neurons." style="min-height:64px"></textarea>
+      <div class="row"><label class="hint"><input type="checkbox" id="mkRevise"> revise the current list</label><span class="spacer"></span>
+        <button id="mkDraft" class="primary">Draft</button></div>
+      <div id="mkDraftMsg" class="hint"></div>
+    </div>
+  </div>
+</dialog>
+<dialog id="nameDlg" style="width:min(420px,92vw)">
+  <div class="dh"><b>Save region</b><span class="spacer"></span><span class="hint" id="nameInfo"></span></div>
+  <div style="padding:12px 14px;display:flex;flex-direction:column;gap:10px">
+    <label class="f">Region name (pick an existing one to add this polygon to it)
+      <input type="text" id="regname" list="regnames" placeholder="e.g. mucosa" autocomplete="off"></label>
+    <datalist id="regnames"></datalist>
+    <div class="row"><span class="err" id="nameErr"></span><span class="spacer"></span>
+      <button id="nameCancel">Cancel</button><button id="nameSave" class="primary">Save</button></div>
+  </div>
+</dialog>
+<div class="toast" id="toast"></div>
+<script>
+const $ = (id) => document.getElementById(id);
+const st = { samples: [], sample: null, he: null, sid: null, version: null, mode: "type", filters: {}, opacity: 0.85, switchToken: 0, heHidden: false,
+             openedThisVisit: {}, dotSize: 1.0,
+             hidden: false, busy: false, legend: [], regions: null };
+const api = async (path, opts) => {
+  const r = await fetch(path, opts);
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.error || r.statusText);
+  return body;
+};
+const post = (path, data) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data || {}) });
+function toast(msg, ms = 2200) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), ms); }
+function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+function load(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } }
+const rgb = (c) => `rgb(${c[0]},${c[1]},${c[2]})`;
+
+// ---------------- viewer ----------------
+const viewer = OpenSeadragon({
+  id: "osd", showNavigationControl: false, showNavigator: true, navigatorPosition: "BOTTOM_RIGHT",
+  maxZoomPixelRatio: 4, visibilityRatio: 0.5, imageLoaderLimit: 8, prefixUrl: "",
+  gestureSettingsMouse: { clickToZoom: false, dblClickToZoom: true, flickEnabled: false },
+});
+const heItem = () => viewer.world.getItemAt(0);
+function tileSource(url) {
+  return { width: st.he.width, height: st.he.height, tileSize: st.he.tile_size, tileOverlap: 0, getTileUrl: url };
+}
+function openHE(sample) {
+  return api(`/api/sample/${sample}/he_info`).then((he) => {
+    st.he = he;
+    viewer.addOnceHandler("open", applyHE);
+    viewer.open(tileSource((l, x, y) => `/api/sample/${sample}/he/${l}/${x}_${y}.jpg`));
+  });
+}
+function filt() {  // legend filter of the current color mode (empty = show all)
+  if (!st.filters[st.mode]) st.filters[st.mode] = new Set();
+  return st.filters[st.mode];
+}
+function applyHE() {
+  const it = heItem(); if (it) it.setOpacity(st.heHidden ? 0 : 1);
+  $("osd").classList.toggle("nohe", st.heHidden);
+  $("hideHE").classList.toggle("on", st.heHidden);
+}
+function overlayUrl() {
+  const q = new URLSearchParams({ size: st.dotSize.toFixed(1) });
+  const only = [...filt()].join("|");
+  if (only) q.set("only", only);
+  return (l, x, y) => `/api/s/${st.sid}/overlay/${st.version}/${st.mode}/${l}/${x}_${y}.png?${q}`;
+}
+function refreshOverlay() {
+  if (!st.sid || !st.he) return;
+  const n = viewer.world.getItemCount();
+  if (st.hidden) { if (n > 1) viewer.world.removeItem(viewer.world.getItemAt(1)); return; }
+  viewer.addTiledImage({ tileSource: tileSource(overlayUrl()), opacity: st.opacity, index: 1, replace: n > 1 });
+}
+
+// ---------------- samples and annotation ----------------
+async function loadSamples() {
+  st.samples = await api("/api/samples");
+  const sel = $("sample"); sel.textContent = "";
+  st.samples.forEach((s) => {
+    const o = document.createElement("option");
+    o.value = s.sample_id;
+    o.textContent = [s.sample_id, s.description || [s.disease, s.location].filter(Boolean).join(" · "), `${s.n_cells.toLocaleString()} cells`].filter(Boolean).join(" · ");
+    sel.append(o);
+  });
+  const url = new URLSearchParams(location.search);  // links from Claude Desktop: ?sample=...&session=...
+  const want = url.get("sample") || load("sample");
+  if (st.samples.some((s) => s.sample_id === want)) sel.value = want;
+  if (url.get("session") && url.get("sample") === sel.value) st.openedThisVisit[sel.value] = url.get("session");
+  await selectSample(sel.value);
+}
+
+// Color-by options appear only when they have something to show: the data starts with no cell types, and
+// region / changes / conflicts appear once regions are drawn, labels change, or priors conflict with cells.
+function fillModes(sm) {
+  const sel = $("mode"); sel.textContent = "";
+  const add = (v, t) => { const o = document.createElement("option"); o.value = v; o.textContent = t; sel.append(o); };
+  if (!sm) { add("", "annotate first"); sel.disabled = true; return; }
+  const avail = [["type", "cell type"], ["lineage", "lineage"]];
+  if (sm.has_regions) avail.push(["region", "region"]);
+  if (sm.n_changed_since_first > 0 || sm.corrections.length) avail.push(["changed", "changed since first annotation"]);
+  if (sm.n_conflicts > 0) avail.push(["conflicts", "conflicts with priors"]);
+  const extra = [["confidence", "confidence"]];
+  if (st.vocab && st.vocab.method === "markers") extra.push(["cluster", "clusters (marker step)"]);
+  if (st.showMore) avail.push(...extra);
+  avail.forEach(([v, t]) => add(v, t));
+  add(st.showMore ? "__less" : "__more", st.showMore ? "fewer options" : "more…");
+  sel.disabled = false;
+  if (!avail.some(([v]) => v === st.mode)) st.mode = "type";
+  sel.value = st.mode;
+}
+function sessionLabel(x) {
+  return `v${x.n_versions} · ${x.created_at.slice(5, 16).replace("T", " ")}`;
+}
+function fillSessions(selected) {
+  const sel = $("session"); sel.textContent = "";
+  const ph = document.createElement("option"); ph.value = "";
+  ph.textContent = `continue an earlier annotation (${st.sample.sessions.length})…`; sel.append(ph);
+  st.sample.sessions.forEach((x) => { const o = document.createElement("option"); o.value = x.session_id; o.textContent = sessionLabel(x); sel.append(o); });
+  $("sessWrap").hidden = !st.sample.sessions.length;
+  sel.value = selected || "";
+}
+
+async function selectSample(id) {
+  const token = ++st.switchToken;  // ignore results of an earlier, still-running switch
+  st.samples = await api("/api/samples");
+  st.sample = st.samples.find((s) => s.sample_id === id);
+  // only annotations made from marker genes; sessions that used the dataset's cell type labels are not shown
+  st.sample.allSessions = st.sample.sessions;
+  st.sample.sessions = st.sample.sessions.filter((x) => x.method === "markers");
+  $("reset").disabled = !st.sample.allSessions.length;
+  store("sample", id);
+  $("path").textContent = st.sample.bundle_dir;
+  $("path").title = `bundle: ${st.sample.bundle_dir}\nsource: ${st.sample.source_dir}\nH&E: ${st.sample.he_path}`;
+  closeSession();
+  await openHE(id);
+  if (token !== st.switchToken) return;
+  // reopen the session last used on this sample, else its most recent one
+  const ids = st.sample.sessions.map((x) => x.session_id);
+  // reopen an annotation only if it was open on this sample earlier in this visit; a fresh page shows none
+  const remembered = st.openedThisVisit[id];
+  const sid = ids.includes(remembered) ? remembered : null;
+  fillSessions(sid);
+  if (sid) await startAnnotation("continue", sid, token);
+}
+
+function closeSession() {
+  st.sid = null; st.version = null; st.filters = {}; st.regions = null; cancelDraw();
+  $("legend").hidden = true; $("cellcard").classList.remove("show");
+  $("empty").style.display = "flex";
+  ["undo", "review", "export", "send"].forEach((b) => ($(b).disabled = true));
+  $("carryWrap").hidden = true;
+  $("input").disabled = true; $("composerhint").textContent = "Annotate a sample first.";
+  $("vinfo").textContent = ""; $("regpanel").hidden = true; drawRegions();
+  fillModes(null); st.lastSummary = null;
+  $("msgs").querySelectorAll(".m").forEach((m) => m.remove());
+  viewer.clearOverlays();
+}
+
+async function startAnnotation(mode, sid, token = st.switchToken) {
+  const body = { sample_id: st.sample.sample_id, region_source: $("regions").value, mode, method: "markers",
+                 markers_text: $("mkText").value, resolution: $("mkAuto").checked ? "auto" : +$("mkRes").value,
+                 carry_from: mode === "new" && st.sid && $("carry").checked ? st.sid : null };
+  if (mode === "new") {
+    const chk = await post("/api/markers/check", { text: body.markers_text, sample: body.sample_id });
+    if (!chk.ok) { openMarkers(); showCheck(chk); toast("Fix the marker list first", 3000); return; }
+  }
+  if (mode === "continue") body.session_id = sid;
+  $("annotate").disabled = $("session").disabled = true;
+  $("progress").classList.add("show");
+  try {
+    const { session_id } = await post("/api/annotate", body);
+    $("pstage").textContent = mode === "continue" ? "opening…" : "starting…";
+    for (;;) {
+      const j = await api(`/api/job/${session_id}`);
+      $("pfill").style.width = `${Math.round(100 * j.progress)}%`;
+      $("pstage").textContent = j.error ? `error: ${j.error}` : j.stage;
+      if (j.done) { if (j.error) throw new Error(j.error); break; }
+      await new Promise((r) => setTimeout(r, 600));
+    }
+    if (token !== st.switchToken) return;  // the user picked another sample meanwhile
+    st.openedThisVisit[st.sample.sample_id] = session_id;
+    if (mode === "new") {
+      st.samples = await api("/api/samples");
+      st.sample = st.samples.find((s) => s.sample_id === body.sample_id);
+      st.sample.allSessions = st.sample.sessions;
+      st.sample.sessions = st.sample.sessions.filter((x) => x.method === "markers");
+      $("reset").disabled = false;
+      fillSessions(session_id);
+    }
+    await openSession(session_id);
+    setTimeout(() => $("progress").classList.remove("show"), 800);
+  } catch (e) {
+    $("pstage").textContent = (mode === "continue" ? "Could not open this annotation: " : "Annotation failed: ") + e.message;
+    toast($("pstage").textContent, 8000);
+  }
+  finally { $("annotate").disabled = $("session").disabled = false; }
+}
+
+async function openSession(sid) {
+  st.sid = sid;
+  $("empty").style.display = "none";
+  ["undo", "review", "export", "send"].forEach((b) => ($(b).disabled = false));
+  $("carryWrap").hidden = false;
+  $("input").disabled = false; $("composerhint").textContent = "Tip: refer to regions you drew by their name.";
+  st.vocab = await api(`/api/s/${sid}/vocab`);
+  await refreshVersion(true);
+  await loadChat();
+}
+
+async function refreshVersion(force) {
+  if (!st.sid) return;
+  const info = await api(`/api/s/${st.sid}/info`);
+  const v = info.summary.latest_version;
+  if (!force && v === st.version) return;
+  st.version = v;
+  const sm = info.summary;
+  st.lastSummary = sm;
+  fillModes(sm);
+  $("vinfo").textContent = `v${v} · ${sm.constraints.length} priors · ${sm.corrections.length} corrections · ${sm.n_conflicts} conflicts`;
+  const opt = [...$("session").options].find((o) => o.value === st.sid);  // keep the session list's version current
+  const rec = st.sample && st.sample.sessions.find((x) => x.session_id === st.sid);
+  if (opt && rec) { rec.n_versions = v; opt.textContent = sessionLabel(rec); }
+  $("vinfo").title = info.history.slice(-6).map((h) => `v${h.version}: ${h.message}`).join("\n");
+  refreshOverlay();
+  await loadLegend();
+  await loadRegions();
+}
+setInterval(() => { if (!st.busy) refreshVersion(false).catch(() => {}); }, 4000);
+
+// ---------------- legend ----------------
+const MODE_TITLES = { type: "Cell types", lineage: "Lineages", region: "Regions", changed: "Changes", conflicts: "Conflicts", confidence: "Confidence", cluster: "Clusters (marker step)" };
+async function loadLegend() {
+  const r = await api(`/api/s/${st.sid}/legend?version=${st.version}&mode=${st.mode}`);
+  st.legend = r.items;
+  const f = filt();
+  $("legend").hidden = false;
+  $("lgtitle").textContent = MODE_TITLES[st.mode] + (f.size ? ` (${f.size} shown)` : "");
+  $("lgall").disabled = !f.size;
+  const box = $("lgitems"); box.textContent = "";
+  const toggle = (keys) => {
+    const allOn = keys.every((k) => f.has(k));
+    keys.forEach((k) => (allOn ? f.delete(k) : f.add(k)));
+    refreshOverlay(); loadLegend();
+  };
+  let grp = null;
+  r.items.forEach((it) => {
+    if (it.group && it.group !== grp) {
+      grp = it.group;
+      const g = document.createElement("div"); g.className = "grp clickable"; g.textContent = grp;
+      const keys = r.items.filter((x) => x.group === it.group).map((x) => x.key);
+      g.title = "Click to show only this group (click again to remove it)";
+      g.onclick = () => toggle(keys);
+      box.append(g);
+    }
+    const el = document.createElement("div");
+    el.className = "it" + (f.size && !f.has(it.key) ? " off" : "");
+    const sw = document.createElement("span"); sw.className = "sw"; sw.style.background = rgb(it.color);
+    const t = document.createElement("span"); t.textContent = it.label;
+    const n = document.createElement("span"); n.className = "n"; n.textContent = it.count.toLocaleString();
+    el.append(sw, t, n);
+    el.title = "Click to show only this; click more entries to add them";
+    el.onclick = () => toggle([it.key]);
+    box.append(el);
+  });
+}
+$("lgall").onclick = () => { filt().clear(); refreshOverlay(); loadLegend(); };
+$("lgtoggle").onclick = () => { $("legend").classList.toggle("collapsed"); $("lgtoggle").textContent = $("legend").classList.contains("collapsed") ? "+" : "−"; };
+
+// ---------------- cell info on click ----------------
+function imgPointFromEvent(pos) { return heItem().viewerElementToImageCoordinates(pos); }
+viewer.addHandler("canvas-click", async (e) => {
+  if (!e.quick || !st.sid) return;
+  if (st.drawing) { addPoint(e.position); return; }
+  const p = imgPointFromEvent(e.position);
+  const q = imgPointFromEvent(new OpenSeadragon.Point(e.position.x + 10, e.position.y));
+  const c = await api(`/api/s/${st.sid}/cell_at?x=${p.x}&y=${p.y}&tol=${Math.abs(q.x - p.x)}&version=${st.version}`);
+  showCell(c);
+});
+function showCell(c) {
+  const card = $("cellcard");
+  viewer.removeOverlay("cellmark");
+  if (!c.cell) { card.classList.remove("show"); return; }
+  card.textContent = "";
+  const x = document.createElement("button"); x.className = "x"; x.textContent = "×"; x.onclick = () => { card.classList.remove("show"); viewer.removeOverlay("cellmark"); };
+  const lab = document.createElement("div"); lab.className = "lab";
+  lab.textContent = c.label + (c.hand_labeled ? "  (labeled by you)" : "");
+  const dl = document.createElement("dl");
+  const row = (k, v) => { const dt = document.createElement("dt"); dt.textContent = k; const dd = document.createElement("dd"); dd.textContent = v; dl.append(dt, dd); };
+  row("confidence", `${(100 * c.confidence).toFixed(0)}%`);
+  row(c.hand_labeled ? "model thinks" : "alternatives", c.top.filter((t, i) => c.hand_labeled || i > 0).map((t) => `${t.type} ${(100 * t.p).toFixed(0)}%`).join(", ") || "–");
+  row("expression only", `${c.expression_label} (${(100 * c.expression_conf).toFixed(0)}%)`);
+  row("region", c.region.replace(/_/g, " "));
+  row("depth", `${c.depth_um} µm from epithelium`);
+  row("counts", c.total_counts);
+  row("cell id", c.cell);
+  if (c.cluster) {
+    row("marker cluster", `${c.cluster} → ${c.cluster_assigned || "unassigned"}` + (c.cluster_resolution ? ` (resolution ${c.cluster_resolution})` : ""));
+    const sc = Object.entries(c.cluster_scores || {}).sort((a, b) => b[1] - a[1]).slice(0, 3);
+    row("marker scores", sc.map(([k, v]) => `${k} ${v}`).join(", "));
+  }
+  card.append(x, lab, dl); card.classList.add("show");
+  const m = document.createElement("div"); m.id = "cellmark"; m.className = "cellmark";
+  viewer.addOverlay({ element: m, location: heItem().imageToViewportCoordinates(c.x_img, c.y_img), placement: OpenSeadragon.Placement.CENTER });
+}
+
+// ---------------- regions: drawn by the user as polygons ----------------
+// Points are kept in viewer image coordinates; the SVG layer is redrawn whenever the viewport moves.
+st.drawing = null;
+const SVGNS = "http://www.w3.org/2000/svg";
+function toScreen(x, y) { return heItem().imageToViewerElementCoordinates(new OpenSeadragon.Point(x, y)); }
+function svgEl(tag, attrs) { const e = document.createElementNS(SVGNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; }
+function drawRegions() {
+  const svg = $("regsvg"); svg.textContent = "";
+  if (!heItem() || !st.he) return;
+  if (st.regions && $("outlines").checked) {
+    st.regions.polygons.forEach((p) => {
+      const pts = p.polygon.map(([x, y]) => toScreen(x, y));
+      const col = rgb(p.color);
+      svg.append(svgEl("polygon", { points: pts.map((q) => `${q.x},${q.y}`).join(" "), fill: col, "fill-opacity": 0.08,
+                                     stroke: col, "stroke-width": 2 }));
+      const cx = pts.reduce((a, q) => a + q.x, 0) / pts.length, cy = pts.reduce((a, q) => a + q.y, 0) / pts.length;
+      const t = svgEl("text", { x: cx, y: cy, fill: col, "text-anchor": "middle" }); t.textContent = p.name; svg.append(t);
+    });
+  }
+  if (st.drawing && st.drawing.length) {
+    const pts = st.drawing.map(([x, y]) => toScreen(x, y));
+    svg.append(svgEl("polyline", { points: pts.map((q) => `${q.x},${q.y}`).join(" "), fill: "rgba(0,200,255,.08)",
+                                    stroke: "#00c8ff", "stroke-width": 2, "stroke-dasharray": "6 4" }));
+    pts.forEach((q, i) => svg.append(svgEl("circle", { cx: q.x, cy: q.y, r: i === 0 ? 6 : 4, fill: i === 0 ? "#00c8ff" : "#fff",
+                                                       stroke: "#00a0d0", "stroke-width": 2 })));
+  }
+}
+["animation", "update-viewport", "open", "resize"].forEach((ev) => viewer.addHandler(ev, drawRegions));
+
+async function loadRegions() {
+  if (!st.sid) return;
+  st.regions = await api(`/api/s/${st.sid}/regions?version=${st.version}`);
+  $("regpanel").hidden = false;
+  const box = $("rgitems"); box.textContent = "";
+  if (!st.regions.regions.length) {
+    const d = document.createElement("div"); d.className = "hint"; d.style.padding = "6px 4px";
+    d.textContent = "No regions yet. Click “Draw region”, outline an area on the map, then name it.";
+    box.append(d);
+  }
+  st.regions.regions.forEach((r) => {
+    const row = document.createElement("div"); row.className = "rg";
+    const sw = document.createElement("span"); sw.className = "sw"; sw.style.background = rgb(r.color);
+    const t = document.createElement("span"); t.textContent = r.name;
+    const n = document.createElement("span"); n.className = "n"; n.textContent = r.n_cells.toLocaleString();
+    const ren = document.createElement("button"); ren.textContent = "✎"; ren.title = "Rename this region";
+    ren.onclick = () => renameRegion(r.name);
+    row.append(sw, t, n, ren); box.append(row);
+    st.regions.polygons.filter((p) => p.name === r.name).forEach((p) => {
+      const pr = document.createElement("div"); pr.className = "pg";
+      const lab = document.createElement("span"); lab.textContent = `${p.id} · ${p.n_cells_drawn.toLocaleString()} cells when drawn`;
+      const go = document.createElement("button"); go.textContent = "zoom"; go.title = "Zoom to this polygon"; go.onclick = () => zoomTo(p);
+      const del = document.createElement("button"); del.textContent = "×"; del.title = "Delete this polygon"; del.onclick = () => deleteRegion(p.id);
+      pr.append(lab, go, del); box.append(pr);
+    });
+  });
+  const u = document.createElement("div"); u.className = "hint"; u.style.padding = "4px";
+  u.textContent = `${st.regions.n_unknown.toLocaleString()} cells in no region (region priors do not apply to them)`;
+  box.append(u);
+  $("regnames").textContent = "";
+  st.regions.regions.forEach((r) => { const o = document.createElement("option"); o.value = r.name; $("regnames").append(o); });
+  drawRegions();
+}
+function zoomTo(p) {
+  const xs = p.polygon.map((q) => q[0]), ys = p.polygon.map((q) => q[1]);
+  const pad = 0.15 * Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+  viewer.viewport.fitBounds(heItem().imageToViewportRectangle(Math.min(...xs) - pad, Math.min(...ys) - pad,
+    Math.max(...xs) - Math.min(...xs) + 2 * pad, Math.max(...ys) - Math.min(...ys) + 2 * pad));
+}
+async function afterRegionChange(r) { toast(r.message || `v${r.new_version}`); await refreshVersion(true); }
+async function renameRegion(old) {
+  const name = prompt(`Rename region “${old}” to:`, old);
+  if (!name || name === old) return;
+  try { await afterRegionChange(await post(`/api/s/${st.sid}/regions/rename`, { old, new: name })); } catch (e) { toast(e.message, 5000); }
+}
+async function deleteRegion(rid) {
+  if (!confirm(`Delete polygon ${rid}? (This creates a new version; Undo brings it back.)`)) return;
+  try { await afterRegionChange(await post(`/api/s/${st.sid}/regions/${rid}/delete`)); } catch (e) { toast(e.message, 6000); }
+}
+
+function startDraw() {
+  if (!st.sid) return;
+  st.drawing = [];
+  viewer.gestureSettingsMouse.dblClickToZoom = false;
+  $("draw").classList.add("on"); $("draw").textContent = "Drawing…"; $("drawhint").hidden = false;
+  $("osd").style.cursor = "crosshair";
+  drawRegions();
+}
+function cancelDraw() {
+  st.drawing = null;
+  viewer.gestureSettingsMouse.dblClickToZoom = true;
+  $("draw").classList.remove("on"); $("draw").textContent = "Draw region"; $("drawhint").hidden = true;
+  $("osd").style.cursor = "";
+  drawRegions();
+}
+function addPoint(pos) {
+  const p = imgPointFromEvent(pos);
+  const pts = st.drawing;
+  if (pts.length >= 3) {  // clicking the first point closes the polygon
+    const f = toScreen(pts[0][0], pts[0][1]);
+    if (Math.hypot(f.x - pos.x, f.y - pos.y) < 10) { finishDraw(); return; }
+  }
+  if (pts.length) {  // ignore a repeat click on the same spot (the two clicks of a double-click)
+    const l = toScreen(pts[pts.length - 1][0], pts[pts.length - 1][1]);
+    if (Math.hypot(l.x - pos.x, l.y - pos.y) < 4) { drawRegions(); return; }
+  }
+  pts.push([p.x, p.y]);
+  drawRegions();
+}
+function finishDraw() {
+  if (!st.drawing || st.drawing.length < 3) { toast("A region needs at least 3 points"); return; }
+  $("nameErr").textContent = ""; $("nameInfo").textContent = `${st.drawing.length} points`;
+  $("nameDlg").showModal(); $("regname").focus(); $("regname").select();
+}
+viewer.addHandler("canvas-double-click", (e) => { if (st.drawing) { e.preventDefaultAction = true; finishDraw(); } });
+$("nameSave").onclick = async () => {
+  try {
+    const r = await post(`/api/s/${st.sid}/regions/add`, { name: $("regname").value, polygon: st.drawing });
+    $("nameDlg").close(); cancelDraw(); await afterRegionChange(r);
+  } catch (e) { $("nameErr").textContent = e.message; }
+};
+$("regname").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("nameSave").click(); } });
+$("nameCancel").onclick = () => { $("nameDlg").close(); };  // keep the points so the user can continue or Esc
+$("draw").onclick = () => (st.drawing ? cancelDraw() : startDraw());
+$("outlines").onchange = drawRegions;
+$("rgtoggle").onclick = () => { $("regpanel").classList.toggle("collapsed"); $("rgtoggle").textContent = $("regpanel").classList.contains("collapsed") ? "+" : "−"; };
+
+// ---------------- chat ----------------
+function mdLite(text) {  // escape, then only **bold** and `code`
+  const esc = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return esc.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>");
+}
+function addMsg(role, text) {
+  const d = document.createElement("div"); d.className = "m " + role;
+  if (role === "assistant") d.innerHTML = mdLite(text); else d.textContent = text;
+  $("msgs").append(d); $("msgs").scrollTop = $("msgs").scrollHeight; return d;
+}
+async function loadChat() {
+  const log = await api(`/api/s/${st.sid}/chat_log`);
+  $("msgs").querySelectorAll(".m").forEach((m) => m.remove());
+  log.forEach((m) => { if (m.text) addMsg(m.role, m.text); });
+}
+async function send() {
+  const text = $("input").value.trim();
+  if (!text || st.busy || !st.sid) return;
+  st.busy = true; $("send").disabled = true; $("input").value = "";
+  addMsg("user", text);
+  const status = addMsg("status", "thinking…");
+  $("agentstate").textContent = "working…";
+  let cur = null;
+  try {
+    const r = await fetch(`/api/s/${st.sid}/chat`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: text }) });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+    const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, i); buf = buf.slice(i + 1);
+        if (!line.trim()) continue;
+        const e = JSON.parse(line);
+        if (e.kind === "text") { cur = addMsg("assistant", e.text); $("msgs").append(status); }
+        else if (e.kind === "tool") status.textContent = `running ${e.name.replace(/_/g, " ")}…`;
+        else if (e.kind === "error") addMsg("error", e.text);
+        else if (e.kind === "done") { await refreshVersion(false); }
+      }
+    }
+  } catch (e) { addMsg("error", e.message); }
+  status.remove(); $("agentstate").textContent = "";
+  st.busy = false; $("send").disabled = false; $("input").focus();
+}
+$("send").onclick = send;
+$("input").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } });
+
+// ---------------- header actions ----------------
+// ---------------- marker list dialog ----------------
+function openMarkers() { $("mkDlg").showModal(); loadLibrary(); }
+async function loadLibrary() {
+  const rows = await api("/api/markers/library");
+  const sel = $("mkLib"); const keep = sel.value; sel.length = 1;
+  rows.forEach((r) => { const o = document.createElement("option"); o.value = r.name; o.textContent = `${r.name} (${r.where})`; sel.append(o); });
+  sel.value = keep;
+}
+function showCheck(r) {
+  const box = $("mkMsgs"); box.textContent = "";
+  const line = (t, cls) => { const d = document.createElement("div"); d.textContent = t; if (cls) d.className = cls; box.append(d); };
+  if (r.ok) line(`OK: ${r.n_types} types, ${r.depth} levels, ${r.genes.length} genes.`, "ok");
+  r.errors.forEach((e) => line("✗ " + e, "err"));
+  r.warnings.forEach((w) => line("! " + w));
+  $("mkSum").textContent = r.ok ? `${r.n_types} types · ${r.depth} levels` : `${r.errors.length} errors`;
+}
+async function checkMarkers() { const r = await post("/api/markers/check", { text: $("mkText").value, sample: st.sample && st.sample.sample_id }); showCheck(r); store("markers_text", $("mkText").value); return r; }
+$("openMarkers").onclick = openMarkers;
+$("mkAuto").onchange = (e) => { $("mkRes").disabled = e.target.checked; };
+$("mkClose").onclick = () => { store("markers_text", $("mkText").value); $("mkDlg").close(); };
+$("mkCheck").onclick = checkMarkers;
+$("mkLib").onchange = async (e) => { if (!e.target.value) return; const r = await api(`/api/markers/library/${encodeURIComponent(e.target.value)}`); $("mkText").value = r.text; $("mkName").value = r.name; checkMarkers(); };
+$("mkSave").onclick = async () => { try { const r = await post("/api/markers/save", { name: $("mkName").value, text: $("mkText").value }); toast(`Saved as ${r.name}`); loadLibrary(); } catch (e) { toast(e.message); } };
+$("mkDraft").onclick = async () => {
+  const msg = $("mkDraftMsg"); msg.textContent = "The agent is drafting… (about 20-60 s)"; $("mkDraft").disabled = true;
+  try {
+    const r = await fetch("/api/markers/draft", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ instructions: $("mkInstr").value, current: $("mkRevise").checked ? $("mkText").value : "" }) });
+    const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read(); if (done) break;
+      buf += dec.decode(value, { stream: true }); let i;
+      while ((i = buf.indexOf("\n")) >= 0) {
+        const e = JSON.parse(buf.slice(0, i)); buf = buf.slice(i + 1);
+        if (e.kind === "tool") msg.textContent = `running ${e.name.replace(/_/g, " ")}…`;
+        else if (e.kind === "text") msg.textContent = e.text;
+        else if (e.kind === "markers") { $("mkText").value = e.text; checkMarkers(); }
+        else if (e.kind === "error") msg.textContent = "Error: " + e.text;
+      }
+    }
+  } catch (e) { msg.textContent = "Error: " + e.message; }
+  $("mkDraft").disabled = false;
+};
+
+$("sample").onchange = (e) => selectSample(e.target.value);
+$("annotate").onclick = () => startAnnotation("new");
+$("session").onchange = (e) => { closeSession(); if (e.target.value) startAnnotation("continue", e.target.value); };
+$("mode").onchange = (e) => {
+  if (e.target.value === "__more" || e.target.value === "__less") {  // reveal / hide confidence and clusters
+    st.showMore = e.target.value === "__more"; fillModes(st.lastSummary); return;
+  }
+  st.mode = e.target.value; refreshOverlay(); loadLegend();
+};
+$("opacity").oninput = (e) => { st.opacity = e.target.value / 100; const it = viewer.world.getItemAt(1); if (it) it.setOpacity(st.opacity); };
+$("hide").onclick = () => { st.hidden = !st.hidden; $("hide").classList.toggle("on", st.hidden); refreshOverlay(); };
+$("hideHE").onclick = () => { st.heHidden = !st.heHidden; applyHE(); };
+let dotTimer = null;
+$("dotsize").oninput = (e) => {  // redraw once the slider rests, not on every step
+  st.dotSize = e.target.value / 100;
+  $("dotsizeVal").textContent = `${st.dotSize.toFixed(1)}×`;
+  store("dotsize", e.target.value);
+  clearTimeout(dotTimer); dotTimer = setTimeout(refreshOverlay, 250);
+};
+{ const v = +load("dotsize"); if (v >= 20 && v <= 300) { $("dotsize").value = v; st.dotSize = v / 100; $("dotsizeVal").textContent = `${st.dotSize.toFixed(1)}×`; } }
+$("reset").onclick = async () => {
+  if (st.busy) { toast("Wait until the assistant has answered"); return; }
+  const id = st.sample.sample_id, n = st.sample.allSessions.length;
+  if (!confirm(`Reset sample ${id}?\n\nAll ${n} annotation(s) of this sample and all their chats are removed: cell types, regions, priors, corrections, review verdicts and conversations. The sample goes back to having no cell types.\n\nThe files are moved to work/trash/ on the server (not shown in the app).`)) return;
+  try {
+    const r = await post(`/api/sample/${id}/reset`);
+    delete st.openedThisVisit[id];
+    await selectSample(id);
+    toast(`Sample ${id} reset: ${r.deleted_sessions} annotation(s) and ${r.deleted_conversations} conversation(s) removed`, 5000);
+  } catch (e) { toast(e.message, 6000); }
+};
+$("undo").onclick = async () => { try { const r = await post(`/api/s/${st.sid}/undo`); toast(`Undone → v${r.new_version}`); refreshVersion(true); } catch (e) { toast(e.message); } };
+$("review").onclick = () => window.open(`/review?session=${st.sid}`, "_blank");
+$("export").onclick = () => {  // download the per-cell CSV of the current version
+  const a = document.createElement("a");
+  a.href = `/api/s/${st.sid}/export.csv?version=${st.version}`;
+  a.download = `${st.sample.sample_id}_v${st.version}_cells.csv`;
+  document.body.append(a); a.click(); a.remove();
+  toast(`Downloading ${a.download}…`);
+};
+document.addEventListener("keydown", (e) => {
+  if ($("mkDlg").open || $("nameDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
+  if (e.key === "h") $("hide").click();
+  if (e.key === "e") $("hideHE").click();
+  if (st.drawing && e.key === "Escape") cancelDraw();
+  if (st.drawing && e.key === "Enter") { e.preventDefault(); finishDraw(); }
+  if (st.drawing && e.key === "Backspace") { e.preventDefault(); st.drawing.pop(); drawRegions(); }
+});
+(async () => {
+  $("mkText").value = load("markers_text");
+  if (!$("mkText").value) {  // start from the project's draft list
+    try { const r = await api("/api/markers/library/ibd_xenium480_draft"); $("mkText").value = r.text; $("mkName").value = r.name; } catch (e) {}
+  }
+})();
+api("/api/config").then((c) => {  // no Claude Code CLI here: the conversation happens in Claude Desktop
+  st.chatAvailable = c.chat;
+  if (!c.chat) {
+    $("msgs").querySelectorAll(".hint").forEach((h) => h.remove());
+    const d = document.createElement("div"); d.className = "hint";
+    d.textContent = "Chat with the agent in Claude Desktop (celltypeagent tools). Everything it changes appears here within a few seconds.";
+    $("msgs").append(d); $("composer").hidden = true;
+  }
+}).catch(() => {});
+loadSamples().catch((e) => toast("Could not load samples: " + e.message, 6000));
+</script>
+</body>
+</html>

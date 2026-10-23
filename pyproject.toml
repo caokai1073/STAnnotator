@@ -1,0 +1,26 @@
+[project]
+name = "celltypeagent"
+version = "0.1.0"
+description = "Spatial transcriptomics cell type annotation driven by natural-language spatial priors"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy", "pandas", "scipy", "pyarrow", "scikit-learn", "matplotlib",
+  "tifffile", "zarr>=3", "imagecodecs", "h5py", "mcp>=1.9,<2", "torch", "igraph", "pynndescent", "uvicorn",
+  "starlette", "pillow",
+]
+
+[project.scripts]
+celltypeagent = "celltypeagent.cli:main"
+celltypeagent-mcp = "celltypeagent.mcp_server:main"
+celltypeagent-review = "celltypeagent.review_app:main"
+celltypeagent-web = "celltypeagent.webapp:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["celltypeagent"]
+
+[tool.setuptools.package-data]
+celltypeagent = ["static/*", "static/vendor/*", "data/*"]

@@ -1,0 +1,583 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conflict Review</title>
+<style>
+:root {
+  --bg: #f6f6f4; --panel: #ffffff; --ink: #1d1f21; --muted: #6b6f73; --line: #e2e2df;
+  --accent: #0f7c86; --accent-soft: #e3f2f3; --warn: #b5541c;
+  --v1: #2f7d4f; --v2: #2a62a8; --v3: #8a5a00; --v4: #7a4fa0; --v5: #b0306a; --v6: #5f6368;
+  --radius: 8px;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #17191b; --panel: #212427; --ink: #e8e8e6; --muted: #9a9ea3; --line: #33373b;
+          --accent: #4fb6bf; --accent-soft: #1f3638; --warn: #e08a55; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { display: flex; align-items: center; gap: 14px; padding: 10px 16px; background: var(--panel);
+         border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+header h1 { font-size: 16px; margin: 0 8px 0 0; font-weight: 650; }
+label.f { display: flex; flex-direction: column; font-size: 11px; color: var(--muted); gap: 2px; }
+select, input[type=text], textarea { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+         border-radius: 6px; padding: 5px 8px; }
+textarea { width: 100%; min-height: 54px; resize: vertical; }
+main { display: grid; grid-template-columns: 290px minmax(0, 1fr) 350px; gap: 12px; padding: 12px; height: calc(100vh - 62px); }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: auto; }
+#groups { padding: 8px; }
+.group { padding: 8px 10px; border-radius: 6px; cursor: pointer; border: 1px solid transparent; margin-bottom: 4px; }
+.group:hover { background: var(--bg); }
+.group.active { background: var(--accent-soft); border-color: var(--accent); }
+.group .t { font-weight: 600; }
+.group .s { color: var(--muted); font-size: 12px; }
+.bar { height: 4px; background: var(--line); border-radius: 2px; margin-top: 5px; overflow: hidden; }
+.bar > i { display: block; height: 100%; background: var(--accent); }
+#viewer { display: flex; flex-direction: column; }
+.toolbar { display: flex; gap: 6px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; border-right: 1px solid var(--line); }
+.seg button:last-child { border-right: 0; }
+button { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+         padding: 5px 10px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+.seg button.on { border-color: transparent; }
+.spacer { flex: 1; }
+.imgwrap { flex: 1; display: flex; align-items: center; justify-content: center; padding: 10px; min-height: 0; }
+.imgwrap img { max-width: 100%; max-height: 100%; border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,.15); background: #fff; }
+.legend { display: flex; gap: 12px; padding: 6px 12px 10px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
+#side { padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; }
+.rule { background: var(--bg); border-radius: 6px; padding: 8px 10px; font-size: 13px; }
+.rule .id { color: var(--accent); font-weight: 650; }
+dl { display: grid; grid-template-columns: 118px 1fr; gap: 4px 10px; margin: 0; font-size: 13px; }
+dt { color: var(--muted); }
+dd { margin: 0; word-break: break-word; }
+.lab { font-weight: 600; }
+.verdicts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.verdicts button { text-align: left; padding: 7px 9px; border-left: 4px solid var(--c); }
+.verdicts button .k { float: right; color: var(--muted); font-size: 11px; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
+.verdicts button .d { display: block; font-size: 11px; color: var(--muted); }
+.verdicts button.chosen { background: var(--c); color: #fff; }
+.verdicts button.chosen .d, .verdicts button.chosen .k { color: #fff; border-color: rgba(255,255,255,.5); }
+.h { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 0 0 4px; }
+.muted { color: var(--muted); }
+.empty { padding: 40px; text-align: center; color: var(--muted); }
+.toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--panel);
+         padding: 8px 14px; border-radius: 6px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+.toast.show { opacity: .92; }
+kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; }
+button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+button:disabled { opacity: .45; cursor: default; }
+dialog { width: min(860px, 94vw); max-height: 90vh; border: 1px solid var(--line); border-radius: 10px; padding: 0;
+         background: var(--panel); color: var(--ink); }
+dialog::backdrop { background: rgba(0, 0, 0, .35); }
+.dlg-head { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--line);
+            position: sticky; top: 0; background: var(--panel); z-index: 1; }
+.tabs { display: inline-flex; gap: 4px; }
+.tabs button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); }
+[hidden] { display: none !important; }
+.tab { padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 12px; }
+.blk { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.lbl { font-size: 12px; color: var(--muted); }
+.row { display: flex; gap: 14px; flex-wrap: wrap; }
+.picker { border: 1px solid var(--line); border-radius: 6px; padding: 6px; }
+.picker .filter { width: 100%; margin-bottom: 6px; }
+.picker .list { max-height: 190px; overflow: auto; columns: 2; column-gap: 16px; font-size: 13px; }
+.picker .list .lin { break-after: avoid; font-size: 11px; color: var(--muted); text-transform: uppercase; margin-top: 4px; }
+.picker .list label { display: block; break-inside: avoid; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-size: 12px; padding: 2px 8px; border-radius: 12px; }
+.chip.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+.actions { display: flex; gap: 8px; align-items: center; }
+.preview { font-size: 13px; }
+.preview table { border-collapse: collapse; margin-top: 6px; }
+.preview td, .preview th { border-bottom: 1px solid var(--line); padding: 3px 8px; text-align: left; }
+.err { color: var(--warn); }
+.rulecard { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font-size: 13px; }
+@media (max-width: 1100px) { main { grid-template-columns: 1fr; height: auto; } .imgwrap { min-height: 360px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Conflict Review</h1>
+  <label class="f">Session <select id="session"></select></label>
+  <label class="f">Version <select id="version"></select></label>
+  <label class="f">Group by <select id="by">
+    <option value="constraint,region">constraint + region</option>
+    <option value="constraint,category">constraint + spatial category</option>
+    <option value="constraint,base_label">constraint + expression label</option>
+  </select></label>
+  <label class="f">Reviewer <input id="reviewer" type="text" placeholder="your name" size="14"></label>
+  <button id="openRules" title="Add a rule, suggest one in words, or see current rules">Rules…</button>
+  <span class="spacer"></span>
+  <a id="csv" href="#" class="muted">Download verdicts (CSV)</a>
+</header>
+<main>
+  <section class="panel" id="groups"><div class="empty">Choose a session</div></section>
+  <section class="panel" id="viewer">
+    <div class="toolbar">
+      <div class="seg" id="views">
+        <button data-v="close" title="Field of view 120 µm">120 µm</button><button data-v="context" class="on" title="Field of view 300 µm">300 µm</button><button data-v="wide" title="Field of view 800 µm">800 µm</button>
+      </div>
+      <button id="overlay" title="Show Xenium cells colored by lineage (o)">Overlay</button>
+      <label class="muted" style="font-size:12px"><input type="checkbox" id="skip" checked> skip reviewed</label>
+      <span class="spacer"></span>
+      <button id="prev" title="Previous (←)">‹ Prev</button>
+      <span id="counter" class="muted">–</span>
+      <button id="next" title="Next (→)">Next ›</button>
+    </div>
+    <div class="imgwrap"><img id="img" alt="H&E crop around the conflict cell"></div>
+    <div class="legend" id="legend">
+      <span><i style="background:#00e6ff"></i>target cell (ticks)</span>
+      <span id="lineageLegend"></span>
+      <span>Keys: <kbd>1</kbd>–<kbd>6</kbd> verdict, <kbd>←</kbd><kbd>→</kbd> move, <kbd>z</kbd> zoom, <kbd>o</kbd> overlay</span>
+    </div>
+  </section>
+  <section class="panel" id="side">
+    <div><p class="h">Rule in conflict</p><div class="rule" id="rule">–</div></div>
+    <div><p class="h">This cell</p>
+      <dl>
+        <dt>Expression says</dt><dd><span class="lab" id="f-base">–</span> <span class="muted" id="f-conf"></span></dd>
+        <dt>After priors</dt><dd id="f-label">–</dd>
+        <dt>Region</dt><dd id="f-region">–</dd>
+        <dt>Spatial pattern</dt><dd id="f-cat">–</dd>
+        <dt>Cell id</dt><dd id="f-cell" class="muted">–</dd>
+        <dt>Other reviewers</dt><dd id="f-others" class="muted">–</dd>
+      </dl>
+    </div>
+    <div><p class="h">Your verdict</p><div class="verdicts" id="verdicts"></div></div>
+    <div><p class="h">Note (optional, saved with the verdict)</p><textarea id="note" placeholder="e.g. crypt fragment at tissue edge"></textarea></div>
+    <div><p class="h">Group progress</p><div id="gprog" class="muted">–</div></div>
+  </section>
+</main>
+<dialog id="ruleDlg">
+  <div class="dlg-head">
+    <b>Rules</b>
+    <div class="tabs">
+      <button type="button" data-tab="add" class="on">Add a rule</button>
+      <button type="button" data-tab="suggest">Suggest in words</button>
+      <button type="button" data-tab="list">Current rules</button>
+    </div>
+    <span class="spacer"></span>
+    <button type="button" id="dlgClose" title="Close (Esc)">Close</button>
+  </div>
+  <div class="tab" id="tab-add">
+    <label class="blk">The rule in your words (saved with the rule)
+      <textarea id="r-text" placeholder="e.g. Tfh cells sit next to B cells"></textarea></label>
+    <div class="blk"><span class="lbl">Cell types the rule is about</span><div id="r-types" class="picker"></div></div>
+    <div class="row">
+      <label class="blk">These cells are
+        <select id="r-mode"><option value="only">only found</option><option value="exclude">never found</option>
+          <option value="enrich">mostly found</option></select></label>
+      <label class="blk">Where
+        <select id="r-kind"><option value="region">in region(s)</option><option value="depth">near the epithelium</option>
+          <option value="neighborhood">next to other cell types</option></select></label>
+      <label class="blk">How sure
+        <select id="r-weight"><option value="strong">strong (almost never wrong)</option>
+          <option value="moderate">moderate (usually)</option><option value="weak">weak (tendency)</option></select></label>
+    </div>
+    <div id="c-region" class="blk"><span class="lbl">Regions</span><div id="r-regions" class="chips"></div></div>
+    <div id="c-depth" class="blk" hidden>
+      <label>Within <input type="number" id="r-depth" value="50" min="1" step="10" style="width:90px"> µm of the epithelium
+        <span class="muted">(distance to crypts / surface epithelium; 0 = inside)</span></label></div>
+    <div id="c-nbr" class="blk" hidden>
+      <span class="lbl">Neighbor cell types</span><div id="r-nbr" class="picker"></div>
+      <label>At least <input type="number" id="r-frac" value="20" min="5" max="100" step="5" style="width:70px">
+        % of the 15 nearest cells are of these types</label></div>
+    <div class="actions">
+      <button type="button" id="r-preview">Preview effect</button>
+      <button type="button" id="r-commit" class="primary" disabled>Add rule</button>
+      <span id="r-msg" class="muted"></span>
+    </div>
+    <div id="r-result" class="preview"></div>
+  </div>
+  <div class="tab" id="tab-suggest" hidden>
+    <p class="muted" style="margin:0">Not sure how to turn it into a rule? Describe it here; the analyst reviews it with the agent.</p>
+    <textarea id="s-text" placeholder="e.g. The smooth muscle in this mucosa is muscularis mucosae, so the muscularis propria rule should not apply here."></textarea>
+    <label class="muted"><input type="checkbox" id="s-attach" checked> attach the current cell and group</label>
+    <div class="actions"><button type="button" id="s-send" class="primary">Send suggestion</button><span id="s-msg" class="muted"></span></div>
+    <div id="s-list"></div>
+  </div>
+  <div class="tab" id="tab-list" hidden><div id="rules-list"></div></div>
+</dialog>
+<div class="toast" id="toast"></div>
+<script>
+const VERDICTS = [
+  ["constraint_right", "Prior right", "label is wrong", "--v1"],
+  ["reference_right", "Label right", "prior doesn't apply", "--v2"],
+  ["region_wrong", "Region wrong", "cell is in another region", "--v3"],
+  ["artifact", "Artifact", "edge, debris, no tissue", "--v4"],
+  ["new_state", "New cell state", "not in taxonomy", "--v5"],
+  ["unclear", "Unclear", "cannot decide", "--v6"],
+];
+const CATEGORY_TEXT = {
+  boundary: "near a region where this type is allowed",
+  clustered: "inside a cluster of the same type",
+  isolated: "isolated among other cell types",
+};
+const st = { sid: null, version: null, by: "constraint,region", groups: [], group: null, queue: [], idx: 0,
+             view: "context", overlay: false, skip: true, info: null, vocab: null };
+const $ = (id) => document.getElementById(id);
+const api = async (path, opts) => {
+  const r = await fetch(path, opts);
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+  return r.json();
+};
+const reviewer = () => $("reviewer").value.trim();
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 1600); }
+function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+function load(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } }
+
+function buildVerdictButtons() {
+  const box = $("verdicts");
+  box.textContent = "";
+  VERDICTS.forEach(([key, title, desc, col], i) => {
+    const b = document.createElement("button");
+    b.style.setProperty("--c", `var(${col})`);
+    b.dataset.v = key;
+    b.title = (st.info && st.info.verdicts[key]) || desc;
+    const k = document.createElement("span"); k.className = "k"; k.textContent = i + 1;
+    const d = document.createElement("span"); d.className = "d"; d.textContent = desc;
+    b.append(k, document.createTextNode(title), d);
+    b.onclick = () => submit(key);
+    box.append(b);
+  });
+}
+
+async function loadSessions() {
+  const rows = await api("/api/sessions");
+  const sel = $("session");
+  sel.textContent = "";
+  if (!rows.length) { $("groups").innerHTML = '<div class="empty">No sessions yet. Create one with the agent.</div>'; return; }
+  rows.forEach((r) => {
+    const o = document.createElement("option");
+    o.value = r.session_id;
+    o.textContent = `${r.sample_id} · ${r.disease || ""} · ${r.location || ""}`;
+    sel.append(o);
+  });
+  const want = new URLSearchParams(location.search).get("session") || load("sid");
+  if (rows.some((r) => r.session_id === want)) sel.value = want;
+  await selectSession(sel.value);
+}
+
+async function selectSession(sid) {
+  st.sid = sid; store("sid", sid);
+  [st.info, st.vocab] = await Promise.all([api(`/api/s/${sid}/info`), api(`/api/s/${sid}/vocab`)]);
+  if (rule.sid !== sid) { rule.types = null; rule.sid = sid; }
+  buildVerdictButtons();
+  const lg = $("lineageLegend"); lg.textContent = "";  // overlay dots are colored by the current annotation's lineage
+  st.info.lineage_colors.forEach((x) => {
+    const sp = document.createElement("span"); const i = document.createElement("i");
+    i.style.background = `rgb(${x.color.join(",")})`; sp.append(i, document.createTextNode(x.name + " ")); lg.append(sp);
+  });
+  const vs = $("version"); vs.textContent = "";
+  st.info.history.slice().reverse().forEach((h) => {
+    const o = document.createElement("option");
+    o.value = h.version; o.textContent = `v${h.version}: ${h.message}`.slice(0, 70);
+    vs.append(o);
+  });
+  st.version = st.info.summary.latest_version;
+  vs.value = st.version;
+  $("csv").href = `/api/s/${sid}/verdicts.csv`;
+  await loadGroups();
+}
+
+async function loadGroups() {
+  const q = new URLSearchParams({ by: st.by, reviewer: reviewer(), version: st.version });
+  const res = await api(`/api/s/${st.sid}/groups?${q}`);
+  st.groups = res.groups;
+  const box = $("groups"); box.textContent = "";
+  const head = document.createElement("div");
+  head.className = "muted"; head.style.cssText = "font-size:12px;padding:4px 10px 8px";
+  head.textContent = `${res.n_conflicts} conflict cells in ${res.groups.length} groups`;
+  box.append(head);
+  if (!res.groups.length) { box.insertAdjacentHTML("beforeend", '<div class="empty">No conflicts in this version.</div>'); return; }
+  const keys = st.by.split(",");
+  res.groups.forEach((g) => {
+    const el = document.createElement("div");
+    el.className = "group" + (st.group === g.group_id ? " active" : "");
+    const t = document.createElement("div"); t.className = "t"; t.textContent = keys.map((k) => g[k]).join(" · ");
+    const s = document.createElement("div"); s.className = "s";
+    s.textContent = `${g.n} cells · mostly ${g.top_base_label} · ${g.top_category} · reviewed ${g.reviewed_by_me}`;
+    const bar = document.createElement("div"); bar.className = "bar";
+    const fill = document.createElement("i"); fill.style.width = `${(100 * g.reviewed_by_me) / g.n}%`;
+    bar.append(fill);
+    el.append(t, s, bar);
+    el.onclick = () => selectGroup(g.group_id);
+    box.append(el);
+  });
+}
+
+async function selectGroup(gid) {
+  st.group = gid;
+  const q = new URLSearchParams({ group: gid, reviewer: reviewer(), version: st.version });
+  st.queue = await api(`/api/s/${st.sid}/queue?${q}`);
+  st.idx = 0;
+  if (st.skip) { const j = st.queue.findIndex((c) => !c.my_verdict); st.idx = j >= 0 ? j : 0; }
+  await loadGroupsKeepScroll();
+  show();
+}
+
+async function loadGroupsKeepScroll() { const y = $("groups").scrollTop; await loadGroups(); $("groups").scrollTop = y; }
+
+function cropUrl(c, view = st.view, overlay = st.overlay) {
+  return `/api/s/${st.sid}/crop/${c.cell}?view=${view}&overlay=${overlay ? 1 : 0}`;
+}
+
+function show() {
+  const c = st.queue[st.idx];
+  if (!c) { $("img").removeAttribute("src"); $("counter").textContent = "–"; return; }
+  $("img").src = cropUrl(c);
+  for (let k = 1; k <= 3; k++) { const n = st.queue[st.idx + k]; if (n) new Image().src = cropUrl(n); }
+  $("counter").textContent = `Cell ${st.idx + 1} of ${st.queue.length}`;
+  const con = st.info.summary.constraints.find((x) => x.id === c.constraint);
+  const rule = $("rule"); rule.textContent = "";
+  const id = document.createElement("span"); id.className = "id"; id.textContent = c.constraint + " ";
+  rule.append(id, document.createTextNode(con ? `“${con.text}”` : ""));
+  if (con) { const d = document.createElement("div"); d.className = "muted"; d.style.fontSize = "12px"; d.textContent = con.rule; rule.append(d); }
+  $("f-base").textContent = c.base_label;
+  $("f-conf").textContent = `(${(100 * c.base_conf).toFixed(1)}%)`;
+  $("f-label").textContent = c.label === c.base_label ? `${c.label} (kept)` : `${c.label} (changed by prior)`;
+  $("f-region").textContent = `${c.region} (${st.info.summary.region_source})`;
+  const dist = Number.isFinite(c.d_allowed_um) ? `, ${Math.round(c.d_allowed_um)} µm from allowed region` : "";
+  $("f-cat").textContent = (CATEGORY_TEXT[c.category] || c.category) + dist;
+  $("f-cell").textContent = c.cell;
+  $("f-others").textContent = c.others.length ? c.others.map((o) => `${o.reviewer}: ${o.verdict}`).join(", ") : "none";
+  $("note").value = c.my_note || "";
+  document.querySelectorAll("#verdicts button").forEach((b) => b.classList.toggle("chosen", b.dataset.v === c.my_verdict));
+  const done = st.queue.filter((x) => x.my_verdict).length;
+  const tally = {};
+  st.queue.forEach((x) => { if (x.my_verdict) tally[x.my_verdict] = (tally[x.my_verdict] || 0) + 1; });
+  $("gprog").textContent = `${done} of ${st.queue.length} reviewed by you` +
+    (done ? " · " + Object.entries(tally).map(([k, v]) => `${k} ${v}`).join(", ") : "");
+}
+
+function move(step) {
+  if (!st.queue.length) return;
+  let i = st.idx + step;
+  if (st.skip && step > 0) { while (i < st.queue.length && st.queue[i].my_verdict) i++; }
+  st.idx = Math.max(0, Math.min(st.queue.length - 1, i));
+  show();
+}
+
+async function submit(verdict) {
+  const c = st.queue[st.idx];
+  if (!c) return;
+  if (!reviewer()) { $("reviewer").focus(); toast("Enter your name first"); return; }
+  await api(`/api/s/${st.sid}/verdict`, { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cells: [c.cell], verdict, note: $("note").value, reviewer: reviewer(), version: st.version, group: st.group }) });
+  c.my_verdict = verdict; c.my_note = $("note").value;
+  toast(`Saved: ${verdict}`);
+  const g = st.groups.find((x) => x.group_id === st.group);
+  if (g) g.reviewed_by_me = st.queue.filter((x) => x.my_verdict).length;
+  if (st.idx < st.queue.length - 1) move(1); else show();
+  loadGroupsKeepScroll();
+}
+
+$("session").onchange = (e) => { st.group = null; st.queue = []; selectSession(e.target.value); show(); };
+$("version").onchange = (e) => { st.version = +e.target.value; st.group = null; st.queue = []; loadGroups(); show(); };
+$("by").onchange = (e) => { st.by = e.target.value; st.group = null; st.queue = []; loadGroups(); show(); };
+$("reviewer").onchange = () => { store("reviewer", reviewer()); if (st.sid) loadGroups(); if (st.group) selectGroup(st.group); };
+$("prev").onclick = () => move(-1);
+$("next").onclick = () => move(1);
+$("skip").onchange = (e) => { st.skip = e.target.checked; };
+$("overlay").onclick = () => { st.overlay = !st.overlay; $("overlay").classList.toggle("on", st.overlay); show(); };
+document.querySelectorAll("#views button").forEach((b) => b.onclick = () => setView(b.dataset.v));
+function setView(v) { st.view = v; document.querySelectorAll("#views button").forEach((x) => x.classList.toggle("on", x.dataset.v === v)); show(); }
+document.addEventListener("keydown", (e) => {
+  if ($("ruleDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
+  if (e.key >= "1" && e.key <= "6") submit(VERDICTS[+e.key - 1][0]);
+  else if (e.key === "ArrowRight") move(1);
+  else if (e.key === "ArrowLeft") move(-1);
+  else if (e.key === "o") $("overlay").click();
+  else if (e.key === "z") { const order = ["close", "context", "wide"]; setView(order[(order.indexOf(st.view) + 1) % 3]); }
+});
+// ---------------- rules dialog ----------------
+const LINEAGES = ["epithelial", "fibroblast", "lymphoid", "myeloid", "stromal"];
+const rule = { types: null, nbr: null, regions: new Set(), previewed: null };
+
+function makePicker(el) {
+  const sel = new Set();
+  el.textContent = "";
+  const filter = document.createElement("input");
+  filter.type = "text"; filter.className = "filter"; filter.placeholder = "filter cell types…";
+  const chips = document.createElement("div"); chips.className = "chips"; chips.style.marginBottom = "6px";
+  const list = document.createElement("div"); list.className = "list";
+  const count = document.createElement("div"); count.className = "muted"; count.style.fontSize = "12px";
+  el.append(filter, chips, list, count);
+  const changed = () => el.dispatchEvent(new Event("change", { bubbles: true }));
+  function render() {
+    chips.textContent = "";
+    Object.entries(st.vocab.type_groups).forEach(([g, ts]) => {
+      const b = document.createElement("button"); b.type = "button"; b.className = "chip";
+      const all = ts.length && ts.every((t) => sel.has(t));
+      b.classList.toggle("on", all);
+      b.textContent = `${all ? "−" : "+"} all ${g.replace("_", " ")}`;
+      b.onclick = () => { ts.forEach((t) => (all ? sel.delete(t) : sel.add(t))); render(); changed(); };
+      chips.append(b);
+    });
+    list.textContent = "";
+    const q = filter.value.toLowerCase();
+    (st.vocab.lineages || LINEAGES).forEach((g) => {
+      const ts = (st.vocab.type_groups[g] || []).filter((t) => t.toLowerCase().includes(q));
+      if (!ts.length) return;
+      const h = document.createElement("div"); h.className = "lin"; h.textContent = g; list.append(h);
+      ts.forEach((t) => {
+        const l = document.createElement("label"); const cb = document.createElement("input");
+        cb.type = "checkbox"; cb.checked = sel.has(t);
+        cb.onchange = () => { cb.checked ? sel.add(t) : sel.delete(t); render(); changed(); };
+        l.append(cb, document.createTextNode(" " + t)); list.append(l);
+      });
+    });
+    count.textContent = sel.size ? `${sel.size} selected: ${[...sel].slice(0, 6).join(", ")}${sel.size > 6 ? ", …" : ""}` : "none selected";
+  }
+  filter.oninput = (e) => { e.stopPropagation(); render(); };
+  render();
+  return { get: () => [...sel], set: (arr) => { sel.clear(); arr.forEach((t) => sel.add(t)); render(); } };
+}
+
+function buildRegionChips() {
+  const box = $("r-regions"); box.textContent = "";
+  st.vocab.regions.filter((r) => !st.vocab.free_regions.includes(r)).forEach((r) => {
+    const b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.textContent = r.replace(/_/g, " ");
+    b.classList.toggle("on", rule.regions.has(r));
+    b.onclick = () => { rule.regions.has(r) ? rule.regions.delete(r) : rule.regions.add(r); buildRegionChips(); invalidate(); };
+    box.append(b);
+  });
+}
+
+function setupRuleForm() {
+  rule.types = makePicker($("r-types"));
+  rule.nbr = makePicker($("r-nbr"));
+  rule.regions = new Set();
+  buildRegionChips();
+  $("r-result").textContent = ""; $("r-msg").textContent = "";
+}
+
+function invalidate() { rule.previewed = null; $("r-commit").disabled = true; }
+
+function ruleSpec() {
+  const kind = $("r-kind").value;
+  const spec = { text: $("r-text").value.trim(), types: rule.types.get(), mode: $("r-mode").value, weight: $("r-weight").value, kind };
+  if (kind === "region") spec.regions = [...rule.regions];
+  if (kind === "depth") spec.max_depth_um = +$("r-depth").value;
+  if (kind === "neighborhood") { spec.neighbor_types = rule.nbr.get(); spec.min_frac = +$("r-frac").value / 100; }
+  return spec;
+}
+
+function showKind() {
+  const k = $("r-kind").value;
+  $("c-region").hidden = k !== "region"; $("c-depth").hidden = k !== "depth"; $("c-nbr").hidden = k !== "neighborhood";
+}
+
+async function previewRule() {
+  const out = $("r-result"); out.textContent = ""; $("r-msg").textContent = "";
+  const spec = ruleSpec();
+  if (!spec.types.length) { $("r-msg").textContent = "Pick at least one cell type."; return; }
+  try {
+    const p = await api(`/api/s/${st.sid}/constraint/preview`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
+    rule.previewed = { spec: JSON.stringify(spec), version: p.based_on_version };
+    const add = (tag, text, cls) => { const e = document.createElement(tag); e.textContent = text; if (cls) e.className = cls; out.append(e); return e; };
+    add("div", p.interpretation).style.fontWeight = "600";
+    add("div", `${p.n_cells_currently_of_these_types} cells are currently labeled as these types; ` +
+      `${p.n_cells_of_these_types_penalized} of them are where the rule applies its weight. ` +
+      `The condition holds for ${p.condition_true_cells} cells in this sample.`, "muted");
+    add("div", `${p.n_label_changes} labels would change (on top of v${p.based_on_version}).`);
+    if (p.top_transitions.length) {
+      const t = document.createElement("table");
+      t.innerHTML = "<tr><th>from</th><th>to</th><th>region</th><th>cells</th></tr>";
+      p.top_transitions.forEach((r) => { const tr = t.insertRow(); [r.from, r.to, r.region, r.count].forEach((v) => (tr.insertCell().textContent = v)); });
+      out.append(t);
+    }
+    $("r-commit").disabled = !spec.text;
+    $("r-commit").textContent = `Add rule (creates v${p.based_on_version + 1})`;
+    if (!spec.text) $("r-msg").textContent = "Describe the rule in your words to add it.";
+  } catch (e) { add_err(out, e.message); }
+}
+function add_err(el, msg) { const d = document.createElement("div"); d.className = "err"; d.textContent = msg; el.append(d); }
+
+async function commitRule() {
+  if (!rule.previewed) return;
+  if (!reviewer()) { $("r-msg").textContent = "Enter your name in the header first."; return; }
+  const spec = JSON.parse(rule.previewed.spec);
+  try {
+    const r = await api(`/api/s/${st.sid}/constraint`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...spec, reviewer: reviewer(), based_on_version: rule.previewed.version }) });
+    $("ruleDlg").close();
+    toast(`Added ${r.constraint_id}: ${r.diff.n_label_changes} labels changed → v${r.new_version}`);
+    const g = st.group;
+    await selectSession(st.sid);
+    if (g && st.groups.some((x) => x.group_id === g)) await selectGroup(g); else { st.group = null; st.queue = []; show(); }
+  } catch (e) { invalidate(); $("r-msg").textContent = ""; add_err($("r-result"), e.message); }
+}
+
+async function sendSuggestion() {
+  const text = $("s-text").value.trim();
+  if (!reviewer()) { $("s-msg").textContent = "Enter your name in the header first."; return; }
+  if (!text) { $("s-msg").textContent = "Write the suggestion first."; return; }
+  const c = st.queue[st.idx];
+  const attach = $("s-attach").checked && c;
+  await api(`/api/s/${st.sid}/suggestion`, { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, reviewer: reviewer(), version: st.version, cell: attach ? c.cell : null, group: attach ? st.group : null }) });
+  $("s-text").value = ""; $("s-msg").textContent = "Sent.";
+  listSuggestions();
+}
+
+async function listSuggestions() {
+  const rows = (await api(`/api/s/${st.sid}/suggestions`)).filter((s) => s.author === reviewer());
+  const box = $("s-list"); box.textContent = "";
+  if (!rows.length) return;
+  const h = document.createElement("p"); h.className = "h"; h.textContent = "Your suggestions"; box.append(h);
+  rows.reverse().forEach((s) => {
+    const d = document.createElement("div"); d.className = "rulecard"; d.style.marginBottom = "6px";
+    d.textContent = `[${s.status}] ${s.text}` + (s.resolution_note ? ` — ${s.resolution_note}` : "");
+    box.append(d);
+  });
+}
+
+function listRules() {
+  const box = $("rules-list"); box.textContent = "";
+  const cs = st.info.summary.constraints;
+  if (!cs.length) { box.textContent = "No rules in this version."; return; }
+  cs.forEach((c) => {
+    const d = document.createElement("div"); d.className = "rulecard"; d.style.marginBottom = "6px";
+    const h = document.createElement("div"); h.style.fontWeight = "600";
+    h.textContent = `${c.id} · ${c.kind} · added by ${c.author || "agent"}`;
+    const t = document.createElement("div"); t.textContent = c.text ? `“${c.text}”` : "";
+    const r = document.createElement("div"); r.className = "muted"; r.style.fontSize = "12px"; r.textContent = c.rule;
+    d.append(h, t, r); box.append(d);
+  });
+}
+
+function openTab(name) {
+  document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === name));
+  ["add", "suggest", "list"].forEach((t) => ($(`tab-${t}`).hidden = t !== name));
+  if (name === "suggest") listSuggestions();
+  if (name === "list") listRules();
+}
+
+$("openRules").onclick = () => {
+  if (!st.sid || !st.vocab) return;
+  if (!rule.types) setupRuleForm();
+  const c = st.queue[st.idx];
+  if (c && !rule.types.get().length) rule.types.set([c.base_label]);
+  openTab("add"); showKind(); $("ruleDlg").showModal();
+};
+$("dlgClose").onclick = () => $("ruleDlg").close();
+document.querySelectorAll(".tabs button").forEach((b) => (b.onclick = () => openTab(b.dataset.tab)));
+$("r-kind").onchange = () => { showKind(); invalidate(); };
+$("tab-add").addEventListener("input", invalidate);
+$("tab-add").addEventListener("change", invalidate);
+$("r-preview").onclick = previewRule;
+$("r-commit").onclick = commitRule;
+$("s-send").onclick = sendSuggestion;
+
+$("reviewer").value = load("reviewer");
+buildVerdictButtons();
+loadSessions().catch((e) => { $("groups").innerHTML = ""; const d = document.createElement("div"); d.className = "empty"; d.textContent = "Error: " + e.message; $("groups").append(d); });
+</script>
+</body>
+</html>
