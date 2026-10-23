@@ -11,21 +11,24 @@ every step. Everything runs on your own computer; images and expression data nev
 
 Requirements: macOS (Apple silicon or Intel), Linux or Windows; about 8 GB of RAM; [Claude Desktop](https://claude.ai/download).
 
-1. Install [uv](https://docs.astral.sh/uv/) (it also installs Python for you):
+1. Install [uv](https://docs.astral.sh/uv/) (it also installs Python for you), then load it into the current
+   terminal:
 
    ```bash
    curl -LsSf https://astral.sh/uv/install.sh | sh
+   source $HOME/.local/bin/env
    ```
 
-2. Unzip the downloaded `STCellTypeAgent-main.zip` somewhere permanent (for example into `~/Applications`; Claude Desktop is
-   pointed at this folder, so do not move it afterwards) and install it:
+2. Download the zip and unzip it (Safari unzips it on its own; otherwise double-click
+   `STCellTypeAgent-main.zip` in Finder). Move the folder somewhere permanent, because Claude Desktop is
+   pointed at it and it should not move afterwards, then install:
 
    ```bash
-   cd ~/Applications/STCellTypeAgent-main
-   uv venv .venv --python 3.12
-   uv pip install --python .venv/bin/python -e .
+   mkdir -p ~/Applications && mv ~/Downloads/STCellTypeAgent-main ~/Applications/
+   cd ~/Applications/STCellTypeAgent-main && uv venv .venv --python 3.12 && uv pip install --python .venv/bin/python -e .
    ```
 
+   The install downloads PyTorch and takes a few minutes. All later commands are run inside this folder.
    On Windows use `.venv\Scripts\python` and `.venv\Scripts\celltypeagent` in place of `.venv/bin/...`.
 
 Your data and annotations are kept in one data folder, `~/celltypeagent` by default (set `CELLTYPEAGENT_HOME`
