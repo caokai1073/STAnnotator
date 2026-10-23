@@ -15,3 +15,4 @@ marker_lists/
 # planning notes (only README.md is published from the top level)
 /*.md
 !/README.md
+share/

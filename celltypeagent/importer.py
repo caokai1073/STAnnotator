@@ -30,12 +30,19 @@ def _strings(a):
 
 
 def _read_column(g):
-    """An obs/var column: plain dataset or categorical group (codes + categories)."""
+    """An obs/var column: plain dataset, categorical group (codes + categories), or nullable group (values + mask,
+    written by recent anndata for strings, integers and booleans)."""
     if isinstance(g, h5py.Group):
-        cats = _strings(g["categories"][:]) if g["categories"].dtype.kind in "SOU" else g["categories"][:]
-        codes = g["codes"][:]
-        out = np.empty(len(codes), dtype=object)
-        out[codes >= 0] = np.asarray(cats, dtype=object)[codes[codes >= 0]]
+        if "codes" in g:
+            cats = _strings(g["categories"][:]) if g["categories"].dtype.kind in "SOU" else g["categories"][:]
+            codes = g["codes"][:]
+            out = np.empty(len(codes), dtype=object)
+            out[codes >= 0] = np.asarray(cats, dtype=object)[codes[codes >= 0]]
+            return out
+        v = g["values"][:]
+        out = (_strings(v) if v.dtype.kind in "SOU" else v).astype(object)
+        if "mask" in g:
+            out[g["mask"][:].astype(bool)] = None
         return out
     v = g[:]
     return _strings(v) if v.dtype.kind in "SOU" else v
@@ -43,7 +50,7 @@ def _read_column(g):
 
 def _index(g):
     key = g.attrs.get("_index", "_index")
-    return _strings(g[key][:])
+    return np.array([str(v) for v in _read_column(g[key])], dtype=object)
 
 
 def _rows_csr(g, rows, n_cols):
