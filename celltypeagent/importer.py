@@ -1,17 +1,22 @@
-"""Import one sample (tissue section) from h5ad files, a registered H&E image and a registration file.
+"""Import one sample (tissue section) into the data folder, from either source:
 
-    celltypeagent import --name 147328 --h5ad a.h5ad [b.h5ad ...] --he slide.ome.tif --registration reg.csv
-                         [--section-column donor_id --section 147328] [--region-column histopathology]
+  h5ad    celltypeagent import --name 147328 --h5ad a.h5ad [b.h5ad ...] --he slide.ome.tif --registration reg.csv
+                               [--section-column donor_id --section 147328] [--region-column histopathology]
+  Xenium  celltypeagent import-xenium --name ln1 --xenium /path/to/output-XETG... [--he he.ome.tif --registration
+                               he_imagealignment.csv]
 
-Inputs
-  h5ad          AnnData files with raw counts (layer "counts", or X) and cell coordinates in micrometers
-                (obs x_centroid/y_centroid, x/y, or obsm["spatial"]). Several files (e.g. one per lineage) are merged;
-                cell type annotations in them are ignored.
-  H&E           pyramidal TIFF / OME-TIFF registered to the cells.
-  registration  either an affine CSV with columns a11,a12,a21,a22,tx,ty mapping cell (x, y) in um to H&E level-0
-                pixels (px = a11*x + a12*y + tx, py = a21*x + a22*y + ty; with several rows, the row whose other
-                columns contain the section value is used), or a Xenium Explorer alignment matrix (3x3 CSV mapping
-                H&E pixels to Xenium morphology pixels of --xenium-px-um).
+h5ad: AnnData files with raw counts (layer "counts", or X) and cell coordinates in micrometers (obs
+  x_centroid/y_centroid, x/y, or obsm["spatial"]). Several files (e.g. one per lineage) are merged; cell type
+  annotations in them are ignored.
+Xenium: the output folder of the Xenium instrument / Xenium Ranger: cells.parquet or cells.csv.gz, and
+  cell_feature_matrix.h5 or cell_feature_matrix/ (only "Gene Expression" features are kept). The background image is
+  the H&E when given (with its Xenium Explorer alignment file), otherwise the DAPI morphology image of the folder,
+  otherwise none.
+H&E: pyramidal TIFF / OME-TIFF.
+registration: either an affine CSV with columns a11,a12,a21,a22,tx,ty mapping cell (x, y) in um to H&E level-0 pixels
+  (px = a11*x + a12*y + tx, py = a21*x + a22*y + ty; with several rows, the row whose other columns contain the
+  section value is used), or a Xenium Explorer alignment matrix (3x3 CSV mapping H&E pixels to Xenium morphology
+  pixels of --xenium-px-um).
 Output: $CELLTYPEAGENT_HOME/samples/<name>/ with cells.parquet, counts.npz, genes.txt and meta.json.
 """
 import json, time
@@ -107,6 +112,36 @@ def read_h5ad(path, section_column=None, section=None, x_column=None, y_column=N
     return {"cell_id": names[rows], "xy": xy, "X": sp.csr_matrix(X), "genes": list(genes), "regions": regions}
 
 
+def inspect_h5ad(paths, max_values=60):
+    """For the import dialog: cells per file, coordinates found, raw-count layer, and obs columns that could name
+    the section or a region annotation (few distinct values) with their values."""
+    files, cols = [], {}
+    for p in paths:
+        with h5py.File(p, "r") as h:
+            obs = h["obs"]
+            n = len(_index(obs))
+            pair = next(([a, b] for a, b in COORD_COLUMNS if a in obs and b in obs), None)
+            files.append({"path": str(p), "n_cells": int(n),
+                          "coordinates": pair or ("obsm['spatial']" if "obsm" in h and "spatial" in h["obsm"] else None),
+                          "counts_layer": "counts" if "layers" in h and "counts" in h["layers"] else "X",
+                          "n_genes": int(len(_index(h["var"])))})
+            for c in obs.keys():
+                if c in ("_index", obs.attrs.get("_index")) or c.startswith("__"):
+                    continue
+                g = obs[c]
+                if isinstance(g, h5py.Group) and "categories" in g:  # categorical: its categories are enough
+                    cat = g["categories"]
+                    vals = [str(v) for v in (_strings(cat[:]) if cat.dtype.kind in "SOU" else cat[:])]
+                elif isinstance(g, h5py.Group) or g.dtype.kind in "SOUiu":  # strings or integer ids
+                    vals = sorted({str(v) for v in _read_column(g)})
+                else:
+                    continue
+                if 1 <= len(vals) <= max_values:  # a single value can still pick the registration row
+                    cols.setdefault(c, set()).update(vals)
+    return {"files": files, "n_cells": sum(f["n_cells"] for f in files),
+            "columns": {c: sorted(v) for c, v in sorted(cols.items())}}
+
+
 # ---------------- registration ----------------
 def load_registration(path, section=None, xenium_px_um=0.2125):
     """Return a 2x3 affine mapping cell (x, y) in um to H&E level-0 pixels."""
@@ -132,10 +167,9 @@ def load_registration(path, section=None, xenium_px_um=0.2125):
 
 
 def _he_size(path):
-    import tifffile
-    with tifffile.TiffFile(path) as t:
-        lv = t.series[0].levels[0].shape
-    return (lv[2], lv[1]) if lv[0] == 3 else (lv[1], lv[0])
+    from .render import slide
+    s = slide(str(path))
+    return s.W0, s.H0
 
 
 # ---------------- depth (distance to the epithelium) ----------------
@@ -156,15 +190,54 @@ def epithelial_depth(X, genes, xy):
 
 
 # ---------------- import ----------------
+def _check_name(name, overwrite):
+    name = str(name).strip()
+    if not name or any(ch in name for ch in "/\\ "):
+        raise ValueError("the sample name must be a short id without spaces or slashes")
+    if (config.SAMPLES / name).exists() and not overwrite:
+        raise ValueError(f"sample {name!r} already exists (use overwrite to replace it)")
+    return name
+
+
+def _write_bundle(name, ids, xy, X, genes, image, A, regions, description, source, progress, image_kind):
+    """Map cells onto the background image, check the registration, estimate depth and write the bundle."""
+    out = config.SAMPLES / name
+    pxy = xy @ A[:, :2].T + A[:, 2]
+    if image:
+        W, H = _he_size(image)
+        inside = ((pxy[:, 0] >= 0) & (pxy[:, 0] < W) & (pxy[:, 1] >= 0) & (pxy[:, 1] < H)).mean()
+        if inside < 0.9:
+            raise ValueError(f"only {inside:.0%} of the cells fall inside the image ({W} x {H} px): check the "
+                             "registration file, the section, and that coordinates are in micrometers")
+        progress(f"registration: {inside:.1%} of cells inside the image")
+    um_per_px = float(1 / np.sqrt(abs(np.linalg.det(A[:, :2]))))
+    progress(f"image: {um_per_px:.3f} um/px ({image_kind})")
+    progress("estimating distance to the epithelium")
+    depth = epithelial_depth(X, genes, xy)
+    cells = pd.DataFrame({"cell": np.arange(len(ids)), "cell_id": ids, "x": xy[:, 0], "y": xy[:, 1],
+                          "px": pxy[:, 0], "py": pxy[:, 1], "depth_um": depth,
+                          "total_counts": np.asarray(X.sum(1)).ravel().astype(np.int64)})
+    has_regions = False
+    if regions is not None:
+        cells["pathologist_region"] = np.asarray(regions).astype(str)
+        has_regions = bool((~cells.pathologist_region.isin(["", "nan", "None", "Unlabelled", "unknown"])).any())
+    out.mkdir(parents=True, exist_ok=True)
+    cells.to_parquet(out / "cells.parquet")
+    sp.save_npz(out / "counts.npz", X)
+    (out / "genes.txt").write_text("\n".join(genes) + "\n")
+    meta = {"sample_id": name, "description": description, "n_cells": int(len(ids)), "n_genes": len(genes),
+            "he_path": str(Path(image).resolve()) if image else None, "he_um_per_px": um_per_px,
+            "image_kind": image_kind, "bundle_dir": str(out), "has_pathologist_regions": has_regions,
+            "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "source": source}
+    json.dump(meta, open(out / "meta.json", "w"), indent=1)
+    progress(f"imported sample {name} into {out}")
+    return meta
+
+
 def import_sample(name, h5ad, he, registration, section_column=None, section=None, x_column=None, y_column=None,
                   counts_layer=None, region_column=None, xenium_px_um=0.2125, description="", overwrite=False,
                   progress=print):
-    name = str(name).strip()
-    if not name or any(ch in name for ch in "/\\\\ "):
-        raise ValueError("--name must be a short id without spaces or slashes")
-    out = config.SAMPLES / name
-    if out.exists() and not overwrite:
-        raise ValueError(f"sample {name!r} already exists (use --overwrite to replace it)")
+    name = _check_name(name, overwrite)
     h5ad = [h5ad] if isinstance(h5ad, (str, Path)) else list(h5ad)
     parts = []
     for p in h5ad:
@@ -174,7 +247,7 @@ def import_sample(name, h5ad, he, registration, section_column=None, section=Non
             progress(f"  no cells of section {section!r} in {p}")
     parts = [q for q in parts if len(q["cell_id"])]
     if not parts:
-        raise ValueError("no cells selected; check --section-column / --section")
+        raise ValueError("no cells selected; check the section column and value")
     genes = parts[0]["genes"]
     for q in parts[1:]:  # align gene order across files
         if q["genes"] != genes:
@@ -189,36 +262,94 @@ def import_sample(name, h5ad, he, registration, section_column=None, section=Non
     if len(set(ids)) != len(ids):
         raise ValueError("cell ids are not unique across the h5ad files")
     progress(f"{len(ids):,} cells, {len(genes)} genes")
-
     A = load_registration(registration, section, xenium_px_um)
-    pxy = xy @ A[:, :2].T + A[:, 2]
-    W, H = _he_size(he)
-    inside = ((pxy[:, 0] >= 0) & (pxy[:, 0] < W) & (pxy[:, 1] >= 0) & (pxy[:, 1] < H)).mean()
-    if inside < 0.9:
-        raise ValueError(f"only {inside:.0%} of the cells fall inside the H&E image ({W} x {H} px): check the "
-                         "registration file, the section, and that coordinates are in micrometers")
-    um_per_px = float(1 / np.sqrt(abs(np.linalg.det(A[:, :2]))))
-    progress(f"registration: {inside:.1%} of cells inside the H&E; H&E {um_per_px:.3f} um/px")
+    regions = np.concatenate([q["regions"] for q in parts]) if region_column else None
+    return _write_bundle(name, ids, xy, X, genes, he, A, regions, description,
+                         {"kind": "h5ad", "h5ad": [str(Path(p).resolve()) for p in h5ad], "section_column": section_column,
+                          "section": section, "registration": str(Path(registration).resolve()),
+                          "region_column": region_column}, progress, "H&E")
 
-    progress("estimating distance to the epithelium")
-    depth = epithelial_depth(X, genes, xy)
-    cells = pd.DataFrame({"cell": np.arange(len(ids)), "cell_id": ids, "x": xy[:, 0], "y": xy[:, 1],
-                          "px": pxy[:, 0], "py": pxy[:, 1], "depth_um": depth,
-                          "total_counts": np.asarray(X.sum(1)).ravel().astype(np.int64)})
-    has_regions = False
-    if region_column:
-        cells["pathologist_region"] = np.concatenate([q["regions"] for q in parts]).astype(str)
-        has_regions = bool((~cells.pathologist_region.isin(["", "nan", "None", "Unlabelled", "unknown"])).any())
-    out.mkdir(parents=True, exist_ok=True)
-    cells.to_parquet(out / "cells.parquet")
-    sp.save_npz(out / "counts.npz", X)
-    (out / "genes.txt").write_text("\n".join(genes) + "\n")
-    meta = {"sample_id": name, "description": description, "n_cells": int(len(ids)), "n_genes": len(genes),
-            "he_path": str(Path(he).resolve()), "he_um_per_px": um_per_px, "bundle_dir": str(out),
-            "has_pathologist_regions": has_regions, "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-            "source": {"h5ad": [str(Path(p).resolve()) for p in h5ad], "section_column": section_column,
-                       "section": section, "registration": str(Path(registration).resolve()),
-                       "region_column": region_column}}
-    json.dump(meta, open(out / "meta.json", "w"), indent=1)
-    progress(f"imported sample {name} into {out}")
-    return meta
+
+# ---------------- Xenium output folder ----------------
+MORPHOLOGY = ["morphology_focus/ch0000_dapi.ome.tif", "morphology_focus.ome.tif", "morphology_mip.ome.tif"]
+
+
+def _xenium_cells(d):
+    if (d / "cells.parquet").exists():
+        c = pd.read_parquet(d / "cells.parquet", columns=["cell_id", "x_centroid", "y_centroid"])
+    elif (d / "cells.csv.gz").exists():
+        c = pd.read_csv(d / "cells.csv.gz", usecols=["cell_id", "x_centroid", "y_centroid"])
+    else:
+        raise ValueError(f"{d}: no cells.parquet or cells.csv.gz (is this a Xenium output folder?)")
+    c["cell_id"] = [x.decode() if isinstance(x, bytes) else str(x) for x in c.cell_id]
+    return c
+
+
+def _xenium_matrix(d):
+    """(barcodes, genes, cells x genes CSR) with only "Gene Expression" features."""
+    if (d / "cell_feature_matrix.h5").exists():
+        with h5py.File(d / "cell_feature_matrix.h5", "r") as h:
+            m = h["matrix"]
+            n_feat, n_cells = (int(v) for v in m["shape"][:])
+            X = sp.csr_matrix((m["data"][:], m["indices"][:], m["indptr"][:]), shape=(n_cells, n_feat))
+            bc = _strings(m["barcodes"][:])
+            names, ftype = _strings(m["features/name"][:]), _strings(m["features/feature_type"][:])
+    elif (d / "cell_feature_matrix").is_dir():
+        import scipy.io
+        md = d / "cell_feature_matrix"
+        X = sp.csr_matrix(scipy.io.mmread(md / "matrix.mtx.gz").T)
+        bc = pd.read_csv(md / "barcodes.tsv.gz", header=None)[0].astype(str).to_numpy()
+        f = pd.read_csv(md / "features.tsv.gz", header=None, sep="\t")
+        names, ftype = f[1].astype(str).to_numpy(), f[2].astype(str).to_numpy()
+    else:
+        raise ValueError(f"{d}: no cell_feature_matrix.h5 or cell_feature_matrix/ folder")
+    keep = np.where(ftype == "Gene Expression")[0]
+    if not len(keep):
+        raise ValueError("the matrix has no 'Gene Expression' features")
+    return bc, [str(g) for g in names[keep]], X[:, keep].astype(np.float32).tocsr()
+
+
+def inspect_xenium(xenium_dir):
+    """What an import would use: counts, panel size, pixel size and the morphology image found."""
+    d = Path(xenium_dir).expanduser()
+    info = {"folder": str(d), "pixel_size_um": 0.2125, "morphology": None}
+    if (d / "experiment.xenium").exists():
+        e = json.load(open(d / "experiment.xenium"))
+        info["pixel_size_um"] = float(e.get("pixel_size", 0.2125))
+        info.update({k: e[k] for k in ("panel_name", "panel_num_targets_predesigned", "region_name", "run_name")
+                     if k in e})
+    info["morphology"] = next((str(d / m) for m in MORPHOLOGY if (d / m).exists()), None)
+    c = _xenium_cells(d)
+    info["n_cells"] = int(len(c))
+    return info
+
+
+def import_xenium(name, xenium_dir, he=None, registration=None, description="", overwrite=False, progress=print):
+    name = _check_name(name, overwrite)
+    d = Path(xenium_dir).expanduser()
+    info = inspect_xenium(d)
+    progress(f"reading {d}")
+    cells = _xenium_cells(d)
+    bc, genes, X = _xenium_matrix(d)
+    pos = pd.Series(np.arange(len(bc)), index=bc)
+    missing = ~cells.cell_id.isin(pos.index)
+    if missing.any():
+        progress(f"  {int(missing.sum()):,} cells have no counts and are left out")
+        cells = cells[~missing]
+    X = X[pos[cells.cell_id].to_numpy()]
+    xy = cells[["x_centroid", "y_centroid"]].to_numpy(float)
+    progress(f"{len(cells):,} cells, {len(genes)} genes")
+    ps = info["pixel_size_um"]
+    if he:
+        if not registration:
+            raise ValueError("an H&E image needs its alignment file (Xenium Explorer: Image alignment -> export)")
+        A, image, kind = load_registration(registration, None, ps), he, "H&E"
+    elif info["morphology"]:
+        A, image, kind = np.array([[1 / ps, 0, 0], [0, 1 / ps, 0]]), info["morphology"], "DAPI"
+    else:
+        progress("  no H&E and no morphology image: the viewer shows the cells on a blank background")
+        A, image, kind = np.array([[2.0, 0, 0], [0, 2.0, 0]]), None, "none"
+    return _write_bundle(name, cells.cell_id.to_numpy(), xy, X, genes, image, A, None, description,
+                         {"kind": "xenium", "folder": str(d), "registration": str(Path(registration).resolve())
+                          if registration else None, **{k: v for k, v in info.items() if k != "folder"}},
+                         progress, kind)

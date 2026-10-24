@@ -1,30 +1,66 @@
-"""Command line: celltypeagent {import, samples, setup-desktop, viewer, mcp}."""
-import argparse, json, os, platform, shutil, sys, time
+"""Command line: celltypeagent {app, make-app, import, import-xenium, samples, setup-desktop, viewer, mcp}."""
+import argparse, platform, shutil, sys
 from pathlib import Path
 from . import config
 
 
-def desktop_config_path():
-    system = platform.system()
-    if system == "Darwin":
-        return Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
-    if system == "Windows":
-        return Path(os.environ.get("APPDATA", Path.home())) / "Claude" / "claude_desktop_config.json"
-    return Path.home() / ".config" / "Claude" / "claude_desktop_config.json"
-
-
-def setup_desktop(config_path=None, name="celltypeagent"):
+def setup_desktop(config_path=None):
     """Register this installation's MCP server in Claude Desktop (existing entries are kept; a backup is written)."""
-    path = Path(config_path) if config_path else desktop_config_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    cfg = json.loads(path.read_text()) if path.exists() and path.read_text().strip() else {}
-    if path.exists():
-        shutil.copy(path, path.with_suffix(f".backup-{time.strftime('%Y%m%d-%H%M%S')}.json"))
-    cfg.setdefault("mcpServers", {})[name] = {
-        "command": sys.executable, "args": ["-m", "celltypeagent.mcp_server"],
-        "env": {"CELLTYPEAGENT_HOME": str(config.HOME)}}
-    path.write_text(json.dumps(cfg, indent=2))
-    return path
+    from .claudelink import register_desktop
+    return register_desktop(config_path)
+
+
+APP_PLIST = """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleName</key><string>Spatial Annotator</string>
+  <key>CFBundleDisplayName</key><string>Spatial Annotator</string>
+  <key>CFBundleIdentifier</key><string>io.github.caokai1073.spatialannotator</string>
+  <key>CFBundleExecutable</key><string>Spatial Annotator</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>{version}</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
+  <key>LSMinimumSystemVersion</key><string>11.0</string>
+  <key>NSHighResolutionCapable</key><true/>
+</dict></plist>
+"""
+
+
+def make_app(dest=None):
+    """Build a small macOS app bundle that starts this installation's desktop app (no copy of Python inside: it
+    runs the environment it was made from, so keep that folder where it is)."""
+    import subprocess, tempfile
+    from importlib.metadata import version
+    if platform.system() != "Darwin":
+        raise SystemExit("make-app builds a macOS app; on this system run: celltypeagent app")
+    dest = Path(dest or Path.home() / "Applications").expanduser()
+    app = dest / "Spatial Annotator.app"
+    if app.exists():
+        shutil.rmtree(app)
+    (app / "Contents" / "MacOS").mkdir(parents=True)
+    (app / "Contents" / "Resources").mkdir()
+    (app / "Contents" / "Info.plist").write_text(APP_PLIST.format(version=version("celltypeagent")))
+    exe = app / "Contents" / "MacOS" / "Spatial Annotator"
+    exe.write_text("#!/bin/sh\n"
+                   f'export CELLTYPEAGENT_HOME="{config.HOME}"\n'
+                   f'exec "{sys.executable}" -m celltypeagent.desktop "$@" >> "{config.HOME / "app.log"}" 2>&1\n')
+    exe.chmod(0o755)
+    icon = config.PACKAGE / "data" / "app_icon.png"
+    try:  # .icns from the PNG with the system's iconutil
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as tmp:
+            iconset = Path(tmp) / "AppIcon.iconset"
+            iconset.mkdir()
+            im = Image.open(icon)
+            for s in (16, 32, 128, 256, 512):
+                im.resize((s, s), Image.LANCZOS).save(iconset / f"icon_{s}x{s}.png")
+                im.resize((2 * s, 2 * s), Image.LANCZOS).save(iconset / f"icon_{s}x{s}@2x.png")
+            subprocess.run(["iconutil", "-c", "icns", str(iconset), "-o", str(app / "Contents" / "Resources" / "AppIcon.icns")],
+                           check=True)
+    except Exception as e:
+        print(f"(no app icon: {e})")
+    subprocess.run(["touch", str(app)], check=False)
+    return app
 
 
 def main(argv=None):
@@ -43,7 +79,18 @@ def main(argv=None):
     im.add_argument("--xenium-px-um", type=float, default=0.2125, help="morphology pixel size for Xenium Explorer matrices")
     im.add_argument("--description", default="")
     im.add_argument("--overwrite", action="store_true")
+    ix = sub.add_parser("import-xenium", help="import one sample from a Xenium output folder")
+    ix.add_argument("--name", required=True, help="sample id used in the viewer and in Claude")
+    ix.add_argument("--xenium", required=True, help="Xenium output folder (cells.parquet / cells.csv.gz, cell_feature_matrix.h5)")
+    ix.add_argument("--he", help="optional H&E image registered with Xenium Explorer")
+    ix.add_argument("--registration", help="the H&E's alignment file (Xenium Explorer) or an affine CSV")
+    ix.add_argument("--description", default="")
+    ix.add_argument("--overwrite", action="store_true")
     sub.add_parser("samples", help="list imported samples")
+    ap_ = sub.add_parser("app", help="start the desktop app (native window)")
+    ap_.add_argument("--browser", action="store_true", help="use the default browser instead of a window")
+    ma = sub.add_parser("make-app", help="macOS: create 'Spatial Annotator.app' in ~/Applications")
+    ma.add_argument("--dest", help="folder for the app (default ~/Applications)")
     sd = sub.add_parser("setup-desktop", help="register the MCP server in Claude Desktop")
     sd.add_argument("--config", help="path of claude_desktop_config.json (default: the platform's location)")
     vw = sub.add_parser("viewer", help="start the web viewer")
@@ -55,6 +102,14 @@ def main(argv=None):
         from .importer import import_sample
         import_sample(a.name, a.h5ad, a.he, a.registration, a.section_column, a.section, a.x_column, a.y_column,
                       a.counts_layer, a.region_column, a.xenium_px_um, a.description, a.overwrite)
+    elif a.cmd == "import-xenium":
+        from .importer import import_xenium
+        import_xenium(a.name, a.xenium, a.he, a.registration, a.description, a.overwrite)
+    elif a.cmd == "app":
+        from .desktop import main as app
+        app(["--browser"] if a.browser else [])
+    elif a.cmd == "make-app":
+        print(f"created {make_app(a.dest)}\nOpen it from Finder or drag it to the Dock. Data folder: {config.HOME}")
     elif a.cmd == "samples":
         from .session import list_samples
         t = list_samples()

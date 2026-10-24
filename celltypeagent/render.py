@@ -33,50 +33,90 @@ def lineage_palette(lineages):
 REGION_COLORS = {"mucosa": "#e6862a", "submucosa": "#57a35a", "muscularis_propria": "#3d76b8",
                  "lymphoid_aggregate": "#8e5bb5", "fibromuscular_hyperplasia": "#c9b63c", "granuloma": "#c4473f",
                  "unknown": "#cfcfcf"}
-_he = {}
-
-
 class Slide:
+    """A pyramidal TIFF / OME-TIFF: RGB (H&E) or a fluorescence channel (e.g. DAPI, shown in gray with its display
+    range taken from the coarsest level)."""
+
     def __init__(self, path):
         self.path = path
         with tifffile.TiffFile(path) as t:
+            s = t.series[0]
             self.levels = []
-            for lv in t.series[0].levels:
-                chw = lv.shape[0] == 3
-                h, w = (lv.shape[1], lv.shape[2]) if chw else (lv.shape[0], lv.shape[1])
-                self.levels.append((w, h, chw))
+            for lv in s.levels:
+                ax, sh = lv.axes, lv.shape
+                self.levels.append((sh[ax.index("X")], sh[ax.index("Y")], ax))
+            rgb = "S" in s.axes and s.shape[s.axes.index("S")] in (3, 4)
+            rgb = rgb or ("C" in s.axes and s.shape[s.axes.index("C")] == 3 and s.dtype == np.uint8)
+            self.rgb, self.dtype = rgb, s.dtype
         self.W0, self.H0 = self.levels[0][:2]
         self._z, self._lock = {}, threading.Lock()
+        self.fill = (245, 245, 245) if self.rgb else (0, 0, 0)
+        self._range = None
 
     def _zarr(self, k):
         if k not in self._z:
             self._z[k] = zarr.open(tifffile.imread(self.path, aszarr=True, level=k), mode="r")
         return self._z[k]
 
+    def _box(self, k, a0, b0, a1, b1):
+        """Pixels of level k in a box as (h, w, 3) uint8."""
+        ax = self.levels[k][2]
+        idx = tuple(slice(b0, b1) if c == "Y" else slice(a0, a1) if c == "X" else
+                    slice(None) if (c in "SC" and self.rgb) else 0 for c in ax)
+        with self._lock:  # tifffile stores share a file handle
+            arr = np.asarray(self._zarr(k)[idx])
+        kept = [c for c in ax if c in "YX" or (c in "SC" and self.rgb)]
+        arr = np.moveaxis(arr, [kept.index(c) for c in ("Y", "X")], [0, 1])
+        if self.rgb:
+            return np.ascontiguousarray(arr[..., :3].astype(np.uint8))
+        lo, hi = self.display_range()
+        g = np.clip((arr.astype(np.float32) - lo) / max(hi - lo, 1e-6), 0, 1)
+        return np.repeat((255 * g).astype(np.uint8)[..., None], 3, axis=2)
+
+    def display_range(self):
+        if self._range is None:
+            k = len(self.levels) - 1
+            w, h, _ = self.levels[k]
+            ax = self.levels[k][2]
+            idx = tuple(slice(None) if c in "YX" else 0 for c in ax)
+            with self._lock:
+                a = np.asarray(self._zarr(k)[idx]).astype(np.float32).ravel()
+            a = a[a > 0] if (a > 0).any() else a
+            self._range = (float(np.percentile(a, 1)), float(np.percentile(a, 99.7)))
+        return self._range
+
     def read(self, x0, y0, x1, y1, out_w, out_h):
         """Level-0 pixel box -> RGB image of (out_w, out_h), read from the coarsest adequate pyramid level."""
         need = (x1 - x0) / out_w
         k = max(i for i, (w, _, _) in enumerate(self.levels) if i == 0 or self.W0 / w <= need * 1.001)
-        w, h, chw = self.levels[k]
+        w, h, _ = self.levels[k]
         ds = self.W0 / w
         a0, b0 = max(0, int(x0 / ds)), max(0, int(y0 / ds))
         a1, b1 = min(w, int(math.ceil(x1 / ds))), min(h, int(math.ceil(y1 / ds)))
-        canvas = Image.new("RGB", (out_w, out_h), (245, 245, 245))
+        canvas = Image.new("RGB", (out_w, out_h), self.fill)
         if a1 <= a0 or b1 <= b0:
             return canvas
-        with self._lock:  # tifffile stores share a file handle
-            z = self._zarr(k)
-            arr = np.asarray(z[:, b0:b1, a0:a1]).transpose(1, 2, 0) if chw else np.asarray(z[b0:b1, a0:a1])
-        img = Image.fromarray(np.ascontiguousarray(arr[..., :3]))
+        img = Image.fromarray(self._box(k, a0, b0, a1, b1))
         tw, th = max(1, round((a1 - a0) * ds / need)), max(1, round((b1 - b0) * ds / need))
         canvas.paste(img.resize((tw, th), Image.BILINEAR), (round((a0 * ds - x0) / need), round((b0 * ds - y0) / need)))
         return canvas
+
+
+class BlankSlide:
+    """No image: a plain background of unlimited size (the cells are drawn on it)."""
+    W0 = H0 = 10 ** 9
+    fill = (250, 250, 250)
+
+    def read(self, x0, y0, x1, y1, out_w, out_h):
+        return Image.new("RGB", (out_w, out_h), self.fill)
 
 
 _slides = {}
 
 
 def slide(path):
+    if not path:
+        return BlankSlide()
     if path not in _slides:
         _slides[path] = Slide(path)
     return _slides[path]
@@ -126,27 +166,32 @@ def _legend(fig, palette, highlight):
     fig.legend(handles=hs, loc="lower center", ncol=min(len(hs), 7), fontsize=7, frameon=False)
 
 
-def tissue_overview(he_path, px, py, lin, palette, g, areas, out, highlight=None, title=""):
-    """Whole sample: H&E with the tile grid (left), cells colored by lineage with candidate areas outlined (right)."""
+def tissue_overview(he_path, px, py, lin, palette, g, areas, out, highlight=None, title="", image_kind="H&E"):
+    """Whole sample: the image (H&E or DAPI) with the tile grid (left), cells colored by lineage with candidate areas
+    outlined (right). Without an image only the right panel is drawn."""
     box = (g["x0"], g["y0"], g["x0"] + g["nx"] * g["tile_px"], g["y0"] + g["ny"] * g["tile_px"])
     w, h = box[2] - box[0], box[3] - box[1]
     W = 1000
     Hh = max(1, round(W * h / w))
-    im = slide(he_path).read(*box, W, Hh)
-    fig, ax = plt.subplots(1, 2, figsize=(2 * W / 100 + 0.6, Hh / 100 + 1.3), dpi=100)
-    ax[0].imshow(np.asarray(im), extent=(box[0], box[2], box[3], box[1]))
-    _grid_axes(ax[0], g, box)
+    n = 2 if he_path else 1
+    fig, axs = plt.subplots(1, n, figsize=(n * W / 100 + 0.6, Hh / 100 + 1.3), dpi=100, squeeze=False)
+    ax = list(axs[0])
+    if he_path:
+        im = slide(he_path).read(*box, W, Hh)
+        ax[0].imshow(np.asarray(im), extent=(box[0], box[2], box[3], box[1]))
+        _grid_axes(ax[0], g, box)
+        ax[0].set_title(f"{image_kind} ({g['tile_um']} um tiles)", fontsize=8, pad=14)
+    ax = [None] * (2 - n) + ax
     ax[1].set_facecolor("white")
     _lineage_dots(ax[1], px, py, lin, palette, highlight)
     _grid_axes(ax[1], g, box)
     for a in areas:
         poly = np.array(a["outline_px"] + a["outline_px"][:1])
-        for k in (0, 1):
+        for k in ([0, 1] if he_path else [1]):
             ax[k].plot(poly[:, 0], poly[:, 1], color="red", lw=1.1, ls="--")
         ax[1].text(poly[:, 0].min(), poly[:, 1].min(), a["id"], color="red", fontsize=7, fontweight="bold",
                    va="bottom", ha="left")
-    ax[0].set_title(f"H&E ({g['tile_um']} um tiles)", fontsize=8, pad=14)
-    ax[1].set_title("cells colored by lineage" + (" (highlighted: " + ", ".join(sorted(highlight)) + ")" if highlight else "")
+    ax[1].set_title(("" if he_path else f"no image; {g['tile_um']} um tiles; ") + "cells colored by lineage" + (" (highlighted: " + ", ".join(sorted(highlight)) + ")" if highlight else "")
                     + "; red dashed = candidate areas", fontsize=8, pad=14)
     _legend(fig, palette, highlight)
     fig.suptitle(title, fontsize=9)
@@ -155,8 +200,9 @@ def tissue_overview(he_path, px, py, lin, palette, g, areas, out, highlight=None
 
 
 def area_view(he_path, px, py, lin, palette, out_of_place, box, outline_px, out, g, highlight=None, um_per_px=None,
-              title=""):
-    """One area: H&E (left) and cells colored by lineage on a faded H&E (right); out-of-place cells ringed."""
+              title="", image_kind="H&E"):
+    """One area: the image (left) and cells colored by lineage on the faded image (right); out-of-place cells ringed.
+    Without an image only the right panel is drawn."""
     x0, y0, x1, y1 = box
     W = 900
     Hh = max(1, round(W * (y1 - y0) / (x1 - x0)))
@@ -164,40 +210,39 @@ def area_view(he_path, px, py, lin, palette, out_of_place, box, outline_px, out,
         W, Hh = max(1, round(900 * (x1 - x0) / (y1 - y0))), 900
     im = np.asarray(slide(he_path).read(x0, y0, x1, y1, W, Hh))
     m = (px >= x0) & (px <= x1) & (py >= y0) & (py <= y1)
-    fig, ax = plt.subplots(1, 2, figsize=(2 * W / 100 + 0.6, Hh / 100 + 1.3), dpi=100)
-    ax[0].imshow(im, extent=(x0, x1, y1, y0))
-    ax[1].imshow(im, extent=(x0, x1, y1, y0), alpha=0.45)
+    n = 2 if he_path else 1
+    fig, axs = plt.subplots(1, n, figsize=(n * W / 100 + 0.6, Hh / 100 + 1.3), dpi=100, squeeze=False)
+    ax = [None] * (2 - n) + list(axs[0])
+    if he_path:
+        ax[0].imshow(im, extent=(x0, x1, y1, y0))
+        ax[1].imshow(im, extent=(x0, x1, y1, y0), alpha=0.45)
     sel = np.where(m)[0]
     _lineage_dots(ax[1], px[sel], py[sel], lin[sel], palette, highlight, s=5 if len(sel) < 20000 else 2)
     o = sel[out_of_place[sel]]
     ax[1].scatter(px[o], py[o], s=40, facecolors="none", edgecolors="black", linewidths=0.8)
     poly = np.array(outline_px + outline_px[:1])
     for a in ax:
+        if a is None:
+            continue
         _grid_axes(a, g, box, alpha=0.25)
         a.plot(poly[:, 0], poly[:, 1], color="red", lw=1.2, ls="--")
     width_um = (x1 - x0) * (um_per_px or config.HE_UM_PER_PX)
-    ax[0].set_title(f"H&E, {width_um:.0f} um wide", fontsize=8, pad=14)
-    ax[1].set_title("cells colored by lineage; black rings = out-of-place cells", fontsize=8, pad=14)
+    if he_path:
+        ax[0].set_title(f"{image_kind}, {width_um:.0f} um wide", fontsize=8, pad=14)
+    ax[1].set_title(("" if he_path else f"no image, {width_um:.0f} um wide; ")
+                    + "cells colored by lineage; black rings = out-of-place cells", fontsize=8, pad=14)
     _legend(fig, palette, highlight)
     fig.suptitle(title, fontsize=9)
     plt.tight_layout(rect=(0, 0.05, 1, 0.98)); plt.savefig(out, dpi=100, pil_kwargs={"quality": 82}); plt.close()
     return str(out)
 
 
-def _he_array(path):
-    if path not in _he:
-        _he[path] = zarr.open(tifffile.imread(path, aszarr=True, level=0), mode="r")
-    return _he[path]
-
-
 def he_crop(path, cx, cy, half_px):
-    z = _he_array(path)
-    chw = z.shape[0] == 3
-    H, W = (z.shape[1], z.shape[2]) if chw else (z.shape[0], z.shape[1])
-    x0, x1 = int(max(cx - half_px, 0)), int(min(cx + half_px, W))
-    y0, y1 = int(max(cy - half_px, 0)), int(min(cy + half_px, H))
-    im = np.asarray(z[:, y0:y1, x0:x1]).transpose(1, 2, 0) if chw else np.asarray(z[y0:y1, x0:x1])
-    return im, x0, y0
+    """Full-resolution crop around (cx, cy), clipped to the image: (array, x0, y0)."""
+    sl = slide(path)
+    x0, x1 = int(max(cx - half_px, 0)), int(min(cx + half_px, sl.W0))
+    y0, y1 = int(max(cy - half_px, 0)), int(min(cy + half_px, sl.H0))
+    return np.asarray(sl.read(x0, y0, x1, y1, max(1, x1 - x0), max(1, y1 - y0))), x0, y0
 
 
 def region_colors(names):

@@ -1,6 +1,6 @@
 [project]
 name = "celltypeagent"
-version = "0.1.0"
+version = "0.2.0"
 description = "Spatial transcriptomics cell type annotation driven by natural-language spatial priors"
 requires-python = ">=3.11"
 dependencies = [
@@ -8,6 +8,9 @@ dependencies = [
   "tifffile", "zarr>=3", "imagecodecs", "h5py", "mcp>=1.9,<2", "torch", "igraph", "pynndescent", "uvicorn",
   "starlette", "pillow",
 ]
+
+[project.optional-dependencies]
+app = ["pywebview>=5"]  # the desktop window (macOS: WebKit through PyObjC)
 
 [project.scripts]
 celltypeagent = "celltypeagent.cli:main"

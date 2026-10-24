@@ -302,7 +302,8 @@ def fig_overview(s, version=None, highlight=None):
     out = s.dir / "figures" / f"overview_v{res['version']}_{'-'.join(sorted(keep or [])) or 'all'}.jpg".replace(" ", "_")
     return render.tissue_overview(s.meta["he_path"], s.cells.px.to_numpy(), s.cells.py.to_numpy(), lin,
                                   s.lineage_colors(), sc["grid"], sc["areas"], out, highlight=keep,
-                                  title=f"sample {s.sample_id} v{res['version']}")
+                                  title=f"sample {s.sample_id} v{res['version']}",
+                                  image_kind=s.meta.get("image_kind", "H&E"))
 
 
 def fig_area(s, spec, version=None, highlight=None):
@@ -322,7 +323,7 @@ def fig_area(s, spec, version=None, highlight=None):
     out = s.dir / "figures" / f"area_v{res['version']}_{a['id'] or a['tiles'].replace(':', '-').replace(', ', '_')}.jpg"
     path = render.area_view(s.meta["he_path"], s.cells.px.to_numpy(), s.cells.py.to_numpy(), res["lineage"],
                             s.lineage_colors(), res["status"] != "", box, a["outline_px"], out, g, highlight=keep,
-                            um_per_px=s.he_um_per_px,
+                            um_per_px=s.he_um_per_px, image_kind=s.meta.get("image_kind", "H&E"),
                             title=f"sample {s.sample_id} v{res['version']} " + (a["id"] or "") + f" tiles {a['tiles']}")
     return path, a
 
@@ -340,7 +341,6 @@ def suggestions(s):
 def suggest(s, areas, author="agent"):
     """Replace the open suggestions with a new list: [{"tiles" or "area", "title", "reason", "action",
     "region_name"}]. Dismissed and done ones are kept."""
-    g = scan(s)["grid"]
     old = [x for x in suggestions(s) if x["status"] != "open"]
     used = {x["id"] for x in old}
     new = []

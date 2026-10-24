@@ -7,7 +7,7 @@ Everything runs on this server. The chat box calls the locally installed Claude 
 the logged-in account (no API key); its only tools are this app's MCP tools, served at /mcp by this same
 process, so the agent and the viewer share one session object. The conflict review page is at /review.
 """
-import argparse, asyncio, colorsys, contextlib, io, json, math, re, shutil, threading, time, uuid
+import argparse, asyncio, colorsys, contextlib, io, json, math, os, re, shutil, sys, threading, time, uuid
 from collections import OrderedDict
 from pathlib import Path
 import numpy as np, pandas as pd
@@ -19,7 +19,7 @@ from starlette.responses import FileResponse, Response, StreamingResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from . import config, vocab, mcp_server, review_app, render
-from . import markers, markerqc, plausibility
+from . import markers, markerqc, plausibility, claudelink, importer
 from .session import Session, list_samples, list_sessions, panel_genes
 
 STATIC = Path(__file__).parent / "static"
@@ -52,7 +52,7 @@ _tiles, _overlays, _colors = LRU(3000), LRU(3000), LRU(40)
 
 
 # ---------------- H&E pyramid and sample geometry ----------------
-Slide = render.Slide
+
 
 
 class SampleView:
@@ -62,7 +62,8 @@ class SampleView:
         meta = json.load(open(config.SAMPLES / sample_id / "meta.json"))
         self.sample_id = sample_id
         self.um_per_px = float(meta.get("he_um_per_px", config.HE_UM_PER_PX))
-        self.slide = Slide(meta["he_path"])
+        self.slide = render.slide(meta.get("he_path"))  # H&E, fluorescence, or a blank background
+        self.image_kind = meta.get("image_kind", "H&E")
         cells = pd.read_parquet(config.SAMPLES / sample_id / "cells.parquet", columns=["px", "py"])
         px, py = cells.px.to_numpy(), cells.py.to_numpy()
         self.px, self.py = px, py
@@ -357,9 +358,86 @@ async def review_page(req):
     return FileResponse(STATIC / "review.html", headers=NO_CACHE)
 
 
+def desktop_mode():
+    return os.environ.get("CELLTYPEAGENT_DESKTOP") == "1"
+
+
 def api_config(req):
-    """The viewer's chat box needs the Claude Code CLI; without it the user chats in Claude Desktop instead."""
-    return _json({"chat": shutil.which("claude") is not None, "home": str(config.HOME)})
+    """The built-in chat box (Claude Code CLI) is only for the server viewer; the desktop app connects to the user's
+    own Claude Desktop or Claude Code instead."""
+    return _json({"chat": not desktop_mode() and shutil.which("claude") is not None, "desktop": desktop_mode(),
+                  "home": str(config.HOME), "platform": sys.platform})
+
+
+# ---------------- viewer <-> agent, Claude connection ----------------
+async def api_viewer_state(req: Request):
+    """The page reports what it shows; the agent's use_viewer_session reads it."""
+    b = await req.json()
+    claudelink.write_viewer_state(sample=b.get("sample"), session=b.get("session"), version=b.get("version"))
+    return _json({"ok": True})
+
+
+def api_viewer_request(req):
+    """A session the agent asked the viewer to show (open_viewer)."""
+    return _json(claudelink.viewer_request())
+
+
+def api_claude_status(req):
+    return _json(claudelink.status())
+
+
+async def api_claude_register(req: Request):
+    try:
+        path = claudelink.register_desktop()
+    except OSError as e:
+        return _json({"error": str(e)}, 400)
+    return _json({"config": str(path)})
+
+
+async def api_claude_code(req: Request):
+    b = await req.json()
+    return _json(claudelink.open_claude_code(b.get("sample"), b.get("session"), (b.get("request") or "").strip() or None))
+
+
+# ---------------- import ----------------
+async def api_import_inspect(req: Request):
+    b = await req.json()
+    try:
+        if b.get("kind") == "xenium":
+            return _json(importer.inspect_xenium(b["folder"]))
+        paths = [p for p in b.get("h5ad", []) if p]
+        if not paths:
+            raise ValueError("choose one or more h5ad files")
+        return _json(importer.inspect_h5ad(paths))
+    except (ValueError, OSError, KeyError) as e:
+        return _json({"error": str(e)}, 400)
+
+
+async def api_import(req: Request):
+    """Import a sample in the background; progress under /api/job/import:<name>."""
+    b = await req.json()
+    name = str(b.get("name", "")).strip()
+    job = f"import:{name}"
+    JOBS[job] = {"stage": "starting", "progress": 0.0, "done": False, "error": None, "log": []}
+
+    def say(msg):
+        JOBS[job]["log"].append(msg)
+        JOBS[job].update(stage=msg, progress=min(0.95, JOBS[job]["progress"] + 0.15))
+
+    def work():
+        try:
+            if b.get("kind") == "xenium":
+                importer.import_xenium(name, b["folder"], he=b.get("he") or None, registration=b.get("registration") or None,
+                                       description=b.get("description", ""), overwrite=bool(b.get("overwrite")), progress=say)
+            else:
+                importer.import_sample(name, b["h5ad"], b["he"], b["registration"], b.get("section_column") or None,
+                                       b.get("section") or None, region_column=b.get("region_column") or None,
+                                       description=b.get("description", ""), overwrite=bool(b.get("overwrite")), progress=say)
+            JOBS[job].update(progress=1.0, stage="done", done=True)
+        except Exception as e:  # shown in the dialog
+            JOBS[job].update(error=f"{type(e).__name__}: {e}", done=True)
+    threading.Thread(target=work, daemon=True).start()
+    return _json({"job": job})
 
 
 def api_samples(req):
@@ -378,7 +456,8 @@ def api_samples(req):
 
 def api_he_info(req):
     v = view(req.path_params["sample"])
-    return _json({"width": v.W, "height": v.H, "tile_size": TILE, "origin": [v.ox, v.oy], "um_per_px": v.um_per_px})
+    return _json({"width": v.W, "height": v.H, "tile_size": TILE, "origin": [v.ox, v.oy], "um_per_px": v.um_per_px,
+                  "image_kind": v.image_kind})
 
 
 async def api_annotate(req: Request):
@@ -695,6 +774,8 @@ any types the panel cannot resolve, in the language named in the request (type n
 
 
 async def api_markers_draft(req: Request):
+    if desktop_mode():
+        return _json({"error": "ask Claude in Claude Desktop or Claude Code to draft the list"}, 400)
     b = await req.json()
     instr = (b.get("instructions") or "").strip() or "Draft a complete list for this tissue."
     current = (b.get("current") or "").strip()
@@ -849,6 +930,7 @@ def api_chat_log(req):
 
 
 def build_app(port):
+    claudelink.write_viewer_state(port=port, pid=os.getpid(), mode="desktop" if desktop_mode() else "web")
     CHAT_MCP.write_text(json.dumps({"mcpServers": {"celltypeagent": {"type": "http", "url": f"http://127.0.0.1:{port}/mcp"}}}))
     mcp_http = mcp_server.mcp.streamable_http_app()
 
@@ -862,6 +944,13 @@ def build_app(port):
         Mount("/static", StaticFiles(directory=STATIC)),
         Route("/api/samples", api_samples),
         Route("/api/config", api_config),
+        Route("/api/viewer/state", api_viewer_state, methods=["POST"]),
+        Route("/api/viewer/request", api_viewer_request),
+        Route("/api/claude/status", api_claude_status),
+        Route("/api/claude/register", api_claude_register, methods=["POST"]),
+        Route("/api/claude/code", api_claude_code, methods=["POST"]),
+        Route("/api/import/inspect", api_import_inspect, methods=["POST"]),
+        Route("/api/import", api_import, methods=["POST"]),
         Route("/api/sample/{sample}/he_info", api_he_info),
         Route("/api/sample/{sample}/he/{level:int}/{xy}", he_tile),
         Route("/api/annotate", api_annotate, methods=["POST"]),

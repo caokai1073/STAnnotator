@@ -127,6 +127,16 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .err { color: var(--warn); }
 .ok { color: #2f7d4f; }
 #mkMsgs { max-height: 22vh; overflow: auto; font-size: 12.5px; }
+.imbody { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 4px; }
+.frow { display: grid; grid-template-columns: 130px minmax(0, 1fr) auto; gap: 8px; align-items: center; margin: 3px 0; }
+.frow > span:first-child { font-size: 12.5px; color: var(--muted); }
+.frow input[type=text], .frow textarea, .frow select { width: 100%; min-width: 0; }
+.frow textarea { font: 12px ui-monospace, Menlo, monospace; resize: vertical; }
+.imkind { display: flex; gap: 16px; margin-bottom: 6px; }
+.clcard { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 6px 0; display: flex; flex-direction: column; gap: 6px; }
+.clcard pre { font: 11.5px ui-monospace, Menlo, monospace; white-space: pre-wrap; margin: 0; color: var(--muted); }
+#clPrompt { width: 100%; min-height: 56px; }
+.claudebox { display: flex; flex-direction: column; gap: 8px; padding: 4px 2px; }
 @media (max-width: 1000px) { main { grid-template-columns: 1fr; grid-template-rows: 60vh auto; } #side { border-left: 0; border-top: 1px solid var(--line); } }
 </style>
 </head>
@@ -134,6 +144,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 <header>
   <h1>Spatial Annotator</h1>
   <label class="f">Sample <select id="sample"></select></label>
+  <button id="importBtn" title="Add a sample: a Xenium output folder, or h5ad + H&amp;E + registration">Import…</button>
   <div class="f">Data folder <span class="path" id="path">–</span></div>
   <button id="openMarkers" title="Write, load, check or draft the marker gene list used for annotation">Markers…</button>
   <label class="f">Start regions from <select id="regions" title="Regions are drawn by you; optionally start from the dataset annotation">
@@ -146,6 +157,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
   <div class="progress" id="progress"><div class="pbar"><i id="pfill"></i></div><span id="pstage"></span></div>
   <span class="spacer"></span>
   <span id="vinfo"></span>
+  <button id="claudeBtn" hidden title="Work with Claude (your own Claude Desktop or Claude Code) on the open sample">Claude…</button>
   <button id="undo" disabled title="Undo the last change">Undo</button>
   <button id="reset" disabled title="Remove every annotation and chat of this sample">Reset</button>
   <button id="review" disabled title="Open the conflict review page">Review conflicts</button>
@@ -190,7 +202,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     </div>
   </section>
   <aside id="side">
-    <div class="sh">Chat <span class="spacer"></span><span class="hint" id="agentstate"></span></div>
+    <div class="sh"><span id="sideTitle">Chat</span> <span class="spacer"></span><span class="hint" id="agentstate"></span></div>
     <div id="msgs">
       <div class="hint">Tell the assistant what you know, in your own words. For example:<br>
         • “Epithelial cells are only in the mucosa.”<br>
@@ -229,11 +241,14 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     </div>
     <div class="col side">
       <div class="h">Check</div><div id="mkMsgs" class="hint">Not checked yet.</div>
+      <div id="mkDraftBox">
       <div class="h">Draft with the agent</div>
       <textarea id="mkInstr" placeholder="e.g. Full list for colon IBD; split T cells into CD4 / CD8 / Tregs; ignore neurons." style="min-height:64px"></textarea>
       <div class="row"><label class="hint"><input type="checkbox" id="mkRevise"> revise the current list</label><span class="spacer"></span>
         <button id="mkDraft" class="primary">Draft</button></div>
       <div id="mkDraftMsg" class="hint"></div>
+      </div>
+      <div id="mkClaudeHint" class="hint" hidden>To draft or revise a list, ask Claude (Claude… button): “Draft a marker list for this panel”. Lists Claude saves appear under “load a list…”.</div>
     </div>
   </div>
 </dialog>
@@ -245,6 +260,47 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <datalist id="regnames"></datalist>
     <div class="row"><span class="err" id="nameErr"></span><span class="spacer"></span>
       <button id="nameCancel">Cancel</button><button id="nameSave" class="primary">Save</button></div>
+  </div>
+</dialog>
+<dialog id="imDlg" style="width:min(780px,95vw)">
+  <div class="dh"><b>Import a sample</b><span class="spacer"></span><button id="imClose">Close</button></div>
+  <div class="imbody">
+    <div class="imkind">
+      <label><input type="radio" name="imKind" value="xenium" checked> Xenium output folder</label>
+      <label><input type="radio" name="imKind" value="h5ad"> h5ad + H&amp;E + registration</label>
+    </div>
+    <div id="imX">
+      <div class="frow"><span>Xenium folder</span><input type="text" id="imFolder" placeholder="the instrument's output folder (output-XETG…)"><button data-pick="folder" data-target="imFolder">Choose…</button></div>
+      <div class="hint" id="imXinfo"></div>
+      <div class="frow"><span>H&amp;E (optional)</span><input type="text" id="imXhe" placeholder="without it the DAPI image is shown"><button data-pick="image" data-target="imXhe">Choose…</button></div>
+      <div class="frow"><span>Alignment file</span><input type="text" id="imXreg" placeholder="with an H&amp;E: Xenium Explorer → Image alignment → export"><button data-pick="csv" data-target="imXreg">Choose…</button></div>
+    </div>
+    <div id="imH" hidden>
+      <div class="frow"><span>h5ad file(s)</span><textarea id="imH5" rows="2" placeholder="one path per line; several files (e.g. one per lineage) are merged"></textarea><button data-pick="h5ad" data-multi="1" data-target="imH5">Choose…</button></div>
+      <div class="hint" id="imHinfo"></div>
+      <div class="frow"><span>Section</span><select id="imSecCol"><option value="">the file holds one section</option></select><select id="imSec" hidden></select></div>
+      <div class="frow"><span>Region column</span><select id="imRegCol"><option value="">none (draw regions yourself)</option></select><span></span></div>
+      <div class="frow"><span>H&amp;E image</span><input type="text" id="imHhe" placeholder="pyramidal TIFF / OME-TIFF"><button data-pick="image" data-target="imHhe">Choose…</button></div>
+      <div class="frow"><span>Registration</span><input type="text" id="imHreg" placeholder="affine CSV (a11,a12,a21,a22,tx,ty) or Xenium Explorer alignment"><button data-pick="csv" data-target="imHreg">Choose…</button></div>
+    </div>
+    <div class="frow"><span>Sample name</span><input type="text" id="imName" placeholder="short id without spaces"><span></span></div>
+    <div class="frow"><span>Description</span><input type="text" id="imDesc" placeholder="optional, e.g. tissue and condition"><span></span></div>
+    <div class="row" style="margin-top:6px"><span class="hint" id="imStatus"></span><span class="spacer"></span><button id="imGo" class="primary">Import</button></div>
+  </div>
+</dialog>
+<dialog id="clDlg" style="width:min(640px,95vw)">
+  <div class="dh"><b>Work with Claude</b><span class="spacer"></span><button id="clClose">Close</button></div>
+  <div class="imbody">
+    <div class="hint">Talk to Claude with your own Claude account, in Claude Desktop or Claude Code. Claude works on the sample open here, and its changes appear in this window.</div>
+    <div class="clcard"><div><b>Claude Desktop</b> <span class="hint" id="clDstat"></span></div>
+      <div class="row"><button id="clReg">Connect Claude Desktop</button><span class="hint" id="clRegMsg"></span></div></div>
+    <div class="clcard"><div><b>Claude Code</b> <span class="hint" id="clCstat"></span></div>
+      <div class="row"><button id="clCode" class="primary">Open in Claude Code</button><span class="hint">opens Terminal with Claude Code connected to this sample</span></div>
+      <pre id="clCmd" hidden></pre></div>
+    <div class="clcard"><div><b>Your request</b> <span class="hint">(optional)</span></div>
+      <textarea id="clPrompt" placeholder="e.g. Review my annotation: are the markers right, and does the layout fit the H&amp;E?"></textarea>
+      <div class="row"><button id="clCopy">Copy for Claude Desktop</button><span class="hint">“Open in Claude Code” sends it as the first message</span></div></div>
+    <div class="hint">Try: “Review my annotation” · “Draft a marker list for this panel” · “Epithelial cells are only in the mucosa” · “Export the result”</div>
   </div>
 </dialog>
 <div class="toast" id="toast"></div>
@@ -278,6 +334,9 @@ function tileSource(url) {
 function openHE(sample) {
   return api(`/api/sample/${sample}/he_info`).then((he) => {
     st.he = he;
+    const kind = he.image_kind || "H&E";
+    $("hideHE").hidden = kind === "none";
+    $("hideHE").textContent = `Hide ${kind === "H&E" ? "H&E" : "image"}`;
     viewer.addOnceHandler("open", applyHE);
     viewer.open(tileSource((l, x, y) => `/api/sample/${sample}/he/${l}/${x}_${y}.jpg`));
   });
@@ -305,9 +364,16 @@ function refreshOverlay() {
 }
 
 // ---------------- samples and annotation ----------------
-async function loadSamples() {
+async function loadSamples(select) {
   st.samples = await api("/api/samples");
   const sel = $("sample"); sel.textContent = "";
+  if (!st.samples.length) {  // a fresh install: nothing imported yet
+    $("empty").firstElementChild.textContent = "No samples yet. Click Import… to add a Xenium output folder, or h5ad + H&E + registration.";
+    $("empty").style.display = "flex"; $("annotate").disabled = true;
+    return;
+  }
+  $("annotate").disabled = false;
+  $("empty").firstElementChild.innerHTML = "No cell types yet. Check the marker list (<b>Markers…</b>) and click <b>Annotate</b>.";
   st.samples.forEach((s) => {
     const o = document.createElement("option");
     o.value = s.sample_id;
@@ -315,7 +381,7 @@ async function loadSamples() {
     sel.append(o);
   });
   const url = new URLSearchParams(location.search);  // links from Claude Desktop: ?sample=...&session=...
-  const want = url.get("sample") || load("sample");
+  const want = select || url.get("sample") || load("sample");
   if (st.samples.some((s) => s.sample_id === want)) sel.value = want;
   if (url.get("session") && url.get("sample") === sel.value) st.openedThisVisit[sel.value] = url.get("session");
   await selectSample(sel.value);
@@ -376,6 +442,9 @@ async function selectSample(id) {
   if (sid) await startAnnotation("continue", sid, token);
 }
 
+function reportState() {  // so Claude (use_viewer_session) knows what the user is looking at
+  post("/api/viewer/state", { sample: st.sample && st.sample.sample_id, session: st.sid, version: st.version }).catch(() => {});
+}
 function closeSession() {
   st.sid = null; st.version = null; st.filters = {}; st.regions = null; cancelDraw(); closePlaus();
   $("legend").hidden = true; $("cellcard").classList.remove("show");
@@ -455,6 +524,7 @@ async function refreshVersion(force) {
   if (opt && rec) { rec.n_versions = v; opt.textContent = sessionLabel(rec); }
   $("vinfo").title = info.history.slice(-6).map((h) => `v${h.version}: ${h.message}`).join("\n");
   if (st.plaus) await loadPlaus(false);  // groups belong to a version: recompute for the new one
+  reportState();
   refreshOverlay();
   await loadLegend();
   await loadRegions();
@@ -703,11 +773,12 @@ async function loadPlaus(switchMode) {
 function renderPlaus() {
   const r = st.plaus;
   $("pltitle").textContent = `Review · v${r.version}`;
-  $("plask").hidden = !st.chatAvailable;
+  $("plask").hidden = !st.chatAvailable && !st.desktop;
   const open = r.suggestions.filter((x) => x.status === "open");
   $("plnote").textContent = "Computed checks of the markers and the spatial layout are listed below; they come from the annotation alone. " +
     (st.chatAvailable ? "“Ask Claude” reviews them with the H&E and biology and suggests fixes (orange)."
-                      : "To let Claude review them with the H&E and biology, ask in Claude Desktop: “review my annotation”.");
+     : st.desktop ? "“Ask Claude” hands them to Claude (Claude Desktop or Claude Code), which reviews them with the image and biology; its suggestions appear here in orange."
+                  : "To let Claude review them with the H&E and biology, ask in Claude Desktop: “review my annotation”.");
   const box = $("plitems"); box.textContent = "";
   const btn = (text, title, fn) => { const b = document.createElement("button"); b.textContent = text; b.title = title; b.onclick = fn; return b; };
   const item = (cls, l1, l2, buttons) => {
@@ -804,6 +875,7 @@ setInterval(() => pollSuggestions().catch(() => {}), 4000);
 $("plaus").onclick = () => loadPlaus(true).catch((e) => toast(e.message, 6000));
 $("plclose").onclick = () => { const was = st.mode === "plausibility"; closePlaus(); fillModes(st.lastSummary); drawRegions(); if (was) { refreshOverlay(); loadLegend(); } };
 $("plask").onclick = () => {
+  if (!st.chatAvailable) { openClaude("Review my annotation: are the markers right for this sample, and does the layout fit the tissue? Suggest fixes."); return; }
   if (st.busy) { toast("Wait until the assistant has answered"); return; }
   $("input").value = "Review my annotation: are the markers right for this sample, and does the layout fit the H&E? Suggest fixes.";
   send();
@@ -858,6 +930,122 @@ async function send() {
 }
 $("send").onclick = send;
 $("input").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } });
+
+// ---------------- import ----------------
+const native = () => window.pywebview && window.pywebview.api;  // file dialogs in the desktop app
+function imKind() { return document.querySelector("input[name=imKind]:checked").value; }
+function openImport() {
+  document.querySelectorAll("#imDlg [data-pick]").forEach((b) => (b.hidden = !native()));
+  $("imStatus").textContent = native() ? "" : "Paste full paths (files on the computer running this viewer).";
+  $("imDlg").showModal();
+}
+document.querySelectorAll("input[name=imKind]").forEach((r) => (r.onchange = () => { $("imX").hidden = imKind() !== "xenium"; $("imH").hidden = imKind() !== "h5ad"; }));
+document.querySelectorAll("#imDlg [data-pick]").forEach((b) => (b.onclick = async () => {
+  const paths = await native().pick(b.dataset.pick, !!b.dataset.multi);
+  if (!paths.length) return;
+  const target = $(b.dataset.target);
+  target.value = paths.join("\n"); target.dispatchEvent(new Event("change"));
+}));
+const baseName = (p) => p.replace(/[\\/]+$/, "").split(/[\\/]/).pop().replace(/\.(h5ad|ome\.tif|tif)$/i, "").replace(/[^A-Za-z0-9_.-]+/g, "_").slice(0, 40);
+$("imFolder").onchange = async () => {
+  const folder = $("imFolder").value.trim(); if (!folder) return;
+  $("imXinfo").textContent = "checking…";
+  try {
+    const r = await post("/api/import/inspect", { kind: "xenium", folder });
+    $("imXinfo").textContent = `${r.n_cells.toLocaleString()} cells` + (r.panel_name ? ` · ${r.panel_name}` : "") +
+      ` · pixel ${r.pixel_size_um} µm · ` + (r.morphology ? "DAPI image found" : "no morphology image (cells on a blank background unless you add an H&E)");
+    if (!$("imName").value) $("imName").value = baseName(folder);
+  } catch (e) { $("imXinfo").textContent = e.message; }
+};
+$("imH5").onchange = async () => {
+  const h5ad = $("imH5").value.split("\n").map((s) => s.trim()).filter(Boolean); if (!h5ad.length) return;
+  $("imHinfo").textContent = "checking…";
+  try {
+    const r = await post("/api/import/inspect", { kind: "h5ad", h5ad });
+    st.imCols = r.columns;
+    $("imHinfo").textContent = `${r.n_cells.toLocaleString()} cells in ${r.files.length} file(s); ` +
+      r.files.map((f) => `${f.n_genes} genes, counts from ${f.counts_layer}, coordinates ${f.coordinates ? [].concat(f.coordinates).join("/") : "NOT FOUND"}`).join("; ");
+    for (const id of ["imSecCol", "imRegCol"]) {
+      const sel = $(id); sel.length = 1;
+      Object.entries(r.columns).forEach(([c, v]) => { const o = document.createElement("option"); o.value = c; o.textContent = `${c} (${v.length} value${v.length === 1 ? "" : "s"})`; sel.append(o); });
+    }
+    if (!$("imName").value) $("imName").value = baseName(h5ad[0]);
+  } catch (e) { $("imHinfo").textContent = e.message; }
+};
+$("imSecCol").onchange = () => {
+  const vals = (st.imCols || {})[$("imSecCol").value] || [];
+  const sel = $("imSec"); sel.textContent = ""; sel.hidden = !vals.length;
+  vals.forEach((v) => { const o = document.createElement("option"); o.value = v; o.textContent = v; sel.append(o); });
+};
+$("imSec").onchange = () => { if ($("imSec").value) $("imName").value = $("imSec").value.replace(/[^A-Za-z0-9_.-]+/g, "_"); };
+$("imClose").onclick = () => $("imDlg").close();
+$("imGo").onclick = async () => {
+  const kind = imKind(), name = $("imName").value.trim();
+  const body = kind === "xenium"
+    ? { kind, name, folder: $("imFolder").value.trim(), he: $("imXhe").value.trim(), registration: $("imXreg").value.trim(), description: $("imDesc").value }
+    : { kind, name, h5ad: $("imH5").value.split("\n").map((s) => s.trim()).filter(Boolean), he: $("imHhe").value.trim(),
+        registration: $("imHreg").value.trim(), section_column: $("imSecCol").value, section: $("imSecCol").value ? $("imSec").value : "",
+        region_column: $("imRegCol").value, description: $("imDesc").value };
+  if (!name) { $("imStatus").textContent = "Give the sample a name"; return; }
+  $("imGo").disabled = true; $("imStatus").textContent = "importing…";
+  try {
+    const { job } = await post("/api/import", body);
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 700));
+      const j = await api(`/api/job/${encodeURIComponent(job)}`);
+      $("imStatus").textContent = j.error || j.stage;
+      if (j.done) { if (j.error) throw new Error(j.error); break; }
+    }
+    $("imDlg").close(); toast(`Imported ${name}`, 4000);
+    await loadSamples(name);
+    if (!st.vocab) { openMarkers(); checkMarkers(); }  // a new panel may need its own marker list
+  } catch (e) { $("imStatus").textContent = e.message; }
+  $("imGo").disabled = false;
+};
+$("importBtn").onclick = openImport;
+
+// ---------------- Claude (the user's own Claude Desktop / Claude Code) ----------------
+async function openClaude(prompt) {
+  $("clPrompt").value = prompt || ""; $("clCmd").hidden = true; $("clRegMsg").textContent = "";
+  $("clDlg").showModal();
+  try {
+    const s = await api("/api/claude/status");
+    $("clDstat").textContent = s.desktop_current ? "connected" : s.desktop_registered ? "connected to another installation: connect again"
+      : s.desktop_installed === false ? "not installed (claude.ai/download)" : "not connected yet";
+    $("clReg").textContent = s.desktop_registered ? "Connect again" : "Connect Claude Desktop";
+    $("clCstat").textContent = s.claude_code ? "installed" : "not found (install Claude Code, then log in with your Claude account)";
+  } catch (e) { $("clDstat").textContent = e.message; }
+}
+$("clReg").onclick = async () => {
+  try { const r = await post("/api/claude/register"); $("clRegMsg").textContent = "Done. Quit and reopen Claude Desktop, then ask it about this sample."; $("clDstat").textContent = `connected (${r.config})`; }
+  catch (e) { $("clRegMsg").textContent = e.message; }
+};
+$("clCode").onclick = async () => {
+  try {
+    const r = await post("/api/claude/code", { sample: st.sample && st.sample.sample_id, session: st.sid, request: $("clPrompt").value });
+    if (!r.opened) { $("clCmd").hidden = false; $("clCmd").textContent = "Run in a terminal:\n" + r.command; }
+    else toast("Claude Code is opening in Terminal", 3000);
+  } catch (e) { toast(e.message, 5000); }
+};
+$("clCopy").onclick = async () => {
+  const text = ($("clPrompt").value.trim() || "Review my annotation.") + (st.sid ? `\n(The sample open in the Spatial Annotator app: ${st.sample.sample_id}; call use_viewer_session first.)` : "");
+  try { await navigator.clipboard.writeText(text); toast("Copied: paste it into Claude Desktop", 3000); }
+  catch (e) { $("clCmd").hidden = false; $("clCmd").textContent = text; }
+};
+$("clClose").onclick = () => $("clDlg").close();
+$("claudeBtn").onclick = () => openClaude("");
+
+// follow the agent: open_viewer asks the viewer to show a session (e.g. a new annotation Claude started)
+st.loadedAt = Date.now() / 1000;
+async function followAgent() {
+  const r = await api("/api/viewer/request");
+  if (!r.session || r.time <= (st.lastRequest || st.loadedAt) || r.session === st.sid) { if (r.time) st.lastRequest = Math.max(st.lastRequest || 0, r.time); return; }
+  st.lastRequest = r.time;
+  st.openedThisVisit[r.sample] = r.session;
+  await loadSamples(r.sample);  // the sample may be new (imported by Claude)
+  toast(`Claude opened ${r.sample} (${r.session})`, 4000);
+}
+setInterval(() => { if (!st.busy) followAgent().catch(() => {}); }, 4000);
 
 // ---------------- header actions ----------------
 // ---------------- marker list dialog ----------------
@@ -945,7 +1133,7 @@ $("export").onclick = () => {  // download the per-cell CSV of the current versi
   toast(`Downloading ${a.download}…`);
 };
 document.addEventListener("keydown", (e) => {
-  if ($("mkDlg").open || $("nameDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
+  if ($("mkDlg").open || $("nameDlg").open || $("imDlg").open || $("clDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
   if (e.key === "h") $("hide").click();
   if (e.key === "e") $("hideHE").click();
   if (st.drawing && e.key === "Escape") cancelDraw();
@@ -958,13 +1146,22 @@ document.addEventListener("keydown", (e) => {
     try { const r = await api("/api/markers/library/ibd_xenium480_draft"); $("mkText").value = r.text; $("mkName").value = r.name; } catch (e) {}
   }
 })();
-api("/api/config").then((c) => {  // no Claude Code CLI here: the conversation happens in Claude Desktop
-  st.chatAvailable = c.chat;
+api("/api/config").then((c) => {  // the desktop app (or no Claude Code CLI): the conversation happens in Claude's apps
+  st.chatAvailable = c.chat; st.desktop = c.desktop; st.platform = c.platform;
+  $("claudeBtn").hidden = !c.desktop;
+  if (c.desktop) $("sideTitle").textContent = "Claude";
+  $("mkDraftBox").hidden = c.desktop; $("mkClaudeHint").hidden = !c.desktop;
   if (!c.chat) {
     $("msgs").querySelectorAll(".hint").forEach((h) => h.remove());
-    const d = document.createElement("div"); d.className = "hint";
-    d.textContent = "Chat with the agent in Claude Desktop (celltypeagent tools). Everything it changes appears here within a few seconds.";
-    $("msgs").append(d); $("composer").hidden = true;
+    const box = document.createElement("div"); box.className = "claudebox hint";
+    const p = document.createElement("div");
+    p.textContent = "Talk to Claude with your own Claude account in Claude Desktop or Claude Code: priors (“epithelial cells are only in the mucosa”), corrections, a review of the annotation, a marker list for a new panel. Everything Claude changes appears here within a few seconds.";
+    box.append(p);
+    if (c.desktop) {
+      const b = document.createElement("button"); b.className = "primary"; b.textContent = "Claude…"; b.onclick = () => openClaude("");
+      box.append(b);
+    }
+    $("msgs").append(box); $("composer").hidden = true;
   }
 }).catch(() => {});
 loadSamples().catch((e) => toast("Could not load samples: " + e.message, 6000));

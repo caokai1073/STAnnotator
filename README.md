@@ -9,7 +9,8 @@ every step. Everything runs on your own computer; images and expression data nev
 
 ## 1. Install
 
-Requirements: macOS (Apple silicon or Intel), Linux or Windows; about 8 GB of RAM; [Claude Desktop](https://claude.ai/download).
+Requirements: macOS 11+ (Apple silicon or Intel), Linux or Windows; about 8 GB of RAM; your own Claude account in
+[Claude Desktop](https://claude.ai/download) and/or [Claude Code](https://claude.com/claude-code).
 
 1. Install [uv](https://docs.astral.sh/uv/) (it also installs Python for you), then load it into the current
    terminal:
@@ -20,39 +21,52 @@ Requirements: macOS (Apple silicon or Intel), Linux or Windows; about 8 GB of RA
    ```
 
 2. Download the zip and unzip it (Safari unzips it on its own; otherwise double-click
-   `STCellTypeAgent-main.zip` in Finder). Move the folder somewhere permanent, because Claude Desktop is
-   pointed at it and it should not move afterwards, then install:
+   `STCellTypeAgent-main.zip` in Finder). Move the folder somewhere permanent, because the app and Claude are
+   pointed at it and it should not move afterwards, then install it with the desktop window (`[app]`):
 
    ```bash
    mkdir -p ~/Applications && mv ~/Downloads/STCellTypeAgent-main ~/Applications/
-   cd ~/Applications/STCellTypeAgent-main && uv venv .venv --python 3.12 && uv pip install --python .venv/bin/python -e .
+   cd ~/Applications/STCellTypeAgent-main && uv venv .venv --python 3.12 && uv pip install --python .venv/bin/python -e ".[app]"
    ```
 
-   The install downloads PyTorch and takes a few minutes. All later commands are run inside this folder.
-   On Windows use `.venv\Scripts\python` and `.venv\Scripts\celltypeagent` in place of `.venv/bin/...`.
+   The install downloads PyTorch and takes a few minutes. On Windows use `.venv\Scripts\...` in place of
+   `.venv/bin/...`.
+
+3. macOS: create the app, then open **Spatial Annotator** from `~/Applications` (drag it to the Dock if you like):
+
+   ```bash
+   .venv/bin/celltypeagent make-app
+   ```
+
+   The app has no Apple signature: the first time, right-click it and choose Open (or allow it in System Settings
+   -> Privacy & Security). On other systems start it with `.venv/bin/celltypeagent app` (`--browser` to use the
+   browser instead of a window).
 
 Your data and annotations are kept in one data folder, `~/celltypeagent` by default (set `CELLTYPEAGENT_HOME`
-to use another one, before importing and before step 3).
+before `make-app` to use another one).
 
 ## 2. Import a sample
 
-Each sample (tissue section) needs three inputs:
+Click **Import…** in the app (or use the commands below). Two kinds of input:
 
 | input | what it is |
 |---|---|
-| h5ad | AnnData file(s) with raw counts (layer `counts`, or `X`) and cell centroids in micrometers (`obs` columns `x_centroid`/`y_centroid` or `x`/`y`, or `obsm["spatial"]`). Several files (e.g. one per lineage) are merged. Cell type labels in them are ignored. |
-| H&E | the H&E image of the section as a pyramidal TIFF / OME-TIFF |
-| registration | how cells map onto the H&E: either an affine CSV with columns `a11,a12,a21,a22,tx,ty` (`px = a11*x + a12*y + tx`, `py = a21*x + a22*y + ty`; cell um to H&E full-resolution pixels; with several rows, the row whose other columns contain the `--section` value is used), or a Xenium Explorer alignment matrix (3x3 CSV, H&E pixels to morphology pixels of 0.2125 um) |
+| Xenium output folder | the folder written by the Xenium instrument / Xenium Ranger: `cells.parquet` or `cells.csv.gz` and `cell_feature_matrix.h5` (or `cell_feature_matrix/`); control probes are dropped. The DAPI image (`morphology_focus/`) is the background unless you add an H&E with its Xenium Explorer alignment file (Image alignment -> export). |
+| h5ad + H&E + registration | AnnData file(s) with raw counts (layer `counts`, or `X`) and cell centroids in micrometers (`obs` columns `x_centroid`/`y_centroid` or `x`/`y`, or `obsm["spatial"]`); several files (e.g. one per lineage) are merged and cell type labels in them are ignored. The H&E as a pyramidal TIFF / OME-TIFF. The registration either as an affine CSV with columns `a11,a12,a21,a22,tx,ty` (`px = a11*x + a12*y + tx`, `py = a21*x + a22*y + ty`; cell um to H&E full-resolution pixels; with several rows, the row whose other columns contain the section value is used), or as a Xenium Explorer alignment matrix (3x3 CSV, H&E pixels to morphology pixels). |
+
+In the dialog, the h5ad's columns are listed so you can pick the section (when a file holds several) and an
+optional region annotation to start from. The import checks that at least 90% of the cells land on the image (a
+wrong registration or section fails here) and takes 10-30 s. From the command line:
 
 ```bash
-.venv/bin/celltypeagent import --name <sample_id> --h5ad cells.h5ad --he he.ome.tif --registration alignment.csv
+.venv/bin/celltypeagent import-xenium --name ln1 --xenium /path/to/output-XETG... [--he he.ome.tif --registration he_imagealignment.csv]
+.venv/bin/celltypeagent import --name <sample_id> --h5ad cells.h5ad --he he.ome.tif --registration alignment.csv \
+  [--section-column donor_id --section 147328] [--region-column histopathology]
 ```
 
-Options: `--section-column donor_id --section 147328` when the h5ad files hold several sections;
-`--region-column histopathology` to keep a region annotation from the h5ad as an optional starting point;
-`--counts-layer`, `--x-column`/`--y-column` for other layouts; `--description "..."`. The import checks that at
-least 90% of the cells land on the H&E (a wrong registration or section fails here) and takes about 15 s.
-`.venv/bin/celltypeagent samples` lists what is imported.
+The default marker list (`ibd_xenium480_draft.txt`) is for the 480-gene IBD panel. Another panel needs its own
+list: ask Claude "draft a marker list for this panel"; it saves the list, and you load it under **Markers…** ->
+"load a list…" and click **Annotate**.
 
 ### Example: the IBD Xenium atlas (SCP2927)
 
@@ -74,27 +88,32 @@ D=~/Downloads/SCP2927
 
 `ibd_xenium480_draft.txt`, a marker list for the 480-gene IBD panel, is the default list.
 
-## 3. Connect Claude Desktop
+## 3. Work with Claude
 
-```bash
-.venv/bin/celltypeagent setup-desktop
-```
+Claude runs in Anthropic's own apps with your own Claude account; the app connects to it and shows every change.
+Click **Claude…** in the app:
 
-This adds a `celltypeagent` entry to Claude Desktop's `claude_desktop_config.json` (other entries are kept and a
-backup is written next to it). Quit and reopen Claude Desktop; `celltypeagent` then shows in the tools
-menu of a new chat. Then talk to it, for example:
+- **Connect Claude Desktop** adds this installation to Claude Desktop (other entries are kept; a backup is written).
+  Quit and reopen Claude Desktop, then talk to it in a new chat. (Command line: `celltypeagent setup-desktop`.)
+- **Open in Claude Code** opens Terminal with your Claude Code connected to this app and to the sample you are
+  looking at (install Claude Code and log in once with your account). A request typed in the dialog is sent as
+  the first message.
 
-- "Which samples do I have?" / "Annotate sample 147328 and open the viewer."
-- "Epithelial cells are only found in the mucosa." (priors are previewed; say go ahead to apply)
+Claude loads what you are looking at (`use_viewer_session`), and when it starts a new annotation (for example with
+a revised marker list) the app switches to it by itself. Examples:
+
+- "Review my annotation." (markers and layout; suggestions appear in the app's Review panel)
+- "Draft a marker list for this panel." / "Epithelial cells are only found in the mucosa." (priors are previewed;
+  say go ahead to apply)
 - "Cluster 7 of the T cells is mixed, split it." / "These cells in region crypt_1 are goblet cells."
 - "Show me the biggest conflict group." / "Go back to version 3." / "Export the result."
 
-Claude answers in the language you write in. Allow the tools when Claude Desktop asks.
+Claude answers in the language you write in.
 
 ## 4. The viewer
 
-Claude opens it with the `open_viewer` tool, or start it yourself with `.venv/bin/celltypeagent viewer` and
-open http://localhost:8765. Changes made from Claude Desktop show up in the viewer within a few seconds.
+The app's window (or the web viewer: `.venv/bin/celltypeagent viewer`, then http://localhost:8765). Changes made
+by Claude show up within a few seconds.
 
 1. Pick a sample; earlier annotations are under **Session**. Click **Annotate** for a new one (about 1 min
    for 350k cells). Regions start empty (or from the h5ad's region column, if imported).
@@ -120,8 +139,8 @@ open http://localhost:8765. Changes made from Claude Desktop show up in the view
    Markers…**, then Annotate with "keep my regions & priors") and areas drawn in orange (**use as region**, then
    Claude applies the agreed prior or correction to that region).
 
-The chat box in the viewer appears only when the [Claude Code](https://claude.com/claude-code) CLI (`claude`)
-is installed and logged in; without it, talk to Claude Desktop instead.
+The app has no chat box of its own: you talk to Claude in Claude Desktop or Claude Code. The web viewer on a
+shared server shows a chat box that uses the server's own logged-in Claude Code CLI (for the server owner's use).
 
 ## Annotation method
 
@@ -179,14 +198,16 @@ and a re-clustering about 5 s.
 - Claude Desktop does not list `celltypeagent`: run `setup-desktop` again, fully quit Claude Desktop and
   reopen it. Its server log is `~/Library/Logs/Claude/mcp-server-celltypeagent.log` on macOS
   (`%APPDATA%\Claude\logs` on Windows).
-- The viewer does not open: see `<data folder>/viewer.log`, or start it by hand (`celltypeagent viewer`); use
-  `--port` if 8765 is taken.
+- The app does not open: see `<data folder>/app.log`; run `.venv/bin/celltypeagent app` in a terminal to see
+  errors, or `--browser` to use the browser. The web viewer logs to `<data folder>/viewer.log`.
+- Open in Claude Code does nothing: Claude Code must be installed and logged in (`claude` in Terminal); the
+  dialog shows the command to run by hand otherwise.
 - Import says too few cells land on the H&E: check the registration file, `--section`, and that the cell
   coordinates are in micrometers.
 
 ## Other clients
 
-- Claude Code: `claude mcp add celltypeagent -e CELLTYPEAGENT_HOME=$HOME/celltypeagent -- $PWD/.venv/bin/python -m celltypeagent.mcp_server`
+- Claude Code without the app: `claude mcp add celltypeagent -e CELLTYPEAGENT_HOME=$HOME/celltypeagent -- $PWD/.venv/bin/python -m celltypeagent.mcp_server`
   (run in this folder). `.claude/skills/spatial-annotation/` holds the agent's working rules for Claude Code.
 - Shared server: the viewer binds to localhost only. Others reach it through an SSH tunnel
   (`ssh -N -L 8765:localhost:8765 <user>@<server>`), then open http://localhost:8765. The review page for
@@ -196,8 +217,10 @@ and a re-clustering about 5 s.
 
 ```
 celltypeagent/     Python package
-  cli.py           celltypeagent import / samples / setup-desktop / viewer / mcp
-  importer.py      h5ad + H&E + registration -> sample bundle
+  cli.py           celltypeagent app / make-app / import / import-xenium / samples / setup-desktop / viewer / mcp
+  desktop.py       the desktop app (pywebview window around the local server)
+  claudelink.py    connection to the user's Claude Desktop / Claude Code; viewer <-> agent handoff files
+  importer.py      Xenium output folder, or h5ad + H&E + registration -> sample bundle
   markers.py       marker list parsing, hierarchical Leiden annotation, re-clustering
   model.py         expression model (training, fine-tuning on corrections)
   constraints.py   priors and Bayesian reweighting

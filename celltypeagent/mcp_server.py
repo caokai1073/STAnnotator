@@ -20,8 +20,13 @@ Getting started
 - start_session(sample_id) runs a marker-based annotation (no labeled reference is used; the data is treated as
   unlabeled) with the default marker list or one the user gives (check it first with check_marker_list), or
   resume_session from list_sessions. The first annotation takes about a minute on a laptop.
-- Call open_viewer and give the user the link: the viewer shows the cell types on the H&E; the user draws and names
+- The user usually has the Spatial Annotator app (or the web viewer) open: call use_viewer_session to load what they
+  are looking at. After starting a new annotation call open_viewer: a running app switches to it by itself;
+  otherwise give the user the link. The viewer shows the cell types on the H&E (or DAPI); the user draws and names
   regions there and can review conflicts. Changes made through these tools appear in the viewer automatically.
+- A new gene panel needs its own marker list: draft one from get_panel_genes, validate it with check_marker_list,
+  and save it with save_marker_list; the user loads it in the viewer's "Markers..." dialog and clicks Annotate (or
+  start_session(markers_text=...) when the user asks you to run it).
 
 Cell types and markers
 - Cell types are the most specific entries of the marker tree; a type with subtypes is a lineage / group: it can be
@@ -116,30 +121,44 @@ def import_sample(name: str, h5ad: list[str], he: str, registration: str, sectio
 
 
 @mcp.tool()
+def use_viewer_session() -> str:
+    """Load the sample and annotation the user is looking at in the Spatial Annotator app (or the web viewer) and
+    make it the active session. Call it first when the user refers to what they see."""
+    from . import claudelink
+    st = claudelink.viewer_state()
+    if not st.get("session"):
+        return _j({"error": "the viewer shows no annotation; ask the user to open one (or start_session)",
+                   "viewer_running": claudelink.viewer_alive(st)})
+    _active["session"] = Session(st["session"])
+    return _j({"session_id": st["session"], "sample": st.get("sample"), "summary": _active["session"].summary()})
+
+
+@mcp.tool()
 def open_viewer(port: int = 8765) -> str:
-    """Start the local web viewer if it is not running and return its link (opens the active session if any).
-    The user draws regions, looks at the H&E and reviews conflicts there."""
-    import subprocess, sys, time, urllib.request
-    from . import config
+    """Show the active session to the user. If the Spatial Annotator app (or a web viewer) is running, it switches to
+    the session by itself; otherwise a web viewer is started and its link returned."""
+    import subprocess, sys, time
+    from . import claudelink, config
+    st = claudelink.viewer_state()
+    s = _active.get("session")
+    if claudelink.viewer_alive(st):
+        if s is not None:
+            claudelink.request_show(s.sample_id, s.id)
+        where = "the Spatial Annotator app" if st.get("mode") == "desktop" else f"http://localhost:{st['port']}"
+        return _j({"shown_in": where, "session": s.id if s else None,
+                   "note": "the viewer switches to this session within a few seconds"})
     url = f"http://localhost:{port}"
-    def up():
-        try:
-            urllib.request.urlopen(f"http://127.0.0.1:{port}/api/samples", timeout=2)
-            return True
-        except Exception:
-            return False
-    if not up():
+    if not claudelink.viewer_alive({"port": port}):
         log = open(config.HOME / "viewer.log", "a")
         subprocess.Popen([sys.executable, "-m", "celltypeagent.webapp", "--port", str(port)], stdout=log, stderr=log,
                          stdin=subprocess.DEVNULL, start_new_session=True, env=dict(os.environ))
         for _ in range(60):
             time.sleep(0.5)
-            if up():
+            if claudelink.viewer_alive({"port": port}):
                 break
         else:
             raise RuntimeError(f"the viewer did not start; see {config.HOME / 'viewer.log'}")
-    if "session" in _active:
-        s = _active["session"]
+    if s is not None:
         url += f"/?sample={s.sample_id}&session={s.id}"
     return _j({"url": url, "note": "open the link in a browser; changes made here show up there within a few seconds"})
 
@@ -422,6 +441,24 @@ def get_panel_genes(sample_id: Optional[str] = None) -> str:
     sid = sample_id or (_active["session"].sample_id if "session" in _active else None)
     genes = panel_genes(sid)
     return _j({"n_genes": len(genes), "genes": genes})
+
+
+@mcp.tool()
+def save_marker_list(name: str, text: str, sample_id: Optional[str] = None) -> str:
+    """Save a marker list (validated against the sample's panel) in the user's library, where the viewer's
+    "Markers..." dialog lists it ("load a list..."). Use it for a new panel: draft a list from get_panel_genes,
+    check it with check_marker_list, save it, and tell the user to load it and click Annotate."""
+    from . import config, markers
+    from .session import panel_genes
+    import re
+    p = markers.parse(text, panel_genes(sample_id))
+    if not p["ok"]:
+        raise vocab.VocabError("marker list has errors: " + "; ".join(p["errors"][:8]))
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", name.strip()).strip("_") or "marker_list"
+    config.USER_MARKERS.mkdir(parents=True, exist_ok=True)
+    path = config.USER_MARKERS / f"{safe}.txt"
+    path.write_text(text.strip() + "\n")
+    return _j({"saved": str(path), "name": safe, "n_types": p["n_types"], "warnings": p["warnings"]})
 
 
 @mcp.tool()
