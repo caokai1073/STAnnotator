@@ -42,6 +42,7 @@ button:disabled { opacity: .45; cursor: default; }
 main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 380px; min-height: 0; }
 #viewerwrap { position: relative; min-height: 0; }
 #osd { position: absolute; inset: 0; background: #ececea; }
+#glcells { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
 #osd.nohe { background: #ffffff; }
 @media (prefers-color-scheme: dark) { #osd.nohe { background: #111214; } }
 #legend .grp.clickable { cursor: pointer; }
@@ -356,12 +357,98 @@ function overlayUrl() {
   if (only) q.set("only", only);
   return (l, x, y) => `/api/s/${st.sid}/overlay/${st.version}/${st.mode}/${l}/${x}_${y}.png?${q}`;
 }
-function refreshOverlay() {
+// ---------------- cells drawn with WebGL ----------------
+// Positions are loaded once per sample and colors once per (version, color mode, filter); the GPU draws every cell
+// on each frame, so panning, zooming and recoloring are immediate. Without WebGL the server's overlay tiles are used.
+const GL = { ok: false, n: 0, sample: null, colorKey: null, colors: {} };
+function initGL() {
+  const c = document.createElement("canvas"); c.id = "glcells";
+  const gl = c.getContext("webgl", { premultipliedAlpha: false, antialias: false, alpha: true });
+  if (!gl) return;
+  const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
+  const prog = gl.createProgram();
+  gl.attachShader(prog, sh(gl.VERTEX_SHADER, `
+    attribute vec2 a_pos; attribute vec4 a_col;
+    uniform vec2 u_scale; uniform vec2 u_offset; uniform float u_size; uniform float u_min;
+    varying vec4 v_col;
+    void main() {
+      gl_Position = vec4(a_pos * u_scale + u_offset, 0.0, 1.0);
+      gl_PointSize = a_col.a > 0.0 ? max(u_size, a_col.a > 0.9 ? u_min : 0.0) : 0.0;
+      v_col = a_col;
+    }`));
+  gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, `
+    precision mediump float;
+    varying vec4 v_col; uniform float u_opacity; uniform float u_edge;
+    void main() {
+      float r = length(gl_PointCoord - 0.5);
+      if (r > 0.5) discard;
+      vec3 c = v_col.rgb;
+      if (u_edge > 0.5 && r > 0.40) c = mix(c, vec3(1.0), 0.65);
+      gl_FragColor = vec4(c, v_col.a * u_opacity);
+    }`));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return;
+  Object.assign(GL, { ok: true, canvas: c, gl, prog, pos: gl.createBuffer(), col: gl.createBuffer(),
+    loc: { pos: gl.getAttribLocation(prog, "a_pos"), col: gl.getAttribLocation(prog, "a_col") },
+    u: Object.fromEntries(["u_scale", "u_offset", "u_size", "u_min", "u_opacity", "u_edge"].map((k) => [k, gl.getUniformLocation(prog, k)])) });
+  viewer.canvas.insertBefore(c, viewer.drawer.canvas.nextSibling);  // above the image, below overlays and the navigator
+  ["animation", "update-viewport", "resize", "open"].forEach((ev) => viewer.addHandler(ev, drawGL));
+}
+async function loadPositions(sample) {
+  if (!GL.ok || GL.sample === sample) return;
+  const r = await fetch(`/api/sample/${sample}/cells.bin`);
+  const buf = await r.arrayBuffer();
+  GL.n = buf.byteLength / 8; GL.sample = sample; GL.radius = +r.headers.get("X-Radius-Px"); GL.colorKey = null; GL.colors = {};
+  const gl = GL.gl; gl.bindBuffer(gl.ARRAY_BUFFER, GL.pos); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(buf), gl.STATIC_DRAW);
+}
+async function loadColors() {
+  const q = new URLSearchParams({ version: st.version, mode: st.mode, only: [...filt()].join("|") });
+  const key = `${st.sid}|${q}`;
+  if (GL.colorKey === key) return;
+  if (!GL.colors[key]) {
+    const r = await fetch(`/api/s/${st.sid}/colors.bin?${q}`);
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+    GL.colors = { [key]: new Uint8Array(await r.arrayBuffer()) };  // keep only the current one
+  }
+  const gl = GL.gl; gl.bindBuffer(gl.ARRAY_BUFFER, GL.col); gl.bufferData(gl.ARRAY_BUFFER, GL.colors[key], gl.STATIC_DRAW);
+  GL.colorKey = key;
+}
+function drawGL() {
+  if (!GL.ok) return;
+  const gl = GL.gl, c = GL.canvas, dpr = window.devicePixelRatio || 1;
+  const w = viewer.canvas.clientWidth, h = viewer.canvas.clientHeight;
+  if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+  gl.viewport(0, 0, c.width, c.height); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  if (!st.sid || !st.he || st.hidden || !GL.colorKey || !heItem() || GL.sample !== (st.sample && st.sample.sample_id)) return;
+  const a = toScreen(0, 0), b = toScreen(st.he.width, st.he.height);
+  const kx = (b.x - a.x) / st.he.width, ky = (b.y - a.y) / st.he.height;  // CSS pixels per image pixel
+  gl.useProgram(GL.prog);
+  gl.uniform2f(GL.u.u_scale, 2 * kx / w, -2 * ky / h);
+  gl.uniform2f(GL.u.u_offset, 2 * a.x / w - 1, 1 - 2 * a.y / h);
+  const diam = 2 * GL.radius * kx * st.dotSize * dpr;
+  const few = filt().size || ["conflicts", "changed", "plausibility"].includes(st.mode);  // keep sparse cells findable
+  gl.uniform1f(GL.u.u_size, Math.max(diam, 2 * dpr));
+  gl.uniform1f(GL.u.u_min, few ? 4 * dpr * st.dotSize : 0);
+  gl.uniform1f(GL.u.u_opacity, st.opacity);
+  gl.uniform1f(GL.u.u_edge, diam >= 7 * dpr ? 1 : 0);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.bindBuffer(gl.ARRAY_BUFFER, GL.pos); gl.enableVertexAttribArray(GL.loc.pos); gl.vertexAttribPointer(GL.loc.pos, 2, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, GL.col); gl.enableVertexAttribArray(GL.loc.col); gl.vertexAttribPointer(GL.loc.col, 4, gl.UNSIGNED_BYTE, true, 0, 0);
+  gl.drawArrays(gl.POINTS, 0, GL.n);
+}
+async function refreshOverlay() {
+  if (GL.ok) {
+    if (!st.sid || !st.he) { drawGL(); return; }
+    try { await loadPositions(st.sample.sample_id); await loadColors(); } catch (e) { toast(e.message, 5000); }
+    drawGL(); return;
+  }
   if (!st.sid || !st.he) return;
   const n = viewer.world.getItemCount();
   if (st.hidden) { if (n > 1) viewer.world.removeItem(viewer.world.getItemAt(1)); return; }
   viewer.addTiledImage({ tileSource: tileSource(overlayUrl()), opacity: st.opacity, index: 1, replace: n > 1 });
 }
+try { initGL(); } catch (e) { GL.ok = false; console.warn("WebGL unavailable, using overlay tiles:", e); }
 
 // ---------------- samples and annotation ----------------
 async function loadSamples(select) {
@@ -454,6 +541,7 @@ function closeSession() {
   $("input").disabled = true; $("composerhint").textContent = "Annotate a sample first.";
   $("vinfo").textContent = ""; $("regpanel").hidden = true; drawRegions();
   fillModes(null); st.lastSummary = null;
+  GL.colorKey = null; drawGL();
   $("msgs").querySelectorAll(".m").forEach((m) => m.remove());
   viewer.clearOverlays();
 }
@@ -1101,7 +1189,7 @@ $("mode").onchange = (e) => {
   }
   st.mode = e.target.value; refreshOverlay(); loadLegend();
 };
-$("opacity").oninput = (e) => { st.opacity = e.target.value / 100; const it = viewer.world.getItemAt(1); if (it) it.setOpacity(st.opacity); };
+$("opacity").oninput = (e) => { st.opacity = e.target.value / 100; const it = viewer.world.getItemAt(1); if (it) it.setOpacity(st.opacity); drawGL(); };
 $("hide").onclick = () => { st.hidden = !st.hidden; $("hide").classList.toggle("on", st.hidden); refreshOverlay(); };
 $("hideHE").onclick = () => { st.heHidden = !st.heHidden; applyHE(); };
 let dotTimer = null;
@@ -1109,7 +1197,7 @@ $("dotsize").oninput = (e) => {  // redraw once the slider rests, not on every s
   st.dotSize = e.target.value / 100;
   $("dotsizeVal").textContent = `${st.dotSize.toFixed(1)}×`;
   store("dotsize", e.target.value);
-  clearTimeout(dotTimer); dotTimer = setTimeout(refreshOverlay, 250);
+  if (GL.ok) drawGL(); else { clearTimeout(dotTimer); dotTimer = setTimeout(refreshOverlay, 250); }
 };
 { const v = +load("dotsize"); if (v >= 20 && v <= 300) { $("dotsize").value = v; st.dotSize = v / 100; $("dotsizeVal").textContent = `${st.dotSize.toFixed(1)}×`; } }
 $("reset").onclick = async () => {

@@ -23,7 +23,7 @@ from . import markers, markerqc, plausibility, claudelink, importer
 from .session import Session, list_samples, list_sessions, panel_genes
 
 STATIC = Path(__file__).parent / "static"
-TILE, MARGIN_PX, CELL_RADIUS_PX = 512, 400, 5.0
+TILE, MARGIN_PX, CELL_RADIUS_UM = 512, 400, 3.45  # dot radius: about a cell's radius
 CHAT_MCP = config.CHAT_MCP
 JOBS: dict = {}
 _views: dict = {}
@@ -315,10 +315,11 @@ def overlay_tile(req: Request):
         x0, y0, x1, y1, w, h, sc = v.tile_box(L, tx, ty)
         col = colors_for(s, version, mode, only)
         # take cells a little beyond the tile so dots on its border are drawn whole
-        idx = v.cells_in(x0, y0, x1, y1, pad=max(CELL_RADIUS_PX * size, 2.0 * size / sc) + 2)
+        rad = CELL_RADIUS_UM / v.um_per_px  # in level-0 image pixels
+        idx = v.cells_in(x0, y0, x1, y1, pad=max(rad * size, 2.0 * size / sc) + 2)
         idx = idx[col[idx, 3] > 0]
         u, w_ = (v.px[idx] - x0) * sc, (v.py[idx] - y0) * sc
-        r = CELL_RADIUS_PX * sc * size
+        r = rad * sc * size
         if only or mode in ("conflicts", "changed", "plausibility"):  # few cells shown: keep them findable when zoomed out
             r = max(r, 2.0 * size)
         if r < 1.6:  # zoomed out: one pixel (or 2x2) per cell
@@ -344,6 +345,27 @@ def overlay_tile(req: Request):
     except ValueError:
         return Response(status_code=404)
     return Response(data, media_type="image/png", headers={"Cache-Control": "max-age=86400"})
+
+
+# ---------------- cells for the page's WebGL layer ----------------
+def api_cells_bin(req):
+    """Cell centers in viewer image coordinates, float32 x, y pairs (drawn by the page with WebGL)."""
+    v = view(req.path_params["sample"])
+    data = np.c_[v.px - v.ox, v.py - v.oy].astype(np.float32).tobytes()
+    return Response(data, media_type="application/octet-stream",
+                    headers={"X-Cells": str(len(v.px)), "X-Radius-Px": f"{CELL_RADIUS_UM / v.um_per_px:.4f}"})
+
+
+def api_colors_bin(req):
+    """RGBA per cell (uint8) for a version, color mode and legend filter, in the order of cells.bin."""
+    s = review_app._session(req.path_params["sid"])
+    q = req.query_params
+    only = tuple(sorted(filter(None, q.get("only", "").split("|"))))
+    try:
+        col = colors_for(s, int(q["version"]), q.get("mode", "type"), only)
+    except (KeyError, ValueError) as e:
+        return _json({"error": str(e)}, 400)
+    return Response(np.ascontiguousarray(col).tobytes(), media_type="application/octet-stream")
 
 
 # ---------------- API ----------------
@@ -957,6 +979,8 @@ def build_app(port):
         Route("/api/job/{sid}", api_job),
         Route("/api/s/{sid}/legend", api_legend),
         Route("/api/s/{sid}/overlay/{version:int}/{mode}/{level:int}/{xy}", overlay_tile),
+        Route("/api/sample/{sample}/cells.bin", api_cells_bin),
+        Route("/api/s/{sid}/colors.bin", api_colors_bin),
         Route("/api/s/{sid}/cell_at", api_cell_at),
         Route("/api/s/{sid}/regions", api_regions),
         Route("/api/s/{sid}/plausibility", api_plausibility),
