@@ -9,8 +9,15 @@ every step. Everything runs on your own computer; images and expression data nev
 
 ## 1. Install
 
-Requirements: macOS 11+ (Apple silicon or Intel), Linux or Windows; about 8 GB of RAM; your own Claude account in
-[Claude Desktop](https://claude.ai/download) and/or [Claude Code](https://claude.com/claude-code).
+Requirements: a Mac with Apple silicon (macOS 11+), about 8 GB of RAM, and your own Claude account in
+[Claude Desktop](https://claude.ai/download) and/or [Claude Code](https://claude.com/claude-code). (Linux and
+Windows can run it from source.)
+
+**The app (recommended).** Open `SpatialAnnotator.dmg` and drag **Spatial Annotator** to Applications. It
+contains everything it needs; no Python installation. If the build is not notarized, the first time right-click
+the app and choose Open (or allow it in System Settings -> Privacy & Security).
+
+**From source** (developers, Linux/Windows, or before a .dmg exists):
 
 1. Install [uv](https://docs.astral.sh/uv/) (it also installs Python for you), then load it into the current
    terminal:
@@ -20,30 +27,22 @@ Requirements: macOS 11+ (Apple silicon or Intel), Linux or Windows; about 8 GB o
    source $HOME/.local/bin/env
    ```
 
-2. Download the zip and unzip it (Safari unzips it on its own; otherwise double-click
-   `STCellTypeAgent-main.zip` in Finder). Move the folder somewhere permanent, because the app and Claude are
-   pointed at it and it should not move afterwards, then install it with the desktop window (`[app]`):
+2. Unzip the downloaded `STCellTypeAgent-main.zip` and move the folder somewhere permanent (the app and Claude
+   are pointed at it), then install it with the desktop window (`[app]`):
 
    ```bash
    mkdir -p ~/Applications && mv ~/Downloads/STCellTypeAgent-main ~/Applications/
    cd ~/Applications/STCellTypeAgent-main && uv venv .venv --python 3.12 && uv pip install --python .venv/bin/python -e ".[app]"
    ```
 
-   The install downloads PyTorch and takes a few minutes. On Windows use `.venv\Scripts\...` in place of
-   `.venv/bin/...`.
+   On Windows use `.venv\Scripts\...` in place of `.venv/bin/...`. Add `gpu` (`".[app,gpu]"`) to install PyTorch,
+   which only speeds up the marker step on an NVIDIA or Apple GPU.
 
-3. macOS: create the app, then open **Spatial Annotator** from `~/Applications` (drag it to the Dock if you like):
+3. macOS: `.venv/bin/celltypeagent make-app` puts a **Spatial Annotator** launcher in `~/Applications` (it runs this
+   folder's environment). Elsewhere: `.venv/bin/celltypeagent app` (`--browser` for the browser instead of a window).
 
-   ```bash
-   .venv/bin/celltypeagent make-app
-   ```
-
-   The app has no Apple signature: the first time, right-click it and choose Open (or allow it in System Settings
-   -> Privacy & Security). On other systems start it with `.venv/bin/celltypeagent app` (`--browser` to use the
-   browser instead of a window).
-
-Your data and annotations are kept in one data folder, `~/celltypeagent` by default (set `CELLTYPEAGENT_HOME`
-before `make-app` to use another one).
+Your data and annotations are kept in one data folder, `~/celltypeagent` by default (`CELLTYPEAGENT_HOME` sets
+another one).
 
 ## 2. Import a sample
 
@@ -189,9 +188,10 @@ were labeled neutrophils (15% before), and lineage agreement rose from 91.4% to 
 
 ## Performance
 
-The expression model uses the GPU when there is one (NVIDIA CUDA or Apple silicon MPS); clustering runs on the
-CPU. On a CPU alone a 356k-cell section takes about 55 s to annotate (3.3 GB of RAM), a correction about 3 s,
-and a re-clustering about 5 s.
+Everything runs on the CPU; with PyTorch installed (`gpu` extra) the marker step's neighbor search uses an NVIDIA
+or Apple GPU. On an idle CPU a 356k-cell section takes about a minute to annotate (3.3 GB of RAM); a correction or
+a local re-clustering takes a few seconds. The viewer draws the cells with WebGL, so panning, zooming and changing
+colors are immediate.
 
 ## Troubleshooting
 
@@ -213,6 +213,26 @@ and a re-clustering about 5 s.
   (`ssh -N -L 8765:localhost:8765 <user>@<server>`), then open http://localhost:8765. The review page for
   pathologists is at http://localhost:8765/review (verdict keys 1-6, rules form, CSV download).
 
+## Building the app (maintainers)
+
+On a Mac with Apple silicon, from this folder:
+
+```bash
+packaging/macos/build_app.sh            # -> dist/Spatial Annotator.app and dist/SpatialAnnotator.dmg (ad-hoc signed)
+```
+
+It builds with PyInstaller (`packaging/spatial_annotator.spec`) in its own environment, without PyTorch. The app's
+executable also takes the command-line subcommands (`Spatial Annotator mcp` is what Claude Desktop and Claude Code
+start). To give it a Developer ID signature and Apple's notarization, so that it opens without warnings on other
+Macs (needs an Apple Developer account):
+
+```bash
+xcrun notarytool store-credentials spatial-annotator --apple-id YOU@EXAMPLE.COM --team-id TEAMID   # once
+DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)" packaging/macos/sign_and_notarize.sh
+```
+
+The hardened-runtime exceptions it uses (`packaging/macos/entitlements.plist`) allow numba's run-time compilation.
+
 ## Layout
 
 ```
@@ -233,5 +253,6 @@ celltypeagent/     Python package
   webapp.py        viewer, review page, chat box
   data/            default marker list
 examples/scp2927/  registration of the SCP2927 sections
+packaging/         PyInstaller spec, macOS build / signing scripts
 tests/             smoke tests (python tests/smoke_engine.py, tests/smoke_mcp.py; they expect sample 147328 / 167799)
 ```
