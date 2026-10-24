@@ -10,7 +10,7 @@ process, so the agent and the viewer share one session object. The conflict revi
 import argparse, asyncio, colorsys, contextlib, io, json, math, re, shutil, threading, time, uuid
 from collections import OrderedDict
 from pathlib import Path
-import numpy as np, pandas as pd, tifffile, zarr
+import numpy as np, pandas as pd
 from PIL import Image, ImageDraw
 from scipy.spatial import cKDTree
 from starlette.applications import Starlette
@@ -19,7 +19,7 @@ from starlette.responses import FileResponse, Response, StreamingResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from . import config, vocab, mcp_server, review_app, render
-from . import markers, plausibility
+from . import markers, markerqc, plausibility
 from .session import Session, list_samples, list_sessions, panel_genes
 
 STATIC = Path(__file__).parent / "static"
@@ -52,41 +52,7 @@ _tiles, _overlays, _colors = LRU(3000), LRU(3000), LRU(40)
 
 
 # ---------------- H&E pyramid and sample geometry ----------------
-class Slide:
-    def __init__(self, path):
-        self.path = path
-        with tifffile.TiffFile(path) as t:
-            self.levels = []
-            for lv in t.series[0].levels:
-                chw = lv.shape[0] == 3
-                h, w = (lv.shape[1], lv.shape[2]) if chw else (lv.shape[0], lv.shape[1])
-                self.levels.append((w, h, chw))
-        self.W0, self.H0 = self.levels[0][:2]
-        self._z, self._lock = {}, threading.Lock()
-
-    def _zarr(self, k):
-        if k not in self._z:
-            self._z[k] = zarr.open(tifffile.imread(self.path, aszarr=True, level=k), mode="r")
-        return self._z[k]
-
-    def read(self, x0, y0, x1, y1, out_w, out_h):
-        """Level-0 pixel box -> RGB array of (out_h, out_w), read from the coarsest adequate pyramid level."""
-        need = (x1 - x0) / out_w
-        k = max(i for i, (w, _, _) in enumerate(self.levels) if i == 0 or self.W0 / w <= need * 1.001)
-        w, h, chw = self.levels[k]
-        ds = self.W0 / w
-        a0, b0 = max(0, int(x0 / ds)), max(0, int(y0 / ds))
-        a1, b1 = min(w, int(math.ceil(x1 / ds))), min(h, int(math.ceil(y1 / ds)))
-        canvas = Image.new("RGB", (out_w, out_h), (245, 245, 245))
-        if a1 <= a0 or b1 <= b0:
-            return canvas
-        with self._lock:  # tifffile stores share a file handle
-            z = self._zarr(k)
-            arr = np.asarray(z[:, b0:b1, a0:a1]).transpose(1, 2, 0) if chw else np.asarray(z[b0:b1, a0:a1])
-        img = Image.fromarray(np.ascontiguousarray(arr[..., :3]))
-        tw, th = max(1, round((a1 - a0) * ds / need)), max(1, round((b1 - b0) * ds / need))
-        canvas.paste(img.resize((tw, th), Image.BILINEAR), (round((a0 * ds - x0) / need), round((b0 * ds - y0) / need)))
-        return canvas
+Slide = render.Slide
 
 
 class SampleView:
@@ -308,7 +274,8 @@ def legend_for(s: Session, version, mode):
     if mode == "plausibility":
         stt = plausibility.check(s, version)["status"]
         n = {k: int((stt == k).sum()) for k in PLAUS_RGB}
-        return [{"key": k, "label": k, "color": c, "count": n[k]} for k, c in PLAUS_RGB.items()] + \
+        names = {plausibility.LIKELY: "out of place, model unsure", plausibility.CHECK: "out of place, model confident"}
+        return [{"key": k, "label": names[k], "color": c, "count": n[k]} for k, c in PLAUS_RGB.items()] + \
                [{"key": "ok", "label": "fits its surroundings or not checked", "color": (170, 170, 170),
                  "count": len(s.cells) - sum(n.values())}]
     return [{"key": "low", "label": "low confidence", "color": (255, 0, 0), "count": int((r["conf"] < 0.5).sum())},
@@ -481,30 +448,76 @@ def api_regions(req):
     return _json(info)
 
 
+def _viewer_poly(v, poly):
+    return [[x - v.ox, y - v.oy] for x, y in poly]
+
+
 def api_plausibility(req):
-    """Groups of isolated cells of cohesive types for one version (image coordinates for the viewer)."""
+    """Candidate areas and Claude's area suggestions for one version (outlines in viewer image coordinates)."""
     s = review_app._session(req.path_params["sid"])
     v = view(s.sample_id)
     ver = int(req.query_params["version"]) if req.query_params.get("version") else None
-    top = int(req.query_params.get("top", 40))
-    res = plausibility.check(s, ver)
-    out = plausibility.summary(s, ver, top)
-    for g, full in zip(out["groups"], res["groups"]):
-        x0, y0, x1, y1 = full["bbox_px"]
-        g["bbox"] = [x0 - v.ox, y0 - v.oy, x1 - v.ox, y1 - v.oy]
-    return _json(out)
+    out = plausibility.summary(s, ver, top=int(req.query_params.get("top", 60)))
+    full = {a["id"]: a for a in plausibility.scan(s, ver)["areas"]}
+    for a in out["candidate_areas"]:
+        a["outline"] = _viewer_poly(v, full[a["id"]]["outline_px"])
+    try:
+        q = markerqc.check(s, ver)
+        mk = {"flags": q["flags"], "unassigned": q["unassigned"]}
+    except ValueError:  # annotations made without a marker list
+        mk = None
+    return _json(out | {"suggestions": _suggestions(s, v), "markers": mk, "proposal": markerqc.proposal(s)})
 
 
-async def api_plausibility_label(req: Request):
-    """Accept suggestions: label the cells of groups computed on `version` (refused if the session moved on)."""
+def _suggestions(s, v):
+    keep = ("id", "title", "reason", "action", "region_name", "tiles", "status", "lineage")
+    return [{k: x.get(k) for k in keep} | {"outline": _viewer_poly(v, x["outline_px"])} for x in plausibility.suggestions(s)]
+
+
+def api_area_suggestions(req):
+    """Claude's area suggestions and marker list proposal (polled by the viewer)."""
+    s = review_app._session(req.path_params["sid"])
+    return _json({"areas": _suggestions(s, view(s.sample_id)), "proposal": markerqc.proposal(s)})
+
+
+async def api_proposal_status(req: Request):
     s = review_app._session(req.path_params["sid"])
     b = await req.json()
     try:
-        ver = plausibility.label_groups(s, b.get("group_ids", []), b.get("cell_type") or None, version=b.get("version"),
-                                        author=b.get("author") or "viewer")
+        markerqc.set_proposal_status(s, b.get("status", ""))
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+    return _json({"ok": True})
+
+
+async def api_area_adopt(req: Request):
+    """Save a suggestion's or a candidate area's outline as region `name` (one new version)."""
+    s = review_app._session(req.path_params["sid"])
+    b = await req.json()
+    try:
+        if b.get("suggestion_id"):
+            sg = next((x for x in plausibility.suggestions(s) if x["id"] == b["suggestion_id"]), None)
+            if sg is None:
+                raise ValueError(f"no suggestion {b['suggestion_id']}")
+            poly = sg["outline_px"]
+        else:
+            poly = plausibility.area_info(s, b.get("area_id", ""), b.get("version"))["outline_px"]
+        ver = s.add_region(b.get("name", ""), poly, author=b.get("author") or "viewer")
+        if b.get("suggestion_id"):
+            plausibility.set_suggestion_status(s, b["suggestion_id"], "done", region_name=s.state(ver)["regions"]["ops"][-1]["name"])
     except ValueError as e:
         return _json({"error": str(e)}, 400)
     return _json({"new_version": ver, "message": s.state(ver)["message"]})
+
+
+async def api_area_dismiss(req: Request):
+    s = review_app._session(req.path_params["sid"])
+    b = await req.json()
+    try:
+        plausibility.set_suggestion_status(s, b.get("suggestion_id", ""), "dismissed")
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+    return _json({"ok": True})
 
 
 async def api_region_add(req: Request):
@@ -756,14 +769,18 @@ resolution "auto" or higher for finer; marker_edits to sharpen existing subtypes
 labels would change and the new clusters, and on a go-ahead call recluster. Report changes inside and outside the
 re-clustered cells separately. Adding or removing cell types needs a revised marker list: the user edits it in
 "Markers..." and clicks Annotate with "keep regions, priors and corrections" checked.
-Plausibility check (the user asks whether the spatial distribution makes sense, or presses "Ask Claude" in the
-plausibility panel): call check_plausibility, look at the top groups with show_plausibility_groups (up to 4 per
-call), and judge them with biology: epithelium in submucosa or muscle is suspicious in normal tissue but can be real
-in IBD (deep crypts, fistulas, ulcer edges); vascular smooth muscle around vessels and the thin muscularis mucosae
-are real; B cells and naive T cells outside follicles are normal. "likely mislabel" groups were wrong about half
-the time on test data, confident isolated cells much less often. Reply with three short lists by group id: likely
-mislabels (with the suggested type), unusual but possibly real (why), unsure (for the user to look at). Relabel only
-after the user agrees, with label_plausibility_groups.
+Reviewing the annotation (the user asks whether it makes sense, or presses "Ask Claude" in the Review panel): use
+your knowledge of tissue biology, marker genes and histology. Check (1) markers with review_markers: do each type's
+top genes fit its label, are listed markers weak or unspecific here with a better panel gene available, do
+Unassigned cells or unassigned clusters express a type missing from the list, is the composition plausible for the
+tissue; (2) space with show_tissue_overview, check_plausibility and show_area: identify the compartments on the H&E
+and areas where the annotation contradicts them (vascular smooth muscle, muscularis mucosae, deep crypts or
+fistulas in IBD are real). Reply with a short prioritized list of suggestions, each with its evidence and action.
+Make them actionable in the viewer: propose_marker_list for a revised marker list (the user opens it from the
+Review panel in "Markers..." and annotates again keeping regions and priors), suggest_areas for areas (drawn on the
+map; the user adopts them as regions), preview_recluster for a mixed cluster. Once a suggested region exists, apply
+its action after a go-ahead: usually an exclude prior on it (preview_constraint, then add_constraint), or
+label_cells(region=..., only_types=...) when the user names the target type. Change nothing without agreement.
 If a request cannot be expressed with the tools, say so plainly."""
 
 BLOCKED = ["start_session", "resume_session", "list_sessions", "list_samples", "set_region_source"]
@@ -854,7 +871,10 @@ def build_app(port):
         Route("/api/s/{sid}/cell_at", api_cell_at),
         Route("/api/s/{sid}/regions", api_regions),
         Route("/api/s/{sid}/plausibility", api_plausibility),
-        Route("/api/s/{sid}/plausibility/label", api_plausibility_label, methods=["POST"]),
+        Route("/api/s/{sid}/plausibility/suggestions", api_area_suggestions),
+        Route("/api/s/{sid}/plausibility/adopt", api_area_adopt, methods=["POST"]),
+        Route("/api/s/{sid}/plausibility/dismiss", api_area_dismiss, methods=["POST"]),
+        Route("/api/s/{sid}/plausibility/proposal", api_proposal_status, methods=["POST"]),
         Route("/api/s/{sid}/regions/add", api_region_add, methods=["POST"]),
         Route("/api/s/{sid}/regions/rename", api_region_rename, methods=["POST"]),
         Route("/api/s/{sid}/regions/{rid}/delete", api_region_delete, methods=["POST"]),

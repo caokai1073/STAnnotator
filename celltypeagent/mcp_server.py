@@ -44,18 +44,30 @@ Priors and corrections
 - Conflicts (conflict_summary, show_conflicts) are cells whose expression contradicts a prior; describe H&E crops
   cautiously and record verdicts only when the user states them.
 
-Plausibility check ("does the spatial distribution make sense?", or the viewer's Check plausibility button)
-- check_plausibility lists groups of isolated cells of cohesive types (types that form sheets, e.g. epithelium,
-  smooth muscle), with the lineage around them, a suggested type, confidence, and lineages per drawn region.
-  "likely mislabel" groups were in another lineage about half the time on test data; confident isolated cells
-  much less often, so judge each group, never relabel everything.
-- Judge with biology and the H&E (show_plausibility_groups, up to 4 groups per call): epithelium in submucosa or
-  muscle is suspicious in normal tissue but can be real in IBD (deep crypts, fistulas, ulcer edges); smooth muscle
-  cells around vessels (vascular smooth muscle) and the thin muscularis mucosae are real; B cells and naive T cells
-  outside follicles are normal. Also use lineages_by_region with the user's region names.
-- Report three lists: likely mislabels (with the suggested type), unusual but possibly real (why), and unsure (for
-  the user or a pathologist to look at in the viewer). Relabel only after the user agrees:
-  label_plausibility_groups (each group gets its suggested type unless you give cell_type).
+Reviewing an annotation ("does this make sense?", "check my annotation", or "Ask Claude" in the viewer's Review panel)
+- Use your knowledge of tissue biology, marker genes and histology; the tools give the evidence. Cover:
+  1. Markers (review_markers): for every lineage and cell type, how often its listed markers are detected compared
+     with its siblings (flags: weak, not specific, negative marker detected), and the genes that actually separate
+     those cells here (top_genes). Ask: do the top genes fit the label (e.g. a "dendritic cell" group whose top genes
+     are C1QC, LYVE1 is macrophages)? Are markers weak in this tissue or panel, with a better panel gene available?
+     Do Unassigned cells (or an unassigned cluster in list_clusters) express a recognizable type missing from the
+     list (e.g. CD177, CSF3R, S100A12: neutrophils)? Is the composition plausible for the tissue and site?
+  2. Space (show_tissue_overview, check_plausibility, show_area): identify compartments on the H&E (mucosa with
+     crypts, submucosa, muscularis propria, lymphoid aggregates, ulcers) and areas where the annotation contradicts
+     them (e.g. epithelial cells in the muscle layer). Candidate areas come from the annotation alone; vascular
+     smooth muscle, the muscularis mucosae, and deep crypts or fistulas in IBD are real. Lineages per drawn region
+     show e.g. epithelial cells outside the user's "mucosa".
+- Then give a short, prioritized list of concrete suggestions, each with its evidence and the action:
+  - a revised marker list: propose_marker_list(text, summary) validates it and puts it in the viewer's Review panel,
+    where the user opens it in "Markers..." and annotates again keeping regions and priors (in Claude Desktop:
+    start_session(markers_text=..., carry_from_current=True) after the user agrees);
+  - a local re-clustering with sharper subtype markers (preview_recluster);
+  - areas: suggest_areas (tiles, title, reason, action, region_name) draws them on the user's map; once the user
+    adopted or drew the region (list_area_suggestions, list_regions), apply the action after a go-ahead: usually an
+    exclude prior (preview_constraint mode="exclude", then add_constraint) so each cell gets its next most likely
+    type, or label_cells(region=..., only_types=...) when the user names the target type;
+  - priors or cluster labels.
+  Change nothing without the user's agreement.
 
 Every change is a version (history, diff, revert). export writes a CSV with one row per cell. Reply briefly, in the
 language of the user's message, keeping cell type and region names as they are."""
@@ -146,14 +158,19 @@ def list_sessions() -> str:
 
 
 @mcp.tool()
-def start_session(sample_id: str, region_source: str = "none", markers_text: Optional[str] = None) -> str:
+def start_session(sample_id: str, region_source: str = "none", markers_text: Optional[str] = None,
+                  carry_from_current: bool = False) -> str:
     """Start a new annotation session on a sample. The data is treated as unlabeled: cell types come from a
     hierarchical marker gene list (markers_text, format as in check_marker_list; default: the project's draft list).
 
     region_source: 'none' (the user draws regions on the map) or 'pathologist' (start from the dataset annotation).
-    Version 1 has no constraints. The first call to any tool that needs labels runs the annotation (10-20 s).
+    carry_from_current: copy the regions, priors and corrections of the active session of the same sample (use it
+    when re-annotating with a revised marker list). The first call to any tool that needs labels runs the annotation
+    (about a minute). Give the user a new viewer link afterwards (open_viewer).
     """
-    _active["session"] = Session.create(sample_id, region_source, method="markers", markers_text=markers_text)
+    carry = _active["session"].id if carry_from_current and _active.get("session") else None
+    _active["session"] = Session.create(sample_id, region_source, method="markers", markers_text=markers_text,
+                                        carry_from=carry)
     return _j(_active["session"].summary())
 
 
@@ -296,37 +313,77 @@ def show_conflicts(group_id: str, n: int = 6, version: Optional[int] = None) -> 
 
 
 @mcp.tool()
-def check_plausibility(top: int = 15, version: Optional[int] = None) -> str:
-    """Find cells whose label does not fit where they lie: isolated cells of cohesive cell types (types that form
-    sheets), grouped in space and ranked (likely mislabels first). Each group lists its cell types, the lineage
-    around it, a suggested type (best type outside its lineage by expression, weighted by the lineages around),
-    confidence, regions and distance to the epithelium. Changes nothing."""
+def review_markers(node: Optional[str] = None, version: Optional[int] = None) -> str:
+    """Marker check of the current annotation. For every node of the marker tree (lineage, group, cell type): its
+    cell count, each listed marker's detection share in its cells vs its siblings' cells with a flag (weak / not
+    specific / negative marker detected), and the panel genes that best separate it from its siblings here; plus the
+    genes of Unassigned cells. node: only that node and its subtypes."""
+    from . import markerqc
+    q = markerqc.check(_s(), version)
+    if node:
+        names = {node} | set(_s().type_groups.get(node, []))
+        q = q | {"nodes": [n for n in q["nodes"] if n["node"] in names or n["parent"] in names],
+                 "flags": [f for f in q["flags"] if f["node"] in names]}
+    return _j(q)
+
+
+@mcp.tool()
+def propose_marker_list(text: str, summary: str) -> str:
+    """Validate a revised marker list (full text, same format as the current one) and offer it to the user: it
+    appears in the viewer's Review panel, from where the user opens it in "Markers..." and annotates again.
+    summary: what changed and why, in a few lines. Returns the changed lines."""
+    from . import markerqc
+    rec = markerqc.propose(_s(), text, summary)
+    return _j({k: rec[k] for k in ("diff", "warnings", "n_types", "status")})
+
+
+@mcp.tool()
+def check_plausibility(top: int = 12, version: Optional[int] = None) -> str:
+    """Candidate areas where the annotation may contradict the tissue: grid tiles with cells of a sheet-forming type
+    (epithelium, smooth muscle) that sit apart from their own lineage, merged into areas, with composition,
+    suggested types and drawn regions; plus lineage counts per drawn region. Changes nothing."""
     from . import plausibility
     return _j(plausibility.summary(_s(), version, top))
 
 
 @mcp.tool()
-def show_plausibility_groups(group_ids: list[str], version: Optional[int] = None) -> list:
-    """H&E crops of up to 4 plausibility groups (raw H&E on top, cells colored by lineage below; the group's cells
-    ringed in cyan)."""
-    png, gs = _s().fig_plausibility(group_ids[:4], version)
-    keep = ("id", "n_cells", "lineage", "types", "surrounded_by", "suggested_type", "median_confidence", "category",
-            "regions", "median_depth_um")
-    return [_j({"groups": [{k: g[k] for k in keep} for g in gs], "path": png}), Image(path=png)]
+def show_tissue_overview(highlight: Optional[list[str]] = None, version: Optional[int] = None) -> list:
+    """Whole sample: H&E with the tile grid (left) and cells colored by lineage with candidate areas (right).
+    highlight: lineages or types to color (others gray), e.g. ["Epithelial"]."""
+    from . import plausibility
+    s = _s()
+    png = plausibility.fig_overview(s, version, highlight)
+    g = plausibility.scan(s, version)["grid"]
+    return [_j({"path": png, "tile_um": g["tile_um"], "rows": f"{g['rows'][0]}-{g['rows'][-1]}", "columns": f"1-{g['nx']}"}),
+            Image(path=png)]
 
 
 @mcp.tool()
-def label_plausibility_groups(group_ids: list[str], cell_type: Optional[str] = None, text: str = "") -> str:
-    """Hand-label the cells of plausibility groups of the latest version: each group gets its suggested type, or
-    cell_type for all of them. One new version (the cells are locked and the model is updated). Only after the user
-    agreed. text: the user's words."""
+def show_area(area: str, highlight: Optional[list[str]] = None, version: Optional[int] = None) -> list:
+    """Zoom on an area: a candidate id ("A3") or tiles ("F3:H6", "F3, G4:G6"). H&E (left) and cells colored by
+    lineage on a faded H&E (right; a candidate's own lineage is highlighted); out-of-place cells ringed."""
     from . import plausibility
-    s = _s()
-    v = plausibility.label_groups(s, group_ids, cell_type, text=text, author="agent")
-    d = s.diff(v - 1, v)
-    n = sum(len(c["cells"]) for c in s.state(v)["corrections"][-len(group_ids):])
-    return _j({"new_version": v, "n_cells_labeled": n, "n_label_changes_total": d["n_label_changes"],
-               "n_other_cells_changed": max(0, d["n_label_changes"] - n), "top_transitions": d["top_transitions"][:8]})
+    png, a = plausibility.fig_area(_s(), area, version, highlight)
+    return [_j({k: a[k] for k in plausibility.AREA_KEYS if k in a} | {"path": png}), Image(path=png)]
+
+
+@mcp.tool()
+def suggest_areas(areas: list[dict]) -> str:
+    """Show area suggestions on the user's map (replaces your earlier open suggestions). Each item:
+    {"area": "A3"} or {"tiles": "F3:H6"}, plus "title" (short), "reason" (what the H&E and the annotation show),
+    "action" (what to do once it is a region, e.g. "exclude Epithelial: cells get their next most likely type"),
+    "region_name" (proposed name, e.g. "muscle_1"). The user adopts a suggestion as a region or draws it."""
+    from . import plausibility
+    new = plausibility.suggest(_s(), areas)
+    return _j([{k: x[k] for k in ("id", "title", "tiles", "region_name")} for x in new])
+
+
+@mcp.tool()
+def list_area_suggestions() -> str:
+    """Area suggestions and their status: open, done (adopted as a region; region_name says which) or dismissed."""
+    from . import plausibility
+    keep = ("id", "title", "reason", "action", "region_name", "tiles", "status")
+    return _j([{k: x.get(k) for k in keep} for x in plausibility.suggestions(_s())])
 
 
 @mcp.tool()

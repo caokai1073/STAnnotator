@@ -112,10 +112,13 @@ open http://localhost:8765. Changes made from Claude Desktop show up in the view
    `expression_label`, `marker_cluster`, `hand_labeled`, `x_um`, `y_um`).
 6. **Reset** removes every annotation and chat of the selected sample (moved to `<data folder>/trash/`).
 7. **Markers…** edits, checks, saves and loads marker lists (saved lists go to `<data folder>/marker_lists/`).
-8. **Check plausibility** lists cells whose type does not fit where they lie, for example isolated epithelial
-   cells in the muscle layer (see below). Each group can be zoomed to and relabeled with its suggested type;
-   **Ask Claude** (or "check the spatial plausibility" in Claude Desktop) lets Claude judge the groups with
-   biology and the H&E and sort them into likely mislabels, unusual but possibly real, and unsure.
+8. **Review annotation** opens the Review panel: computed marker checks (markers that are weak or unspecific in
+   their cells, negative markers that are detected, genes of Unassigned cells) and areas to check (where cells of
+   types that form sheets, such as epithelium or smooth muscle, sit apart from their own lineage), outlined on the
+   map. **Ask Claude** (or "review my annotation" in Claude Desktop) lets Claude review markers and layout with the
+   H&E and its knowledge of the tissue. Its suggestions appear in the panel: a revised marker list (**open in
+   Markers…**, then Annotate with "keep my regions & priors") and areas drawn in orange (**use as region**, then
+   Claude applies the agreed prior or correction to that region).
 
 The chat box in the viewer appears only when the [Claude Code](https://claude.com/claude-code) CLI (`claude`)
 is installed and logged in; without it, talk to Claude Desktop instead.
@@ -152,15 +155,18 @@ Each works as `only`, `exclude` or `enrich` with strength `strong` / `moderate` 
 ("this cluster is mixed") re-clusters one cluster or level, is previewed, and keeps regions, priors and
 corrections. To add or remove types, revise the marker list and Annotate again with "keep my regions & priors".
 
-**Plausibility check.** Cell types that form sheets (epithelium, smooth muscle: most of a type's 15 nearest cells
-share its lineage, and few of its cells are alone) are checked for isolated cells, which are grouped in space.
-Groups whose cells the model is unsure about are "likely mislabels"; confident isolated cells may be real
-(shed or displaced cells, deep crypts or fistulas in IBD) and need a look at the H&E. The suggested type is the
-best type outside the cell's lineage by expression, weighted by the lineages around it. Scattered types (most
-immune cells) are not checked. On three SCP2927 sections, using the dataset's own lineage split only to score it,
-48-68% of "likely mislabel" cells and 19-45% of confident isolated cells were in another lineage (against
-1.6-6.5% of all cells of the checked types), and the suggested lineage was right for 70-78% of the wrong ones,
-so every group is a candidate to look at, not a verdict.
+**Review.** Claude reviews an annotation with three kinds of evidence. *Markers:* for every lineage and cell type,
+how often each listed marker is detected in its cells compared with its siblings, flags (weak, not specific,
+negative marker detected), and the genes that actually separate those cells in this sample; Unassigned cells are
+described the same way. *Space:* a whole-sample overview (H&E with a lettered tile grid next to the lineage map) and
+computed candidate areas, i.e. tiles where cells of a type that forms sheets sit apart from their own lineage, at
+least 3x more than expected from cell density. *Biology:* Claude's knowledge of the tissue, cell types and
+histology, which also tells real structures (vascular smooth muscle, muscularis mucosae, deep crypts in IBD) from
+mislabels. Nothing changes until the user agrees. Example (SCP2927 section 146685, ulcerative colitis, scored
+afterwards against the dataset's own labels): the review found that 15,514 Unassigned cells expressed CD177,
+CSF3R and S100A12 (neutrophils missing the myeloid markers) and that the "dendritic cells" had macrophage genes
+(C1QC, LYVE1, MS4A7); with the revised markers, Unassigned cells fell to 195, 97% of the dataset's neutrophils
+were labeled neutrophils (15% before), and lineage agreement rose from 91.4% to 98.6%.
 
 ## Performance
 
@@ -198,7 +204,8 @@ celltypeagent/     Python package
   session.py       sessions, append-only versions, corrections, export
   regions.py       user-drawn regions
   conflicts.py     conflict detection and grouping
-  plausibility.py  spatial plausibility check (isolated cells of cohesive types)
+  plausibility.py  review of the spatial layout: tile grid, candidate areas, overview figures, area suggestions
+  markerqc.py      review of the markers: support per node, flags, top genes, marker list proposals
   mcp_server.py    MCP tools (Claude Desktop / Claude Code)
   webapp.py        viewer, review page, chat box
   data/            default marker list

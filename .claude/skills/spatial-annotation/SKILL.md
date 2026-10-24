@@ -82,17 +82,22 @@ apply here, the region assignment is wrong, a technical artifact, or a cell stat
 - New or removed cell types need a revised marker list: the user edits it in "Markers..." (the agent can draft it)
   and annotates again with "keep my regions & priors" checked.
 
-## Plausibility check
+## Reviewing an annotation
 
-- When the user asks whether the spatial distribution makes sense (or presses "Ask Claude" in the plausibility
-  panel): `check_plausibility`, then `show_plausibility_groups` for the top groups (up to 4 per call).
-- Judge each group with biology and the H&E: epithelium in submucosa or muscle is suspicious in normal tissue but
-  can be real in IBD (deep crypts, fistulas, ulcer edges); vascular smooth muscle and the thin muscularis mucosae
-  are real; B cells and naive T cells outside follicles are normal. Use `lineages_by_region` with the user's region
-  names.
-- "likely mislabel" groups were wrong about half the time on test data, confident isolated cells less often:
-  never relabel all groups at once. Report three lists (likely mislabels with the suggested type, unusual but
-  possibly real, unsure) and call `label_plausibility_groups` only for the groups the user approves.
+- When the user asks whether the annotation makes sense (or presses "Ask Claude" in the Review panel), review it
+  like an expert would, using the tools for evidence and your own knowledge of the tissue:
+  - Markers: `review_markers`. Do each node's top genes fit its label? Are listed markers weak or unspecific
+    here, and is a better panel gene available (`get_panel_genes`)? Do Unassigned cells or unassigned clusters
+    (`list_clusters`) express a type missing from the list? Is the composition plausible for the tissue and site?
+  - Space: `show_tissue_overview` (H&E with a tile grid next to the lineage map; `highlight` one lineage to see
+    where it lies), `check_plausibility` (candidate areas, diffuse spreads, lineages per drawn region) and
+    `show_area`. Identify compartments on the H&E and annotation that contradicts them. Vascular smooth muscle,
+    the muscularis mucosae, villus smooth muscle, and deep crypts or fistulas in IBD are real.
+- Answer with a short prioritized list of suggestions, each with its evidence and action, and make them actionable:
+  `propose_marker_list` (opens from the viewer's Review panel; in Claude Desktop `start_session(markers_text=...,
+  carry_from_current=True)` after agreement), `suggest_areas` (drawn on the map; the user adopts them as regions),
+  `preview_recluster`. Once a suggested region exists, preview an exclude prior on it (or `label_cells` with
+  `only_types` when the user names the target type) and apply it after a go-ahead.
 
 ## History and output
 

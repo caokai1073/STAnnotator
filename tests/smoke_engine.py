@@ -45,13 +45,19 @@ v = s.label_cells(s.types[int(np.bincount(s.result()["pred"][s.result()["region"
                   region="patch A", text="smoke test")
 print("label_cells in region:", s.diff(v - 1, v)["n_label_changes"], "changes")
 s.record_verdicts([int(c.cell.iloc[0])], "reference_right", note="smoke test")
-from celltypeagent import plausibility
+from celltypeagent import plausibility, markerqc
 ps = plausibility.summary(s, top=3)
-print("plausibility:", ps["n_flagged_cells"], "flagged cells,", ps["n_groups"], "groups; cohesive:", ps["cohesive_types"])
-if ps["groups"]:
-    print("plausibility sheet", s.fig_plausibility([g["id"] for g in ps["groups"]])[0])
-    v = plausibility.label_groups(s, [ps["groups"][0]["id"]])
-    print("plausibility label:", s.state(v)["message"])
+print("plausibility:", ps["n_out_of_place_cells"], "out-of-place cells,", ps["n_candidate_areas"], "candidate areas; grid", ps["grid"])
+print("overview", plausibility.fig_overview(s, highlight=["Epithelial"]))
+if ps["candidate_areas"]:
+    print("area", plausibility.fig_area(s, ps["candidate_areas"][0]["id"])[0])
+    sg = plausibility.suggest(s, [{"area": ps["candidate_areas"][0]["id"], "title": "smoke test", "region_name": "smoke"}])
+    print("suggestion", sg[0]["id"], sg[0]["tiles"])
+print("area by tiles", plausibility.area_info(s, "B2:C3")["tiles"])
+q = markerqc.check(s)
+print("marker check:", len(q["nodes"]), "nodes,", len(q["flags"]), "flags; unassigned", (q["unassigned"] or {}).get("n_cells"))
+print("proposal diff:", markerqc.propose(s, s.scheme["text"].replace("Goblet cells: ", "Goblet cells: MUC2+ ", 1)
+                                         if "MUC2" in s.panel else s.scheme["text"], "smoke test")["diff"])
 v = s.revert(2)
 print([(h["version"], h["action"]) for h in s.history()])
 print("export", s.export())
