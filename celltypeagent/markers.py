@@ -138,6 +138,20 @@ RESOLUTIONS = (0.5, 1.0, 2.0, 4.0)  # candidates tried per level when resolution
 AUTO = "auto"
 
 
+def _knn_gpu(Z, k, dev):
+    """Exact neighbors on a GPU, blockwise."""
+    import torch
+    Zt = torch.tensor(Z, device=dev)
+    n = len(Z)
+    chunk = int(np.clip(1.2e9 / n, 256, 8192))  # rows per distance block, about 5 GB at most
+    dist, nbr = [], []
+    for i in range(0, n, chunk):
+        d, j = torch.topk(torch.cdist(Zt[i:i + chunk], Zt), k + 1, largest=False)
+        dist.append(d[:, 1:].cpu()); nbr.append(j[:, 1:].cpu())
+    del Zt
+    return torch.cat(dist).numpy(), torch.cat(nbr).numpy()
+
+
 def _graph(Xn):
     """PCA on standardized genes and a kNN graph with adaptive Gaussian weights; built once per level.
     The PCA works on the sparse matrix (no dense copy). Neighbors are exact on a GPU (CUDA or Apple MPS, when torch
@@ -153,21 +167,17 @@ def _graph(Xn):
     V = np.linalg.eigh(cov)[1][:, -N_PCS:] / sd[:, None]
     Z = np.asarray(X @ V - mu @ V, dtype=np.float32)  # = standardized X times the top components
     k = min(N_NEIGHBORS, n - 1)
-    dev = device()
-    if dev != "cpu":
-        import torch
-        Zt = torch.tensor(Z, device=dev)
-        chunk = int(np.clip(1.2e9 / n, 256, 8192))  # rows per distance block, about 5 GB at most
-        dist, nbr = [], []
-        for i in range(0, n, chunk):
-            d, j = torch.topk(torch.cdist(Zt[i:i + chunk], Zt), k + 1, largest=False)
-            dist.append(d[:, 1:].cpu()); nbr.append(j[:, 1:].cpu())
-        dist, nbr = torch.cat(dist).numpy(), torch.cat(nbr).numpy()
-    elif n > 20000:
+    dist = nbr = None
+    if device() != "cpu":
+        try:
+            dist, nbr = _knn_gpu(Z, k, device())
+        except RuntimeError:  # e.g. GPU memory taken by other jobs: fall back to the CPU
+            dist = nbr = None
+    if nbr is None and n > 20000:
         from pynndescent import NNDescent
         nbr, dist = NNDescent(Z, n_neighbors=k + 1, random_state=0).neighbor_graph
         nbr, dist = nbr[:, 1:], dist[:, 1:]
-    else:  # exact, blockwise through BLAS (a KD-tree is slow in 30 dimensions)
+    elif nbr is None:  # exact, blockwise through BLAS (a KD-tree is slow in 30 dimensions)
         sq = (Z * Z).sum(1)
         nbr, dist = np.empty((n, k), np.int64), np.empty((n, k), np.float32)
         for i in range(0, n, 4096):
