@@ -25,8 +25,8 @@ def desktop_config_path():
 
 
 def server_entry():
-    return {"command": sys.executable, "args": ["-m", "celltypeagent.mcp_server"],
-            "env": {"CELLTYPEAGENT_HOME": str(config.HOME)}}
+    cmd = config.self_command("mcp")
+    return {"command": cmd[0], "args": cmd[1:], "env": {"CELLTYPEAGENT_HOME": str(config.HOME)}}
 
 
 def register_desktop(config_path=None, name="celltypeagent"):

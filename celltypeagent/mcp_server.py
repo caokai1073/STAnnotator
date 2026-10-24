@@ -150,7 +150,7 @@ def open_viewer(port: int = 8765) -> str:
     url = f"http://localhost:{port}"
     if not claudelink.viewer_alive({"port": port}):
         log = open(config.HOME / "viewer.log", "a")
-        subprocess.Popen([sys.executable, "-m", "celltypeagent.webapp", "--port", str(port)], stdout=log, stderr=log,
+        subprocess.Popen(config.self_command("viewer", "--port", str(port)), stdout=log, stderr=log,
                          stdin=subprocess.DEVNULL, start_new_session=True, env=dict(os.environ))
         for _ in range(60):
             time.sleep(0.5)

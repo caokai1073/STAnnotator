@@ -1,5 +1,5 @@
 """Command line: celltypeagent {app, make-app, import, import-xenium, samples, setup-desktop, viewer, mcp}."""
-import argparse, platform, shutil, sys
+import argparse, os, platform, shutil, sys
 from pathlib import Path
 from . import config
 
@@ -124,6 +124,7 @@ def main(argv=None):
     elif a.cmd == "mcp":
         from .mcp_server import main as mcp
         mcp()
+        sys.stdout = open(os.devnull, "w")  # the client has closed stdout: nothing may flush it at exit
 
 
 if __name__ == "__main__":

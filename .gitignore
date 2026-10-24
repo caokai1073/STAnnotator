@@ -16,3 +16,9 @@ marker_lists/
 /*.md
 !/README.md
 share/
+
+# app builds
+/dist/
+/build/
+/.build-venv/
+packaging/macos/AppIcon.icns
