@@ -19,7 +19,7 @@ from starlette.responses import FileResponse, Response, StreamingResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from . import config, vocab, mcp_server, review_app, render
-from . import markers
+from . import markers, plausibility
 from .session import Session, list_samples, list_sessions, panel_genes
 
 STATIC = Path(__file__).parent / "static"
@@ -132,7 +132,8 @@ def view(sample_id) -> SampleView:
 # ---------------- colors ----------------
 LINEAGE_HUES = {"epi": (0.02, 0.15), "fib": (0.20, 0.36), "stroma": (0.42, 0.50), "lymph": (0.56, 0.72), "myeloid": (0.78, 0.95)}
 LINEAGE_RGB = {"epi": (235, 130, 20), "fib": (60, 165, 60), "stroma": (40, 160, 170), "lymph": (50, 100, 220), "myeloid": (210, 60, 170)}
-MODES = ("type", "lineage", "region", "changed", "conflicts", "confidence", "cluster")
+MODES = ("type", "lineage", "region", "changed", "conflicts", "plausibility", "confidence", "cluster")
+PLAUS_RGB = {plausibility.LIKELY: (230, 30, 30), plausibility.CHECK: (255, 170, 0)}
 GRAY = (160, 160, 160)
 
 
@@ -217,6 +218,11 @@ def colors_for(s: Session, version, mode, only):
             if len(cf):
                 rows = cf.row.to_numpy(dtype=int)
                 out[rows] = np.where((cf.status == "kept").to_numpy()[:, None], [[230, 30, 30, 250]], [[255, 150, 0, 250]])
+        elif mode == "plausibility":
+            out[:] = (170, 170, 170, 50)
+            stt = plausibility.check(s, version)["status"]
+            for k, c in PLAUS_RGB.items():
+                out[stt == k] = c + (250,)
         elif mode == "confidence":
             c = np.clip((r["conf"] - 0.3) / 0.7, 0, 1)
             out[:, 0] = (255 * np.clip(2 - 2 * c, 0, 1)).astype(np.uint8)
@@ -248,6 +254,10 @@ def cell_keys(s: Session, version, mode):
         cf = r["conflicts"]
         if len(cf):
             k[cf.row.to_numpy(dtype=int)] = np.where((cf.status == "kept").to_numpy(), "kept", "overridden")
+        return k
+    if mode == "plausibility":
+        k = plausibility.check(s, version)["status"].copy()
+        k[k == ""] = "ok"
         return k
     if mode == "confidence":
         return np.where(r["conf"] < 0.5, "low", np.where(r["conf"] < 0.8, "mid", "high")).astype(object)
@@ -295,6 +305,12 @@ def legend_for(s: Session, version, mode):
         return [{"key": "kept", "label": "conflict, expression kept", "color": (230, 30, 30), "count": kept},
                 {"key": "overridden", "label": "conflict, prior won", "color": (255, 150, 0), "count": len(cf) - kept},
                 {"key": "none", "label": "no conflict", "color": (170, 170, 170), "count": len(s.cells) - len(cf)}]
+    if mode == "plausibility":
+        stt = plausibility.check(s, version)["status"]
+        n = {k: int((stt == k).sum()) for k in PLAUS_RGB}
+        return [{"key": k, "label": k, "color": c, "count": n[k]} for k, c in PLAUS_RGB.items()] + \
+               [{"key": "ok", "label": "fits its surroundings or not checked", "color": (170, 170, 170),
+                 "count": len(s.cells) - sum(n.values())}]
     return [{"key": "low", "label": "low confidence", "color": (255, 0, 0), "count": int((r["conf"] < 0.5).sum())},
             {"key": "mid", "label": "medium", "color": (255, 220, 0), "count": int(((r["conf"] >= 0.5) & (r["conf"] < 0.8)).sum())},
             {"key": "high", "label": "high", "color": (0, 220, 0), "count": int((r["conf"] >= 0.8).sum())}]
@@ -335,7 +351,7 @@ def overlay_tile(req: Request):
         idx = idx[col[idx, 3] > 0]
         u, w_ = (v.px[idx] - x0) * sc, (v.py[idx] - y0) * sc
         r = CELL_RADIUS_PX * sc * size
-        if only or mode in ("conflicts", "changed"):  # few cells shown: keep them findable when zoomed out
+        if only or mode in ("conflicts", "changed", "plausibility"):  # few cells shown: keep them findable when zoomed out
             r = max(r, 2.0 * size)
         if r < 1.6:  # zoomed out: one pixel (or 2x2) per cell
             arr = np.zeros((h, w, 4), np.uint8)
@@ -463,6 +479,32 @@ def api_regions(req):
     for r in info["regions"]:
         r["color"] = colors.get(r["name"], GRAY)
     return _json(info)
+
+
+def api_plausibility(req):
+    """Groups of isolated cells of cohesive types for one version (image coordinates for the viewer)."""
+    s = review_app._session(req.path_params["sid"])
+    v = view(s.sample_id)
+    ver = int(req.query_params["version"]) if req.query_params.get("version") else None
+    top = int(req.query_params.get("top", 40))
+    res = plausibility.check(s, ver)
+    out = plausibility.summary(s, ver, top)
+    for g, full in zip(out["groups"], res["groups"]):
+        x0, y0, x1, y1 = full["bbox_px"]
+        g["bbox"] = [x0 - v.ox, y0 - v.oy, x1 - v.ox, y1 - v.oy]
+    return _json(out)
+
+
+async def api_plausibility_label(req: Request):
+    """Accept suggestions: label the cells of groups computed on `version` (refused if the session moved on)."""
+    s = review_app._session(req.path_params["sid"])
+    b = await req.json()
+    try:
+        ver = plausibility.label_groups(s, b.get("group_ids", []), b.get("cell_type") or None, version=b.get("version"),
+                                        author=b.get("author") or "viewer")
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+    return _json({"new_version": ver, "message": s.state(ver)["message"]})
 
 
 async def api_region_add(req: Request):
@@ -714,6 +756,14 @@ resolution "auto" or higher for finer; marker_edits to sharpen existing subtypes
 labels would change and the new clusters, and on a go-ahead call recluster. Report changes inside and outside the
 re-clustered cells separately. Adding or removing cell types needs a revised marker list: the user edits it in
 "Markers..." and clicks Annotate with "keep regions, priors and corrections" checked.
+Plausibility check (the user asks whether the spatial distribution makes sense, or presses "Ask Claude" in the
+plausibility panel): call check_plausibility, look at the top groups with show_plausibility_groups (up to 4 per
+call), and judge them with biology: epithelium in submucosa or muscle is suspicious in normal tissue but can be real
+in IBD (deep crypts, fistulas, ulcer edges); vascular smooth muscle around vessels and the thin muscularis mucosae
+are real; B cells and naive T cells outside follicles are normal. "likely mislabel" groups were wrong about half
+the time on test data, confident isolated cells much less often. Reply with three short lists by group id: likely
+mislabels (with the suggested type), unusual but possibly real (why), unsure (for the user to look at). Relabel only
+after the user agrees, with label_plausibility_groups.
 If a request cannot be expressed with the tools, say so plainly."""
 
 BLOCKED = ["start_session", "resume_session", "list_sessions", "list_samples", "set_region_source"]
@@ -803,6 +853,8 @@ def build_app(port):
         Route("/api/s/{sid}/overlay/{version:int}/{mode}/{level:int}/{xy}", overlay_tile),
         Route("/api/s/{sid}/cell_at", api_cell_at),
         Route("/api/s/{sid}/regions", api_regions),
+        Route("/api/s/{sid}/plausibility", api_plausibility),
+        Route("/api/s/{sid}/plausibility/label", api_plausibility_label, methods=["POST"]),
         Route("/api/s/{sid}/regions/add", api_region_add, methods=["POST"]),
         Route("/api/s/{sid}/regions/rename", api_region_rename, methods=["POST"]),
         Route("/api/s/{sid}/regions/{rid}/delete", api_region_delete, methods=["POST"]),

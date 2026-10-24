@@ -82,6 +82,18 @@ apply here, the region assignment is wrong, a technical artifact, or a cell stat
 - New or removed cell types need a revised marker list: the user edits it in "Markers..." (the agent can draft it)
   and annotates again with "keep my regions & priors" checked.
 
+## Plausibility check
+
+- When the user asks whether the spatial distribution makes sense (or presses "Ask Claude" in the plausibility
+  panel): `check_plausibility`, then `show_plausibility_groups` for the top groups (up to 4 per call).
+- Judge each group with biology and the H&E: epithelium in submucosa or muscle is suspicious in normal tissue but
+  can be real in IBD (deep crypts, fistulas, ulcer edges); vascular smooth muscle and the thin muscularis mucosae
+  are real; B cells and naive T cells outside follicles are normal. Use `lineages_by_region` with the user's region
+  names.
+- "likely mislabel" groups were wrong about half the time on test data, confident isolated cells less often:
+  never relabel all groups at once. Report three lists (likely mislabels with the suggested type, unusual but
+  possibly real, unsure) and call `label_plausibility_groups` only for the groups the user approves.
+
 ## History and output
 
 - Every change is a version. Mention version numbers. Offer `revert` when the user is unhappy with a change;

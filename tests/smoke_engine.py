@@ -45,6 +45,13 @@ v = s.label_cells(s.types[int(np.bincount(s.result()["pred"][s.result()["region"
                   region="patch A", text="smoke test")
 print("label_cells in region:", s.diff(v - 1, v)["n_label_changes"], "changes")
 s.record_verdicts([int(c.cell.iloc[0])], "reference_right", note="smoke test")
+from celltypeagent import plausibility
+ps = plausibility.summary(s, top=3)
+print("plausibility:", ps["n_flagged_cells"], "flagged cells,", ps["n_groups"], "groups; cohesive:", ps["cohesive_types"])
+if ps["groups"]:
+    print("plausibility sheet", s.fig_plausibility([g["id"] for g in ps["groups"]])[0])
+    v = plausibility.label_groups(s, [ps["groups"][0]["id"]])
+    print("plausibility label:", s.state(v)["message"])
 v = s.revert(2)
 print([(h["version"], h["action"]) for h in s.history()])
 print("export", s.export())

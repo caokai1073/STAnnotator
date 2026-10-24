@@ -72,6 +72,38 @@ def region_map(cells, region, out, title="", highlight=None, highlight_label="co
     return str(out)
 
 
+def group_sheet(cells, groups, he_path, lineage, palette, out, title="", um_per_px=None, min_half_um=100.0):
+    """Two panels per plausibility group: raw H&E (top) and cells colored by lineage (bottom); the group's cells are
+    ringed in cyan."""
+    upp = um_per_px or config.HE_UM_PER_PX
+    n = len(groups)
+    fig, ax = plt.subplots(2, n, figsize=(3.4 * n, 7.2), squeeze=False)
+    px, py = cells.px.to_numpy(), cells.py.to_numpy()
+    for j, g in enumerate(groups):
+        x0b, y0b, x1b, y1b = g["bbox_px"]
+        half = max(min_half_um / upp, 0.5 * max(x1b - x0b, y1b - y0b) + 40 / upp)
+        im, x0, y0 = he_crop(he_path, (x0b + x1b) / 2, (y0b + y1b) / 2, half)
+        m = (px >= x0) & (px < x0 + im.shape[1]) & (py >= y0) & (py < y0 + im.shape[0])
+        for a in ax[:, j]:
+            a.imshow(im); a.set_xticks([]); a.set_yticks([])
+        lin = lineage[m]
+        for k, col in palette.items():
+            mm = lin == k
+            ax[1, j].scatter(px[m][mm] - x0, py[m][mm] - y0, s=4, c=[tuple(v / 255 for v in col)])
+        rows = g["rows"]
+        for a in ax[:, j]:
+            a.scatter(px[rows] - x0, py[rows] - y0, s=160, facecolors="none", edgecolors="cyan", linewidths=1.3)
+        ax[0, j].set_title(f"{g['id']}: {g['n_cells']} {', '.join(list(g['types'])[:2])}\n{g['category']} "
+                           f"({2 * half * upp:.0f} um wide)", fontsize=7)
+        ax[1, j].set_title(f"among {g['surrounded_by']}; conf {g['median_confidence']}\nsuggested: {g['suggested_type']}",
+                           fontsize=7)
+    handles = [plt.Line2D([], [], marker="o", ls="", color=tuple(v / 255 for v in c), label=k) for k, c in palette.items()]
+    fig.legend(handles=handles, loc="lower center", ncol=min(len(handles), 6), fontsize=6, frameon=False)
+    fig.suptitle(title + "  [cyan rings = the group's cells; dots = cells colored by current lineage]", fontsize=8)
+    plt.tight_layout(rect=(0, 0.05, 1, 0.97)); plt.savefig(out, dpi=70, pil_kwargs={"quality": 80}); plt.close()
+    return str(out)
+
+
 def conflict_sheet(cells, rows, he_path, labels, out, half_um=120.0, title="", lineage=None, palette=None, um_per_px=None):
     """Two panels per conflict cell: raw H&E (top) and the cells colored by their current lineage (bottom)."""
     half = half_um / (um_per_px or config.HE_UM_PER_PX)

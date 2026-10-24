@@ -84,6 +84,18 @@ main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 380px; min-
 .rg button, .pg button { border: 0; background: none; padding: 0 4px; color: var(--muted); }
 .rg button:hover, .pg button:hover { color: var(--accent); }
 .pg { display: flex; gap: 6px; padding: 0 4px 2px 21px; color: var(--muted); font-size: 11px; }
+#plpanel { top: 10px; right: 10px; width: 340px; max-height: calc(100% - 210px); display: flex; flex-direction: column; }
+#plpanel .lh { display: flex; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 12px; gap: 6px; }
+#plpanel .items { overflow: auto; padding: 4px 6px; font-size: 12px; }
+#plnote { padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 12px; }
+.plg { padding: 5px 6px 5px 9px; border-left: 3px solid #ffaa00; margin: 3px 0; border-radius: 3px; }
+.plg.likely { border-left-color: #e61e1e; }
+.plg:hover { background: var(--bg); }
+.plg .l1 { font-weight: 600; }
+.plg .l2 { color: var(--muted); font-size: 11.5px; }
+.plg .l3 { display: flex; gap: 4px; margin-top: 3px; }
+.plg .l3 button { padding: 1px 7px; font-size: 11.5px; }
+#viewerwrap.pl #cellcard { right: 360px; }
 .cellmark { width: 26px; height: 26px; border: 3px solid #00e6ff; border-radius: 50%; box-shadow: 0 0 0 2px rgba(0,0,0,.5); }
 #side { border-left: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
 #side .sh { padding: 10px 14px; border-bottom: 1px solid var(--line); font-weight: 600; display: flex; align-items: center; }
@@ -133,6 +145,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
   <button id="undo" disabled title="Undo the last change">Undo</button>
   <button id="reset" disabled title="Remove every annotation and chat of this sample">Reset</button>
   <button id="review" disabled title="Open the conflict review page">Review conflicts</button>
+  <button id="plaus" disabled title="Find cells whose type does not fit where they lie (e.g. isolated epithelial cells in muscle)">Check plausibility</button>
   <button id="export" disabled title="Download a CSV with one row per cell: cell id, region, cell type, lineage, type levels, confidence…">Export CSV</button>
 </header>
 <main>
@@ -154,6 +167,13 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <div class="items" id="lgitems"></div>
     </div>
     <div id="cellcard" class="float"></div>
+    <div id="plpanel" class="float" hidden>
+      <div class="lh"><b id="pltitle">Plausibility</b><span class="spacer"></span>
+        <button id="plask" class="primary" style="padding:1px 8px;font-size:11.5px" hidden title="Let Claude judge the groups with biology and the H&amp;E">Ask Claude</button>
+        <button id="plclose" style="padding:1px 7px;font-size:11px" title="Close">×</button></div>
+      <div class="hint" id="plnote"></div>
+      <div class="items" id="plitems"></div>
+    </div>
     <svg id="regsvg"></svg>
     <div id="regpanel" class="float" hidden>
       <div class="lh"><b>Regions</b><span class="spacer"></span>
@@ -307,6 +327,7 @@ function fillModes(sm) {
   if (sm.has_regions) avail.push(["region", "region"]);
   if (sm.n_changed_since_first > 0 || sm.corrections.length) avail.push(["changed", "changed since first annotation"]);
   if (sm.n_conflicts > 0) avail.push(["conflicts", "conflicts with priors"]);
+  if (st.plaus) avail.push(["plausibility", "plausibility check"]);
   const extra = [["confidence", "confidence"]];
   if (st.vocab && st.vocab.method === "markers") extra.push(["cluster", "clusters (marker step)"]);
   if (st.showMore) avail.push(...extra);
@@ -352,10 +373,10 @@ async function selectSample(id) {
 }
 
 function closeSession() {
-  st.sid = null; st.version = null; st.filters = {}; st.regions = null; cancelDraw();
+  st.sid = null; st.version = null; st.filters = {}; st.regions = null; cancelDraw(); closePlaus();
   $("legend").hidden = true; $("cellcard").classList.remove("show");
   $("empty").style.display = "flex";
-  ["undo", "review", "export", "send"].forEach((b) => ($(b).disabled = true));
+  ["undo", "review", "export", "send", "plaus"].forEach((b) => ($(b).disabled = true));
   $("carryWrap").hidden = true;
   $("input").disabled = true; $("composerhint").textContent = "Annotate a sample first.";
   $("vinfo").textContent = ""; $("regpanel").hidden = true; drawRegions();
@@ -407,7 +428,7 @@ async function startAnnotation(mode, sid, token = st.switchToken) {
 async function openSession(sid) {
   st.sid = sid;
   $("empty").style.display = "none";
-  ["undo", "review", "export", "send"].forEach((b) => ($(b).disabled = false));
+  ["undo", "review", "export", "send", "plaus"].forEach((b) => ($(b).disabled = false));
   $("carryWrap").hidden = false;
   $("input").disabled = false; $("composerhint").textContent = "Tip: refer to regions you drew by their name.";
   st.vocab = await api(`/api/s/${sid}/vocab`);
@@ -429,6 +450,7 @@ async function refreshVersion(force) {
   const rec = st.sample && st.sample.sessions.find((x) => x.session_id === st.sid);
   if (opt && rec) { rec.n_versions = v; opt.textContent = sessionLabel(rec); }
   $("vinfo").title = info.history.slice(-6).map((h) => `v${h.version}: ${h.message}`).join("\n");
+  if (st.plaus) await loadPlaus(false);  // groups belong to a version: recompute for the new one
   refreshOverlay();
   await loadLegend();
   await loadRegions();
@@ -436,7 +458,7 @@ async function refreshVersion(force) {
 setInterval(() => { if (!st.busy) refreshVersion(false).catch(() => {}); }, 4000);
 
 // ---------------- legend ----------------
-const MODE_TITLES = { type: "Cell types", lineage: "Lineages", region: "Regions", changed: "Changes", conflicts: "Conflicts", confidence: "Confidence", cluster: "Clusters (marker step)" };
+const MODE_TITLES = { type: "Cell types", lineage: "Lineages", region: "Regions", changed: "Changes", conflicts: "Conflicts", plausibility: "Plausibility check", confidence: "Confidence", cluster: "Clusters (marker step)" };
 async function loadLegend() {
   const r = await api(`/api/s/${st.sid}/legend?version=${st.version}&mode=${st.mode}`);
   st.legend = r.items;
@@ -529,6 +551,12 @@ function drawRegions() {
       const cx = pts.reduce((a, q) => a + q.x, 0) / pts.length, cy = pts.reduce((a, q) => a + q.y, 0) / pts.length;
       const t = svgEl("text", { x: cx, y: cy, fill: col, "text-anchor": "middle" }); t.textContent = p.name; svg.append(t);
     });
+  }
+  if (st.focus) {  // the plausibility group the user zoomed to
+    const [x0, y0, x1, y1] = st.focus, a = toScreen(x0, y0), b = toScreen(x1, y1);
+    const r = Math.max(Math.hypot(b.x - a.x, b.y - a.y) / 2 + 14, 18);
+    svg.append(svgEl("circle", { cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, r, fill: "none", stroke: "#00e6ff",
+                                 "stroke-width": 2.5, "stroke-dasharray": "7 5" }));
   }
   if (st.drawing && st.drawing.length) {
     const pts = st.drawing.map(([x, y]) => toScreen(x, y));
@@ -644,6 +672,64 @@ $("nameCancel").onclick = () => { $("nameDlg").close(); };  // keep the points s
 $("draw").onclick = () => (st.drawing ? cancelDraw() : startDraw());
 $("outlines").onchange = drawRegions;
 $("rgtoggle").onclick = () => { $("regpanel").classList.toggle("collapsed"); $("rgtoggle").textContent = $("regpanel").classList.contains("collapsed") ? "+" : "−"; };
+
+// ---------------- plausibility check ----------------
+// Groups of isolated cells of types that normally form sheets; the user zooms to each, and accepts a suggested
+// type or asks Claude to judge them with biology and the H&E.
+async function loadPlaus(switchMode) {
+  $("plpanel").hidden = false; $("viewerwrap").classList.add("pl");
+  if (switchMode) $("pltitle").textContent = "Plausibility: checking…";
+  const r = await api(`/api/s/${st.sid}/plausibility?version=${st.version}`);
+  st.plaus = r;
+  $("pltitle").textContent = `Plausibility · v${r.version}`;
+  $("plask").hidden = !st.chatAvailable;
+  $("plnote").textContent = r.n_groups
+    ? `${r.n_flagged_cells.toLocaleString()} cells of types that normally form sheets (${r.cohesive_types.join(", ")}) sit apart from their own lineage, in ${r.n_groups.toLocaleString()} groups (largest and least certain first). ` +
+      `Red: likely mislabel (the model is unsure). Orange: the model is confident, may be real. Look before relabeling.` +
+      (st.chatAvailable ? "" : " To let Claude judge them, ask in Claude Desktop: “check the spatial plausibility”.")
+    : "No isolated cells of types that form sheets: the layout looks consistent.";
+  const box = $("plitems"); box.textContent = "";
+  const btn = (text, title, fn) => { const b = document.createElement("button"); b.textContent = text; b.title = title; b.onclick = fn; return b; };
+  r.groups.forEach((g) => {
+    const row = document.createElement("div"); row.className = "plg" + (g.category === "likely mislabel" ? " likely" : "");
+    const l1 = document.createElement("div"); l1.className = "l1";
+    l1.textContent = `${g.id} · ` + Object.entries(g.types).map(([k, n]) => `${n} ${k}`).join(", ");
+    const l2 = document.createElement("div"); l2.className = "l2";
+    const regs = Object.keys(g.regions).filter((k) => k !== "unknown");
+    l2.textContent = `among ${g.surrounded_by} · confidence ${g.median_confidence}` + (regs.length ? ` · ${regs.join(", ")}` : "");
+    const l3 = document.createElement("div"); l3.className = "l3";
+    l3.append(btn("zoom", "Zoom to this group", () => zoomToBox(g.bbox)),
+              btn(`label as ${g.suggested_type}`, "Hand-label these cells with the suggested type (Undo reverts)", () => acceptPlaus(g)));
+    row.append(l1, l2, l3); box.append(row);
+  });
+  fillModes(st.lastSummary);
+  if (switchMode) { st.mode = "plausibility"; $("mode").value = "plausibility"; refreshOverlay(); await loadLegend(); }
+}
+function closePlaus() {
+  st.plaus = null; st.focus = null;
+  $("plpanel").hidden = true; $("viewerwrap").classList.remove("pl");
+  if (st.mode === "plausibility") st.mode = "type";
+}
+function zoomToBox(b) {
+  const pad = Math.max(80 / st.he.um_per_px, 0.6 * Math.max(b[2] - b[0], b[3] - b[1]));
+  st.focus = b;
+  viewer.viewport.fitBounds(heItem().imageToViewportRectangle(b[0] - pad, b[1] - pad, b[2] - b[0] + 2 * pad, b[3] - b[1] + 2 * pad));
+  drawRegions();
+}
+async function acceptPlaus(g) {
+  if (!confirm(`Label the ${g.n_cells} cells of ${g.id} as ${g.suggested_type}?\n\nThey are locked to this type and the model is updated, so similar cells elsewhere may change too. Undo reverts it.`)) return;
+  try {
+    const r = await post(`/api/s/${st.sid}/plausibility/label`, { group_ids: [g.id], version: st.plaus.version });
+    st.focus = null; toast(r.message, 4000); await refreshVersion(true);
+  } catch (e) { toast(e.message, 6000); }
+}
+$("plaus").onclick = () => loadPlaus(true).catch((e) => toast(e.message, 6000));
+$("plclose").onclick = () => { const was = st.mode === "plausibility"; closePlaus(); fillModes(st.lastSummary); drawRegions(); if (was) { refreshOverlay(); loadLegend(); } };
+$("plask").onclick = () => {
+  if (st.busy) { toast("Wait until the assistant has answered"); return; }
+  $("input").value = "Check the spatial plausibility of the current annotation: which groups look wrong, which may be real?";
+  send();
+};
 
 // ---------------- chat ----------------
 function mdLite(text) {  // escape, then only **bold** and `code`

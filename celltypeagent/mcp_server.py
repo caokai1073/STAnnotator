@@ -44,6 +44,19 @@ Priors and corrections
 - Conflicts (conflict_summary, show_conflicts) are cells whose expression contradicts a prior; describe H&E crops
   cautiously and record verdicts only when the user states them.
 
+Plausibility check ("does the spatial distribution make sense?", or the viewer's Check plausibility button)
+- check_plausibility lists groups of isolated cells of cohesive types (types that form sheets, e.g. epithelium,
+  smooth muscle), with the lineage around them, a suggested type, confidence, and lineages per drawn region.
+  "likely mislabel" groups were in another lineage about half the time on test data; confident isolated cells
+  much less often, so judge each group, never relabel everything.
+- Judge with biology and the H&E (show_plausibility_groups, up to 4 groups per call): epithelium in submucosa or
+  muscle is suspicious in normal tissue but can be real in IBD (deep crypts, fistulas, ulcer edges); smooth muscle
+  cells around vessels (vascular smooth muscle) and the thin muscularis mucosae are real; B cells and naive T cells
+  outside follicles are normal. Also use lineages_by_region with the user's region names.
+- Report three lists: likely mislabels (with the suggested type), unusual but possibly real (why), and unsure (for
+  the user or a pathologist to look at in the viewer). Relabel only after the user agrees:
+  label_plausibility_groups (each group gets its suggested type unless you give cell_type).
+
 Every change is a version (history, diff, revert). export writes a CSV with one row per cell. Reply briefly, in the
 language of the user's message, keeping cell type and region names as they are."""
 
@@ -280,6 +293,40 @@ def show_conflicts(group_id: str, n: int = 6, version: Optional[int] = None) -> 
     keep = ["cell", "constraint", "region", "category", "base_label", "base_conf", "label",
             "status", "already_reviewed"]
     return [_j({"group_id": group_id, "cells": [{k: r[k] for k in keep} for r in q], "path": png}), Image(path=png)]
+
+
+@mcp.tool()
+def check_plausibility(top: int = 15, version: Optional[int] = None) -> str:
+    """Find cells whose label does not fit where they lie: isolated cells of cohesive cell types (types that form
+    sheets), grouped in space and ranked (likely mislabels first). Each group lists its cell types, the lineage
+    around it, a suggested type (best type outside its lineage by expression, weighted by the lineages around),
+    confidence, regions and distance to the epithelium. Changes nothing."""
+    from . import plausibility
+    return _j(plausibility.summary(_s(), version, top))
+
+
+@mcp.tool()
+def show_plausibility_groups(group_ids: list[str], version: Optional[int] = None) -> list:
+    """H&E crops of up to 4 plausibility groups (raw H&E on top, cells colored by lineage below; the group's cells
+    ringed in cyan)."""
+    png, gs = _s().fig_plausibility(group_ids[:4], version)
+    keep = ("id", "n_cells", "lineage", "types", "surrounded_by", "suggested_type", "median_confidence", "category",
+            "regions", "median_depth_um")
+    return [_j({"groups": [{k: g[k] for k in keep} for g in gs], "path": png}), Image(path=png)]
+
+
+@mcp.tool()
+def label_plausibility_groups(group_ids: list[str], cell_type: Optional[str] = None, text: str = "") -> str:
+    """Hand-label the cells of plausibility groups of the latest version: each group gets its suggested type, or
+    cell_type for all of them. One new version (the cells are locked and the model is updated). Only after the user
+    agreed. text: the user's words."""
+    from . import plausibility
+    s = _s()
+    v = plausibility.label_groups(s, group_ids, cell_type, text=text, author="agent")
+    d = s.diff(v - 1, v)
+    n = sum(len(c["cells"]) for c in s.state(v)["corrections"][-len(group_ids):])
+    return _j({"new_version": v, "n_cells_labeled": n, "n_label_changes_total": d["n_label_changes"],
+               "n_other_cells_changed": max(0, d["n_label_changes"] - n), "top_transitions": d["top_transitions"][:8]})
 
 
 @mcp.tool()

@@ -382,16 +382,20 @@ class Session:
         say(1.0, "expression model ready")
         return logp
 
+    def knn(self):
+        """Row indices of every cell's K nearest neighbors (itself excluded)."""
+        if not hasattr(self, "_nn"):
+            xy = self.cells[["x", "y"]].to_numpy()
+            self._nn = cKDTree(xy).query(xy, k=cmod.NEIGHBORS_K + 1)[1][:, 1:]
+        return self._nn
+
     def _neighbor_frac_fn(self, base):
         def frac(type_names):
             """Fraction of each cell's K nearest neighbors whose expression-model label is in type_names."""
             key = (base["key"], tuple(sorted(type_names)))
             if key not in self._nbr_frac_cache:
-                if not hasattr(self, "_nn"):
-                    xy = self.cells[["x", "y"]].to_numpy()
-                    self._nn = cKDTree(xy).query(xy, k=cmod.NEIGHBORS_K + 1)[1][:, 1:]
                 hit = np.isin(base["pred"], [self.types.index(t) for t in type_names])
-                self._nbr_frac_cache[key] = hit[self._nn].mean(1)
+                self._nbr_frac_cache[key] = hit[self.knn()].mean(1)
             return self._nbr_frac_cache[key]
         return frac
 
@@ -675,6 +679,25 @@ class Session:
         return self._commit("label_cells", f"L{i}: {len(cells)} cells labeled {label}" + (f" ({text})" if text else ""),
                             corrections=corr + [new], expected_parent=cur["version"])
 
+    def label_many(self, items, message, expected_parent=None):
+        """Several hand labels in one version (one model update): items = [{"cells", "label", "text", "author"}]."""
+        cur = self.state()
+        corr = list(cur.get("corrections", []))
+        used = {c["id"] for c in corr}
+        for it in items:
+            if self.scheme["kind"] == "markers" and it["label"] in self.type_groups and it["label"] not in self.types:
+                raise vocab.VocabError(f"{it['label']} is a lineage / parent type; use one of its cell types: "
+                                       + ", ".join(self.type_groups[it["label"]]))
+            label = vocab.resolve([it["label"]], self.types, {}, "cell type")[0]
+            i = 1
+            while f"L{i}" in used:
+                i += 1
+            used.add(f"L{i}")
+            corr.append({"id": f"L{i}", "cells": [int(c) for c in it["cells"]], "label": label, "text": it.get("text", ""),
+                         "author": it.get("author"), "region": None, "only_types": None})
+        return self._commit("label_cells", message, corrections=corr,
+                            expected_parent=cur["version"] if expected_parent is None else expected_parent)
+
     def remove_correction(self, cid, message=None):
         cur = self.state()
         corr = [c for c in cur.get("corrections", []) if c["id"] != cid]
@@ -877,6 +900,15 @@ class Session:
         return render.conflict_sheet(self.cells, q, self.meta["he_path"], labels, out, title=gid,
                                      lineage=self.lineage_labels(version), palette=self.lineage_colors(),
                                      um_per_px=self.he_um_per_px), q
+
+    def fig_plausibility(self, gids, version=None):
+        from . import plausibility
+        groups = [plausibility.group(self, g, version) for g in gids]
+        v = plausibility.check(self, version)["version"]
+        out = self.dir / "figures" / f"plausibility_v{v}_{_tag(','.join(gids))}.jpg"
+        return render.group_sheet(self.cells, groups, self.meta["he_path"], self.lineage_labels(version),
+                                  self.lineage_colors(), out, title=f"sample {self.sample_id} v{v} plausibility",
+                                  um_per_px=self.he_um_per_px), groups
 
     # ---------- export ----------
     def cell_ids(self):
