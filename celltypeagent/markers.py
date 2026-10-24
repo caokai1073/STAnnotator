@@ -140,28 +140,44 @@ AUTO = "auto"
 
 def _graph(Xn):
     """PCA on standardized genes and a kNN graph with adaptive Gaussian weights; built once per level.
-    On a GPU (CUDA or Apple MPS) neighbors are exact (blockwise distances); on a CPU they come from pynndescent."""
-    import torch, igraph
+    The PCA works on the sparse matrix (no dense copy). Neighbors are exact on a GPU (CUDA or Apple MPS, when torch
+    is installed) and for small levels; otherwise they come from pynndescent."""
+    import igraph
     from .config import device
+    X = sp.csr_matrix(Xn, dtype=np.float32)
+    n = X.shape[0]
+    mu = np.asarray(X.mean(0)).ravel()
+    ex2 = np.asarray(X.multiply(X).mean(0)).ravel()
+    sd = np.sqrt(np.maximum(ex2 - mu ** 2, 0) * n / max(n - 1, 1)) + 1e-3
+    cov = ((X.T @ X).toarray() / n - np.outer(mu, mu)) / np.outer(sd, sd)  # covariance of standardized genes
+    V = np.linalg.eigh(cov)[1][:, -N_PCS:] / sd[:, None]
+    Z = np.asarray(X @ V - mu @ V, dtype=np.float32)  # = standardized X times the top components
+    k = min(N_NEIGHBORS, n - 1)
     dev = device()
-    X = torch.tensor(Xn.toarray(), dtype=torch.float32, device=dev)
-    X = (X - X.mean(0)) / (X.std(0) + 1e-3)
-    cov = (X.T @ X / len(X)).cpu()  # 480 x 480: eigh on the CPU works everywhere (MPS has no eigh)
-    Z = X @ torch.linalg.eigh(cov)[1][:, -N_PCS:].to(dev)
-    del X
-    k = min(N_NEIGHBORS, len(Z) - 1)
-    n = len(Z)
-    if dev == "cpu" and n > 20000:
-        from pynndescent import NNDescent
-        nbr, dist = NNDescent(Z.numpy(), n_neighbors=k + 1, random_state=0).neighbor_graph
-        nbr, dist = nbr[:, 1:], dist[:, 1:]
-    else:
+    if dev != "cpu":
+        import torch
+        Zt = torch.tensor(Z, device=dev)
         chunk = int(np.clip(1.2e9 / n, 256, 8192))  # rows per distance block, about 5 GB at most
         dist, nbr = [], []
         for i in range(0, n, chunk):
-            d, j = torch.topk(torch.cdist(Z[i:i + chunk], Z), k + 1, largest=False)
+            d, j = torch.topk(torch.cdist(Zt[i:i + chunk], Zt), k + 1, largest=False)
             dist.append(d[:, 1:].cpu()); nbr.append(j[:, 1:].cpu())
         dist, nbr = torch.cat(dist).numpy(), torch.cat(nbr).numpy()
+    elif n > 20000:
+        from pynndescent import NNDescent
+        nbr, dist = NNDescent(Z, n_neighbors=k + 1, random_state=0).neighbor_graph
+        nbr, dist = nbr[:, 1:], dist[:, 1:]
+    else:  # exact, blockwise through BLAS (a KD-tree is slow in 30 dimensions)
+        sq = (Z * Z).sum(1)
+        nbr, dist = np.empty((n, k), np.int64), np.empty((n, k), np.float32)
+        for i in range(0, n, 4096):
+            D = sq[i:i + 4096, None] + sq[None, :] - 2 * Z[i:i + 4096] @ Z.T
+            D[np.arange(len(D)), np.arange(i, i + len(D))] = np.inf  # not its own neighbor
+            j = np.argpartition(D, k - 1, axis=1)[:, :k]
+            dj = np.take_along_axis(D, j, 1)
+            o = np.argsort(dj, 1)
+            nbr[i:i + 4096] = np.take_along_axis(j, o, 1)
+            dist[i:i + 4096] = np.sqrt(np.maximum(np.take_along_axis(dj, o, 1), 0))
     w = np.exp(-(dist / np.maximum(dist[:, -1], 1e-6)[:, None]) ** 2).ravel()
     A = sp.csr_matrix((w, (np.repeat(np.arange(n), k), nbr.ravel())), shape=(n, n))
     A = A.maximum(A.T).tocoo()

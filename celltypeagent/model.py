@@ -1,4 +1,4 @@
-"""Expression model: multinomial logistic regression on log-normalized counts, trained on the GPU.
+"""Expression model: multinomial logistic regression on log-normalized counts (numpy; small enough for the CPU).
 
 Two sources of training labels: the reference pool (reference mode) or the sample's own marker-annotation
 pseudo-labels (marker mode, no reference needed).
@@ -73,13 +73,43 @@ def reference():
     return _ref
 
 
+class _Adam:
+    """Adam on a list of numpy arrays, updated in place (weight decay added to the gradient, as in torch.optim.Adam)."""
+
+    def __init__(self, params, lr, weight_decay=0.0, betas=(0.9, 0.999), eps=1e-8):
+        self.p, self.lr, self.wd, (self.b1, self.b2), self.eps, self.t = params, lr, weight_decay, betas, eps, 0
+        self.m = [np.zeros_like(x) for x in params]
+        self.v = [np.zeros_like(x) for x in params]
+
+    def step(self, grads):
+        self.t += 1
+        c1, c2 = 1 - self.b1 ** self.t, 1 - self.b2 ** self.t
+        for x, g, m, v in zip(self.p, grads, self.m, self.v):
+            if self.wd:
+                g = g + self.wd * x
+            m *= self.b1; m += (1 - self.b1) * g
+            v *= self.b2; v += (1 - self.b2) * g * g
+            x -= self.lr * (m / c1) / (np.sqrt(v / c2) + self.eps)
+
+
+def _ce(Z, y, w=None):
+    """Weighted mean cross-entropy of logits Z and its gradient with respect to Z."""
+    Z = Z - Z.max(1, keepdims=True)
+    P = np.exp(Z)
+    P /= P.sum(1, keepdims=True)
+    w = np.ones(len(y), np.float32) if w is None else w
+    r = np.arange(len(y))
+    loss = float(-(w * np.log(P[r, y] + 1e-12)).sum() / w.sum())
+    P[r, y] -= 1
+    P *= (w / w.sum())[:, None]
+    return loss, P
+
+
 def _fit(X, y, T, pi_target, extra_X=None, extra_y=None, progress=None, seed=0):
     """Core trainer. X: log-normalized CSR, y: class indices; 10% of (X, y) is held out for temperature scaling.
     pi_target: class distribution to correct the prior back to (training data may be class-capped)."""
-    import torch
-    dev = config.device()
+    from scipy.optimize import minimize_scalar
     rng = np.random.default_rng(seed)
-    torch.manual_seed(seed)
     perm = rng.permutation(len(y))
     n_val = max(min(1000, len(y) // 5), len(y) // 10)
     va, tr = perm[:n_val], perm[n_val:]
@@ -93,34 +123,32 @@ def _fit(X, y, T, pi_target, extra_X=None, extra_y=None, progress=None, seed=0):
     pi_target = np.asarray(pi_target, float) + 1.0
     prior_shift = np.log(pi_target / pi_target.sum()) - np.log(pi_train / pi_train.sum())
 
-    G = torch.tensor(Xtr.toarray(), dtype=torch.float16 if dev == "cuda" else torch.float32, device=dev)
-    Y = torch.tensor(ytr, device=dev)
-    Wt = torch.tensor(wtr, device=dev)
-    mu = G.float().mean(0); sd = G.float().std(0) + 1e-3
-    lin = torch.nn.Linear(G.shape[1], T).to(dev)
-    opt = torch.optim.Adam(lin.parameters(), lr=LR, weight_decay=1e-6)
-    steps = EPOCHS * ((len(Y) + BATCH - 1) // BATCH)
+    G = Xtr.toarray().astype(np.float32)
+    mu = G.mean(0)
+    sd = G.std(0, ddof=1) + 1e-3
+    G -= mu
+    G /= sd
+    bound = 1 / np.sqrt(G.shape[1])
+    W = rng.uniform(-bound, bound, (T, G.shape[1])).astype(np.float32)
+    b = rng.uniform(-bound, bound, T).astype(np.float32)
+    opt = _Adam([W, b], LR, weight_decay=1e-6)
+    steps = EPOCHS * ((len(ytr) + BATCH - 1) // BATCH)
     k = 0
     for ep in range(EPOCHS):
-        idx = torch.randperm(len(Y), device=dev)
-        for b in range(0, len(Y), BATCH):
-            bi = idx[b:b + BATCH]
-            loss = (torch.nn.functional.cross_entropy(lin((G[bi].float() - mu) / sd), Y[bi], reduction="none") * Wt[bi]).sum() / Wt[bi].sum()
-            opt.zero_grad(); loss.backward(); opt.step()
+        idx = rng.permutation(len(ytr))
+        for s in range(0, len(ytr), BATCH):
+            bi = idx[s:s + BATCH]
+            Xb = G[bi]
+            _, dZ = _ce(Xb @ W.T + b, ytr[bi], wtr[bi])
+            opt.step([dZ.T @ Xb, dZ.sum(0)])
             k += 1
             if progress and k % 20 == 0:
                 progress(k / steps, f"training expression model, epoch {ep + 1}/{EPOCHS}")
     del G
-    model = {"W": lin.weight.detach().cpu().numpy(), "b": lin.bias.detach().cpu().numpy(),
-             "mu": mu.cpu().numpy(), "sd": sd.cpu().numpy(), "prior_shift": prior_shift.astype(np.float32), "temp": 1.0}
-    lv = torch.tensor(_logits(model, X[va]), dtype=torch.float32, device=dev)
-    yv = torch.tensor(y[va], device=dev)
-    logT = torch.zeros(1, device=dev, requires_grad=True)
-    o2 = torch.optim.LBFGS([logT], max_iter=100)
-    def closure():
-        o2.zero_grad(); l = torch.nn.functional.cross_entropy(lv / logT.exp(), yv); l.backward(); return l
-    o2.step(closure)
-    model["temp"] = float(logT.exp().item())
+    model = {"W": W, "b": b, "mu": mu, "sd": sd, "prior_shift": prior_shift.astype(np.float32), "temp": 1.0}
+    lv, yv = _logits(model, X[va]), y[va]
+    res = minimize_scalar(lambda lt: _ce(lv / np.exp(lt), yv)[0], bounds=(-4.0, 4.0), method="bounded")
+    model["temp"] = float(np.exp(res.x))
     return model
 
 
@@ -152,42 +180,35 @@ def finetune(init, extra_X, extra_y, replay_X, replay_y, progress=None, seed=0):
     """Start from `init` and adapt to corrected cells, replaying (replay_X, replay_y) so the rest is preserved.
     Only the weights of involved classes (the corrected labels and what init predicted for those cells) are
     updated, so unrelated cell types cannot drift. Normalization, prior correction and temperature are kept."""
-    import torch
-    dev = config.device()
     rng = np.random.default_rng(seed)
-    torch.manual_seed(seed)
     T = len(init["b"])
-    mu, sd = (torch.tensor(init[k], dtype=torch.float32, device=dev) for k in ("mu", "sd"))
-    lin = torch.nn.Linear(len(init["mu"]), T).to(dev)
-    with torch.no_grad():
-        lin.weight.copy_(torch.tensor(init["W"], dtype=torch.float32)); lin.bias.copy_(torch.tensor(init["b"], dtype=torch.float32))
-    opt = torch.optim.Adam(lin.parameters(), lr=FT_LR)
-    Xc = torch.tensor(lognorm(extra_X).toarray(), dtype=torch.float32, device=dev)
-    yc = torch.tensor(np.asarray(extra_y, np.int64), device=dev)
-    W0, b0 = lin.weight.detach().clone(), lin.bias.detach().clone()
-    shift = torch.tensor(init["prior_shift"], dtype=torch.float32, device=dev)
-    with torch.no_grad():
-        before = (lin((Xc - mu) / sd) + shift).argmax(1)  # the classes init actually predicted
-    involved = torch.zeros(T, dtype=torch.bool, device=dev)
+    mu, sd = init["mu"], init["sd"]
+    W, b = init["W"].astype(np.float32).copy(), init["b"].astype(np.float32).copy()
+    W0, b0 = W.copy(), b.copy()
+    opt = _Adam([W, b], FT_LR)
+    Xc = (lognorm(extra_X).toarray() - mu) / sd
+    yc = np.asarray(extra_y, np.int64)
+    before = (Xc @ W.T + b + init["prior_shift"]).argmax(1)  # the classes init actually predicted
+    involved = np.zeros(T, bool)
     involved[yc] = True
     involved[before] = True
-    frozen = ~involved
     n_rep = min(FT_REPLAY, len(replay_y))
+    n_c = len(yc) * CORRECTION_WEIGHT
     for k in range(FT_STEPS):
         rep = rng.choice(len(replay_y), n_rep, replace=False)
-        Xr = torch.tensor(replay_X[rep].toarray(), dtype=torch.float32, device=dev)
-        yr = torch.tensor(np.asarray(replay_y[rep], np.int64), device=dev)
-        lr_ = torch.nn.functional.cross_entropy(lin((Xr - mu) / sd), yr)
-        lc = torch.nn.functional.cross_entropy(lin((Xc - mu) / sd), yc)
-        n_c = len(yc) * CORRECTION_WEIGHT
-        loss = (lr_ * n_rep + lc * n_c) / (n_rep + n_c)
-        loss = loss + FT_L2 * (((lin.weight - W0) ** 2).sum() + ((lin.bias - b0) ** 2).sum())
-        opt.zero_grad(); loss.backward()
-        lin.weight.grad[frozen] = 0; lin.bias.grad[frozen] = 0
-        opt.step()
+        Xr = (replay_X[rep].toarray() - mu) / sd
+        yr = np.asarray(replay_y[rep], np.int64)
+        _, dr = _ce(Xr @ W.T + b, yr)
+        _, dc = _ce(Xc @ W.T + b, yc)
+        a_r, a_c = n_rep / (n_rep + n_c), n_c / (n_rep + n_c)
+        gW = a_r * dr.T @ Xr + a_c * dc.T @ Xc + 2 * FT_L2 * (W - W0)
+        gb = a_r * dr.sum(0) + a_c * dc.sum(0) + 2 * FT_L2 * (b - b0)
+        gW[~involved] = 0
+        gb[~involved] = 0
+        opt.step([gW.astype(np.float32), gb.astype(np.float32)])
         if progress and k % 10 == 0:
             progress(k / FT_STEPS, f"updating expression model with your corrections ({k}/{FT_STEPS})")
-    return dict(init, W=lin.weight.detach().cpu().numpy(), b=lin.bias.detach().cpu().numpy())
+    return dict(init, W=W, b=b)
 
 
 def reference_replay(exclude_slide):

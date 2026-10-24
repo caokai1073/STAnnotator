@@ -4,13 +4,14 @@ version = "0.2.0"
 description = "Spatial transcriptomics cell type annotation driven by natural-language spatial priors"
 requires-python = ">=3.11"
 dependencies = [
-  "numpy", "pandas", "scipy", "pyarrow", "scikit-learn", "matplotlib",
-  "tifffile", "zarr>=3", "imagecodecs", "h5py", "mcp>=1.9,<2", "torch", "igraph", "pynndescent", "uvicorn",
+  "numpy", "pandas", "scipy", "pyarrow", "matplotlib",
+  "tifffile", "zarr>=3", "imagecodecs", "h5py", "mcp>=1.9,<2", "igraph", "pynndescent", "uvicorn",
   "starlette", "pillow",
 ]
 
 [project.optional-dependencies]
 app = ["pywebview>=5"]  # the desktop window (macOS: WebKit through PyObjC)
+gpu = ["torch"]  # optional: exact kNN on an NVIDIA / Apple GPU in the marker step
 
 [project.scripts]
 celltypeagent = "celltypeagent.cli:main"

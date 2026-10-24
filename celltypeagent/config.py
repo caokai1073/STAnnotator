@@ -30,8 +30,12 @@ def ensure_dirs():
 
 
 def device():
-    """'cuda' (NVIDIA), 'mps' (Apple silicon GPU) or 'cpu'."""
-    import torch
+    """'cuda' (NVIDIA) or 'mps' (Apple silicon GPU) when torch is installed (optional: it only speeds up the kNN
+    graph of the marker step), else 'cpu'."""
+    try:
+        import torch
+    except ImportError:
+        return "cpu"
     if torch.cuda.is_available():
         return "cuda"
     if getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
