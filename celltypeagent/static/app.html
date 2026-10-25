@@ -136,7 +136,6 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .imkind { display: flex; gap: 16px; margin-bottom: 6px; }
 .clcard { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 6px 0; display: flex; flex-direction: column; gap: 6px; }
 .clcard pre { font: 11.5px ui-monospace, Menlo, monospace; white-space: pre-wrap; margin: 0; color: var(--muted); }
-#clPrompt { width: 100%; min-height: 56px; }
 .claudebox { display: flex; flex-direction: column; gap: 8px; padding: 4px 2px; }
 @media (max-width: 1000px) { main { grid-template-columns: 1fr; grid-template-rows: 60vh auto; } #side { border-left: 0; border-top: 1px solid var(--line); } }
 </style>
@@ -158,7 +157,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
   <div class="progress" id="progress"><div class="pbar"><i id="pfill"></i></div><span id="pstage"></span></div>
   <span class="spacer"></span>
   <span id="vinfo"></span>
-  <button id="claudeBtn" hidden title="Work with Claude (your own Claude Desktop or Claude Code) on the open sample">Claude…</button>
+  <button id="claudeBtn" hidden title="Open your own Claude Code in Terminal, connected to the sample open here">Claude Code</button>
   <button id="undo" disabled title="Undo the last change">Undo</button>
   <button id="reset" disabled title="Remove every annotation and chat of this sample">Reset</button>
   <button id="review" disabled title="Open the conflict review page">Review conflicts</button>
@@ -186,7 +185,6 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <div id="cellcard" class="float"></div>
     <div id="plpanel" class="float" hidden>
       <div class="lh"><b id="pltitle">Review</b><span class="spacer"></span>
-        <button id="plask" class="primary" style="padding:1px 8px;font-size:11.5px" hidden title="Let Claude review markers and layout with the H&amp;E and biology and suggest fixes">Ask Claude</button>
         <button id="plclose" style="padding:1px 7px;font-size:11px" title="Close">×</button></div>
       <div class="hint" id="plnote"></div>
       <div class="items" id="plitems"></div>
@@ -249,7 +247,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
         <button id="mkDraft" class="primary">Draft</button></div>
       <div id="mkDraftMsg" class="hint"></div>
       </div>
-      <div id="mkClaudeHint" class="hint" hidden>To draft or revise a list, ask Claude (Claude… button): “Draft a marker list for this panel”. Lists Claude saves appear under “load a list…”.</div>
+      <div id="mkClaudeHint" class="hint" hidden>To draft or revise a list, ask Claude in Claude Code: “Draft a marker list for this panel”. Lists Claude saves appear under “load a list…”.</div>
     </div>
   </div>
 </dialog>
@@ -289,19 +287,11 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <div class="row" style="margin-top:6px"><span class="hint" id="imStatus"></span><span class="spacer"></span><button id="imGo" class="primary">Import</button></div>
   </div>
 </dialog>
-<dialog id="clDlg" style="width:min(640px,95vw)">
-  <div class="dh"><b>Work with Claude</b><span class="spacer"></span><button id="clClose">Close</button></div>
+<dialog id="clDlg" style="width:min(600px,95vw)">
+  <div class="dh"><b>Claude Code</b><span class="spacer"></span><button id="clClose">Close</button></div>
   <div class="imbody">
-    <div class="hint">Talk to Claude with your own Claude account, in Claude Desktop or Claude Code. Claude works on the sample open here, and its changes appear in this window.</div>
-    <div class="clcard"><div><b>Claude Desktop</b> <span class="hint" id="clDstat"></span></div>
-      <div class="row"><button id="clReg">Connect Claude Desktop</button><span class="hint" id="clRegMsg"></span></div></div>
-    <div class="clcard"><div><b>Claude Code</b> <span class="hint" id="clCstat"></span></div>
-      <div class="row"><button id="clCode" class="primary">Open in Claude Code</button><span class="hint">opens Terminal with Claude Code connected to this sample</span></div>
-      <pre id="clCmd" hidden></pre></div>
-    <div class="clcard"><div><b>Your request</b> <span class="hint">(optional)</span></div>
-      <textarea id="clPrompt" placeholder="e.g. Review my annotation: are the markers right, and does the layout fit the H&amp;E?"></textarea>
-      <div class="row"><button id="clCopy">Copy for Claude Desktop</button><span class="hint">“Open in Claude Code” sends it as the first message</span></div></div>
-    <div class="hint">Try: “Review my annotation” · “Draft a marker list for this panel” · “Epithelial cells are only in the mucosa” · “Export the result”</div>
+    <div class="hint" id="clMsg"></div>
+    <pre id="clCmd" class="clcard" hidden></pre>
   </div>
 </dialog>
 <div class="toast" id="toast"></div>
@@ -467,7 +457,7 @@ async function loadSamples(select) {
     o.textContent = [s.sample_id, s.description || [s.disease, s.location].filter(Boolean).join(" · "), `${s.n_cells.toLocaleString()} cells`].filter(Boolean).join(" · ");
     sel.append(o);
   });
-  const url = new URLSearchParams(location.search);  // links from Claude Desktop: ?sample=...&session=...
+  const url = new URLSearchParams(location.search);  // links from the agent: ?sample=...&session=...
   const want = select || url.get("sample") || load("sample");
   if (st.samples.some((s) => s.sample_id === want)) sel.value = want;
   if (url.get("session") && url.get("sample") === sel.value) st.openedThisVisit[sel.value] = url.get("session");
@@ -861,12 +851,10 @@ async function loadPlaus(switchMode) {
 function renderPlaus() {
   const r = st.plaus;
   $("pltitle").textContent = `Review · v${r.version}`;
-  $("plask").hidden = !st.chatAvailable && !st.desktop;
   const open = r.suggestions.filter((x) => x.status === "open");
   $("plnote").textContent = "Computed checks of the markers and the spatial layout are listed below; they come from the annotation alone. " +
-    (st.chatAvailable ? "“Ask Claude” reviews them with the H&E and biology and suggests fixes (orange)."
-     : st.desktop ? "“Ask Claude” hands them to Claude (Claude Desktop or Claude Code), which reviews them with the image and biology; its suggestions appear here in orange."
-                  : "To let Claude review them with the H&E and biology, ask in Claude Desktop: “review my annotation”.");
+    (st.chatAvailable ? "Ask in the chat (“review my annotation”) to let Claude review them with the H&E and biology; its suggestions appear here in orange."
+                      : "To let Claude review them with the image and biology, open Claude Code and ask “review my annotation”; its suggestions appear here in orange.");
   const box = $("plitems"); box.textContent = "";
   const btn = (text, title, fn) => { const b = document.createElement("button"); b.textContent = text; b.title = title; b.onclick = fn; return b; };
   const item = (cls, l1, l2, buttons) => {
@@ -949,7 +937,7 @@ async function setProposal(status) {
 async function dismissSug(id) {
   try { await post(`/api/s/${st.sid}/plausibility/dismiss`, { suggestion_id: id }); await loadPlaus(false); } catch (e) { toast(e.message, 5000); }
 }
-async function pollSuggestions() {  // suggestions made in Claude Desktop show up without a new version
+async function pollSuggestions() {  // suggestions made in Claude Code show up without a new version
   if (!st.sid || st.busy) return;
   const sug = await api(`/api/s/${st.sid}/plausibility/suggestions`);
   const key = JSON.stringify(sug);
@@ -962,12 +950,6 @@ async function pollSuggestions() {  // suggestions made in Claude Desktop show u
 setInterval(() => pollSuggestions().catch(() => {}), 4000);
 $("plaus").onclick = () => loadPlaus(true).catch((e) => toast(e.message, 6000));
 $("plclose").onclick = () => { const was = st.mode === "plausibility"; closePlaus(); fillModes(st.lastSummary); drawRegions(); if (was) { refreshOverlay(); loadLegend(); } };
-$("plask").onclick = () => {
-  if (!st.chatAvailable) { openClaude("Review my annotation: are the markers right for this sample, and does the layout fit the tissue? Suggest fixes."); return; }
-  if (st.busy) { toast("Wait until the assistant has answered"); return; }
-  $("input").value = "Review my annotation: are the markers right for this sample, and does the layout fit the H&E? Suggest fixes.";
-  send();
-};
 
 // ---------------- chat ----------------
 function mdLite(text) {  // escape, then only **bold** and `code`
@@ -1092,36 +1074,22 @@ $("imGo").onclick = async () => {
 };
 $("importBtn").onclick = openImport;
 
-// ---------------- Claude (the user's own Claude Desktop / Claude Code) ----------------
-async function openClaude(prompt) {
-  $("clPrompt").value = prompt || ""; $("clCmd").hidden = true; $("clRegMsg").textContent = "";
-  $("clDlg").showModal();
+// ---------------- Claude Code (the user's own, in Terminal) ----------------
+async function openClaudeCode() {
   try {
     const s = await api("/api/claude/status");
-    $("clDstat").textContent = s.desktop_current ? "connected" : s.desktop_registered ? "connected to another installation: connect again"
-      : s.desktop_installed === false ? "not installed (claude.ai/download)" : "not connected yet";
-    $("clReg").textContent = s.desktop_registered ? "Connect again" : "Connect Claude Desktop";
-    $("clCstat").textContent = s.claude_code ? "installed" : "not found (install Claude Code, then log in with your Claude account)";
-  } catch (e) { $("clDstat").textContent = e.message; }
+    if (s.platform === "Darwin" && !s.claude_code) {
+      $("clMsg").textContent = "Claude Code was not found on this Mac. Install it (docs.claude.com → Claude Code → Setup), log in once with your own Claude account in Terminal, then click Claude Code again.";
+      $("clCmd").hidden = true; $("clDlg").showModal(); return;
+    }
+    const r = await post("/api/claude/code", { sample: st.sample && st.sample.sample_id, session: st.sid });
+    if (r.opened) { toast("Claude Code is opening in Terminal, connected to this sample", 4000); return; }
+    $("clMsg").textContent = "Run this in a terminal to start Claude Code connected to this app:";
+    $("clCmd").textContent = r.command; $("clCmd").hidden = false; $("clDlg").showModal();
+  } catch (e) { toast(e.message, 6000); }
 }
-$("clReg").onclick = async () => {
-  try { const r = await post("/api/claude/register"); $("clRegMsg").textContent = "Done. Quit and reopen Claude Desktop, then ask it about this sample."; $("clDstat").textContent = `connected (${r.config})`; }
-  catch (e) { $("clRegMsg").textContent = e.message; }
-};
-$("clCode").onclick = async () => {
-  try {
-    const r = await post("/api/claude/code", { sample: st.sample && st.sample.sample_id, session: st.sid, request: $("clPrompt").value });
-    if (!r.opened) { $("clCmd").hidden = false; $("clCmd").textContent = "Run in a terminal:\n" + r.command; }
-    else toast("Claude Code is opening in Terminal", 3000);
-  } catch (e) { toast(e.message, 5000); }
-};
-$("clCopy").onclick = async () => {
-  const text = ($("clPrompt").value.trim() || "Review my annotation.") + (st.sid ? `\n(The sample open in the Spatial Annotator app: ${st.sample.sample_id}; call use_viewer_session first.)` : "");
-  try { await navigator.clipboard.writeText(text); toast("Copied: paste it into Claude Desktop", 3000); }
-  catch (e) { $("clCmd").hidden = false; $("clCmd").textContent = text; }
-};
 $("clClose").onclick = () => $("clDlg").close();
-$("claudeBtn").onclick = () => openClaude("");
+$("claudeBtn").onclick = openClaudeCode;
 
 // follow the agent: open_viewer asks the viewer to show a session (e.g. a new annotation Claude started)
 st.loadedAt = Date.now() / 1000;
@@ -1243,10 +1211,10 @@ api("/api/config").then((c) => {  // the desktop app (or no Claude Code CLI): th
     $("msgs").querySelectorAll(".hint").forEach((h) => h.remove());
     const box = document.createElement("div"); box.className = "claudebox hint";
     const p = document.createElement("div");
-    p.textContent = "Talk to Claude with your own Claude account in Claude Desktop or Claude Code: priors (“epithelial cells are only in the mucosa”), corrections, a review of the annotation, a marker list for a new panel. Everything Claude changes appears here within a few seconds.";
+    p.textContent = "Talk to Claude in Claude Code, with your own Claude account: priors (“epithelial cells are only in the mucosa”), corrections, “review my annotation”, a marker list for a new panel. Everything Claude changes appears here within a few seconds.";
     box.append(p);
     if (c.desktop) {
-      const b = document.createElement("button"); b.className = "primary"; b.textContent = "Claude…"; b.onclick = () => openClaude("");
+      const b = document.createElement("button"); b.className = "primary"; b.textContent = "Open in Claude Code"; b.onclick = openClaudeCode;
       box.append(b);
     }
     $("msgs").append(box); $("composer").hidden = true;

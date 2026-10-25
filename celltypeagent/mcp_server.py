@@ -49,7 +49,7 @@ Priors and corrections
 - Conflicts (conflict_summary, show_conflicts) are cells whose expression contradicts a prior; describe H&E crops
   cautiously and record verdicts only when the user states them.
 
-Reviewing an annotation ("does this make sense?", "check my annotation", or "Ask Claude" in the viewer's Review panel)
+Reviewing an annotation ("does this make sense?", "check my annotation", "review my annotation")
 - Use your knowledge of tissue biology, marker genes and histology; the tools give the evidence. Cover:
   1. Markers (review_markers): for every lineage and cell type, how often its listed markers are detected compared
      with its siblings (flags: weak, not specific, negative marker detected), and the genes that actually separate
@@ -64,8 +64,8 @@ Reviewing an annotation ("does this make sense?", "check my annotation", or "Ask
      show e.g. epithelial cells outside the user's "mucosa".
 - Then give a short, prioritized list of concrete suggestions, each with its evidence and the action:
   - a revised marker list: propose_marker_list(text, summary) validates it and puts it in the viewer's Review panel,
-    where the user opens it in "Markers..." and annotates again keeping regions and priors (in Claude Desktop:
-    start_session(markers_text=..., carry_from_current=True) after the user agrees);
+    where the user opens it in "Markers..." and annotates again keeping regions and priors (or
+    start_session(markers_text=..., carry_from_current=True) when the user asks you to run it; the app follows);
   - a local re-clustering with sharper subtype markers (preview_recluster);
   - areas: suggest_areas (tiles, title, reason, action, region_name) draws them on the user's map; once the user
     adopted or drew the region (list_area_suggestions, list_regions), apply the action after a go-ahead: usually an
@@ -137,7 +137,7 @@ def use_viewer_session() -> str:
 def open_viewer(port: int = 8765) -> str:
     """Show the active session to the user. If the Spatial Annotator app (or a web viewer) is running, it switches to
     the session by itself; otherwise a web viewer is started and its link returned."""
-    import subprocess, sys, time
+    import subprocess, time
     from . import claudelink, config
     st = claudelink.viewer_state()
     s = _active.get("session")

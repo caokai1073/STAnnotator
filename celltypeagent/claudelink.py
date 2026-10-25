@@ -1,12 +1,11 @@
-"""Connecting the app to the user's own Claude: Claude Desktop (MCP server entry) and Claude Code (a workspace whose
-MCP config points at this installation, opened in Terminal). The app never signs in to Claude itself; each user
-talks to Claude in Anthropic's apps with their own account.
+"""Connecting the app to the user's own Claude Code: a workspace whose MCP config points at this installation, opened
+in Terminal. The app never signs in to Claude itself; each user talks to Claude in Claude Code with their own account.
 
 The viewer and the MCP server (started by Claude) are separate processes. They share two small files in the data
 folder: viewer.json (what the viewer shows: port, sample, session) and viewer_request.json (a session the agent
 asks the viewer to show).
 """
-import glob, json, os, platform, shutil, subprocess, sys, time
+import glob, json, os, platform, shutil, subprocess, time
 from pathlib import Path
 from . import config
 
@@ -15,30 +14,9 @@ CLAUDE_PATHS = ["~/.local/bin", "~/.claude/local", "/opt/homebrew/bin", "/usr/lo
                 "~/.bun/bin", "~/.volta/bin"]
 
 
-def desktop_config_path():
-    system = platform.system()
-    if system == "Darwin":
-        return Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
-    if system == "Windows":
-        return Path(os.environ.get("APPDATA", Path.home())) / "Claude" / "claude_desktop_config.json"
-    return Path.home() / ".config" / "Claude" / "claude_desktop_config.json"
-
-
 def server_entry():
     cmd = config.self_command("mcp")
     return {"command": cmd[0], "args": cmd[1:], "env": {"CELLTYPEAGENT_HOME": str(config.HOME)}}
-
-
-def register_desktop(config_path=None, name="celltypeagent"):
-    """Add this installation's MCP server to Claude Desktop (other entries are kept; a backup is written)."""
-    path = Path(config_path) if config_path else desktop_config_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    cfg = json.loads(path.read_text()) if path.exists() and path.read_text().strip() else {}
-    if path.exists():
-        shutil.copy(path, path.with_suffix(f".backup-{time.strftime('%Y%m%d-%H%M%S')}.json"))
-    cfg.setdefault("mcpServers", {})[name] = server_entry()
-    path.write_text(json.dumps(cfg, indent=2))
-    return path
 
 
 _shell_claude = None
@@ -66,20 +44,8 @@ def claude_code_path():
 
 
 def status():
-    """What is installed and connected (shown in the app's Claude dialog)."""
-    path = desktop_config_path()
-    entry = None
-    try:
-        entry = json.loads(path.read_text()).get("mcpServers", {}).get("celltypeagent") if path.exists() else None
-    except (ValueError, OSError):
-        pass
-    apps = [Path("/Applications/Claude.app"), Path.home() / "Applications" / "Claude.app"]
-    return {"platform": platform.system(),
-            "desktop_installed": any(p.exists() for p in apps) if platform.system() == "Darwin" else None,
-            "desktop_registered": bool(entry),
-            "desktop_current": bool(entry) and entry == server_entry(),
-            "desktop_config": str(path),
-            "claude_code": claude_code_path()}
+    """Whether Claude Code is installed (shown when the app's Claude Code button cannot open it)."""
+    return {"platform": platform.system(), "claude_code": claude_code_path()}
 
 
 # ---------------- Claude Code workspace ----------------

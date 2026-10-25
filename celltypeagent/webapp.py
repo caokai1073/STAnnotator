@@ -386,7 +386,7 @@ def desktop_mode():
 
 def api_config(req):
     """The built-in chat box (Claude Code CLI) is only for the server viewer; the desktop app connects to the user's
-    own Claude Desktop or Claude Code instead."""
+    own Claude Code instead."""
     return _json({"chat": not desktop_mode() and shutil.which("claude") is not None, "desktop": desktop_mode(),
                   "home": str(config.HOME), "platform": sys.platform})
 
@@ -406,14 +406,6 @@ def api_viewer_request(req):
 
 def api_claude_status(req):
     return _json(claudelink.status())
-
-
-async def api_claude_register(req: Request):
-    try:
-        path = claudelink.register_desktop()
-    except OSError as e:
-        return _json({"error": str(e)}, 400)
-    return _json({"config": str(path)})
 
 
 async def api_claude_code(req: Request):
@@ -797,7 +789,7 @@ any types the panel cannot resolve, in the language named in the request (type n
 
 async def api_markers_draft(req: Request):
     if desktop_mode():
-        return _json({"error": "ask Claude in Claude Desktop or Claude Code to draft the list"}, 400)
+        return _json({"error": "ask Claude in Claude Code to draft the list"}, 400)
     b = await req.json()
     instr = (b.get("instructions") or "").strip() or "Draft a complete list for this tissue."
     current = (b.get("current") or "").strip()
@@ -872,7 +864,7 @@ resolution "auto" or higher for finer; marker_edits to sharpen existing subtypes
 labels would change and the new clusters, and on a go-ahead call recluster. Report changes inside and outside the
 re-clustered cells separately. Adding or removing cell types needs a revised marker list: the user edits it in
 "Markers..." and clicks Annotate with "keep regions, priors and corrections" checked.
-Reviewing the annotation (the user asks whether it makes sense, or presses "Ask Claude" in the Review panel): use
+Reviewing the annotation (the user asks whether it makes sense): use
 your knowledge of tissue biology, marker genes and histology. Check (1) markers with review_markers: do each type's
 top genes fit its label, are listed markers weak or unspecific here with a better panel gene available, do
 Unassigned cells or unassigned clusters express a type missing from the list, is the composition plausible for the
@@ -969,7 +961,6 @@ def build_app(port):
         Route("/api/viewer/state", api_viewer_state, methods=["POST"]),
         Route("/api/viewer/request", api_viewer_request),
         Route("/api/claude/status", api_claude_status),
-        Route("/api/claude/register", api_claude_register, methods=["POST"]),
         Route("/api/claude/code", api_claude_code, methods=["POST"]),
         Route("/api/import/inspect", api_import_inspect, methods=["POST"]),
         Route("/api/import", api_import, methods=["POST"]),

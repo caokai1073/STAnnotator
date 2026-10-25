@@ -84,7 +84,7 @@ apply here, the region assignment is wrong, a technical artifact, or a cell stat
 
 ## Reviewing an annotation
 
-- When the user asks whether the annotation makes sense (or presses "Ask Claude" in the Review panel), review it
+- When the user asks whether the annotation makes sense ("review my annotation"), review it
   like an expert would, using the tools for evidence and your own knowledge of the tissue:
   - Markers: `review_markers`. Do each node's top genes fit its label? Are listed markers weak or unspecific
     here, and is a better panel gene available (`get_panel_genes`)? Do Unassigned cells or unassigned clusters
@@ -94,8 +94,8 @@ apply here, the region assignment is wrong, a technical artifact, or a cell stat
     `show_area`. Identify compartments on the H&E and annotation that contradicts them. Vascular smooth muscle,
     the muscularis mucosae, villus smooth muscle, and deep crypts or fistulas in IBD are real.
 - Answer with a short prioritized list of suggestions, each with its evidence and action, and make them actionable:
-  `propose_marker_list` (opens from the viewer's Review panel; in Claude Desktop `start_session(markers_text=...,
-  carry_from_current=True)` after agreement), `suggest_areas` (drawn on the map; the user adopts them as regions),
+  `propose_marker_list` (opens from the viewer's Review panel; or `start_session(markers_text=...,
+  carry_from_current=True)` when the user asks you to run it), `suggest_areas` (drawn on the map; the user adopts them as regions),
   `preview_recluster`. Once a suggested region exists, preview an exclude prior on it (or `label_cells` with
   `only_types` when the user names the target type) and apply it after a go-ahead.
 

@@ -9,9 +9,8 @@ every step. Everything runs on your own computer; images and expression data nev
 
 ## 1. Install
 
-Requirements: a Mac with Apple silicon (macOS 11+), about 8 GB of RAM, and your own Claude account in
-[Claude Desktop](https://claude.ai/download) and/or [Claude Code](https://claude.com/claude-code). (Linux and
-Windows can run it from source.)
+Requirements: a Mac with Apple silicon (macOS 11+), about 8 GB of RAM, and [Claude Code](https://claude.com/claude-code)
+logged in with your own Claude account. (Linux and Windows can run it from source.)
 
 **The app (recommended).** Open `SpatialAnnotator.dmg` and drag **Spatial Annotator** to Applications. It
 contains everything it needs; no Python installation. If the build is not notarized, the first time right-click
@@ -89,14 +88,9 @@ D=~/Downloads/SCP2927
 
 ## 3. Work with Claude
 
-Claude runs in Anthropic's own apps with your own Claude account; the app connects to it and shows every change.
-Click **Claude…** in the app:
-
-- **Connect Claude Desktop** adds this installation to Claude Desktop (other entries are kept; a backup is written).
-  Quit and reopen Claude Desktop, then talk to it in a new chat. (Command line: `celltypeagent setup-desktop`.)
-- **Open in Claude Code** opens Terminal with your Claude Code connected to this app and to the sample you are
-  looking at (install Claude Code and log in once with your account). A request typed in the dialog is sent as
-  the first message.
+Claude runs in your own Claude Code, with your own Claude account; the app connects it and shows every change.
+Click **Claude Code** in the app: Terminal opens with Claude Code connected to the app and to the sample you are
+looking at (install Claude Code and log in once beforehand).
 
 Claude loads what you are looking at (`use_viewer_session`), and when it starts a new annotation (for example with
 a revised marker list) the app switches to it by itself. Examples:
@@ -133,12 +127,12 @@ by Claude show up within a few seconds.
 8. **Review annotation** opens the Review panel: computed marker checks (markers that are weak or unspecific in
    their cells, negative markers that are detected, genes of Unassigned cells) and areas to check (where cells of
    types that form sheets, such as epithelium or smooth muscle, sit apart from their own lineage), outlined on the
-   map. **Ask Claude** (or "review my annotation" in Claude Desktop) lets Claude review markers and layout with the
+   map. Asking Claude Code "review my annotation" lets Claude review markers and layout with the
    H&E and its knowledge of the tissue. Its suggestions appear in the panel: a revised marker list (**open in
    Markers…**, then Annotate with "keep my regions & priors") and areas drawn in orange (**use as region**, then
    Claude applies the agreed prior or correction to that region).
 
-The app has no chat box of its own: you talk to Claude in Claude Desktop or Claude Code. The web viewer on a
+The app has no chat box of its own: you talk to Claude in Claude Code. The web viewer on a
 shared server shows a chat box that uses the server's own logged-in Claude Code CLI (for the server owner's use).
 
 ## Annotation method
@@ -195,13 +189,10 @@ colors are immediate.
 
 ## Troubleshooting
 
-- Claude Desktop does not list `celltypeagent`: run `setup-desktop` again, fully quit Claude Desktop and
-  reopen it. Its server log is `~/Library/Logs/Claude/mcp-server-celltypeagent.log` on macOS
-  (`%APPDATA%\Claude\logs` on Windows).
 - The app does not open: see `<data folder>/app.log`; run `.venv/bin/celltypeagent app` in a terminal to see
   errors, or `--browser` to use the browser. The web viewer logs to `<data folder>/viewer.log`.
-- Open in Claude Code does nothing: Claude Code must be installed and logged in (`claude` in Terminal); the
-  dialog shows the command to run by hand otherwise.
+- Claude Code does not open: it must be installed and logged in (`claude` works in Terminal). By hand:
+  `cd ~/celltypeagent/claude_workspace && claude --mcp-config celltypeagent_mcp.json`.
 - Import says too few cells land on the H&E: check the registration file, `--section`, and that the cell
   coordinates are in micrometers.
 
@@ -222,8 +213,7 @@ packaging/macos/build_app.sh            # -> dist/Spatial Annotator.app and dist
 ```
 
 It builds with PyInstaller (`packaging/spatial_annotator.spec`) in its own environment, without PyTorch. The app's
-executable also takes the command-line subcommands (`Spatial Annotator mcp` is what Claude Desktop and Claude Code
-start). To give it a Developer ID signature and Apple's notarization, so that it opens without warnings on other
+executable also takes the command-line subcommands (`Spatial Annotator mcp` is what Claude Code starts). To give it a Developer ID signature and Apple's notarization, so that it opens without warnings on other
 Macs (needs an Apple Developer account):
 
 ```bash
@@ -237,9 +227,9 @@ The hardened-runtime exceptions it uses (`packaging/macos/entitlements.plist`) a
 
 ```
 celltypeagent/     Python package
-  cli.py           celltypeagent app / make-app / import / import-xenium / samples / setup-desktop / viewer / mcp
+  cli.py           celltypeagent app / make-app / import / import-xenium / samples / viewer / mcp
   desktop.py       the desktop app (pywebview window around the local server)
-  claudelink.py    connection to the user's Claude Desktop / Claude Code; viewer <-> agent handoff files
+  claudelink.py    connection to the user's Claude Code; viewer <-> agent handoff files
   importer.py      Xenium output folder, or h5ad + H&E + registration -> sample bundle
   markers.py       marker list parsing, hierarchical Leiden annotation, re-clustering
   model.py         expression model (training, fine-tuning on corrections)
@@ -249,7 +239,7 @@ celltypeagent/     Python package
   conflicts.py     conflict detection and grouping
   plausibility.py  review of the spatial layout: tile grid, candidate areas, overview figures, area suggestions
   markerqc.py      review of the markers: support per node, flags, top genes, marker list proposals
-  mcp_server.py    MCP tools (Claude Desktop / Claude Code)
+  mcp_server.py    MCP tools (Claude Code)
   webapp.py        viewer, review page, chat box
   data/            default marker list
 examples/scp2927/  registration of the SCP2927 sections

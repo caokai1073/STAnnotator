@@ -1,13 +1,7 @@
-"""Command line: celltypeagent {app, make-app, import, import-xenium, samples, setup-desktop, viewer, mcp}."""
+"""Command line: celltypeagent {app, make-app, import, import-xenium, samples, viewer, mcp}."""
 import argparse, os, platform, shutil, sys
 from pathlib import Path
 from . import config
-
-
-def setup_desktop(config_path=None):
-    """Register this installation's MCP server in Claude Desktop (existing entries are kept; a backup is written)."""
-    from .claudelink import register_desktop
-    return register_desktop(config_path)
 
 
 APP_PLIST = """<?xml version="1.0" encoding="UTF-8"?>
@@ -91,11 +85,9 @@ def main(argv=None):
     ap_.add_argument("--browser", action="store_true", help="use the default browser instead of a window")
     ma = sub.add_parser("make-app", help="macOS: create 'Spatial Annotator.app' in ~/Applications")
     ma.add_argument("--dest", help="folder for the app (default ~/Applications)")
-    sd = sub.add_parser("setup-desktop", help="register the MCP server in Claude Desktop")
-    sd.add_argument("--config", help="path of claude_desktop_config.json (default: the platform's location)")
     vw = sub.add_parser("viewer", help="start the web viewer")
     vw.add_argument("--port", type=int, default=8765)
-    sub.add_parser("mcp", help="run the MCP server on stdio (Claude Desktop starts this itself)")
+    sub.add_parser("mcp", help="run the MCP server on stdio (Claude Code starts this itself)")
     a = ap.parse_args(argv)
     config.ensure_dirs()
     if a.cmd == "import":
@@ -114,9 +106,6 @@ def main(argv=None):
         from .session import list_samples
         t = list_samples()
         print(t.to_string(index=False) if len(t) else f"no samples in {config.SAMPLES}")
-    elif a.cmd == "setup-desktop":
-        p = setup_desktop(a.config)
-        print(f"registered 'celltypeagent' in {p}\ndata folder: {config.HOME}\nRestart Claude Desktop to load it.")
     elif a.cmd == "viewer":
         sys.argv = ["celltypeagent-web", "--port", str(a.port)]
         from .webapp import main as web

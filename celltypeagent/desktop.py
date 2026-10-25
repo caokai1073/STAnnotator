@@ -3,7 +3,7 @@
     celltypeagent app [--browser]          (or: python -m celltypeagent.desktop)
 
 The window is pywebview (WebKit on macOS); without pywebview, or with --browser, the viewer opens in the default
-browser instead. Claude is used through the user's own Claude Desktop or Claude Code (MCP), not inside the app.
+browser instead. Claude is used through the user's own Claude Code (MCP), not inside the app.
 """
 import argparse, os, socket, sys, threading, time, webbrowser
 from . import config
@@ -84,7 +84,7 @@ def main(argv=None):
     ap.add_argument("--browser", action="store_true", help="open the viewer in the default browser instead of a window")
     ap.add_argument("--port", type=int, default=8765)
     a = ap.parse_args(argv)
-    os.environ["CELLTYPEAGENT_DESKTOP"] = "1"  # the page then offers Claude Desktop / Claude Code instead of a chat box
+    os.environ["CELLTYPEAGENT_DESKTOP"] = "1"  # the page then offers Claude Code instead of a chat box
     config.ensure_dirs()
     port = free_port(a.port)
     server = start_server(port)
