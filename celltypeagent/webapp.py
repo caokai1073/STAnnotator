@@ -979,8 +979,8 @@ def api_sample_reset(req):
 
 
 def _trash_sessions(sess, trash):
-    """Move sessions and their Claude Code transcripts into trash; forget them in memory. Returns the number of
-    transcripts moved."""
+    """Move sessions and their Claude Code transcripts into trash (None: delete them for good); forget them in
+    memory. Returns the number of transcripts moved or deleted."""
     n_chats = 0
     for d in sess:
         ids = set()
@@ -990,10 +990,13 @@ def _trash_sessions(sess, trash):
         for cid in filter(None, ids):
             for t in (CLAUDE_PROJECT / f"{cid}.jsonl", CLAUDE_PROJECT / cid):
                 if t.exists():
+                    n_chats += t.suffix == ".jsonl"
+                    if trash is None:
+                        shutil.rmtree(t) if t.is_dir() else t.unlink()
+                        continue
                     (trash / "claude_transcripts").mkdir(exist_ok=True)
                     shutil.move(str(t), str(trash / "claude_transcripts" / t.name))
-                    n_chats += t.suffix == ".jsonl"
-        shutil.move(str(d), str(trash / d.name))
+        shutil.rmtree(d) if trash is None else shutil.move(str(d), str(trash / d.name))
         review_app._sessions.pop(d.name, None)
         JOBS.pop(d.name, None)
         if mcp_server._active.get("session") is not None and mcp_server._active["session"].id == d.name:
@@ -1005,27 +1008,25 @@ def _trash_sessions(sess, trash):
 
 
 def api_samples_clear(req):
-    """Desktop app: remove every sample with all its annotations and chats, to import from scratch. Everything is
-    moved to <data folder>/trash/<time>_all_samples/ (recoverable by hand); marker lists are kept."""
+    """Desktop app: delete every sample with all its annotations and chats for good, to import from scratch (and the
+    *_all_samples folders an earlier version of this button left in the trash); marker lists are kept."""
     if not desktop_mode():
         return _json({"error": "only in the desktop app"}, 403)
     if any(not j["done"] for j in JOBS.values()):
         return _json({"error": "an import, annotation or niche run is still running; wait until it finishes"}, 409)
     samples = [d for d in sorted(config.SAMPLES.iterdir()) if d.is_dir()] if config.SAMPLES.exists() else []
     sess = [d for d in sorted(config.SESSIONS.iterdir()) if (d / "session.json").exists()] if config.SESSIONS.exists() else []
-    if not samples and not sess:
-        return _json({"deleted_samples": 0, "deleted_sessions": 0, "trash": None})
-    trash = config.TRASH / f"{time.strftime('%Y%m%d-%H%M%S')}_all_samples"
-    (trash / "samples").mkdir(parents=True)
-    n_chats = _trash_sessions(sess, trash)
-    for d in samples:
-        shutil.move(str(d), str(trash / "samples" / d.name))
+    old = sorted(config.TRASH.glob("*_all_samples")) if config.TRASH.exists() else []
+    if not samples and not sess and not old:
+        return _json({"deleted_samples": 0, "deleted_sessions": 0})
+    n_chats = _trash_sessions(sess, None)
+    for d in samples + old:
+        shutil.rmtree(d)
     for cache in (_views, _tiles, _overlays, _colors):
         cache.clear()
     review_app._sessions.clear()
     mcp_server._active.pop("session", None)
-    return _json({"deleted_samples": len(samples), "deleted_sessions": len(sess), "deleted_conversations": n_chats,
-                  "trash": str(trash)})
+    return _json({"deleted_samples": len(samples), "deleted_sessions": len(sess), "deleted_conversations": n_chats})
 
 
 async def api_undo(req):

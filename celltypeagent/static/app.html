@@ -188,7 +188,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <div class="cap"><h1>Spatial Annotator</h1><span id="build" class="buildtag"></span></div>
     <label class="fl">Sample <select id="sample"></select></label>
     <button id="importBtn" title="Add a sample: a Xenium output folder, or h5ad + H&amp;E + registration">Import…</button>
-    <button id="clearAll" class="danger" hidden title="Remove every sample with all its annotations and chats, to import from scratch (moved to the data folder's trash)">Remove all…</button>
+    <button id="clearAll" class="danger" hidden title="Delete every sample with all its annotations and chats for good, to import from scratch">Remove all…</button>
     <span class="sep"></span>
     <label class="fl" id="sessWrap">Session <select id="session" title="Earlier annotations of this sample"></select></label>
     <span class="spacer"></span>
@@ -1620,7 +1620,7 @@ $("importBtn").onclick = openImport;
 $("clearAll").onclick = async () => {
   const n = st.samples.length;
   if (!n) { toast("There are no samples"); return; }
-  if (!confirm(`Remove all ${n} sample(s)?\n\nEvery sample, all its annotations, regions, priors, niches and Claude Code chats are removed from the app, so you can import from scratch. They are moved to ${st.home}/trash (recoverable by hand). Marker lists are kept.`)) return;
+  if (!confirm(`Remove all ${n} sample(s)?\n\nEvery sample, all its annotations, regions, priors, niches and Claude Code chats are deleted for good, so you can import from scratch. This cannot be undone. Marker lists are kept.`)) return;
   try {
     const r = await post("/api/samples/clear", {});
     toast(`Removed ${r.deleted_samples} sample(s) and ${r.deleted_sessions} annotation(s)`, 4000);
