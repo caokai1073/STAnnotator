@@ -770,11 +770,15 @@ function drawRegions() {
   if (st.regions && $("outlines").checked) {
     st.regions.polygons.forEach((p) => {
       const pts = p.polygon.map(([x, y]) => toScreen(x, y));
-      const col = rgb(p.color);
-      svg.append(svgEl("polygon", { points: pts.map((q) => `${q.x},${q.y}`).join(" "), fill: col, "fill-opacity": 0.08,
-                                     stroke: col, "stroke-width": 2 }));
+      const col = rgb(p.color), points = pts.map((q) => `${q.x},${q.y}`).join(" ");
+      // a dark halo under the colored line keeps the outline visible over cells of a similar color
+      svg.append(svgEl("polygon", { points, fill: col, "fill-opacity": 0.08, stroke: "#000", "stroke-opacity": 0.6,
+                                     "stroke-width": 5, "stroke-linejoin": "round" }));
+      svg.append(svgEl("polygon", { points, fill: "none", stroke: col, "stroke-width": 2.6, "stroke-linejoin": "round" }));
       const cx = pts.reduce((a, q) => a + q.x, 0) / pts.length, cy = pts.reduce((a, q) => a + q.y, 0) / pts.length;
-      const t = svgEl("text", { x: cx, y: cy, fill: col, "text-anchor": "middle" }); t.textContent = p.name; svg.append(t);
+      const t = svgEl("text", { x: cx, y: cy, fill: col, "text-anchor": "middle", stroke: "#000", "stroke-width": 3,
+                                "stroke-opacity": 0.7, "paint-order": "stroke", "font-weight": 700 });
+      t.textContent = p.name; svg.append(t);
     });
   }
   if (st.plaus) {  // candidate areas (red) and Claude's open suggestions (orange)
