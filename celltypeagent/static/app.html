@@ -588,7 +588,8 @@ function reportState() {  // so Claude (use_viewer_session) knows what the user 
   post("/api/viewer/state", { sample: st.sample && st.sample.sample_id, session: st.sid, version: st.version }).catch(() => {});
 }
 function closeSession() {
-  st.sid = null; st.version = null; st.filters = {}; st.regions = null; cancelDraw(); if (st.editing) stopEdit(); closePlaus();
+  st.sid = null; st.version = null; st.filters = {}; st.regions = null; st.advice = null; st.adviceSig = undefined;
+  cancelDraw(); if (st.editing) stopEdit(); closePlaus();
   $("legend").hidden = true; $("cellcard").classList.remove("show");
   $("empty").style.display = "flex";
   ["undo", "export", "send", "plaus", "report"].forEach((b) => ($(b).disabled = true));
@@ -803,7 +804,11 @@ function drawRegions() {
     const shownAdv = ((st.advice || {}).items || []).find((x) => x.id === st.adviceShown && x.action && x.action.outlines);
     if (shownAdv) {  // the compartment the user chose to see, labelled once on its largest piece
       const big = shownAdv.action.outlines.reduce((a, p) => (p.length > a.length ? p : a), []);
-      shownAdv.action.outlines.forEach((poly) => outline(poly, "#6a2cff", 3, poly === big ? shownAdv.action.name : ""));
+      shownAdv.action.outlines.forEach((poly) => {  // dark halo under the dashed line, like region outlines
+        svg.append(svgEl("polygon", { points: poly.map(([x, y]) => toScreen(x, y)).map((q) => `${q.x},${q.y}`).join(" "),
+                                      fill: "none", stroke: "#000", "stroke-opacity": 0.55, "stroke-width": 5.5 }));
+        outline(poly, "#b98cff", 2.8, poly === big ? shownAdv.action.name : "");
+      });
     }
   }
   if (st.focus) {
@@ -1014,6 +1019,7 @@ async function loadPlaus(switchMode) {
   st.solvedSig = [r_solved_areas(st.plaus), (st.plaus.solved || []).filter((x) => x.kind === "marker").length];
   st.sugKey = JSON.stringify({ areas: st.plaus.suggestions, proposal: st.plaus.proposal, solved: st.solvedSig, review: st.plaus.review_count });
   st.adviceRuns = (st.advice.status.last_run || {}).time || null;
+  st.adviceSig = JSON.stringify([st.advice.status.n_runs, st.advice.items.length]);
   renderPlaus();
   fillModes(st.lastSummary);
   if (switchMode) { st.mode = "plausibility"; $("mode").value = "plausibility"; refreshOverlay(); await loadLegend(); }
@@ -1125,7 +1131,8 @@ function renderAdvice(adv, btn, head, prop) {
   const open = adv.items.filter((x) => x.status === "open");
   if (open.length) head(`Claude's advice (${open.length})`);
   Object.entries(adv.categories).forEach(([cat, label]) => {
-    const rows = open.filter((x) => x.category === cat);
+    const rows = open.filter((x) => x.category === cat)  // regions the user asked for first, newest first
+      .sort((a, b) => (!!b.requested - !!a.requested) || (a.requested ? (a.time < b.time ? 1 : -1) : 0));
     if (!rows.length) return;
     const h = document.createElement("div"); h.className = "plh cat"; h.textContent = label; box.append(h);
     rows.forEach((x) => box.append(adviceRow(x, btn, adv, prop)));
@@ -1141,6 +1148,7 @@ function renderAdvice(adv, btn, head, prop) {
 }
 function adviceRow(x, btn, adv, prop) {
   const row = document.createElement("div"); row.className = "pla adv" + (x.status !== "open" ? " done" : "");
+  row.dataset.id = x.id;
   const a = document.createElement("div"); a.className = "l1";
   a.textContent = x.title + (x.status === "done" ? `  (done${x.note ? ": " + x.note : ""})` : x.status === "dismissed" ? "  (dismissed)" : "");
   const b = document.createElement("div"); b.className = "l2 clamp"; b.textContent = x.text;
@@ -1254,13 +1262,27 @@ async function pollSuggestions() {  // suggestions made in Claude Code show up w
   if (key === st.sugKey) return;
   const fresh = sug.areas.filter((x) => x.status === "open").length + (sug.proposal && sug.proposal.status === "open" ? 1 : 0);
   st.sugKey = key;
+  const advSig = JSON.stringify(sug.advice);
+  if (st.adviceSig === undefined) st.adviceSig = advSig;  // first look: nothing new yet
+  if (advSig !== st.adviceSig) { await adviceArrived(); return; }
   if (!st.plaus) { if (fresh) { await loadPlaus(false); toast(`Claude made ${fresh} suggestion(s): see the Review panel`, 4000); } return; }
   if (JSON.stringify(sug.solved) !== JSON.stringify(st.solvedSig) || sug.review !== st.plaus.review_count) { await loadPlaus(false); return; }  // Claude judged candidates
-  if (sug.advice !== (st.advice ? st.advice.status.n_runs : sug.advice)) { await loadPlaus(false); toast("Claude's advice is in the Review panel", 4000); return; }
   if (sug.report && sug.report !== st.reportTime && $("rpDlg").open) await openReport();
   st.plaus.suggestions = sug.areas; st.plaus.proposal = sug.proposal; renderPlaus();
 }
 setInterval(() => pollSuggestions().catch(() => {}), 4000);
+async function adviceArrived() {  // new advice from Claude Code: open the Review panel; a region the user asked for is shown
+  const before = new Set(((st.advice || {}).items || []).map((x) => x.id));
+  await loadPlaus(false);
+  const fresh = st.advice.items.filter((x) => !before.has(x.id) && x.status === "open");
+  const reg = fresh.filter((x) => x.requested && x.action && x.action.outlines).sort((a, b) => (a.time < b.time ? 1 : -1))[0];
+  if (reg) {
+    st.adviceShown = reg.id;
+    zoomToPoly(reg.action.outlines.flat(), false); renderPlaus();
+    const el = document.querySelector(`.pla.adv[data-id="${reg.id}"]`); if (el) el.scrollIntoView({ block: "nearest" });
+    toast(`Claude outlined “${reg.action.name}”: check it, then click “add region” in the Review panel`, 7000);
+  } else if (fresh.length) toast("Claude's advice is in the Review panel", 4000);
+}
 $("plaus").onclick = async () => {
   try { await loadPlaus(true); await askClaudeReview(); } catch (e) { toast(e.message, 6000); }
 };

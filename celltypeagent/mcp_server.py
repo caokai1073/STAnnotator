@@ -50,7 +50,12 @@ Priors and corrections
 - A correction ("the smooth muscle in mucosa_2 is muscularis mucosae", "root/c27 is neurons"): label_cells
   (region=..., only_types=... for part of a region) or label_cluster; the instruction is the go-ahead. Report how many
   cells you labeled and how many others changed because the model was updated; suggest a region or depth prior
-  when the types differ mainly by position. You cannot draw regions: ask the user to draw and name them in the viewer.
+  when the types differ mainly by position.
+- Regions are the user's. When the user asks you to draw or outline one ("draw the mucosa", "outline the follicles",
+  "make a region of tiles F3:H6"): compute it with preview_compartment (tissue a lineage forms) or take tiles / a
+  candidate area, check the figure against the H&E, then propose_region. It appears in the viewer's Review panel
+  (other advice stays) and becomes a region when the user clicks "add region"; the user can then edit its points.
+  Never add regions the user did not ask for.
 - Conflicts (conflict_summary, show_conflicts) are cells whose expression contradicts a prior; describe H&E crops
   cautiously and record verdicts only when the user states them.
 
@@ -319,7 +324,8 @@ def remove_constraint(constraint_id: str, message: Optional[str] = None) -> str:
 # ---------------- regions ----------------
 @mcp.tool()
 def list_regions(version: Optional[int] = None) -> str:
-    """Regions of the session. Regions are drawn and named by the user on the map (the agent cannot draw them);
+    """Regions of the session. Regions are drawn by the user on the map, or added from an outline you proposed
+    (propose_region) when the user clicks it;
     cells outside every region are 'unknown' and no region prior applies to them."""
     info = _s().regions_info(version)
     return _j({"source": info["source"], "regions": info["regions"], "n_unknown": info["n_unknown"],
@@ -487,6 +493,32 @@ def preview_compartment(name: str, lineages: list[str], max_dist_um: float = 30.
 
 
 @mcp.tool()
+def propose_region(name: str, compartment: Optional[str] = None, area: Optional[str] = None, text: str = "",
+                   prior: Optional[dict] = None) -> str:
+    """Offer a region the user asked for: the outline of a compartment computed with preview_compartment
+    (compartment=<its name>) or of tiles / a candidate area (area="F3:H6" or "A3"). It is added to the Review panel
+    next to the other advice (nothing is replaced) and becomes region `name` when the user clicks "add region".
+    text: one or two sentences on what the outline holds; prior: optional constraint spec on the new region, offered
+    after the region exists. Only when the user asked for the region."""
+    from . import advice, plausibility
+    s = _s()
+    if bool(compartment) == bool(area):
+        raise ValueError("give either compartment (from preview_compartment) or area (tiles or a candidate id)")
+    if compartment:
+        comp = advice.load(s)["compartments"].get(compartment)
+        if comp is None:
+            raise ValueError(f"no previewed compartment {compartment!r}: call preview_compartment first")
+        polys, n = comp["polygons_px"], comp["n_cells"]
+    else:
+        info = plausibility.area_info(s, area)
+        polys, n = [info["outline_px"]], info.get("n_cells", 0)
+    item = advice.propose_region(s, name, polys, n, text, prior, source=compartment or area)
+    return _j({"id": item["id"], "region_name": item["action"]["name"], "n_pieces": len(polys), "n_cells": n,
+               "prior": item["action"].get("prior_text"),
+               "next": "the user clicks 'add region' on it in the Review panel (it opens by itself in the app)"})
+
+
+@mcp.tool()
 def type_confusion(top: int = 15) -> str:
     """Pairs of cell types the expression model hardly tells apart (mean probability of B in cells labelled A and the
     reverse): candidates to merge, or to separate with sharper markers."""
@@ -536,7 +568,8 @@ def check_registration() -> str:
 
 @mcp.tool()
 def add_advice(items: list[dict]) -> str:
-    """Record your high-level advice for the user's Review panel (replaces your earlier open advice; at most 12,
+    """Record your high-level advice for the user's Review panel (replaces your earlier open advice, except regions
+    the user asked for with propose_region; at most 12,
     keep only what matters, most important first). Each item: {"category": compartments | taxonomy | organization |
     context | qc, "title": short, "text": the finding with its evidence and what to do (2-4 sentences),
     "action": optional, one of

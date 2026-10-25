@@ -59,6 +59,33 @@ def store_compartment(s, name, comp, spec):
 
 
 # ---------------- advice ----------------
+def _next_id(used):
+    k = 1
+    while f"H{k}" in used:
+        k += 1
+    used.add(f"H{k}")
+    return f"H{k}"
+
+
+def propose_region(s, name, polygons_px, n_cells, text, prior=None, source=None, version=None):
+    """A region the user asked Claude for ("draw the mucosa"): added to the advice without touching the other items
+    or the advice runs, and shown in the Review panel, where the user adds it as a region with one click."""
+    name = re.sub(r"\s+", "_", str(name).strip())
+    if not name:
+        raise ValueError("the region needs a name")
+    if not polygons_px:
+        raise ValueError("no outline")
+    st = load(s)
+    act = {"kind": "region", "name": name, "compartment": source, "polygons_px": polygons_px, "n_cells": int(n_cells)}
+    if prior:
+        act["prior"], act["prior_text"] = _check_prior(s, prior, name)
+    item = {"id": _next_id({x["id"] for x in st["items"]}), "category": "compartments", "requested": True,
+            "title": f"Region “{name}” (you asked for it)", "text": str(text).strip() or f"Outline of {name}.",
+            "action": act, "status": "open", "version": s.state(version)["version"], "time": _now()}
+    st["items"].append(item)
+    _save(s, st)
+    return item
+
 def _check_prior(s, spec, new_region=None):
     """A prior spec as the user will add it; regions may include the region the same item creates."""
     spec = {k: v for k, v in dict(spec).items() if v is not None}
@@ -70,12 +97,13 @@ def _check_prior(s, spec, new_region=None):
 
 
 def add(s, items, version=None):
-    """Replace the open advice with items [{"category", "title", "text", "action"?}]; returns the stored items."""
+    """Replace the open advice with items [{"category", "title", "text", "action"?}]; returns the stored items.
+    Regions the user asked for (propose_region) stay until the user acts on them."""
     st = load(s)
     if len(items) > MAX_ITEMS:
         raise ValueError(f"at most {MAX_ITEMS} pieces of advice: keep the ones that matter")
-    keep = [x for x in st["items"] if x["status"] != "open"]
-    used = {x["id"] for x in keep}
+    keep = [x for x in st["items"] if x["status"] != "open" or x.get("requested")]
+    used = {x["id"] for x in st["items"]}
     v = s.state(version)["version"]
     new = []
     for it in items:
@@ -114,11 +142,7 @@ def add(s, items, version=None):
             if not str(act.get("request", "")).strip():
                 raise ValueError("a claude action needs 'request' (what Claude Code should do when the user asks)")
             out["request"] = str(act["request"]).strip()
-        k = 1
-        while f"H{k}" in used:
-            k += 1
-        used.add(f"H{k}")
-        new.append({"id": f"H{k}", "category": cat, "title": title, "text": text, "action": out, "status": "open",
+        new.append({"id": _next_id(used), "category": cat, "title": title, "text": text, "action": out, "status": "open",
                     "version": v, "time": _now()})
     st["items"] = keep + new
     st["runs"].append({"version": v, "labels_key": labels_key(s, version), "time": _now(), "n_items": len(new)})

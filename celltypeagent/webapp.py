@@ -743,7 +743,8 @@ def api_area_suggestions(req):
     return _json({"areas": _suggestions(s, view(s.sample_id)), "proposal": markerqc.proposal(s),
                   "solved": [len(plausibility.solved_areas(s)), len(markerqc.solved(s))],
                   "review": len(claudereview.load(s)["areas"]) + len(claudereview.load(s)["markers"]),
-                  "advice": len(advice.load(s)["runs"]), "report": (advice.report(s) or {}).get("time")})
+                  "advice": [len(advice.load(s)["runs"]), len(advice.load(s)["items"])],
+                  "report": (advice.report(s) or {}).get("time")})
 
 
 async def api_marker_check_solve(req: Request):
@@ -1146,8 +1147,8 @@ Two kinds of input:
 2. A correction of cell labels in a region ("the smooth muscle in mucosa_2 is muscularis mucosae", "the cells
    in region X are goblet cells"): apply it directly with label_cells(region=..., cell_type=..., only_types=...
    when only some cells of the region are meant); the instruction itself is the go-ahead. Regions are drawn and
-   named by the user with "Draw region" on the map; you cannot draw or move them. If the user points at an area
-   that is not a region yet, ask them to draw and name it first. After label_cells, report how many cells you
+   named by the user with "Draw region" on the map. If the user asks you to draw one, compute the outline
+   (preview_compartment, or tiles) and offer it with propose_region: the user adds it from the Review panel. After label_cells, report how many cells you
    labeled and how many other cells changed because the model was updated. If the cells differ mainly by location
    (e.g. muscularis mucosae vs muscularis propria smooth muscle), suggest a region or depth prior as well.
 Region priors only act on cells inside drawn regions; cells in no region are never penalized. When the user adds
