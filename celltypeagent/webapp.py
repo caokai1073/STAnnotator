@@ -483,8 +483,8 @@ async def api_annotate(req: Request):
         try:
             sid = Session.create(sample, b.get("region_source", "none"), method=b.get("method", "markers"),
                                  markers_text=b.get("markers_text"), resolution=b.get("resolution"),
-                                 carry_from=b.get("carry_from")).id
-        except ValueError as e:
+                                 carry_from=b.get("carry_from"), reference=b.get("reference")).id
+        except (ValueError, OSError, KeyError) as e:
             return _json({"error": str(e)}, 400)
     s = review_app._session(sid)
     JOBS[sid] = {"stage": "starting", "progress": 0.0, "done": False, "error": None}
@@ -794,6 +794,16 @@ async def api_markers_import(req: Request):
     return _json({"name": name, "text": text})
 
 
+async def api_reference_inspect(req: Request):
+    """A single-cell reference h5ad: cells, label columns, gene overlap with the sample's panel."""
+    from . import scref
+    b = await req.json()
+    try:
+        return _json(scref.inspect(Path(b["path"]).expanduser(), panel_genes(b.get("sample"))))
+    except (OSError, KeyError, ValueError) as e:
+        return _json({"error": f"cannot read the reference: {e}"}, 400)
+
+
 async def api_markers_to_csv(req: Request):
     b = await req.json()
     return Response(markers.text_to_csv(b.get("text", "")), media_type="text/csv")
@@ -1044,6 +1054,7 @@ def build_app(port):
         Route("/api/markers/import", api_markers_import, methods=["POST"]),
         Route("/api/markers/save_file", api_markers_save_file, methods=["POST"]),
         Route("/api/markers/to_csv", api_markers_to_csv, methods=["POST"]),
+        Route("/api/reference/inspect", api_reference_inspect, methods=["POST"]),
         Route("/api/s/{sid}/export_to", api_export_to, methods=["POST"]),
         Route("/api/markers/draft", api_markers_draft, methods=["POST"]),
     ] + [r for r in review_app.app.routes if r.path != "/"] + list(mcp_http.routes)

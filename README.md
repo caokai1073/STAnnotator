@@ -53,7 +53,7 @@ Click **Import…** in the app (or use the commands below). Two kinds of input:
 | h5ad + H&E + registration | AnnData file(s) with raw counts (layer `counts`, or `X`) and cell centroids in micrometers (`obs` columns `x_centroid`/`y_centroid` or `x`/`y`, or `obsm["spatial"]`); several files (e.g. one per lineage) are merged and cell type labels in them are ignored. The H&E as a pyramidal TIFF / OME-TIFF. The registration either as an affine CSV with columns `a11,a12,a21,a22,tx,ty` (`px = a11*x + a12*y + tx`, `py = a21*x + a22*y + ty`; cell um to H&E full-resolution pixels; with several rows, the row whose other columns contain the section value is used), or as a Xenium Explorer alignment matrix (3x3 CSV, H&E pixels to morphology pixels). |
 
 In the dialog, the h5ad's columns are listed so you can pick the section (when a file holds several) and an
-optional region annotation to start from. The import checks that at least 90% of the cells land on the image (a
+optional region annotation (regions start empty; Claude can start them from this column on request). The import checks that at least 90% of the cells land on the image (a
 wrong registration or section fails here) and takes 10-30 s. From the command line:
 
 ```bash
@@ -117,8 +117,10 @@ Claude answers in the language you write in.
 The app's window (or the web viewer: `.venv/bin/celltypeagent viewer`, then http://localhost:8765). Changes made
 by Claude show up within a few seconds.
 
-1. Pick a sample; earlier annotations are under **Session**. Click **Annotate** for a new one (about 1 min
-   for 350k cells). Regions start empty (or from the h5ad's region column, if imported).
+1. Pick a sample; earlier annotations are under **Session**. Choose the **Method**: *Marker genes* (a marker
+   list, **Markers…**) or *Single-cell reference* (a labeled reference h5ad, **Reference…**), then click
+   **Annotate** (about 1 min for 350k cells with markers, seconds with a reference). Regions start empty: you
+   draw them.
 2. The result is drawn on the H&E: pan and zoom down to single cells; color by cell type, lineage, region,
    changes, conflicts, confidence or clusters. Click a legend entry to show only that type; click a cell for
    its label, alternatives and region. Opacity, dot size, hide cells, hide H&E.
@@ -144,9 +146,20 @@ by Claude show up within a few seconds.
 The app has no chat box of its own: you talk to Claude in Claude Code. The web viewer on a
 shared server shows a chat box that uses the server's own logged-in Claude Code CLI (for the server owner's use).
 
-## Annotation method
+## Annotation methods
 
-Marker list format in text (indent two spaces per level; the CSV above is equivalent):
+**Single-cell reference** (like CellTypist). Give a labeled single-cell h5ad of the same tissue, its cell type
+column, and optionally a coarser group column (used as lineages for colors and priors). A multinomial logistic
+regression is trained on up to 3,000 reference cells per label, on the genes the reference shares with the panel,
+and labels every cell; both sides are normalized on the shared genes only, so a whole-transcriptome reference
+fits a panel of a few hundred genes. Raw counts are read from `layers["counts"]`, `raw.X` or `X` (log-normalized
+values are converted back), and gene names from the var index or the var column that matches the panel best
+(e.g. `feature_name` next to Ensembl ids). *Majority voting* over-clusters the sample and lets each cluster agree
+on one label. Hand corrections fine-tune the classifier (replaying the reference cells). Example: a reference built
+from three other SCP2927 sections labeled section 147328 with 80% agreement on 56 fine types and 97% on the five
+lineages (98% with majority voting); a reference from another platform (scRNA-seq) will agree less.
+
+**Marker genes.** A hierarchical marker list. Format in text (indent two spaces per level; the CSV above is equivalent):
 
 ```
 # Name: GENE+ GENE- A|B+    (+ expressed, - not expressed, A|B+ = any of A or B)

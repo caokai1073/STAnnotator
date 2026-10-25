@@ -40,6 +40,8 @@ button:disabled { opacity: .45; cursor: default; }
 #pstage { font-size: 12px; color: var(--muted); white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
 #vinfo { font-size: 12px; color: var(--muted); }
 main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 380px; min-height: 0; }
+body.desktop main { grid-template-columns: minmax(0, 1fr); }
+body.desktop #side { display: none; }
 #viewerwrap { position: relative; min-height: 0; }
 #osd { position: absolute; inset: 0; background: #ececea; }
 #glcells { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
@@ -146,10 +148,10 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
   <label class="f">Sample <select id="sample"></select></label>
   <button id="importBtn" title="Add a sample: a Xenium output folder, or h5ad + H&amp;E + registration">Import…</button>
   <div class="f">Data folder <span class="path" id="path">–</span></div>
-  <button id="openMarkers" title="Write, load, check or draft the marker gene list used for annotation">Markers…</button>
-  <label class="f">Start regions from <select id="regions" title="Regions are drawn by you; optionally start from the dataset annotation">
-    <option value="none">nothing (draw your own)</option><option value="pathologist">dataset pathologist annotation</option>
-  </select></label>
+  <label class="f">Method <select id="method" title="How cell types are assigned">
+    <option value="markers">Marker genes</option><option value="scref">Single-cell reference</option></select></label>
+  <button id="openMarkers" title="Import, write, check or save the marker gene list used for annotation">Markers…</button>
+  <button id="openRef" hidden title="The labeled single-cell reference (h5ad) used for annotation">Reference…</button>
   <button id="annotate" class="primary">Annotate</button>
   <label class="hint" id="carryWrap" hidden title="Start the new annotation with the regions, priors and cell corrections of the one that is open (items naming types that no longer exist are dropped)">
     <input type="checkbox" id="carry" checked> keep my regions &amp; priors</label>
@@ -288,6 +290,17 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <div class="frow"><span>Sample name</span><input type="text" id="imName" placeholder="short id without spaces"><span></span></div>
     <div class="frow"><span>Description</span><input type="text" id="imDesc" placeholder="optional, e.g. tissue and condition"><span></span></div>
     <div class="row" style="margin-top:6px"><span class="hint" id="imStatus"></span><span class="spacer"></span><button id="imGo" class="primary">Import</button></div>
+  </div>
+</dialog>
+<dialog id="refDlg" style="width:min(760px,95vw)">
+  <div class="dh"><b>Single-cell reference</b><span class="spacer"></span><button id="refClose">Done</button></div>
+  <div class="imbody">
+    <div class="hint">A labeled single-cell dataset (h5ad) of the same tissue. A classifier (logistic regression, as in CellTypist) is trained on the genes it shares with this sample's panel and labels every cell; raw counts are taken from layers["counts"], raw or X.</div>
+    <div class="frow"><span>Reference h5ad</span><input type="text" id="refPath" placeholder="/path/to/reference.h5ad"><button id="refPick">Choose…</button></div>
+    <div class="hint" id="refInfo"></div>
+    <div class="frow"><span>Cell type column</span><select id="refLabel"></select><span></span></div>
+    <div class="frow"><span>Group column</span><select id="refGroup"><option value="">none</option></select><span class="hint">optional: coarse classes, used as lineages</span></div>
+    <label class="hint"><input type="checkbox" id="refMV"> majority voting: over-cluster the sample and let each cluster agree on one label (smoother, slower)</label>
   </div>
 </dialog>
 <dialog id="clDlg" style="width:min(600px,95vw)">
@@ -487,8 +500,9 @@ function fillModes(sm) {
   if (!avail.some(([v]) => v === st.mode)) st.mode = "type";
   sel.value = st.mode;
 }
+const USER_METHODS = ["markers", "scref"];  // annotations made in the app (not the lab's benchmark ones)
 function sessionLabel(x) {
-  return `v${x.n_versions} · ${x.created_at.slice(5, 16).replace("T", " ")}`;
+  return `v${x.n_versions} · ${x.created_at.slice(5, 16).replace("T", " ")} · ${x.method === "scref" ? "reference" : "markers"}`;
 }
 function fillSessions(selected) {
   const sel = $("session"); sel.textContent = "";
@@ -503,9 +517,9 @@ async function selectSample(id) {
   const token = ++st.switchToken;  // ignore results of an earlier, still-running switch
   st.samples = await api("/api/samples");
   st.sample = st.samples.find((s) => s.sample_id === id);
-  // only annotations made from marker genes; sessions that used the dataset's cell type labels are not shown
+  // only annotations made in the app (marker genes or a single-cell reference); the lab's benchmark ones are not shown
   st.sample.allSessions = st.sample.sessions;
-  st.sample.sessions = st.sample.sessions.filter((x) => x.method === "markers");
+  st.sample.sessions = st.sample.sessions.filter((x) => USER_METHODS.includes(x.method));
   $("reset").disabled = !st.sample.allSessions.length;
   store("sample", id);
   $("path").textContent = st.sample.bundle_dir;
@@ -541,13 +555,18 @@ function closeSession() {
 }
 
 async function startAnnotation(mode, sid, token = st.switchToken) {
-  const body = { sample_id: st.sample.sample_id, region_source: $("regions").value, mode, method: "markers",
+  const method = $("method").value;
+  const body = { sample_id: st.sample.sample_id, region_source: "none", mode, method,
                  markers_text: $("mkText").value, resolution: $("mkAuto").checked ? "auto" : +$("mkRes").value,
                  carry_from: mode === "new" && st.sid && $("carry").checked ? st.sid : null };
-  if (mode === "new" && !body.markers_text.trim()) {
+  if (mode === "new" && method === "scref") {
+    body.reference = { path: $("refPath").value.trim(), label_column: $("refLabel").value, group_column: $("refGroup").value,
+                       majority_voting: $("refMV").checked };
+    if (!body.reference.path || !body.reference.label_column) { openRef(); toast("Choose the reference h5ad and its cell type column", 5000); return; }
+  } else if (mode === "new" && !body.markers_text.trim()) {
     openMarkers(); toast("Import a marker list first (Import…), load one, or ask Claude Code to draft one", 5000); return;
   }
-  if (mode === "new") {
+  if (mode === "new" && method === "markers") {
     const chk = await post("/api/markers/check", { text: body.markers_text, sample: body.sample_id });
     if (!chk.ok) { openMarkers(); showCheck(chk); toast("Fix the marker list first", 3000); return; }
   }
@@ -570,7 +589,7 @@ async function startAnnotation(mode, sid, token = st.switchToken) {
       st.samples = await api("/api/samples");
       st.sample = st.samples.find((s) => s.sample_id === body.sample_id);
       st.sample.allSessions = st.sample.sessions;
-      st.sample.sessions = st.sample.sessions.filter((x) => x.method === "markers");
+      st.sample.sessions = st.sample.sessions.filter((x) => USER_METHODS.includes(x.method));
       $("reset").disabled = false;
       fillSessions(session_id);
     }
@@ -591,6 +610,8 @@ async function openSession(sid) {
   $("input").disabled = false; $("composerhint").textContent = "Tip: refer to regions you drew by their name.";
   st.vocab = await api(`/api/s/${sid}/vocab`);
   if (st.vocab.marker_list) setMarkers(st.vocab.marker_list, "");  // re-annotating starts from this annotation's list
+  if (st.vocab.method === "scref" && st.vocab.reference) setReference(st.vocab.reference);
+  if (st.vocab.method === "markers" || st.vocab.method === "scref") { $("method").value = st.vocab.method; showMethod(); }
   await refreshVersion(true);
   await loadChat();
 }
@@ -1002,6 +1023,43 @@ async function send() {
 $("send").onclick = send;
 $("input").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } });
 
+// ---------------- single-cell reference ----------------
+function showMethod() {
+  const ref = $("method").value === "scref";
+  $("openMarkers").hidden = ref; $("openRef").hidden = !ref;
+}
+function openRef() { $("refPick").hidden = !native(); $("refDlg").showModal(); }
+function fillRefColumns(cols, label, group) {
+  const names = Object.keys(cols || {});
+  const guess = label || names.find((c) => /^(cell_?type|celltype|cell_type_.*|annotation|labels?|cluster_?name)$/i.test(c)) || names[0] || "";
+  for (const [id, keep] of [["refLabel", guess], ["refGroup", group || ""]]) {
+    const sel = $(id); sel.length = id === "refGroup" ? 1 : 0;
+    names.forEach((c) => { const o = document.createElement("option"); o.value = c; o.textContent = `${c} (${cols[c].n_values} values: ${cols[c].examples.slice(0, 3).join(", ")}…)`; sel.append(o); });
+    if (keep && ![...sel.options].some((o) => o.value === keep)) { const o = document.createElement("option"); o.value = keep; o.textContent = keep; sel.append(o); }
+    sel.value = keep;
+  }
+}
+async function inspectRef(label, group) {
+  const path = $("refPath").value.trim(); if (!path) return;
+  $("refInfo").textContent = "reading the reference…";
+  try {
+    const r = await post("/api/reference/inspect", { path, sample: st.sample && st.sample.sample_id });
+    $("refInfo").textContent = `${r.n_cells.toLocaleString()} cells; ${r.n_shared_genes} of the ${r.n_panel_genes} panel genes found ` +
+      `(gene names from ${r.gene_names}, counts from ${r.matrix})` + (r.n_shared_genes < 20 ? ". Too few shared genes for this panel." : ".");
+    fillRefColumns(r.label_columns, label, group);
+  } catch (e) { $("refInfo").textContent = e.message; }
+}
+function setReference(ref) {
+  $("refPath").value = ref.path || ""; $("refMV").checked = !!ref.majority_voting;
+  fillRefColumns({}, ref.label_column, ref.group_column);
+  inspectRef(ref.label_column, ref.group_column);
+}
+$("method").onchange = showMethod;
+$("openRef").onclick = openRef;
+$("refClose").onclick = () => $("refDlg").close();
+$("refPath").onchange = () => inspectRef();
+$("refPick").onclick = async () => { const p = await native().pick("h5ad"); if (p.length) { $("refPath").value = p[0]; inspectRef(); } };
+
 // ---------------- import ----------------
 const native = () => window.pywebview && window.pywebview.api;  // file dialogs in the desktop app
 function imKind() { return document.querySelector("input[name=imKind]:checked").value; }
@@ -1084,7 +1142,7 @@ async function openClaudeCode() {
       $("clCmd").hidden = true; $("clDlg").showModal(); return;
     }
     const r = await post("/api/claude/code", { sample: st.sample && st.sample.sample_id, session: st.sid });
-    if (r.opened) { toast("Claude Code is opening in Terminal, connected to this sample", 4000); return; }
+    if (r.opened) { toast(r.reused ? "Claude Code is open in Terminal (brought to the front)" : "Claude Code is opening in Terminal, connected to this sample", 4000); return; }
     $("clMsg").textContent = "Run this in a terminal to start Claude Code connected to this app:";
     $("clCmd").textContent = r.command; $("clCmd").hidden = false; $("clDlg").showModal();
   } catch (e) { toast(e.message, 6000); }
@@ -1225,7 +1283,7 @@ $("export").onclick = async () => {  // the per-cell CSV of the current version
   toast(`Downloading ${a.download}…`);
 };
 document.addEventListener("keydown", (e) => {
-  if ($("mkDlg").open || $("nameDlg").open || $("imDlg").open || $("clDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
+  if ($("mkDlg").open || $("nameDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
   if (e.key === "h") $("hide").click();
   if (e.key === "e") $("hideHE").click();
   if (st.drawing && e.key === "Escape") cancelDraw();
@@ -1235,7 +1293,7 @@ document.addEventListener("keydown", (e) => {
 api("/api/config").then((c) => {  // the desktop app (or no Claude Code CLI): the conversation happens in Claude's apps
   st.chatAvailable = c.chat; st.desktop = c.desktop; st.platform = c.platform;
   $("claudeBtn").hidden = !c.desktop;
-  if (c.desktop) $("sideTitle").textContent = "Claude";
+  if (c.desktop) { document.body.classList.add("desktop"); $("sideTitle").textContent = "Claude"; }  // Claude Code button in the header
   $("mkDraftBox").hidden = c.desktop; $("mkClaudeHint").hidden = !c.desktop;
   if (!c.chat) {
     $("msgs").querySelectorAll(".hint").forEach((h) => h.remove());

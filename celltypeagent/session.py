@@ -83,6 +83,13 @@ class Session:
             self.type_groups = {k: [t for t in v if t in self.types]
                                 for k, v in markers.descendants(self.scheme["tree"]).items()}
             self.lineages = [n["name"] for n in self.scheme["tree"]] + [markers.UNASSIGNED]
+        elif self.scheme["kind"] == "scref":
+            # cell types are the labels of a single-cell reference; an optional group column gives their lineages
+            self.types = self.scheme["types"]
+            self.lineage_of_type = self.scheme["lineage_of_type"]
+            self.lineages = list(dict.fromkeys(self.lineage_of_type[t] for t in self.types))
+            self.type_groups = {l: [t for t in self.types if self.lineage_of_type[t] == l] for l in self.lineages
+                                if l not in self.types}
         else:
             self.types = ds["types"]
             self.lineage_of_type = ds["lineage_of_type"]
@@ -109,9 +116,11 @@ class Session:
     # ---------- creation / persistence ----------
     @classmethod
     def create(cls, sample_id, region_source="none", method="markers", markers_text=None, resolution=None,
-               carry_from=None):
+               carry_from=None, reference=None):
         """method 'markers' (default): hierarchical marker annotation (Leiden + marker scores) of this sample; the data
         is treated as having no cell type labels. markers_text: the marker list (indented text or CSV); required.
+        method 'scref': a single-cell reference h5ad (reference = {"path", "label_column", optional "group_column",
+        "majority_voting"}) trains a CellTypist-like classifier on the genes it shares with the panel.
         method 'reference': expression model trained on the dataset's labeled slides (benchmarks only)."""
         sd = config.SAMPLES / str(sample_id)
         if not (sd / "meta.json").exists():
@@ -132,8 +141,22 @@ class Session:
                       "nodes": parsed["types"], "leaf_types": True,
                       "parent": parsed["parent"], "top": parsed["top"],
                       "resolution": markers.AUTO if resolution in (None, "", markers.AUTO) else float(resolution)}
+        elif method == "scref":
+            from . import scref
+            ref = dict(reference or {})
+            if not ref.get("path") or not ref.get("label_column"):
+                raise vocab.VocabError("a single-cell reference needs the h5ad path and its cell type column")
+            info = scref.inspect(ref["path"], panel_genes(sample_id))
+            if info["n_shared_genes"] < scref.MIN_SHARED:
+                raise vocab.VocabError(f"the reference shares only {info['n_shared_genes']} genes with the panel")
+            _, types, natural, lineage = scref.scan_labels(ref["path"], ref["label_column"], ref.get("group_column") or None)
+            scheme = {"kind": "scref", "types": types, "lineage_of_type": lineage, "reference_counts": natural,
+                      "reference": {"path": str(ref["path"]), "label_column": ref["label_column"],
+                                    "group_column": ref.get("group_column") or None,
+                                    "majority_voting": bool(ref.get("majority_voting"))},
+                      "n_shared_genes": info["n_shared_genes"], "gene_names": info["gene_names"]}
         elif method != "reference":
-            raise ValueError("method must be 'reference' or 'markers'")
+            raise ValueError("method must be 'markers', 'scref' or 'reference'")
         sid = f"{sample_id}_{time.strftime('%Y%m%d-%H%M%S')}_{uuid.uuid4().hex[:4]}"
         d = config.SESSIONS / sid
         (d / "versions").mkdir(parents=True)
@@ -255,12 +278,55 @@ class Session:
             lab = self.marker_labels(st, lambda fr, msg: say(0.02 + 0.6 * fr, msg))
             say(0.65, "training expression model on the marker annotation")
             m = model.train_pseudo(self.counts, lab, len(self.types), progress=lambda fr, msg: say(0.65 + 0.25 * fr, msg))
+        elif self.scheme["kind"] == "scref":
+            tr = self._scref_training(say)
+            say(0.6, f"training the classifier on {len(tr['y']):,} reference cells, {len(tr['panel_idx'])} shared genes")
+            m = model._fit(model.lognorm(tr["X"]), tr["y"], len(self.types),
+                           [self.scheme["reference_counts"][t] for t in self.types],
+                           progress=lambda fr, msg: say(0.6 + 0.3 * fr, msg))
         else:
             say(0.02, "loading reference cells")
             model.reference()
             m = model.train(self.meta["slide_id"], progress=lambda fr, msg: say(0.05 + 0.85 * fr, msg))
         model.save(m, f)
         return m
+
+    def _scref_training(self, say=None):
+        """Reference training cells on the shared genes, read once and kept in the session folder (also the replay
+        set when corrections fine-tune the classifier)."""
+        from . import scref
+        f = self.dir / "base" / "reference_cells.npz"
+        if f.exists():
+            z = np.load(f)
+            return {"X": sp.csr_matrix((z["data"], z["indices"], z["indptr"]), shape=tuple(z["shape"])),
+                    "y": z["y"], "panel_idx": z["panel_idx"]}
+        ref = self.scheme["reference"]
+        tr = scref.load_training(ref["path"], ref["label_column"], self.panel,
+                                 progress=(lambda fr, msg: say(0.05 + 0.5 * fr, msg)) if say else None)
+        if tr["types"] != self.types:
+            raise ValueError("the reference's labels changed since this annotation was made")
+        X = tr["X"]
+        np.savez(f, data=X.data, indices=X.indices, indptr=X.indptr, shape=np.array(X.shape), y=tr["y"],
+                 panel_idx=tr["panel_idx"])
+        return tr
+
+    def _model_counts(self):
+        """The sample's counts as the expression model sees them (single-cell reference: the shared genes only)."""
+        if self.scheme["kind"] == "scref":
+            return self.counts[:, self._scref_training()["panel_idx"]]
+        return self.counts
+
+    def _overclusters(self, say):
+        """Leiden over-clustering of the sample for majority voting (cached)."""
+        from . import scref, model
+        f = self.dir / "base" / "overclusters.npy"
+        if f.exists():
+            return np.load(f)
+        say(0.93, "over-clustering for majority voting")
+        g, nbr = markers._graph(model.lognorm(self.counts))
+        cl = markers._leiden(g, nbr, scref.over_resolution(self.counts.shape[0]), 0)
+        np.save(f, cl)
+        return cl
 
     # ----- marker step (versioned: each local re-clustering is an op in state["marker_step"]["ops"]) -----
     def _marker_tree(self, ops):
@@ -371,16 +437,23 @@ class Session:
         from . import model
         rows, labs = self._locks(st.get("corrections", []))
         m = self._init_model(st, say if not len(rows) else (lambda f, msg: say(0.3 * f, msg)))
+        counts = self._model_counts()
         if len(rows):
             if self.scheme["kind"] == "markers":
                 rX, ry, _ = model.pseudo_pool(self.counts, self.marker_labels(st), len(self.types))
+            elif self.scheme["kind"] == "scref":
+                tr = self._scref_training()
+                rX, ry = model.lognorm(tr["X"]), tr["y"]
             else:
                 rX, ry = model.reference_replay(self.meta["slide_id"])
-            m = model.finetune(m, self.counts[rows], labs, rX, ry, progress=lambda fr, msg: say(0.3 + 0.6 * fr, msg))
+            m = model.finetune(m, counts[rows], labs, rX, ry, progress=lambda fr, msg: say(0.3 + 0.6 * fr, msg))
         say(0.92, "predicting all cells")
-        logp = model.predict(m, self.counts)
+        logp = model.predict(m, counts)
         if self.scheme.get("leaf_types"):
             logp = self._within_parent(logp, st)
+        if self.scheme["kind"] == "scref" and self.scheme["reference"].get("majority_voting"):
+            from . import scref
+            logp = scref.majority_vote(logp, self._overclusters(say))
         say(1.0, "expression model ready")
         return logp
 
@@ -450,7 +523,7 @@ class Session:
         return {"method": self.scheme["kind"], "cell_types": self.types,
                 "type_groups": {k: v for k, v in self.type_groups.items()},
                 "lineages": self.lineages, "lineage_of_type": self.lineage_of_type,
-                "marker_list": self.scheme.get("text"),
+                "marker_list": self.scheme.get("text"), "reference": self.scheme.get("reference"),
                 "regions": self.region_names(), "free_regions": vocab.FREE_REGIONS, "kinds": cmod.KINDS,
                 "modes": cmod.MODES, "strengths": cmod.STRENGTH, "verdicts": vocab.VERDICTS,
                 "depth_note": "depth = distance to the mucosa core (epithelial-marker density); 0 inside crypts",
@@ -909,7 +982,8 @@ class Session:
             while self.scheme["parent"].get(path[0]):
                 path.insert(0, self.scheme["parent"][path[0]])
             return path
-        return [self.lineage_of_type.get(t, t), t]
+        lin = self.lineage_of_type.get(t, t)
+        return [t] if lin == t else [lin, t]
 
     def export_table(self, version=None):
         """One row per cell: original cell id first, then region, cell type, lineage, the full type path, confidence,

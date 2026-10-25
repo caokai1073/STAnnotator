@@ -74,6 +74,33 @@ def claude_code_command(prompt=None):
     return cmd + (f" '{prompt}'" if prompt else ""), ws
 
 
+TAB_TITLE = "Spatial Annotator - Claude Code"
+# Bring the Terminal tab that still runs this app's Claude Code to the front; otherwise start it in a new window
+FOCUS_SCRIPT = """on run argv
+  set theTitle to item 1 of argv
+  set theScript to item 2 of argv
+  tell application "Terminal"
+    repeat with w in windows
+      repeat with t in tabs of w
+        try
+          if custom title of t is theTitle and busy of t then
+            set selected of t to true
+            set index of w to 1
+            activate
+            return "existing"
+          end if
+        end try
+      end repeat
+    end repeat
+    set t to do script quoted form of theScript
+    set custom title of t to theTitle
+    activate
+    return "new"
+  end tell
+end run
+"""
+
+
 def open_claude_code(sample=None, session=None, request=None):
     """Open the user's own Claude Code in Terminal (macOS), connected to this app; elsewhere return the command.
     request: the user's first message (otherwise Claude loads the session and waits)."""
@@ -104,8 +131,12 @@ def open_claude_code(sample=None, session=None, request=None):
                  f'exec claude {args}']
     script.write_text("\n".join(body) + "\n")
     script.chmod(0o755)
-    subprocess.run(["open", "-a", "Terminal", str(script)], check=False)
-    return {"opened": True, "command": cmd, "claude_code": exe}
+    focus = ws / "focus_claude.applescript"
+    focus.write_text(FOCUS_SCRIPT)
+    r = subprocess.run(["osascript", str(focus), TAB_TITLE, str(script)], capture_output=True, text=True, check=False)
+    if r.returncode != 0:  # e.g. the user did not allow the app to control Terminal: open a new window
+        subprocess.run(["open", "-a", "Terminal", str(script)], check=False)
+    return {"opened": True, "reused": r.stdout.strip() == "existing", "command": cmd, "claude_code": exe}
 
 
 # ---------------- viewer <-> agent ----------------
