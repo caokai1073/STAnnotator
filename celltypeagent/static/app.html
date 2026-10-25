@@ -19,8 +19,8 @@
 html, body { height: 100%; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
        display: flex; flex-direction: column; }
-header { display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: var(--panel);
-         border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+header { display: flex; flex-direction: column; gap: 4px; padding: 8px 14px; background: var(--panel);
+         border-bottom: 1px solid var(--line); }
 header h1 { font-size: 16px; margin: 0 6px 0 0; font-weight: 650; }
 .f { display: flex; flex-direction: column; font-size: 11px; color: var(--muted); gap: 2px; }
 .path { font: 11px ui-monospace, monospace; color: var(--muted); max-width: 330px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -33,8 +33,10 @@ button.primary { background: var(--accent); color: #fff; border-color: var(--acc
 button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
 button:disabled { opacity: .45; cursor: default; }
 .spacer { flex: 1; }
-.progress { display: none; align-items: center; gap: 8px; min-width: 280px; }
-.progress.show { display: flex; }
+.hrow { display: flex; align-items: center; gap: 12px; min-height: 40px; flex-wrap: wrap; }
+.cfgslot { display: inline-flex; min-width: 132px; }
+.progress { display: flex; visibility: hidden; align-items: center; gap: 8px; min-width: 280px; flex: 1; max-width: 640px; }
+.progress.show { visibility: visible; }
 .pbar { flex: 1; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; min-width: 120px; }
 .pbar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
 #pstage { font-size: 12px; color: var(--muted); white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
@@ -144,28 +146,36 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 </head>
 <body>
 <header>
-  <h1>Spatial Annotator</h1>
-  <label class="f">Sample <select id="sample"></select></label>
-  <button id="importBtn" title="Add a sample: a Xenium output folder, or h5ad + H&amp;E + registration">Import…</button>
-  <div class="f">Data folder <span class="path" id="path">–</span></div>
-  <label class="f">Method <select id="method" title="How cell types are assigned">
-    <option value="markers">Marker genes</option><option value="scref">Single-cell reference</option>
-    <option value="existing">Load existing</option></select></label>
-  <button id="openMarkers" title="Import, write, check or save the marker gene list used for annotation">Markers…</button>
-  <button id="openRef" hidden title="The labeled single-cell reference (h5ad) used for annotation">Reference…</button>
-  <button id="openEx" hidden title="A CSV with an existing cell type annotation (one row per cell)">Annotation file…</button>
-  <button id="annotate" class="primary">Annotate</button>
-  <label class="hint" id="carryWrap" hidden title="Start the new annotation with the regions, priors and cell corrections of the one that is open (items naming types that no longer exist are dropped)">
-    <input type="checkbox" id="carry" checked> keep my regions &amp; priors</label>
-  <label class="f" id="sessWrap" hidden>Session <select id="session" title="Earlier annotations of this sample"></select></label>
-  <div class="progress" id="progress"><div class="pbar"><i id="pfill"></i></div><span id="pstage"></span></div>
-  <span class="spacer"></span>
-  <span id="vinfo"></span>
-  <button id="claudeBtn" hidden title="Open your own Claude Code in Terminal, connected to the sample open here">Claude Code</button>
-  <button id="undo" disabled title="Undo the last change">Undo</button>
-  <button id="reset" disabled title="Remove every annotation and chat of this sample">Reset</button>
-  <button id="plaus" disabled title="Check markers and spatial layout; Claude can review them with the H&amp;E and suggest fixes">Review annotation</button>
-  <button id="export" disabled title="Download a CSV with one row per cell: cell id, region, cell type, lineage, type levels, confidence…">Export CSV</button>
+  <!-- three fixed rows: nothing moves when the progress bar or an option appears -->
+  <div class="hrow">
+    <h1>Spatial Annotator</h1>
+    <label class="f">Sample <select id="sample"></select></label>
+    <button id="importBtn" title="Add a sample: a Xenium output folder, or h5ad + H&amp;E + registration">Import…</button>
+    <div class="f">Data folder <span class="path" id="path">–</span></div>
+    <label class="f" id="sessWrap" hidden>Session <select id="session" title="Earlier annotations of this sample"></select></label>
+  </div>
+  <div class="hrow">
+    <label class="f">Method <select id="method" title="How cell types are assigned">
+      <option value="markers">Marker genes</option><option value="scref">Single-cell reference</option>
+      <option value="existing">Load existing</option></select></label>
+    <span class="cfgslot">
+      <button id="openMarkers" title="Import, write, check or save the marker gene list used for annotation">Markers…</button>
+      <button id="openRef" hidden title="The labeled single-cell reference (h5ad) used for annotation">Reference…</button>
+      <button id="openEx" hidden title="A CSV with an existing cell type annotation (one row per cell)">Annotation file…</button>
+    </span>
+    <button id="annotate" class="primary">Annotate</button>
+    <label class="hint" id="carryWrap" style="visibility:hidden" title="Start the new annotation with the regions, priors and cell corrections of the one that is open (items naming types that no longer exist are dropped)">
+      <input type="checkbox" id="carry" checked> keep my regions &amp; priors</label>
+    <div class="progress" id="progress"><div class="pbar"><i id="pfill"></i></div><span id="pstage"></span></div>
+  </div>
+  <div class="hrow">
+    <button id="claudeBtn" hidden title="Open your own Claude Code in Terminal, connected to the sample open here">Claude Code</button>
+    <button id="undo" disabled title="Undo the last change">Undo</button>
+    <button id="reset" disabled title="Remove every annotation and chat of this sample">Reset</button>
+    <button id="plaus" disabled title="Check markers and spatial layout; Claude can review them with the H&amp;E and suggest fixes">Review annotation</button>
+    <button id="export" disabled title="Download a CSV with one row per cell: cell id, region, cell type, lineage, type levels, confidence…">Export CSV</button>
+    <span id="vinfo"></span>
+  </div>
 </header>
 <main>
   <section id="viewerwrap">
@@ -558,7 +568,7 @@ function closeSession() {
   $("legend").hidden = true; $("cellcard").classList.remove("show");
   $("empty").style.display = "flex";
   ["undo", "export", "send", "plaus"].forEach((b) => ($(b).disabled = true));
-  $("carryWrap").hidden = true;
+  $("carryWrap").style.visibility = "hidden";
   $("input").disabled = true; $("composerhint").textContent = "Annotate a sample first.";
   $("vinfo").textContent = ""; $("regpanel").hidden = true; drawRegions();
   fillModes(null); st.lastSummary = null;
@@ -622,7 +632,7 @@ async function openSession(sid) {
   st.sid = sid;
   $("empty").style.display = "none";
   ["undo", "export", "send", "plaus"].forEach((b) => ($(b).disabled = false));
-  $("carryWrap").hidden = false;
+  $("carryWrap").style.visibility = "visible";
   $("input").disabled = false; $("composerhint").textContent = "Tip: refer to regions you drew by their name.";
   st.vocab = await api(`/api/s/${sid}/vocab`);
   if (st.vocab.marker_list) setMarkers(st.vocab.marker_list, "");  // re-annotating starts from this annotation's list
