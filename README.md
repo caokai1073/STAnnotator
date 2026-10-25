@@ -129,6 +129,9 @@ by Claude show up within a few seconds.
    with a double-click, Enter or the first point (Backspace removes a point, Esc cancels), and name it. A
    name can have several polygons; regions can be renamed, deleted, zoomed to and outlined. Cells in no
    region are "unknown" and region priors never apply to them. Refer to regions by name when talking to Claude.
+   **edit** next to a polygon shows its points: drag a point to move it, drag a small circle between two points to
+   add one, double-click a point to remove it, then **Save** (Enter) or **Cancel** (Esc). The region keeps its name
+   and priors; its cells are recomputed, and Undo brings the old outline back.
 4. Hand-labeled cells are locked and fine-tune the expression model (only the involved cell types can move),
    so similar cells elsewhere update too. Every step is a version; **Undo** reverts the last one.
 5. **Export CSV** saves one row per cell

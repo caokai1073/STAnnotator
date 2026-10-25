@@ -707,6 +707,27 @@ class Session:
         return self._commit("add_region", f"R{i}: {len(rows)} cells drawn as region {name}", regions=reg,
                             expected_parent=expected_parent or cur["version"])
 
+    def edit_region(self, rid, polygon_px, author=None, message=None):
+        """Replace the outline of drawn polygon rid (points moved, added or removed by the user); its cells are
+        recomputed, its id and name stay, so priors on the region keep applying."""
+        cur = self.state()
+        ops = cur["regions"].get("ops", [])
+        op = next((o for o in ops if o.get("id") == rid and o.get("op") == "polygon"), None)
+        if op is None:
+            raise ValueError(f"no region polygon {rid}")
+        if len(polygon_px) < 3:
+            raise vocab.VocabError("a region needs at least 3 points")
+        rows = regmod.cells_in_polygon(self.cells.px.to_numpy(), self.cells.py.to_numpy(), polygon_px)
+        if not len(rows):
+            raise vocab.VocabError("the polygon contains no cells")
+        new = dict(op, polygon=[[float(x), float(y)] for x, y in polygon_px], cells=self.cells.cell.to_numpy()[rows].tolist(),
+                   edited_by=author, edited_at=_now())
+        before = len(op["cells"])
+        return self._commit("edit_region", message or f"{rid}: outline of region {op['name']} edited "
+                                                      f"({before:,} -> {len(rows):,} cells)",
+                            regions=dict(cur["regions"], ops=[new if o is op else o for o in ops]),
+                            expected_parent=cur["version"])
+
     def rename_region(self, old, new, message=None):
         """Rename a region everywhere (all its polygons and every constraint that names it)."""
         new = regmod.validate_name(new)

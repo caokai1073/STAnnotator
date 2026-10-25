@@ -204,6 +204,20 @@ def _simplify(pts, tol):
     return out if len(out) >= 3 else pts
 
 
+def smooth_outline(mask, x0, y0, step, sigma=1.0, tol=0.3):
+    """Outer boundary of a raster mask (pixel (i, j) covers x0 + j*step.., y0 + i*step..) as one smooth polygon in
+    H&E level-0 pixels: the 0.5 contour (marching squares) of the Gaussian-smoothed mask, its longest line, simplified
+    to tol raster pixels. Many more points than the pixel staircase, and they follow the shape."""
+    import contourpy
+    z = ndimage.gaussian_filter(np.pad(mask.astype(np.float32), 3), sigma)
+    lines = contourpy.contour_generator(z=z, line_type="Separate").lines(0.5)
+    if not len(lines):
+        return None
+    ln = max(lines, key=len)
+    pts = [[float(x0 + (c - 3 + 0.5) * step), float(y0 + (r - 3 + 0.5) * step)] for c, r in ln[:-1]]
+    return _simplify(pts, tol * step) if len(pts) >= 3 else None
+
+
 def cell_outline(px, py, um_per_px):
     """One polygon (H&E level-0 pixels) around where the given cells lie: a contour of their smoothed density that
     holds at least OUTLINE_COVER of them in one piece (the smoothing widens until it does), holes filled,
@@ -234,8 +248,7 @@ def cell_outline(px, py, um_per_px):
     if best_held < OUTLINE_MIN_COVER * len(px):
         return None
     mask, x0, y0 = best
-    pix = {(int(i), int(j)) for i, j in zip(*np.where(mask))}
-    return _simplify(outline({"x0": x0, "y0": y0, "tile_px": step}, pix), 0.75 * step)
+    return smooth_outline(mask, x0, y0, step)
 
 
 # ---------------- candidate areas ----------------

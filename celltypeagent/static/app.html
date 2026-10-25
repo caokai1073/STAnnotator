@@ -79,6 +79,8 @@ body.desktop #side { display: none; }
 #empty div { background: var(--panel); padding: 12px 18px; border-radius: 8px; border: 1px solid var(--line); }
 .cellmark { pointer-events: none; }  /* drags that start on it must still pan the viewer */
 #regsvg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; }
+#regsvg .hdl { pointer-events: all; cursor: grab; }
+#regsvg .hdl.mid { cursor: copy; }
 #regsvg text { font: 600 12px system-ui, sans-serif; paint-order: stroke; stroke: rgba(255,255,255,.85); stroke-width: 3px; }
 #regpanel { top: 62px; left: 10px; width: 310px; max-height: 38%; display: flex; flex-direction: column; }
 #regpanel .lh { display: flex; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 12px; gap: 6px; }
@@ -221,6 +223,11 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <div class="items" id="rgitems"></div>
       <div class="hint" id="drawhint" hidden style="padding:6px 10px;border-top:1px solid var(--line)">
         Click to add points · double-click / Enter / first point to close · Backspace undo point · Esc cancel</div>
+      <div class="hint" id="edithint" hidden style="padding:6px 10px;border-top:1px solid var(--line)">
+        <div id="editinfo" style="margin-bottom:4px"></div>
+        Drag a point to move it · drag a small ◦ between two points to add one · double-click a point to remove it
+        <div style="display:flex;gap:6px;margin-top:6px"><button id="editSave" class="primary" style="padding:2px 10px">Save</button>
+          <button id="editCancel" style="padding:2px 10px">Cancel</button></div></div>
     </div>
   </section>
   <aside id="side">
@@ -581,7 +588,7 @@ function reportState() {  // so Claude (use_viewer_session) knows what the user 
   post("/api/viewer/state", { sample: st.sample && st.sample.sample_id, session: st.sid, version: st.version }).catch(() => {});
 }
 function closeSession() {
-  st.sid = null; st.version = null; st.filters = {}; st.regions = null; cancelDraw(); closePlaus();
+  st.sid = null; st.version = null; st.filters = {}; st.regions = null; cancelDraw(); if (st.editing) stopEdit(); closePlaus();
   $("legend").hidden = true; $("cellcard").classList.remove("show");
   $("empty").style.display = "flex";
   ["undo", "export", "send", "plaus", "report"].forEach((b) => ($(b).disabled = true));
@@ -726,6 +733,7 @@ function imgPointFromEvent(pos) { return heItem().viewerElementToImageCoordinate
 viewer.addHandler("canvas-click", async (e) => {
   if (!e.quick || !st.sid) return;
   if (st.drawing) { addPoint(e.position); return; }
+  if (st.editing) return;
   const p = imgPointFromEvent(e.position);
   const q = imgPointFromEvent(new OpenSeadragon.Point(e.position.x + 10, e.position.y));
   const c = await api(`/api/s/${st.sid}/cell_at?x=${p.x}&y=${p.y}&tol=${Math.abs(q.x - p.x)}&version=${st.version}`);
@@ -768,7 +776,7 @@ function drawRegions() {
   const svg = $("regsvg"); svg.textContent = "";
   if (!heItem() || !st.he) return;
   if (st.regions && $("outlines").checked) {
-    st.regions.polygons.forEach((p) => {
+    st.regions.polygons.filter((p) => !st.editing || p.id !== st.editing.id).forEach((p) => {
       const pts = p.polygon.map(([x, y]) => toScreen(x, y));
       const col = rgb(p.color), points = pts.map((q) => `${q.x},${q.y}`).join(" ");
       // a dark halo under the colored line keeps the outline visible over cells of a similar color
@@ -803,6 +811,7 @@ function drawRegions() {
     svg.append(svgEl("polygon", { points: pts.map((q) => `${q.x},${q.y}`).join(" "), fill: "rgba(0,230,255,.06)",
                                   stroke: "#00e6ff", "stroke-width": 2.5 }));
   }
+  if (st.editing) drawEditing(svg);
   if (st.drawing && st.drawing.length) {
     const pts = st.drawing.map(([x, y]) => toScreen(x, y));
     svg.append(svgEl("polyline", { points: pts.map((q) => `${q.x},${q.y}`).join(" "), fill: "rgba(0,200,255,.08)",
@@ -835,8 +844,9 @@ async function loadRegions() {
       const pr = document.createElement("div"); pr.className = "pg";
       const lab = document.createElement("span"); lab.textContent = `${p.id} · ${p.n_cells_drawn.toLocaleString()} cells when drawn`;
       const go = document.createElement("button"); go.textContent = "zoom"; go.title = "Zoom to this polygon"; go.onclick = () => zoomTo(p);
+      const ed = document.createElement("button"); ed.textContent = "edit"; ed.title = "Move, add or remove points of this outline"; ed.onclick = () => startEdit(p);
       const del = document.createElement("button"); del.textContent = "×"; del.title = "Delete this polygon"; del.onclick = () => deleteRegion(p.id);
-      pr.append(lab, go, del); box.append(pr);
+      pr.append(lab, go, ed, del); box.append(pr);
     });
   });
   const u = document.createElement("div"); u.className = "hint"; u.style.padding = "4px";
@@ -863,6 +873,88 @@ async function deleteRegion(rid) {
   try { const r = await post(`/api/s/${st.sid}/regions/${rid}/delete`); toast(r.message, 5000); await refreshVersion(true); }
   catch (e) { toast(e.message, 6000); }
 }
+
+// ---------------- editing a drawn polygon: drag points, drag a midpoint to add one, double-click to remove ----------------
+st.editing = null;
+const MAX_HANDLES = 900;  // more points than this on screen: zoom in to edit them
+function startEdit(p) {
+  if (st.drawing) cancelDraw();
+  st.editing = { id: p.id, name: p.name, pts: p.polygon.map((q) => [q[0], q[1]]), dirty: false };
+  $("edithint").hidden = false; $("draw").disabled = true;
+  editInfo();
+  zoomTo(p); drawRegions();
+}
+function editInfo() {
+  const e = st.editing;
+  $("editinfo").textContent = `Editing ${e.id} (${e.name}) · ${e.pts.length} points` + (e.dirty ? " · changed" : "");
+}
+function stopEdit() {
+  st.editing = null; st.drag = null;
+  $("edithint").hidden = true; $("draw").disabled = false;
+  drawRegions();
+}
+async function saveEdit() {
+  const e = st.editing;
+  if (!e) return;
+  if (!e.dirty) { stopEdit(); return; }
+  try { const r = await post(`/api/s/${st.sid}/regions/${e.id}/edit`, { polygon: e.pts }); stopEdit(); await afterRegionChange(r); }
+  catch (err) { toast(err.message, 6000); }
+}
+function evToImage(ev) {
+  const r = $("osd").getBoundingClientRect();
+  const p = imgPointFromEvent(new OpenSeadragon.Point(ev.clientX - r.left, ev.clientY - r.top));
+  return [p.x, p.y];
+}
+function drawEditing(svg) {
+  const e = st.editing, pts = e.pts.map(([x, y]) => toScreen(x, y));
+  svg.append(svgEl("polygon", { points: pts.map((q) => `${q.x},${q.y}`).join(" "), fill: "rgba(0,230,255,.07)",
+                                stroke: "#000", "stroke-opacity": 0.6, "stroke-width": 5 }));
+  svg.append(svgEl("polygon", { points: pts.map((q) => `${q.x},${q.y}`).join(" "), fill: "none", stroke: "#00e6ff", "stroke-width": 2.4 }));
+  const W = svg.clientWidth || 4000, H = svg.clientHeight || 4000;
+  const on = (q) => q.x > -20 && q.y > -20 && q.x < W + 20 && q.y < H + 20;
+  const visible = pts.filter(on).length;
+  if (visible > MAX_HANDLES) { $("editinfo").textContent = `Editing ${e.id} · ${e.pts.length} points: zoom in to move them`; return; }
+  editInfo();
+  pts.forEach((q, i) => {  // midpoints first, so the vertices sit on top
+    const n = pts[(i + 1) % pts.length];
+    if (!on(q) && !on(n)) return;
+    if (Math.hypot(n.x - q.x, n.y - q.y) < 18) return;
+    const m = svgEl("circle", { cx: (q.x + n.x) / 2, cy: (q.y + n.y) / 2, r: 4, fill: "rgba(255,255,255,.55)", stroke: "#00a0d0",
+                                "stroke-width": 1.5, class: "hdl mid" });
+    m.addEventListener("pointerdown", (ev) => {
+      ev.preventDefault(); ev.stopPropagation();
+      const a = e.pts[i], b = e.pts[(i + 1) % e.pts.length];
+      e.pts.splice(i + 1, 0, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]);
+      e.dirty = true; beginDrag(i + 1);
+    });
+    svg.append(m);
+  });
+  pts.forEach((q, i) => {
+    if (!on(q)) return;
+    const c = svgEl("circle", { cx: q.x, cy: q.y, r: 5, fill: "#fff", stroke: "#00a0d0", "stroke-width": 2, class: "hdl" });
+    c.addEventListener("pointerdown", (ev) => {  // the layer is redrawn on every press, so double-clicks are timed here
+      ev.preventDefault(); ev.stopPropagation();
+      const now = Date.now(), last = st.lastDown;
+      st.lastDown = { i, t: now };
+      if (last && last.i === i && now - last.t < 400) {
+        st.lastDown = null;
+        if (e.pts.length <= 3) { toast("A region needs at least 3 points"); return; }
+        e.pts.splice(i, 1); e.dirty = true; drawRegions(); return;
+      }
+      beginDrag(i);
+    });
+    svg.append(c);
+  });
+}
+function beginDrag(i) {
+  st.drag = { i };
+  const move = (ev) => { if (!st.editing || !st.drag) return; st.editing.pts[st.drag.i] = evToImage(ev); st.editing.dirty = true; drawRegions(); };
+  const up = () => { st.drag = null; window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); drawRegions(); };
+  window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+  drawRegions();
+}
+$("editSave").onclick = saveEdit;
+$("editCancel").onclick = stopEdit;
 
 function startDraw() {
   if (!st.sid) return;
@@ -1583,6 +1675,8 @@ document.addEventListener("keydown", (e) => {
   if ($("mkDlg").open || $("rpDlg").open || $("nameDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
   if (e.key === "h") $("hide").click();
   if (e.key === "e") $("hideHE").click();
+  if (st.editing && e.key === "Escape") stopEdit();
+  if (st.editing && e.key === "Enter") { e.preventDefault(); saveEdit(); }
   if (st.drawing && e.key === "Escape") cancelDraw();
   if (st.drawing && e.key === "Enter") { e.preventDefault(); finishDraw(); }
   if (st.drawing && e.key === "Backspace") { e.preventDefault(); st.drawing.pop(); drawRegions(); }

@@ -19,7 +19,8 @@ from scipy import ndimage
 from scipy.spatial import cKDTree
 from . import plausibility, markers, model, render
 
-GRID_UM = 40.0  # raster of compartment outlines
+FINE_UM = 10.0   # raster of compartment outlines
+CLOSE_UM = 40.0  # gaps between a compartment's cells up to about this wide are closed
 
 
 def _lineage(s, version=None):
@@ -52,39 +53,45 @@ def _core_distance(s, mask, min_share=0.5):
 
 # ---------------- compartments ----------------
 def compartment(s, lineages, max_dist_um=30.0, min_share=0.5, min_cells=200, version=None):
-    """Where the given lineages / types form tissue: cells within max_dist_um of their core, closed and hole-filled
-    on a GRID_UM raster; one polygon per piece holding >= min_cells cells (H&E level-0 pixels)."""
+    """Where the given lineages / types form tissue: cells within max_dist_um of their core, on a FINE_UM raster
+    closed over CLOSE_UM gaps, hole-filled and smoothed; one polygon per piece holding >= min_cells cells (H&E
+    level-0 pixels, a point every few um along the boundary)."""
     r, types, lin = _lineage(s, version)
     mask = _members(s, lineages, types, lin)
     if not mask.any():
         raise ValueError(f"no cells of {lineages}")
     inside = _core_distance(s, mask, min_share) <= max_dist_um
     px, py = s.cells.px.to_numpy(), s.cells.py.to_numpy()
-    step = GRID_UM / s.he_um_per_px
-    x0, y0 = px.min() - 2 * step, py.min() - 2 * step
+    step = FINE_UM / s.he_um_per_px
+    pad = int(CLOSE_UM / FINE_UM) + 3
+    x0, y0 = px.min() - pad * step, py.min() - pad * step
     ix, iy = ((px - x0) / step).astype(int), ((py - y0) / step).astype(int)
-    grid = np.zeros((iy.max() + 3, ix.max() + 3), bool)
+    grid = np.zeros((iy.max() + pad + 1, ix.max() + pad + 1), bool)
     grid[iy[inside], ix[inside]] = True
-    grid = ndimage.binary_fill_holes(ndimage.binary_closing(grid, iterations=2))
+    rad = int(round(CLOSE_UM / FINE_UM))
+    yy, xx = np.mgrid[-rad:rad + 1, -rad:rad + 1]
+    disk = xx ** 2 + yy ** 2 <= rad ** 2
+    grid = ndimage.binary_fill_holes(ndimage.binary_closing(grid, disk))
     lab, n = ndimage.label(grid)
     cell_lab = lab[iy, ix]
-    pieces, polys = [], []
+    pieces, polys, area = [], [], 0
     for k in range(1, n + 1):
-        cells = cell_lab == k
+        cells = (cell_lab == k) & inside
         if cells.sum() < min_cells:
             continue
-        pix = {(int(i), int(j)) for i, j in zip(*np.where(lab == k))}
-        poly = plausibility._simplify(plausibility.outline({"x0": x0, "y0": y0, "tile_px": step}, pix), step)
+        poly = plausibility.smooth_outline(lab == k, x0, y0, step, sigma=1.5)
+        if poly is None:
+            continue
         polys.append(poly)
-        pieces.append(cells)
+        pieces.append(cell_lab == k)
+        area += int((lab == k).sum())
     if not polys:
         raise ValueError("no piece of that compartment holds enough cells; lower min_cells or raise max_dist_um")
     covered = np.any(pieces, axis=0)
     comp = pd.Series(lin[covered]).value_counts(normalize=True).head(6).round(3)
-    area_mm2 = float(sum((lab == k).sum() for k in range(1, n + 1) if (cell_lab == k).sum() >= min_cells) * (GRID_UM / 1000) ** 2)
     return {"polygons_px": polys, "n_pieces": len(polys), "n_cells": int(covered.sum()),
             "share_of_members_inside": round(float(mask[covered].sum() / mask.sum()), 3),
-            "composition": comp.to_dict(), "area_mm2": round(area_mm2, 2), "cells": covered}
+            "composition": comp.to_dict(), "area_mm2": round(area * (FINE_UM / 1000) ** 2, 2), "cells": covered}
 
 
 def fig_compartment(s, comp, name, version=None):

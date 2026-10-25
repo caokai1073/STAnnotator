@@ -834,6 +834,19 @@ async def api_region_add(req: Request):
     return _json({"new_version": ver, "message": s.state(ver)["message"]})
 
 
+async def api_region_edit(req: Request):
+    """Save the edited outline of one drawn polygon (viewer image coordinates)."""
+    s = review_app._session(req.path_params["sid"])
+    b = await req.json()
+    v = view(s.sample_id)
+    try:
+        ver = s.edit_region(req.path_params["rid"], [[x + v.ox, y + v.oy] for x, y in b.get("polygon", [])],
+                            author=b.get("author") or "viewer")
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+    return _json({"new_version": ver, "message": s.state(ver)["message"]})
+
+
 async def api_region_rename(req: Request):
     s = review_app._session(req.path_params["sid"])
     b = await req.json()
@@ -1286,6 +1299,7 @@ def build_app(port):
         Route("/api/s/{sid}/regions/add", api_region_add, methods=["POST"]),
         Route("/api/s/{sid}/regions/rename", api_region_rename, methods=["POST"]),
         Route("/api/s/{sid}/regions/{rid}/delete", api_region_delete, methods=["POST"]),
+        Route("/api/s/{sid}/regions/{rid}/edit", api_region_edit, methods=["POST"]),
         Route("/api/s/{sid}/undo", api_undo, methods=["POST"]),
         Route("/api/sample/{sample}/reset", api_sample_reset, methods=["POST"]),
         Route("/api/s/{sid}/export", api_export, methods=["POST"]),
