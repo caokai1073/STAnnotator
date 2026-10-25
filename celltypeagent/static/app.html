@@ -92,7 +92,7 @@ body.desktop #side { display: none; }
 #cellcard dd { margin: 0; }
 #cellcard .lab { font-weight: 650; font-size: 14px; }
 #cellcard .x { float: right; border: 0; padding: 0 4px; background: none; }
-#empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none;
+#empty { position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: center; pointer-events: none; padding-bottom: 28px;
          z-index: 4; color: var(--muted); }
 #empty div { background: var(--panel); padding: 12px 18px; border-radius: 8px; border: 1px solid var(--line); }
 .cellmark { pointer-events: none; }  /* drags that start on it must still pan the viewer */
@@ -212,7 +212,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
   <div class="hrow r1">
     <div class="cap"><h1>Spatial Annotator</h1><span id="build" class="buildtag"></span></div>
     <label class="fl">Sample <select id="sample"></select></label>
-    <button id="importBtn" title="Add a sample: a Xenium output folder, or h5ad + H&amp;E + registration">Import…</button>
+    <button id="importBtn" title="Add a sample (a Xenium output folder or h5ad), then its image and registration">Import…</button>
     <button id="clearAll" class="danger" hidden title="Delete every sample with all its annotations and chats for good, to import from scratch">Remove all…</button>
     <span class="sep"></span>
     <label class="fl" id="sessWrap">Session <select id="session" title="Earlier annotations of this sample"></select></label>
@@ -405,7 +405,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       afterwards (tabs above), in any order; without a registration file Claude can align the image.</div>
     <div class="imkind">
       <label><input type="radio" name="imKind" value="xenium" checked> Xenium output folder</label>
-      <label><input type="radio" name="imKind" value="h5ad"> h5ad + H&amp;E + registration</label>
+      <label><input type="radio" name="imKind" value="h5ad"> h5ad</label>
     </div>
     <div id="imX">
       <div class="frow"><span>Xenium folder</span><input type="text" id="imFolder" placeholder="the instrument's output folder (output-XETG…)"><button data-pick="folder" data-target="imFolder">Choose…</button></div>
@@ -586,6 +586,14 @@ async function loadPositions(sample) {
   GL.n = buf.byteLength / 8; GL.sample = key; GL.radius = +r.headers.get("X-Radius-Px"); GL.colorKey = null; GL.colors = {};
   const gl = GL.gl; gl.bindBuffer(gl.ARRAY_BUFFER, GL.pos); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(buf), gl.STATIC_DRAW);
 }
+function grayColors() {
+  const key = `gray|${GL.sample}`;
+  if (GL.colorKey === key) return;
+  const a = new Uint8Array(GL.n * 4);
+  for (let i = 0; i < GL.n; i++) { a[4 * i] = a[4 * i + 1] = a[4 * i + 2] = 120; a[4 * i + 3] = 215; }
+  const gl = GL.gl; gl.bindBuffer(gl.ARRAY_BUFFER, GL.col); gl.bufferData(gl.ARRAY_BUFFER, withSelection(a), gl.STATIC_DRAW);
+  GL.colorKey = key;
+}
 async function loadColors() {
   const q = new URLSearchParams({ version: st.version, mode: st.mode, only: [...filt()].join("|") });
   const key = `${st.sid}|${q}|${st.mode === "region" ? st.colorEpoch || 0 : st.mode === "niche" && st.niche ? st.niche.params.run_id : 0}`;
@@ -604,7 +612,8 @@ function drawGL() {
   const w = viewer.canvas.clientWidth, h = viewer.canvas.clientHeight;
   if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
   gl.viewport(0, 0, c.width, c.height); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
-  if (!st.sid || !st.he || st.hidden || !GL.colorKey || !heItem() || !st.sample || GL.sample !== glKey(st.sample.sample_id)) return;
+  if (!st.he || st.hidden || !GL.colorKey || !heItem() || !st.sample || GL.sample !== glKey(st.sample.sample_id)) return;
+  if (!st.sid && !GL.colorKey.startsWith("gray|")) return;
   const a = toScreen(0, 0), b = toScreen(st.he.width, st.he.height);
   const kx = (b.x - a.x) / st.he.width, ky = (b.y - a.y) / st.he.height;  // CSS pixels per image pixel
   gl.useProgram(GL.prog);
@@ -623,6 +632,10 @@ function drawGL() {
 }
 async function refreshOverlay() {
   if (GL.ok) {
+    if (!st.sid && st.he && st.sample) {  // no annotation yet: every cell in gray
+      try { await loadPositions(st.sample.sample_id); grayColors(); } catch (e) { toast(e.message, 5000); }
+      drawGL(); return;
+    }
     if (!st.sid || !st.he) { drawGL(); return; }
     try { await loadPositions(st.sample.sample_id); await loadColors(); } catch (e) { toast(e.message, 5000); }
     drawGL(); return;
@@ -663,7 +676,11 @@ async function loadSamples(select) {
 function fillModes(sm) {
   const sel = $("mode"); sel.textContent = "";
   const add = (v, t) => { const o = document.createElement("option"); o.value = v; o.textContent = t; sel.append(o); };
-  if (!sm) { add("", "annotate first"); sel.disabled = true; return; }
+  if (!sm) {  // no annotation yet: the cells in gray
+    if (st.sample && st.he) { add("cells", "cells"); sel.disabled = false; st.mode = "cells"; sel.value = "cells"; }
+    else { add("", "annotate first"); sel.disabled = true; }
+    $("geneInput").hidden = true; return;
+  }
   const avail = [["type", "cell type"], ["lineage", "lineage"], ["gene", "gene expression…"]];
   if (sm.has_regions) avail.push(["region", "region"]);
   if (sm.n_changed_since_first > 0 || sm.corrections.length) avail.push(["changed", "changed since first annotation"]);
@@ -710,6 +727,7 @@ async function selectSample(id) {
   closeSession();
   await openHE(id);
   alignBar();
+  fillModes(null); refreshOverlay();  // the cells in gray until there is an annotation
   if (token !== st.switchToken) return;
   // reopen the session last used on this sample, else its most recent one
   const ids = st.sample.sessions.map((x) => x.session_id);
@@ -1934,7 +1952,7 @@ async function afterPlacement(msg) {  // the sample's image or cell positions ch
   const fresh = st.samples.find((s) => s.sample_id === id);
   Object.assign(st.sample, fresh, { sessions: st.sample.sessions, allSessions: st.sample.allSessions });
   const sameImage = before === `${st.sample.image_kind}|${st.sample.he_path}`;  // else show the whole new image
-  if (st.sid) await reloadGeometry(sameImage); else await openHE(id);
+  if (st.sid) await reloadGeometry(sameImage); else { await openHE(id); GL.colorKey = null; fillModes(null); refreshOverlay(); }
   alignBar(); imTab(document.querySelector(".imtabs button.on").dataset.tab);
   if (msg) toast(msg, 6000);
 }
@@ -2198,7 +2216,8 @@ $("mode").onchange = (e) => {
     return;
   }
   $("geneInput").hidden = true;
-  st.mode = e.target.value; refreshOverlay(); loadLegend(); emFollow();
+  st.mode = e.target.value; refreshOverlay();
+  if (st.sid) { loadLegend(); emFollow(); }
 };
 function emFollow() { if (!$("empanel").hidden && $("emColor").value === "map") loadEMData().then(drawEM); }
 function setGene() {
