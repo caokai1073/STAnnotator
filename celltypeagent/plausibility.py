@@ -179,6 +179,65 @@ def outline(g, tiles):
     return [[g["x0"] + x * g["tile_px"], g["y0"] + y * g["tile_px"]] for x, y in pts]
 
 
+# ---------------- outlines that follow the cells ----------------
+OUTLINE_STEP_UM = 20.0     # raster of the cell-density outline
+OUTLINE_SIGMAS_UM = (60.0, 100.0, 150.0, 220.0)  # smoothing, widened until the cells of an area form one shape
+OUTLINE_COVER = 0.85       # the outline holds at least this share of the area's out-of-place cells
+OUTLINE_MIN_COVER = 0.6    # below this (cells in far-apart groups) the area keeps its tile outline
+
+
+def _simplify(pts, tol):
+    """Douglas-Peucker on a closed polygon (list of [x, y])."""
+    def dp(seg):
+        if len(seg) < 3:
+            return seg
+        a, b = np.asarray(seg[0], float), np.asarray(seg[-1], float)
+        ab = b - a
+        n = np.hypot(*ab) or 1.0
+        d = [abs(ab[0] * (a[1] - p[1]) - ab[1] * (a[0] - p[0])) / n for p in seg[1:-1]]
+        k = int(np.argmax(d)) + 1
+        return dp(seg[:k + 1])[:-1] + dp(seg[k:]) if d[k - 1] > tol else [seg[0], seg[-1]]
+    if len(pts) < 8:
+        return pts
+    half = len(pts) // 2
+    out = dp(pts[:half + 1])[:-1] + dp(pts[half:] + [pts[0]])[:-1]
+    return out if len(out) >= 3 else pts
+
+
+def cell_outline(px, py, um_per_px):
+    """One polygon (H&E level-0 pixels) around where the given cells lie: a contour of their smoothed density that
+    holds at least OUTLINE_COVER of them in one piece (the smoothing widens until it does), holes filled,
+    simplified."""
+    step = OUTLINE_STEP_UM / um_per_px
+    best, best_held = None, -1
+    for sigma_um in OUTLINE_SIGMAS_UM:
+        pad = 3 * sigma_um / um_per_px
+        x0, y0 = px.min() - pad, py.min() - pad
+        nx, ny = int((px.max() + pad - x0) / step) + 1, int((py.max() + pad - y0) / step) + 1
+        ix, iy = ((px - x0) / step).astype(int), ((py - y0) / step).astype(int)
+        dens = np.zeros((ny, nx))
+        np.add.at(dens, (iy, ix), 1.0)
+        dens = ndimage.gaussian_filter(dens, sigma_um / OUTLINE_STEP_UM)
+        for q in np.linspace(0.6, 0.0, 13):  # from a tight to a loose contour level
+            lab, n = ndimage.label(dens >= max(np.quantile(dens[iy, ix], q) * 0.999, 1e-9))
+            if not n:
+                continue
+            held = np.bincount(lab[iy, ix], minlength=n + 1)
+            held[0] = 0
+            k = int(held.argmax())
+            if held[k] > best_held:
+                best, best_held = (ndimage.binary_fill_holes(lab == k), x0, y0), held[k]
+            if held[k] >= OUTLINE_COVER * len(px):
+                break
+        if best_held >= OUTLINE_COVER * len(px):
+            break
+    if best_held < OUTLINE_MIN_COVER * len(px):
+        return None
+    mask, x0, y0 = best
+    pix = {(int(i), int(j)) for i, j in zip(*np.where(mask))}
+    return _simplify(outline({"x0": x0, "y0": y0, "tile_px": step}, pix), 0.75 * step)
+
+
 # ---------------- candidate areas ----------------
 def _area_stats(s, r, res, g, ti, tj, tiles, lineage=None):
     """Composition and out-of-place cells of a set of tiles."""
@@ -224,7 +283,9 @@ def scan(s, version=None):
             px, py = s.cells.px.to_numpy()[oop], s.cells.py.to_numpy()[oop]
             areas.append({"lineage": lin, **st,
                           "category": LIKELY if st["n_likely_mislabel"] * 2 >= st["n_out_of_place"] else CHECK,
-                          "outline_px": outline(g, tiles), "tile_set": sorted(tiles),
+                          "outline_px": cell_outline(px, py, s.he_um_per_px) or outline(g, tiles),
+                          "tile_outline_px": outline(g, tiles),
+                          "tile_set": sorted(tiles),
                           "bbox_px": [float(px.min()), float(py.min()), float(px.max()), float(py.max())]})
     areas.sort(key=lambda a: -a["n_out_of_place"])
     for i, a in enumerate(areas):
