@@ -49,3 +49,16 @@ def device():
     if getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
         return "mps"
     return "cpu"
+
+
+def build():
+    """Commit and date of this code: stamped into data/build.txt by git archive (export-subst), else read from git."""
+    text = (PACKAGE / "data" / "build.txt").read_text().strip() if (PACKAGE / "data" / "build.txt").exists() else ""
+    if text and not text.startswith("$Format"):
+        return text
+    try:
+        import subprocess
+        return subprocess.run(["git", "-C", str(PACKAGE), "log", "-1", "--format=%h %cs"], capture_output=True,
+                              text=True, timeout=5).stdout.strip() or "dev"
+    except Exception:
+        return "dev"

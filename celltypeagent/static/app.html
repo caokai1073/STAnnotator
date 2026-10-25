@@ -22,6 +22,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 syst
 header { display: flex; flex-direction: column; gap: 4px; padding: 8px 14px; background: var(--panel);
          border-bottom: 1px solid var(--line); }
 header h1 { font-size: 16px; margin: 0 6px 0 0; font-weight: 650; }
+.buildtag { display: block; font-size: 10px; font-weight: 400; color: var(--muted); }
 .f { display: flex; flex-direction: column; font-size: 11px; color: var(--muted); gap: 2px; }
 .path { font: 11px ui-monospace, monospace; color: var(--muted); max-width: 330px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 select, input[type=text], textarea { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line);
@@ -156,7 +157,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 <header>
   <!-- three fixed rows: nothing moves when the progress bar or an option appears -->
   <div class="hrow">
-    <h1>Spatial Annotator</h1>
+    <h1>Spatial Annotator <span id="build" class="buildtag"></span></h1>
     <label class="f">Sample <select id="sample"></select></label>
     <button id="importBtn" title="Add a sample: a Xenium output folder, or h5ad + H&amp;E + registration">Import…</button>
     <div class="f">Data folder <span class="path" id="path">–</span></div>
@@ -1584,6 +1585,7 @@ document.addEventListener("keydown", (e) => {
 });
 api("/api/config").then((c) => {  // the desktop app (or no Claude Code CLI): the conversation happens in Claude's apps
   st.chatAvailable = c.chat; st.desktop = c.desktop; st.platform = c.platform;
+  $("build").textContent = c.build ? `build ${c.build}` : "";
   $("claudeBtn").hidden = !c.desktop;
   if (c.desktop) { document.body.classList.add("desktop"); $("sideTitle").textContent = "Claude"; }  // Claude Code button in the header
   $("mkDraftBox").hidden = c.desktop; $("mkClaudeHint").hidden = !c.desktop;

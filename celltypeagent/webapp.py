@@ -388,7 +388,8 @@ def api_config(req):
     """The built-in chat box (Claude Code CLI) is only for the server viewer; the desktop app connects to the user's
     own Claude Code instead."""
     return _json({"chat": not desktop_mode() and shutil.which("claude") is not None, "desktop": desktop_mode(),
-                  "home": str(config.HOME), "platform": sys.platform})
+                  "home": str(config.HOME), "platform": sys.platform,
+                  "build": config.build()})
 
 
 # ---------------- viewer <-> agent, Claude connection ----------------
