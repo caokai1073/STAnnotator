@@ -1226,6 +1226,14 @@ def api_export_csv(req):
     return FileResponse(folder / "cells.csv", media_type="text/csv", filename=name)
 
 
+def api_registration_csv(req):
+    """The registration in use (file, Claude's alignment or a correction) as an a11..ty CSV."""
+    from . import notebook
+    sample = req.path_params["sample"]
+    return Response(notebook.registration_csv(sample), media_type="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="{sample}_registration.csv"'})
+
+
 def api_export_notebook(req):
     """Download the analysis notebook of a version (default: latest)."""
     from . import notebook
@@ -1367,8 +1375,11 @@ async def api_export_to(req: Request):
     v = int(b.get("version") or s.versions()[-1])
     try:
         from . import notebook
-        src = notebook.build(s, v) if b.get("kind") == "notebook" else Path(s.export(v)) / "cells.csv"
-        shutil.copy(src, Path(b["path"]).expanduser())
+        if b.get("kind") == "registration":
+            Path(b["path"]).expanduser().write_text(notebook.registration_csv(s.sample_id))
+        else:
+            src = notebook.build(s, v) if b.get("kind") == "notebook" else Path(s.export(v)) / "cells.csv"
+            shutil.copy(src, Path(b["path"]).expanduser())
     except (OSError, KeyError) as e:
         return _json({"error": str(e)}, 400)
     return _json({"saved": b["path"]})
@@ -1623,6 +1634,7 @@ def build_app(port):
         Route("/api/s/{sid}/export", api_export, methods=["POST"]),
         Route("/api/s/{sid}/export.csv", api_export_csv),
         Route("/api/s/{sid}/export.ipynb", api_export_notebook),
+        Route("/api/sample/{sample}/registration.csv", api_registration_csv),
         Route("/api/s/{sid}/chat", api_chat, methods=["POST"]),
         Route("/api/s/{sid}/chat_log", api_chat_log),
         Route("/api/panel", api_panel),

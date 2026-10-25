@@ -399,11 +399,16 @@ def apply_registration_fix(sample_id, correction):
     if "px_import" not in cells:
         cells["px_import"], cells["py_import"] = cells.px.to_numpy(), cells.py.to_numpy()
     A, b, o = np.asarray(correction["A"], float), np.asarray(correction["b"], float), np.asarray(correction["origin"], float)
+    old = placement(sample_id)
     p = cells[["px", "py"]].to_numpy()
     q = p + (p - o) @ A.T + b
     cells["px"], cells["py"] = q[:, 0], q[:, 1]
     cells.to_parquet(d / "cells.parquet")
     meta = json.load(open(d / "meta.json"))
+    M = np.eye(2) + A  # the corrected placement is again an affine of the cell um (exported as the registration)
+    meta.setdefault("placement_affine_import", old.tolist())
+    meta["placement_affine"] = np.c_[M @ old[:, :2], M @ old[:, 2] - A @ o + b].tolist()
+    meta["registration_by"] = (meta.get("registration_by") or "file") + " + nuclei correction"
     meta.setdefault("registration_fixes", []).append({"correction_px": correction,
                                                       "time": time.strftime("%Y-%m-%dT%H:%M:%S")})
     json.dump(meta, open(d / "meta.json", "w"), indent=1)
@@ -421,6 +426,9 @@ def undo_registration_fix(sample_id):
     cells.drop(columns=["px_import", "py_import"]).to_parquet(d / "cells.parquet")
     meta = json.load(open(d / "meta.json"))
     meta.pop("registration_fixes", None)
+    if meta.get("placement_affine_import"):
+        meta["placement_affine"] = meta.pop("placement_affine_import")
+        meta["registration_by"] = (meta.get("registration_by") or "file").replace(" + nuclei correction", "")
     json.dump(meta, open(d / "meta.json", "w"), indent=1)
     return {"ok": True}
 

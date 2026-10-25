@@ -153,12 +153,17 @@ by Claude show up within a few seconds.
    back; it never undoes the undo).
 5. **Export…** saves the **cells table** (CSV, one row per cell: `cell_id`, `region`, `cell_type`, `lineage`,
    `level_1`… the full type path, `confidence`, `expression_label`, `marker_cluster`, `hand_labeled`, and when
-   computed `niche`, `leiden`, `umap_1`, `umap_2`; then `x_um`, `y_um`) or the **analysis notebook** (Jupyter): the
-   code of every step with this annotation's parameters (data and how to re-import it, the placement on the image,
-   the annotation replayed with its regions, priors, corrections and re-clusterings, PCA / UMAP / Leiden, niches)
-   with its results filled in (tables, figures). Running it repeats the analysis and reports whether the replayed
-   labels match (identical for annotations made with the same version of the app; UMAP coordinates differ slightly
-   because UMAP runs on all cores).
+   computed `niche`, `leiden`, `umap_1`, `umap_2`; then `x_um`, `y_um`), the **registration** (CSV: the affine
+   a11..ty that places the cells on the image now, whether it came from the file, Claude's alignment or a
+   correction; it can be imported again), or the **analysis notebook** (Jupyter). The notebook runs without this
+   app: it needs the data files and `numpy pandas scipy scikit-learn python-igraph pynndescent umap-learn h5py
+   matplotlib`. Standard steps are plain code (reading the cells, the registration affine, PCA / neighbors /
+   Leiden / UMAP, NMF niches, figures, the table); the app's annotation algorithm (marker clustering, expression
+   model, priors) is carried as source code in a folded cell and replayed with this annotation's marker list,
+   regions, priors, corrections and re-clusterings. The results at export time are filled in, and a rerun checks
+   that labels, Leiden clusters and niches come out the same: identical when run on the same kind of machine (with
+   a GPU and PyTorch, neighbors are exact as in the app; without, large samples use approximate neighbors);
+   annotations made with an earlier app version can differ. UMAP coordinates differ slightly (all cores).
 6. **Reset** removes every annotation and chat of the selected sample (moved to `<data folder>/trash/`).
    **Remove all…** (next to Import, desktop app) deletes every sample with all its annotations and chats for good,
    to import from scratch (it cannot be undone); marker lists stay.

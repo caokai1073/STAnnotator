@@ -488,9 +488,14 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <div class="clcard"><b>Analysis notebook (Jupyter)</b>
       <div class="hint">The code of every step with this annotation's parameters (data, placement on the image, annotation
         with its regions, priors and corrections, PCA / UMAP / Leiden, niches) and its results (tables, figures).
-        Run it to repeat the analysis: it needs the app's Python environment and the data folder, and checks that the
-        replayed labels match.</div>
+        It runs without this app, with the data files and common Python packages, and checks that the labels,
+        clusters and niches come out the same.</div>
       <div class="row"><span class="spacer"></span><button id="xpNb" class="primary">Save notebook…</button></div></div>
+    <div class="clcard"><b>Registration (CSV)</b>
+      <div class="hint" id="xpRegInfo">The affine that places the cells on the image, as used now (from the registration file,
+        Claude's alignment or a correction): columns a11, a12, a21, a22, tx, ty (cell um to image pixels). It can be
+        imported again under Import &gt; Registration, or used by other tools.</div>
+      <div class="row"><span class="spacer"></span><button id="xpReg" class="primary">Save registration…</button></div></div>
     <div class="hint" id="xpStatus"></div>
   </div>
 </dialog>
@@ -2079,7 +2084,8 @@ turn gray; <b>Show on map</b> zooms the map to them; <b>Clear</b> ends the selec
 <li><b>Report</b>: Claude writes the annotation report; <b>Save…</b> keeps it as a Markdown file.</li>
 <li><b>Niches</b>: identity, k and number of niches; <b>Run niches</b>, or <b>Claude picks k</b>.</li>
 <li><b>Undo</b> steps back one change at a time. <b>Export…</b>: the cell table (CSV, with niche, Leiden and UMAP when
-computed) or the whole analysis as a Jupyter notebook (code with this annotation's parameters, and its results).</li>
+computed), the registration in use (CSV), or the whole analysis as a Jupyter notebook that runs without this app
+(code with this annotation's parameters, and its results).</li>
 <li><b>Claude Code</b> opens your own Claude Code, connected to this app.</li></ul>`;
 async function showAbout() {
   $("hpBody").innerHTML = "<p>Checking…</p>";
@@ -2331,11 +2337,20 @@ $("rpSave").onclick = async () => {
   const a = document.createElement("a"); a.href = `/api/s/${st.sid}/report.md`; a.download = name;
   document.body.append(a); a.click(); a.remove();
 };
-$("export").onclick = () => { $("xpInfo").textContent = `${st.sample.sample_id} · version ${st.version}`; $("xpStatus").textContent = ""; $("xpDlg").showModal(); };
+$("export").onclick = () => {
+  $("xpInfo").textContent = `${st.sample.sample_id} · version ${st.version}`; $("xpStatus").textContent = "";
+  const placed = st.sample.image_kind && st.sample.image_kind !== "none";
+  $("xpReg").disabled = !placed;
+  $("xpRegInfo").textContent = placed
+    ? `The affine that places the cells on the image, as used now (made by: ${st.sample.registration_by || "file"}): columns a11, a12, a21, a22, tx, ty (cell um to image pixels). It can be imported again under Import > Registration, or used by other tools.`
+    : "The cells are not on an image yet: import an image and its registration, or align it with Claude.";
+  $("xpDlg").showModal();
+};
 $("xpClose").onclick = () => $("xpDlg").close();
 async function exportAs(kind) {  // the cell table or the notebook of the current version
   const ext = kind === "notebook" ? "ipynb" : "csv";
-  const name = `${st.sample.sample_id}_v${st.version}_${kind === "notebook" ? "analysis" : "cells"}.${ext}`;
+  const name = kind === "registration" ? `${st.sample.sample_id}_registration.csv`
+    : `${st.sample.sample_id}_v${st.version}_${kind === "notebook" ? "analysis" : "cells"}.${ext}`;
   if (native()) {  // the desktop app saves through a Save dialog
     const path = await native().save_path(name); if (!path) return;
     $("xpStatus").textContent = kind === "notebook" ? "Writing the notebook (figures included)…" : "Writing the CSV…";
@@ -2344,12 +2359,14 @@ async function exportAs(kind) {  // the cell table or the notebook of the curren
     return;
   }
   const a = document.createElement("a");
-  a.href = `/api/s/${st.sid}/export.${ext}?version=${st.version}`; a.download = name;
+  a.href = kind === "registration" ? `/api/sample/${st.sample.sample_id}/registration.csv` : `/api/s/${st.sid}/export.${ext}?version=${st.version}`;
+  a.download = name;
   document.body.append(a); a.click(); a.remove();
   $("xpStatus").textContent = `Downloading ${name}…`;
 }
 $("xpCsv").onclick = () => exportAs("csv");
 $("xpNb").onclick = () => exportAs("notebook");
+$("xpReg").onclick = () => exportAs("registration");
 document.addEventListener("keydown", (e) => {
   if ($("mkDlg").open || $("rpDlg").open || $("hpDlg").open || $("xpDlg").open || $("nameDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
   if (e.key === "h") $("hide").click();
