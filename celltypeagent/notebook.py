@@ -63,6 +63,11 @@ def _image(b64):
     return {"output_type": "display_data", "metadata": {}, "data": {"image/png": b64, "text/plain": "<Figure>"}}
 
 
+def _py(x):
+    """A value as Python source (plain types: no numpy scalars; None, True and False as Python writes them)."""
+    return repr(json.loads(json.dumps(x)))
+
+
 def _pack(a, dtype):
     """An integer array as a short string (zlib + base64)."""
     return base64.b64encode(zlib.compress(np.asarray(a, dtype).tobytes(), 9)).decode()
@@ -150,7 +155,7 @@ large samples use approximate neighbors (pynndescent), which change a share of t
     loader = (f"SOURCES = json.loads({json.dumps(json.dumps(srcs))})\n" + '''
 import sys, types
 sa = types.ModuleType("sa"); sa.__path__ = []; sys.modules["sa"] = sa   # a package made from the sources above
-for name in ["config"] + ''' + json.dumps(CARRIED) + ''':
+for name in ["config"] + ''' + _py(CARRIED) + ''':
     mod = types.ModuleType(f"sa.{name}"); mod.__package__ = "sa"; sys.modules[f"sa.{name}"] = mod
     exec(compile(SOURCES[name], f"sa/{name}.py", "exec"), mod.__dict__)
     setattr(sa, name, mod)
@@ -184,8 +189,8 @@ xy = c[["x_centroid", "y_centroid"]].to_numpy(float)
 cell_ids = c.cell_id.to_numpy()'''
     elif src.get("kind") == "h5ad":
         read = f'''
-H5AD = {json.dumps(src.get('h5ad'))}
-SECTION_COLUMN, SECTION = {json.dumps(src.get('section_column'))}, {json.dumps(src.get('section'))}
+H5AD = {_py(src.get('h5ad'))}
+SECTION_COLUMN, SECTION = {_py(src.get('section_column'))}, {_py(src.get('section'))}
 parts = [sa.importer.read_h5ad(p, SECTION_COLUMN, SECTION) for p in H5AD]
 parts = [q for q in parts if len(q["cell_id"])]
 genes = parts[0]["genes"]
@@ -209,8 +214,8 @@ print(f"{len(cells):,} cells, {len(genes)} genes")''', [_text(f"{n:,} cells, {le
                   f"full-resolution pixels, as used by the app (made by: {by}). The same numbers are in "
                   "**Export > Registration (CSV)**."))
     nb.append(_code(f'''
-IMAGE = {json.dumps(meta.get("he_path"))}
-A = np.array({json.dumps(np.round(A, 10).tolist())})   # px = A[0,0]*x + A[0,1]*y + A[0,2];  py = A[1,0]*x + A[1,1]*y + A[1,2]
+IMAGE = {_py(meta.get("he_path"))}
+A = np.array({_py(np.round(A, 10).tolist())})   # px = A[0,0]*x + A[0,1]*y + A[0,2];  py = A[1,0]*x + A[1,1]*y + A[1,2]
 pxy = xy @ A[:, :2].T + A[:, 2]
 cells["px"], cells["py"] = pxy[:, 0], pxy[:, 1]
 print(f"{{1 / np.sqrt(abs(np.linalg.det(A[:, :2]))):.4f}} um per image pixel")''',
@@ -239,10 +244,10 @@ Method: {how}. On top: {len(rows['regions']['ops'])} drawn region polygons, {len
 ({'; '.join(priors) or 'none'}), {len(rows['corrections'])} hand corrections and {len(rows['marker_ops'])}
 re-clusterings, as in version {v}. The regions and corrected cells are stored as cell lists."""))
     nb.append(_code(f'''
-SCHEME = json.loads(r\'\'\'{json.dumps(scheme)}\'\'\')
-STATE = json.loads(r\'\'\'{json.dumps(rows)}\'\'\')
+SCHEME = {_py(scheme)}
+STATE = {_py(rows)}
 TYPES = SCHEME["types"]; T = len(TYPES)
-LINEAGE = json.loads(r\'\'\'{json.dumps(lineage)}\'\'\')
+LINEAGE = {_py(lineage)}
 for o in STATE["regions"]["ops"]:
     o["cells"] = unpack(o.pop("cells_packed"), np.int32).tolist()
 corr = {{}}
@@ -278,7 +283,7 @@ logp = (logp - np.log(np.exp(logp).sum(1, keepdims=True))).astype(np.float16)'''
     elif sch["kind"] == "existing":
         e = sch["existing"]
         base = f'''
-EXISTING = {json.dumps({k: e[k] for k in ("path", "id_column", "label_column", "lineage_column")})}
+EXISTING = {_py({k: e[k] for k in ("path", "id_column", "label_column", "lineage_column")})}
 loaded = sa.existing.load(EXISTING["path"], cell_ids, EXISTING["id_column"], EXISTING["label_column"], EXISTING["lineage_column"])
 train = loaded["labels"].copy()
 if "Unassigned" in TYPES:
@@ -291,7 +296,7 @@ logp = sa.existing.mix(sa.model.predict(model, counts), loaded["labels"])   # th
     elif sch["kind"] == "scref":
         r = sch["reference"]
         base = f'''
-REFERENCE = {json.dumps(r)}
+REFERENCE = {_py(r)}
 tr = sa.scref.load_training(REFERENCE["path"], REFERENCE["label_column"], genes)
 model = sa.model._fit(sa.model.lognorm(tr["X"]), tr["y"], T, [SCHEME["reference_counts"][t] for t in TYPES])
 mcounts = counts[:, tr["panel_idx"]]
@@ -315,7 +320,7 @@ ctx = {{"region": region, "depth_um": depth_um, "cell": cells.cell.to_numpy(), "
 pred, conf, _, _ = sa.constraints.posterior(logp, STATE["constraints"], ctx, TYPES, top=3)   # priors
 pred[lock_rows], conf[lock_rows] = lock_labels, 1.0                     # hand corrections
 labels = np.array(TYPES, dtype=object)[pred]
-ORIGINAL = np.array({json.dumps(tnames)}, dtype=object)[unpack("{_pack(tcodes, np.uint16)}", np.uint16)]
+ORIGINAL = np.array({_py(tnames)}, dtype=object)[unpack("{_pack(tcodes, np.uint16)}", np.uint16)]
 same = labels == ORIGINAL
 print("labels identical to the original" if same.all() else f"{{same.mean():.2%}} of the labels as in the original "
       f"({{(~same).sum():,}} cells differ; an annotation made with an earlier app version can differ)")
@@ -381,7 +386,7 @@ kk = np.clip(cKDTree(xy).query_ball_point(xy, r={nmeta['radius_um']}, return_len
         else:
             kk = f'''
 kk = np.full(len(xy), {nmeta['k']})
-for name, k in {json.dumps(nmeta.get('k_by_region') or {})}.items():   # k per drawn region
+for name, k in {_py(nmeta.get('k_by_region') or {})}.items():   # k per drawn region
     kk[region == name] = k'''
         nb.append(_md(f"## {sec()}. Niches\nEach cell's identity (" + ("its composition of NMF gene programs" if nmeta["identity"] == "nmf"
                       else "its cell type") + ") is averaged over the cell and its nearest cells, and the averages are "
@@ -397,7 +402,7 @@ for k in np.unique(kk):
 km = KMeans(n_clusters={nmeta['n_niches']}, n_init=4, random_state=0).fit(avg)
 order = np.argsort(-np.bincount(km.labels_, minlength={nmeta['n_niches']}))
 niche = np.argsort(order)[km.labels_]
-NAMES = {json.dumps(names)}
+NAMES = {_py(names)}
 print("niches identical to the original:", bool((niche == unpack("{_pack(nlab, np.int16)}", np.int16)).all()))
 niche_name = np.array(NAMES, dtype=object)[niche]
 pd.DataFrame({{"niche": niche_name, "cell type": labels}}).groupby("niche")["cell type"].agg(
