@@ -112,11 +112,20 @@ class Session:
         if self.scheme["kind"] != "markers":
             self.node_names = self.types
         self.cells = pd.read_parquet(sd / "cells.parquet")
+        self._cells_mtime = (sd / "cells.parquet").stat().st_mtime
         self._counts = None
         self._cache, self._bases, self._nbr_frac_cache = {}, {}, {}
         self._lock = threading.RLock()
         for sub in ("base", "selections"):
             (self.dir / sub).mkdir(exist_ok=True)
+
+    def stale(self):
+        """True when the sample's cell positions changed on disk since this object was made (e.g. the registration
+        was corrected in the app): the caller should make a new Session."""
+        try:
+            return (self.sample_dir / "cells.parquet").stat().st_mtime != self._cells_mtime
+        except OSError:
+            return False
 
     @property
     def counts(self):

@@ -439,7 +439,7 @@ function openHE(sample) {
     $("hideHE").hidden = kind === "none";
     $("hideHE").textContent = `Hide ${kind === "H&E" ? "H&E" : "image"}`;
     viewer.addOnceHandler("open", applyHE);
-    viewer.open(tileSource((l, x, y) => `/api/sample/${sample}/he/${l}/${x}_${y}.jpg`));
+    viewer.open(tileSource((l, x, y) => `/api/sample/${sample}/he/${l}/${x}_${y}.jpg?r=${he.rev}`));  // rev: new cell positions, new tiles
   });
 }
 function filt() {  // legend filter of the current color mode (empty = show all)
@@ -452,7 +452,7 @@ function applyHE() {
   $("hideHE").classList.toggle("on", st.heHidden);
 }
 function overlayUrl() {
-  const q = new URLSearchParams({ size: st.dotSize.toFixed(1) });
+  const q = new URLSearchParams({ size: st.dotSize.toFixed(1), r: st.he ? st.he.rev : 0 });
   if (st.mode === "region" && st.colorEpoch) q.set("c", st.colorEpoch);  // region colors changed: fresh tiles
   if (st.mode === "niche" && st.niche) q.set("n", st.niche.params.run_id);
   const only = [...filt()].join("|");
@@ -497,11 +497,13 @@ function initGL() {
   viewer.canvas.insertBefore(c, viewer.drawer.canvas.nextSibling);  // above the image, below overlays and the navigator
   ["animation", "update-viewport", "resize", "open"].forEach((ev) => viewer.addHandler(ev, drawGL));
 }
+const glKey = (sample) => `${sample}@${st.he ? st.he.rev : 0}`;  // positions change when the registration is corrected
 async function loadPositions(sample) {
-  if (!GL.ok || GL.sample === sample) return;
-  const r = await fetch(`/api/sample/${sample}/cells.bin`);
+  const key = glKey(sample);
+  if (!GL.ok || GL.sample === key) return;
+  const r = await fetch(`/api/sample/${sample}/cells.bin?r=${st.he ? st.he.rev : 0}`);
   const buf = await r.arrayBuffer();
-  GL.n = buf.byteLength / 8; GL.sample = sample; GL.radius = +r.headers.get("X-Radius-Px"); GL.colorKey = null; GL.colors = {};
+  GL.n = buf.byteLength / 8; GL.sample = key; GL.radius = +r.headers.get("X-Radius-Px"); GL.colorKey = null; GL.colors = {};
   const gl = GL.gl; gl.bindBuffer(gl.ARRAY_BUFFER, GL.pos); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(buf), gl.STATIC_DRAW);
 }
 async function loadColors() {
@@ -522,7 +524,7 @@ function drawGL() {
   const w = viewer.canvas.clientWidth, h = viewer.canvas.clientHeight;
   if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
   gl.viewport(0, 0, c.width, c.height); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
-  if (!st.sid || !st.he || st.hidden || !GL.colorKey || !heItem() || GL.sample !== (st.sample && st.sample.sample_id)) return;
+  if (!st.sid || !st.he || st.hidden || !GL.colorKey || !heItem() || !st.sample || GL.sample !== glKey(st.sample.sample_id)) return;
   const a = toScreen(0, 0), b = toScreen(st.he.width, st.he.height);
   const kx = (b.x - a.x) / st.he.width, ky = (b.y - a.y) / st.he.height;  // CSS pixels per image pixel
   gl.useProgram(GL.prog);
@@ -1307,12 +1309,22 @@ function adviceRow(x, btn, adv, prop) {
   row.append(a, b, c);
   return row;
 }
+async function reloadGeometry() {  // the cells moved on the image: reopen it in place, keeping the view
+  const vp = viewer.viewport, center = vp.getCenter(), zoom = vp.getZoom();
+  viewer.addOnceHandler("open", () => { vp.zoomTo(zoom, null, true); vp.panTo(center, true); });
+  await openHE(st.sample.sample_id);
+  GL.colorKey = null;
+  await refreshVersion(true);
+  if (st.plaus) await loadPlaus(false);
+  await loadNiches(false);
+  refreshOverlay(); drawRegions();
+}
 async function adviceAct(x, step, extra) {
   try {
     let name;
     if (step === "region") { name = prompt("Save the outline as region (name):", x.action.name); if (!name) return; }
     const r = await post(`/api/s/${st.sid}/advice/act`, { id: x.id, step, name, ...(extra || {}) });
-    if (r.reload) { toast("Cell positions changed: reloading…", 3000); setTimeout(() => location.reload(), 800); return; }
+    if (r.reload) { await reloadGeometry(); toast(step === "undo_registration" ? "Registration correction undone" : `Cells moved onto their nuclei (median ${r.moved_um_median} µm, up to ${r.moved_um_max} µm)`, 6000); return; }
     if (r.claude_code) toast(r.claude_code.reused ? "Sent to Claude Code" : "Claude Code is opening", 4000);
     else if (r.message && step === "claude" && st.chatAvailable) { $("input").value = r.message; send(); }
     else if (r.message) toast(r.message + (r.prior ? " · now add its prior" : ""), 5000);

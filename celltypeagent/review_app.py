@@ -52,7 +52,7 @@ def _default(o):
 
 
 def _session(sid) -> Session:
-    if sid not in _sessions:
+    if sid not in _sessions or _sessions[sid].stale():
         _sessions[sid] = Session(sid)
     return _sessions[sid]
 

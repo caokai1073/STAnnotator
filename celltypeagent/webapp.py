@@ -91,8 +91,15 @@ class SampleView:
 
 
 def view(sample_id) -> SampleView:
-    if sample_id not in _views:
+    """The sample's viewer geometry, rebuilt (with its image and dot tiles) when the cell positions change on disk."""
+    rev = (config.SAMPLES / sample_id / "cells.parquet").stat().st_mtime
+    if sample_id not in _views or _views[sample_id].rev != rev:
+        if sample_id in _views:
+            for cache in (_tiles, _overlays):
+                for k in [k for k in cache if k[0] == sample_id or (len(k) > 8 and k[8] == sample_id)]:
+                    cache.pop(k)
         _views[sample_id] = SampleView(sample_id)
+        _views[sample_id].rev = rev
     return _views[sample_id]
 
 
@@ -369,7 +376,7 @@ def overlay_tile(req: Request):
         img.save(buf, "PNG", compress_level=1)
         return buf.getvalue()
     try:
-        data = _overlays.get_or((s.id, version, mode_key(s, mode), only, size, L, tx, ty), make)
+        data = _overlays.get_or((s.id, version, mode_key(s, mode), only, size, L, tx, ty, s.sample_id, v.rev), make)
     except ValueError:
         return Response(status_code=404)
     return Response(data, media_type="image/png", headers={"Cache-Control": "max-age=86400"})
@@ -381,7 +388,7 @@ def api_cells_bin(req):
     v = view(req.path_params["sample"])
     data = np.c_[v.px - v.ox, v.py - v.oy].astype(np.float32).tobytes()
     return Response(data, media_type="application/octet-stream",
-                    headers={"X-Cells": str(len(v.px)), "X-Radius-Px": f"{CELL_RADIUS_UM / v.um_per_px:.4f}"})
+                    headers={"X-Cells": str(len(v.px)), "X-Radius-Px": f"{CELL_RADIUS_UM / v.um_per_px:.4f}", **NO_CACHE})
 
 
 def api_colors_bin(req):
@@ -544,10 +551,13 @@ def api_advice(req):
 
 
 def _reload_sample(sample_id):
-    """Drop cached sessions and views of a sample whose cell positions changed."""
-    _views.pop(sample_id, None)
+    """Drop cached sessions and views of a sample whose cell positions changed (view() and _session() also notice
+    it by themselves, from the file's modification time)."""
+    view(sample_id)
     for sid in [k for k, x in review_app._sessions.items() if x.sample_id == sample_id]:
         review_app._sessions.pop(sid, None)
+    if mcp_server._active.get("session") is not None and mcp_server._active["session"].sample_id == sample_id:
+        mcp_server._active["session"] = Session(mcp_server._active["session"].id)
 
 
 async def api_advice_act(req: Request):
@@ -692,7 +702,7 @@ def api_samples(req):
 def api_he_info(req):
     v = view(req.path_params["sample"])
     return _json({"width": v.W, "height": v.H, "tile_size": TILE, "origin": [v.ox, v.oy], "um_per_px": v.um_per_px,
-                  "image_kind": v.image_kind})
+                  "image_kind": v.image_kind, "rev": int(v.rev)})
 
 
 async def api_annotate(req: Request):

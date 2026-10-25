@@ -130,6 +130,8 @@ _active: dict = {}
 def _s() -> Session:
     if "session" not in _active:
         raise ValueError("no active session; call start_session or resume_session first")
+    if _active["session"].stale():  # the cells moved (registration corrected in the app): reload
+        _active["session"] = Session(_active["session"].id)
     return _active["session"]
 
 
