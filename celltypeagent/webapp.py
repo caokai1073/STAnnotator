@@ -930,11 +930,11 @@ def api_sample_reset(req):
 
 async def api_undo(req):
     s = review_app._session(req.path_params["sid"])
-    cur = s.state()
-    if cur["parent"] is None:
-        return _json({"error": "nothing to undo"}, 400)
-    v = s.revert(cur["parent"], f"undo v{cur['version']} ({cur['message'][:60]})")
-    return _json({"new_version": v})
+    try:
+        v = s.undo()
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+    return _json({"new_version": v, "message": s.state(v)["message"]})
 
 
 async def api_export(req):

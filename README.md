@@ -132,14 +132,15 @@ by Claude show up within a few seconds.
    **edit** next to a polygon shows its points: drag a point to move it, drag a small circle between two points to
    add one, double-click a point to remove it, then **Save** (Enter) or **Cancel** (Esc). The region keeps its name
    and priors; its cells are recomputed, and Undo brings the old outline back. Click a region's color square to
-   pick another color (right-click: back to the automatic one); outlines, cells colored by region and the legend
-   follow, and the color stays with the region when it is renamed.
+   choose one of 15 colors; outlines, cells colored by region and the legend follow, and the color stays with the
+   region when it is renamed.
    You can also ask Claude in Claude Code to draw one ("draw the mucosa", "outline the lymphoid follicles", "make
    a region of tiles F3:H6"): Claude computes the outline from where that tissue's cells lie, checks it on the H&E
    and offers it in the Review panel, which opens by itself and shows the outline on the map (other advice stays).
    Click **add region** to keep it, then **edit** to adjust it.
 4. Hand-labeled cells are locked and fine-tune the expression model (only the involved cell types can move),
-   so similar cells elsewhere update too. Every step is a version; **Undo** reverts the last one.
+   so similar cells elsewhere update too. Every step is a version; **Undo** steps back one change at a time (clicking it again goes further
+   back; it never undoes the undo).
 5. **Export CSV** saves one row per cell
    (`cell_id`, `region`, `cell_type`, `lineage`, `level_1`… the full type path, `confidence`,
    `expression_label`, `marker_cluster`, `hand_labeled`, `x_um`, `y_um`).

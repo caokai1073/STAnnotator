@@ -234,7 +234,7 @@ class Session:
         return json.load(open(self._vpath(v)))
 
     def _commit(self, action, message, regions=None, constraints=None, expected_parent=None, corrections=None,
-                marker_step=None):
+                marker_step=None, extra=None):
         """Append a version. The lock keeps version numbers unique when the agent and the review page
         (or two reviewers) commit at the same time; expected_parent rejects edits made on a stale version."""
         with open(self.dir / "versions" / ".lock", "w") as lk:
@@ -247,6 +247,7 @@ class Session:
                    "constraints": constraints if constraints is not None else cur["constraints"],
                    "corrections": corrections if corrections is not None else cur.get("corrections", []),
                    "marker_step": marker_step if marker_step is not None else cur.get("marker_step", {"ops": []})}
+            new.update(extra or {})
             self._write(new)
         return new["version"]
 
@@ -813,6 +814,21 @@ class Session:
         return self._commit("revert", message or f"revert to v{version}", regions=old["regions"],
                             constraints=old["constraints"], corrections=old.get("corrections", []),
                             marker_step=old.get("marker_step", {"ops": []}), expected_parent=cur["version"])
+
+    def undo(self):
+        """Undo the last change. An undo restores the state before the change and remembers which version it restored
+        ("restores"), so the next undo steps back further instead of undoing the undo."""
+        cur = self.state()
+        eff = cur.get("restores", cur["version"])  # the version whose content is current
+        done = self.state(eff)
+        if done["parent"] is None:
+            raise ValueError("nothing to undo")
+        target = self.state(done["parent"]).get("restores", done["parent"])
+        old = self.state(target)
+        return self._commit("undo", f"undo v{eff} ({done['message'][:60]})", regions=old["regions"],
+                            constraints=old["constraints"], corrections=old.get("corrections", []),
+                            marker_step=old.get("marker_step", {"ops": []}), expected_parent=cur["version"],
+                            extra={"restores": target})
 
     # ---------- hand corrections ----------
     def _cells_for(self, region, cells, only_types, version=None):
