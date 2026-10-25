@@ -70,32 +70,43 @@ def workspace():
 
 def claude_code_command(prompt=None):
     ws = workspace()
-    cmd = f'cd "{ws}" && claude --mcp-config "{ws / "celltypeagent_mcp.json"}"'
-    return cmd + (f" '{prompt}'" if prompt else ""), ws
+    # the prompt goes first: --mcp-config takes several values and would swallow it
+    cmd = f'cd "{ws}" && claude ' + (f"'{prompt}' " if prompt else "") + f'--mcp-config "{ws / "celltypeagent_mcp.json"}"'
+    return cmd, ws
 
 
 TAB_TITLE = "Spatial Annotator - Claude Code"
-# Bring the Terminal tab that still runs this app's Claude Code to the front; otherwise start it in a new window
+# Bring the Terminal tab that runs this app's Claude Code to the front (found by the tty recorded when it was opened,
+# still running claude); otherwise open it in a new window. Prints "existing <tty>" or "new <tty>".
+# (Claude Code changes the tab's title while it runs, so the title cannot identify the tab.)
 FOCUS_SCRIPT = """on run argv
-  set theTitle to item 1 of argv
+  set theTTY to item 1 of argv
   set theScript to item 2 of argv
+  set theTitle to item 3 of argv
   tell application "Terminal"
-    repeat with w in windows
-      repeat with t in tabs of w
-        try
-          if custom title of t is theTitle and busy of t then
-            set selected of t to true
-            set index of w to 1
-            activate
-            return "existing"
-          end if
-        end try
+    if theTTY is not "" then
+      repeat with w in windows
+        repeat with t in tabs of w
+          try
+            if (tty of t) is theTTY and (busy of t) then
+              set ps to processes of t
+              if ps contains "claude" or ps contains "node" then
+                set selected of t to true
+                set index of w to 1
+                activate
+                return "existing " & theTTY
+              end if
+            end if
+          end try
+        end repeat
       end repeat
-    end repeat
+    end if
     set t to do script quoted form of theScript
-    set custom title of t to theTitle
+    try
+      set custom title of t to theTitle
+    end try
     activate
-    return "new"
+    return "new " & (tty of t)
   end tell
 end run
 """
@@ -118,7 +129,8 @@ def open_claude_code(sample=None, session=None, request=None):
         return {"opened": False, "command": cmd}
     script = ws / "start_claude.command"
     exe = claude_code_path()
-    args = f'--mcp-config "{ws / "celltypeagent_mcp.json"}"' + (f" '{prompt}'" if prompt else "")
+    # the prompt goes first: --mcp-config takes several values and would swallow it
+    args = (f"'{prompt}' " if prompt else "") + f'--mcp-config "{ws / "celltypeagent_mcp.json"}"'
     body = ["#!/bin/zsh -il", f'cd "{ws}"']  # interactive login shell: the same PATH as the user's Terminal
     if exe:
         body.append(f'exec "{exe}" {args}')
@@ -131,12 +143,17 @@ def open_claude_code(sample=None, session=None, request=None):
                  f'exec claude {args}']
     script.write_text("\n".join(body) + "\n")
     script.chmod(0o755)
-    focus = ws / "focus_claude.applescript"
+    focus, tab = ws / "focus_claude.applescript", ws / "claude_tab.txt"
     focus.write_text(FOCUS_SCRIPT)
-    r = subprocess.run(["osascript", str(focus), TAB_TITLE, str(script)], capture_output=True, text=True, check=False)
-    if r.returncode != 0:  # e.g. the user did not allow the app to control Terminal: open a new window
+    tty = tab.read_text().strip() if tab.exists() else ""
+    r = subprocess.run(["osascript", str(focus), tty, str(script), TAB_TITLE], capture_output=True, text=True,
+                       check=False)
+    out = r.stdout.strip().split(" ", 1)
+    if r.returncode != 0 or len(out) < 2:  # e.g. the user did not allow the app to control Terminal
         subprocess.run(["open", "-a", "Terminal", str(script)], check=False)
-    return {"opened": True, "reused": r.stdout.strip() == "existing", "command": cmd, "claude_code": exe}
+        return {"opened": True, "reused": False, "command": cmd, "claude_code": exe}
+    tab.write_text(out[1])
+    return {"opened": True, "reused": out[0] == "existing", "command": cmd, "claude_code": exe}
 
 
 # ---------------- viewer <-> agent ----------------
