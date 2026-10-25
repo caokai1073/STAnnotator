@@ -18,6 +18,12 @@ registration: either an affine CSV with columns a11,a12,a21,a22,tx,ty mapping ce
   section value is used), or a Xenium Explorer alignment matrix (3x3 CSV mapping H&E pixels to Xenium morphology
   pixels of --xenium-px-um).
 Output: $CELLTYPEAGENT_HOME/samples/<name>/ with cells.parquet, counts.npz, genes.txt and meta.json.
+
+The cells, the image and the registration can come one at a time: a sample needs only its cells; set_image and
+set_registration add the others later (in any order), and place_cells puts the cells on the image with an affine
+found otherwise (e.g. by align.py). Until an image is registered the cells are shown on a blank background (or the
+Xenium DAPI image) and the image waits in meta["image_pending"]. Moving the cells to a new placement moves the
+outlines drawn on the old one with them (regions, proposed areas).
 """
 import json, time
 from pathlib import Path
@@ -27,6 +33,8 @@ from . import config
 
 COORD_COLUMNS = [("x_centroid", "y_centroid"), ("x", "y"), ("center_x", "center_y"), ("x_location", "y_location")]
 DEPTH_MARKERS, DEPTH_MIN_COUNTS, DEPTH_MIN_FRAC, DEPTH_K, DEPTH_CORE = ("EPCAM", "KRT8"), 3, 0.05, 30, 0.3
+BLANK = np.array([[2.0, 0, 0], [0, 2.0, 0]])  # placement without an image: 0.5 um per pixel of a blank background
+MIN_INSIDE = 0.9  # share of cells that must fall inside the image for a registration to be accepted
 
 
 # ---------------- reading AnnData (h5ad) with h5py: only the selected rows are loaded ----------------
@@ -213,14 +221,16 @@ def _check_name(name, overwrite):
     return name
 
 
-def _write_bundle(name, ids, xy, X, genes, image, A, regions, description, source, progress, image_kind):
-    """Map cells onto the background image, check the registration, estimate depth and write the bundle."""
+def _write_bundle(name, ids, xy, X, genes, image, A, regions, description, source, progress, image_kind,
+                  registration=None, image_pending=None):
+    """Map cells onto the background image, check the registration, estimate depth and write the bundle.
+    registration: the affine of a registration file (kept even before there is an image to use it on)."""
     out = config.SAMPLES / name
     pxy = xy @ A[:, :2].T + A[:, 2]
     if image:
         W, H = _he_size(image)
         inside = ((pxy[:, 0] >= 0) & (pxy[:, 0] < W) & (pxy[:, 1] >= 0) & (pxy[:, 1] < H)).mean()
-        if inside < 0.9:
+        if inside < MIN_INSIDE:
             raise ValueError(f"only {inside:.0%} of the cells fall inside the image ({W} x {H} px): check the "
                              "registration file, the section, and that coordinates are in micrometers")
         progress(f"registration: {inside:.1%} of cells inside the image")
@@ -242,13 +252,16 @@ def _write_bundle(name, ids, xy, X, genes, image, A, regions, description, sourc
     meta = {"sample_id": name, "description": description, "n_cells": int(len(ids)), "n_genes": len(genes),
             "he_path": str(Path(image).resolve()) if image else None, "he_um_per_px": um_per_px,
             "image_kind": image_kind, "bundle_dir": str(out), "has_pathologist_regions": has_regions,
-            "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "source": source}
+            "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "source": source, "placement_affine": A.tolist(),
+            "registration_affine": None if registration is None else np.asarray(registration).tolist(),
+            "registration_by": "file" if registration is not None else None,
+            "image_pending": str(Path(image_pending).resolve()) if image_pending else None}
     json.dump(meta, open(out / "meta.json", "w"), indent=1)
     progress(f"imported sample {name} into {out}")
     return meta
 
 
-def import_sample(name, h5ad, he, registration, section_column=None, section=None, x_column=None, y_column=None,
+def import_sample(name, h5ad, he=None, registration=None, section_column=None, section=None, x_column=None, y_column=None,
                   counts_layer=None, region_column=None, xenium_px_um=0.2125, description="", overwrite=False,
                   progress=print):
     name = _check_name(name, overwrite)
@@ -279,12 +292,16 @@ def import_sample(name, h5ad, he, registration, section_column=None, section=Non
     candidates = ()
     if section is None:  # values that are the same for every cell (e.g. the donor id) can pick the registration row
         candidates = [v[0] for v in inspect_h5ad(h5ad)["columns"].values() if len(v) == 1]
-    A = load_registration(registration, section, xenium_px_um, candidates, progress)
+    R = load_registration(registration, section, xenium_px_um, candidates, progress) if registration else None
     regions = np.concatenate([q["regions"] for q in parts]) if region_column else None
-    return _write_bundle(name, ids, xy, X, genes, he, A, regions, description,
+    if he and R is None:
+        progress("  the image waits for a registration (Import > Registration, or Align with Claude)")
+    image, A, kind = (he, R, "H&E") if he and R is not None else (None, BLANK, "none")
+    return _write_bundle(name, ids, xy, X, genes, image, A, regions, description,
                          {"kind": "h5ad", "h5ad": [str(Path(p).resolve()) for p in h5ad], "section_column": section_column,
-                          "section": section, "registration": str(Path(registration).resolve()),
-                          "region_column": region_column}, progress, "H&E")
+                          "section": section, "registration": str(Path(registration).resolve()) if registration else None,
+                          "region_column": region_column, "candidates": [str(c) for c in candidates]}, progress, kind,
+                         registration=R, image_pending=he if he and R is None else None)
 
 
 # ---------------- Xenium output folder ----------------
@@ -357,19 +374,20 @@ def import_xenium(name, xenium_dir, he=None, registration=None, description="", 
     xy = cells[["x_centroid", "y_centroid"]].to_numpy(float)
     progress(f"{len(cells):,} cells, {len(genes)} genes")
     ps = info["pixel_size_um"]
-    if he:
-        if not registration:
-            raise ValueError("an H&E image needs its alignment file (Xenium Explorer: Image alignment -> export)")
-        A, image, kind = load_registration(registration, None, ps), he, "H&E"
+    R = load_registration(registration, None, ps) if registration else None
+    if he and R is not None:
+        A, image, kind = R, he, "H&E"
     elif info["morphology"]:
         A, image, kind = np.array([[1 / ps, 0, 0], [0, 1 / ps, 0]]), info["morphology"], "DAPI"
     else:
         progress("  no H&E and no morphology image: the viewer shows the cells on a blank background")
-        A, image, kind = np.array([[2.0, 0, 0], [0, 2.0, 0]]), None, "none"
+        A, image, kind = BLANK, None, "none"
+    if he and R is None:
+        progress("  the H&E waits for its alignment (Import > Registration, or Align with Claude)")
     return _write_bundle(name, cells.cell_id.to_numpy(), xy, X, genes, image, A, None, description,
                          {"kind": "xenium", "folder": str(d), "registration": str(Path(registration).resolve())
                           if registration else None, **{k: v for k, v in info.items() if k != "folder"}},
-                         progress, kind)
+                         progress, kind, registration=R, image_pending=he if he and R is None else None)
 
 
 def apply_registration_fix(sample_id, correction):
@@ -405,3 +423,141 @@ def undo_registration_fix(sample_id):
     meta.pop("registration_fixes", None)
     json.dump(meta, open(d / "meta.json", "w"), indent=1)
     return {"ok": True}
+
+
+# ---------------- adding the image and the registration later ----------------
+def _meta(sample_id):
+    return json.load(open(config.SAMPLES / sample_id / "meta.json"))
+
+
+def placement(sample_id):
+    """The affine that currently maps cell (x, y) um to the shown image's level-0 pixels (fitted from the cells for
+    samples imported before it was stored)."""
+    m = _meta(sample_id)
+    if m.get("placement_affine"):
+        return np.asarray(m["placement_affine"], float)
+    c = pd.read_parquet(config.SAMPLES / sample_id / "cells.parquet", columns=["x", "y", "px", "py"])
+    X = np.c_[c.x, c.y, np.ones(len(c))]
+    return np.linalg.lstsq(X, c[["px", "py"]].to_numpy(), rcond=None)[0].T
+
+
+def _move_outlines(sample_id, M):
+    """Apply the 2x3 map M (old pixels -> new pixels) to every outline stored in pixels for this sample: drawn
+    regions in every version of every session, proposed areas and compartments."""
+    def mv(poly):
+        P = np.asarray(poly, float)
+        return (P @ M[:, :2].T + M[:, 2]).tolist() if len(P) else poly
+    for d in config.SESSIONS.iterdir() if config.SESSIONS.exists() else []:
+        sj = d / "session.json"
+        if not sj.exists() or json.load(open(sj)).get("sample_id") != sample_id:
+            continue
+        for v in (d / "versions").glob("v*.json"):
+            st = json.load(open(v))
+            ops = st.get("regions", {}).get("ops", [])
+            if any(o.get("polygon") for o in ops):
+                for o in ops:
+                    if o.get("polygon"):
+                        o["polygon"] = mv(o["polygon"])
+                json.dump(st, open(v, "w"), indent=1)
+        f = d / "advice.json"
+        if f.exists():
+            a = json.load(open(f))
+            for c in a.get("compartments", {}).values():
+                c["polygons_px"] = [mv(p) for p in c["polygons_px"]]
+            for it in a.get("items", []):
+                if it.get("action") and it["action"].get("polygons_px"):
+                    it["action"]["polygons_px"] = [mv(p) for p in it["action"]["polygons_px"]]
+            json.dump(a, open(f, "w"), indent=1)
+        f = d / "area_suggestions.json"
+        if f.exists():
+            a = json.load(open(f))
+            for it in a:
+                if it.get("outline_px"):
+                    it["outline_px"] = mv(it["outline_px"])
+            json.dump(a, open(f, "w"), indent=1)
+
+
+def place_cells(sample_id, A, image, image_kind="H&E", by="file", progress=print):
+    """Put the cells on `image` with the affine A (cell um -> image level-0 pixels): new pixel positions, outlines
+    moved along, the previous placement kept for undo_placement. Refuses an A that puts fewer than MIN_INSIDE of
+    the cells inside the image."""
+    d = config.SAMPLES / sample_id
+    A = np.asarray(A, float)
+    cells = pd.read_parquet(d / "cells.parquet")
+    xy = cells[["x", "y"]].to_numpy()
+    pxy = xy @ A[:, :2].T + A[:, 2]
+    if image:
+        W, H = _he_size(image)
+        inside = ((pxy[:, 0] >= 0) & (pxy[:, 0] < W) & (pxy[:, 1] >= 0) & (pxy[:, 1] < H)).mean()
+        if inside < MIN_INSIDE:
+            raise ValueError(f"only {inside:.0%} of the cells fall inside the image ({W} x {H} px) with this "
+                             "registration: check the file, the section and that coordinates are in micrometers")
+        progress(f"registration: {inside:.1%} of cells inside the image")
+    m = _meta(sample_id)
+    old = placement(sample_id)
+    M = np.c_[A[:, :2] @ np.linalg.inv(old[:, :2]), A[:, 2] - A[:, :2] @ np.linalg.inv(old[:, :2]) @ old[:, 2]]
+    _move_outlines(sample_id, M)
+    m["placement_previous"] = {k: m.get(k) for k in ("placement_affine", "he_path", "image_kind", "he_um_per_px",
+                                                     "image_pending", "registration_affine", "registration_by")}
+    m["placement_previous"]["placement_affine"] = old.tolist()
+    cells["px"], cells["py"] = pxy[:, 0], pxy[:, 1]
+    cells.drop(columns=[c for c in ("px_import", "py_import") if c in cells]).to_parquet(d / "cells.parquet")
+    m.pop("registration_fixes", None)
+    m.update(placement_affine=A.tolist(), he_path=str(Path(image).resolve()) if image else None,
+             image_kind=image_kind if image else "none", he_um_per_px=float(1 / np.sqrt(abs(np.linalg.det(A[:, :2])))),
+             registration_by=by)
+    if image and m.get("image_pending") and Path(m["image_pending"]).resolve() == Path(image).resolve():
+        m["image_pending"] = None
+    json.dump(m, open(d / "meta.json", "w"), indent=1)
+    return {"placed_on": image, "by": by, "um_per_px": round(m["he_um_per_px"], 4)}
+
+
+def undo_placement(sample_id):
+    """Back to the placement before the last place_cells."""
+    m = _meta(sample_id)
+    prev = m.get("placement_previous")
+    if not prev:
+        raise ValueError("there is no earlier placement to go back to")
+    r = place_cells(sample_id, prev["placement_affine"], prev.get("he_path"), prev.get("image_kind") or "H&E",
+                    by=prev.get("registration_by") or "file", progress=lambda *a: None)
+    m = _meta(sample_id)
+    m.update(image_pending=prev.get("image_pending"), registration_affine=prev.get("registration_affine"),
+             placement_previous=None)
+    json.dump(m, open(config.SAMPLES / sample_id / "meta.json", "w"), indent=1)
+    return r
+
+
+def set_image(sample_id, path, kind="H&E", progress=print):
+    """Add (or replace) the sample's image. With a registration already known the cells move onto it at once;
+    otherwise it waits (image_pending) for set_registration or an alignment."""
+    path = str(Path(path).expanduser().resolve())
+    _he_size(path)  # readable?
+    m = _meta(sample_id)
+    if m.get("registration_affine"):
+        return place_cells(sample_id, m["registration_affine"], path, kind, by=m.get("registration_by") or "file",
+                           progress=progress)
+    m["image_pending"] = path
+    m["image_pending_kind"] = kind
+    json.dump(m, open(config.SAMPLES / sample_id / "meta.json", "w"), indent=1)
+    return {"pending": path}
+
+
+def set_registration(sample_id, path, section=None, progress=print):
+    """Add the registration file; with an image (pending or shown) the cells move onto it at once."""
+    m = _meta(sample_id)
+    before = {k: m.get(k) for k in ("registration_affine", "registration_by")}
+    src = m.get("source") or {}
+    R = load_registration(Path(path).expanduser(), section if section else src.get("section"),
+                          float(src.get("pixel_size_um") or 0.2125), src.get("candidates") or (), progress)
+    m["registration_affine"], m["registration_by"] = R.tolist(), "file"
+    src["registration"] = str(Path(path).expanduser().resolve())
+    m["source"] = src
+    json.dump(m, open(config.SAMPLES / sample_id / "meta.json", "w"), indent=1)
+    image = m.get("image_pending") or (m.get("he_path") if m.get("image_kind") == "H&E" else None)
+    if not image:
+        return {"stored": True, "note": "import the image to see the cells on it"}
+    r = place_cells(sample_id, R, image, m.get("image_pending_kind") or "H&E", by="file", progress=progress)
+    m = _meta(sample_id)  # undo goes back to before this file, registration included
+    m["placement_previous"].update(before)
+    json.dump(m, open(config.SAMPLES / sample_id / "meta.json", "w"), indent=1)
+    return r

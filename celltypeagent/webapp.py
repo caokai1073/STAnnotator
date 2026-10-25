@@ -750,7 +750,7 @@ async def api_import(req: Request):
                 importer.import_xenium(name, b["folder"], he=b.get("he") or None, registration=b.get("registration") or None,
                                        description=b.get("description", ""), overwrite=bool(b.get("overwrite")), progress=say)
             else:
-                importer.import_sample(name, b["h5ad"], b["he"], b["registration"], b.get("section_column") or None,
+                importer.import_sample(name, b["h5ad"], b.get("he") or None, b.get("registration") or None, b.get("section_column") or None,
                                        b.get("section") or None, region_column=b.get("region_column") or None,
                                        description=b.get("description", ""), overwrite=bool(b.get("overwrite")), progress=say)
             JOBS[job].update(progress=1.0, stage="done", done=True)
@@ -768,7 +768,10 @@ def api_samples(req):
         meta = json.load(open(config.SAMPLES / r["sample_id"] / "meta.json"))
         mine = ss[ss.sample_id == r["sample_id"]] if len(ss) else ss
         rows.append(r | {"bundle_dir": meta.get("bundle_dir"), "source_dir": meta.get("source_dir"),
-                         "he_path": meta.get("he_path"),
+                         "he_path": meta.get("he_path"), "image_kind": meta.get("image_kind"),
+                         "image_pending": meta.get("image_pending"), "registration_by": meta.get("registration_by"),
+                         "has_registration": bool(meta.get("registration_affine")),
+                         "can_undo_placement": bool(meta.get("placement_previous")),
                          "sessions": mine.sort_values("created_at", ascending=False)[["session_id", "created_at", "n_versions", "method"]]
                          .to_dict("records") if len(mine) else []})
     return _json(rows)
@@ -1128,6 +1131,55 @@ def _trash_sessions(sess, trash):
             for k in [k for k in cache if k[0] == d.name]:
                 cache.pop(k)
     return n_chats
+
+
+async def api_sample_image(req: Request):
+    """Add or replace a sample's image; it is shown once there is a registration (file or alignment)."""
+    sample = req.path_params["sample"]
+    b = await req.json()
+    try:
+        r = importer.set_image(sample, b["path"], b.get("kind") or "H&E", progress=lambda *a: None)
+    except (ValueError, OSError, KeyError) as e:
+        return _json({"error": str(e)}, 400)
+    _reload_sample(sample)
+    return _json(r)
+
+
+async def api_sample_registration(req: Request):
+    """Add a registration file; with an image the cells move onto it at once."""
+    sample = req.path_params["sample"]
+    b = await req.json()
+    try:
+        r = importer.set_registration(sample, b["path"], b.get("section") or None, progress=lambda *a: None)
+    except (ValueError, OSError, KeyError) as e:
+        return _json({"error": str(e)}, 400)
+    _reload_sample(sample)
+    return _json(r)
+
+
+async def api_sample_placement_undo(req: Request):
+    sample = req.path_params["sample"]
+    try:
+        r = importer.undo_placement(sample)
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+    _reload_sample(sample)
+    return _json(r)
+
+
+ALIGN_REQUEST = ("Align the cells of sample {sample} to its image (I clicked 'Align with Claude'; there is no "
+                 "registration file): alignment_status, search_alignment, compare the best candidates on their figures "
+                 "(show_alignment), refine_alignment the right one, check the close-ups and numbers, then "
+                 "apply_alignment. Do not change the annotation. Then tell me in three lines what you chose and why.")
+
+
+async def api_claude_align(req: Request):
+    b = await req.json()
+    sample = b["sample"]
+    text = ALIGN_REQUEST.format(sample=sample)
+    if not desktop_mode():
+        return _json({"message": text})
+    return _json({"claude_code": claudelink.open_claude_code(sample, b.get("session"), text, send_if_open=True)})
 
 
 def api_samples_clear(req):
@@ -1552,6 +1604,10 @@ def build_app(port):
         Route("/api/s/{sid}/undo", api_undo, methods=["POST"]),
         Route("/api/sample/{sample}/reset", api_sample_reset, methods=["POST"]),
         Route("/api/samples/clear", api_samples_clear, methods=["POST"]),
+        Route("/api/sample/{sample}/image", api_sample_image, methods=["POST"]),
+        Route("/api/sample/{sample}/registration", api_sample_registration, methods=["POST"]),
+        Route("/api/sample/{sample}/placement/undo", api_sample_placement_undo, methods=["POST"]),
+        Route("/api/claude/align", api_claude_align, methods=["POST"]),
         Route("/api/s/{sid}/export", api_export, methods=["POST"]),
         Route("/api/s/{sid}/export.csv", api_export_csv),
         Route("/api/s/{sid}/chat", api_chat, methods=["POST"]),

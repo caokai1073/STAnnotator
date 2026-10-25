@@ -113,6 +113,11 @@ High-level review (when the app asks for advice, or the user asks what you think
 - A report (the viewer's Report button, or when asked): gather annotation_facts, session_summary, sample_context,
   list_advice, check_plausibility and review_markers, and save it with write_report.
 
+Aligning cells to an image (the app's "Align with Claude", or when asked): alignment_status, then
+search_alignment; look at the figures of the best candidates (show_alignment), pick the one whose footprint covers
+the right section in the right orientation, refine_alignment it, check the close-ups (centroids on nuclei) and the
+refinement numbers, then apply_alignment. If no candidate fits, say so and ask for the registration file.
+
 Niches (the viewer's Niches row, or when asked): run_niches averages each cell's identity (NMF gene programs, or
 its cell type) over its k nearest cells and clusters the averages. When asked to choose k: niche_context, then k
 per drawn region or radius_um so neighborhoods span the tissue scale that matters (small in dense epithelium, larger
@@ -532,6 +537,73 @@ def propose_region(name: str, compartment: Optional[str] = None, area: Optional[
     return _j({"id": item["id"], "region_name": item["action"]["name"], "n_pieces": len(polys), "n_cells": n,
                "prior": item["action"].get("prior_text"),
                "next": "the user clicks 'add region' on it in the Review panel (it opens by itself in the app)"})
+
+
+# ---------------- aligning cells to an image without a registration file ----------------
+def _sample_id(sample_id):
+    if sample_id:
+        return sample_id
+    if "session" in _active:
+        return _s().sample_id
+    from . import claudelink
+    sid = claudelink.viewer_state().get("sample")
+    if not sid:
+        raise ValueError("which sample? give sample_id (list_samples)")
+    return sid
+
+
+@mcp.tool()
+def alignment_status(sample_id: Optional[str] = None) -> str:
+    """Whether the sample's cells sit on an image: the image shown, an image waiting for alignment, whether a
+    registration file was given and who placed the cells (file / Claude), the cells' extent in um and the image pixel
+    size stored in the file. Default sample: the active session's, else the one open in the app."""
+    from . import align
+    return _j(align.status(_sample_id(sample_id)))
+
+
+@mcp.tool()
+def search_alignment(sample_id: Optional[str] = None) -> list:
+    """Find where the cells lie on the sample's image without a registration file: the tissue on the image is matched
+    with the cells' footprint over 8 orientations (rotations, mirrored) and a range of pixel sizes. Returns the best
+    candidates (K1, K2, ... with orientation, um per pixel, score) and the figure of K1. Scores near 0.7-0.9 with a
+    clear lead are typical of the right one; a slide often holds several sections, so check the place too."""
+    from . import align
+    sid = _sample_id(sample_id)
+    st = align.search(align.Sample(sid))
+    png = align.show(align.Sample(sid), st["candidates"][0]["id"], refined=False) if st["candidates"] else None
+    out = {k: v for k, v in st.items() if k != "candidates"} | {"candidates": [{k: c[k] for k in (
+        "id", "orientation_name", "um_per_px", "score")} for c in st["candidates"]], "figure": png}
+    return [_j(out)] + ([Image(path=png)] if png else [])
+
+
+@mcp.tool()
+def show_alignment(candidate: str, sample_id: Optional[str] = None) -> list:
+    """Figure of a candidate (refined if refine_alignment ran): the cells' footprint on the whole image and two
+    close-ups where the cell centroids should sit on nuclei."""
+    from . import align
+    png = align.show(align.Sample(_sample_id(sample_id)), candidate)
+    return [_j({"figure": png}), Image(path=png)]
+
+
+@mcp.tool()
+def refine_alignment(candidate: str, sample_id: Optional[str] = None) -> str:
+    """Bring a candidate to micrometer precision: nuclei on the image vs cell centroids in windows over the tissue,
+    an affine fit of the offsets, three rounds (60, 25, 12 um search). A good result ends with median shifts of a
+    few um and correlations clearly above 0.2; then look at show_alignment."""
+    from . import align
+    return _j(align.refine(align.Sample(_sample_id(sample_id)), candidate))
+
+
+@mcp.tool()
+def apply_alignment(candidate: str, sample_id: Optional[str] = None) -> str:
+    """Put the cells on the image with this candidate (refined if it was): the app shows them there at once and
+    outlines drawn before move along. The user can undo it in the app (Import > Registration > Undo alignment)."""
+    from . import align
+    sid = _sample_id(sample_id)
+    r = align.apply(align.Sample(sid), candidate)
+    if "session" in _active and _active["session"].sample_id == sid:
+        _active["session"] = Session(_active["session"].id)
+    return _j(r)
 
 
 # ---------------- niches ----------------

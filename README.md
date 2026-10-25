@@ -45,21 +45,30 @@ another one).
 
 ## 2. Import a sample
 
-Click **Import…** in the app (or use the commands below). Two kinds of input:
+Click **Import…** in the app (or use the commands below). It has three tabs, and the parts can come in any order:
 
-| input | what it is |
+| tab | what it takes |
 |---|---|
-| Xenium output folder | the folder written by the Xenium instrument / Xenium Ranger: `cells.parquet` or `cells.csv.gz` and `cell_feature_matrix.h5` (or `cell_feature_matrix/`); control probes are dropped. The DAPI image (`morphology_focus/`) is the background unless you add an H&E with its Xenium Explorer alignment file (Image alignment -> export). |
-| h5ad + H&E + registration | AnnData file(s) with raw counts (layer `counts`, or `X`) and cell centroids in micrometers (`obs` columns `x_centroid`/`y_centroid` or `x`/`y`, or `obsm["spatial"]`); several files (e.g. one per lineage) are merged and cell type labels in them are ignored. The H&E as a pyramidal TIFF / OME-TIFF. The registration either as an affine CSV with columns `a11,a12,a21,a22,tx,ty` (`px = a11*x + a12*y + tx`, `py = a21*x + a22*y + ty`; cell um to H&E full-resolution pixels; with several rows, the row whose other columns contain the section value is used), or as a Xenium Explorer alignment matrix (3x3 CSV, H&E pixels to morphology pixels). |
+| **New sample** | the cells. A Xenium output folder (`cells.parquet` or `cells.csv.gz` and `cell_feature_matrix.h5` or `cell_feature_matrix/`; control probes are dropped; its DAPI image `morphology_focus/` is shown until an H&E is aligned), or AnnData file(s) with raw counts (layer `counts`, or `X`) and cell centroids in micrometers (`obs` columns `x_centroid`/`y_centroid` or `x`/`y`, or `obsm["spatial"]`); several files (e.g. one per lineage) are merged and cell type labels in them are ignored. The dialog lists the h5ad's columns to pick the section when a file holds several. |
+| **Image** | the H&E (or a fluorescence image) of the selected sample, as a pyramidal TIFF / OME-TIFF. |
+| **Registration** | an affine CSV with columns `a11,a12,a21,a22,tx,ty` (`px = a11*x + a12*y + tx`, `py = a21*x + a22*y + ty`; cell um to image full-resolution pixels; with one row per section, give the section value) or a Xenium Explorer alignment matrix (3x3 CSV, image pixels to morphology pixels). |
 
-In the dialog, the h5ad's columns are listed so you can pick the section (when a file holds several) and an
-optional region annotation (regions start empty; Claude can start them from this column on request). The import checks that at least 90% of the cells land on the image (a
-wrong registration or section fails here) and takes 10-30 s. From the command line:
+Until the image is registered the cells are shown on a blank background (or the DAPI) with a yellow bar over the
+map. **No registration file?** **Align with Claude** (Registration tab, or the bar) asks your Claude Code to align it:
+the tissue on the image is matched with the cells' footprint over 4 rotations, mirroring and a range of pixel sizes
+(around the size stored in an OME-TIFF), Claude picks the right section and orientation from the candidates' figures,
+and a refinement moves the cells onto their nuclei (nuclei on the image vs cell centroids in windows, affine fit,
+three rounds). On SCP2927 section 147328 (two sections on the slide, rotated 180 degrees) the search took 8 s and the
+refinement 3 s; the result agreed with the nuclei-corrected registration to 0.5 um (median; 1.6 um for 95% of
+cells), while the shipped registration file was 13 um off. **Undo last alignment** goes back. A registration needs
+at least 90% of the cells on the image. Regions drawn before the cells move are moved along with them.
+
+From the command line (`--he` and `--registration` are optional):
 
 ```bash
 .venv/bin/celltypeagent import-xenium --name ln1 --xenium /path/to/output-XETG... [--he he.ome.tif --registration he_imagealignment.csv]
-.venv/bin/celltypeagent import --name <sample_id> --h5ad cells.h5ad --he he.ome.tif --registration alignment.csv \
-  [--section-column donor_id --section 147328] [--region-column histopathology]
+.venv/bin/celltypeagent import --name <sample_id> --h5ad cells.h5ad [--he he.ome.tif --registration alignment.csv] \
+  [--section-column donor_id --section 147328]
 ```
 
 Then give the sample a marker list (there is no default): **Markers…** -> **Import…** a CSV (or text) file, or
