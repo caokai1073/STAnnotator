@@ -181,6 +181,10 @@ def colors_for(s: Session, version, mode, only):
             out[:, :3] = np.array([rgbs.get(x, GRAY) for x in r["region"]], np.uint8)
             out[:, 3] = 200
             out[r["region"] == "unknown", 3] = 70
+        elif mode.startswith("gene:"):
+            b = gene_bins(s, mode)
+            out[:, :3] = np.array([x[2] for x in GENE_BINS], np.uint8)[b]
+            out[:, 3] = np.array([x[3] for x in GENE_BINS], np.uint8)[b]
         elif mode == "niche":
             meta, lab = niches.current(s)
             if lab is not None:
@@ -219,6 +223,21 @@ def mode_key(s, mode):
     return f"niche:{(niches.current(s)[0] or {}).get('run_id')}" if mode == "niche" else mode
 
 
+GENE_BINS = (("0", "not detected", (200, 200, 200), 35), ("1", "1 transcript", (254, 217, 118), 235),
+             ("2-3", "2–3 transcripts", (253, 141, 60), 240), ("4-7", "4–7 transcripts", (227, 26, 28), 245),
+             ("8+", "8 or more", (128, 0, 38), 250))
+
+
+def gene_bins(s, mode):
+    """Transcript-count bin (index into GENE_BINS) of every cell for color mode "gene:<name>"."""
+    g = mode.split(":", 1)[1]
+    i = {x.upper(): k for k, x in enumerate(s.panel)}.get(g.upper())
+    if i is None:
+        raise ValueError(f"{g} is not in this sample's gene panel")
+    c = np.asarray(s.counts[:, i].todense()).ravel()
+    return np.digitize(c, [1, 2, 4, 8])
+
+
 def niche_rgb(s):
     meta, _ = niches.current(s)
     return [tuple(int(h[i:i + 2], 16) for i in (1, 3, 5)) for h in
@@ -250,6 +269,8 @@ def cell_keys(s: Session, version, mode):
         k = plausibility.check(s, version)["status"].copy()
         k[k == ""] = "ok"
         return k
+    if mode.startswith("gene:"):
+        return np.array([x[0] for x in GENE_BINS], dtype=object)[gene_bins(s, mode)]
     if mode == "niche":
         meta, lab = niches.current(s)
         return np.array([f"N{i + 1}" for i in range(meta["n_niches"])], dtype=object)[lab] if meta else np.full(n, "", dtype=object)
@@ -286,6 +307,9 @@ def legend_for(s: Session, version, mode):
         vc = dict(zip(*np.unique(r["region"].astype(str), return_counts=True)))
         return [{"key": k, "label": k.replace("_", " ") if k != "unknown" else "no region", "color": c, "count": int(vc.get(k, 0))}
                 for k, c in region_rgb(s, version).items()]
+    if mode.startswith("gene:"):
+        n = np.bincount(gene_bins(s, mode), minlength=len(GENE_BINS))
+        return [{"key": k, "label": lab, "color": c, "count": int(n[i])} for i, (k, lab, c, _) in enumerate(GENE_BINS)][::-1]
     if mode == "niche":
         meta, lab = niches.current(s)
         if meta is None:
@@ -756,6 +780,10 @@ def api_cell_at(req):
     if d > max(float(q.get("tol", 12)), 12):
         return _json({"cell": None})
     info = s.cell_info(int(row), int(q["version"]) if q.get("version") else None)
+    if q.get("gene"):  # the gene the map is colored by
+        i = {x.upper(): k for k, x in enumerate(s.panel)}.get(q["gene"].upper())
+        if i is not None:
+            info["gene"] = {"name": s.panel[i], "count": int(s.counts[int(row), i])}
     return _json(info | {"x_img": float(v.px[row] - v.ox), "y_img": float(v.py[row] - v.oy)})
 
 
@@ -925,6 +953,40 @@ async def api_region_edit(req: Request):
     except ValueError as e:
         return _json({"error": str(e)}, 400)
     return _json({"new_version": ver, "message": s.state(ver)["message"]})
+
+
+def api_genes(req):
+    return _json({"genes": panel_genes(req.path_params["sample"])})
+
+
+async def api_constraint_delete(req: Request):
+    """Remove one prior (a new version; Undo brings it back)."""
+    s = review_app._session(req.path_params["sid"])
+    try:
+        ver = s.remove_constraint(req.path_params["cid"], message=f"remove {req.path_params['cid']} (in the app)")
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+    return _json({"new_version": ver, "message": s.state(ver)["message"]})
+
+
+def api_diagnostics(req):
+    """About / diagnostics: what runs where, whether Claude Code is found and connected, the data folder."""
+    import importlib.metadata as md, platform
+    def ver(pkg):
+        try:
+            return md.version(pkg)
+        except Exception:
+            return None
+    n_samples = sum(1 for d in config.SAMPLES.iterdir() if (d / "meta.json").exists()) if config.SAMPLES.exists() else 0
+    n_sessions = sum(1 for d in config.SESSIONS.iterdir() if (d / "session.json").exists()) if config.SESSIONS.exists() else 0
+    size = sum(f.stat().st_size for f in config.HOME.rglob("*") if f.is_file()) if config.HOME.exists() else 0
+    return _json({"build": config.build(), "app": "desktop app" if desktop_mode() else "web viewer",
+                  "standalone": bool(config.FROZEN), "system": f"{platform.system()} {platform.release()} ({platform.machine()})",
+                  "python": platform.python_version(), "data_folder": str(config.HOME),
+                  "n_samples": n_samples, "n_annotations": n_sessions, "data_size_mb": round(size / 2 ** 20),
+                  "claude_code": claudelink.claude_code_path(), "claude_workspace": str(claudelink.workspace()),
+                  "claude_connection": claudelink.mcp_seen(),
+                  "libraries": {k: ver(k) for k in ("numpy", "scipy", "scikit-learn", "igraph", "pywebview", "mcp")}})
 
 
 async def api_region_color(req: Request):
@@ -1428,6 +1490,9 @@ def build_app(port):
         Route("/api/s/{sid}/regions/add", api_region_add, methods=["POST"]),
         Route("/api/s/{sid}/regions/rename", api_region_rename, methods=["POST"]),
         Route("/api/s/{sid}/regions/color", api_region_color, methods=["POST"]),
+        Route("/api/s/{sid}/constraint/{cid}/delete", api_constraint_delete, methods=["POST"]),
+        Route("/api/sample/{sample}/genes", api_genes),
+        Route("/api/diagnostics", api_diagnostics),
         Route("/api/s/{sid}/regions/{rid}/delete", api_region_delete, methods=["POST"]),
         Route("/api/s/{sid}/regions/{rid}/edit", api_region_edit, methods=["POST"]),
         Route("/api/s/{sid}/undo", api_undo, methods=["POST"]),

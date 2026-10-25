@@ -123,7 +123,8 @@ by Claude show up within a few seconds.
    **Annotate** (about 1 min for 350k cells with markers, seconds with a reference). Regions start empty: you
    draw them.
 2. The result is drawn on the H&E: pan and zoom down to single cells; color by cell type, lineage, region,
-   changes, conflicts, confidence or clusters. Click a legend entry to show only that type; click a cell for
+   changes, conflicts, confidence or clusters, or by **gene expression…** (type any panel gene: cells are colored by
+   their transcript count, 0 / 1 / 2–3 / 4–7 / 8+, and a clicked cell shows its count). Click a legend entry to show only that type; click a cell for
    its label, alternatives and region. Opacity, dot size, hide cells, hide H&E.
 3. **Regions are drawn by you.** In the Regions panel click **Draw region**, click points on the map, close
    with a double-click, Enter or the first point (Backspace removes a point, Esc cancels), and name it. A
@@ -174,6 +175,10 @@ by Claude show up within a few seconds.
      cells; **undo correction** puts them back). On SCP2927 section 147328 it found a 0.28% scale mismatch (cells up
      to 30 um off their nuclei at the corners); after the correction the windows agree within 0.5 um.
    Advice changes nothing until you click; **dismiss** hides it.
+   The **Priors** list under Regions shows the priors of the annotation (the user's words and how they were read);
+   **×** removes one (Undo brings it back). **?** (top right) explains every control and, under **About**, shows the
+   build, the data folder, whether Claude Code was found and when Claude last used the tools, with a button that
+   copies these details for a bug report.
 9. **Niches** (fourth row): places where cells of similar make-up live together. Every cell gets an identity, its
    weights on NMF gene programs (*Identity: NMF programs*, independent of the annotation) or its cell type; the
    identities are averaged over the cell and its *k* nearest cells and clustered (k-means) into the chosen number of

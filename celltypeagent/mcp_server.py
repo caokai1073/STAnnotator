@@ -127,7 +127,22 @@ mcp = FastMCP("celltypeagent", instructions=INSTRUCTIONS)
 _active: dict = {}
 
 
+def _heartbeat():
+    """Note that Claude is connected (the app's About shows when Claude last used the tools)."""
+    import time
+    now = time.time()
+    if now - _active.get("beat", 0) < 20:
+        return
+    _active["beat"] = now
+    try:
+        from . import config
+        json.dump({"pid": os.getpid(), "time": now, "via": _active.get("via", "app")}, open(config.HOME / "mcp_seen.json", "w"))
+    except OSError:
+        pass
+
+
 def _s() -> Session:
+    _heartbeat()
     if "session" not in _active:
         raise ValueError("no active session; call start_session or resume_session first")
     if _active["session"].stale():  # the cells moved (registration corrected in the app): reload
@@ -171,6 +186,7 @@ def import_sample(name: str, h5ad: list[str], he: str, registration: str, sectio
 def use_viewer_session() -> str:
     """Load the sample and annotation the user is looking at in the Spatial Annotator app (or the web viewer) and
     make it the active session. Call it first when the user refers to what they see."""
+    _heartbeat()
     from . import claudelink
     st = claudelink.viewer_state()
     if not st.get("session"):
@@ -876,6 +892,8 @@ def export(version: Optional[int] = None) -> str:
 
 
 def main():
+    _active["via"] = "Claude Code"
+    _heartbeat()
     mcp.run()
 
 

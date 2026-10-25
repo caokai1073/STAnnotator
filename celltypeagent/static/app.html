@@ -117,6 +117,10 @@ body.desktop #side { display: none; }
 .rg button, .pg button { border: 0; background: none; padding: 0 4px; color: var(--muted); }
 .rg button:hover, .pg button:hover { color: var(--accent); }
 .pg { display: flex; gap: 6px; padding: 0 4px 2px 21px; color: var(--muted); font-size: 11px; }
+.prior { display: flex; align-items: flex-start; gap: 6px; padding: 3px 4px; border-left: 3px solid var(--accent); margin: 3px 0; }
+.prior .pt { font-size: 12px; } .prior .pr { font-size: 11px; color: var(--muted); }
+.prior button { border: 0; background: none; padding: 0 4px; color: var(--muted); }
+.prior button:hover { color: #c0392b; }
 #plpanel { top: 10px; right: 10px; width: 340px; max-height: calc(100% - 210px); display: flex; flex-direction: column; }
 #plpanel .lh { display: flex; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 12px; gap: 6px; }
 #plpanel .items { overflow: auto; padding: 4px 6px; font-size: 12px; }
@@ -133,6 +137,12 @@ body.desktop #side { display: none; }
 .pla .l2.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
 .plh.cat { text-transform: none; letter-spacing: 0; font-weight: 600; color: #7b5cd6; margin-top: 6px; }
 #rpBody { overflow: auto; max-height: 70vh; padding: 4px 18px 14px; font-size: 13px; line-height: 1.5; }
+.hpbody { overflow: auto; max-height: 72vh; padding: 6px 18px 16px; font-size: 13px; line-height: 1.5; }
+.hpbody h3 { font-size: 13.5px; margin: 12px 0 3px; } .hpbody ul { margin: 0; padding-left: 18px; }
+.hpbody kbd { font: 11px ui-monospace, Menlo, monospace; border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; }
+.hpbody dl { display: grid; grid-template-columns: 170px 1fr; gap: 4px 12px; margin: 8px 0; }
+.hpbody dt { color: var(--muted); } .hpbody dd { margin: 0; overflow-wrap: anywhere; }
+.ok { color: #2e7d32; } .bad { color: #c0392b; }
 #rpBody h1 { font-size: 18px; } #rpBody h2 { font-size: 15px; margin: 14px 0 4px; } #rpBody h3 { font-size: 13.5px; margin: 10px 0 2px; }
 #rpBody table { border-collapse: collapse; font-size: 12px; } #rpBody td, #rpBody th { border: 1px solid var(--line); padding: 2px 6px; }
 #rpBody code, #rpBody pre { font: 12px ui-monospace, Menlo, monospace; }
@@ -193,6 +203,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <label class="fl" id="sessWrap">Session <select id="session" title="Earlier annotations of this sample"></select></label>
     <span class="spacer"></span>
     <span class="folder">Data folder <span class="path" id="path">–</span></span>
+    <button id="helpBtn" title="How to use the app, and About (version, Claude connection, data folder)" style="padding:4px 10px;font-weight:600">?</button>
   </div>
   <div class="hrow">
     <div class="cap"><span class="captxt">Annotate</span></div>
@@ -242,6 +253,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <div id="empty"><div>No cell types yet. Check the marker list (<b>Markers…</b>) and click <b>Annotate</b>.</div></div>
     <div id="tools" class="float">
       <label>Color by <select id="mode" disabled><option value="">annotate first</option></select></label>
+      <input type="text" id="geneInput" list="geneList" placeholder="gene, e.g. EPCAM" hidden autocomplete="off"
+             title="Type a gene of the panel and press Enter" style="width:150px"><datalist id="geneList"></datalist>
       <label>Opacity <input type="range" id="opacity" min="0" max="100" value="85"></label>
       <label title="Size of the cell dots">Dot size <input type="range" id="dotsize" min="20" max="300" value="100" step="10">
         <span id="dotsizeVal" style="min-width:34px">1.0×</span></label>
@@ -403,6 +416,11 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <button id="rpSave" title="Save the report as a Markdown file">Save…</button>
     <button id="rpClose">Close</button></div>
   <div id="rpBody"></div>
+</dialog>
+<dialog id="hpDlg" style="width:min(760px,95vw)">
+  <div class="dh"><b>Spatial Annotator</b><span class="spacer"></span>
+    <button id="hpHow" class="on">How to use</button><button id="hpAbout">About</button><button id="hpClose">Close</button></div>
+  <div id="hpBody" class="hpbody"></div>
 </dialog>
 <div class="toast" id="toast"></div>
 <script>
@@ -584,7 +602,7 @@ function fillModes(sm) {
   const sel = $("mode"); sel.textContent = "";
   const add = (v, t) => { const o = document.createElement("option"); o.value = v; o.textContent = t; sel.append(o); };
   if (!sm) { add("", "annotate first"); sel.disabled = true; return; }
-  const avail = [["type", "cell type"], ["lineage", "lineage"]];
+  const avail = [["type", "cell type"], ["lineage", "lineage"], ["gene", "gene expression…"]];
   if (sm.has_regions) avail.push(["region", "region"]);
   if (sm.n_changed_since_first > 0 || sm.corrections.length) avail.push(["changed", "changed since first annotation"]);
   if (sm.n_conflicts > 0) avail.push(["conflicts", "conflicts with priors"]);
@@ -596,8 +614,10 @@ function fillModes(sm) {
   avail.forEach(([v, t]) => add(v, t));
   add(st.showMore ? "__less" : "__more", st.showMore ? "fewer options" : "more…");
   sel.disabled = false;
-  if (!avail.some(([v]) => v === st.mode)) st.mode = "type";
-  sel.value = st.mode;
+  const cur = st.mode.startsWith("gene:") ? "gene" : st.mode;
+  if (!avail.some(([v]) => v === cur)) st.mode = "type";
+  sel.value = st.mode.startsWith("gene:") ? "gene" : st.mode;
+  $("geneInput").hidden = sel.value !== "gene";
 }
 const USER_METHODS = ["markers", "scref", "existing"];  // annotations made in the app (not the lab's benchmark ones)
 function sessionLabel(x) {
@@ -720,6 +740,7 @@ async function openSession(sid) {
   if (st.vocab.method === "existing" && st.vocab.existing) inspectEx({ path: st.vocab.existing.path }, st.vocab.existing);
   if (["markers", "scref", "existing"].includes(st.vocab.method)) { $("method").value = st.vocab.method; showMethod(); }
   await loadNiches(false);
+  loadGenes(st.sample.sample_id).catch(() => {});
   await refreshVersion(true);
   await loadChat();
 }
@@ -796,7 +817,7 @@ async function loadLegend() {
   st.legend = r.items;
   const f = filt();
   $("legend").hidden = false;
-  $("lgtitle").textContent = MODE_TITLES[st.mode] + (f.size ? ` (${f.size} shown)` : "");
+  $("lgtitle").textContent = (st.mode.startsWith("gene:") ? `${st.mode.slice(5)} transcripts` : MODE_TITLES[st.mode]) + (f.size ? ` (${f.size} shown)` : "");
   $("lgall").disabled = !f.size;
   const box = $("lgitems"); box.textContent = "";
   const toggle = (keys) => {
@@ -836,7 +857,8 @@ viewer.addHandler("canvas-click", async (e) => {
   if (st.editing) return;
   const p = imgPointFromEvent(e.position);
   const q = imgPointFromEvent(new OpenSeadragon.Point(e.position.x + 10, e.position.y));
-  const c = await api(`/api/s/${st.sid}/cell_at?x=${p.x}&y=${p.y}&tol=${Math.abs(q.x - p.x)}&version=${st.version}`);
+  const g = st.mode.startsWith("gene:") ? `&gene=${encodeURIComponent(st.mode.slice(5))}` : "";
+  const c = await api(`/api/s/${st.sid}/cell_at?x=${p.x}&y=${p.y}&tol=${Math.abs(q.x - p.x)}&version=${st.version}${g}`);
   showCell(c);
 });
 function showCell(c) {
@@ -855,6 +877,7 @@ function showCell(c) {
   row("region", c.region.replace(/_/g, " "));
   row("depth", `${c.depth_um} µm from epithelium`);
   row("counts", c.total_counts);
+  if (c.gene) row(c.gene.name, `${c.gene.count} transcript${c.gene.count === 1 ? "" : "s"}`);
   row("cell id", c.cell);
   if (c.cluster) {
     row("marker cluster", `${c.cluster} → ${c.cluster_assigned || "unassigned"}` + (c.cluster_resolution ? ` (resolution ${c.cluster_resolution})` : ""));
@@ -958,9 +981,33 @@ async function loadRegions() {
   const u = document.createElement("div"); u.className = "hint"; u.style.padding = "4px";
   u.textContent = `${st.regions.n_unknown.toLocaleString()} cells in no region (region priors do not apply to them)`;
   box.append(u);
+  renderPriors(box);
   $("regnames").textContent = "";
   st.regions.regions.forEach((r) => { const o = document.createElement("option"); o.value = r.name; $("regnames").append(o); });
   drawRegions();
+}
+function renderPriors(box) {  // the priors of this version, each removable (a new version; Undo brings it back)
+  const cons = (st.lastSummary && st.lastSummary.constraints) || [];
+  const h = document.createElement("div"); h.className = "plh"; h.textContent = `Priors (${cons.length})`; box.append(h);
+  if (!cons.length) {
+    const d = document.createElement("div"); d.className = "hint"; d.style.padding = "2px 4px 6px";
+    d.textContent = "No priors yet. Ask Claude in Claude Code, e.g. “epithelial cells are only in the mucosa”.";
+    box.append(d); return;
+  }
+  cons.forEach((c) => {
+    const row = document.createElement("div"); row.className = "prior";
+    const a = document.createElement("div"); a.className = "pt";
+    a.textContent = `${c.id} · ${c.text || c.rule}`;
+    const b = document.createElement("div"); b.className = "pr"; b.textContent = c.rule.replace(/^C\d+: /, "") + (c.author ? ` · by ${c.author}` : "");
+    const del = document.createElement("button"); del.textContent = "×"; del.title = "Remove this prior (Undo brings it back)";
+    del.onclick = async () => {
+      if (!confirm(`Remove prior ${c.id}?\n\n${c.text || c.rule}`)) return;
+      try { const r = await post(`/api/s/${st.sid}/constraint/${c.id}/delete`); toast(r.message, 4000); await refreshVersion(true); }
+      catch (e) { toast(e.message, 6000); }
+    };
+    const txt = document.createElement("div"); txt.style.flex = "1"; txt.style.minWidth = "0"; txt.append(a, b);
+    row.append(txt, del); box.append(row);
+  });
 }
 function zoomTo(p) {
   const xs = p.polygon.map((q) => q[0]), ys = p.polygon.map((q) => q[1]);
@@ -1629,6 +1676,61 @@ $("imGo").onclick = async () => {
   $("imGo").disabled = false;
 };
 $("importBtn").onclick = openImport;
+// ---------------- help and about ----------------
+const HELP = `
+<h3>Map</h3><ul>
+<li>Drag to move, scroll or pinch to zoom; the small map at the bottom right shows where you are.</li>
+<li>Click a cell: its type, confidence, alternatives, region (and the gene's transcripts when coloring by a gene).</li>
+<li><b>Color by</b> cell type, lineage, <b>gene expression…</b> (type a gene, Enter), region, niche and more. Click legend
+entries to show only those (click again to drop one; <b>show all</b> resets).</li>
+<li><b>Opacity</b> and <b>Dot size</b> sliders; <b>Hide cells</b> <kbd>h</kbd>, <b>Hide H&amp;E</b> <kbd>e</kbd>.</li></ul>
+<h3>Regions</h3><ul>
+<li><b>Draw region</b>: click points on the map; close with a double-click, <kbd>Enter</kbd> or by clicking the first
+point; <kbd>Backspace</kbd> removes the last point, <kbd>Esc</kbd> cancels; then name it. A name can have several polygons.</li>
+<li><b>edit</b> (next to a polygon): drag a white point to move it; drag a small circle between two points to add a
+point there; click a point twice quickly to remove it; <b>Save</b> <kbd>Enter</kbd> or <b>Cancel</b> <kbd>Esc</kbd>.
+With many points on screen, zoom in first.</li>
+<li>Click a region's color square to choose another color; <b>✎</b> renames; <b>×</b> deletes a polygon (priors on it keep applying).</li>
+<li>Ask Claude in Claude Code to draw one (“draw the mucosa”): it appears in the Review panel; click <b>add region</b>.</li></ul>
+<h3>Priors and corrections</h3><ul>
+<li>Tell Claude in Claude Code (“epithelial cells are only in the mucosa”, “the cells in region X are goblet cells”);
+it previews the change and asks before adding a prior.</li>
+<li>The <b>Priors</b> list under Regions shows them; <b>×</b> removes one.</li></ul>
+<h3>Annotate</h3><ul>
+<li><b>Method</b>: marker genes (<b>Markers…</b>), a single-cell reference (<b>Reference…</b>) or an existing annotation
+(<b>Annotation file…</b>). <b>Annotate</b> makes a new annotation; <b>keep my regions, priors &amp; corrections</b> carries them over.</li></ul>
+<h3>Review and output</h3><ul>
+<li><b>Review annotation</b>: computed checks, checked by Claude on the H&amp;E; Claude's advice with one-click actions; <b>solve</b> hides an item.</li>
+<li><b>Report</b>: Claude writes the annotation report; <b>Save…</b> keeps it as a Markdown file.</li>
+<li><b>Niches</b> (fourth row): identity, k and number of niches; <b>Run niches</b>, or <b>Claude picks k</b>.</li>
+<li><b>Undo</b> steps back one change at a time. <b>Export CSV</b>: one row per cell.</li>
+<li><b>Claude Code</b> opens your own Claude Code, connected to this app.</li></ul>`;
+async function showAbout() {
+  $("hpBody").innerHTML = "<p>Checking…</p>";
+  const d = await api("/api/diagnostics");
+  const esc = (s) => String(s ?? "–").replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const cc = d.claude_connection || {};
+  const rows = [
+    ["Build", esc(d.build)], ["Running as", esc(d.app) + (d.standalone ? " (standalone)" : " (from source)")],
+    ["System", esc(d.system) + " · Python " + esc(d.python)],
+    ["Data folder", esc(d.data_folder)], ["Samples / annotations", `${d.n_samples} / ${d.n_annotations} · ${d.data_size_mb} MB`],
+    ["Claude Code", d.claude_code ? `<span class="ok">found</span> · ${esc(d.claude_code)}` : `<span class="bad">not found</span>: install Claude Code, then click Claude Code`],
+    ["Claude connection", cc.seen ? `<span class="${cc.running ? "ok" : ""}">last used the tools ${esc(cc.last)}</span>` + (cc.running ? " (still open)" : " (closed since)") : `<span class="bad">not yet</span>: click Claude Code and ask something`],
+    ["Claude workspace", esc(d.claude_workspace)],
+    ["Libraries", Object.entries(d.libraries).map(([k, v]) => `${k} ${v || "–"}`).join(" · ")]];
+  $("hpBody").innerHTML = `<dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>
+    <button id="hpCopy">Copy for a bug report</button>`;
+  $("hpCopy").onclick = () => { navigator.clipboard.writeText(JSON.stringify(d, null, 1)).then(() => toast("Copied")).catch(() => toast("Could not copy")); };
+}
+function showHelp(tab) {
+  $("hpHow").classList.toggle("on", tab === "how"); $("hpAbout").classList.toggle("on", tab === "about");
+  if (tab === "how") $("hpBody").innerHTML = HELP; else showAbout().catch((e) => { $("hpBody").textContent = e.message; });
+  if (!$("hpDlg").open) $("hpDlg").showModal();
+}
+$("helpBtn").onclick = () => showHelp("how");
+$("hpHow").onclick = () => showHelp("how");
+$("hpAbout").onclick = () => showHelp("about");
+$("hpClose").onclick = () => $("hpDlg").close();
 $("clearAll").onclick = async () => {
   const n = st.samples.length;
   if (!n) { toast("There are no samples"); return; }
@@ -1749,8 +1851,28 @@ $("mode").onchange = (e) => {
   if (e.target.value === "__more" || e.target.value === "__less") {  // reveal / hide confidence and clusters
     st.showMore = e.target.value === "__more"; fillModes(st.lastSummary); return;
   }
+  if (e.target.value === "gene") {  // pick the gene in the box next to it
+    $("geneInput").hidden = false;
+    if (st.gene) { st.mode = `gene:${st.gene}`; refreshOverlay(); loadLegend(); } else $("geneInput").focus();
+    return;
+  }
+  $("geneInput").hidden = true;
   st.mode = e.target.value; refreshOverlay(); loadLegend();
 };
+function setGene() {
+  const v = $("geneInput").value.trim();
+  const g = (st.genes || []).find((x) => x.toUpperCase() === v.toUpperCase());
+  if (!g) { if (v) toast(`${v} is not in this sample's gene panel`, 4000); return; }
+  $("geneInput").value = g; st.gene = g; st.mode = `gene:${g}`;
+  refreshOverlay(); loadLegend();
+}
+$("geneInput").addEventListener("change", setGene);
+$("geneInput").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); setGene(); $("geneInput").blur(); } });
+async function loadGenes(sample) {
+  st.genes = (await api(`/api/sample/${sample}/genes`)).genes;
+  const dl = $("geneList"); dl.textContent = "";
+  st.genes.forEach((g) => { const o = document.createElement("option"); o.value = g; dl.append(o); });
+}
 $("opacity").oninput = (e) => { st.opacity = e.target.value / 100; const it = viewer.world.getItemAt(1); if (it) it.setOpacity(st.opacity); drawGL(); };
 $("hide").onclick = () => { st.hidden = !st.hidden; $("hide").classList.toggle("on", st.hidden); refreshOverlay(); };
 $("hideHE").onclick = () => { st.heHidden = !st.heHidden; applyHE(); };
@@ -1846,7 +1968,7 @@ $("export").onclick = async () => {  // the per-cell CSV of the current version
   toast(`Downloading ${a.download}…`);
 };
 document.addEventListener("keydown", (e) => {
-  if ($("mkDlg").open || $("rpDlg").open || $("nameDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
+  if ($("mkDlg").open || $("rpDlg").open || $("hpDlg").open || $("nameDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
   if (e.key === "h") $("hide").click();
   if (e.key === "e") $("hideHE").click();
   if (st.editing && e.key === "Escape") stopEdit();

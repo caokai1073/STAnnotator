@@ -43,6 +43,21 @@ def claude_code_path():
     return _shell_claude or None
 
 
+def mcp_seen():
+    """When Claude last used the tools (the MCP server notes it), and whether that Claude Code is still running."""
+    p = config.HOME / "mcp_seen.json"
+    if not p.exists():
+        return {"seen": False}
+    d = json.load(open(p))
+    try:
+        os.kill(int(d["pid"]), 0)
+        alive = True
+    except (OSError, ValueError, KeyError):
+        alive = False
+    return {"seen": True, "last": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(d["time"])), "via": d.get("via"),
+            "running": alive}
+
+
 def status():
     """Whether Claude Code is installed (shown when the app's Claude Code button cannot open it)."""
     return {"platform": platform.system(), "claude_code": claude_code_path()}
