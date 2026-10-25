@@ -11,7 +11,7 @@ Session directory (work/sessions/<session_id>/):
   verdicts.jsonl      reviewer verdicts on conflict cells; suggestions.jsonl rule suggestions
   figures/, exports/
 """
-import fcntl, hashlib, json, threading, time, uuid
+import fcntl, hashlib, json, re, threading, time, uuid
 from datetime import datetime
 import numpy as np, pandas as pd, scipy.sparse as sp
 from scipy.spatial import cKDTree
@@ -728,9 +728,29 @@ class Session:
                             regions=dict(cur["regions"], ops=[new if o is op else o for o in ops]),
                             expected_parent=cur["version"])
 
+    def region_colors(self):
+        """Colors the user picked for regions ({name: "#rrggbb"}); a display setting of the session, not versioned."""
+        p = self.dir / "region_colors.json"
+        return json.load(open(p)) if p.exists() else {}
+
+    def set_region_color(self, name, color=None):
+        """Pick a region's color ("#rrggbb"), or None for the automatic one."""
+        if color is not None and not re.fullmatch(r"#[0-9a-fA-F]{6}", str(color)):
+            raise ValueError("color must look like #1a2b3c")
+        cols = self.region_colors()
+        if color is None:
+            cols.pop(name, None)
+        else:
+            cols[name] = str(color).lower()
+        json.dump(cols, open(self.dir / "region_colors.json", "w"), indent=1)
+        return cols
+
     def rename_region(self, old, new, message=None):
         """Rename a region everywhere (all its polygons and every constraint that names it)."""
         new = regmod.validate_name(new)
+        cols = self.region_colors()
+        if old in cols:  # the picked color follows the name
+            self.set_region_color(new, cols[old]); self.set_region_color(old, None)
         cur = self.state()
         ops = [dict(o, name=new) if o.get("name") == old else o for o in cur["regions"].get("ops", [])]
         if ops == cur["regions"].get("ops", []):
@@ -1018,7 +1038,7 @@ class Session:
         out = self.dir / "figures" / f"map_v{r['state']['version']}_{_tag(conflict_group)}.png"
         return render.region_map(self.cells, r["region"], out, title=f"sample {self.sample_id} v{r['state']['version']} "
                                  f"regions ({r['state']['regions']['source']})", highlight=hl,
-                                 highlight_label=conflict_group or "conflicts")
+                                 highlight_label=conflict_group or "conflicts", chosen=self.region_colors())
 
     def fig_conflicts(self, gid, n=6, version=None):
         q = self.review_queue(gid, n, version)

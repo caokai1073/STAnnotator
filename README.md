@@ -131,7 +131,9 @@ by Claude show up within a few seconds.
    region are "unknown" and region priors never apply to them. Refer to regions by name when talking to Claude.
    **edit** next to a polygon shows its points: drag a point to move it, drag a small circle between two points to
    add one, double-click a point to remove it, then **Save** (Enter) or **Cancel** (Esc). The region keeps its name
-   and priors; its cells are recomputed, and Undo brings the old outline back.
+   and priors; its cells are recomputed, and Undo brings the old outline back. Click a region's color square to
+   pick another color (right-click: back to the automatic one); outlines, cells colored by region and the legend
+   follow, and the color stays with the region when it is renamed.
    You can also ask Claude in Claude Code to draw one ("draw the mucosa", "outline the lymphoid follicles", "make
    a region of tiles F3:H6"): Claude computes the outline from where that tissue's cells lie, checks it on the H&E
    and offers it in the Review panel, which opens by itself and shows the outline on the map (other advice stays).

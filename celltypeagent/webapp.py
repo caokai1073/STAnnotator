@@ -136,7 +136,7 @@ def type_palette(s: Session):
 
 def region_rgb(s: Session, version):
     names = s.region_names(version) + ["unknown"]
-    hexes = render.region_colors(names)
+    hexes = render.region_colors(names, s.region_colors())
     return {n: (GRAY if n == "unknown" else tuple(int(hexes[n][i:i + 2], 16) for i in (1, 3, 5))) for n in names}
 
 
@@ -848,6 +848,20 @@ async def api_region_edit(req: Request):
     return _json({"new_version": ver, "message": s.state(ver)["message"]})
 
 
+async def api_region_color(req: Request):
+    """The user picks a region's color (or null for the automatic one); maps colored by region are redrawn."""
+    s = review_app._session(req.path_params["sid"])
+    b = await req.json()
+    try:
+        s.set_region_color(str(b.get("name", "")), b.get("color"))
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+    for cache in (_overlays, _colors):
+        for k in [k for k in cache if k[0] == s.id and k[2] == "region"]:
+            cache.pop(k)
+    return _json({"ok": True})
+
+
 async def api_region_rename(req: Request):
     s = review_app._session(req.path_params["sid"])
     b = await req.json()
@@ -1299,6 +1313,7 @@ def build_app(port):
         Route("/api/s/{sid}/review/reopen", api_reopen, methods=["POST"]),
         Route("/api/s/{sid}/regions/add", api_region_add, methods=["POST"]),
         Route("/api/s/{sid}/regions/rename", api_region_rename, methods=["POST"]),
+        Route("/api/s/{sid}/regions/color", api_region_color, methods=["POST"]),
         Route("/api/s/{sid}/regions/{rid}/delete", api_region_delete, methods=["POST"]),
         Route("/api/s/{sid}/regions/{rid}/edit", api_region_edit, methods=["POST"]),
         Route("/api/s/{sid}/undo", api_undo, methods=["POST"]),

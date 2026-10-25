@@ -246,24 +246,27 @@ def he_crop(path, cx, cy, half_px):
     return np.asarray(sl.read(x0, y0, x1, y1, max(1, x1 - x0), max(1, y1 - y0))), x0, y0
 
 
-def region_colors(names):
-    """Fixed colors for the canonical names, a generated palette for user-drawn region names."""
+def region_colors(names, chosen=None):
+    """Fixed colors for the canonical names, a generated palette for user-drawn region names; chosen = colors the
+    user picked ({name: "#rrggbb"}) win."""
     import colorsys
     out, k = {}, 0
+    chosen = chosen or {}
     for n in names:
         if n in REGION_COLORS:
             out[n] = REGION_COLORS[n]
-        else:
+        else:  # every user-drawn name takes its turn, so picking one color leaves the others as they were
             r, g, b = colorsys.hls_to_rgb((0.07 + k * 0.618034) % 1.0, 0.5, 0.65)
             out[n] = "#%02x%02x%02x" % (int(255 * r), int(255 * g), int(255 * b))
             k += 1
+        out[n] = chosen.get(n, out[n])
     return out
 
 
-def region_map(cells, region, out, title="", highlight=None, highlight_label="conflicts"):
+def region_map(cells, region, out, title="", highlight=None, highlight_label="conflicts", chosen=None):
     fig, ax = plt.subplots(figsize=(9, 8))
     names = [n for n in dict.fromkeys(region.tolist()) if n != "unknown"] + ["unknown"]
-    for name, col in region_colors(names).items():
+    for name, col in region_colors(names, chosen).items():
         m = region == name
         if m.any():
             ax.scatter(cells.x.to_numpy()[m], cells.y.to_numpy()[m], s=0.05, c=col, label=f"{name} ({m.sum()})", rasterized=True)
