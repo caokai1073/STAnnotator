@@ -221,21 +221,24 @@ def _knn_gpu(Z, k, dev):
     return torch.cat(dist).numpy(), torch.cat(nbr).numpy()
 
 
-def _graph(Xn):
-    """PCA on standardized genes and a kNN graph with adaptive Gaussian weights; built once per level.
-    The PCA works on the sparse matrix (no dense copy). Neighbors are exact on a GPU (CUDA or Apple MPS, when torch
-    is installed) and for small levels; otherwise they come from pynndescent."""
-    import igraph
-    from .config import device
+def pca(Xn, n_pcs=None):
+    """PCA of standardized genes on the sparse matrix (no dense copy): cell scores (cells x n_pcs, float32)."""
     X = sp.csr_matrix(Xn, dtype=np.float32)
     n = X.shape[0]
     mu = np.asarray(X.mean(0)).ravel()
     ex2 = np.asarray(X.multiply(X).mean(0)).ravel()
     sd = np.sqrt(np.maximum(ex2 - mu ** 2, 0) * n / max(n - 1, 1)) + 1e-3
     cov = ((X.T @ X).toarray() / n - np.outer(mu, mu)) / np.outer(sd, sd)  # covariance of standardized genes
-    V = np.linalg.eigh(cov)[1][:, -N_PCS:] / sd[:, None]
-    Z = np.asarray(X @ V - mu @ V, dtype=np.float32)  # = standardized X times the top components
-    k = min(N_NEIGHBORS, n - 1)
+    V = np.linalg.eigh(cov)[1][:, -(n_pcs or N_PCS):] / sd[:, None]  # ascending variance: the last column is PC1
+    return np.asarray(X @ V - mu @ V, dtype=np.float32)  # = standardized X times the top components
+
+
+def knn(Z, k):
+    """k nearest neighbors of every row (itself excluded): (distances, indices). Exact on a GPU (CUDA or Apple MPS,
+    when torch is installed) and for small sets; otherwise from pynndescent."""
+    from .config import device
+    n = len(Z)
+    k = min(k, n - 1)
     dist = nbr = None
     if device() != "cpu":
         try:
@@ -257,13 +260,26 @@ def _graph(Xn):
             o = np.argsort(dj, 1)
             nbr[i:i + 4096] = np.take_along_axis(j, o, 1)
             dist[i:i + 4096] = np.sqrt(np.maximum(np.take_along_axis(dj, o, 1), 0))
+    return dist, nbr
+
+
+def knn_graph(dist, nbr):
+    """Weighted undirected igraph graph from kNN lists (adaptive Gaussian weights)."""
+    import igraph
+    n, k = nbr.shape
     w = np.exp(-(dist / np.maximum(dist[:, -1], 1e-6)[:, None]) ** 2).ravel()
     A = sp.csr_matrix((w, (np.repeat(np.arange(n), k), nbr.ravel())), shape=(n, n))
     A = A.maximum(A.T).tocoo()
     m = A.row < A.col
     g = igraph.Graph(n=n, edges=np.c_[A.row[m], A.col[m]])
     g.es["weight"] = A.data[m]
-    return g, nbr
+    return g
+
+
+def _graph(Xn):
+    """PCA on standardized genes and a kNN graph with adaptive Gaussian weights; built once per level."""
+    dist, nbr = knn(pca(Xn), N_NEIGHBORS)
+    return knn_graph(dist, nbr), nbr
 
 
 def _leiden(g, nbr, resolution, seed):

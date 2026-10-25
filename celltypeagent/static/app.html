@@ -30,10 +30,10 @@ header h1 { font-size: 16px; margin: 0; font-weight: 650; line-height: 1.2; }
 #sample { min-width: 220px; } #session { min-width: 250px; } #method { min-width: 180px; }
 .sep { width: 1px; height: 22px; background: var(--line); flex: none; }
 .num { width: 62px; }
-#nicheinfo { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+#nicheinfo, #einfo { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .nslot { flex: 1; min-width: 0; position: relative; display: flex; align-items: center; height: 30px; }
-#nprogress { position: absolute; inset: 0; max-width: 420px; min-width: 0; }
-#nprogress.show + * , .nslot:has(#nprogress.show) #nicheinfo { visibility: hidden; }
+.nslot .progress { position: absolute; inset: 0; max-width: 420px; min-width: 0; }
+.nslot:has(.progress.show) > span { visibility: hidden; }
 .folder { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); min-width: 0;
           flex: 0 1 auto; white-space: nowrap; overflow: hidden; }
 .folder .path { min-width: 60px; flex: 1 1 auto; }
@@ -151,6 +151,15 @@ body.desktop #side { display: none; }
 .pla .l3 { display: flex; gap: 4px; margin-top: 3px; flex-wrap: wrap; }
 .pla .l3 button { padding: 1px 7px; font-size: 11.5px; }
 #viewerwrap.pl #cellcard { right: 360px; }
+#empanel { top: 10px; right: 10px; width: 420px; display: flex; flex-direction: column; }
+#empanel .lh { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 12px; }
+#empanel .lh select { padding: 2px 6px; font-size: 12px; }
+.emtools { display: flex; align-items: center; gap: 6px; padding: 6px 10px; font-size: 12px; }
+.emtools button { padding: 2px 9px; font-size: 12px; }
+#emcanvas { width: 420px; height: 380px; display: block; background: var(--panel); cursor: grab; touch-action: none; }
+#emcanvas.lasso { cursor: crosshair; }
+#viewerwrap.em #plpanel { top: 520px; max-height: calc(100% - 530px); }
+#viewerwrap.em #cellcard { right: 440px; }
 .cellmark { width: 26px; height: 26px; border: 3px solid #00e6ff; border-radius: 50%; box-shadow: 0 0 0 2px rgba(0,0,0,.5); }
 #side { border-left: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
 #side .sh { padding: 10px 14px; border-bottom: 1px solid var(--line); font-weight: 600; display: flex; align-items: center; }
@@ -221,17 +230,16 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <div class="progress" id="progress"><div class="pbar"><i id="pfill"></i></div><span id="pstage"></span></div>
   </div>
   <div class="hrow">
-    <div class="cap"><span class="captxt">Review &amp; export</span></div>
-    <button id="undo" disabled title="Undo the last change">Undo</button>
+    <div class="cap"><span class="captxt">Embedding</span></div>
+    <label class="fl" title="Principal components used for the neighbors, UMAP and Leiden">PCs <input type="number" id="eP" class="num" min="5" max="100" value="30"></label>
+    <label class="fl" title="Neighbors per cell in the kNN graph (UMAP and Leiden)">Neighbors <input type="number" id="eK" class="num" min="5" max="100" value="15"></label>
     <span class="sep"></span>
-    <button id="claudeBtn" hidden title="Open your own Claude Code in Terminal, connected to the sample open here">Claude Code</button>
-    <button id="plaus" disabled title="Check markers and spatial layout; Claude checks them with the H&amp;E and gives advice">Review annotation</button>
-    <button id="report" disabled title="The annotation report Claude writes: method, composition, compartments, quality, open questions">Report</button>
-    <span class="spacer"></span>
-    <span id="vinfo"></span>
-    <button id="export" disabled title="Download a CSV with one row per cell: cell id, region, cell type, lineage, type levels, confidence…">Export CSV</button>
-    <span class="sep"></span>
-    <button id="reset" class="danger" disabled title="Remove every annotation and chat of this sample">Reset…</button>
+    <label class="fl" title="UMAP min_dist: smaller packs similar cells tighter">Min dist <input type="number" id="eD" class="num" min="0" max="1" step="0.05" value="0.3"></label>
+    <label class="fl" title="Leiden resolution: higher gives more clusters">Leiden res. <input type="number" id="eR" class="num" min="0.1" max="10" step="0.1" value="1"></label>
+    <button id="eRun" class="primary" disabled title="Compute PCA, UMAP and Leiden clusters of this sample (expression only; about a minute)">Run PCA + UMAP</button>
+    <button id="eShow" disabled title="Show the embedding in a window on the right">Show UMAP</button>
+    <div class="nslot"><span id="einfo"></span>
+      <div class="progress" id="eprogress"><div class="pbar"><i id="efill"></i></div><span id="estage" style="font-size:12px;color:var(--muted)"></span></div></div>
   </div>
   <div class="hrow">
     <div class="cap"><span class="captxt">Niches</span></div>
@@ -245,6 +253,19 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <button id="nClaude" disabled title="Ask your Claude Code to choose k per region from cell density and cell types, run the niches and name them">Claude picks k</button>
     <div class="nslot"><span id="nicheinfo"></span>
       <div class="progress" id="nprogress"><div class="pbar"><i id="nfill"></i></div><span id="nstage" style="font-size:12px;color:var(--muted)"></span></div></div>
+  </div>
+  <div class="hrow">
+    <div class="cap"><span class="captxt">Review &amp; export</span></div>
+    <button id="undo" disabled title="Undo the last change">Undo</button>
+    <span class="sep"></span>
+    <button id="claudeBtn" hidden title="Open your own Claude Code in Terminal, connected to the sample open here">Claude Code</button>
+    <button id="plaus" disabled title="Check markers and spatial layout; Claude checks them with the H&amp;E and gives advice">Review annotation</button>
+    <button id="report" disabled title="The annotation report Claude writes: method, composition, compartments, quality, open questions">Report</button>
+    <span class="spacer"></span>
+    <span id="vinfo"></span>
+    <button id="export" disabled title="Download a CSV with one row per cell: cell id, region, cell type, lineage, type levels, confidence…">Export CSV</button>
+    <span class="sep"></span>
+    <button id="reset" class="danger" disabled title="Remove every annotation and chat of this sample">Reset…</button>
   </div>
 </header>
 <main>
@@ -275,6 +296,20 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <div class="items" id="plitems"></div>
     </div>
     <svg id="regsvg"></svg>
+    <div id="empanel" class="float" hidden>
+      <div class="lh"><b>Embedding</b>
+        <select id="emKind" title="Which embedding"><option value="umap">UMAP</option><option value="pca">PCA (PC1, PC2)</option></select>
+        <select id="emColor" title="Colors of the points"><option value="map">as the map</option><option value="type">cell type</option>
+          <option value="leiden">Leiden clusters</option><option value="niche">niche</option></select>
+        <span class="spacer"></span><button id="emClose" style="padding:1px 7px;font-size:11px" title="Close">×</button></div>
+      <div class="emtools">
+        <button id="emLasso" title="Draw around cells to select them (or hold Shift and drag); they light up on the map">Select</button>
+        <button id="emClear" disabled title="Clear the selection">Clear</button>
+        <button id="emZoom" disabled title="Zoom the map to the selected cells">Show on map</button>
+        <span id="emInfo" class="hint"></span></div>
+      <canvas id="emcanvas"></canvas>
+      <div class="hint" style="padding:4px 10px 6px">Scroll to zoom, drag to move; double-click to reset.</div>
+    </div>
     <div id="regpanel" class="float" hidden>
       <div class="lh"><b>Regions</b><span class="spacer"></span>
         <label class="hint" title="Show region outlines"><input type="checkbox" id="outlines" checked> outlines</label>
@@ -521,6 +556,7 @@ async function loadPositions(sample) {
   if (!GL.ok || GL.sample === key) return;
   const r = await fetch(`/api/sample/${sample}/cells.bin?r=${st.he ? st.he.rev : 0}`);
   const buf = await r.arrayBuffer();
+  GL.posArr = new Float32Array(buf.slice(0));
   GL.n = buf.byteLength / 8; GL.sample = key; GL.radius = +r.headers.get("X-Radius-Px"); GL.colorKey = null; GL.colors = {};
   const gl = GL.gl; gl.bindBuffer(gl.ARRAY_BUFFER, GL.pos); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(buf), gl.STATIC_DRAW);
 }
@@ -533,7 +569,7 @@ async function loadColors() {
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
     GL.colors = { [key]: new Uint8Array(await r.arrayBuffer()) };  // keep only the current one
   }
-  const gl = GL.gl; gl.bindBuffer(gl.ARRAY_BUFFER, GL.col); gl.bufferData(gl.ARRAY_BUFFER, GL.colors[key], gl.STATIC_DRAW);
+  const gl = GL.gl; gl.bindBuffer(gl.ARRAY_BUFFER, GL.col); gl.bufferData(gl.ARRAY_BUFFER, withSelection(GL.colors[key]), gl.STATIC_DRAW);
   GL.colorKey = key;
 }
 function drawGL() {
@@ -549,7 +585,7 @@ function drawGL() {
   gl.uniform2f(GL.u.u_scale, 2 * kx / w, -2 * ky / h);
   gl.uniform2f(GL.u.u_offset, 2 * a.x / w - 1, 1 - 2 * a.y / h);
   const diam = 2 * GL.radius * kx * st.dotSize * dpr;
-  const few = filt().size || ["conflicts", "changed", "plausibility"].includes(st.mode);  // keep sparse cells findable
+  const few = filt().size || st.sel || ["conflicts", "changed", "plausibility"].includes(st.mode);  // keep sparse cells findable
   gl.uniform1f(GL.u.u_size, Math.max(diam, 2 * dpr));
   gl.uniform1f(GL.u.u_min, few ? 4 * dpr * st.dotSize : 0);
   gl.uniform1f(GL.u.u_opacity, st.opacity);
@@ -608,6 +644,7 @@ function fillModes(sm) {
   if (sm.n_conflicts > 0) avail.push(["conflicts", "conflicts with priors"]);
   if (st.plaus) avail.push(["plausibility", "out-of-place cells"]);
   if (st.niche) avail.push(["niche", "niche"]);
+  if (st.emb) avail.push(["leiden", "Leiden clusters"]);
   const extra = [["confidence", "confidence"]];
   if (st.vocab && st.vocab.method === "markers") extra.push(["cluster", "clusters (marker step)"]);
   if (st.showMore) avail.push(...extra);
@@ -665,7 +702,8 @@ function closeSession() {
   cancelDraw(); if (st.editing) stopEdit(); closePlaus();
   $("legend").hidden = true; $("cellcard").classList.remove("show");
   $("empty").style.display = "flex";
-  ["undo", "export", "send", "plaus", "report", "nRun", "nClaude"].forEach((b) => ($(b).disabled = true));
+  ["undo", "export", "send", "plaus", "report", "nRun", "nClaude", "eRun", "eShow"].forEach((b) => ($(b).disabled = true));
+  st.emb = null; setSelection(null); closeEmbedding(); $("einfo").textContent = "";
   st.niche = null; st.nicheSig = undefined; $("nicheinfo").textContent = "";
   $("carryWrap").style.visibility = "hidden";
   $("input").disabled = true; $("composerhint").textContent = "Annotate a sample first.";
@@ -730,7 +768,7 @@ async function startAnnotation(mode, sid, token = st.switchToken) {
 async function openSession(sid) {
   st.sid = sid;
   $("empty").style.display = "none";
-  ["undo", "export", "send", "plaus", "report", "nRun"].forEach((b) => ($(b).disabled = false));
+  ["undo", "export", "send", "plaus", "report", "nRun", "eRun"].forEach((b) => ($(b).disabled = false));
   $("nClaude").disabled = !st.desktop && !st.chatAvailable;
   $("carryWrap").style.visibility = "visible";
   $("input").disabled = false; $("composerhint").textContent = "Tip: refer to regions you drew by their name.";
@@ -740,10 +778,200 @@ async function openSession(sid) {
   if (st.vocab.method === "existing" && st.vocab.existing) inspectEx({ path: st.vocab.existing.path }, st.vocab.existing);
   if (["markers", "scref", "existing"].includes(st.vocab.method)) { $("method").value = st.vocab.method; showMethod(); }
   await loadNiches(false);
+  await loadEmbedding(false);
   loadGenes(st.sample.sample_id).catch(() => {});
   await refreshVersion(true);
   await loadChat();
 }
+
+// ---------------- embedding (PCA, UMAP, Leiden) and selecting cells on it ----------------
+const EM = { gl: null, n: 0, xy: null, colors: {}, colKey: null, view: { z: 1, x: 0, y: 0 }, lasso: false, path: null };
+function withSelection(arr) {  // cells outside the selection are grayed out (map and embedding)
+  if (!st.sel) return arr;
+  const out = new Uint8Array(arr);
+  for (let i = 0; i < st.sel.length; i++) {
+    const j = 4 * i;
+    if (st.sel[i]) out[j + 3] = 255; else { out[j] = out[j + 1] = out[j + 2] = 175; out[j + 3] = out[j + 3] ? 28 : 0; }
+  }
+  return out;
+}
+async function loadEmbedding(show) {
+  const r = await api(`/api/sample/${st.sample.sample_id}/embedding`);
+  st.emb = r.embedding;
+  const e = st.emb;
+  $("eShow").disabled = !e;
+  $("einfo").textContent = e ? `${e.n_clusters} Leiden clusters · ${e.n_pcs} PCs · ${e.n_neighbors} neighbors · ${e.seconds} s` : "no embedding yet";
+  if (e) { $("eP").value = e.n_pcs; $("eK").value = e.n_neighbors; $("eD").value = e.min_dist; $("eR").value = e.resolution; }
+  EM.xy = null; EM.colors = {}; EM.colKey = null;
+  fillModes(st.lastSummary);
+  if (show && e) await openEmbedding();
+}
+$("eRun").onclick = async () => {
+  const body = { n_pcs: +$("eP").value, n_neighbors: +$("eK").value, min_dist: +$("eD").value, resolution: +$("eR").value };
+  $("eRun").disabled = true; $("eprogress").classList.add("show");
+  try {
+    const { job } = await post(`/api/s/${st.sid}/embedding/run`, body);
+    for (;;) {
+      const j = await api(`/api/job/${job}`);
+      $("efill").style.width = `${Math.round(100 * j.progress)}%`; $("estage").textContent = j.error ? `error: ${j.error}` : j.stage;
+      if (j.done) { if (j.error) throw new Error(j.error); break; }
+      await new Promise((r) => setTimeout(r, 800));
+    }
+    setSelection(null);
+    await loadEmbedding(true);
+    setTimeout(() => $("eprogress").classList.remove("show"), 800);
+  } catch (e) { toast(`Embedding failed: ${e.message}`, 8000); }
+  finally { $("eRun").disabled = false; }
+};
+$("eShow").onclick = () => ($("empanel").hidden ? openEmbedding() : closeEmbedding());
+function initEM() {
+  const c = $("emcanvas"), dpr = window.devicePixelRatio || 1;
+  c.width = 420 * dpr; c.height = 380 * dpr;
+  const gl = c.getContext("webgl", { premultipliedAlpha: false, antialias: false });
+  if (!gl) return false;
+  const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
+  const prog = gl.createProgram();
+  gl.attachShader(prog, sh(gl.VERTEX_SHADER, `attribute vec2 a_pos; attribute vec4 a_col; uniform vec2 u_scale; uniform vec2 u_offset;
+    uniform float u_size; varying vec4 v_col;
+    void main() { gl_Position = vec4(a_pos * u_scale + u_offset, 0.0, 1.0); gl_PointSize = a_col.a > 0.0 ? u_size : 0.0; v_col = a_col; }`));
+  gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, `precision mediump float; varying vec4 v_col;
+    void main() { if (length(gl_PointCoord - 0.5) > 0.5) discard; gl_FragColor = v_col; }`));
+  gl.linkProgram(prog);
+  Object.assign(EM, { gl, prog, pos: gl.createBuffer(), col: gl.createBuffer(),
+    loc: { pos: gl.getAttribLocation(prog, "a_pos"), col: gl.getAttribLocation(prog, "a_col") },
+    u: { scale: gl.getUniformLocation(prog, "u_scale"), offset: gl.getUniformLocation(prog, "u_offset"), size: gl.getUniformLocation(prog, "u_size") } });
+  return true;
+}
+async function openEmbedding() {
+  if (!st.emb) return;
+  if (!EM.gl && !initEM()) { toast("WebGL is not available for the embedding window", 5000); return; }
+  $("empanel").hidden = false; $("viewerwrap").classList.add("em"); $("eShow").textContent = "Hide UMAP";
+  await loadEMData(); drawEM();
+}
+function closeEmbedding() {
+  $("empanel").hidden = true; $("viewerwrap").classList.remove("em"); $("eShow").textContent = "Show UMAP";
+}
+$("emClose").onclick = closeEmbedding;
+async function loadEMData() {
+  const kind = $("emKind").value, key = `${st.sample.sample_id}|${kind}|${st.emb.run_id}`;
+  if (EM.xyKey !== key) {
+    const buf = new Float32Array(await (await fetch(`/api/sample/${st.sample.sample_id}/embedding.bin?kind=${kind}&r=${st.emb.run_id}`)).arrayBuffer());
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (let i = 0; i < buf.length; i += 2) { x0 = Math.min(x0, buf[i]); x1 = Math.max(x1, buf[i]); y0 = Math.min(y0, buf[i + 1]); y1 = Math.max(y1, buf[i + 1]); }
+    const s = 1.9 / Math.max(x1 - x0, y1 - y0, 1e-9), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    for (let i = 0; i < buf.length; i += 2) { buf[i] = (buf[i] - cx) * s; buf[i + 1] = (buf[i + 1] - cy) * s; }
+    EM.xy = buf; EM.n = buf.length / 2; EM.xyKey = key; EM.view = { z: 1, x: 0, y: 0 };
+    const gl = EM.gl; gl.bindBuffer(gl.ARRAY_BUFFER, EM.pos); gl.bufferData(gl.ARRAY_BUFFER, buf, gl.STATIC_DRAW);
+  }
+  const cm = $("emColor").value === "map" ? st.mode : $("emColor").value;
+  const ckey = `${st.sid}|${st.version}|${cm}|${cm === "niche" && st.niche ? st.niche.params.run_id : ""}|${cm === "region" ? st.colorEpoch || 0 : ""}`;
+  if (!EM.colors[ckey]) {
+    const r = await fetch(`/api/s/${st.sid}/colors.bin?${new URLSearchParams({ version: st.version, mode: cm, only: "" })}`);
+    if (!r.ok) { toast((await r.json().catch(() => ({}))).error || "no colors for this choice", 5000); return; }
+    EM.colors = { [ckey]: new Uint8Array(await r.arrayBuffer()) };
+  }
+  const gl = EM.gl; gl.bindBuffer(gl.ARRAY_BUFFER, EM.col); gl.bufferData(gl.ARRAY_BUFFER, withSelection(EM.colors[ckey]), gl.STATIC_DRAW);
+  EM.colKey = ckey;
+}
+function emToCanvas(px, py) {  // embedding (normalized) to canvas CSS pixels
+  const v = EM.view;
+  return [(px * v.z + v.x) * 0.5 * 380 + 210, (-(py * v.z + v.y)) * 0.5 * 380 + 190];
+}
+function drawEM() {
+  if (!EM.gl || $("empanel").hidden || !EM.xy) return;
+  const gl = EM.gl, c = $("emcanvas"), v = EM.view;
+  gl.viewport(0, 0, c.width, c.height); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.useProgram(EM.prog);
+  gl.uniform2f(EM.u.scale, v.z * 380 / 420, v.z);
+  gl.uniform2f(EM.u.offset, v.x * 380 / 420, v.y);
+  gl.uniform1f(EM.u.size, Math.max(1.5, Math.min(6, 1.6 * Math.sqrt(v.z))) * (window.devicePixelRatio || 1));
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.bindBuffer(gl.ARRAY_BUFFER, EM.pos); gl.enableVertexAttribArray(EM.loc.pos); gl.vertexAttribPointer(EM.loc.pos, 2, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, EM.col); gl.enableVertexAttribArray(EM.loc.col); gl.vertexAttribPointer(EM.loc.col, 4, gl.UNSIGNED_BYTE, true, 0, 0);
+  gl.drawArrays(gl.POINTS, 0, EM.n);
+  if (EM.path && EM.path.length > 1) {  // the lasso being drawn, on a 2D overlay
+    const o = emOverlay(), ctx = o.getContext("2d");
+    ctx.clearRect(0, 0, o.width, o.height); ctx.strokeStyle = "#00a0d0"; ctx.lineWidth = 2; ctx.setLineDash([5, 4]);
+    ctx.beginPath(); EM.path.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.stroke();
+  } else if (EM.overlay) EM.overlay.getContext("2d").clearRect(0, 0, 420, 380);
+}
+function emOverlay() {
+  if (!EM.overlay) {
+    const o = document.createElement("canvas"); o.width = 420; o.height = 380;
+    o.style.cssText = "position:absolute;pointer-events:none;width:420px;height:380px";
+    $("emcanvas").before(o); EM.overlay = o;
+    o.style.top = `${$("emcanvas").offsetTop}px`; o.style.left = "0px";
+  }
+  return EM.overlay;
+}
+function setSelection(sel) {
+  st.sel = sel;
+  const n = sel ? sel.reduce((a, b) => a + b, 0) : 0;
+  $("emInfo").textContent = sel ? `${n.toLocaleString()} cells selected` : "";
+  $("emClear").disabled = $("emZoom").disabled = !sel;
+  GL.colorKey = null; EM.colKey = null;
+  if (st.sid && st.he) refreshOverlay();
+  if (EM.gl && EM.xy && !$("empanel").hidden) loadEMData().then(drawEM);
+}
+function lassoSelect(path) {
+  if (path.length < 3) return;
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  path.forEach(([x, y]) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); });
+  const sel = new Uint8Array(EM.n), m = path.length;
+  for (let i = 0; i < EM.n; i++) {
+    const [px, py] = emToCanvas(EM.xy[2 * i], EM.xy[2 * i + 1]);
+    if (px < x0 || px > x1 || py < y0 || py > y1) continue;
+    let inside = false;
+    for (let a = 0, b = m - 1; a < m; b = a++) {
+      const [xa, ya] = path[a], [xb, yb] = path[b];
+      if ((ya > py) !== (yb > py) && px < ((xb - xa) * (py - ya)) / (yb - ya) + xa) inside = !inside;
+    }
+    if (inside) sel[i] = 1;
+  }
+  setSelection(sel.some((x) => x) ? sel : null);
+}
+(() => {  // zoom, pan and lasso on the embedding canvas
+  const c = $("emcanvas"); let drag = null;
+  const pos = (e) => { const r = c.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  c.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const [mx, my] = pos(e), v = EM.view, f = Math.exp(-e.deltaY * 0.0015);
+    const ex = ((mx - 210) / 190 - v.x) / v.z, ey = (-(my - 190) / 190 - v.y) / v.z;  // embedding point under the cursor
+    v.z = Math.min(200, Math.max(0.5, v.z * f));
+    v.x = (mx - 210) / 190 - ex * v.z; v.y = -(my - 190) / 190 - ey * v.z;
+    drawEM();
+  }, { passive: false });
+  c.addEventListener("pointerdown", (e) => {
+    c.setPointerCapture(e.pointerId);
+    if (EM.lasso || e.shiftKey) { EM.path = [pos(e)]; drag = "lasso"; }
+    else { drag = { p: pos(e), x: EM.view.x, y: EM.view.y }; c.style.cursor = "grabbing"; }
+  });
+  c.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    if (drag === "lasso") { EM.path.push(pos(e)); drawEM(); return; }
+    const [x, y] = pos(e);
+    EM.view.x = drag.x + (x - drag.p[0]) / 190; EM.view.y = drag.y - (y - drag.p[1]) / 190; drawEM();
+  });
+  c.addEventListener("pointerup", () => {
+    if (drag === "lasso") { const p = EM.path; EM.path = null; lassoSelect(p); drawEM(); }
+    drag = null; c.style.cursor = "";
+  });
+  c.addEventListener("dblclick", () => { EM.view = { z: 1, x: 0, y: 0 }; drawEM(); });
+})();
+$("emLasso").onclick = () => { EM.lasso = !EM.lasso; $("emLasso").classList.toggle("on", EM.lasso); $("emcanvas").classList.toggle("lasso", EM.lasso); };
+$("emClear").onclick = () => setSelection(null);
+$("emZoom").onclick = () => {  // fit the map to the selected cells
+  if (!st.sel || !GL.posArr) return;
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (let i = 0; i < st.sel.length; i++) if (st.sel[i]) {
+    const x = GL.posArr[2 * i], y = GL.posArr[2 * i + 1];
+    x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+  }
+  const pad = 0.05 * Math.max(x1 - x0, y1 - y0);
+  viewer.viewport.fitBounds(heItem().imageToViewportRectangle(x0 - pad, y0 - pad, x1 - x0 + 2 * pad, y1 - y0 + 2 * pad));
+};
+$("emKind").onchange = () => loadEMData().then(drawEM);
+$("emColor").onchange = () => loadEMData().then(drawEM);
 
 // ---------------- niches ----------------
 async function loadNiches(show) {
@@ -811,7 +1039,7 @@ async function refreshVersion(force) {
 setInterval(() => { if (!st.busy) refreshVersion(false).catch(() => {}); }, 4000);
 
 // ---------------- legend ----------------
-const MODE_TITLES = { type: "Cell types", lineage: "Lineages", region: "Regions", changed: "Changes", conflicts: "Conflicts", plausibility: "Out-of-place cells", confidence: "Confidence", cluster: "Clusters (marker step)", niche: "Niches" };
+const MODE_TITLES = { type: "Cell types", lineage: "Lineages", region: "Regions", changed: "Changes", conflicts: "Conflicts", plausibility: "Out-of-place cells", confidence: "Confidence", cluster: "Clusters (marker step)", niche: "Niches", leiden: "Leiden clusters" };
 async function loadLegend() {
   const r = await api(`/api/s/${st.sid}/legend?version=${st.version}&mode=${st.mode}`);
   st.legend = r.items;
@@ -1699,10 +1927,17 @@ it previews the change and asks before adding a prior.</li>
 <h3>Annotate</h3><ul>
 <li><b>Method</b>: marker genes (<b>Markers…</b>), a single-cell reference (<b>Reference…</b>) or an existing annotation
 (<b>Annotation file…</b>). <b>Annotate</b> makes a new annotation; <b>keep my regions, priors &amp; corrections</b> carries them over.</li></ul>
+<h3>Embedding (third row)</h3><ul>
+<li><b>Run PCA + UMAP</b> computes PCA, UMAP and Leiden clusters from the expression (about a minute; shared by all
+annotations of the sample). <b>Show UMAP</b> opens the window on the right: UMAP or PCA, colored as the map, by cell
+type, Leiden cluster or niche; scroll to zoom, drag to move, double-click to reset.</li>
+<li><b>Select</b> (or hold <kbd>Shift</kbd> and drag) and draw around cells: they light up on the map and the rest
+turn gray; <b>Show on map</b> zooms the map to them; <b>Clear</b> ends the selection.</li>
+<li>Color by <b>Leiden clusters</b> shows the clusters on the map.</li></ul>
 <h3>Review and output</h3><ul>
 <li><b>Review annotation</b>: computed checks, checked by Claude on the H&amp;E; Claude's advice with one-click actions; <b>solve</b> hides an item.</li>
 <li><b>Report</b>: Claude writes the annotation report; <b>Save…</b> keeps it as a Markdown file.</li>
-<li><b>Niches</b> (fourth row): identity, k and number of niches; <b>Run niches</b>, or <b>Claude picks k</b>.</li>
+<li><b>Niches</b>: identity, k and number of niches; <b>Run niches</b>, or <b>Claude picks k</b>.</li>
 <li><b>Undo</b> steps back one change at a time. <b>Export CSV</b>: one row per cell.</li>
 <li><b>Claude Code</b> opens your own Claude Code, connected to this app.</li></ul>`;
 async function showAbout() {
@@ -1857,14 +2092,15 @@ $("mode").onchange = (e) => {
     return;
   }
   $("geneInput").hidden = true;
-  st.mode = e.target.value; refreshOverlay(); loadLegend();
+  st.mode = e.target.value; refreshOverlay(); loadLegend(); emFollow();
 };
+function emFollow() { if (!$("empanel").hidden && $("emColor").value === "map") loadEMData().then(drawEM); }
 function setGene() {
   const v = $("geneInput").value.trim();
   const g = (st.genes || []).find((x) => x.toUpperCase() === v.toUpperCase());
   if (!g) { if (v) toast(`${v} is not in this sample's gene panel`, 4000); return; }
   $("geneInput").value = g; st.gene = g; st.mode = `gene:${g}`;
-  refreshOverlay(); loadLegend();
+  refreshOverlay(); loadLegend(); emFollow();
 }
 $("geneInput").addEventListener("change", setGene);
 $("geneInput").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); setGene(); $("geneInput").blur(); } });

@@ -179,7 +179,13 @@ by Claude show up within a few seconds.
    **×** removes one (Undo brings it back). **?** (top right) explains every control and, under **About**, shows the
    build, the data folder, whether Claude Code was found and when Claude last used the tools, with a button that
    copies these details for a bug report.
-9. **Niches** (fourth row): places where cells of similar make-up live together. Every cell gets an identity, its
+9. **Embedding** (third row): **Run PCA + UMAP** computes a PCA, a UMAP and Leiden clusters of the sample from
+   expression only (shared by all its annotations; about 40–50 s for 356,629 cells: the kNN graph comes from the
+   fast GPU / pynndescent search and is handed to UMAP, which starts from PC1/PC2 and runs on all cores).
+   **Show UMAP** opens a window on the right (UMAP or PC1/PC2, colored as the map, by cell type, Leiden cluster or
+   niche). **Select** (or Shift-drag) draws around cells: they light up on the spatial map and the rest turn gray;
+   **Show on map** zooms there. Leiden clusters are also a *Color by* option.
+10. **Niches** (fourth row): places where cells of similar make-up live together. Every cell gets an identity, its
    weights on NMF gene programs (*Identity: NMF programs*, independent of the annotation) or its cell type; the
    identities are averaged over the cell and its *k* nearest cells and clustered (k-means) into the chosen number of
    niches. **Run niches** uses one k everywhere; **Claude picks k** asks Claude Code to choose k per drawn region
@@ -188,7 +194,7 @@ by Claude show up within a few seconds.
    a `niche` column in Export CSV. On SCP2927 section 147328 (356,629 cells) a run takes about 6 s (1.5 s once the
    NMF is cached) and the 8 niches match the tissue layers (surface epithelium, crypt base, lamina propria, lymphoid
    follicles, muscularis mucosae, muscularis propria, submucosal vessels and stroma).
-10. **Report** shows the annotation report Claude writes (**Ask Claude to write it**): sample, method and inputs,
+11. **Report** shows the annotation report Claude writes (**Ask Claude to write it**): sample, method and inputs,
    composition, compartments, quality and open questions, from the tools' facts. **Save…** writes it as Markdown.
 
 The app has no chat box of its own: you talk to Claude in Claude Code. The web viewer on a

@@ -77,6 +77,10 @@ new = advice.add(s, [{"category": "compartments", "title": "mucosa", "text": "sm
                      {"category": "qc", "title": "registration", "text": "smoke test", "action": {"kind": "registration"}}])
 print("advice:", [(x["id"], x["action"]["kind"]) for x in new], advice.status(s))
 print("report:", advice.write_report(s, "# Report\n\n" + json.dumps(insights.annotation_facts(s), default=str)[:400])["path"])
+from celltypeagent import embedding, config
+had_embedding = (config.SAMPLES / s.sample_id / "embedding").exists()
+em = embedding.run(s)
+print("embedding:", em["n_clusters"], "Leiden clusters,", em["seconds"], "s; umap", embedding.coords(s.sample_id).shape)
 from celltypeagent import niches
 ns = niches.run(s, k=15, n_niches=6)
 print("niches:", [(x["niche"], x["n_cells"], list(x["cell_types"])[:2]) for x in ns["niches"]])
@@ -87,3 +91,5 @@ print([(h["version"], h["action"]) for h in s.history()])
 print("export", s.export())
 print(f"total {time.time() - t0:.1f}s")
 shutil.rmtree(s.dir)  # keep work/sessions free of test sessions
+if not had_embedding:  # and the sample as it was
+    shutil.rmtree(config.SAMPLES / s.sample_id / "embedding")

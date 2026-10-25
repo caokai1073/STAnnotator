@@ -19,7 +19,7 @@ from starlette.responses import FileResponse, Response, StreamingResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from . import config, vocab, mcp_server, review_app, render
-from . import markers, markerqc, plausibility, claudelink, claudereview, importer, advice, niches
+from . import markers, markerqc, plausibility, claudelink, claudereview, importer, advice, niches, embedding
 from .session import Session, list_samples, list_sessions, panel_genes
 
 STATIC = Path(__file__).parent / "static"
@@ -185,6 +185,11 @@ def colors_for(s: Session, version, mode, only):
             b = gene_bins(s, mode)
             out[:, :3] = np.array([x[2] for x in GENE_BINS], np.uint8)[b]
             out[:, 3] = np.array([x[3] for x in GENE_BINS], np.uint8)[b]
+        elif mode == "leiden":
+            lab = embedding.leiden(s.sample_id)
+            if lab is not None:
+                out[:, :3] = np.array([cluster_rgb(i) for i in range(int(lab.max()) + 1)], np.uint8)[lab]
+                out[:, 3] = 225
         elif mode == "niche":
             meta, lab = niches.current(s)
             if lab is not None:
@@ -220,6 +225,8 @@ def colors_for(s: Session, version, mode, only):
 
 def mode_key(s, mode):
     """Cache key of a color mode; niche colors change with every niche run."""
+    if mode == "leiden":
+        return f"leiden:{(embedding.current(s.sample_id) or {}).get('run_id')}"
     return f"niche:{(niches.current(s)[0] or {}).get('run_id')}" if mode == "niche" else mode
 
 
@@ -271,6 +278,9 @@ def cell_keys(s: Session, version, mode):
         return k
     if mode.startswith("gene:"):
         return np.array([x[0] for x in GENE_BINS], dtype=object)[gene_bins(s, mode)]
+    if mode == "leiden":
+        lab = embedding.leiden(s.sample_id)
+        return np.array([f"L{i + 1}" for i in lab], dtype=object) if lab is not None else np.full(n, "", dtype=object)
     if mode == "niche":
         meta, lab = niches.current(s)
         return np.array([f"N{i + 1}" for i in range(meta["n_niches"])], dtype=object)[lab] if meta else np.full(n, "", dtype=object)
@@ -307,6 +317,13 @@ def legend_for(s: Session, version, mode):
         vc = dict(zip(*np.unique(r["region"].astype(str), return_counts=True)))
         return [{"key": k, "label": k.replace("_", " ") if k != "unknown" else "no region", "color": c, "count": int(vc.get(k, 0))}
                 for k, c in region_rgb(s, version).items()]
+    if mode == "leiden":
+        lab = embedding.leiden(s.sample_id)
+        if lab is None:
+            return []
+        n = np.bincount(lab)
+        return sorted([{"key": f"L{i + 1}", "label": f"L{i + 1}", "color": cluster_rgb(i), "count": int(n[i])}
+                       for i in range(len(n))], key=lambda x: -x["count"])
     if mode.startswith("gene:"):
         n = np.bincount(gene_bins(s, mode), minlength=len(GENE_BINS))
         return [{"key": k, "label": lab, "color": c, "count": int(n[i])} for i, (k, lab, c, _) in enumerate(GENE_BINS)][::-1]
@@ -543,6 +560,40 @@ async def api_niches_run(req: Request):
             JOBS[job].update(error=f"{type(e).__name__}: {e}", done=True)
     threading.Thread(target=work, daemon=True).start()
     return _json({"job": job})
+
+
+async def api_embedding_run(req: Request):
+    """PCA, UMAP and Leiden of a sample in the background; progress under /api/job/embed:<sample>."""
+    s = review_app._session(req.path_params["sid"])
+    b = await req.json()
+    job = f"embed:{s.sample_id}"
+    if job in JOBS and not JOBS[job]["done"]:
+        return _json({"error": "already running"}, 409)
+    JOBS[job] = {"stage": "starting", "progress": 0.0, "done": False, "error": None}
+
+    def work():
+        try:
+            embedding.run(s, n_pcs=int(b.get("n_pcs", 30)), n_neighbors=int(b.get("n_neighbors", 15)),
+                          min_dist=float(b.get("min_dist", 0.3)), resolution=float(b.get("resolution", 1.0)),
+                          progress=lambda f, m: JOBS[job].update(progress=round(f, 3), stage=m))
+            JOBS[job].update(progress=1.0, stage="done", done=True)
+        except Exception as e:
+            JOBS[job].update(error=f"{type(e).__name__}: {e}", done=True)
+    threading.Thread(target=work, daemon=True).start()
+    return _json({"job": job})
+
+
+def api_embedding(req):
+    return _json({"embedding": embedding.current(req.path_params["sample"])})
+
+
+def api_embedding_bin(req):
+    """Embedding coordinates (float32 x, y pairs in cell order)."""
+    try:
+        Y = embedding.coords(req.path_params["sample"], req.query_params.get("kind", "umap"))
+    except (ValueError, OSError) as e:
+        return _json({"error": str(e)}, 404)
+    return Response(np.ascontiguousarray(Y, np.float32).tobytes(), media_type="application/octet-stream", headers=NO_CACHE)
 
 
 def api_niches(req):
@@ -1460,6 +1511,9 @@ def build_app(port):
         Route("/api/claude/report", api_claude_report, methods=["POST"]),
         Route("/api/claude/niches", api_claude_niches, methods=["POST"]),
         Route("/api/s/{sid}/niches", api_niches),
+        Route("/api/s/{sid}/embedding/run", api_embedding_run, methods=["POST"]),
+        Route("/api/sample/{sample}/embedding", api_embedding),
+        Route("/api/sample/{sample}/embedding.bin", api_embedding_bin),
         Route("/api/s/{sid}/niches/run", api_niches_run, methods=["POST"]),
         Route("/api/s/{sid}/advice", api_advice),
         Route("/api/s/{sid}/advice/act", api_advice_act, methods=["POST"]),
