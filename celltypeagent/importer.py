@@ -369,3 +369,38 @@ def import_xenium(name, xenium_dir, he=None, registration=None, description="", 
                          {"kind": "xenium", "folder": str(d), "registration": str(Path(registration).resolve())
                           if registration else None, **{k: v for k, v in info.items() if k != "folder"}},
                          progress, kind)
+
+
+def apply_registration_fix(sample_id, correction):
+    """Move every cell onto its nucleus on the image: p + A (p - origin) + b in H&E level-0 pixels, the correction
+    that insights.registration fitted. The positions as imported are kept (px_import, py_import) for
+    undo_registration_fix. Regions keep their cells (they store cell ids); only the cells' place on the image moves."""
+    d = config.SAMPLES / sample_id
+    cells = pd.read_parquet(d / "cells.parquet")
+    if "px_import" not in cells:
+        cells["px_import"], cells["py_import"] = cells.px.to_numpy(), cells.py.to_numpy()
+    A, b, o = np.asarray(correction["A"], float), np.asarray(correction["b"], float), np.asarray(correction["origin"], float)
+    p = cells[["px", "py"]].to_numpy()
+    q = p + (p - o) @ A.T + b
+    cells["px"], cells["py"] = q[:, 0], q[:, 1]
+    cells.to_parquet(d / "cells.parquet")
+    meta = json.load(open(d / "meta.json"))
+    meta.setdefault("registration_fixes", []).append({"correction_px": correction,
+                                                      "time": time.strftime("%Y-%m-%dT%H:%M:%S")})
+    json.dump(meta, open(d / "meta.json", "w"), indent=1)
+    return {"moved_um_median": round(float(np.median(np.hypot(*(q - p).T)) * meta.get("he_um_per_px", 1)), 1),
+            "moved_um_max": round(float(np.hypot(*(q - p).T).max() * meta.get("he_um_per_px", 1)), 1)}
+
+
+def undo_registration_fix(sample_id):
+    """Put the cells back where the import placed them."""
+    d = config.SAMPLES / sample_id
+    cells = pd.read_parquet(d / "cells.parquet")
+    if "px_import" not in cells:
+        raise ValueError("the registration of this sample was never corrected")
+    cells["px"], cells["py"] = cells.px_import.to_numpy(), cells.py_import.to_numpy()
+    cells.drop(columns=["px_import", "py_import"]).to_parquet(d / "cells.parquet")
+    meta = json.load(open(d / "meta.json"))
+    meta.pop("registration_fixes", None)
+    json.dump(meta, open(d / "meta.json", "w"), indent=1)
+    return {"ok": True}

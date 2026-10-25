@@ -582,7 +582,7 @@ class Session:
         r = self.result(version)
         st = r["state"]
         lab = pd.Series(np.array(self.types)[r["pred"]])
-        return {"session_id": self.id, "sample": {k: _clean(v) for k, v in self.meta.items() if k != "he_path"},
+        return {"session_id": self.id, "sample": {k: _clean(v) for k, v in self.meta.items() if k not in ("he_path", "has_pathologist_regions")},
                 "version": st["version"], "latest_version": self.versions()[-1], "message": st["message"],
                 "region_source": st["regions"]["source"],
                 "region_composition": pd.Series(r["region"]).value_counts().to_dict(),

@@ -61,6 +61,22 @@ q = markerqc.check(s)
 print("marker check:", len(q["nodes"]), "nodes,", len(q["flags"]), "flags; unassigned", (q["unassigned"] or {}).get("n_cells"))
 print("proposal diff:", markerqc.propose(s, s.scheme["text"].replace("Goblet cells: ", "Goblet cells: MUC2+ ", 1)
                                          if "MUC2" in s.panel else s.scheme["text"], "smoke test")["diff"])
+from celltypeagent import insights, advice
+comp = insights.compartment(s, ["Epithelial"])
+print("compartment:", comp["n_pieces"], "pieces,", comp["n_cells"], "cells; fig", insights.fig_compartment(s, comp, "mucosa"))
+advice.store_compartment(s, "mucosa", comp, {"lineages": ["Epithelial"]})
+print("confusion:", insights.type_confusion(s, 3)["pairs"][0]["types"])
+print("structure:", len(insights.type_structure(s, "Smooth muscle cells")["subclusters"]), "sub-clusters")
+print("profile:", len(insights.spatial_profile(s)["types"]), "types; qc hotspots", insights.qc_overview(s)["hotspot_tiles"]["low_density"][:3])
+reg = insights.registration(s)
+print("registration:", reg["offset_um"], (reg["affine_fit"] or {}).get("max_offset_um"))
+new = advice.add(s, [{"category": "compartments", "title": "mucosa", "text": "smoke test",
+                      "action": {"kind": "region", "compartment": "mucosa", "name": "mucosa_smoke",
+                                 "prior": {"kind": "region", "text": "Epithelial only in mucosa_smoke", "types": ["Epithelial"],
+                                           "regions": ["mucosa_smoke"], "mode": "only", "weight": "strong"}}},
+                     {"category": "qc", "title": "registration", "text": "smoke test", "action": {"kind": "registration"}}])
+print("advice:", [(x["id"], x["action"]["kind"]) for x in new], advice.status(s))
+print("report:", advice.write_report(s, "# Report\n\n" + json.dumps(insights.annotation_facts(s), default=str)[:400])["path"])
 v = s.revert(2)
 print([(h["version"], h["action"]) for h in s.history()])
 print("export", s.export())

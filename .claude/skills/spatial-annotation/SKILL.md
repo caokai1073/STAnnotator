@@ -98,6 +98,14 @@ apply here, the region assignment is wrong, a technical artifact, or a cell stat
   carry_from_current=True)` when the user asks you to run it), `suggest_areas` (drawn on the map; the user adopts them as regions),
   `preview_recluster`. Once a suggested region exists, preview an exclude prior on it (or `label_cells` with
   `only_types` when the user names the target type) and apply it after a go-ahead.
+- High-level advice (when asked what you think of the annotation as a whole, or by the viewer's Review annotation):
+  `sample_context`, `preview_compartment` (outline of where a lineage forms tissue, e.g. the mucosa from the
+  epithelium; check it on the H&E), `type_confusion` (types to merge), `type_structure` (a type to split, or another
+  type hidden in it), `spatial_profile` (gradients and neighbors), `qc_overview` and `check_registration`. Record a
+  few well-supported items with `add_advice` in five categories (compartments, taxonomy, organization, context, qc),
+  each with one action the user takes in the Review panel (add a region, add a prior, open the proposed marker list,
+  correct the registration, or ask you to do something).
+- A report: `annotation_facts` plus the review results, saved with `write_report` (the viewer's Report button).
 
 ## History and output
 

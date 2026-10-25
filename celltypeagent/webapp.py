@@ -19,7 +19,7 @@ from starlette.responses import FileResponse, Response, StreamingResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from . import config, vocab, mcp_server, review_app, render
-from . import markers, markerqc, plausibility, claudelink, claudereview, importer
+from . import markers, markerqc, plausibility, claudelink, claudereview, importer, advice
 from .session import Session, list_samples, list_sessions, panel_genes
 
 STATIC = Path(__file__).parent / "static"
@@ -410,23 +410,154 @@ def api_claude_status(req):
 
 REVIEW_REQUEST = ("Check the review candidates of version {v} (I clicked Review annotation): look at every candidate "
                   "area on the H&E with show_area and judge every marker check, then record each verdict with "
-                  "record_review, keeping only real annotation problems. Do not change the annotation. Then sum up in "
-                  "three lines.")
+                  "record_review, keeping only real annotation problems.")
+ADVICE_REQUEST = ("Then give high-level advice on version {v} (compartments, cell types, spatial organization, sample "
+                  "context, technical): gather the evidence (sample_context, show_tissue_overview, preview_compartment, "
+                  "type_confusion, type_structure, spatial_profile, qc_overview, check_registration) and record a few "
+                  "well-supported items with add_advice.")
+REVIEW_END = " Do not change the annotation. Then sum up in three lines."
+REPORT_REQUEST = ("Write the annotation report of version {v} (I clicked Report): gather annotation_facts, "
+                  "session_summary, sample_context, list_advice, check_plausibility and review_markers, and save it "
+                  "with write_report. Do not change the annotation.")
+
+
+def _ask_claude(s, text):
+    """Send a request to the user's Claude Code (desktop app) or hand it to the server viewer's chat box."""
+    if not desktop_mode():
+        return {"message": text}
+    return {"claude_code": claudelink.open_claude_code(s.sample_id, s.id, text, send_if_open=True)}
 
 
 async def api_claude_review(req: Request):
-    """Review annotation: ask the user's Claude Code to check the candidates Claude has not judged yet."""
+    """Review annotation: ask the user's Claude Code to check the candidates Claude has not judged yet and, when the
+    labels changed since its last advice, for high-level advice."""
     b = await req.json()
     s = review_app._session(b["session"])
     st = claudereview.status(s)
-    if not st["unchecked"]:
-        return _json({"needed": False, **st})
-    v = claudereview.request(s)
-    text = REVIEW_REQUEST.format(v=v)
-    if not desktop_mode():  # the server viewer's chat box sends it
-        return _json({"needed": True, "message": text, **claudereview.status(s)})
-    r = claudelink.open_claude_code(s.sample_id, s.id, text, send_if_open=True)
-    return _json({"needed": True, "claude_code": r, **claudereview.status(s)})
+    adv = advice.status(s)
+    want_advice = b.get("advice", True) and not adv["current"]
+    if not st["unchecked"] and not want_advice:
+        return _json({"needed": False, **st, "advice": adv})
+    v = s.state()["version"]
+    parts = []
+    if st["unchecked"]:
+        claudereview.request(s)
+        parts.append(REVIEW_REQUEST.format(v=v))
+    if want_advice:
+        advice.request(s)
+        parts.append(ADVICE_REQUEST.format(v=v) if parts else ADVICE_REQUEST.format(v=v).replace("Then give", "Give", 1))
+    text = " ".join(parts) + REVIEW_END
+    return _json({"needed": True, **_ask_claude(s, text), **claudereview.status(s), "advice": advice.status(s)})
+
+
+async def api_claude_report(req: Request):
+    b = await req.json()
+    s = review_app._session(b["session"])
+    return _json(_ask_claude(s, REPORT_REQUEST.format(v=s.state()["version"])))
+
+
+# ---------------- high-level advice and report ----------------
+def api_advice(req):
+    """Claude's high-level advice (outlines in viewer image coordinates), its status, and the report's date."""
+    s = review_app._session(req.path_params["sid"])
+    v = view(s.sample_id)
+    out = []
+    for x in advice.items(s):
+        a = dict(x["action"] or {})
+        if "polygons_px" in a:
+            a["outlines"] = [_viewer_poly(v, p) for p in a.pop("polygons_px")]
+        a.pop("correction_px", None)
+        out.append(x | {"action": a or None})
+    rep = advice.report(s)
+    return _json({"items": out, "categories": advice.CATEGORIES, "status": advice.status(s),
+                  "report": rep and {k: rep[k] for k in ("version", "time") if k in rep},
+                  "registration_fixed": bool(s.meta.get("registration_fixes"))})
+
+
+def _reload_sample(sample_id):
+    """Drop cached sessions and views of a sample whose cell positions changed."""
+    _views.pop(sample_id, None)
+    for sid in [k for k, x in review_app._sessions.items() if x.sample_id == sample_id]:
+        review_app._sessions.pop(sid, None)
+
+
+async def api_advice_act(req: Request):
+    """The user takes a piece of advice: step region (add the outline as a region), prior_preview / prior (preview
+    or add its prior), registration / undo_registration, claude (send its request to Claude Code)."""
+    s = review_app._session(req.path_params["sid"])
+    b = await req.json()
+    try:
+        x = advice.get(s, b.get("id", ""))
+        a = x["action"] or {}
+        step = b.get("step")
+        if step == "region":
+            name = str(b.get("name") or a["name"]).strip()
+            ver = None
+            for poly in a["polygons_px"]:
+                ver = s.add_region(name, poly, author="Claude advice")
+            if not a.get("prior"):
+                advice.set_status(s, x["id"], "done", f"region {name}")
+            return _json({"new_version": ver, "message": s.state(ver)["message"], "prior": bool(a.get("prior"))})
+        if step in ("prior_preview", "prior"):
+            spec = dict(a["prior"], author="Claude advice (accepted in the viewer)")
+            if step == "prior_preview":
+                p = s.preview_constraint(spec)
+                return _json({k: p[k] for k in ("interpretation", "n_label_changes", "top_transitions")})
+            ver = s.add_constraint(spec)
+            advice.set_status(s, x["id"], "done", "prior added")
+            return _json({"new_version": ver, "message": s.state(ver)["message"]})
+        if step == "registration":
+            r = importer.apply_registration_fix(s.sample_id, a["correction_px"])
+            advice.set_status(s, x["id"], "done", "registration corrected")
+            _reload_sample(s.sample_id)
+            return _json(r | {"reload": True})
+        if step == "undo_registration":
+            r = importer.undo_registration_fix(s.sample_id)
+            advice.set_status(s, x["id"], "open")
+            _reload_sample(s.sample_id)
+            return _json(r | {"reload": True})
+        if step == "claude":
+            return _json(_ask_claude(s, a["request"]))
+        raise ValueError(f"unknown step {step!r}")
+    except (ValueError, KeyError) as e:
+        return _json({"error": str(e)}, 400)
+
+
+async def api_advice_status(req: Request):
+    s = review_app._session(req.path_params["sid"])
+    b = await req.json()
+    try:
+        advice.set_status(s, b.get("id", ""), b.get("status", ""))
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+    return _json({"ok": True})
+
+
+def api_report(req):
+    s = review_app._session(req.path_params["sid"])
+    return _json({"report": advice.report(s)})
+
+
+def api_report_md(req):
+    s = review_app._session(req.path_params["sid"])
+    rep = advice.report(s)
+    if not rep:
+        return _json({"error": "no report yet"}, 404)
+    return FileResponse(rep["path"], media_type="text/markdown", filename=f"{s.sample_id}_annotation_report.md")
+
+
+async def api_report_save(req: Request):
+    """Write the report to a path the user chose (desktop app: Save dialog)."""
+    s = review_app._session(req.path_params["sid"])
+    b = await req.json()
+    rep = advice.report(s)
+    try:
+        if not rep:
+            raise ValueError("no report yet")
+        shutil.copy(rep["path"], Path(b["path"]).expanduser())
+    except (OSError, KeyError, ValueError) as e:
+        return _json({"error": str(e)}, 400)
+    return _json({"saved": b["path"]})
 
 
 async def api_claude_code(req: Request):
@@ -610,7 +741,8 @@ def api_area_suggestions(req):
     s = review_app._session(req.path_params["sid"])
     return _json({"areas": _suggestions(s, view(s.sample_id)), "proposal": markerqc.proposal(s),
                   "solved": [len(plausibility.solved_areas(s)), len(markerqc.solved(s))],
-                  "review": len(claudereview.load(s)["areas"]) + len(claudereview.load(s)["markers"])})
+                  "review": len(claudereview.load(s)["areas"]) + len(claudereview.load(s)["markers"]),
+                  "advice": len(advice.load(s)["runs"]), "report": (advice.report(s) or {}).get("time")})
 
 
 async def api_marker_check_solve(req: Request):
@@ -1032,6 +1164,10 @@ When asked to check the review candidates (after Review annotation): look at eve
 show_area and judge every marker check, then record each verdict with record_review (keep only real problems; cells at
 the edge of a sheet, next to mislabeled neighbors or where few cells were segmented are false alarms). Do not change
 the annotation while checking.
+When asked for high-level advice: gather sample_context, show_tissue_overview, preview_compartment, type_confusion,
+type_structure, spatial_profile, qc_overview and check_registration, and record a few well-supported items with
+add_advice (categories compartments, taxonomy, organization, context, qc; one action each when one fits). When asked
+for a report: annotation_facts plus the review results, saved with write_report.
 If a request cannot be expressed with the tools, say so plainly."""
 
 BLOCKED = ["start_session", "resume_session", "list_sessions", "list_samples", "set_region_source"]
@@ -1119,6 +1255,13 @@ def build_app(port):
         Route("/api/claude/status", api_claude_status),
         Route("/api/claude/code", api_claude_code, methods=["POST"]),
         Route("/api/claude/review", api_claude_review, methods=["POST"]),
+        Route("/api/claude/report", api_claude_report, methods=["POST"]),
+        Route("/api/s/{sid}/advice", api_advice),
+        Route("/api/s/{sid}/advice/act", api_advice_act, methods=["POST"]),
+        Route("/api/s/{sid}/advice/status", api_advice_status, methods=["POST"]),
+        Route("/api/s/{sid}/report", api_report),
+        Route("/api/s/{sid}/report.md", api_report_md),
+        Route("/api/s/{sid}/report/save", api_report_save, methods=["POST"]),
         Route("/api/import/inspect", api_import_inspect, methods=["POST"]),
         Route("/api/import", api_import, methods=["POST"]),
         Route("/api/sample/{sample}/he_info", api_he_info),

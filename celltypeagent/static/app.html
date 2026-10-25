@@ -101,6 +101,14 @@ body.desktop #side { display: none; }
 .pla .l1 { font-weight: 600; }
 .pla .l2 { color: var(--muted); font-size: 11.5px; white-space: pre-wrap; }
 .pla.mk { border-left-color: #8a8f94; }
+.pla.adv { border-left-color: #7b5cd6; background: rgba(123,92,214,.06); }
+.pla .l2.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
+.plh.cat { text-transform: none; letter-spacing: 0; font-weight: 600; color: #7b5cd6; margin-top: 6px; }
+#rpBody { overflow: auto; max-height: 70vh; padding: 4px 18px 14px; font-size: 13px; line-height: 1.5; }
+#rpBody h1 { font-size: 18px; } #rpBody h2 { font-size: 15px; margin: 14px 0 4px; } #rpBody h3 { font-size: 13.5px; margin: 10px 0 2px; }
+#rpBody table { border-collapse: collapse; font-size: 12px; } #rpBody td, #rpBody th { border: 1px solid var(--line); padding: 2px 6px; }
+#rpBody code, #rpBody pre { font: 12px ui-monospace, Menlo, monospace; }
+#rpBody pre { background: var(--bg); padding: 8px 10px; border-radius: 6px; overflow: auto; }
 .pla pre { font: 11px/1.4 ui-monospace, Menlo, monospace; margin: 3px 0 0; max-height: 150px; overflow: auto; white-space: pre-wrap; }
 .pla .l3 { display: flex; gap: 4px; margin-top: 3px; flex-wrap: wrap; }
 .pla .l3 button { padding: 1px 7px; font-size: 11.5px; }
@@ -173,6 +181,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <button id="undo" disabled title="Undo the last change">Undo</button>
     <button id="reset" disabled title="Remove every annotation and chat of this sample">Reset</button>
     <button id="plaus" disabled title="Check markers and spatial layout; Claude can review them with the H&amp;E and suggest fixes">Review annotation</button>
+    <button id="report" disabled title="The annotation report Claude writes: method, composition, compartments, quality, open questions">Report</button>
     <button id="export" disabled title="Download a CSV with one row per cell: cell id, region, cell type, lineage, type levels, confidence…">Export CSV</button>
     <span id="vinfo"></span>
   </div>
@@ -332,6 +341,13 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <div class="hint" id="clMsg"></div>
     <pre id="clCmd" class="clcard" hidden></pre>
   </div>
+</dialog>
+<dialog id="rpDlg" style="width:min(860px,95vw)">
+  <div class="dh"><b>Annotation report</b><span class="hint" id="rpInfo" style="margin-left:8px"></span><span class="spacer"></span>
+    <button id="rpAsk" title="Ask your Claude Code to write (or update) the report for the version shown">Ask Claude to write it</button>
+    <button id="rpSave" title="Save the report as a Markdown file">Save…</button>
+    <button id="rpClose">Close</button></div>
+  <div id="rpBody"></div>
 </dialog>
 <div class="toast" id="toast"></div>
 <script>
@@ -567,7 +583,7 @@ function closeSession() {
   st.sid = null; st.version = null; st.filters = {}; st.regions = null; cancelDraw(); closePlaus();
   $("legend").hidden = true; $("cellcard").classList.remove("show");
   $("empty").style.display = "flex";
-  ["undo", "export", "send", "plaus"].forEach((b) => ($(b).disabled = true));
+  ["undo", "export", "send", "plaus", "report"].forEach((b) => ($(b).disabled = true));
   $("carryWrap").style.visibility = "hidden";
   $("input").disabled = true; $("composerhint").textContent = "Annotate a sample first.";
   $("vinfo").textContent = ""; $("regpanel").hidden = true; drawRegions();
@@ -631,7 +647,7 @@ async function startAnnotation(mode, sid, token = st.switchToken) {
 async function openSession(sid) {
   st.sid = sid;
   $("empty").style.display = "none";
-  ["undo", "export", "send", "plaus"].forEach((b) => ($(b).disabled = false));
+  ["undo", "export", "send", "plaus", "report"].forEach((b) => ($(b).disabled = false));
   $("carryWrap").style.visibility = "visible";
   $("input").disabled = false; $("composerhint").textContent = "Tip: refer to regions you drew by their name.";
   st.vocab = await api(`/api/s/${sid}/vocab`);
@@ -770,6 +786,12 @@ function drawRegions() {
     };
     (st.plaus.shown_areas || st.plaus.candidate_areas).forEach((a) => outline(a.outline, "#e61e1e", 1.3, a.id));
     st.plaus.suggestions.filter((x) => x.status === "open").forEach((x) => outline(x.outline, "#ff8c00", 2.6, `${x.id} ${x.title}`));
+    const have = new Set((st.regions ? st.regions.regions : []).map((g) => g.name));
+    const shownAdv = ((st.advice || {}).items || []).find((x) => x.id === st.adviceShown && x.action && x.action.outlines);
+    if (shownAdv) {  // the compartment the user chose to see, labelled once on its largest piece
+      const big = shownAdv.action.outlines.reduce((a, p) => (p.length > a.length ? p : a), []);
+      shownAdv.action.outlines.forEach((poly) => outline(poly, "#6a2cff", 3, poly === big ? shownAdv.action.name : ""));
+    }
   }
   if (st.focus) {
     const pts = st.focus.map(([x, y]) => toScreen(x, y));
@@ -891,9 +913,10 @@ $("rgtoggle").onclick = () => { $("regpanel").classList.toggle("collapsed"); $("
 async function loadPlaus(switchMode) {
   $("plpanel").hidden = false; $("viewerwrap").classList.add("pl");
   if (switchMode) $("pltitle").textContent = "Review: checking…";
-  st.plaus = await api(`/api/s/${st.sid}/plausibility?version=${st.version}`);
+  [st.plaus, st.advice] = await Promise.all([api(`/api/s/${st.sid}/plausibility?version=${st.version}`), api(`/api/s/${st.sid}/advice`)]);
   st.solvedSig = [r_solved_areas(st.plaus), (st.plaus.solved || []).filter((x) => x.kind === "marker").length];
   st.sugKey = JSON.stringify({ areas: st.plaus.suggestions, proposal: st.plaus.proposal, solved: st.solvedSig, review: st.plaus.review_count });
+  st.adviceRuns = (st.advice.status.last_run || {}).time || null;
   renderPlaus();
   fillModes(st.lastSummary);
   if (switchMode) { st.mode = "plausibility"; $("mode").value = "plausibility"; refreshOverlay(); await loadLegend(); }
@@ -906,10 +929,11 @@ function renderPlaus() {
   const rv = r.review || {};
   const judged = !!rv.asked, shown = (x) => !judged || (x.claude && x.claude.keep);
   const dropped = [];
-  $("plnote").textContent = rv.checking
+  const adv = st.advice || { items: [], status: {}, categories: {} };
+  $("plnote").textContent = (adv.status.preparing ? "Claude is preparing high-level advice in Claude Code. " : "") + (rv.checking
     ? `Claude is checking the candidates on the H&E in Claude Code (${rv.checked} of ${rv.checked + rv.unchecked} done). Only the real problems will be listed here.`
     : judged ? "Checked by Claude on the H&E and with marker biology: only real problems are listed. Claude's own suggestions appear in orange."
-    : "Not checked by Claude yet: these candidates come from the annotation alone and can include false alarms.";
+    : "Not checked by Claude yet: these candidates come from the annotation alone and can include false alarms.");
   const box = $("plitems"); box.textContent = "";
   const btn = (text, title, fn) => { const b = document.createElement("button"); b.textContent = text; b.title = title; b.onclick = fn; return b; };
   const item = (cls, l1, l2, buttons) => {
@@ -921,6 +945,7 @@ function renderPlaus() {
   };
   const head = (text) => { const h = document.createElement("div"); h.className = "plh"; h.textContent = text; box.append(h); };
   const prop = r.proposal && r.proposal.status !== "dismissed" ? r.proposal : null;
+  renderAdvice(adv, btn, head, prop);
   if (r.suggestions.length || prop) head(`Claude's suggestions (${open.length + (prop ? 1 : 0)} open)`);
   if (prop) {
     const row = document.createElement("div"); row.className = "pla sug";
@@ -997,6 +1022,88 @@ function renderPlaus() {
   }
   drawRegions();
 }
+// Claude's high-level advice (compartments, cell types, spatial organization, context, technical), each with one action
+function renderAdvice(adv, btn, head, prop) {
+  const box = $("plitems");
+  const open = adv.items.filter((x) => x.status === "open");
+  if (open.length) head(`Claude's advice (${open.length})`);
+  Object.entries(adv.categories).forEach(([cat, label]) => {
+    const rows = open.filter((x) => x.category === cat);
+    if (!rows.length) return;
+    const h = document.createElement("div"); h.className = "plh cat"; h.textContent = label; box.append(h);
+    rows.forEach((x) => box.append(adviceRow(x, btn, adv, prop)));
+  });
+  const closed = adv.items.filter((x) => x.status !== "open");
+  if (closed.length) {
+    const det = document.createElement("details"); det.className = "plsolved";
+    const sum = document.createElement("summary"); sum.className = "plh"; sum.textContent = `Advice taken or dismissed (${closed.length})`;
+    det.append(sum);
+    closed.forEach((x) => det.append(adviceRow(x, btn, adv, prop)));
+    box.append(det);
+  }
+}
+function adviceRow(x, btn, adv, prop) {
+  const row = document.createElement("div"); row.className = "pla adv" + (x.status !== "open" ? " done" : "");
+  const a = document.createElement("div"); a.className = "l1";
+  a.textContent = x.title + (x.status === "done" ? `  (done${x.note ? ": " + x.note : ""})` : x.status === "dismissed" ? "  (dismissed)" : "");
+  const b = document.createElement("div"); b.className = "l2 clamp"; b.textContent = x.text;
+  b.title = "Click to read all"; b.onclick = () => b.classList.toggle("clamp");
+  const c = document.createElement("div"); c.className = "l3";
+  const act = x.action || {}, open = x.status === "open";
+  if (act.kind === "region") {
+    const regionExists = (st.regions ? st.regions.regions : []).some((g) => g.name === act.name);
+    if (act.prior) b.textContent += `\nPrior: ${act.prior_text}`;
+    const on = st.adviceShown === x.id;
+    c.append(btn(on ? "hide" : "show", "Show the proposed outline on the map", () => {
+      st.adviceShown = on ? null : x.id;
+      if (!on) zoomToPoly(act.outlines.flat(), false); else drawRegions();
+      renderPlaus();
+    }));
+    if (open && !regionExists) c.append(btn(`add region “${act.name}”`, `Save the outline (${act.n_cells.toLocaleString()} cells) as a region`, () => adviceAct(x, "region")));
+    if (open && regionExists && act.prior) c.append(btn("add prior…", "Preview the prior, then add it", () => advicePrior(x)));
+  } else if (act.kind === "prior") {
+    b.textContent += `\nPrior: ${act.prior_text}`;
+    if (open) c.append(btn("add prior…", "Preview the prior, then add it", () => advicePrior(x)));
+  } else if (act.kind === "marker_list") {
+    if (open && prop) c.append(btn("open in Markers…", "Load Claude's revised marker list", () => openProposal(prop)));
+  } else if (act.kind === "registration") {
+    if (open && !adv.registration_fixed) c.append(btn("correct registration…", "Move every cell onto its nucleus on the image", () => adviceRegistration(x, act)));
+    if (adv.registration_fixed) c.append(btn("undo correction", "Put the cells back where the import placed them", () => adviceAct(x, "undo_registration")));
+  } else if (act.kind === "claude") {
+    if (open) c.append(btn("ask Claude Code", act.request, () => adviceAct(x, "claude")));
+  }
+  if (open) c.append(btn("dismiss", "Hide this advice", () => adviceStatus(x.id, "dismissed")));
+  else c.append(btn("reopen", "Put it back on the list", () => adviceStatus(x.id, "open")));
+  row.append(a, b, c);
+  return row;
+}
+async function adviceAct(x, step, extra) {
+  try {
+    let name;
+    if (step === "region") { name = prompt("Save the outline as region (name):", x.action.name); if (!name) return; }
+    const r = await post(`/api/s/${st.sid}/advice/act`, { id: x.id, step, name, ...(extra || {}) });
+    if (r.reload) { toast("Cell positions changed: reloading…", 3000); setTimeout(() => location.reload(), 800); return; }
+    if (r.claude_code) toast(r.claude_code.reused ? "Sent to Claude Code" : "Claude Code is opening", 4000);
+    else if (r.message && step === "claude" && st.chatAvailable) { $("input").value = r.message; send(); }
+    else if (r.message) toast(r.message + (r.prior ? " · now add its prior" : ""), 5000);
+    if (r.new_version) await refreshVersion(true); else await loadPlaus(false);
+  } catch (e) { toast(e.message, 6000); }
+}
+async function advicePrior(x) {
+  try {
+    const p = await post(`/api/s/${st.sid}/advice/act`, { id: x.id, step: "prior_preview" });
+    const tr = (p.top_transitions || []).slice(0, 4).map((t) => `${t.from} → ${t.to}: ${t.count}`).join("\n");
+    if (!confirm(`${p.interpretation}\n\n${p.n_label_changes.toLocaleString()} cells would change label${tr ? ":\n" + tr : ""}\n\nAdd this prior?`)) return;
+    await adviceAct(x, "prior");
+  } catch (e) { toast(e.message, 6000); }
+}
+async function adviceRegistration(x, act) {
+  if (!confirm(`The cells sit up to ${act.max_offset_um} µm off their nuclei on the image. Move every cell onto its nucleus? Regions keep their cells; you can undo this.`)) return;
+  await adviceAct(x, "registration");
+}
+async function adviceStatus(id, status) {
+  try { await post(`/api/s/${st.sid}/advice/status`, { id, status }); await loadPlaus(false); } catch (e) { toast(e.message, 5000); }
+}
 async function reopenSolved(x) {
   try { await post(`/api/s/${st.sid}/review/reopen`, x.kind === "area" ? { kind: "area", index: x.index } : { kind: "marker", key: x.key }); await loadPlaus(false); }
   catch (e) { toast(e.message, 5000); }
@@ -1007,11 +1114,11 @@ function closePlaus() {
   $("plpanel").hidden = true; $("viewerwrap").classList.remove("pl");
   if (st.mode === "plausibility") st.mode = "type";
 }
-function zoomToPoly(poly) {
+function zoomToPoly(poly, focus = true) {  // focus = false: zoom only (e.g. to several pieces drawn elsewhere)
   const xs = poly.map((q) => q[0]), ys = poly.map((q) => q[1]);
   const b = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
   const pad = Math.max(60 / st.he.um_per_px, 0.15 * Math.max(b[2] - b[0], b[3] - b[1]));
-  st.focus = poly;
+  st.focus = focus ? poly : null;
   viewer.viewport.fitBounds(heItem().imageToViewportRectangle(b[0] - pad, b[1] - pad, b[2] - b[0] + 2 * pad, b[3] - b[1] + 2 * pad));
   drawRegions();
 }
@@ -1052,6 +1159,8 @@ async function pollSuggestions() {  // suggestions made in Claude Code show up w
   st.sugKey = key;
   if (!st.plaus) { if (fresh) { await loadPlaus(false); toast(`Claude made ${fresh} suggestion(s): see the Review panel`, 4000); } return; }
   if (JSON.stringify(sug.solved) !== JSON.stringify(st.solvedSig) || sug.review !== st.plaus.review_count) { await loadPlaus(false); return; }  // Claude judged candidates
+  if (sug.advice !== (st.advice ? st.advice.status.n_runs : sug.advice)) { await loadPlaus(false); toast("Claude's advice is in the Review panel", 4000); return; }
+  if (sug.report && sug.report !== st.reportTime && $("rpDlg").open) await openReport();
   st.plaus.suggestions = sug.areas; st.plaus.proposal = sug.proposal; renderPlaus();
 }
 setInterval(() => pollSuggestions().catch(() => {}), 4000);
@@ -1063,7 +1172,7 @@ async function askClaudeReview() {  // Claude checks the candidates it has not j
   const r = await post("/api/claude/review", { session: st.sid });
   if (!r.needed) return;
   if (r.message && st.chatAvailable) { $("input").value = r.message; send(); }
-  else if (r.claude_code) toast(r.claude_code.reused ? "Claude Code is checking the candidates on the H&E" : "Claude Code is opening to check the candidates on the H&E", 5000);
+  else if (r.claude_code) toast((r.claude_code.reused ? "Claude Code is checking" : "Claude Code is opening to check") + (r.unchecked ? " the candidates on the H&E" : " the annotation as a whole"), 5000);
   await loadPlaus(false);
 }
 $("plclose").onclick = () => { const was = st.mode === "plausibility"; closePlaus(); fillModes(st.lastSummary); drawRegions(); if (was) { refreshOverlay(); loadLegend(); } };
@@ -1394,6 +1503,63 @@ $("reset").onclick = async () => {
   } catch (e) { toast(e.message, 6000); }
 };
 $("undo").onclick = async () => { try { const r = await post(`/api/s/${st.sid}/undo`); toast(`Undone → v${r.new_version}`); refreshVersion(true); } catch (e) { toast(e.message); } };
+// ---------------- report ----------------
+function mdBlock(md) {  // Markdown to HTML: headings, lists, tables, paragraphs, **bold**, `code` (text is escaped first)
+  const lines = md.split("\n"), out = []; let list = null, table = null, para = [], code = null;
+  const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const flush = () => {
+    if (para.length) { out.push(`<p>${mdLite(para.join(" "))}</p>`); para = []; }
+    if (list) { out.push(`<ul>${list.map((x) => `<li>${mdLite(x)}</li>`).join("")}</ul>`); list = null; }
+    if (table) { out.push(`<table>${table.filter((r) => !/^\s*\|?\s*:?-{2,}/.test(r)).map((r, i) => `<tr>${r.replace(/^\s*\||\|\s*$/g, "").split("|").map((c) => i ? `<td>${mdLite(c.trim())}</td>` : `<th>${mdLite(c.trim())}</th>`).join("")}</tr>`).join("")}</table>`); table = null; }
+  };
+  lines.forEach((l) => {
+    if (/^\s*```/.test(l)) {  // fenced code: kept verbatim
+      if (code) { out.push(`<pre>${esc(code.join("\n"))}</pre>`); code = null; } else { flush(); code = []; }
+      return;
+    }
+    if (code) { code.push(l); return; }
+    const h = l.match(/^(#{1,4})\s+(.*)/);
+    if (h) { flush(); out.push(`<h${h[1].length}>${mdLite(h[2])}</h${h[1].length}>`); return; }
+    if (/^\s*\|/.test(l)) { if (!table) { flush(); table = []; } table.push(l); return; }
+    const li = l.match(/^\s*(?:[-*]|\d+\.)\s+(.*)/);
+    if (li) { if (!list) { flush(); list = []; } list.push(li[1]); return; }
+    if (!l.trim()) { flush(); return; }
+    if (list || table) flush();
+    para.push(l.trim());
+  });
+  flush();
+  if (code) out.push(`<pre>${esc(code.join("\n"))}</pre>`);
+  return out.join("");
+}
+async function openReport() {
+  const r = (await api(`/api/s/${st.sid}/report`)).report;
+  st.reportTime = r ? r.time : null;
+  $("rpInfo").textContent = r ? `version ${r.version} · ${r.time.replace("T", " ")}` : "";
+  $("rpBody").innerHTML = r ? mdBlock(r.markdown) : "<p>No report yet. Click <b>Ask Claude to write it</b>: your Claude Code gathers the facts of this annotation (method, composition, compartments, quality, open review items) and writes it here.</p>";
+  $("rpAsk").textContent = r ? "Ask Claude to update it" : "Ask Claude to write it";
+  $("rpSave").disabled = !r;
+  if (!$("rpDlg").open) $("rpDlg").showModal();
+}
+$("report").onclick = () => openReport().catch((e) => toast(e.message, 6000));
+$("rpClose").onclick = () => $("rpDlg").close();
+$("rpAsk").onclick = async () => {
+  try {
+    const r = await post("/api/claude/report", { session: st.sid });
+    if (r.message && st.chatAvailable) { $("rpDlg").close(); $("input").value = r.message; send(); }
+    else if (r.claude_code) toast(r.claude_code.reused ? "Claude Code is writing the report; it appears here when done" : "Claude Code is opening to write the report", 5000);
+    else toast("Connect Claude Code first (Claude Code button)", 5000);
+  } catch (e) { toast(e.message, 6000); }
+};
+$("rpSave").onclick = async () => {
+  const name = `${st.sample.sample_id}_annotation_report.md`;
+  if (native()) {
+    const path = await native().save_path(name); if (!path) return;
+    try { await post(`/api/s/${st.sid}/report/save`, { path }); toast(`Saved ${path}`, 5000); } catch (e) { toast(e.message, 6000); }
+    return;
+  }
+  const a = document.createElement("a"); a.href = `/api/s/${st.sid}/report.md`; a.download = name;
+  document.body.append(a); a.click(); a.remove();
+};
 $("export").onclick = async () => {  // the per-cell CSV of the current version
   const name = `${st.sample.sample_id}_v${st.version}_cells.csv`;
   if (native()) {  // the desktop app saves through a Save dialog
@@ -1409,7 +1575,7 @@ $("export").onclick = async () => {  // the per-cell CSV of the current version
   toast(`Downloading ${a.download}…`);
 };
 document.addEventListener("keydown", (e) => {
-  if ($("mkDlg").open || $("nameDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
+  if ($("mkDlg").open || $("rpDlg").open || $("nameDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
   if (e.key === "h") $("hide").click();
   if (e.key === "e") $("hideHE").click();
   if (st.drawing && e.key === "Escape") cancelDraw();

@@ -86,6 +86,26 @@ Reviewing an annotation ("does this make sense?", "check my annotation", "review
   - priors or cluster labels.
   Change nothing without the user's agreement.
 
+High-level review (when the app asks for advice, or the user asks what you think of the annotation as a whole)
+- Evidence: sample_context, show_tissue_overview, preview_compartment, type_confusion, type_structure (large or
+  suspicious types), spatial_profile, qc_overview, check_registration, review_markers. Think as a pathologist and a
+  single-cell analyst together, in five categories:
+  compartments: the compartments on the H&E (mucosa, submucosa, muscularis, lymphoid follicles, ulcer, serosa);
+    propose regions from preview_compartment outlines that fit the H&E, with the prior that would use them;
+  taxonomy: types to merge (high type_confusion and no difference in markers or position), to split (type_structure
+    sub-clusters with distinct genes and position, or another type hidden inside), or missing (Unassigned genes);
+  organization: expected gradients and neighbors (stem cells at the crypt base, mature colonocytes at the top, B
+    cells in follicles, ICC between muscle layers), found or contradicted;
+  context: site and disease and what they imply (inflamed IBD: neutrophils, CXCL1+ colonocytes, plasma cell shifts;
+    ileum vs colon: Paneth cells); what the composition suggests and what to check;
+  qc: registration (check_registration), low-quality tiles, spillover, segmentation; only real issues.
+- Record with add_advice (one action per item when one fits). Do not repeat what the review candidates already
+  show; a few well-supported items beat many. Check every compartment outline on the H&E before proposing it.
+  Regions are the user's: propose outlines to add, never region columns of the dataset. A claim about a type
+  (mislabelled share, missing type) cites the sub-cluster sizes it rests on; say "about" when it is an estimate.
+- A report (the viewer's Report button, or when asked): gather annotation_facts, session_summary, sample_context,
+  list_advice, check_plausibility and review_markers, and save it with write_report.
+
 Every change is a version (history, diff, revert). export writes a CSV with one row per cell. Reply briefly, in the
 language of the user's message, keeping cell type and region names as they are."""
 
@@ -438,6 +458,125 @@ def record_review(areas: Optional[list[dict]] = None, marker_checks: Optional[li
     One-line reasons. Call it as you go (in batches); it never changes the annotation."""
     from . import claudereview
     return _j(claudereview.record(_s(), areas or [], marker_checks or []))
+
+
+# ---------------- high-level review (advice and report) ----------------
+@mcp.tool()
+def sample_context() -> str:
+    """What the sample is (description, panel size, image), the annotation method, and its lineage and type
+    composition: the start of a high-level review (is this composition plausible for the tissue, site and disease?)."""
+    from . import insights
+    return _j(insights.sample_context(_s()))
+
+
+@mcp.tool()
+def preview_compartment(name: str, lineages: list[str], max_dist_um: float = 30.0, min_cells: int = 200) -> list:
+    """Outline where the given lineages / types form tissue (cells within max_dist_um of where they are dense, holes
+    filled), e.g. name="mucosa", lineages=["Epithelial"]; "muscularis" from smooth muscle; "follicles" from B cells
+    (max_dist_um ~15). Returns the outline on the H&E and the stats (pieces, cells, composition). Check the figure
+    against the H&E before proposing it (add_advice with action {"kind": "region", "compartment": name}). Changes
+    nothing."""
+    from . import insights, advice
+    s = _s()
+    comp = insights.compartment(s, lineages, max_dist_um=max_dist_um, min_cells=min_cells)
+    spec = {"lineages": lineages, "max_dist_um": max_dist_um, "min_cells": min_cells}
+    advice.store_compartment(s, name, comp, spec)
+    png = insights.fig_compartment(s, comp, name)
+    return [_j({k: v for k, v in comp.items() if k not in ("polygons_px", "cells")} | {"name": name, "path": png}),
+            Image(path=png)]
+
+
+@mcp.tool()
+def type_confusion(top: int = 15) -> str:
+    """Pairs of cell types the expression model hardly tells apart (mean probability of B in cells labelled A and the
+    reverse): candidates to merge, or to separate with sharper markers."""
+    from . import insights
+    return _j(insights.type_confusion(_s(), top))
+
+
+@mcp.tool()
+def type_structure(cell_type: str, resolution: float = 0.5) -> str:
+    """Sub-clusters of one cell type with the genes that set each apart, their distance to the epithelium, regions
+    and spatial clustering: shows a type that should be split (distinct subtypes, or another type mislabelled, e.g.
+    PDGFRA+ C7+ fibroblasts inside 'smooth muscle')."""
+    from . import insights
+    return _j(insights.type_structure(_s(), cell_type, resolution))
+
+
+@mcp.tool()
+def spatial_profile() -> str:
+    """Per cell type: distance to the epithelium and to the smooth muscle (quartiles, um), regions, and the types it
+    neighbors more or less than expected. Compare with the expected organization of the tissue (crypt base to top,
+    lamina propria, follicles, muscle layers): contradictions point at mislabels, consistent patterns at priors."""
+    from . import insights
+    return _j(insights.spatial_profile(_s()))
+
+
+@mcp.tool()
+def qc_overview() -> list:
+    """Technical quality per tile (transcripts per cell, cell density, Unassigned share, mixed-lineage share) with
+    hotspot tiles, and epithelial-marker spillover into nearby non-epithelial cells. Returns the tile maps."""
+    from . import insights
+    s = _s()
+    png = insights.fig_qc(s)
+    return [_j(insights.qc_overview(s) | {"path": png}), Image(path=png)]
+
+
+@mcp.tool()
+def check_registration() -> str:
+    """Offset between the nuclei on the H&E (or DAPI) and the cell centroids, per window and as an affine fit (scale,
+    rotation, offset at the corners). A max offset above ~8 um with a small fit residual means the cells sit off their
+    nuclei: propose the correction (add_advice category "qc", action {"kind": "registration"})."""
+    from . import insights
+    r = insights.registration(_s())
+    if r.get("affine_fit"):
+        r["affine_fit"] = {k: v for k, v in r["affine_fit"].items() if k != "correction_px"}
+    return _j(r)
+
+
+@mcp.tool()
+def add_advice(items: list[dict]) -> str:
+    """Record your high-level advice for the user's Review panel (replaces your earlier open advice; at most 12,
+    keep only what matters, most important first). Each item: {"category": compartments | taxonomy | organization |
+    context | qc, "title": short, "text": the finding with its evidence and what to do (2-4 sentences),
+    "action": optional, one of
+      {"kind": "region", "compartment": <name from preview_compartment>, "name": region name, "prior": optional spec}
+      {"kind": "prior", "prior": {"kind", "text", "types", "mode", "weight", "regions" | "max_depth_um" |
+                                  "neighbor_types" + "min_frac"}}   (as for preview_constraint)
+      {"kind": "marker_list"}   (after propose_marker_list)
+      {"kind": "registration"}  (after check_registration)
+      {"kind": "claude", "request": what you would do when the user asks, e.g. a re-clustering}}.
+    The user acts with one click in the viewer; nothing changes before."""
+    from . import advice
+    new = advice.add(_s(), items)
+    return _j([{k: x[k] for k in ("id", "category", "title")} | {"action": (x["action"] or {}).get("kind")} for x in new])
+
+
+@mcp.tool()
+def list_advice(status: Optional[str] = None) -> str:
+    """Your high-level advice and what the user did with it (status open | done | dismissed)."""
+    from . import advice
+    return _j([{k: v for k, v in x.items() if k != "action"} | {"action": {k: v for k, v in (x["action"] or {}).items()
+                                                                      if k not in ("polygons_px", "correction_px")}}
+               for x in advice.items(_s(), status)])
+
+
+@mcp.tool()
+def annotation_facts(version: Optional[int] = None) -> str:
+    """How the annotation was made (method, marker list or reference, priors, corrections, regions, history): the
+    facts for an annotation report."""
+    from . import insights
+    return _j(insights.annotation_facts(_s(), version))
+
+
+@mcp.tool()
+def write_report(markdown: str) -> str:
+    """Save the annotation report (Markdown) the user sees under Report in the viewer and can save as a file. Write it
+    for a reader who was not there: sample; method and its inputs (annotation_facts); composition; compartments and
+    spatial organization; quality and limitations (QC, registration, open review items); what the user changed and
+    why; open questions. Facts from the tools only; cite numbers."""
+    from . import advice
+    return _j(advice.write_report(_s(), markdown))
 
 
 @mcp.tool()

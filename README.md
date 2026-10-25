@@ -147,6 +147,24 @@ by Claude show up within a few seconds.
    Markers…**, then Annotate with "keep my regions & priors") and areas drawn in orange (**use as region**, then
    Claude applies the agreed prior or correction to that region).
 
+   When the labels changed since Claude's last look, Review annotation also asks Claude for **high-level advice**,
+   listed at the top of the panel in five groups, each with one button:
+   - *Compartments*: outlines of the mucosa, muscularis or lymphoid follicles, computed from where a lineage forms
+     tissue and checked by Claude on the H&E (drawn in purple; **add region**, then **add prior…** for the prior
+     that uses it).
+   - *Cell types*: types to merge (the model hardly tells them apart), to split (sub-clusters with their own genes
+     and place), or missing (**open in Markers…** for a revised list, **ask Claude Code** for a re-clustering).
+   - *Spatial organization*: expected gradients and neighbors, found or contradicted (**add prior…**).
+   - *Sample context*: what the composition says about site and disease, and what to check.
+   - *Technical*: low-quality tiles, marker spillover next to the epithelium, and the registration. The registration
+     check correlates the nuclei on the H&E (hematoxylin) or DAPI with the cell centroids in windows across the
+     section and fits an affine; **correct registration…** moves every cell onto its nucleus (regions keep their
+     cells; **undo correction** puts them back). On SCP2927 section 147328 it found a 0.28% scale mismatch (cells up
+     to 30 um off their nuclei at the corners); after the correction the windows agree within 0.5 um.
+   Advice changes nothing until you click; **dismiss** hides it.
+9. **Report** shows the annotation report Claude writes (**Ask Claude to write it**): sample, method and inputs,
+   composition, compartments, quality and open questions, from the tools' facts. **Save…** writes it as Markdown.
+
 The app has no chat box of its own: you talk to Claude in Claude Code. The web viewer on a
 shared server shows a chat box that uses the server's own logged-in Claude Code CLI (for the server owner's use).
 
