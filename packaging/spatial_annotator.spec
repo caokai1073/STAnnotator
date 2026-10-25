@@ -8,6 +8,10 @@ from PyInstaller.utils.hooks import collect_all, copy_metadata
 ROOT = Path(SPECPATH).parent
 datas = [(str(ROOT / "celltypeagent" / "static"), "celltypeagent/static"),
          (str(ROOT / "celltypeagent" / "data"), "celltypeagent/data")]
+# source of the modules an exported notebook carries (the bundle otherwise holds only compiled code)
+import ast, re
+CARRIED = ast.literal_eval(re.search(r"^CARRIED = (\[.*?\])", (ROOT / "celltypeagent" / "notebook.py").read_text(), re.M).group(1))
+datas += [(str(ROOT / "celltypeagent" / f"{m}.py"), "celltypeagent/algorithm_src") for m in CARRIED]
 binaries, hidden = [], ["celltypeagent.mcp_server", "celltypeagent.webapp", "celltypeagent.desktop"]
 # packages that load parts of themselves dynamically (codecs, event loops, numba-compiled modules, plugins)
 for pkg in ["zarr", "numcodecs", "imagecodecs", "tifffile", "pynndescent", "numba", "llvmlite", "igraph", "umap", "sklearn",

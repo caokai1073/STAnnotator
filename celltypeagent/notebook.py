@@ -88,10 +88,18 @@ def _scatter(x, y, keys, title, invert=True, max_n=200000):
 
 
 def _sources():
+    """Source of the carried modules: from the package, or (standalone app: only compiled code) from the copies the
+    app bundle keeps in algorithm_src/."""
     import importlib
     out = {"config": CONFIG_STUB}
     for name in CARRIED:
-        out[name] = inspect.getsource(importlib.import_module(f"celltypeagent.{name}"))
+        try:
+            out[name] = inspect.getsource(importlib.import_module(f"celltypeagent.{name}"))
+        except (OSError, TypeError):
+            f = config.PACKAGE / "algorithm_src" / f"{name}.py"
+            if not f.exists():
+                raise RuntimeError(f"the source of {name}.py is missing from this app build")
+            out[name] = f.read_text()
     return out
 
 
