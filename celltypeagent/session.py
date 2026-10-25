@@ -826,6 +826,23 @@ class Session:
                             constraints=old["constraints"], corrections=old.get("corrections", []),
                             marker_step=old.get("marker_step", {"ops": []}), expected_parent=cur["version"])
 
+    def apply_state(self, state, message="replayed"):
+        """Commit the regions, priors, corrections and marker-step operations of a saved state (e.g. the one an
+        exported notebook carries) as a new version. Polygons without their cell list get it from the polygon."""
+        regions = dict(state["regions"])
+        ops = []
+        for o in regions.get("ops", []):
+            if o.get("op") == "polygon" and not o.get("cells"):
+                rows = regmod.cells_in_polygon(self.cells.px.to_numpy(), self.cells.py.to_numpy(), o["polygon"])
+                o = dict(o, cells=self.cells.cell.to_numpy()[rows].tolist())
+            ops.append(o)
+        return self._commit("replay", message, regions=dict(regions, ops=ops), constraints=state.get("constraints", []),
+                            corrections=state.get("corrections", []), marker_step=state.get("marker_step", {"ops": []}))
+
+    def labels_hash(self, version=None):
+        """Fingerprint of a version's labels (cell type per cell), to check a replay gives the same annotation."""
+        return hashlib.sha1("\n".join(self.labels(version)).encode()).hexdigest()[:16]
+
     def undo(self):
         """Undo the last change. An undo restores the state before the change and remembers which version it restored
         ("restores"), so the next undo steps back further instead of undoing the undo."""
@@ -1114,10 +1131,14 @@ class Session:
         if self.scheme["kind"] == "markers":
             df["marker_cluster"] = self.marker_result(r["state"])["cluster_of"]
         df["hand_labeled"] = np.isin(np.arange(len(self.cells)), r["locked_rows"])
-        from . import niches
+        from . import niches, embedding
         meta, lab = niches.current(self)
         if meta is not None:  # the current niche result, by name
             df["niche"] = np.array(niches.niche_names(self), dtype=object)[lab]
+        if embedding.current(self.sample_id):  # Leiden clusters and UMAP of the sample
+            df["leiden"] = np.char.add("L", (embedding.leiden(self.sample_id) + 1).astype(str))
+            um = embedding.coords(self.sample_id, "umap")
+            df["umap_1"], df["umap_2"] = um[:, 0].round(4), um[:, 1].round(4)
         df["x_um"], df["y_um"] = self.cells.x.round(2).to_numpy(), self.cells.y.round(2).to_numpy()
         return df
 

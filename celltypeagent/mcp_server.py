@@ -963,6 +963,15 @@ def export(version: Optional[int] = None) -> str:
     return _j({"folder": _s().export(version)})
 
 
+@mcp.tool()
+def export_notebook(version: Optional[int] = None) -> str:
+    """Write the analysis as a Jupyter notebook: the code of every step with this annotation's parameters (data,
+    placement on the image, annotation replayed with its regions, priors and corrections, PCA / UMAP / Leiden,
+    niches) and its results; running it repeats the analysis and checks the labels. Returns its path."""
+    from . import notebook
+    return _j({"notebook": notebook.build(_s(), version)})
+
+
 def main():
     _active["via"] = "Claude Code"
     _heartbeat()

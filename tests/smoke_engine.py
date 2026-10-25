@@ -85,6 +85,8 @@ from celltypeagent import niches
 ns = niches.run(s, k=15, n_niches=6)
 print("niches:", [(x["niche"], x["n_cells"], list(x["cell_types"])[:2]) for x in ns["niches"]])
 print("niches by radius:", niches.run(s, radius_um=40, n_niches=6)["params"]["k_range"], "| context:", niches.context(s)["regions"][0]["radius_um_covered_by_k"])
+from celltypeagent import notebook
+print("notebook:", notebook.build(s), "| csv columns:", list(s.export_table().columns)[-6:])
 v = s.undo(); print("undo:", s.state(v)["message"])
 v = s.revert(2)
 print([(h["version"], h["action"]) for h in s.history()])

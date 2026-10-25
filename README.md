@@ -151,9 +151,14 @@ by Claude show up within a few seconds.
 4. Hand-labeled cells are locked and fine-tune the expression model (only the involved cell types can move),
    so similar cells elsewhere update too. Every step is a version; **Undo** steps back one change at a time (clicking it again goes further
    back; it never undoes the undo).
-5. **Export CSV** saves one row per cell
-   (`cell_id`, `region`, `cell_type`, `lineage`, `level_1`… the full type path, `confidence`,
-   `expression_label`, `marker_cluster`, `hand_labeled`, `x_um`, `y_um`).
+5. **Export…** saves the **cells table** (CSV, one row per cell: `cell_id`, `region`, `cell_type`, `lineage`,
+   `level_1`… the full type path, `confidence`, `expression_label`, `marker_cluster`, `hand_labeled`, and when
+   computed `niche`, `leiden`, `umap_1`, `umap_2`; then `x_um`, `y_um`) or the **analysis notebook** (Jupyter): the
+   code of every step with this annotation's parameters (data and how to re-import it, the placement on the image,
+   the annotation replayed with its regions, priors, corrections and re-clusterings, PCA / UMAP / Leiden, niches)
+   with its results filled in (tables, figures). Running it repeats the analysis and reports whether the replayed
+   labels match (identical for annotations made with the same version of the app; UMAP coordinates differ slightly
+   because UMAP runs on all cores).
 6. **Reset** removes every annotation and chat of the selected sample (moved to `<data folder>/trash/`).
    **Remove all…** (next to Import, desktop app) deletes every sample with all its annotations and chats for good,
    to import from scratch (it cannot be undone); marker lists stay.

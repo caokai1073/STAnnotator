@@ -269,7 +269,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <button id="report" disabled title="The annotation report Claude writes: method, composition, compartments, quality, open questions">Report</button>
     <span class="spacer"></span>
     <span id="vinfo"></span>
-    <button id="export" disabled title="Download a CSV with one row per cell: cell id, region, cell type, lineage, type levels, confidence…">Export CSV</button>
+    <button id="export" disabled title="Save the cell table (CSV) or the analysis as a Jupyter notebook">Export…</button>
     <span class="sep"></span>
     <button id="reset" class="danger" disabled title="Remove every annotation and chat of this sample">Reset…</button>
   </div>
@@ -477,6 +477,22 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <button id="rpSave" title="Save the report as a Markdown file">Save…</button>
     <button id="rpClose">Close</button></div>
   <div id="rpBody"></div>
+</dialog>
+<dialog id="xpDlg" style="width:min(640px,95vw)">
+  <div class="dh"><b>Export</b><span class="hint" id="xpInfo" style="margin-left:8px"></span><span class="spacer"></span><button id="xpClose">Close</button></div>
+  <div class="imbody">
+    <div class="clcard"><b>Cells table (CSV)</b>
+      <div class="hint">One row per cell: cell id, region, cell type, lineage, type levels, confidence, expression label,
+        marker cluster, hand-labeled, niche, Leiden cluster, UMAP 1 and 2 (when computed) and the coordinates (um).</div>
+      <div class="row"><span class="spacer"></span><button id="xpCsv" class="primary">Save CSV…</button></div></div>
+    <div class="clcard"><b>Analysis notebook (Jupyter)</b>
+      <div class="hint">The code of every step with this annotation's parameters (data, placement on the image, annotation
+        with its regions, priors and corrections, PCA / UMAP / Leiden, niches) and its results (tables, figures).
+        Run it to repeat the analysis: it needs the app's Python environment and the data folder, and checks that the
+        replayed labels match.</div>
+      <div class="row"><span class="spacer"></span><button id="xpNb" class="primary">Save notebook…</button></div></div>
+    <div class="hint" id="xpStatus"></div>
+  </div>
 </dialog>
 <dialog id="hpDlg" style="width:min(760px,95vw)">
   <div class="dh"><b>Spatial Annotator</b><span class="spacer"></span>
@@ -2062,7 +2078,8 @@ turn gray; <b>Show on map</b> zooms the map to them; <b>Clear</b> ends the selec
 <li><b>Review annotation</b>: computed checks, checked by Claude on the H&amp;E; Claude's advice with one-click actions; <b>solve</b> hides an item.</li>
 <li><b>Report</b>: Claude writes the annotation report; <b>Save…</b> keeps it as a Markdown file.</li>
 <li><b>Niches</b>: identity, k and number of niches; <b>Run niches</b>, or <b>Claude picks k</b>.</li>
-<li><b>Undo</b> steps back one change at a time. <b>Export CSV</b>: one row per cell.</li>
+<li><b>Undo</b> steps back one change at a time. <b>Export…</b>: the cell table (CSV, with niche, Leiden and UMAP when
+computed) or the whole analysis as a Jupyter notebook (code with this annotation's parameters, and its results).</li>
 <li><b>Claude Code</b> opens your own Claude Code, connected to this app.</li></ul>`;
 async function showAbout() {
   $("hpBody").innerHTML = "<p>Checking…</p>";
@@ -2314,22 +2331,27 @@ $("rpSave").onclick = async () => {
   const a = document.createElement("a"); a.href = `/api/s/${st.sid}/report.md`; a.download = name;
   document.body.append(a); a.click(); a.remove();
 };
-$("export").onclick = async () => {  // the per-cell CSV of the current version
-  const name = `${st.sample.sample_id}_v${st.version}_cells.csv`;
+$("export").onclick = () => { $("xpInfo").textContent = `${st.sample.sample_id} · version ${st.version}`; $("xpStatus").textContent = ""; $("xpDlg").showModal(); };
+$("xpClose").onclick = () => $("xpDlg").close();
+async function exportAs(kind) {  // the cell table or the notebook of the current version
+  const ext = kind === "notebook" ? "ipynb" : "csv";
+  const name = `${st.sample.sample_id}_v${st.version}_${kind === "notebook" ? "analysis" : "cells"}.${ext}`;
   if (native()) {  // the desktop app saves through a Save dialog
     const path = await native().save_path(name); if (!path) return;
-    toast("Writing the CSV…", 3000);
-    try { await post(`/api/s/${st.sid}/export_to`, { path, version: st.version }); toast(`Saved ${path}`, 5000); } catch (e) { toast(e.message, 6000); }
+    $("xpStatus").textContent = kind === "notebook" ? "Writing the notebook (figures included)…" : "Writing the CSV…";
+    try { await post(`/api/s/${st.sid}/export_to`, { path, version: st.version, kind }); $("xpStatus").textContent = `Saved ${path}`; }
+    catch (e) { $("xpStatus").textContent = e.message; }
     return;
   }
   const a = document.createElement("a");
-  a.href = `/api/s/${st.sid}/export.csv?version=${st.version}`;
-  a.download = `${st.sample.sample_id}_v${st.version}_cells.csv`;
+  a.href = `/api/s/${st.sid}/export.${ext}?version=${st.version}`; a.download = name;
   document.body.append(a); a.click(); a.remove();
-  toast(`Downloading ${a.download}…`);
-};
+  $("xpStatus").textContent = `Downloading ${name}…`;
+}
+$("xpCsv").onclick = () => exportAs("csv");
+$("xpNb").onclick = () => exportAs("notebook");
 document.addEventListener("keydown", (e) => {
-  if ($("mkDlg").open || $("rpDlg").open || $("hpDlg").open || $("nameDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
+  if ($("mkDlg").open || $("rpDlg").open || $("hpDlg").open || $("xpDlg").open || $("nameDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
   if (e.key === "h") $("hide").click();
   if (e.key === "e") $("hideHE").click();
   if (st.editing && e.key === "Escape") stopEdit();

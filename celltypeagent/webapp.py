@@ -1226,6 +1226,15 @@ def api_export_csv(req):
     return FileResponse(folder / "cells.csv", media_type="text/csv", filename=name)
 
 
+def api_export_notebook(req):
+    """Download the analysis notebook of a version (default: latest)."""
+    from . import notebook
+    s = review_app._session(req.path_params["sid"])
+    v = int(req.query_params["version"]) if req.query_params.get("version") else s.versions()[-1]
+    return FileResponse(notebook.build(s, v), media_type="application/x-ipynb+json",
+                        filename=f"{s.sample_id}_v{v}_analysis.ipynb")
+
+
 def reply_language(text):
     """The language to answer in, decided here instead of by the model: with an empty history the model sometimes
     picked a third language (German) for an English message."""
@@ -1351,12 +1360,15 @@ async def api_markers_save_file(req: Request):
 
 
 async def api_export_to(req: Request):
-    """Write the per-cell CSV of a version to a path the user chose (desktop app: Save dialog)."""
+    """Write the per-cell CSV (kind "csv") or the analysis notebook (kind "notebook") of a version to a path the user
+    chose (desktop app: Save dialog)."""
     s = review_app._session(req.path_params["sid"])
     b = await req.json()
     v = int(b.get("version") or s.versions()[-1])
     try:
-        shutil.copy(Path(s.export(v)) / "cells.csv", Path(b["path"]).expanduser())
+        from . import notebook
+        src = notebook.build(s, v) if b.get("kind") == "notebook" else Path(s.export(v)) / "cells.csv"
+        shutil.copy(src, Path(b["path"]).expanduser())
     except (OSError, KeyError) as e:
         return _json({"error": str(e)}, 400)
     return _json({"saved": b["path"]})
@@ -1610,6 +1622,7 @@ def build_app(port):
         Route("/api/claude/align", api_claude_align, methods=["POST"]),
         Route("/api/s/{sid}/export", api_export, methods=["POST"]),
         Route("/api/s/{sid}/export.csv", api_export_csv),
+        Route("/api/s/{sid}/export.ipynb", api_export_notebook),
         Route("/api/s/{sid}/chat", api_chat, methods=["POST"]),
         Route("/api/s/{sid}/chat_log", api_chat_log),
         Route("/api/panel", api_panel),
