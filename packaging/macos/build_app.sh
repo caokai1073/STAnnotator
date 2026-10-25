@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 [ "$(uname -m)" = "arm64" ] || { echo "build on an Apple silicon Mac"; exit 1; }
-uv venv .build-venv --python 3.12
+uv venv --allow-existing .build-venv --python 3.12
 uv pip install --python .build-venv/bin/python ".[app]" pyinstaller
 # app icon (.icns) from the PNG
 ICONSET=$(mktemp -d)/AppIcon.iconset; mkdir -p "$ICONSET"

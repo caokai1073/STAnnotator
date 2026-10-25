@@ -6,7 +6,7 @@ The viewer and the MCP server (started by Claude) are separate processes. They s
 folder: viewer.json (what the viewer shows: port, sample, session) and viewer_request.json (a session the agent
 asks the viewer to show).
 """
-import json, os, platform, shutil, subprocess, sys, time
+import glob, json, os, platform, shutil, subprocess, sys, time
 from pathlib import Path
 from . import config
 
@@ -41,9 +41,28 @@ def register_desktop(config_path=None, name="celltypeagent"):
     return path
 
 
+_shell_claude = None
+
+
 def claude_code_path():
-    extra = os.pathsep.join(str(Path(p).expanduser()) for p in CLAUDE_PATHS)
-    return shutil.which("claude", path=os.environ.get("PATH", "") + os.pathsep + extra)
+    """Claude Code's executable: the app's PATH, the usual install folders (nvm included), and on macOS the user's
+    interactive login shell, where nvm, conda or Homebrew set PATH up (~/.zshrc)."""
+    extra = [str(Path(p).expanduser()) for p in CLAUDE_PATHS]
+    extra += sorted(glob.glob(str(Path.home() / ".nvm" / "versions" / "node" / "*" / "bin")), reverse=True)
+    hit = shutil.which("claude", path=os.pathsep.join([os.environ.get("PATH", "")] + extra))
+    if hit or platform.system() != "Darwin":
+        return hit
+    global _shell_claude
+    if _shell_claude is None:
+        try:
+            out = subprocess.run([os.environ.get("SHELL") or "/bin/zsh", "-ilc",
+                                  "whence -p claude 2>/dev/null || type -P claude 2>/dev/null || command -v claude"],
+                                 capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL).stdout
+            paths = [l.strip() for l in out.splitlines() if l.strip().startswith("/")]
+            _shell_claude = paths[-1] if paths and os.access(paths[-1], os.X_OK) else ""
+        except (OSError, subprocess.SubprocessError):
+            _shell_claude = ""
+    return _shell_claude or None
 
 
 def status():
@@ -106,14 +125,17 @@ def open_claude_code(sample=None, session=None, request=None):
         return {"opened": False, "command": cmd}
     script = ws / "start_claude.command"
     exe = claude_code_path()
-    body = ["#!/bin/zsh -l", f'cd "{ws}"']
+    args = f'--mcp-config "{ws / "celltypeagent_mcp.json"}"' + (f" '{prompt}'" if prompt else "")
+    body = ["#!/bin/zsh -il", f'cd "{ws}"']  # interactive login shell: the same PATH as the user's Terminal
     if exe:
-        body.append(f'exec "{exe}" --mcp-config "{ws / "celltypeagent_mcp.json"}"' + (f" '{prompt}'" if prompt else ""))
+        body.append(f'exec "{exe}" {args}')
     else:
-        body += ['if ! command -v claude >/dev/null; then',
-                 '  echo "Claude Code is not installed. Install it (https://claude.com/claude-code), log in with your',
-                 '  echo "own Claude account, then press the button in the app again."; read; exit 1; fi',
-                 f'exec claude --mcp-config "{ws / "celltypeagent_mcp.json"}"' + (f" '{prompt}'" if prompt else "")]
+        body += ['if ! command -v claude >/dev/null 2>&1; then',
+                 '  echo "Claude Code was not found. Install it (https://docs.claude.com/en/docs/claude-code/setup),"',
+                 '  echo "log in once with your own Claude account, then press the button in the app again."',
+                 '  read -r; exit 1',
+                 'fi',
+                 f'exec claude {args}']
     script.write_text("\n".join(body) + "\n")
     script.chmod(0o755)
     subprocess.run(["open", "-a", "Terminal", str(script)], check=False)
