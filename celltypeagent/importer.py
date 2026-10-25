@@ -143,16 +143,29 @@ def inspect_h5ad(paths, max_values=60):
 
 
 # ---------------- registration ----------------
-def load_registration(path, section=None, xenium_px_um=0.2125):
-    """Return a 2x3 affine mapping cell (x, y) in um to H&E level-0 pixels."""
+def _rows_matching(df, value):
+    return df[df.astype(str).apply(lambda col: col == str(value)).any(axis=1)]
+
+
+def load_registration(path, section=None, xenium_px_um=0.2125, candidates=(), progress=None):
+    """Return a 2x3 affine mapping cell (x, y) in um to H&E level-0 pixels. An affine CSV with one row per section
+    needs the section; without one, a candidate value (e.g. the h5ad's donor id) that matches exactly one row is used."""
     text = Path(path).read_text().strip()
     first = text.splitlines()[0].lower()
     if "a11" in first:
         df = pd.read_csv(path)
         if len(df) > 1:
             if section is None:
-                raise ValueError("the registration file has several rows; pass --section to choose one")
-            hit = df[df.astype(str).apply(lambda col: col == str(section)).any(axis=1)]
+                found = {str(v): _rows_matching(df, v) for v in candidates}
+                found = {v: h for v, h in found.items() if len(h) == 1}
+                if len(found) != 1:
+                    raise ValueError(f"the registration file has {len(df)} rows (one per section): choose the section "
+                                     "(Import dialog: Section column and value; command line: --section-column and "
+                                     "--section)")
+                section = next(iter(found))
+                if progress:
+                    progress(f"registration: using the row of section {section}")
+            hit = _rows_matching(df, section)
             if len(hit) != 1:
                 raise ValueError(f"no single registration row matches section {section!r}")
             df = hit
@@ -262,7 +275,10 @@ def import_sample(name, h5ad, he, registration, section_column=None, section=Non
     if len(set(ids)) != len(ids):
         raise ValueError("cell ids are not unique across the h5ad files")
     progress(f"{len(ids):,} cells, {len(genes)} genes")
-    A = load_registration(registration, section, xenium_px_um)
+    candidates = ()
+    if section is None:  # values that are the same for every cell (e.g. the donor id) can pick the registration row
+        candidates = [v[0] for v in inspect_h5ad(h5ad)["columns"].values() if len(v) == 1]
+    A = load_registration(registration, section, xenium_px_um, candidates, progress)
     regions = np.concatenate([q["regions"] for q in parts]) if region_column else None
     return _write_bundle(name, ids, xy, X, genes, he, A, regions, description,
                          {"kind": "h5ad", "h5ad": [str(Path(p).resolve()) for p in h5ad], "section_column": section_column,
