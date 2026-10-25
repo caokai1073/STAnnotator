@@ -208,7 +208,8 @@ def _check_name(name, overwrite):
     if not name or any(ch in name for ch in "/\\ "):
         raise ValueError("the sample name must be a short id without spaces or slashes")
     if (config.SAMPLES / name).exists() and not overwrite:
-        raise ValueError(f"sample {name!r} already exists (use overwrite to replace it)")
+        raise ValueError(f"a sample named {name!r} already exists: choose another name, or remove all samples "
+                         "(Remove all… next to Import) to start over")
     return name
 
 

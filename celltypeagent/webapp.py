@@ -974,6 +974,13 @@ def api_sample_reset(req):
         return _json({"deleted_sessions": 0, "deleted_conversations": 0, "trash": None})
     trash = config.TRASH / f"{time.strftime('%Y%m%d-%H%M%S')}_{sample}"
     trash.mkdir(parents=True)
+    n_chats = _trash_sessions(sess, trash)
+    return _json({"deleted_sessions": len(sess), "deleted_conversations": n_chats, "trash": str(trash)})
+
+
+def _trash_sessions(sess, trash):
+    """Move sessions and their Claude Code transcripts into trash; forget them in memory. Returns the number of
+    transcripts moved."""
     n_chats = 0
     for d in sess:
         ids = set()
@@ -994,7 +1001,31 @@ def api_sample_reset(req):
         for cache in (_overlays, _colors):
             for k in [k for k in cache if k[0] == d.name]:
                 cache.pop(k)
-    return _json({"deleted_sessions": len(sess), "deleted_conversations": n_chats, "trash": str(trash)})
+    return n_chats
+
+
+def api_samples_clear(req):
+    """Desktop app: remove every sample with all its annotations and chats, to import from scratch. Everything is
+    moved to <data folder>/trash/<time>_all_samples/ (recoverable by hand); marker lists are kept."""
+    if not desktop_mode():
+        return _json({"error": "only in the desktop app"}, 403)
+    if any(not j["done"] for j in JOBS.values()):
+        return _json({"error": "an import, annotation or niche run is still running; wait until it finishes"}, 409)
+    samples = [d for d in sorted(config.SAMPLES.iterdir()) if d.is_dir()] if config.SAMPLES.exists() else []
+    sess = [d for d in sorted(config.SESSIONS.iterdir()) if (d / "session.json").exists()] if config.SESSIONS.exists() else []
+    if not samples and not sess:
+        return _json({"deleted_samples": 0, "deleted_sessions": 0, "trash": None})
+    trash = config.TRASH / f"{time.strftime('%Y%m%d-%H%M%S')}_all_samples"
+    (trash / "samples").mkdir(parents=True)
+    n_chats = _trash_sessions(sess, trash)
+    for d in samples:
+        shutil.move(str(d), str(trash / "samples" / d.name))
+    for cache in (_views, _tiles, _overlays, _colors):
+        cache.clear()
+    review_app._sessions.clear()
+    mcp_server._active.pop("session", None)
+    return _json({"deleted_samples": len(samples), "deleted_sessions": len(sess), "deleted_conversations": n_chats,
+                  "trash": str(trash)})
 
 
 async def api_undo(req):
@@ -1390,6 +1421,7 @@ def build_app(port):
         Route("/api/s/{sid}/regions/{rid}/edit", api_region_edit, methods=["POST"]),
         Route("/api/s/{sid}/undo", api_undo, methods=["POST"]),
         Route("/api/sample/{sample}/reset", api_sample_reset, methods=["POST"]),
+        Route("/api/samples/clear", api_samples_clear, methods=["POST"]),
         Route("/api/s/{sid}/export", api_export, methods=["POST"]),
         Route("/api/s/{sid}/export.csv", api_export_csv),
         Route("/api/s/{sid}/chat", api_chat, methods=["POST"]),

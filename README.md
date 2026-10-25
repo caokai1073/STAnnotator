@@ -145,6 +145,8 @@ by Claude show up within a few seconds.
    (`cell_id`, `region`, `cell_type`, `lineage`, `level_1`… the full type path, `confidence`,
    `expression_label`, `marker_cluster`, `hand_labeled`, `x_um`, `y_um`).
 6. **Reset** removes every annotation and chat of the selected sample (moved to `<data folder>/trash/`).
+   **Remove all…** (next to Import, desktop app) removes every sample with all its annotations and chats, to import
+   from scratch; everything goes to `<data folder>/trash/<time>_all_samples/`, marker lists stay.
 7. **Markers…** edits, checks, saves and loads marker lists (saved lists go to `<data folder>/marker_lists/`).
 8. **Review annotation** opens the Review panel: computed marker checks (markers that are weak or unspecific in
    their cells, negative markers that are detected, genes of Unassigned cells) and areas to check (where cells of
