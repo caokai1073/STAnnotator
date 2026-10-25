@@ -258,20 +258,23 @@ def summary(s, version=None, top=12):
     """What the agent needs to review the sample (no per-cell lists)."""
     res, sc = check(s, version), scan(s, version)
     g = sc["grid"]
+    areas = open_areas(s, version)
     return {"version": res["version"],
             "grid": {"tile_um": g["tile_um"], "rows": f"{g['rows'][0]}-{g['rows'][-1]} (top to bottom)",
                      "columns": f"1-{g['nx']} (left to right)"},
             "cohesive_types": res["cohesive_types"],
             "n_out_of_place_cells": res["n_flagged"], "n_likely_mislabels": res["n_likely"],
-            "n_candidate_areas": len(sc["areas"]),
+            "n_candidate_areas": len(areas),
             "out_of_place_by_lineage": sc["by_lineage"],
-            "candidate_areas": [{k: a[k] for k in AREA_KEYS} for a in sc["areas"][:top]],
+            "candidate_areas": [{k: a[k] for k in AREA_KEYS} for a in areas[:top]],
+            "solved_by_user": [{k: v for k, v in x.items() if k != "tile_set"} for x in solved_areas(s)],
             "lineages_by_region": lineage_by_region(s, version),
             "note": f"out of place = cell of a type that forms sheets with < {ISOLATED:.0%} of its 15 nearest cells in "
                     f"its lineage; a candidate area = touching {g['tile_um']} um tiles with >= {MIN_TILE} such cells of "
                     f"one lineage and >= {ENRICH:g}x the count expected from cell density (a local excess; a diffuse "
                     "spread shows only in out_of_place_by_lineage: view it with show_tissue_overview(highlight)); composition = lineage shares of all cells in the area. Candidates are computed from "
-                    "the annotation only: confirm them on the overview and H&E before suggesting anything."}
+                    "the annotation only: confirm them on the overview and H&E before suggesting anything. Areas "
+                    "the user marked as solved are left out (solved_by_user): do not raise them again."}
 
 
 def area_info(s, spec, version=None):
@@ -371,3 +374,42 @@ def set_suggestion_status(s, sid, status, region_name=None):
         hit[0]["region_name"] = region_name
     json.dump(rows, open(_sfile(s), "w"), indent=1)
     return hit[0]
+
+
+# ---------------- candidate areas the user marked as solved (the agent sees them in check_plausibility) ----------------
+SOLVED_OVERLAP = 0.5  # a later candidate of the same lineage sharing this share of its tiles with a solved one is solved
+
+
+def _afile(s):
+    return s.dir / "area_checks_solved.json"
+
+
+def solved_areas(s):
+    p = _afile(s)
+    return json.load(open(p)) if p.exists() else []
+
+
+def _is_solved(a, done):
+    tiles = {tuple(t) for t in a["tile_set"]}
+    return any(d["lineage"] == a["lineage"] and len(tiles & {tuple(t) for t in d["tile_set"]}) >= SOLVED_OVERLAP * len(tiles)
+               for d in done)
+
+
+def open_areas(s, version=None):
+    """Candidate areas without the ones the user marked as solved (matched by lineage and tiles, as ids change)."""
+    done = solved_areas(s)
+    return [a for a in scan(s, version)["areas"] if not _is_solved(a, done)]
+
+
+def solve_area(s, area_id, version=None, by="user"):
+    """Mark a candidate area as solved: it leaves the Review panel and the map, and stays solved in later versions."""
+    sc = scan(s, version)
+    a = next((x for x in sc["areas"] if x["id"] == str(area_id).strip().upper()), None)
+    if a is None:
+        raise ValueError(f"no candidate area {area_id!r} in version {sc['version']}")
+    rows = solved_areas(s)
+    rows.append({"lineage": a["lineage"], "tiles": a["tiles"], "tile_set": [list(t) for t in a["tile_set"]],
+                 "n_out_of_place": a["n_out_of_place"], "area_id": a["id"], "version": sc["version"], "by": by,
+                 "time": time.strftime("%Y-%m-%dT%H:%M:%S")})
+    json.dump(rows, open(_afile(s), "w"), indent=1)
+    return {k: v for k, v in rows[-1].items() if k != "tile_set"}

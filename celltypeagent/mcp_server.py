@@ -386,7 +386,8 @@ def propose_marker_list(text: str, summary: str) -> str:
 def check_plausibility(top: int = 12, version: Optional[int] = None) -> str:
     """Candidate areas where the annotation may contradict the tissue: grid tiles with cells of a sheet-forming type
     (epithelium, smooth muscle) that sit apart from their own lineage, merged into areas, with composition,
-    suggested types and drawn regions; plus lineage counts per drawn region. Changes nothing."""
+    suggested types and drawn regions; plus lineage counts per drawn region. Areas the user marked as solved in the
+    viewer are left out and listed in solved_by_user: do not raise them again. Changes nothing."""
     from . import plausibility
     return _j(plausibility.summary(_s(), version, top))
 

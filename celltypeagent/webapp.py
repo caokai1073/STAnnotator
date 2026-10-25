@@ -561,7 +561,8 @@ def api_plausibility(req):
               "n_solved": len(markerqc.solved(s))}
     except ValueError:  # annotations made without a marker list
         mk = None
-    return _json(out | {"suggestions": _suggestions(s, v), "markers": mk, "proposal": markerqc.proposal(s)})
+    return _json(out | {"suggestions": _suggestions(s, v), "markers": mk, "proposal": markerqc.proposal(s),
+                        "n_areas_solved": len(out["solved_by_user"])})
 
 
 def _suggestions(s, v):
@@ -581,6 +582,17 @@ async def api_marker_check_solve(req: Request):
     b = await req.json()
     try:
         rec = markerqc.solve(s, b.get("key", ""), b.get("version"))
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+    return _json(rec)
+
+
+async def api_area_solve(req: Request):
+    """The user marks a candidate area as solved: it leaves the Review panel and the map; the agent sees it."""
+    s = review_app._session(req.path_params["sid"])
+    b = await req.json()
+    try:
+        rec = plausibility.solve_area(s, b.get("area_id", ""), b.get("version"))
     except ValueError as e:
         return _json({"error": str(e)}, 400)
     return _json(rec)
@@ -1069,6 +1081,7 @@ def build_app(port):
         Route("/api/s/{sid}/plausibility/dismiss", api_area_dismiss, methods=["POST"]),
         Route("/api/s/{sid}/plausibility/proposal", api_proposal_status, methods=["POST"]),
         Route("/api/s/{sid}/markers/solve", api_marker_check_solve, methods=["POST"]),
+        Route("/api/s/{sid}/areas/solve", api_area_solve, methods=["POST"]),
         Route("/api/s/{sid}/regions/add", api_region_add, methods=["POST"]),
         Route("/api/s/{sid}/regions/rename", api_region_rename, methods=["POST"]),
         Route("/api/s/{sid}/regions/{rid}/delete", api_region_delete, methods=["POST"]),

@@ -943,14 +943,15 @@ function renderPlaus() {
     const u = r.markers.unassigned;
     if (u) item("mk", `${u.n_cells.toLocaleString()} Unassigned cells`, "they express " + u.top_genes.slice(0, 6).map((g) => g.gene).join(", ") + " (a type missing from the list?)", [solve("unassigned")]);
   }
-  if (r.candidate_areas.length) head(`Areas to check (computed, ${r.n_candidate_areas})`);
+  if (r.candidate_areas.length || r.n_areas_solved) head(`Areas to check (computed, ${r.n_candidate_areas}` + (r.n_areas_solved ? `; ${r.n_areas_solved} solved` : "") + ")");
   r.candidate_areas.forEach((a) => {
     const comp = Object.entries(a.composition).slice(0, 3).map(([k, f]) => `${k} ${Math.round(100 * f)}%`).join(", ");
     const regs = Object.keys(a.regions).filter((k) => k !== "unknown");
     item("", `${a.id} · ${a.n_out_of_place} ${a.lineage} out of place`,
          `area: ${comp}` + (regs.length ? ` · in ${regs.join(", ")}` : "") + ` · tiles ${a.tiles}`,
          [btn("zoom", "Zoom to this area", () => zoomToPoly(a.outline)),
-          btn("use as region", "Save this outline as a region", () => adoptArea({ area_id: a.id, version: r.version }, ""))]);
+          btn("use as region", "Save this outline as a region", () => adoptArea({ area_id: a.id, version: r.version }, "")),
+          btn("solve", "Mark this area as solved: it leaves this list and the map, and Claude sees it as solved", () => solveArea(a.id))]);
   });
   drawRegions();
 }
@@ -983,6 +984,10 @@ function openProposal(prop) {
 }
 async function setProposal(status) {
   try { await post(`/api/s/${st.sid}/plausibility/proposal`, { status }); await loadPlaus(false); } catch (e) { toast(e.message, 5000); }
+}
+async function solveArea(id) {
+  try { await post(`/api/s/${st.sid}/areas/solve`, { area_id: id, version: st.plaus.version }); st.focus = null; await loadPlaus(false); }
+  catch (e) { toast(e.message, 5000); }
 }
 async function solveCheck(key) {
   try { await post(`/api/s/${st.sid}/markers/solve`, { key, version: st.plaus.version }); await loadPlaus(false); }
