@@ -19,10 +19,23 @@
 html, body { height: 100%; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
        display: flex; flex-direction: column; }
-header { display: flex; flex-direction: column; gap: 4px; padding: 8px 14px; background: var(--panel);
+header { display: flex; flex-direction: column; gap: 2px; padding: 6px 14px 8px; background: var(--panel);
          border-bottom: 1px solid var(--line); }
-header h1 { font-size: 16px; margin: 0 6px 0 0; font-weight: 650; }
+header h1 { font-size: 16px; margin: 0; font-weight: 650; line-height: 1.2; }
 .buildtag { display: block; font-size: 10px; font-weight: 400; color: var(--muted); }
+.cap { width: 160px; flex: none; display: flex; flex-direction: column; justify-content: center; }
+.captxt { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.fl { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.fl select { color: var(--ink); }
+#sample { min-width: 220px; } #session { min-width: 250px; } #method { min-width: 180px; }
+.sep { width: 1px; height: 22px; background: var(--line); flex: none; }
+.folder { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); min-width: 0;
+          flex: 0 1 auto; white-space: nowrap; overflow: hidden; }
+.folder .path { min-width: 60px; flex: 1 1 auto; }
+.hrow.r1 { flex-wrap: nowrap; }
+.hrow.r1 > :not(.folder):not(.spacer) { flex: none; }
+button.danger { color: #c0392b; }
+button.danger:hover:not(:disabled) { border-color: #c0392b; }
 .f { display: flex; flex-direction: column; font-size: 11px; color: var(--muted); gap: 2px; }
 .path { font: 11px ui-monospace, monospace; color: var(--muted); max-width: 330px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 select, input[type=text], textarea { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line);
@@ -34,7 +47,7 @@ button.primary { background: var(--accent); color: #fff; border-color: var(--acc
 button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
 button:disabled { opacity: .45; cursor: default; }
 .spacer { flex: 1; }
-.hrow { display: flex; align-items: center; gap: 12px; min-height: 40px; flex-wrap: wrap; }
+.hrow { display: flex; align-items: center; gap: 10px; min-height: 38px; flex-wrap: wrap; }
 .cfgslot { display: inline-flex; min-width: 132px; }
 .progress { display: flex; visibility: hidden; align-items: center; gap: 8px; min-width: 280px; flex: 1; max-width: 640px; }
 .progress.show { visibility: visible; }
@@ -157,16 +170,20 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 </head>
 <body>
 <header>
-  <!-- three fixed rows: nothing moves when the progress bar or an option appears -->
-  <div class="hrow">
-    <h1>Spatial Annotator <span id="build" class="buildtag"></span></h1>
-    <label class="f">Sample <select id="sample"></select></label>
+  <!-- three fixed rows (data / annotate / review and export), aligned by a caption column; nothing moves when the
+       progress bar or an option appears -->
+  <div class="hrow r1">
+    <div class="cap"><h1>Spatial Annotator</h1><span id="build" class="buildtag"></span></div>
+    <label class="fl">Sample <select id="sample"></select></label>
     <button id="importBtn" title="Add a sample: a Xenium output folder, or h5ad + H&amp;E + registration">Import…</button>
-    <div class="f">Data folder <span class="path" id="path">–</span></div>
-    <label class="f" id="sessWrap" hidden>Session <select id="session" title="Earlier annotations of this sample"></select></label>
+    <span class="sep"></span>
+    <label class="fl" id="sessWrap">Session <select id="session" title="Earlier annotations of this sample"></select></label>
+    <span class="spacer"></span>
+    <span class="folder">Data folder <span class="path" id="path">–</span></span>
   </div>
   <div class="hrow">
-    <label class="f">Method <select id="method" title="How cell types are assigned">
+    <div class="cap"><span class="captxt">Annotate</span></div>
+    <label class="fl">Method <select id="method" title="How cell types are assigned">
       <option value="markers">Marker genes</option><option value="scref">Single-cell reference</option>
       <option value="existing">Load existing</option></select></label>
     <span class="cfgslot">
@@ -175,18 +192,22 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <button id="openEx" hidden title="A CSV with an existing cell type annotation (one row per cell)">Annotation file…</button>
     </span>
     <button id="annotate" class="primary">Annotate</button>
-    <label class="hint" id="carryWrap" style="visibility:hidden" title="Start the new annotation with the regions, priors and cell corrections of the one that is open (items naming types that no longer exist are dropped)">
+    <label class="fl carry" id="carryWrap" style="visibility:hidden" title="Start the new annotation with the regions, priors and cell corrections of the one that is open (items naming types that no longer exist are dropped)">
       <input type="checkbox" id="carry" checked> keep my regions &amp; priors</label>
     <div class="progress" id="progress"><div class="pbar"><i id="pfill"></i></div><span id="pstage"></span></div>
   </div>
   <div class="hrow">
-    <button id="claudeBtn" hidden title="Open your own Claude Code in Terminal, connected to the sample open here">Claude Code</button>
+    <div class="cap"><span class="captxt">Review &amp; export</span></div>
     <button id="undo" disabled title="Undo the last change">Undo</button>
-    <button id="reset" disabled title="Remove every annotation and chat of this sample">Reset</button>
-    <button id="plaus" disabled title="Check markers and spatial layout; Claude can review them with the H&amp;E and suggest fixes">Review annotation</button>
+    <span class="sep"></span>
+    <button id="claudeBtn" hidden title="Open your own Claude Code in Terminal, connected to the sample open here">Claude Code</button>
+    <button id="plaus" disabled title="Check markers and spatial layout; Claude checks them with the H&amp;E and gives advice">Review annotation</button>
     <button id="report" disabled title="The annotation report Claude writes: method, composition, compartments, quality, open questions">Report</button>
-    <button id="export" disabled title="Download a CSV with one row per cell: cell id, region, cell type, lineage, type levels, confidence…">Export CSV</button>
+    <span class="spacer"></span>
     <span id="vinfo"></span>
+    <button id="export" disabled title="Download a CSV with one row per cell: cell id, region, cell type, lineage, type levels, confidence…">Export CSV</button>
+    <span class="sep"></span>
+    <button id="reset" class="danger" disabled title="Remove every annotation and chat of this sample">Reset…</button>
   </div>
 </header>
 <main>
@@ -556,7 +577,8 @@ function fillSessions(selected) {
   const ph = document.createElement("option"); ph.value = "";
   ph.textContent = `continue an earlier annotation (${st.sample.sessions.length})…`; sel.append(ph);
   st.sample.sessions.forEach((x) => { const o = document.createElement("option"); o.value = x.session_id; o.textContent = sessionLabel(x); sel.append(o); });
-  $("sessWrap").hidden = !st.sample.sessions.length;
+  sel.disabled = !st.sample.sessions.length;  // always shown, so the header does not move
+  if (!st.sample.sessions.length) ph.textContent = "no annotation yet";
   sel.value = selected || "";
 }
 
