@@ -77,6 +77,11 @@ new = advice.add(s, [{"category": "compartments", "title": "mucosa", "text": "sm
                      {"category": "qc", "title": "registration", "text": "smoke test", "action": {"kind": "registration"}}])
 print("advice:", [(x["id"], x["action"]["kind"]) for x in new], advice.status(s))
 print("report:", advice.write_report(s, "# Report\n\n" + json.dumps(insights.annotation_facts(s), default=str)[:400])["path"])
+from celltypeagent import niches
+ns = niches.run(s, k=15, n_niches=6)
+print("niches:", [(x["niche"], x["n_cells"], list(x["cell_types"])[:2]) for x in ns["niches"]])
+print("niches by radius:", niches.run(s, radius_um=40, n_niches=6)["params"]["k_range"], "| context:", niches.context(s)["regions"][0]["radius_um_covered_by_k"])
+v = s.undo(); print("undo:", s.state(v)["message"])
 v = s.revert(2)
 print([(h["version"], h["action"]) for h in s.history()])
 print("export", s.export())

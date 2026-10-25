@@ -29,6 +29,11 @@ header h1 { font-size: 16px; margin: 0; font-weight: 650; line-height: 1.2; }
 .fl select { color: var(--ink); }
 #sample { min-width: 220px; } #session { min-width: 250px; } #method { min-width: 180px; }
 .sep { width: 1px; height: 22px; background: var(--line); flex: none; }
+.num { width: 62px; }
+#nicheinfo { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.nslot { flex: 1; min-width: 0; position: relative; display: flex; align-items: center; height: 30px; }
+#nprogress { position: absolute; inset: 0; max-width: 420px; min-width: 0; }
+#nprogress.show + * , .nslot:has(#nprogress.show) #nicheinfo { visibility: hidden; }
 .folder { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); min-width: 0;
           flex: 0 1 auto; white-space: nowrap; overflow: hidden; }
 .folder .path { min-width: 60px; flex: 1 1 auto; }
@@ -38,7 +43,7 @@ button.danger { color: #c0392b; }
 button.danger:hover:not(:disabled) { border-color: #c0392b; }
 .f { display: flex; flex-direction: column; font-size: 11px; color: var(--muted); gap: 2px; }
 .path { font: 11px ui-monospace, monospace; color: var(--muted); max-width: 330px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-select, input[type=text], textarea { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+select, input[type=text], input[type=number], textarea { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line);
   border-radius: 6px; padding: 5px 8px; }
 button { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
          padding: 5px 11px; cursor: pointer; }
@@ -199,8 +204,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <button id="openEx" hidden title="A CSV with an existing cell type annotation (one row per cell)">Annotation file…</button>
     </span>
     <button id="annotate" class="primary">Annotate</button>
-    <label class="fl carry" id="carryWrap" style="visibility:hidden" title="Start the new annotation with the regions, priors and cell corrections of the one that is open (items naming types that no longer exist are dropped)">
-      <input type="checkbox" id="carry" checked> keep my regions &amp; priors</label>
+    <label class="fl carry" id="carryWrap" style="visibility:hidden" title="Start the new annotation with the regions (and their colors), priors and hand corrections of the one that is open; priors and corrections naming cell types the new annotation does not have are dropped">
+      <input type="checkbox" id="carry" checked> keep my regions, priors &amp; corrections</label>
     <div class="progress" id="progress"><div class="pbar"><i id="pfill"></i></div><span id="pstage"></span></div>
   </div>
   <div class="hrow">
@@ -215,6 +220,19 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <button id="export" disabled title="Download a CSV with one row per cell: cell id, region, cell type, lineage, type levels, confidence…">Export CSV</button>
     <span class="sep"></span>
     <button id="reset" class="danger" disabled title="Remove every annotation and chat of this sample">Reset…</button>
+  </div>
+  <div class="hrow">
+    <div class="cap"><span class="captxt">Niches</span></div>
+    <label class="fl">Identity <select id="nIdentity" title="What a cell is, before averaging over its neighbors">
+      <option value="nmf">NMF programs</option><option value="cell types">Cell types</option></select></label>
+    <label class="fl" title="Number of NMF gene programs">Programs <input type="number" id="nPrograms" class="num" min="4" max="60" value="20"></label>
+    <span class="sep"></span>
+    <label class="fl" title="Neighbors averaged per cell (the cell itself plus its k nearest cells)">k <input type="number" id="nK" class="num" min="1" max="80" value="15"></label>
+    <label class="fl" title="Number of niches (k-means clusters)">Niches <input type="number" id="nN" class="num" min="2" max="30" value="8"></label>
+    <button id="nRun" class="primary" disabled title="Compute niches with these settings">Run niches</button>
+    <button id="nClaude" disabled title="Ask your Claude Code to choose k per region from cell density and cell types, run the niches and name them">Claude picks k</button>
+    <div class="nslot"><span id="nicheinfo"></span>
+      <div class="progress" id="nprogress"><div class="pbar"><i id="nfill"></i></div><span id="nstage" style="font-size:12px;color:var(--muted)"></span></div></div>
   </div>
 </header>
 <main>
@@ -435,6 +453,7 @@ function applyHE() {
 function overlayUrl() {
   const q = new URLSearchParams({ size: st.dotSize.toFixed(1) });
   if (st.mode === "region" && st.colorEpoch) q.set("c", st.colorEpoch);  // region colors changed: fresh tiles
+  if (st.mode === "niche" && st.niche) q.set("n", st.niche.params.run_id);
   const only = [...filt()].join("|");
   if (only) q.set("only", only);
   return (l, x, y) => `/api/s/${st.sid}/overlay/${st.version}/${st.mode}/${l}/${x}_${y}.png?${q}`;
@@ -486,7 +505,7 @@ async function loadPositions(sample) {
 }
 async function loadColors() {
   const q = new URLSearchParams({ version: st.version, mode: st.mode, only: [...filt()].join("|") });
-  const key = `${st.sid}|${q}|${st.mode === "region" ? st.colorEpoch || 0 : 0}`;
+  const key = `${st.sid}|${q}|${st.mode === "region" ? st.colorEpoch || 0 : st.mode === "niche" && st.niche ? st.niche.params.run_id : 0}`;
   if (GL.colorKey === key) return;
   if (!GL.colors[key]) {
     const r = await fetch(`/api/s/${st.sid}/colors.bin?${q}`);
@@ -567,6 +586,7 @@ function fillModes(sm) {
   if (sm.n_changed_since_first > 0 || sm.corrections.length) avail.push(["changed", "changed since first annotation"]);
   if (sm.n_conflicts > 0) avail.push(["conflicts", "conflicts with priors"]);
   if (st.plaus) avail.push(["plausibility", "out-of-place cells"]);
+  if (st.niche) avail.push(["niche", "niche"]);
   const extra = [["confidence", "confidence"]];
   if (st.vocab && st.vocab.method === "markers") extra.push(["cluster", "clusters (marker step)"]);
   if (st.showMore) avail.push(...extra);
@@ -622,7 +642,8 @@ function closeSession() {
   cancelDraw(); if (st.editing) stopEdit(); closePlaus();
   $("legend").hidden = true; $("cellcard").classList.remove("show");
   $("empty").style.display = "flex";
-  ["undo", "export", "send", "plaus", "report"].forEach((b) => ($(b).disabled = true));
+  ["undo", "export", "send", "plaus", "report", "nRun", "nClaude"].forEach((b) => ($(b).disabled = true));
+  st.niche = null; st.nicheSig = undefined; $("nicheinfo").textContent = "";
   $("carryWrap").style.visibility = "hidden";
   $("input").disabled = true; $("composerhint").textContent = "Annotate a sample first.";
   $("vinfo").textContent = ""; $("regpanel").hidden = true; drawRegions();
@@ -686,7 +707,8 @@ async function startAnnotation(mode, sid, token = st.switchToken) {
 async function openSession(sid) {
   st.sid = sid;
   $("empty").style.display = "none";
-  ["undo", "export", "send", "plaus", "report"].forEach((b) => ($(b).disabled = false));
+  ["undo", "export", "send", "plaus", "report", "nRun"].forEach((b) => ($(b).disabled = false));
+  $("nClaude").disabled = !st.desktop && !st.chatAvailable;
   $("carryWrap").style.visibility = "visible";
   $("input").disabled = false; $("composerhint").textContent = "Tip: refer to regions you drew by their name.";
   st.vocab = await api(`/api/s/${sid}/vocab`);
@@ -694,9 +716,53 @@ async function openSession(sid) {
   if (st.vocab.method === "scref" && st.vocab.reference) setReference(st.vocab.reference);
   if (st.vocab.method === "existing" && st.vocab.existing) inspectEx({ path: st.vocab.existing.path }, st.vocab.existing);
   if (["markers", "scref", "existing"].includes(st.vocab.method)) { $("method").value = st.vocab.method; showMethod(); }
+  await loadNiches(false);
   await refreshVersion(true);
   await loadChat();
 }
+
+// ---------------- niches ----------------
+async function loadNiches(show) {
+  const r = await api(`/api/s/${st.sid}/niches`);
+  st.niche = r.summary;
+  st.nicheSig = JSON.stringify([st.niche && st.niche.params.run_id, st.niche ? st.niche.niches.map((x) => x.name) : []]);
+  const p = st.niche && st.niche.params;
+  $("nicheinfo").textContent = !p ? "no niches yet" :
+    `${p.n_niches} niches · ${p.identity === "nmf" ? `NMF ${p.n_programs} programs` : "cell types"} · ` +
+    (p.radius_um ? `cells within ${p.radius_um} µm (k ${p.k_range[0]}–${p.k_range[1]})` :
+     Object.keys(p.k_by_region || {}).length ? `k ${p.k} (by region: ${Object.entries(p.k_by_region).map(([a, b]) => `${a} ${b}`).join(", ")})` : `k ${p.k}`);
+  if (p) {
+    $("nIdentity").value = p.identity; if (p.n_programs) $("nPrograms").value = p.n_programs;
+    $("nK").value = p.k; $("nN").value = p.n_niches; $("nPrograms").disabled = p.identity !== "nmf";
+  }
+  fillModes(st.lastSummary);
+  if (show && st.niche) { st.mode = "niche"; $("mode").value = "niche"; }
+  if (st.mode === "niche" || show) { refreshOverlay(); loadLegend(); }
+}
+$("nIdentity").onchange = () => { $("nPrograms").disabled = $("nIdentity").value !== "nmf"; };
+$("nRun").onclick = async () => {
+  const body = { identity: $("nIdentity").value, n_programs: +$("nPrograms").value, k: +$("nK").value, n_niches: +$("nN").value };
+  $("nRun").disabled = true; $("nprogress").classList.add("show");
+  try {
+    const { job } = await post(`/api/s/${st.sid}/niches/run`, body);
+    for (;;) {
+      const j = await api(`/api/job/${job}`);
+      $("nfill").style.width = `${Math.round(100 * j.progress)}%`; $("nstage").textContent = j.error ? `error: ${j.error}` : j.stage;
+      if (j.done) { if (j.error) throw new Error(j.error); break; }
+      await new Promise((r) => setTimeout(r, 600));
+    }
+    await loadNiches(true);
+    setTimeout(() => $("nprogress").classList.remove("show"), 800);
+  } catch (e) { toast(`Niches failed: ${e.message}`, 8000); }
+  finally { $("nRun").disabled = false; }
+};
+$("nClaude").onclick = async () => {
+  try {
+    const r = await post("/api/claude/niches", { session: st.sid, n_niches: +$("nN").value, identity: $("nIdentity").value });
+    if (r.message && st.chatAvailable) { $("input").value = r.message; send(); }
+    else if (r.claude_code) toast(r.claude_code.reused ? "Claude Code is choosing k; the niches appear here when done" : "Claude Code is opening to choose k", 6000);
+  } catch (e) { toast(e.message, 6000); }
+};
 
 async function refreshVersion(force) {
   if (!st.sid) return;
@@ -721,7 +787,7 @@ async function refreshVersion(force) {
 setInterval(() => { if (!st.busy) refreshVersion(false).catch(() => {}); }, 4000);
 
 // ---------------- legend ----------------
-const MODE_TITLES = { type: "Cell types", lineage: "Lineages", region: "Regions", changed: "Changes", conflicts: "Conflicts", plausibility: "Out-of-place cells", confidence: "Confidence", cluster: "Clusters (marker step)" };
+const MODE_TITLES = { type: "Cell types", lineage: "Lineages", region: "Regions", changed: "Changes", conflicts: "Conflicts", plausibility: "Out-of-place cells", confidence: "Confidence", cluster: "Clusters (marker step)", niche: "Niches" };
 async function loadLegend() {
   const r = await api(`/api/s/${st.sid}/legend?version=${st.version}&mode=${st.mode}`);
   st.legend = r.items;
@@ -1114,7 +1180,7 @@ function renderPlaus() {
     const b = document.createElement("div"); b.className = "l2"; b.textContent = prop.summary;
     const d = document.createElement("pre"); d.textContent = prop.diff.join("\n") || "(no changes)";
     const c = document.createElement("div"); c.className = "l3";
-    c.append(btn("open in Markers…", "Load it into the marker list dialog; then Annotate with “keep my regions & priors”", () => openProposal(prop)),
+    c.append(btn("open in Markers…", "Load it into the marker list dialog; then Annotate with “keep my regions, priors & corrections”", () => openProposal(prop)),
              btn("dismiss", "Hide this proposal", () => setProposal("dismissed")));
     row.append(a, b, d, c); box.append(row);
   }
@@ -1296,7 +1362,7 @@ async function adoptArea(body, proposed) {
 function openProposal(prop) {
   $("mkText").value = prop.text; $("mkName").value = ""; openMarkers(); checkMarkers();
   $("carry").checked = true;
-  toast("Proposed marker list loaded. Close the dialog and click Annotate (“keep my regions & priors” is checked).", 6000);
+  toast("Proposed marker list loaded. Close the dialog and click Annotate (“keep my regions, priors & corrections” is checked).", 6000);
   setProposal("opened");
 }
 async function setProposal(status) {
@@ -1320,6 +1386,11 @@ async function pollSuggestions() {  // suggestions made in Claude Code show up w
   if (key === st.sugKey) return;
   const fresh = sug.areas.filter((x) => x.status === "open").length + (sug.proposal && sug.proposal.status === "open" ? 1 : 0);
   st.sugKey = key;
+  if (sug.niche && st.nicheSig !== undefined && JSON.stringify(sug.niche) !== st.nicheSig) {
+    const fresh = !st.niche || sug.niche[0] !== st.niche.params.run_id;
+    await loadNiches(fresh);
+    if (fresh) toast("New niches from Claude: colored by niche", 5000);
+  }
   const advSig = JSON.stringify(sug.advice);
   if (st.adviceSig === undefined) st.adviceSig = advSig;  // first look: nothing new yet
   if (advSig !== st.adviceSig) { await adviceArrived(); return; }

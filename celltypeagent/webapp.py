@@ -19,7 +19,7 @@ from starlette.responses import FileResponse, Response, StreamingResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from . import config, vocab, mcp_server, review_app, render
-from . import markers, markerqc, plausibility, claudelink, claudereview, importer, advice
+from . import markers, markerqc, plausibility, claudelink, claudereview, importer, advice, niches
 from .session import Session, list_samples, list_sessions, panel_genes
 
 STATIC = Path(__file__).parent / "static"
@@ -174,6 +174,12 @@ def colors_for(s: Session, version, mode, only):
             out[:, :3] = np.array([rgbs.get(x, GRAY) for x in r["region"]], np.uint8)
             out[:, 3] = 200
             out[r["region"] == "unknown", 3] = 70
+        elif mode == "niche":
+            meta, lab = niches.current(s)
+            if lab is not None:
+                pal = niche_rgb(s)
+                out[:, :3] = np.array(pal, np.uint8)[lab]
+                out[:, 3] = 225
         elif mode == "changed":  # compared with the first annotation of the session
             out[:] = (170, 170, 170, 60)
             ch = r["pred"] != s.result(s.versions()[0])["pred"]
@@ -198,7 +204,18 @@ def colors_for(s: Session, version, mode, only):
         if only:  # show only the cells whose legend entry is selected
             out[~np.isin(cell_keys(s, version, mode), list(only)), 3] = 0
         return out
-    return _colors.get_or((s.id, version, mode, tuple(only)), make)
+    return _colors.get_or((s.id, version, mode_key(s, mode), tuple(only)), make)
+
+
+def mode_key(s, mode):
+    """Cache key of a color mode; niche colors change with every niche run."""
+    return f"niche:{(niches.current(s)[0] or {}).get('run_id')}" if mode == "niche" else mode
+
+
+def niche_rgb(s):
+    meta, _ = niches.current(s)
+    return [tuple(int(h[i:i + 2], 16) for i in (1, 3, 5)) for h in
+            (render.DISTINCT * 3)[:meta["n_niches"]]] if meta else []
 
 
 def cell_keys(s: Session, version, mode):
@@ -226,6 +243,9 @@ def cell_keys(s: Session, version, mode):
         k = plausibility.check(s, version)["status"].copy()
         k[k == ""] = "ok"
         return k
+    if mode == "niche":
+        meta, lab = niches.current(s)
+        return np.array([f"N{i + 1}" for i in range(meta["n_niches"])], dtype=object)[lab] if meta else np.full(n, "", dtype=object)
     if mode == "confidence":
         return np.where(r["conf"] < 0.5, "low", np.where(r["conf"] < 0.8, "mid", "high")).astype(object)
     if mode == "cluster":
@@ -259,6 +279,14 @@ def legend_for(s: Session, version, mode):
         vc = dict(zip(*np.unique(r["region"].astype(str), return_counts=True)))
         return [{"key": k, "label": k.replace("_", " ") if k != "unknown" else "no region", "color": c, "count": int(vc.get(k, 0))}
                 for k, c in region_rgb(s, version).items()]
+    if mode == "niche":
+        meta, lab = niches.current(s)
+        if meta is None:
+            return []
+        n = np.bincount(lab, minlength=meta["n_niches"])
+        names, pal = niches.niche_names(s), niche_rgb(s)
+        return [{"key": f"N{i + 1}", "label": names[i] if names[i] == f"N{i + 1}" else f"N{i + 1} · {names[i]}",
+                 "color": pal[i], "count": int(n[i])} for i in range(meta["n_niches"])]
     if mode == "changed":
         ch = r["pred"] != s.result(s.versions()[0])["pred"]
         ch[r["locked_rows"]] = False
@@ -341,7 +369,7 @@ def overlay_tile(req: Request):
         img.save(buf, "PNG", compress_level=1)
         return buf.getvalue()
     try:
-        data = _overlays.get_or((s.id, version, mode, only, size, L, tx, ty), make)
+        data = _overlays.get_or((s.id, version, mode_key(s, mode), only, size, L, tx, ty), make)
     except ValueError:
         return Response(status_code=404)
     return Response(data, media_type="image/png", headers={"Cache-Control": "max-age=86400"})
@@ -449,6 +477,46 @@ async def api_claude_review(req: Request):
         parts.append(ADVICE_REQUEST.format(v=v) if parts else ADVICE_REQUEST.format(v=v).replace("Then give", "Give", 1))
     text = " ".join(parts) + REVIEW_END
     return _json({"needed": True, **_ask_claude(s, text), **claudereview.status(s), "advice": advice.status(s)})
+
+
+NICHE_K_REQUEST = ("Choose the neighborhood size k for the niche analysis of version {v} (I clicked 'Claude picks "
+                   "k'): look at niche_context (cell density, the distance k neighbors cover and the lineages per "
+                   "region) and the tissue, choose k per region (or radius_um) so each neighborhood spans the tissue "
+                   "scale that matters there (with no regions drawn: radius_um adapts to density, or one k; you may "
+                   "offer region outlines with propose_region for a later run), run_niches with it ({n} niches, "
+                   "identity {identity}), then look at "
+                   "niche_summary, name the niches with name_niches and explain your choice of k in two lines.")
+
+
+async def api_claude_niches(req: Request):
+    b = await req.json()
+    s = review_app._session(b["session"])
+    return _json(_ask_claude(s, NICHE_K_REQUEST.format(v=s.state()["version"], n=int(b.get("n_niches", 8)),
+                                                       identity=b.get("identity", "nmf"))))
+
+
+async def api_niches_run(req: Request):
+    """Run the niche analysis in the background; progress under /api/job/niche:<session>."""
+    s = review_app._session(req.path_params["sid"])
+    b = await req.json()
+    job = f"niche:{s.id}"
+    JOBS[job] = {"stage": "starting", "progress": 0.0, "done": False, "error": None}
+
+    def work():
+        try:
+            niches.run(s, k=int(b.get("k", 15)), n_niches=int(b.get("n_niches", 8)), identity=b.get("identity", "nmf"),
+                       n_programs=int(b.get("n_programs", 20)),
+                       progress=lambda f, m: JOBS[job].update(progress=round(f, 3), stage=m))
+            JOBS[job].update(progress=1.0, stage="done", done=True)
+        except Exception as e:
+            JOBS[job].update(error=f"{type(e).__name__}: {e}", done=True)
+    threading.Thread(target=work, daemon=True).start()
+    return _json({"job": job})
+
+
+def api_niches(req):
+    s = review_app._session(req.path_params["sid"])
+    return _json({"summary": niches.summary(s)})
 
 
 async def api_claude_report(req: Request):
@@ -744,7 +812,8 @@ def api_area_suggestions(req):
                   "solved": [len(plausibility.solved_areas(s)), len(markerqc.solved(s))],
                   "review": len(claudereview.load(s)["areas"]) + len(claudereview.load(s)["markers"]),
                   "advice": [len(advice.load(s)["runs"]), len(advice.load(s)["items"])],
-                  "report": (advice.report(s) or {}).get("time")})
+                  "report": (advice.report(s) or {}).get("time"),
+                  "niche": [(niches.current(s)[0] or {}).get("run_id"), niches.niche_names(s)]})
 
 
 async def api_marker_check_solve(req: Request):
@@ -1285,6 +1354,9 @@ def build_app(port):
         Route("/api/claude/code", api_claude_code, methods=["POST"]),
         Route("/api/claude/review", api_claude_review, methods=["POST"]),
         Route("/api/claude/report", api_claude_report, methods=["POST"]),
+        Route("/api/claude/niches", api_claude_niches, methods=["POST"]),
+        Route("/api/s/{sid}/niches", api_niches),
+        Route("/api/s/{sid}/niches/run", api_niches_run, methods=["POST"]),
         Route("/api/s/{sid}/advice", api_advice),
         Route("/api/s/{sid}/advice/act", api_advice_act, methods=["POST"]),
         Route("/api/s/{sid}/advice/status", api_advice_status, methods=["POST"]),

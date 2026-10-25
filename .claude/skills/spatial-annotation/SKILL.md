@@ -13,8 +13,8 @@ Users are biologists and pathologists; keep the conversation in their language a
 
 1. If the user did not name a sample, call `list_samples` and let them choose. Offer `list_sessions` /
    `resume_session` if they may be continuing earlier work.
-2. `start_session(sample_id, region_source)`. Use `none` unless the user wants to start from the dataset's
-   pathologist annotation (`pathologist`). Regions are drawn and named by the user in the web viewer
+2. `start_session(sample_id, markers_text)` (or a reference / an existing annotation). Regions are drawn and
+   named by the user in the viewer
    ("Draw region"). When the user asks you to draw one ("draw the mucosa"), compute it with
    `preview_compartment` (or take tiles) and offer it with `propose_region`; the user adds it with one click in the
    Review panel and can edit its points. Never add regions unasked. `list_regions` shows what exists.
@@ -82,7 +82,7 @@ apply here, the region assignment is wrong, a technical artifact, or a cell stat
   marker_edits={...})`, report the marker-label changes and new clusters, and call `recluster` on a go-ahead.
 - Report changes inside the re-clustered cells and elsewhere (model update) separately.
 - New or removed cell types need a revised marker list: the user edits it in "Markers..." (the agent can draft it)
-  and annotates again with "keep my regions & priors" checked.
+  and annotates again with "keep my regions, priors & corrections" checked.
 
 ## Reviewing an annotation
 

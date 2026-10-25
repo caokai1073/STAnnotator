@@ -22,7 +22,7 @@ async def main():
             tools = await s.list_tools()
             print("tools:", [t.name for t in tools.tools])
             calls = [
-                ("start_session", {"sample_id": "167799", "region_source": "pathologist", "markers_text": MARKERS}),
+                ("start_session", {"sample_id": "167799", "markers_text": MARKERS}),
                 ("list_regions", {}),
                 ("preview_constraint", {"text": "Epithelial cells are only found in the mucosa", "types": ["epithelial"],
                                         "regions": ["mucosa"], "mode": "only"}),
@@ -41,6 +41,11 @@ async def main():
                 show(res)
                 if name == "start_session":
                     sid = json.loads(res.content[0].text)["session_id"]
+                    from celltypeagent.session import Session  # the user draws a region in the viewer
+                    import numpy as np
+                    c = Session(sid).cells
+                    cx, cy, h = float(np.median(c.px)), float(np.median(c.py)), 2500.0
+                    Session(sid).add_region("mucosa", [[cx - h, cy - h], [cx + h, cy - h], [cx + h, cy + h], [cx - h, cy + h]])
                 if name == "conflict_summary" and not res.isError:
                     groups = json.loads(res.content[0].text)["groups"]
                     gid = groups[0]["group_id"] if groups else None

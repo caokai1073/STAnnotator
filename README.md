@@ -154,7 +154,7 @@ by Claude show up within a few seconds.
    are shown, each with Claude's reason (false alarms are folded under "Filtered out by Claude"). Verdicts carry over
    to later versions, so only new candidates are checked again. **solve** removes an item you have dealt with. Asking Claude Code "review my annotation" lets Claude review markers and layout with the
    H&E and its knowledge of the tissue. Its suggestions appear in the panel: a revised marker list (**open in
-   Markers…**, then Annotate with "keep my regions & priors") and areas drawn in orange (**use as region**, then
+   Markers…**, then Annotate with "keep my regions, priors & corrections") and areas drawn in orange (**use as region**, then
    Claude applies the agreed prior or correction to that region).
 
    When the labels changed since Claude's last look, Review annotation also asks Claude for **high-level advice**,
@@ -172,7 +172,16 @@ by Claude show up within a few seconds.
      cells; **undo correction** puts them back). On SCP2927 section 147328 it found a 0.28% scale mismatch (cells up
      to 30 um off their nuclei at the corners); after the correction the windows agree within 0.5 um.
    Advice changes nothing until you click; **dismiss** hides it.
-9. **Report** shows the annotation report Claude writes (**Ask Claude to write it**): sample, method and inputs,
+9. **Niches** (fourth row): places where cells of similar make-up live together. Every cell gets an identity, its
+   weights on NMF gene programs (*Identity: NMF programs*, independent of the annotation) or its cell type; the
+   identities are averaged over the cell and its *k* nearest cells and clustered (k-means) into the chosen number of
+   niches. **Run niches** uses one k everywhere; **Claude picks k** asks Claude Code to choose k per drawn region
+   from cell density and cell types (or a radius, so neighborhoods cover a similar stretch of tissue in dense and
+   sparse areas), run it and name the niches. The result appears as *Color by: niche* (names in the legend) and as
+   a `niche` column in Export CSV. On SCP2927 section 147328 (356,629 cells) a run takes about 6 s (1.5 s once the
+   NMF is cached) and the 8 niches match the tissue layers (surface epithelium, crypt base, lamina propria, lymphoid
+   follicles, muscularis mucosae, muscularis propria, submucosal vessels and stroma).
+10. **Report** shows the annotation report Claude writes (**Ask Claude to write it**): sample, method and inputs,
    composition, compartments, quality and open questions, from the tools' facts. **Save…** writes it as Markdown.
 
 The app has no chat box of its own: you talk to Claude in Claude Code. The web viewer on a
@@ -226,7 +235,7 @@ the cells the marker step left at a parent level within their lineage. Priors re
 
 Each works as `only`, `exclude` or `enrich` with strength `strong` / `moderate` / `weak`. Local re-clustering
 ("this cluster is mixed") re-clusters one cluster or level, is previewed, and keeps regions, priors and
-corrections. To add or remove types, revise the marker list and Annotate again with "keep my regions & priors".
+corrections. To add or remove types, revise the marker list and Annotate again with "keep my regions, priors & corrections".
 
 **Review.** Claude reviews an annotation with three kinds of evidence. *Markers:* for every lineage and cell type,
 how often each listed marker is detected in its cells compared with its siblings, flags (weak, not specific,

@@ -6,8 +6,9 @@ Tool results are compact JSON; figure tools also return the PNG so the client ca
 """
 import json, os
 from typing import Optional, Union
+import numpy as np
 from mcp.server.fastmcp import FastMCP, Image
-from . import vocab
+from . import vocab, render
 from .session import Session, list_samples as _list_samples, list_sessions as _list_sessions
 
 INSTRUCTIONS = """You help a biologist annotate cell types in imaging spatial transcriptomics (e.g. Xenium) on their own
@@ -55,7 +56,8 @@ Priors and corrections
   "make a region of tiles F3:H6"): compute it with preview_compartment (tissue a lineage forms) or take tiles / a
   candidate area, check the figure against the H&E, then propose_region. It appears in the viewer's Review panel
   (other advice stays) and becomes a region when the user clicks "add region"; the user can then edit its points.
-  Never add regions the user did not ask for.
+  Never add regions the user did not ask for, and never offer region or cell type columns stored with the data
+  (they are kept only for offline evaluation).
 - Conflicts (conflict_summary, show_conflicts) are cells whose expression contradicts a prior; describe H&E crops
   cautiously and record verdicts only when the user states them.
 
@@ -110,6 +112,12 @@ High-level review (when the app asks for advice, or the user asks what you think
   (mislabelled share, missing type) cites the sub-cluster sizes it rests on; say "about" when it is an estimate.
 - A report (the viewer's Report button, or when asked): gather annotation_facts, session_summary, sample_context,
   list_advice, check_plausibility and review_markers, and save it with write_report.
+
+Niches (the viewer's Niches row, or when asked): run_niches averages each cell's identity (NMF gene programs, or
+its cell type) over its k nearest cells and clusters the averages. When asked to choose k: niche_context, then k
+per drawn region or radius_um so neighborhoods span the tissue scale that matters (small in dense epithelium, larger
+in sparse stroma). Afterwards niche_summary and show_niches; name the niches (name_niches) from their composition,
+genes and place, cautiously.
 
 Every change is a version (history, diff, revert). export writes a CSV with one row per cell. Reply briefly, in the
 language of the user's message, keeping cell type and region names as they are."""
@@ -203,8 +211,8 @@ def open_viewer(port: int = 8765) -> str:
 # ---------------- sessions ----------------
 @mcp.tool()
 def list_samples() -> str:
-    """List available samples (sections) with disease, location, cell count, and whether pathologist regions / H&E exist."""
-    return _j(_records(_list_samples()))
+    """List available samples (sections) with description, cell count and whether an H&E exists."""
+    return _j(_records(_list_samples().drop(columns=["has_pathologist_regions"], errors="ignore")))
 
 
 @mcp.tool()
@@ -214,7 +222,7 @@ def list_sessions() -> str:
 
 
 @mcp.tool()
-def start_session(sample_id: str, region_source: str = "none", markers_text: Optional[str] = None,
+def start_session(sample_id: str, markers_text: Optional[str] = None,
                   carry_from_current: bool = False, reference_h5ad: Optional[str] = None,
                   label_column: Optional[str] = None, group_column: Optional[str] = None,
                   majority_voting: bool = False, annotation_csv: Optional[str] = None, id_column: Optional[str] = None,
@@ -223,7 +231,6 @@ def start_session(sample_id: str, region_source: str = "none", markers_text: Opt
     hierarchical marker gene list (markers_text: indented text as in check_marker_list, or CSV with columns
     cell_type, parent, positive_markers, negative_markers; required).
 
-    region_source: 'none' (the user draws regions on the map) or 'pathologist' (start from the dataset annotation).
     Single-cell reference instead (CellTypist-like classifier): reference_h5ad + label_column (the cell type column),
     optionally group_column (coarse classes, used as lineages) and majority_voting; check it with inspect_reference.
     An existing annotation instead: annotation_csv (one row per cell) with id_column, label_column and optionally
@@ -241,7 +248,7 @@ def start_session(sample_id: str, region_source: str = "none", markers_text: Opt
         ref = {"path": reference_h5ad, "label_column": label_column, "group_column": group_column,
                "majority_voting": majority_voting}
     method = "existing" if ex else "scref" if ref else "markers"
-    _active["session"] = Session.create(sample_id, region_source, method=method, markers_text=markers_text,
+    _active["session"] = Session.create(sample_id, "none", method=method, markers_text=markers_text,
                                         carry_from=carry, reference=ref, existing=ex)
     return _j(_active["session"].summary())
 
@@ -347,15 +354,6 @@ def label_cells(region: str, cell_type: str, only_types: Optional[list[str]] = N
                "n_label_changes_total": d["n_label_changes"],
                "n_other_cells_changed": max(0, d["n_label_changes"] - len(corr["cells"])),
                "top_transitions": d["top_transitions"][:8]})
-
-
-@mcp.tool()
-def set_region_source(source: str, message: Optional[str] = None) -> str:
-    """Start regions from nothing ('none') or from the dataset's pathologist annotation ('pathologist');
-    regions the user drew are kept on top."""
-    s = _s()
-    v = s.set_region_source(source, message)
-    return _j({"new_version": v, "diff": s.diff(v - 1, v)})
 
 
 @mcp.tool()
@@ -516,6 +514,60 @@ def propose_region(name: str, compartment: Optional[str] = None, area: Optional[
     return _j({"id": item["id"], "region_name": item["action"]["name"], "n_pieces": len(polys), "n_cells": n,
                "prior": item["action"].get("prior_text"),
                "next": "the user clicks 'add region' on it in the Review panel (it opens by itself in the app)"})
+
+
+# ---------------- niches ----------------
+@mcp.tool()
+def niche_context() -> str:
+    """For choosing the niche neighborhood size k: per drawn region (and the cells in none), cell density, the
+    median distance covered by k = 10, 15, 20, 30, 50 neighbors, and the main lineages."""
+    from . import niches
+    return _j(niches.context(_s()))
+
+
+@mcp.tool()
+def run_niches(k: int = 15, n_niches: int = 8, identity: str = "nmf", n_programs: int = 20,
+               k_by_region: Optional[dict] = None, radius_um: Optional[float] = None) -> str:
+    """Niche analysis: every cell's identity (identity="nmf": its weights on n_programs NMF gene programs, scaled to
+    sum 1; or "cell types": its label) is averaged over the cell and its k nearest cells, and the averages are
+    clustered (k-means) into n_niches niches. k_by_region = {"<drawn region>": k} sets k per region (cells in no
+    region use k); radius_um instead takes every cell within that distance (5-80 cells), adapting to density. The
+    result replaces the session's current niches and shows in the viewer (color by niche). Returns niche_summary."""
+    from . import niches
+    return _j(niches.run(_s(), k, n_niches, identity, n_programs, k_by_region, radius_um))
+
+
+@mcp.tool()
+def niche_summary() -> str:
+    """The current niches: per niche its size, cell types, identity profile (NMF programs with their top genes),
+    regions and distance to the epithelium, plus the parameters used."""
+    from . import niches
+    return _j(niches.summary(_s()) or {"error": "no niches yet: run_niches first"})
+
+
+@mcp.tool()
+def show_niches() -> list:
+    """Whole sample: the H&E (left) and the cells colored by niche (right)."""
+    from . import niches, plausibility
+    s = _s()
+    meta, lab = niches.current(s)
+    if meta is None:
+        raise ValueError("no niches yet: run_niches first")
+    names = np.array(niches.niche_names(s), dtype=object)
+    pal = {n: tuple(int(c[i:i + 2], 16) for i in (1, 3, 5)) for n, c in zip(names, (render.DISTINCT * 3)[:len(names)])}
+    out = s.dir / "figures" / f"niches_{meta['run_id']}.jpg"
+    png = render.tissue_overview(s.meta.get("he_path"), s.cells.px.to_numpy(), s.cells.py.to_numpy(), names[lab], pal,
+                                 plausibility.grid(s), [], out, title=f"niches ({meta['identity']}, k={meta['k']})",
+                                 image_kind=s.meta.get("image_kind", "H&E"))
+    return [_j({"path": png}), Image(path=png)]
+
+
+@mcp.tool()
+def name_niches(names: dict) -> str:
+    """Give niches names the user sees in the legend, e.g. {"N1": "lamina propria", "N3": "crypt base"}; base them
+    on niche_summary and the H&E."""
+    from . import niches
+    return _j(niches.set_names(_s(), names))
 
 
 @mcp.tool()

@@ -218,6 +218,8 @@ class Session:
         dropped += [f"{c['id']} (type {c['label']} not in the new list)" for c in ost.get("corrections", []) if c["label"] not in self.types]
         msg = (f"carried over from {sid}: {len(regions.get('ops', []))} region polygons, {len(kept)} priors, "
                f"{len(corr)} corrections" + (f"; dropped: {'; '.join(dropped)}" if dropped else ""))
+        if old.region_colors():  # the colors the user picked come along with the regions
+            json.dump(old.region_colors(), open(self.dir / "region_colors.json", "w"), indent=1)
         return self._commit("carry_over", msg, regions=regions, constraints=kept, corrections=corr)
 
     def _vpath(self, v):
@@ -1103,6 +1105,10 @@ class Session:
         if self.scheme["kind"] == "markers":
             df["marker_cluster"] = self.marker_result(r["state"])["cluster_of"]
         df["hand_labeled"] = np.isin(np.arange(len(self.cells)), r["locked_rows"])
+        from . import niches
+        meta, lab = niches.current(self)
+        if meta is not None:  # the current niche result, by name
+            df["niche"] = np.array(niches.niche_names(self), dtype=object)[lab]
         df["x_um"], df["y_um"] = self.cells.x.round(2).to_numpy(), self.cells.y.round(2).to_numpy()
         return df
 
