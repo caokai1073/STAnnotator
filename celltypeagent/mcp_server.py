@@ -68,6 +68,12 @@ Reviewing an annotation ("does this make sense?", "check my annotation", "review
      them (e.g. epithelial cells in the muscle layer). Candidate areas come from the annotation alone; vascular
      smooth muscle, the muscularis mucosae, and deep crypts or fistulas in IBD are real. Lineages per drawn region
      show e.g. epithelial cells outside the user's "mucosa".
+- When the app asks you to check the review candidates (or the user asks for a review): look at every candidate area
+  on the H&E with show_area and judge every marker check, then record each verdict with record_review (keep only real
+  annotation problems; one-line reasons). Out-of-place cells are computed from the labels of their neighbors, so
+  cells at the edge of a sheet, next to mislabeled neighbors, or where few cells were segmented (e.g. mucus-rich
+  crypts) are false alarms. Items already judged carry a claude_verdict; skip them. Never change the annotation
+  while checking. The Review panel shows only what you kept.
 - Then give a short, prioritized list of concrete suggestions, each with its evidence and the action:
   - a revised marker list: propose_marker_list(text, summary) validates it and puts it in the viewer's Review panel,
     where the user opens it in "Markers..." and annotates again keeping regions and priors (or
@@ -364,7 +370,11 @@ def review_markers(node: Optional[str] = None, version: Optional[int] = None) ->
     s = _s()
     q = dict(markerqc.check(s, version))
     flags, unassigned = markerqc.open_checks(s, version)
-    q.update(flags=flags, unassigned=unassigned, solved_by_user=markerqc.solved(s))
+    from . import claudereview
+    judged = claudereview.load(s)["markers"]
+    flags = [f | {"key": markerqc.check_key(f), "claude_verdict": judged.get(markerqc.check_key(f))} for f in flags]
+    q.update(flags=flags, unassigned=unassigned, unassigned_verdict=judged.get("unassigned"),
+             solved_by_user=markerqc.solved(s))
     if node:
         names = {node} | set(_s().type_groups.get(node, []))
         q = q | {"nodes": [n for n in q["nodes"] if n["node"] in names or n["parent"] in names],
@@ -388,8 +398,14 @@ def check_plausibility(top: int = 12, version: Optional[int] = None) -> str:
     (epithelium, smooth muscle) that sit apart from their own lineage, merged into areas, with composition,
     suggested types and drawn regions; plus lineage counts per drawn region. Areas the user marked as solved in the
     viewer are left out and listed in solved_by_user: do not raise them again. Changes nothing."""
-    from . import plausibility
-    return _j(plausibility.summary(_s(), version, top))
+    from . import plausibility, claudereview
+    s = _s()
+    out = plausibility.summary(s, version, top)
+    verdicts = {a["id"]: v for a, v in claudereview.items(s, version)[0]}
+    for a in out["candidate_areas"]:
+        v = verdicts.get(a["id"])
+        a["claude_verdict"] = None if v is None else {"keep": v["keep"], "reason": v["reason"]}
+    return _j(out)
 
 
 @mcp.tool()
@@ -411,6 +427,17 @@ def show_area(area: str, highlight: Optional[list[str]] = None, version: Optiona
     from . import plausibility
     png, a = plausibility.fig_area(_s(), area, version, highlight)
     return [_j({k: a[k] for k in plausibility.AREA_KEYS if k in a} | {"path": png}), Image(path=png)]
+
+
+@mcp.tool()
+def record_review(areas: Optional[list[dict]] = None, marker_checks: Optional[list[dict]] = None) -> str:
+    """Record your verdicts on the computed review candidates, so the user's Review panel shows only real problems:
+    areas = [{"id": "A3", "keep": true/false, "reason": "..."}] (ids from check_plausibility, after looking at each
+    on the H&E with show_area), marker_checks = [{"key": "Cycling TAs|UBE2C+" or "unassigned", "keep": ..., "reason":
+    ...}] (keys from review_markers). keep = a real annotation problem the user should see; false alarms are hidden.
+    One-line reasons. Call it as you go (in batches); it never changes the annotation."""
+    from . import claudereview
+    return _j(claudereview.record(_s(), areas or [], marker_checks or []))
 
 
 @mcp.tool()

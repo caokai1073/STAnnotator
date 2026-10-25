@@ -462,8 +462,9 @@ def open_areas(s, version=None):
     return [a for a in scan(s, version)["areas"] if not _is_solved(a, done)]
 
 
-def solve_area(s, area_id, version=None, by="user"):
-    """Mark a candidate area as solved: it leaves the Review panel and the map, and stays solved in later versions."""
+def solve_area(s, area_id, version=None, by="user", reason=""):
+    """Mark a candidate area as solved (by the user, or by Claude after looking at the H&E, with a reason): it leaves
+    the Review panel and the map, and stays solved in later versions."""
     sc = scan(s, version)
     a = next((x for x in sc["areas"] if x["id"] == str(area_id).strip().upper()), None)
     if a is None:
@@ -471,6 +472,16 @@ def solve_area(s, area_id, version=None, by="user"):
     rows = solved_areas(s)
     rows.append({"lineage": a["lineage"], "tiles": a["tiles"], "tile_set": [list(t) for t in a["tile_set"]],
                  "n_out_of_place": a["n_out_of_place"], "area_id": a["id"], "version": sc["version"], "by": by,
-                 "time": time.strftime("%Y-%m-%dT%H:%M:%S")})
+                 "reason": str(reason).strip(), "time": time.strftime("%Y-%m-%dT%H:%M:%S")})
     json.dump(rows, open(_afile(s), "w"), indent=1)
     return {k: v for k, v in rows[-1].items() if k != "tile_set"}
+
+
+def reopen_area(s, index):
+    """Undo a 'solved' mark (index in solved_areas)."""
+    rows = solved_areas(s)
+    if not 0 <= int(index) < len(rows):
+        raise ValueError("no such solved area")
+    gone = rows.pop(int(index))
+    json.dump(rows, open(_afile(s), "w"), indent=1)
+    return gone

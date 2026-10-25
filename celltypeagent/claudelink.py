@@ -77,12 +77,14 @@ def claude_code_command(prompt=None):
 
 TAB_TITLE = "Spatial Annotator - Claude Code"
 # Bring the Terminal tab that runs this app's Claude Code to the front (found by the tty recorded when it was opened,
-# still running claude); otherwise open it in a new window. Prints "existing <tty>" or "new <tty>".
+# still running claude) and type the given message into it; otherwise open it in a new window (the message goes in as
+# the first prompt). Prints "existing <tty>" or "new <tty>".
 # (Claude Code changes the tab's title while it runs, so the title cannot identify the tab.)
 FOCUS_SCRIPT = """on run argv
   set theTTY to item 1 of argv
   set theScript to item 2 of argv
   set theTitle to item 3 of argv
+  set theText to item 4 of argv
   tell application "Terminal"
     if theTTY is not "" then
       repeat with w in windows
@@ -94,6 +96,7 @@ FOCUS_SCRIPT = """on run argv
                 set selected of t to true
                 set index of w to 1
                 activate
+                if theText is not "" then do script theText in t
                 return "existing " & theTTY
               end if
             end if
@@ -112,9 +115,10 @@ end run
 """
 
 
-def open_claude_code(sample=None, session=None, request=None):
+def open_claude_code(sample=None, session=None, request=None, send_if_open=False):
     """Open the user's own Claude Code in Terminal (macOS), connected to this app; elsewhere return the command.
-    request: the user's first message (otherwise Claude loads the session and waits)."""
+    request: the first message (otherwise Claude loads the session and waits); with send_if_open it is also typed into
+    a Claude Code window that is already open."""
     prompt = None
     if session:
         prompt = (f"I am looking at sample {sample} (session {session}) in the Spatial Annotator app. "
@@ -124,6 +128,7 @@ def open_claude_code(sample=None, session=None, request=None):
         prompt = request
     if prompt:
         prompt = prompt.replace("'", "\u2019")  # it is passed in single quotes to the shell
+    send = prompt if (send_if_open and request) else None
     cmd, ws = claude_code_command(prompt)
     if platform.system() != "Darwin":
         return {"opened": False, "command": cmd}
@@ -146,8 +151,8 @@ def open_claude_code(sample=None, session=None, request=None):
     focus, tab = ws / "focus_claude.applescript", ws / "claude_tab.txt"
     focus.write_text(FOCUS_SCRIPT)
     tty = tab.read_text().strip() if tab.exists() else ""
-    r = subprocess.run(["osascript", str(focus), tty, str(script), TAB_TITLE], capture_output=True, text=True,
-                       check=False)
+    r = subprocess.run(["osascript", str(focus), tty, str(script), TAB_TITLE, send or ""], capture_output=True,
+                       text=True, check=False)
     out = r.stdout.strip().split(" ", 1)
     if r.returncode != 0 or len(out) < 2:  # e.g. the user did not allow the app to control Terminal
         subprocess.run(["open", "-a", "Terminal", str(script)], check=False)

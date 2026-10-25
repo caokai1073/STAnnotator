@@ -168,7 +168,7 @@ def solved(s):
     return json.load(open(p)) if p.exists() else []
 
 
-def solve(s, key, version=None, by="user"):
+def solve(s, key, version=None, by="user", reason=""):
     """Mark a marker check (key 'node|marker', or 'unassigned') as solved; it stays solved in later versions."""
     import json, time
     q = check(s, version)
@@ -179,7 +179,8 @@ def solve(s, key, version=None, by="user"):
         raise ValueError(f"no marker check {key!r} in version {q['version']}")
     rows = [r for r in solved(s) if r["key"] != key]
     rows.append({"key": key, "node": found[0]["node"], "marker": found[0]["marker"], "flag": found[0]["flag"],
-                 "version": q["version"], "by": by, "time": time.strftime("%Y-%m-%dT%H:%M:%S")})
+                 "version": q["version"], "by": by, "reason": str(reason).strip(),
+                 "time": time.strftime("%Y-%m-%dT%H:%M:%S")})
     json.dump(rows, open(_rfile(s), "w"), indent=1)
     return rows[-1]
 
@@ -190,3 +191,13 @@ def open_checks(s, version=None):
     done = {r["key"] for r in solved(s)}
     return ([f for f in q["flags"] if check_key(f) not in done],
             None if "unassigned" in done else q["unassigned"])
+
+
+def reopen(s, key):
+    """Undo a 'solved' mark."""
+    import json
+    rows = solved(s)
+    keep = [r for r in rows if r["key"] != key]
+    if len(keep) == len(rows):
+        raise ValueError(f"marker check {key!r} is not solved")
+    json.dump(keep, open(_rfile(s), "w"), indent=1)

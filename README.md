@@ -139,8 +139,10 @@ by Claude show up within a few seconds.
 8. **Review annotation** opens the Review panel: computed marker checks (markers that are weak or unspecific in
    their cells, negative markers that are detected, genes of Unassigned cells) and areas to check (where cells of
    types that form sheets, such as epithelium or smooth muscle, sit apart from their own lineage), outlined on the
-   map. **solve** removes a marker check or an area you have dealt with (also from the map); it stays solved in
-   later versions, and Claude sees it as solved and does not raise it again. Asking Claude Code "review my annotation" lets Claude review markers and layout with the
+   map. Clicking it also asks your Claude Code to check every candidate on the H&E and with marker biology
+   (record_review); while Claude checks, unchecked candidates are not listed, and afterwards only the real problems
+   are shown, each with Claude's reason (false alarms are folded under "Filtered out by Claude"). Verdicts carry over
+   to later versions, so only new candidates are checked again. **solve** removes an item you have dealt with. Asking Claude Code "review my annotation" lets Claude review markers and layout with the
    H&E and its knowledge of the tissue. Its suggestions appear in the panel: a revised marker list (**open in
    Markers…**, then Annotate with "keep my regions & priors") and areas drawn in orange (**use as region**, then
    Claude applies the agreed prior or correction to that region).

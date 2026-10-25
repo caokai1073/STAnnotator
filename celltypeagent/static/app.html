@@ -768,7 +768,7 @@ function drawRegions() {
       const top = pts.reduce((a, q) => (q.y < a.y || (q.y === a.y && q.x < a.x) ? q : a), pts[0]);
       const t = svgEl("text", { x: top.x + 3, y: top.y - 4, fill: color }); t.textContent = label; svg.append(t);
     };
-    st.plaus.candidate_areas.forEach((a) => outline(a.outline, "#e61e1e", 1.3, a.id));
+    (st.plaus.shown_areas || st.plaus.candidate_areas).forEach((a) => outline(a.outline, "#e61e1e", 1.3, a.id));
     st.plaus.suggestions.filter((x) => x.status === "open").forEach((x) => outline(x.outline, "#ff8c00", 2.6, `${x.id} ${x.title}`));
   }
   if (st.focus) {
@@ -892,7 +892,8 @@ async function loadPlaus(switchMode) {
   $("plpanel").hidden = false; $("viewerwrap").classList.add("pl");
   if (switchMode) $("pltitle").textContent = "Review: checking…";
   st.plaus = await api(`/api/s/${st.sid}/plausibility?version=${st.version}`);
-  st.sugKey = JSON.stringify({ areas: st.plaus.suggestions, proposal: st.plaus.proposal });
+  st.solvedSig = [r_solved_areas(st.plaus), (st.plaus.solved || []).filter((x) => x.kind === "marker").length];
+  st.sugKey = JSON.stringify({ areas: st.plaus.suggestions, proposal: st.plaus.proposal, solved: st.solvedSig, review: st.plaus.review_count });
   renderPlaus();
   fillModes(st.lastSummary);
   if (switchMode) { st.mode = "plausibility"; $("mode").value = "plausibility"; refreshOverlay(); await loadLegend(); }
@@ -901,9 +902,14 @@ function renderPlaus() {
   const r = st.plaus;
   $("pltitle").textContent = `Review · v${r.version}`;
   const open = r.suggestions.filter((x) => x.status === "open");
-  $("plnote").textContent = "Computed checks of the markers and the spatial layout are listed below; they come from the annotation alone. " +
-    (st.chatAvailable ? "Ask in the chat (“review my annotation”) to let Claude review them with the H&E and biology; its suggestions appear here in orange."
-                      : "To let Claude review them with the image and biology, open Claude Code and ask “review my annotation”; its suggestions appear here in orange.");
+  // once Claude was asked, only the candidates it kept as real problems are listed; the rest never shows up
+  const rv = r.review || {};
+  const judged = !!rv.asked, shown = (x) => !judged || (x.claude && x.claude.keep);
+  const dropped = [];
+  $("plnote").textContent = rv.checking
+    ? `Claude is checking the candidates on the H&E in Claude Code (${rv.checked} of ${rv.checked + rv.unchecked} done). Only the real problems will be listed here.`
+    : judged ? "Checked by Claude on the H&E and with marker biology: only real problems are listed. Claude's own suggestions appear in orange."
+    : "Not checked by Claude yet: these candidates come from the annotation alone and can include false alarms.";
   const box = $("plitems"); box.textContent = "";
   const btn = (text, title, fn) => { const b = document.createElement("button"); b.textContent = text; b.title = title; b.onclick = fn; return b; };
   const item = (cls, l1, l2, buttons) => {
@@ -935,26 +941,67 @@ function renderPlaus() {
                  btn("use as region", "Save this outline as a region (you can also draw it by hand)", () => adoptArea({ suggestion_id: x.id }, x.region_name)),
                  btn("dismiss", "Hide this suggestion", () => dismissSug(x.id))]);
   });
-  if (r.markers && (r.markers.flags.length || r.markers.unassigned)) {
-    head(`Marker checks (computed, ${r.markers.flags.length}` + (r.markers.n_solved ? `; ${r.markers.n_solved} solved` : "") + ")");
-    const pct = (x) => x == null ? "–" : `${Math.round(100 * x)}%`;
-    const solve = (key) => btn("solve", "Mark this check as solved: it leaves this list, and Claude sees it as solved", () => solveCheck(key));
-    r.markers.flags.forEach((f) => item("mk", `${f.node} · ${f.marker}`, `${f.flag} (in ${pct(f.in)} of these cells, ${pct(f.siblings)} of siblings)`, [solve(f.key)]));
+  const pct = (x) => x == null ? "–" : `${Math.round(100 * x)}%`;
+  const why = (x) => x.claude && x.claude.reason ? `\nClaude: ${x.claude.reason}` : "";
+  const checks = [];
+  if (r.markers) {
+    r.markers.flags.forEach((f) => checks.push({ key: f.key, claude: f.claude, l1: `${f.node} · ${f.marker}`,
+      l2: `${f.flag} (in ${pct(f.in)} of these cells, ${pct(f.siblings)} of siblings)` }));
     const u = r.markers.unassigned;
-    if (u) item("mk", `${u.n_cells.toLocaleString()} Unassigned cells`, "they express " + u.top_genes.slice(0, 6).map((g) => g.gene).join(", ") + " (a type missing from the list?)", [solve("unassigned")]);
+    if (u) checks.push({ key: "unassigned", claude: u.claude, l1: `${u.n_cells.toLocaleString()} Unassigned cells`,
+      l2: "they express " + u.top_genes.slice(0, 6).map((g) => g.gene).join(", ") + " (a type missing from the list?)" });
   }
-  if (r.candidate_areas.length || r.n_areas_solved) head(`Areas to check (computed, ${r.n_candidate_areas}` + (r.n_areas_solved ? `; ${r.n_areas_solved} solved` : "") + ")");
-  r.candidate_areas.forEach((a) => {
+  checks.filter((c) => judged && c.claude && !c.claude.keep).forEach((c) => dropped.push({ l1: c.l1, reason: c.claude.reason }));
+  const showChecks = checks.filter(shown);
+  if (showChecks.length || (r.markers && r.markers.n_solved)) head(`Marker checks (${showChecks.length}` + (r.markers.n_solved ? `; ${r.markers.n_solved} solved` : "") + ")");
+  showChecks.forEach((c) => item("mk", c.l1, c.l2 + why(c), [btn("solve", "Mark this check as solved: it leaves this list", () => solveCheck(c.key))]));
+  r.candidate_areas.filter((a) => judged && a.claude && !a.claude.keep).forEach((a) => dropped.push({ l1: `${a.id} · ${a.lineage} out of place · tiles ${a.tiles}`, reason: a.claude.reason }));
+  r.shown_areas = r.candidate_areas.filter(shown);
+  if (r.shown_areas.length || r.n_areas_solved) head(`Areas to check (${r.shown_areas.length}` + (r.n_areas_solved ? `; ${r.n_areas_solved} solved` : "") + ")");
+  r.shown_areas.forEach((a) => {
     const comp = Object.entries(a.composition).slice(0, 3).map(([k, f]) => `${k} ${Math.round(100 * f)}%`).join(", ");
     const regs = Object.keys(a.regions).filter((k) => k !== "unknown");
     item("", `${a.id} · ${a.n_out_of_place} ${a.lineage} out of place`,
-         `area: ${comp}` + (regs.length ? ` · in ${regs.join(", ")}` : "") + ` · tiles ${a.tiles}`,
+         `area: ${comp}` + (regs.length ? ` · in ${regs.join(", ")}` : "") + ` · tiles ${a.tiles}` + why(a),
          [btn("zoom", "Zoom to this area", () => zoomToPoly(a.outline)),
           btn("use as region", "Save this outline as a region", () => adoptArea({ area_id: a.id, version: r.version }, "")),
-          btn("solve", "Mark this area as solved: it leaves this list and the map, and Claude sees it as solved", () => solveArea(a.id))]);
+          btn("solve", "Mark this area as solved: it leaves this list and the map", () => solveArea(a.id))]);
   });
+  if (dropped.length) {  // false alarms Claude filtered out, folded away with its reasons
+    const det = document.createElement("details"); det.className = "plsolved";
+    const sum = document.createElement("summary"); sum.className = "plh"; sum.textContent = `Filtered out by Claude (${dropped.length})`;
+    det.append(sum);
+    dropped.forEach((d) => {
+      const row = document.createElement("div"); row.className = "pla done";
+      const a = document.createElement("div"); a.className = "l1"; a.textContent = d.l1;
+      const b = document.createElement("div"); b.className = "l2"; b.textContent = d.reason || "false alarm";
+      row.append(a, b); det.append(row);
+    });
+    box.append(det);
+  }
+  if (r.solved && r.solved.length) {  // checks the user marked as solved
+    const det = document.createElement("details"); det.className = "plsolved";
+    const sum = document.createElement("summary"); sum.className = "plh";
+    sum.textContent = `Solved by you (${r.solved.length})`;
+    det.append(sum);
+    r.solved.forEach((x) => {
+      const row = document.createElement("div"); row.className = "pla done";
+      const a = document.createElement("div"); a.className = "l1"; a.textContent = x.label;
+      const b = document.createElement("div"); b.className = "l2";
+      b.textContent = x.reason ? x.reason : "solved";
+      const c = document.createElement("div"); c.className = "l3";
+      c.append(btn("reopen", "Put it back on the list", () => reopenSolved(x)));
+      row.append(a, b, c); det.append(row);
+    });
+    box.append(det);
+  }
   drawRegions();
 }
+async function reopenSolved(x) {
+  try { await post(`/api/s/${st.sid}/review/reopen`, x.kind === "area" ? { kind: "area", index: x.index } : { kind: "marker", key: x.key }); await loadPlaus(false); }
+  catch (e) { toast(e.message, 5000); }
+}
+function r_solved_areas(r) { return (r.solved || []).filter((x) => x.kind === "area").length; }
 function closePlaus() {
   st.plaus = null; st.focus = null;
   $("plpanel").hidden = true; $("viewerwrap").classList.remove("pl");
@@ -1004,10 +1051,21 @@ async function pollSuggestions() {  // suggestions made in Claude Code show up w
   const fresh = sug.areas.filter((x) => x.status === "open").length + (sug.proposal && sug.proposal.status === "open" ? 1 : 0);
   st.sugKey = key;
   if (!st.plaus) { if (fresh) { await loadPlaus(false); toast(`Claude made ${fresh} suggestion(s): see the Review panel`, 4000); } return; }
+  if (JSON.stringify(sug.solved) !== JSON.stringify(st.solvedSig) || sug.review !== st.plaus.review_count) { await loadPlaus(false); return; }  // Claude judged candidates
   st.plaus.suggestions = sug.areas; st.plaus.proposal = sug.proposal; renderPlaus();
 }
 setInterval(() => pollSuggestions().catch(() => {}), 4000);
-$("plaus").onclick = () => loadPlaus(true).catch((e) => toast(e.message, 6000));
+$("plaus").onclick = async () => {
+  try { await loadPlaus(true); await askClaudeReview(); } catch (e) { toast(e.message, 6000); }
+};
+async function askClaudeReview() {  // Claude checks the candidates it has not judged yet; the panel follows its verdicts
+  if (!st.desktop && !st.chatAvailable) return;
+  const r = await post("/api/claude/review", { session: st.sid });
+  if (!r.needed) return;
+  if (r.message && st.chatAvailable) { $("input").value = r.message; send(); }
+  else if (r.claude_code) toast(r.claude_code.reused ? "Claude Code is checking the candidates on the H&E" : "Claude Code is opening to check the candidates on the H&E", 5000);
+  await loadPlaus(false);
+}
 $("plclose").onclick = () => { const was = st.mode === "plausibility"; closePlaus(); fillModes(st.lastSummary); drawRegions(); if (was) { refreshOverlay(); loadLegend(); } };
 
 // ---------------- chat ----------------

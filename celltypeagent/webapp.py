@@ -19,7 +19,7 @@ from starlette.responses import FileResponse, Response, StreamingResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from . import config, vocab, mcp_server, review_app, render
-from . import markers, markerqc, plausibility, claudelink, importer
+from . import markers, markerqc, plausibility, claudelink, claudereview, importer
 from .session import Session, list_samples, list_sessions, panel_genes
 
 STATIC = Path(__file__).parent / "static"
@@ -408,6 +408,27 @@ def api_claude_status(req):
     return _json(claudelink.status())
 
 
+REVIEW_REQUEST = ("Check the review candidates of version {v} (I clicked Review annotation): look at every candidate "
+                  "area on the H&E with show_area and judge every marker check, then record each verdict with "
+                  "record_review, keeping only real annotation problems. Do not change the annotation. Then sum up in "
+                  "three lines.")
+
+
+async def api_claude_review(req: Request):
+    """Review annotation: ask the user's Claude Code to check the candidates Claude has not judged yet."""
+    b = await req.json()
+    s = review_app._session(b["session"])
+    st = claudereview.status(s)
+    if not st["unchecked"]:
+        return _json({"needed": False, **st})
+    v = claudereview.request(s)
+    text = REVIEW_REQUEST.format(v=v)
+    if not desktop_mode():  # the server viewer's chat box sends it
+        return _json({"needed": True, "message": text, **claudereview.status(s)})
+    r = claudelink.open_claude_code(s.sample_id, s.id, text, send_if_open=True)
+    return _json({"needed": True, "claude_code": r, **claudereview.status(s)})
+
+
 async def api_claude_code(req: Request):
     b = await req.json()
     return _json(claudelink.open_claude_code(b.get("sample"), b.get("session"), (b.get("request") or "").strip() or None))
@@ -553,16 +574,30 @@ def api_plausibility(req):
     ver = int(req.query_params["version"]) if req.query_params.get("version") else None
     out = plausibility.summary(s, ver, top=int(req.query_params.get("top", 60)))
     full = {a["id"]: a for a in plausibility.scan(s, ver)["areas"]}
+    area_items, check_items = claudereview.items(s, ver)
+    verdict = {a["id"]: x for a, x in area_items}
     for a in out["candidate_areas"]:
         a["outline"] = _viewer_poly(v, full[a["id"]]["outline_px"])
+        x = verdict.get(a["id"])
+        a["claude"] = None if x is None else {"keep": x["keep"], "reason": x["reason"]}
     try:
         flags, unassigned = markerqc.open_checks(s, ver)
-        mk = {"flags": [f | {"key": markerqc.check_key(f)} for f in flags], "unassigned": unassigned,
+        judged = {k["key"]: x for k, x in check_items}
+        mk = {"flags": [f | {"key": markerqc.check_key(f), "claude": judged.get(markerqc.check_key(f))} for f in flags],
+              "unassigned": unassigned and (unassigned | {"claude": judged.get("unassigned")}),
               "n_solved": len(markerqc.solved(s))}
     except ValueError:  # annotations made without a marker list
         mk = None
+    review = claudereview.status(s, ver)
+    solved = [{"kind": "area", "index": i, "label": f"{x['lineage']} out of place · tiles {x['tiles']}",
+               "by": x.get("by", "user"), "reason": x.get("reason", ""), "time": x["time"]}
+              for i, x in enumerate(plausibility.solved_areas(s))]
+    solved += [{"kind": "marker", "key": x["key"], "label": "Unassigned cells" if x["key"] == "unassigned"
+                else f"{x['node']} · {x['marker']}", "by": x.get("by", "user"), "reason": x.get("reason", ""),
+                "time": x["time"]} for x in markerqc.solved(s)] if mk is not None else []
     return _json(out | {"suggestions": _suggestions(s, v), "markers": mk, "proposal": markerqc.proposal(s),
-                        "n_areas_solved": len(out["solved_by_user"])})
+                        "n_areas_solved": len(out["solved_by_user"]), "solved": solved, "review": review,
+                        "review_count": len(claudereview.load(s)["areas"]) + len(claudereview.load(s)["markers"])})
 
 
 def _suggestions(s, v):
@@ -573,7 +608,9 @@ def _suggestions(s, v):
 def api_area_suggestions(req):
     """Claude's area suggestions and marker list proposal (polled by the viewer)."""
     s = review_app._session(req.path_params["sid"])
-    return _json({"areas": _suggestions(s, view(s.sample_id)), "proposal": markerqc.proposal(s)})
+    return _json({"areas": _suggestions(s, view(s.sample_id)), "proposal": markerqc.proposal(s),
+                  "solved": [len(plausibility.solved_areas(s)), len(markerqc.solved(s))],
+                  "review": len(claudereview.load(s)["areas"]) + len(claudereview.load(s)["markers"])})
 
 
 async def api_marker_check_solve(req: Request):
@@ -596,6 +633,20 @@ async def api_area_solve(req: Request):
     except ValueError as e:
         return _json({"error": str(e)}, 400)
     return _json(rec)
+
+
+async def api_reopen(req: Request):
+    """Undo a 'solved' mark on an area (index) or a marker check (key)."""
+    s = review_app._session(req.path_params["sid"])
+    b = await req.json()
+    try:
+        if b.get("kind") == "area":
+            plausibility.reopen_area(s, b.get("index", -1))
+        else:
+            markerqc.reopen(s, b.get("key", ""))
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+    return _json({"ok": True})
 
 
 async def api_proposal_status(req: Request):
@@ -977,6 +1028,10 @@ Review panel in "Markers..." and annotates again keeping regions and priors), su
 map; the user adopts them as regions), preview_recluster for a mixed cluster. Once a suggested region exists, apply
 its action after a go-ahead: usually an exclude prior on it (preview_constraint, then add_constraint), or
 label_cells(region=..., only_types=...) when the user names the target type. Change nothing without agreement.
+When asked to check the review candidates (after Review annotation): look at every candidate area on the H&E with
+show_area and judge every marker check, then record each verdict with record_review (keep only real problems; cells at
+the edge of a sheet, next to mislabeled neighbors or where few cells were segmented are false alarms). Do not change
+the annotation while checking.
 If a request cannot be expressed with the tools, say so plainly."""
 
 BLOCKED = ["start_session", "resume_session", "list_sessions", "list_samples", "set_region_source"]
@@ -1063,6 +1118,7 @@ def build_app(port):
         Route("/api/viewer/request", api_viewer_request),
         Route("/api/claude/status", api_claude_status),
         Route("/api/claude/code", api_claude_code, methods=["POST"]),
+        Route("/api/claude/review", api_claude_review, methods=["POST"]),
         Route("/api/import/inspect", api_import_inspect, methods=["POST"]),
         Route("/api/import", api_import, methods=["POST"]),
         Route("/api/sample/{sample}/he_info", api_he_info),
@@ -1082,6 +1138,7 @@ def build_app(port):
         Route("/api/s/{sid}/plausibility/proposal", api_proposal_status, methods=["POST"]),
         Route("/api/s/{sid}/markers/solve", api_marker_check_solve, methods=["POST"]),
         Route("/api/s/{sid}/areas/solve", api_area_solve, methods=["POST"]),
+        Route("/api/s/{sid}/review/reopen", api_reopen, methods=["POST"]),
         Route("/api/s/{sid}/regions/add", api_region_add, methods=["POST"]),
         Route("/api/s/{sid}/regions/rename", api_region_rename, methods=["POST"]),
         Route("/api/s/{sid}/regions/{rid}/delete", api_region_delete, methods=["POST"]),
