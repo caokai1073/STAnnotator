@@ -16,7 +16,9 @@ A constraint is a dict:
           enrich  -> types are more likely where the condition is TRUE (weight > 1 applied there)
   weight  multiplicative prior factor; strength names map to: strong 0.01, moderate 0.1, weak 0.5
           (enrich: strong 10, moderate 3, weak 1.5)
-Region-kind constraints never touch cells in vocab.FREE_REGIONS.
+Region-kind constraints never touch cells in vocab.FREE_REGIONS. When a region a constraint uses is deleted, its
+cells at that moment are kept in the constraint (cells_of: {region name: [cell ids]}), so the prior keeps applying
+to them.
 posterior(t | x, cell) is proportional to p(t | x) * prod_c w_c(t, cell).
 """
 import numpy as np
@@ -56,10 +58,10 @@ def normalize(c, types, type_groups, region_names=None):
         raise vocab.VocabError("types is required")
     c["types_resolved"] = vocab.resolve(c["types"], types, type_groups, "cell type")
     if c.get("kind", "region") == "region":
-        if not c.get("regions"):
+        if not c.get("regions") and not c.get("cells_of"):
             raise vocab.VocabError("region constraints need regions")
         c["regions_resolved"] = vocab.resolve(c["regions"], region_names if region_names is not None else vocab.REGIONS,
-                                              {}, "region")
+                                              {}, "region") if c.get("regions") else []
         if set(c["regions_resolved"]) & set(vocab.FREE_REGIONS):
             raise vocab.VocabError(f"constraints cannot target {vocab.FREE_REGIONS}")
     elif c.get("kind", "region") == "depth":
@@ -83,7 +85,8 @@ def _list(names):
 
 def condition_text(c):
     if c.get("kind", "region") == "region":
-        return f"in [{', '.join(c['regions_resolved'])}]"
+        kept = [f"{len(v):,} cells of deleted region {k}" for k, v in c.get("cells_of", {}).items()]
+        return f"in [{', '.join(c['regions_resolved'] + kept)}]"
     if c.get("kind", "region") == "depth":
         return f"within {c['max_depth_um']:g} um of the epithelium"
     return f"with >= {c['min_frac']:.0%} of {NEIGHBORS_K} neighbors being [{_list(c['neighbor_types_resolved'])}]"
@@ -100,7 +103,10 @@ def describe(c):
 def condition_mask(c, ctx):
     """Boolean per cell: is the constraint's condition true?"""
     if c.get("kind", "region") == "region":
-        return np.isin(ctx["region"], c["regions_resolved"])
+        m = np.isin(ctx["region"], c["regions_resolved"])
+        if c.get("cells_of"):
+            m |= _kept_cells(c, ctx)
+        return m
     if c.get("kind", "region") == "depth":
         return ctx["depth_um"] <= c["max_depth_um"]
     return ctx["neighbor_frac"](c["neighbor_types_resolved"]) >= c["min_frac"]
@@ -111,8 +117,15 @@ def penalized_cells(c, ctx):
     cond = condition_mask(c, ctx)
     m = ~cond if c["mode"] == "only" else cond
     if c.get("kind", "region") == "region":
-        m &= ~np.isin(ctx["region"], vocab.FREE_REGIONS)
+        free = np.isin(ctx["region"], vocab.FREE_REGIONS)
+        if c.get("cells_of"):
+            free &= ~_kept_cells(c, ctx)  # cells of a deleted region are in no region now but still constrained
+        m &= ~free
     return m
+
+
+def _kept_cells(c, ctx):
+    return np.isin(ctx["cell"], [x for v in c["cells_of"].values() for x in v])
 
 
 def posterior(base_logp, constraints, ctx, types, top=0):

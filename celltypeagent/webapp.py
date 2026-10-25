@@ -637,16 +637,11 @@ async def api_region_rename(req: Request):
 
 async def api_region_delete(req: Request):
     s = review_app._session(req.path_params["sid"])
-    body = await req.json() if await req.body() else {}
     try:
-        op, users = s.region_users(req.path_params["rid"])
-        if users and not body.get("remove_priors"):  # the page asks before removing the priors too
-            return _json({"error": f"region {op['name']} is used by priors", "region": op["name"],
-                          "priors": [{"id": c["id"], "text": c.get("text", "")} for c in users]}, 409)
-        ver = s.delete_region(req.path_params["rid"], remove_priors=bool(body.get("remove_priors")))
+        ver = s.delete_region(req.path_params["rid"])  # priors that use it keep applying to its cells
     except ValueError as e:
         return _json({"error": str(e)}, 400)
-    return _json({"new_version": ver})
+    return _json({"new_version": ver, "message": s.state(ver)["message"]})
 
 
 # Claude Code keeps chat transcripts per project directory; only those listed in a session's chat metadata are touched
@@ -733,7 +728,7 @@ def language_line(text):
 
 
 # ---------------- marker lists ----------------
-LIBRARY_DIRS = [config.PACKAGE / "data", config.USER_MARKERS]  # shipped lists, then lists saved by the user
+LIBRARY = config.USER_MARKERS  # marker lists the user imported or saved (there is no built-in default)
 
 
 def api_panel(req):
@@ -746,31 +741,84 @@ async def api_markers_check(req: Request):
     return _json({k: p[k] for k in ("ok", "errors", "warnings", "n_types", "depth", "genes", "canonical")})
 
 
+def _library_files():
+    return sorted([f for f in LIBRARY.glob("*") if f.suffix in (".txt", ".csv")]) if LIBRARY.exists() else []
+
+
 def api_markers_library(req):
-    rows = []
-    for d in LIBRARY_DIRS:
-        for f in sorted(d.glob("*.txt")) if d.exists() else []:
-            rows.append({"name": f.stem, "where": "project" if d == LIBRARY_DIRS[0] else "saved"})
-    return _json(rows)
+    return _json([{"name": f.stem, "where": f.suffix[1:]} for f in _library_files()])
+
+
+def _as_text(raw):
+    """Marker list in the editor's indented text format (CSV files are converted)."""
+    return markers.csv_to_text(raw) if markers.is_csv(raw) else raw
 
 
 def api_markers_get(req):
     name = req.path_params["name"]
-    for d in LIBRARY_DIRS[::-1]:
-        f = d / f"{name}.txt"
-        if f.exists() and f.resolve().parent == d.resolve():
-            return _json({"name": name, "text": f.read_text()})
-    return _json({"error": "not found"}, 404)
+    f = next((f for f in _library_files() if f.stem == name), None)
+    if f is None:
+        return _json({"error": "not found"}, 404)
+    return _json({"name": name, "text": _as_text(f.read_text())})
+
+
+def _safe_name(name):
+    return "".join(ch for ch in name if ch.isalnum() or ch in "-_ .").strip().replace(" ", "_")
 
 
 async def api_markers_save(req: Request):
     b = await req.json()
-    name = "".join(ch for ch in b.get("name", "") if ch.isalnum() or ch in "-_ .").strip().replace(" ", "_")
+    name = _safe_name(b.get("name", ""))
     if not name:
         return _json({"error": "give the list a name"}, 400)
-    LIBRARY_DIRS[1].mkdir(parents=True, exist_ok=True)
-    (LIBRARY_DIRS[1] / f"{name}.txt").write_text(b.get("text", ""))
+    LIBRARY.mkdir(parents=True, exist_ok=True)
+    (LIBRARY / f"{name}.csv").write_text(markers.text_to_csv(b.get("text", "")))
     return _json({"name": name})
+
+
+async def api_markers_import(req: Request):
+    """Import a marker list file (CSV or text) from a path or its content; a copy goes to the library."""
+    b = await req.json()
+    try:
+        if b.get("path"):
+            src = Path(b["path"]).expanduser()
+            raw, name = src.read_text(), src.stem
+        else:
+            raw, name = b.get("text", ""), Path(b.get("name") or "imported").stem
+        text = _as_text(raw)
+    except (OSError, UnicodeDecodeError, ValueError) as e:
+        return _json({"error": str(e)}, 400)
+    name = _safe_name(name) or "imported"
+    LIBRARY.mkdir(parents=True, exist_ok=True)
+    (LIBRARY / f"{name}.csv").write_text(markers.text_to_csv(text) if markers.parse(text, None)["tree"] else raw)
+    return _json({"name": name, "text": text})
+
+
+async def api_markers_to_csv(req: Request):
+    b = await req.json()
+    return Response(markers.text_to_csv(b.get("text", "")), media_type="text/csv")
+
+
+async def api_markers_save_file(req: Request):
+    """Write the marker list as CSV to a path the user chose (desktop app: Save dialog)."""
+    b = await req.json()
+    try:
+        Path(b["path"]).expanduser().write_text(markers.text_to_csv(b.get("text", "")))
+    except (OSError, KeyError) as e:
+        return _json({"error": str(e)}, 400)
+    return _json({"saved": b["path"]})
+
+
+async def api_export_to(req: Request):
+    """Write the per-cell CSV of a version to a path the user chose (desktop app: Save dialog)."""
+    s = review_app._session(req.path_params["sid"])
+    b = await req.json()
+    v = int(b.get("version") or s.versions()[-1])
+    try:
+        shutil.copy(Path(s.export(v)) / "cells.csv", Path(b["path"]).expanduser())
+    except (OSError, KeyError) as e:
+        return _json({"error": str(e)}, 400)
+    return _json({"saved": b["path"]})
 
 
 DRAFT_PROMPT = """You draft a hierarchical marker gene list for cell typing of an imaging-based spatial
@@ -993,6 +1041,10 @@ def build_app(port):
         Route("/api/markers/library", api_markers_library),
         Route("/api/markers/library/{name}", api_markers_get),
         Route("/api/markers/save", api_markers_save, methods=["POST"]),
+        Route("/api/markers/import", api_markers_import, methods=["POST"]),
+        Route("/api/markers/save_file", api_markers_save_file, methods=["POST"]),
+        Route("/api/markers/to_csv", api_markers_to_csv, methods=["POST"]),
+        Route("/api/s/{sid}/export_to", api_export_to, methods=["POST"]),
         Route("/api/markers/draft", api_markers_draft, methods=["POST"]),
     ] + [r for r in review_app.app.routes if r.path != "/"] + list(mcp_http.routes)
     return Starlette(routes=routes, lifespan=lifespan)

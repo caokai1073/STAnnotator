@@ -55,9 +55,19 @@ class Api:
             mode = fd.OPEN if fd else webview.OPEN_DIALOG
             types = {"h5ad": ("AnnData (*.h5ad)", "All files (*.*)"),
                      "image": ("Images (*.tif;*.tiff;*.btf)", "All files (*.*)"),
-                     "csv": ("CSV (*.csv)", "All files (*.*)")}.get(kind, ("All files (*.*)",))
+                     "csv": ("CSV (*.csv)", "All files (*.*)"),
+                     "markers": ("Marker lists (*.csv;*.txt)", "All files (*.*)")}.get(kind, ("All files (*.*)",))
             res = self._window.create_file_dialog(mode, allow_multiple=bool(multiple), file_types=types)
         return [str(p) for p in res] if res else []
+
+    def save_path(self, filename):
+        """Native Save dialog; returns the chosen path or an empty string."""
+        import webview
+        fd = getattr(webview, "FileDialog", None)
+        res = self._window.create_file_dialog(fd.SAVE if fd else webview.SAVE_DIALOG, save_filename=filename)
+        if isinstance(res, (list, tuple)):
+            res = res[0] if res else None
+        return str(res) if res else ""
 
     def open_url(self, url):
         webbrowser.open(url)
@@ -104,6 +114,7 @@ def main(argv=None):
         except KeyboardInterrupt:
             pass
     else:
+        webview.settings["ALLOW_DOWNLOADS"] = True  # links that download files (the app also uses Save dialogs)
         api = Api()
         api._window = webview.create_window(APP_NAME, url, js_api=api, width=1500, height=950, min_size=(1000, 650))
         _mac_identity()

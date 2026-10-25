@@ -62,9 +62,18 @@ wrong registration or section fails here) and takes 10-30 s. From the command li
   [--section-column donor_id --section 147328] [--region-column histopathology]
 ```
 
-The default marker list (`ibd_xenium480_draft.txt`) is for the 480-gene IBD panel. Another panel needs its own
-list: ask Claude "draft a marker list for this panel"; it saves the list, and you load it under **Markers…** ->
-"load a list…" and click **Annotate**.
+Then give the sample a marker list (there is no default): **Markers…** -> **Import…** a CSV (or text) file, or
+ask Claude Code "draft a marker list for this panel" and load it under "load a list…". Imported and saved lists
+stay in that list for the next samples. The CSV has one row per cell type:
+
+| cell_type | parent | positive_markers | negative_markers |
+|---|---|---|---|
+| Epithelial | | EPCAM KRT8 | |
+| Absorptive | Epithelial | CA1\|SLC26A3\|FABP2\|AQP8 | SPINK4 |
+| Goblet cells | Epithelial | SPINK4 RETNLB ITLN1 | |
+
+`parent` is empty for lineages; markers are separated by spaces (or semicolons); `A|B` means any one of A or B.
+**Export CSV** in the same dialog saves the list being edited.
 
 ### Example: the IBD Xenium atlas (SCP2927)
 
@@ -84,7 +93,7 @@ D=~/Downloads/SCP2927
   --section-column donor_id --section 147328 --region-column histopathology
 ```
 
-`ibd_xenium480_draft.txt`, a marker list for the 480-gene IBD panel, is the default list.
+Marker list for the 480-gene IBD panel: `examples/scp2927/ibd_xenium480_markers.csv` (import it in **Markers…**).
 
 ## 3. Work with Claude
 
@@ -137,7 +146,7 @@ shared server shows a chat box that uses the server's own logged-in Claude Code 
 
 ## Annotation method
 
-Marker list format (indent two spaces per level):
+Marker list format in text (indent two spaces per level; the CSV above is equivalent):
 
 ```
 # Name: GENE+ GENE- A|B+    (+ expressed, - not expressed, A|B+ = any of A or B)
@@ -241,7 +250,7 @@ celltypeagent/     Python package
   markerqc.py      review of the markers: support per node, flags, top genes, marker list proposals
   mcp_server.py    MCP tools (Claude Code)
   webapp.py        viewer, review page, chat box
-  data/            default marker list
+  data/            app icon
 examples/scp2927/  registration of the SCP2927 sections
 packaging/         PyInstaller spec, macOS build / signing scripts
 tests/             smoke tests (python tests/smoke_engine.py, tests/smoke_mcp.py; they expect sample 147328 / 167799)

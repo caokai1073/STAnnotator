@@ -31,12 +31,81 @@ TOKEN = re.compile(r"^([A-Za-z0-9._|-]+?)([+-]?)$")
 
 
 # ---------------- parsing ----------------
+CSV_COLUMNS = ("cell_type", "parent", "positive_markers", "negative_markers")
+
+
+def is_csv(text):
+    first = next((l for l in text.splitlines() if l.strip() and not l.lstrip().startswith("#")), "")
+    return first.replace(" ", "").lower().startswith("cell_type,")
+
+
+def csv_to_text(text):
+    """Marker list CSV (cell_type, parent, positive_markers, negative_markers; one row per type, parent empty for
+    lineages; markers separated by spaces or semicolons, A|B = any of A or B) -> the indented text format."""
+    import csv, io
+    rows = [r for r in csv.DictReader(io.StringIO("\n".join(l for l in text.splitlines() if not l.lstrip().startswith("#"))))]
+    rows = [{(k or "").strip().lower(): (v or "").strip() for k, v in r.items()} for r in rows]
+    if not rows or "cell_type" not in rows[0]:
+        raise ValueError("a marker list CSV needs the columns " + ", ".join(CSV_COLUMNS))
+    kids = {}
+    for r in rows:
+        if r["cell_type"]:
+            kids.setdefault(r.get("parent", ""), []).append(r)
+    out, seen = [], set()
+
+    def toks(s, sign):
+        return [f"{g}{sign}" for g in re.split(r"[\s;,]+", s) if g]
+
+    def walk(parent, depth):
+        for r in kids.get(parent, []):
+            if r["cell_type"] in seen:
+                continue
+            seen.add(r["cell_type"])
+            out.append("  " * depth + f"{r['cell_type']}: " + " ".join(toks(r.get("positive_markers", ""), "+")
+                                                                       + toks(r.get("negative_markers", ""), "-")))
+            walk(r["cell_type"], depth + 1)
+    walk("", 0)
+    missing = [r["cell_type"] for r in rows if r["cell_type"] and r["cell_type"] not in seen]
+    if missing:  # parents that are not in the list: keep the rows so the check reports them
+        out += [f"{kids_parent} > {r['cell_type']}: " + " ".join(toks(r.get("positive_markers", ""), "+") + toks(r.get("negative_markers", ""), "-"))
+                for kids_parent, rs in kids.items() for r in rs if r["cell_type"] in missing]
+    return "\n".join(out) + "\n"
+
+
+def text_to_csv(text):
+    """The indented text format -> marker list CSV (see csv_to_text)."""
+    import csv, io
+    p = parse(text, None)
+    buf = io.StringIO()
+    w = csv.writer(buf, lineterminator="\n")
+    w.writerow(CSV_COLUMNS)
+
+    def walk(nodes, parent):
+        for n in nodes:
+            pos = " ".join("|".join(m["genes"]) for m in n["markers"] if m["sign"] > 0)
+            neg = " ".join("|".join(m["genes"]) for m in n["markers"] if m["sign"] < 0)
+            w.writerow([n["name"], parent or "", pos, neg])
+            walk(n["children"], n["name"])
+    walk(p["tree"], None)
+    return buf.getvalue()
+
+
 def parse(text, panel):
-    """Return {"ok", "errors", "warnings", "tree", "types", "parent", "top", "genes", "canonical"}."""
-    upper = {g.upper(): g for g in panel}
+    """Return {"ok", "errors", "warnings", "tree", "types", "parent", "top", "genes", "canonical"}.
+    text: the indented text format or a marker list CSV. panel: the sample's genes (None: genes are not checked)."""
+    if is_csv(text):
+        try:
+            text = csv_to_text(text)
+        except ValueError as e:
+            return {"ok": False, "errors": [str(e)], "warnings": [], "tree": [], "types": [UNASSIGNED],
+                    "parent": {}, "top": {}, "genes": [], "canonical": "", "leaves": [UNASSIGNED], "n_types": 0,
+                    "depth": 0}
+    upper = {g.upper(): g for g in panel} if panel is not None else None
     errors, warnings, roots, stack, names = [], [], [], [], {}
 
     def gene(name, ln):
+        if upper is None:
+            return name
         g = upper.get(name.upper())
         if g is None:
             sug = difflib.get_close_matches(name.upper(), list(upper), n=3, cutoff=0.6)

@@ -17,8 +17,9 @@ Getting started
 - list_samples. If the sample is not there, ask for: the h5ad file(s) (raw counts, cell coordinates in um), the
   registered H&E image, and the registration file (affine CSV or Xenium Explorer matrix); for an h5ad holding several
   sections also the obs column and value of the section. Then call import_sample with those paths.
-- start_session(sample_id) runs a marker-based annotation (no labeled reference is used; the data is treated as
-  unlabeled) with the default marker list or one the user gives (check it first with check_marker_list), or
+- start_session(sample_id, markers_text) runs a marker-based annotation (no labeled reference is used; the data is
+  treated as unlabeled). There is no default marker list: use the one the user gives (text or CSV with columns
+  cell_type, parent, positive_markers, negative_markers; check it first with check_marker_list) or draft one. Or
   resume_session from list_sessions. The first annotation takes about a minute on a laptop.
 - The user usually has the Spatial Annotator app (or the web viewer) open: call use_viewer_session to load what they
   are looking at. After starting a new annotation call open_viewer: a running app switches to it by itself;
@@ -180,7 +181,8 @@ def list_sessions() -> str:
 def start_session(sample_id: str, region_source: str = "none", markers_text: Optional[str] = None,
                   carry_from_current: bool = False) -> str:
     """Start a new annotation session on a sample. The data is treated as unlabeled: cell types come from a
-    hierarchical marker gene list (markers_text, format as in check_marker_list; default: the project's draft list).
+    hierarchical marker gene list (markers_text: indented text as in check_marker_list, or CSV with columns
+    cell_type, parent, positive_markers, negative_markers; required).
 
     region_source: 'none' (the user draws regions on the map) or 'pathologist' (start from the dataset annotation).
     carry_from_current: copy the regions, priors and corrections of the active session of the same sample (use it

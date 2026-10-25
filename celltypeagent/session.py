@@ -111,7 +111,7 @@ class Session:
     def create(cls, sample_id, region_source="none", method="markers", markers_text=None, resolution=None,
                carry_from=None):
         """method 'markers' (default): hierarchical marker annotation (Leiden + marker scores) of this sample; the data
-        is treated as having no cell type labels. markers_text defaults to config.DEFAULT_MARKERS.
+        is treated as having no cell type labels. markers_text: the marker list (indented text or CSV); required.
         method 'reference': expression model trained on the dataset's labeled slides (benchmarks only)."""
         sd = config.SAMPLES / str(sample_id)
         if not (sd / "meta.json").exists():
@@ -123,7 +123,9 @@ class Session:
             raise ValueError("this sample has no pathologist annotation")
         scheme = {"kind": "reference"}
         if method == "markers":
-            parsed = markers.parse(markers_text or config.DEFAULT_MARKERS.read_text(), panel_genes(sample_id))
+            if not (markers_text or "").strip():
+                raise vocab.VocabError("no marker list: import one (Markers... -> Import) or ask Claude to draft one")
+            parsed = markers.parse(markers_text, panel_genes(sample_id))
             if not parsed["ok"]:
                 raise vocab.VocabError("marker list has errors: " + "; ".join(parsed["errors"][:8]))
             scheme = {"kind": "markers", "text": parsed["canonical"], "tree": parsed["tree"], "types": parsed["leaves"],
@@ -400,7 +402,8 @@ class Session:
         return frac
 
     def _ctx(self, region, base):
-        return {"region": region, "depth_um": self.cells.depth_um.to_numpy(), "neighbor_frac": self._neighbor_frac_fn(base)}
+        return {"region": region, "depth_um": self.cells.depth_um.to_numpy(), "cell": self.cells.cell.to_numpy(),
+                "neighbor_frac": self._neighbor_frac_fn(base)}
 
     def _compute(self, st, constraints=None):
         base = self.base(st)
@@ -614,20 +617,26 @@ class Session:
         users = [] if still else [c for c in cur["constraints"] if op["name"] in c.get("regions_resolved", [])]
         return op, users
 
-    def delete_region(self, rid, message=None, remove_priors=False):
-        """Delete one drawn polygon. If it is the last polygon of a region that priors use, it is refused unless
-        remove_priors, which removes those priors in the same version (Undo restores both)."""
+    def delete_region(self, rid, message=None):
+        """Delete one drawn polygon. If it is the last polygon of a region that priors use, the priors are kept and keep
+        applying to the region's cells (frozen into the prior), so deleting the drawing never undoes a prior."""
         cur = self.state()
         op, users = self.region_users(rid)
-        if users and not remove_priors:
-            raise vocab.VocabError(f"region {op['name']} is used by {', '.join(c['id'] for c in users)}; "
-                                   "change or remove those priors first")
-        drop = {c["id"] for c in users}
-        msg = f"delete {rid} (region {op['name']})" + (f" and priors {', '.join(sorted(drop))}" if drop else "")
+        keep = {}
+        if users:
+            reg = regmod.assign(self.cells, cur["regions"])
+            keep = {op["name"]: self.cells.cell.to_numpy()[reg == op["name"]].tolist()}
+        ids = {c["id"] for c in users}
+        cons = [c if c["id"] not in ids else
+                dict(c, regions=[r for r in c.get("regions", []) if r != op["name"]],
+                     regions_resolved=[r for r in c.get("regions_resolved", []) if r != op["name"]],
+                     cells_of={**c.get("cells_of", {}), **keep})
+                for c in cur["constraints"]]
+        msg = f"delete {rid} (region {op['name']})" + (
+            f"; {', '.join(sorted(ids))} keep applying to its {len(keep[op['name']]):,} cells" if ids else "")
         return self._commit("delete_region", message or msg,
                             regions=dict(cur["regions"], ops=[o for o in cur["regions"]["ops"] if o.get("id") != rid]),
-                            constraints=[c for c in cur["constraints"] if c["id"] not in drop],
-                            expected_parent=cur["version"])
+                            constraints=cons, expected_parent=cur["version"])
 
     def regions_info(self, version=None):
         """Drawn polygons and per-region cell counts of a version."""

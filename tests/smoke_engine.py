@@ -1,11 +1,13 @@
 """End-to-end smoke test of the engine on one sample with user-drawn regions."""
 import json, shutil, time
+from pathlib import Path
 import numpy as np
 from celltypeagent.session import Session, list_samples
 
 t0 = time.time()
 print(list_samples().head(3).to_string())
-s = Session.create("147328", region_source="none")  # marker annotation with the project's draft list
+MARKERS = open(Path(__file__).parent.parent / "examples" / "scp2927" / "ibd_xenium480_markers.csv").read()
+s = Session.create("147328", region_source="none", markers_text=MARKERS)  # marker annotation (IBD 480-gene list)
 print("created", s.id, f"{time.time() - t0:.1f}s")
 print(json.dumps(s.summary(), indent=1, default=str)[:600])
 
@@ -31,10 +33,11 @@ try:
     s.preview_constraint({"text": "typo", "types": ["Gobelt cells"], "regions": ["patch A"], "mode": "only"})
 except Exception as e:
     print("expected error:", e)
-try:
-    s.delete_region("R1")
-except Exception as e:
-    print("expected refusal:", e)
+v_before = s.versions()[-1]
+before = s.result()["pred"].copy()
+v = s.delete_region("R1")  # patch A is used by C1: the prior keeps applying to its cells
+print("delete region:", s.state(v)["message"], "| labels kept:", bool((s.result(v)["pred"] == before).all()))
+s.revert(v_before)
 s.rename_region("patch B", "patch B2")
 cs = s.conflict_summary()
 if len(cs):

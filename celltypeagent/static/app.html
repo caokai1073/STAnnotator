@@ -217,7 +217,9 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 </main>
 <dialog id="mkDlg">
   <div class="dh"><b>Marker genes</b>
-    <select id="mkLib" title="Load a saved list"><option value="">load a list…</option></select>
+    <button id="mkImport" class="primary" title="Import a marker list file: CSV (cell_type, parent, positive_markers, negative_markers) or text">Import…</button>
+    <input type="file" id="mkFile" accept=".csv,.txt" hidden>
+    <select id="mkLib" title="Lists imported or saved before"><option value="">load a list…</option></select>
     <span class="spacer"></span>
     <label class="hint" title="Try resolutions 0.5 / 1 / 2 / 4 at every level and keep the one the markers resolve best">
       <input type="checkbox" id="mkAuto" checked> automatic Leiden resolution</label>
@@ -236,6 +238,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
   CD8 T cells: CD8A+ CD4-"></textarea>
       <div class="row"><button id="mkCheck">Check</button>
         <input type="text" id="mkName" placeholder="name" style="width:150px"><button id="mkSave">Save</button>
+        <button id="mkExport" title="Save this list as a CSV file">Export CSV</button>
         <span class="spacer"></span><span class="hint" id="mkSum"></span></div>
     </div>
     <div class="col side">
@@ -516,6 +519,7 @@ async function selectSample(id) {
   const remembered = st.openedThisVisit[id];
   const sid = ids.includes(remembered) ? remembered : null;
   fillSessions(sid);
+  setMarkers("", "");  // no default list: import or load one for this sample
   if (sid) await startAnnotation("continue", sid, token);
 }
 
@@ -540,6 +544,9 @@ async function startAnnotation(mode, sid, token = st.switchToken) {
   const body = { sample_id: st.sample.sample_id, region_source: $("regions").value, mode, method: "markers",
                  markers_text: $("mkText").value, resolution: $("mkAuto").checked ? "auto" : +$("mkRes").value,
                  carry_from: mode === "new" && st.sid && $("carry").checked ? st.sid : null };
+  if (mode === "new" && !body.markers_text.trim()) {
+    openMarkers(); toast("Import a marker list first (Import…), load one, or ask Claude Code to draft one", 5000); return;
+  }
   if (mode === "new") {
     const chk = await post("/api/markers/check", { text: body.markers_text, sample: body.sample_id });
     if (!chk.ok) { openMarkers(); showCheck(chk); toast("Fix the marker list first", 3000); return; }
@@ -583,6 +590,7 @@ async function openSession(sid) {
   $("carryWrap").hidden = false;
   $("input").disabled = false; $("composerhint").textContent = "Tip: refer to regions you drew by their name.";
   st.vocab = await api(`/api/s/${sid}/vocab`);
+  if (st.vocab.marker_list) setMarkers(st.vocab.marker_list, "");  // re-annotating starts from this annotation's list
   await refreshVersion(true);
   await loadChat();
 }
@@ -776,16 +784,9 @@ async function renameRegion(old) {
   try { await afterRegionChange(await post(`/api/s/${st.sid}/regions/rename`, { old, new: name })); } catch (e) { toast(e.message, 5000); }
 }
 async function deleteRegion(rid) {
-  if (!confirm(`Delete polygon ${rid}? (This creates a new version; Undo brings it back.)`)) return;
-  try { await afterRegionChange(await post(`/api/s/${st.sid}/regions/${rid}/delete`)); }
-  catch (e) {
-    if (e.status !== 409) return toast(e.message, 6000);
-    const list = e.body.priors.map((c) => `  ${c.id}: ${c.text}`).join("\n");
-    if (!confirm(`This is the last polygon of region "${e.body.region}", which these priors use:\n\n${list}\n\n` +
-                 `Delete the region and these priors? (Undo brings both back.)`)) return;
-    try { await afterRegionChange(await post(`/api/s/${st.sid}/regions/${rid}/delete`, { remove_priors: true })); }
-    catch (e2) { toast(e2.message, 6000); }
-  }
+  if (!confirm(`Delete polygon ${rid}? Priors that use its region keep applying to its cells. (Undo brings it back.)`)) return;
+  try { const r = await post(`/api/s/${st.sid}/regions/${rid}/delete`); toast(r.message, 5000); await refreshVersion(true); }
+  catch (e) { toast(e.message, 6000); }
 }
 
 function startDraw() {
@@ -1068,7 +1069,7 @@ $("imGo").onclick = async () => {
     }
     $("imDlg").close(); toast(`Imported ${name}`, 4000);
     await loadSamples(name);
-    if (!st.vocab) { openMarkers(); checkMarkers(); }  // a new panel may need its own marker list
+    if (!st.vocab) { openMarkers(); toast("Now import a marker list for this sample (Import…), or ask Claude Code to draft one", 6000); }
   } catch (e) { $("imStatus").textContent = e.message; }
   $("imGo").disabled = false;
 };
@@ -1120,10 +1121,38 @@ function showCheck(r) {
   r.warnings.forEach((w) => line("! " + w));
   $("mkSum").textContent = r.ok ? `${r.n_types} types · ${r.depth} levels` : `${r.errors.length} errors`;
 }
-async function checkMarkers() { const r = await post("/api/markers/check", { text: $("mkText").value, sample: st.sample && st.sample.sample_id }); showCheck(r); store("markers_text", $("mkText").value); return r; }
+async function checkMarkers() { const r = await post("/api/markers/check", { text: $("mkText").value, sample: st.sample && st.sample.sample_id }); showCheck(r); return r; }
 $("openMarkers").onclick = openMarkers;
 $("mkAuto").onchange = (e) => { $("mkRes").disabled = e.target.checked; };
-$("mkClose").onclick = () => { store("markers_text", $("mkText").value); $("mkDlg").close(); };
+$("mkClose").onclick = () => $("mkDlg").close();
+// marker lists: there is no default; each annotation starts from a list the user imports, loads or Claude drafts
+function setMarkers(text, name) { $("mkText").value = text || ""; $("mkName").value = name || ""; $("mkMsgs").textContent = text ? "" : "Not checked yet."; }
+$("mkImport").onclick = async () => {
+  if (native()) {
+    const paths = await native().pick("markers");
+    if (!paths.length) return;
+    try { const r = await post("/api/markers/import", { path: paths[0] }); setMarkers(r.text, r.name); checkMarkers(); loadLibrary(); toast(`Imported ${r.name}`); }
+    catch (e) { toast(e.message, 6000); }
+  } else $("mkFile").click();
+};
+$("mkFile").onchange = async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  try { const r = await post("/api/markers/import", { text: await f.text(), name: f.name }); setMarkers(r.text, r.name); checkMarkers(); loadLibrary(); toast(`Imported ${r.name}`); }
+  catch (err) { toast(err.message, 6000); }
+  e.target.value = "";
+};
+$("mkExport").onclick = async () => {
+  const text = $("mkText").value; if (!text.trim()) { toast("The list is empty"); return; }
+  const name = ($("mkName").value || "marker_list") + ".csv";
+  if (native()) {
+    const path = await native().save_path(name); if (!path) return;
+    try { await post("/api/markers/save_file", { path, text }); toast(`Saved ${path}`, 4000); } catch (e) { toast(e.message, 6000); }
+    return;
+  }
+  const r = await fetch("/api/markers/to_csv", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(await r.blob()); a.download = name;
+  document.body.append(a); a.click(); a.remove();
+};
 $("mkCheck").onclick = checkMarkers;
 $("mkLib").onchange = async (e) => { if (!e.target.value) return; const r = await api(`/api/markers/library/${encodeURIComponent(e.target.value)}`); $("mkText").value = r.text; $("mkName").value = r.name; checkMarkers(); };
 $("mkSave").onclick = async () => { try { const r = await post("/api/markers/save", { name: $("mkName").value, text: $("mkText").value }); toast(`Saved as ${r.name}`); loadLibrary(); } catch (e) { toast(e.message); } };
@@ -1181,7 +1210,14 @@ $("reset").onclick = async () => {
 };
 $("undo").onclick = async () => { try { const r = await post(`/api/s/${st.sid}/undo`); toast(`Undone → v${r.new_version}`); refreshVersion(true); } catch (e) { toast(e.message); } };
 $("review").onclick = () => window.open(`/review?session=${st.sid}`, "_blank");
-$("export").onclick = () => {  // download the per-cell CSV of the current version
+$("export").onclick = async () => {  // the per-cell CSV of the current version
+  const name = `${st.sample.sample_id}_v${st.version}_cells.csv`;
+  if (native()) {  // the desktop app saves through a Save dialog
+    const path = await native().save_path(name); if (!path) return;
+    toast("Writing the CSV…", 3000);
+    try { await post(`/api/s/${st.sid}/export_to`, { path, version: st.version }); toast(`Saved ${path}`, 5000); } catch (e) { toast(e.message, 6000); }
+    return;
+  }
   const a = document.createElement("a");
   a.href = `/api/s/${st.sid}/export.csv?version=${st.version}`;
   a.download = `${st.sample.sample_id}_v${st.version}_cells.csv`;
@@ -1196,12 +1232,6 @@ document.addEventListener("keydown", (e) => {
   if (st.drawing && e.key === "Enter") { e.preventDefault(); finishDraw(); }
   if (st.drawing && e.key === "Backspace") { e.preventDefault(); st.drawing.pop(); drawRegions(); }
 });
-(async () => {
-  $("mkText").value = load("markers_text");
-  if (!$("mkText").value) {  // start from the project's draft list
-    try { const r = await api("/api/markers/library/ibd_xenium480_draft"); $("mkText").value = r.text; $("mkName").value = r.name; } catch (e) {}
-  }
-})();
 api("/api/config").then((c) => {  // the desktop app (or no Claude Code CLI): the conversation happens in Claude's apps
   st.chatAvailable = c.chat; st.desktop = c.desktop; st.platform = c.platform;
   $("claudeBtn").hidden = !c.desktop;

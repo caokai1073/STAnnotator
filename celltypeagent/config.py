@@ -17,7 +17,6 @@ SESSIONS = HOME / "sessions"
 TRASH = HOME / "trash"
 USER_MARKERS = HOME / "marker_lists"
 CHAT_MCP = HOME / "chat_mcp.json"
-DEFAULT_MARKERS = PACKAGE / "data" / "ibd_xenium480_draft.txt"
 # working directory of the Claude Code CLI behind the viewer's chat box (only used when `claude` is installed)
 ROOT = Path(os.environ.get("CELLTYPEAGENT_ROOT", PACKAGE.parent))
 # H&E pixel size used when a sample's meta.json does not record one (bundles made before import existed)

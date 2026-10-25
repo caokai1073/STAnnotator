@@ -4,6 +4,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 PY = sys.executable
+MARKERS = open(__import__("pathlib").Path(__file__).parent.parent / "examples" / "scp2927" / "ibd_xenium480_markers.csv").read()
 
 
 def show(res, n=400):
@@ -21,7 +22,7 @@ async def main():
             tools = await s.list_tools()
             print("tools:", [t.name for t in tools.tools])
             calls = [
-                ("start_session", {"sample_id": "167799", "region_source": "pathologist"}),
+                ("start_session", {"sample_id": "167799", "region_source": "pathologist", "markers_text": MARKERS}),
                 ("list_regions", {}),
                 ("preview_constraint", {"text": "Epithelial cells are only found in the mucosa", "types": ["epithelial"],
                                         "regions": ["mucosa"], "mode": "only"}),
