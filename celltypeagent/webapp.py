@@ -555,8 +555,9 @@ def api_plausibility(req):
     for a in out["candidate_areas"]:
         a["outline"] = _viewer_poly(v, full[a["id"]]["outline_px"])
     try:
-        q = markerqc.check(s, ver)
-        mk = {"flags": q["flags"], "unassigned": q["unassigned"]}
+        flags, unassigned = markerqc.open_checks(s, ver)
+        mk = {"flags": [f | {"key": markerqc.check_key(f)} for f in flags], "unassigned": unassigned,
+              "n_solved": len(markerqc.solved(s))}
     except ValueError:  # annotations made without a marker list
         mk = None
     return _json(out | {"suggestions": _suggestions(s, v), "markers": mk, "proposal": markerqc.proposal(s)})
@@ -571,6 +572,17 @@ def api_area_suggestions(req):
     """Claude's area suggestions and marker list proposal (polled by the viewer)."""
     s = review_app._session(req.path_params["sid"])
     return _json({"areas": _suggestions(s, view(s.sample_id)), "proposal": markerqc.proposal(s)})
+
+
+async def api_marker_check_solve(req: Request):
+    """The user marks a marker check as solved: it leaves the Review panel and the agent sees it as solved."""
+    s = review_app._session(req.path_params["sid"])
+    b = await req.json()
+    try:
+        rec = markerqc.solve(s, b.get("key", ""), b.get("version"))
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+    return _json(rec)
 
 
 async def api_proposal_status(req: Request):
@@ -1037,6 +1049,7 @@ def build_app(port):
         Route("/api/s/{sid}/plausibility/adopt", api_area_adopt, methods=["POST"]),
         Route("/api/s/{sid}/plausibility/dismiss", api_area_dismiss, methods=["POST"]),
         Route("/api/s/{sid}/plausibility/proposal", api_proposal_status, methods=["POST"]),
+        Route("/api/s/{sid}/markers/solve", api_marker_check_solve, methods=["POST"]),
         Route("/api/s/{sid}/regions/add", api_region_add, methods=["POST"]),
         Route("/api/s/{sid}/regions/rename", api_region_rename, methods=["POST"]),
         Route("/api/s/{sid}/regions/{rid}/delete", api_region_delete, methods=["POST"]),

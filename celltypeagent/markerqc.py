@@ -151,3 +151,42 @@ def set_proposal_status(s, status):
     rec["status"] = status
     json.dump(rec, open(_pfile(s), "w"), indent=1)
     return rec
+
+
+# ---------------- checks the user marked as solved (the agent sees them in review_markers) ----------------
+def check_key(flag):
+    return "unassigned" if flag.get("node") is None else f"{flag['node']}|{flag['marker']}"
+
+
+def _rfile(s):
+    return s.dir / "marker_checks_solved.json"
+
+
+def solved(s):
+    import json
+    p = _rfile(s)
+    return json.load(open(p)) if p.exists() else []
+
+
+def solve(s, key, version=None, by="user"):
+    """Mark a marker check (key 'node|marker', or 'unassigned') as solved; it stays solved in later versions."""
+    import json, time
+    q = check(s, version)
+    found = [f for f in q["flags"] if check_key(f) == key]
+    if key == "unassigned" and q["unassigned"]:
+        found = [{"node": None, "marker": None, "flag": f"{q['unassigned']['n_cells']} Unassigned cells"}]
+    if not found:
+        raise ValueError(f"no marker check {key!r} in version {q['version']}")
+    rows = [r for r in solved(s) if r["key"] != key]
+    rows.append({"key": key, "node": found[0]["node"], "marker": found[0]["marker"], "flag": found[0]["flag"],
+                 "version": q["version"], "by": by, "time": time.strftime("%Y-%m-%dT%H:%M:%S")})
+    json.dump(rows, open(_rfile(s), "w"), indent=1)
+    return rows[-1]
+
+
+def open_checks(s, version=None):
+    """Flags and the Unassigned note without the ones the user marked as solved."""
+    q = check(s, version)
+    done = {r["key"] for r in solved(s)}
+    return ([f for f in q["flags"] if check_key(f) not in done],
+            None if "unassigned" in done else q["unassigned"])

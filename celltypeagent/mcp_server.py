@@ -59,7 +59,8 @@ Reviewing an annotation ("does this make sense?", "check my annotation", "review
      those cells here (top_genes). Ask: do the top genes fit the label (e.g. a "dendritic cell" group whose top genes
      are C1QC, LYVE1 is macrophages)? Are markers weak in this tissue or panel, with a better panel gene available?
      Do Unassigned cells (or an unassigned cluster in list_clusters) express a recognizable type missing from the
-     list (e.g. CD177, CSF3R, S100A12: neutrophils)? Is the composition plausible for the tissue and site?
+     list (e.g. CD177, CSF3R, S100A12: neutrophils)? Is the composition plausible for the tissue and site? Checks the
+     user marked as solved (solved_by_user) are settled: mention them only if asked.
   2. Space (show_tissue_overview, check_plausibility, show_area): identify compartments on the H&E (mucosa with
      crypts, submucosa, muscularis propria, lymphoid aggregates, ulcers) and areas where the annotation contradicts
      them (e.g. epithelial cells in the muscle layer). Candidate areas come from the annotation alone; vascular
@@ -348,9 +349,13 @@ def review_markers(node: Optional[str] = None, version: Optional[int] = None) ->
     """Marker check of the current annotation. For every node of the marker tree (lineage, group, cell type): its
     cell count, each listed marker's detection share in its cells vs its siblings' cells with a flag (weak / not
     specific / negative marker detected), and the panel genes that best separate it from its siblings here; plus the
-    genes of Unassigned cells. node: only that node and its subtypes."""
+    genes of Unassigned cells. node: only that node and its subtypes. Checks the user marked as solved in the
+    viewer's Review panel are left out of flags and listed in solved_by_user: do not raise them again."""
     from . import markerqc
-    q = markerqc.check(_s(), version)
+    s = _s()
+    q = dict(markerqc.check(s, version))
+    flags, unassigned = markerqc.open_checks(s, version)
+    q.update(flags=flags, unassigned=unassigned, solved_by_user=markerqc.solved(s))
     if node:
         names = {node} | set(_s().type_groups.get(node, []))
         q = q | {"nodes": [n for n in q["nodes"] if n["node"] in names or n["parent"] in names],

@@ -162,7 +162,6 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
   <button id="claudeBtn" hidden title="Open your own Claude Code in Terminal, connected to the sample open here">Claude Code</button>
   <button id="undo" disabled title="Undo the last change">Undo</button>
   <button id="reset" disabled title="Remove every annotation and chat of this sample">Reset</button>
-  <button id="review" disabled title="Open the conflict review page">Review conflicts</button>
   <button id="plaus" disabled title="Check markers and spatial layout; Claude can review them with the H&amp;E and suggest fixes">Review annotation</button>
   <button id="export" disabled title="Download a CSV with one row per cell: cell id, region, cell type, lineage, type levels, confidence…">Export CSV</button>
 </header>
@@ -544,7 +543,7 @@ function closeSession() {
   st.sid = null; st.version = null; st.filters = {}; st.regions = null; cancelDraw(); closePlaus();
   $("legend").hidden = true; $("cellcard").classList.remove("show");
   $("empty").style.display = "flex";
-  ["undo", "review", "export", "send", "plaus"].forEach((b) => ($(b).disabled = true));
+  ["undo", "export", "send", "plaus"].forEach((b) => ($(b).disabled = true));
   $("carryWrap").hidden = true;
   $("input").disabled = true; $("composerhint").textContent = "Annotate a sample first.";
   $("vinfo").textContent = ""; $("regpanel").hidden = true; drawRegions();
@@ -605,7 +604,7 @@ async function startAnnotation(mode, sid, token = st.switchToken) {
 async function openSession(sid) {
   st.sid = sid;
   $("empty").style.display = "none";
-  ["undo", "review", "export", "send", "plaus"].forEach((b) => ($(b).disabled = false));
+  ["undo", "export", "send", "plaus"].forEach((b) => ($(b).disabled = false));
   $("carryWrap").hidden = false;
   $("input").disabled = false; $("composerhint").textContent = "Tip: refer to regions you drew by their name.";
   st.vocab = await api(`/api/s/${sid}/vocab`);
@@ -909,11 +908,12 @@ function renderPlaus() {
                  btn("dismiss", "Hide this suggestion", () => dismissSug(x.id))]);
   });
   if (r.markers && (r.markers.flags.length || r.markers.unassigned)) {
-    head(`Marker checks (computed, ${r.markers.flags.length})`);
+    head(`Marker checks (computed, ${r.markers.flags.length}` + (r.markers.n_solved ? `; ${r.markers.n_solved} solved` : "") + ")");
     const pct = (x) => x == null ? "–" : `${Math.round(100 * x)}%`;
-    r.markers.flags.forEach((f) => item("mk", `${f.node} · ${f.marker}`, `${f.flag} (in ${pct(f.in)} of these cells, ${pct(f.siblings)} of siblings)`, []));
+    const solve = (key) => btn("solve", "Mark this check as solved: it leaves this list, and Claude sees it as solved", () => solveCheck(key));
+    r.markers.flags.forEach((f) => item("mk", `${f.node} · ${f.marker}`, `${f.flag} (in ${pct(f.in)} of these cells, ${pct(f.siblings)} of siblings)`, [solve(f.key)]));
     const u = r.markers.unassigned;
-    if (u) item("mk", `${u.n_cells.toLocaleString()} Unassigned cells`, "they express " + u.top_genes.slice(0, 6).map((g) => g.gene).join(", ") + " (a type missing from the list?)", []);
+    if (u) item("mk", `${u.n_cells.toLocaleString()} Unassigned cells`, "they express " + u.top_genes.slice(0, 6).map((g) => g.gene).join(", ") + " (a type missing from the list?)", [solve("unassigned")]);
   }
   if (r.candidate_areas.length) head(`Areas to check (computed, ${r.n_candidate_areas})`);
   r.candidate_areas.forEach((a) => {
@@ -955,6 +955,10 @@ function openProposal(prop) {
 }
 async function setProposal(status) {
   try { await post(`/api/s/${st.sid}/plausibility/proposal`, { status }); await loadPlaus(false); } catch (e) { toast(e.message, 5000); }
+}
+async function solveCheck(key) {
+  try { await post(`/api/s/${st.sid}/markers/solve`, { key, version: st.plaus.version }); await loadPlaus(false); }
+  catch (e) { toast(e.message, 5000); }
 }
 async function dismissSug(id) {
   try { await post(`/api/s/${st.sid}/plausibility/dismiss`, { suggestion_id: id }); await loadPlaus(false); } catch (e) { toast(e.message, 5000); }
@@ -1267,7 +1271,6 @@ $("reset").onclick = async () => {
   } catch (e) { toast(e.message, 6000); }
 };
 $("undo").onclick = async () => { try { const r = await post(`/api/s/${st.sid}/undo`); toast(`Undone → v${r.new_version}`); refreshVersion(true); } catch (e) { toast(e.message); } };
-$("review").onclick = () => window.open(`/review?session=${st.sid}`, "_blank");
 $("export").onclick = async () => {  // the per-cell CSV of the current version
   const name = `${st.sample.sample_id}_v${st.version}_cells.csv`;
   if (native()) {  // the desktop app saves through a Save dialog

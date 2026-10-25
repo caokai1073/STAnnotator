@@ -130,7 +130,7 @@ by Claude show up within a few seconds.
    region are "unknown" and region priors never apply to them. Refer to regions by name when talking to Claude.
 4. Hand-labeled cells are locked and fine-tune the expression model (only the involved cell types can move),
    so similar cells elsewhere update too. Every step is a version; **Undo** reverts the last one.
-5. **Review conflicts** opens the conflict review page. **Export CSV** downloads one row per cell
+5. **Export CSV** saves one row per cell
    (`cell_id`, `region`, `cell_type`, `lineage`, `level_1`… the full type path, `confidence`,
    `expression_label`, `marker_cluster`, `hand_labeled`, `x_um`, `y_um`).
 6. **Reset** removes every annotation and chat of the selected sample (moved to `<data folder>/trash/`).
@@ -138,7 +138,8 @@ by Claude show up within a few seconds.
 8. **Review annotation** opens the Review panel: computed marker checks (markers that are weak or unspecific in
    their cells, negative markers that are detected, genes of Unassigned cells) and areas to check (where cells of
    types that form sheets, such as epithelium or smooth muscle, sit apart from their own lineage), outlined on the
-   map. Asking Claude Code "review my annotation" lets Claude review markers and layout with the
+   map. **solve** removes a marker check you have dealt with; Claude sees it as solved and does not raise it
+   again. Asking Claude Code "review my annotation" lets Claude review markers and layout with the
    H&E and its knowledge of the tissue. Its suggestions appear in the panel: a revised marker list (**open in
    Markers…**, then Annotate with "keep my regions & priors") and areas drawn in orange (**use as region**, then
    Claude applies the agreed prior or correction to that region).
@@ -223,7 +224,7 @@ colors are immediate.
 - Claude Code without the app: `claude mcp add celltypeagent -e CELLTYPEAGENT_HOME=$HOME/celltypeagent -- $PWD/.venv/bin/python -m celltypeagent.mcp_server`
   (run in this folder). `.claude/skills/spatial-annotation/` holds the agent's working rules for Claude Code.
 - Shared server: the viewer binds to localhost only. Others reach it through an SSH tunnel
-  (`ssh -N -L 8765:localhost:8765 <user>@<server>`), then open http://localhost:8765. The review page for
+  (`ssh -N -L 8765:localhost:8765 <user>@<server>`), then open http://localhost:8765. The conflict review page for
   pathologists is at http://localhost:8765/review (verdict keys 1-6, rules form, CSV download).
 
 ## Building the app (maintainers)
