@@ -21,7 +21,9 @@ Getting started
   treated as unlabeled). There is no default marker list: use the one the user gives (text or CSV with columns
   cell_type, parent, positive_markers, negative_markers; check it first with check_marker_list) or draft one. Or,
   with a labeled single-cell reference h5ad of the tissue, start_session(sample_id, reference_h5ad=..., label_column=...)
-  (inspect_reference first: shared genes, label columns). Or resume_session from list_sessions. The first
+  (inspect_reference first: shared genes, label columns). Or load an existing annotation (CSV, one row per cell):
+  start_session(sample_id, annotation_csv=..., id_column=..., label_column=...) after inspect_annotation. Or
+  resume_session from list_sessions. The first
   annotation takes about a minute on a laptop.
 - The user usually has the Spatial Annotator app (or the web viewer) open: call use_viewer_session to load what they
   are looking at. After starting a new annotation call open_viewer: a running app switches to it by itself;
@@ -184,7 +186,8 @@ def list_sessions() -> str:
 def start_session(sample_id: str, region_source: str = "none", markers_text: Optional[str] = None,
                   carry_from_current: bool = False, reference_h5ad: Optional[str] = None,
                   label_column: Optional[str] = None, group_column: Optional[str] = None,
-                  majority_voting: bool = False) -> str:
+                  majority_voting: bool = False, annotation_csv: Optional[str] = None, id_column: Optional[str] = None,
+                  lineage_column: Optional[str] = None) -> str:
     """Start a new annotation session on a sample. The data is treated as unlabeled: cell types come from a
     hierarchical marker gene list (markers_text: indented text as in check_marker_list, or CSV with columns
     cell_type, parent, positive_markers, negative_markers; required).
@@ -192,17 +195,23 @@ def start_session(sample_id: str, region_source: str = "none", markers_text: Opt
     region_source: 'none' (the user draws regions on the map) or 'pathologist' (start from the dataset annotation).
     Single-cell reference instead (CellTypist-like classifier): reference_h5ad + label_column (the cell type column),
     optionally group_column (coarse classes, used as lineages) and majority_voting; check it with inspect_reference.
+    An existing annotation instead: annotation_csv (one row per cell) with id_column, label_column and optionally
+    lineage_column (check it with inspect_annotation); its labels stay the labels.
     carry_from_current: copy the regions, priors and corrections of the active session of the same sample (use it
     when re-annotating with a revised marker list). The first call to any tool that needs labels runs the annotation
     (about a minute). Give the user a new viewer link afterwards (open_viewer).
     """
     carry = _active["session"].id if carry_from_current and _active.get("session") else None
-    ref = None
-    if reference_h5ad:
+    ref = ex = None
+    if annotation_csv:
+        ex = {"path": annotation_csv, "id_column": id_column, "label_column": label_column,
+              "lineage_column": lineage_column}
+    elif reference_h5ad:
         ref = {"path": reference_h5ad, "label_column": label_column, "group_column": group_column,
                "majority_voting": majority_voting}
-    _active["session"] = Session.create(sample_id, region_source, method="scref" if ref else "markers",
-                                        markers_text=markers_text, carry_from=carry, reference=ref)
+    method = "existing" if ex else "scref" if ref else "markers"
+    _active["session"] = Session.create(sample_id, region_source, method=method, markers_text=markers_text,
+                                        carry_from=carry, reference=ref, existing=ex)
     return _j(_active["session"].summary())
 
 
@@ -467,6 +476,15 @@ def inspect_reference(path: str, sample_id: Optional[str] = None) -> str:
     from . import scref
     from .session import panel_genes
     return _j(scref.inspect(path, panel_genes(sample_id)))
+
+
+@mcp.tool()
+def inspect_annotation(path: str, sample_id: str) -> str:
+    """An existing annotation CSV for start_session(annotation_csv=...): its columns (with examples), the guessed
+    cell id / cell type / lineage columns, and how many of the sample's cells it covers."""
+    from . import existing
+    from .session import sample_cell_ids
+    return _j(existing.inspect(path, sample_cell_ids(sample_id)))
 
 
 @mcp.tool()

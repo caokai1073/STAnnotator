@@ -40,6 +40,16 @@ def panel_genes(sample_id=None):
     return pd.read_csv(config.HOME / "genes.csv", header=None)[0].tolist()  # lab-server bundles
 
 
+def sample_cell_ids(sample_id):
+    """A sample's original cell ids, in its cell order."""
+    c = pd.read_parquet(config.SAMPLES / str(sample_id) / "cells.parquet")
+    if "cell_id" in c:
+        return c.cell_id.astype(str).to_numpy()
+    import pyarrow.parquet as pq  # lab-server bundles: ids from the merged obs table
+    names = pq.read_table(config.WORK / "obs_all.parquet", columns=["NAME"]).column(0).to_numpy()
+    return names[c.cell.to_numpy()].astype(str)
+
+
 def list_samples():
     rows = []
     for d in sorted(config.SAMPLES.iterdir()) if config.SAMPLES.exists() else []:
@@ -83,8 +93,9 @@ class Session:
             self.type_groups = {k: [t for t in v if t in self.types]
                                 for k, v in markers.descendants(self.scheme["tree"]).items()}
             self.lineages = [n["name"] for n in self.scheme["tree"]] + [markers.UNASSIGNED]
-        elif self.scheme["kind"] == "scref":
-            # cell types are the labels of a single-cell reference; an optional group column gives their lineages
+        elif self.scheme["kind"] in ("scref", "existing"):
+            # cell types are the labels of a single-cell reference or of a loaded annotation; an optional group
+            # (lineage) column gives their lineages
             self.types = self.scheme["types"]
             self.lineage_of_type = self.scheme["lineage_of_type"]
             self.lineages = list(dict.fromkeys(self.lineage_of_type[t] for t in self.types))
@@ -116,11 +127,13 @@ class Session:
     # ---------- creation / persistence ----------
     @classmethod
     def create(cls, sample_id, region_source="none", method="markers", markers_text=None, resolution=None,
-               carry_from=None, reference=None):
+               carry_from=None, reference=None, existing=None):
         """method 'markers' (default): hierarchical marker annotation (Leiden + marker scores) of this sample; the data
         is treated as having no cell type labels. markers_text: the marker list (indented text or CSV); required.
         method 'scref': a single-cell reference h5ad (reference = {"path", "label_column", optional "group_column",
         "majority_voting"}) trains a CellTypist-like classifier on the genes it shares with the panel.
+        method 'existing': an annotation loaded from a CSV (existing = {"path", "id_column", "label_column",
+        optional "lineage_column"}); its labels stay the labels, the expression model adds confidences.
         method 'reference': expression model trained on the dataset's labeled slides (benchmarks only)."""
         sd = config.SAMPLES / str(sample_id)
         if not (sd / "meta.json").exists():
@@ -155,14 +168,26 @@ class Session:
                                     "group_column": ref.get("group_column") or None,
                                     "majority_voting": bool(ref.get("majority_voting"))},
                       "n_shared_genes": info["n_shared_genes"], "gene_names": info["gene_names"]}
+        elif method == "existing":
+            from . import existing as ex
+            e = dict(existing or {})
+            if not e.get("path") or not e.get("id_column") or not e.get("label_column"):
+                raise vocab.VocabError("loading an annotation needs the CSV and its cell id and cell type columns")
+            loaded = ex.load(e["path"], sample_cell_ids(sample_id), e["id_column"], e["label_column"],
+                             e.get("lineage_column") or None)
+            scheme = {"kind": "existing", "types": loaded["types"], "lineage_of_type": loaded["lineage_of_type"],
+                      "existing": {"path": str(e["path"]), "id_column": e["id_column"], "label_column": e["label_column"],
+                                   "lineage_column": e.get("lineage_column") or None, "n_matched": loaded["n_matched"]}}
         elif method != "reference":
-            raise ValueError("method must be 'markers', 'scref' or 'reference'")
+            raise ValueError("method must be 'markers', 'scref', 'existing' or 'reference'")
         sid = f"{sample_id}_{time.strftime('%Y%m%d-%H%M%S')}_{uuid.uuid4().hex[:4]}"
         d = config.SESSIONS / sid
         (d / "versions").mkdir(parents=True)
         (d / "figures").mkdir(); (d / "exports").mkdir()
         json.dump({"session_id": sid, "sample_id": str(sample_id), "created_at": _now(), "method": method,
                    "scheme": scheme}, open(d / "session.json", "w"), indent=1)
+        if method == "existing":
+            np.save(d / "loaded_labels.npy", loaded["labels"])
         s = cls(sid)
         state = {"version": 1, "parent": None, "created_at": _now(), "action": "create",
                  "message": f"session created ({method} annotation); "
@@ -278,6 +303,10 @@ class Session:
             lab = self.marker_labels(st, lambda fr, msg: say(0.02 + 0.6 * fr, msg))
             say(0.65, "training expression model on the marker annotation")
             m = model.train_pseudo(self.counts, lab, len(self.types), progress=lambda fr, msg: say(0.65 + 0.25 * fr, msg))
+        elif self.scheme["kind"] == "existing":
+            say(0.3, "training the expression model on the loaded labels")
+            m = model.train_pseudo(self.counts, self._existing_training_labels(), len(self.types),
+                                   progress=lambda fr, msg: say(0.3 + 0.6 * fr, msg))
         elif self.scheme["kind"] == "scref":
             tr = self._scref_training(say)
             say(0.6, f"training the classifier on {len(tr['y']):,} reference cells, {len(tr['panel_idx'])} shared genes")
@@ -309,6 +338,16 @@ class Session:
         np.savez(f, data=X.data, indices=X.indices, indptr=X.indptr, shape=np.array(X.shape), y=tr["y"],
                  panel_idx=tr["panel_idx"])
         return tr
+
+    def loaded_labels(self):
+        """Labels of an annotation loaded from a CSV (type index per cell)."""
+        return np.load(self.dir / "loaded_labels.npy")
+
+    def _existing_training_labels(self):
+        lab = self.loaded_labels().copy()
+        if markers.UNASSIGNED in self.types:  # cells the file has no label for do not train the model
+            lab[lab == self.types.index(markers.UNASSIGNED)] = -1
+        return lab
 
     def _model_counts(self):
         """The sample's counts as the expression model sees them (single-cell reference: the shared genes only)."""
@@ -444,6 +483,8 @@ class Session:
             elif self.scheme["kind"] == "scref":
                 tr = self._scref_training()
                 rX, ry = model.lognorm(tr["X"]), tr["y"]
+            elif self.scheme["kind"] == "existing":
+                rX, ry, _ = model.pseudo_pool(self.counts, self._existing_training_labels(), len(self.types))
             else:
                 rX, ry = model.reference_replay(self.meta["slide_id"])
             m = model.finetune(m, counts[rows], labs, rX, ry, progress=lambda fr, msg: say(0.3 + 0.6 * fr, msg))
@@ -451,6 +492,9 @@ class Session:
         logp = model.predict(m, counts)
         if self.scheme.get("leaf_types"):
             logp = self._within_parent(logp, st)
+        if self.scheme["kind"] == "existing":
+            from . import existing as ex
+            logp = ex.mix(logp, self.loaded_labels())
         if self.scheme["kind"] == "scref" and self.scheme["reference"].get("majority_voting"):
             from . import scref
             logp = scref.majority_vote(logp, self._overclusters(say))
@@ -524,6 +568,7 @@ class Session:
                 "type_groups": {k: v for k, v in self.type_groups.items()},
                 "lineages": self.lineages, "lineage_of_type": self.lineage_of_type,
                 "marker_list": self.scheme.get("text"), "reference": self.scheme.get("reference"),
+                "existing": self.scheme.get("existing"),
                 "regions": self.region_names(), "free_regions": vocab.FREE_REGIONS, "kinds": cmod.KINDS,
                 "modes": cmod.MODES, "strengths": cmod.STRENGTH, "verdicts": vocab.VERDICTS,
                 "depth_note": "depth = distance to the mucosa core (epithelial-marker density); 0 inside crypts",
@@ -967,12 +1012,8 @@ class Session:
     # ---------- export ----------
     def cell_ids(self):
         """Original Xenium cell ids (obs names of the source h5ad files), one per row of self.cells."""
-        if "cell_id" in self.cells:
-            return self.cells.cell_id.to_numpy()
-        if not hasattr(self, "_cell_ids"):  # lab-server bundles: ids from the merged obs table
-            import pyarrow.parquet as pq
-            names = pq.read_table(config.WORK / "obs_all.parquet", columns=["NAME"]).column(0).to_numpy()
-            self._cell_ids = names[self.cells.cell.to_numpy()]
+        if not hasattr(self, "_cell_ids"):
+            self._cell_ids = sample_cell_ids(self.sample_id)
         return self._cell_ids
 
     def type_path(self, t):

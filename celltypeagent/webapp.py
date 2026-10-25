@@ -483,7 +483,8 @@ async def api_annotate(req: Request):
         try:
             sid = Session.create(sample, b.get("region_source", "none"), method=b.get("method", "markers"),
                                  markers_text=b.get("markers_text"), resolution=b.get("resolution"),
-                                 carry_from=b.get("carry_from"), reference=b.get("reference")).id
+                                 carry_from=b.get("carry_from"), reference=b.get("reference"),
+                                 existing=b.get("existing")).id
         except (ValueError, OSError, KeyError) as e:
             return _json({"error": str(e)}, 400)
     s = review_app._session(sid)
@@ -816,6 +817,24 @@ async def api_reference_inspect(req: Request):
         return _json({"error": f"cannot read the reference: {e}"}, 400)
 
 
+async def api_existing_inspect(req: Request):
+    """An annotation CSV (by path, or uploaded text kept in <data folder>/annotations/): columns and matches."""
+    from . import existing
+    from .session import sample_cell_ids
+    b = await req.json()
+    try:
+        if b.get("text") is not None:
+            folder = config.HOME / "annotations"
+            folder.mkdir(parents=True, exist_ok=True)
+            path = folder / (_safe_name(Path(b.get("name") or "annotation.csv").name) or "annotation.csv")
+            path.write_text(b["text"])
+        else:
+            path = Path(b["path"]).expanduser()
+        return _json(existing.inspect(path, sample_cell_ids(b["sample"])))
+    except (OSError, KeyError, ValueError, UnicodeDecodeError) as e:
+        return _json({"error": f"cannot read the annotation: {e}"}, 400)
+
+
 async def api_markers_to_csv(req: Request):
     b = await req.json()
     return Response(markers.text_to_csv(b.get("text", "")), media_type="text/csv")
@@ -1068,6 +1087,7 @@ def build_app(port):
         Route("/api/markers/save_file", api_markers_save_file, methods=["POST"]),
         Route("/api/markers/to_csv", api_markers_to_csv, methods=["POST"]),
         Route("/api/reference/inspect", api_reference_inspect, methods=["POST"]),
+        Route("/api/existing/inspect", api_existing_inspect, methods=["POST"]),
         Route("/api/s/{sid}/export_to", api_export_to, methods=["POST"]),
         Route("/api/markers/draft", api_markers_draft, methods=["POST"]),
     ] + [r for r in review_app.app.routes if r.path != "/"] + list(mcp_http.routes)

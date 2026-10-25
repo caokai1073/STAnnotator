@@ -118,7 +118,8 @@ The app's window (or the web viewer: `.venv/bin/celltypeagent viewer`, then http
 by Claude show up within a few seconds.
 
 1. Pick a sample; earlier annotations are under **Session**. Choose the **Method**: *Marker genes* (a marker
-   list, **Markers…**) or *Single-cell reference* (a labeled reference h5ad, **Reference…**), then click
+   list, **Markers…**), *Single-cell reference* (a labeled reference h5ad, **Reference…**) or *Load existing* (a
+   CSV with one cell type per cell, **Annotation file…**), then click
    **Annotate** (about 1 min for 350k cells with markers, seconds with a reference). Regions start empty: you
    draw them.
 2. The result is drawn on the H&E: pan and zoom down to single cells; color by cell type, lineage, region,
@@ -148,6 +149,13 @@ The app has no chat box of its own: you talk to Claude in Claude Code. The web v
 shared server shows a chat box that uses the server's own logged-in Claude Code CLI (for the server owner's use).
 
 ## Annotation methods
+
+**Load existing.** A CSV (or TSV) with one row per cell: the cell id as in the sample (h5ad obs names or the
+Xenium `cell_id`), the cell type, and optionally a lineage column; the dialog guesses the columns and shows how
+many cells match. Its labels become the annotation (cells not in the file are Unassigned); an expression model
+trained on them adds a confidence per cell and lets priors and corrections act. A CSV exported by the app can be
+loaded back. Example: `share/celltype.csv` holds the published cell types of SCP2927 section 147328
+(`cell_id, cell_type, lineage`).
 
 **Single-cell reference** (like CellTypist). Give a labeled single-cell h5ad of the same tissue, its cell type
 column, and optionally a coarser group column (used as lineages for colors and priors). A multinomial logistic
