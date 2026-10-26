@@ -318,7 +318,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
        review and export, and at the bottom the buttons that delete -->
   <div class="hrow r1">
     <div class="cap"><div><h1>STAnnotator</h1><span id="build" class="buildtag"></span></div>
-      <button id="helpBtn" title="How to use the app, and About (version, Claude connection, data folder)" style="padding:4px 10px;font-weight:600;margin-left:auto">?</button>
+      <button id="helpBtn" title="How to use the app, and About (version, agent connection, data folder)" style="padding:4px 10px;font-weight:600;margin-left:auto">?</button>
       <button id="hdrHide" title="Fold the toolbar to the right for a bigger map (t)" style="padding:4px 9px">›</button></div>
     <button id="importBtn" title="Add a sample (a Xenium output folder or h5ad), then its image and registration">Import…</button>
     <button id="export" disabled title="Save the cell table (CSV), the registration, or the analysis as a Jupyter notebook">Export…</button>
@@ -384,7 +384,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <details class="adv"><summary>Advanced</summary><div class="fgrid">
       <label class="fld" title="Number of NMF gene programs"><span>NMF programs</span><input type="number" id="nPrograms" min="4" max="60" value="20"></label>
     </div></details>
-    <div class="act2"><button id="nClaude" disabled title="Ask your Claude Code to choose k per region from cell density and cell types, run the niches and name them">Claude picks k</button></div>
+    <div class="act2"><button id="nClaude" disabled title="Ask the agent to choose k per region from cell density and cell types, run the niches and name them">Agent picks k</button></div>
     <button id="nRun" class="primary main" disabled title="Compute niches with these settings">Run niches</button>
   </div>
   <div class="hrow bottom">
@@ -429,7 +429,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <div class="items" id="plitems"></div>
     </div>
     <svg id="regsvg"></svg>
-    <div id="alignbar" hidden><span id="alignmsg"></span><button id="alignNow">Align with Claude</button><button id="alignReg">Registration file…</button></div>
+    <div id="alignbar" hidden><span id="alignmsg"></span><button id="alignNow">Align with Agent</button><button id="alignReg">Registration file…</button></div>
     <div id="empanel" class="float" hidden>
       <div class="lh"><b>Embedding</b>
         <select id="emKind" title="Which embedding"><option value="umap">UMAP</option><option value="pca">PCA (PC1, PC2)</option></select>
@@ -510,7 +510,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
         <button id="mkDraft" class="primary">Draft</button></div>
       <div id="mkDraftMsg" class="hint"></div>
       </div>
-      <div id="mkClaudeHint" class="hint" hidden>To draft or revise a list, ask Claude in Claude Code: “Draft a marker list for this panel”. Lists Claude saves appear under “load a list…”.</div>
+      <div id="mkClaudeHint" class="hint" hidden>To draft or revise a list, ask the agent (Ask Agent): “Draft a marker list for this panel”. Lists the agent saves appear under “load a list…”.</div>
     </div>
   </div>
 </dialog>
@@ -552,7 +552,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <div class="frow"><span>Registration</span><span class="choice">
       <label><input type="radio" name="imRegMode" value="file"> Registration file</label>
       <label><input type="radio" name="imRegMode" value="none" checked> No registration</label>
-      <button id="imNewAlign" disabled title="Choose an image first">Align with Claude</button></span><span></span></div>
+      <button id="imNewAlign" disabled title="Choose an image first">Align with Agent</button></span><span></span></div>
     <div class="frow" id="imRegRow" hidden><span></span><input type="text" id="imNewReg" placeholder="affine CSV (a11,a12,a21,a22,tx,ty) or Xenium Explorer alignment (3x3)"><button data-pick="csv" data-target="imNewReg">Choose…</button></div>
     <div class="frow" id="imRegSecRow" hidden><span>Registration row</span><input type="text" id="imNewRegSec" placeholder="only if the file has one row per section; default: the section chosen above"><span></span></div>
     <div class="frow"><span id="imNameLabel">Sample name</span><input type="text" id="imName" placeholder="short id without spaces"><span></span></div>
@@ -560,13 +560,13 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <div class="frow"><span>Description</span><input type="text" id="imDesc" placeholder="optional, e.g. tissue and condition"><span></span></div>
     <div class="row" style="margin-top:6px"><span class="hint" id="imStatus"></span><span class="spacer"></span><button id="imGo" class="primary">Import</button></div>
     <details id="imExisting" class="clcard" style="margin-top:12px">
-      <summary><b id="imExTitle">Image and registration of the selected sample</b></summary>
+      <summary><b id="imExTitle">Already imported: change the image or registration</b></summary>
       <div class="hint" id="imExInfo" style="margin:4px 0"></div>
       <div class="frow"><span>Image</span><input type="text" id="imImgPath" placeholder="H&amp;E or fluorescence image"><button data-pick="image" data-target="imImgPath">Choose…</button></div>
       <div class="frow"><span>Image kind</span><select id="imImgKind"><option value="H&amp;E">H&amp;E</option><option value="DAPI">DAPI / fluorescence</option></select><button id="imImgGo">Add image</button></div>
       <div class="frow"><span>Registration</span><input type="text" id="imRegPath" placeholder="registration file"><button data-pick="csv" data-target="imRegPath">Choose…</button></div>
       <div class="frow"><span>Registration row</span><input type="text" id="imRegSec" placeholder="only if the file has one row per section"><button id="imRegGo">Apply</button></div>
-      <div class="row"><button id="imAlign">Align with Claude</button><button id="imUndoPlace" hidden>Undo last alignment</button>
+      <div class="row"><button id="imAlign">Align with Agent</button><button id="imUndoPlace" hidden>Undo last alignment</button>
         <span class="hint" id="imExStatus"></span><span class="spacer"></span></div>
     </details>
   </div>
@@ -607,7 +607,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <div class="frow"><span>STAnnotator there</span><input type="text" id="rcCmd" placeholder="full path of its celltypeagent command, e.g. ~/STAnnotator/.venv/bin/celltypeagent"><span></span></div>
       <div class="frow"><span>Data folder there</span><input type="text" id="rcHome" placeholder="default: ~/celltypeagent on the server"><span></span></div>
       <div class="hint" style="margin:6px 0">The server needs STAnnotator installed (README, "Working on a server") and an SSH login without a
-        password prompt (a key, or ssh-agent). Claude Code runs on this computer; its tools run on the server.</div>
+        password prompt (a key, or ssh-agent). The agent (Claude Code) runs on this computer; its tools run on the server.</div>
     </div>
     <div class="row" style="margin-top:6px"><span class="hint" id="rcStatus"></span><span class="spacer"></span>
       <button id="rcTest">Test</button><button id="rcGo" class="primary">Connect</button></div>
@@ -637,7 +637,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
   </div>
 </dialog>
 <dialog id="clDlg" style="width:min(600px,95vw)">
-  <div class="dh"><b>Claude Code</b><span class="spacer"></span><button id="clClose">Close</button></div>
+  <div class="dh"><b>Agent</b><span class="spacer"></span><button id="clClose">Close</button></div>
   <div class="imbody">
     <div class="hint" id="clMsg"></div>
     <pre id="clCmd" class="clcard" hidden></pre>
@@ -645,7 +645,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
 </dialog>
 <dialog id="rpDlg" style="width:min(860px,95vw)">
   <div class="dh"><b>Annotation report</b><span class="hint" id="rpInfo" style="margin-left:8px"></span><span class="spacer"></span>
-    <button id="rpAsk" title="Ask your Claude Code to write (or update) the report for the version shown">Ask Claude to write it</button>
+    <button id="rpAsk" title="Ask the agent to write (or update) the report for the version shown">Ask Agent to write it</button>
     <button id="rpSave" title="Save the report as a Markdown file">Save…</button>
     <button id="rpClose">Close</button></div>
   <div id="rpBody"></div>
@@ -665,7 +665,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <div class="row"><span class="spacer"></span><button id="xpNb" class="primary">Save notebook…</button></div></div>
     <div class="clcard"><b>Registration (CSV)</b>
       <div class="hint" id="xpRegInfo">The affine that places the cells on the image, as used now (from the registration file,
-        Claude's alignment or a correction): columns a11, a12, a21, a22, tx, ty (cell um to image pixels). It can be
+        the agent's alignment or a correction): columns a11, a12, a21, a22, tx, ty (cell um to image pixels). It can be
         imported again under Import &gt; Registration, or used by other tools.</div>
       <div class="row"><span class="spacer"></span><button id="xpReg" class="primary">Save registration…</button></div></div>
     <div class="hint" id="xpStatus"></div>
@@ -693,6 +693,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
 const $ = (id) => document.getElementById(id);
 // ---------------- icons: thin line icons from the sprite at the top of the page ----------------
 const icon = (name) => `<svg class="ic" aria-hidden="true"><use href="#ic-${name}"/></svg>`;
+const placedBy = (by) => String(by).replace(/^Claude/, "the agent's alignment");  // stored as "Claude" (by align.py)
 function setLabel(b, text) {  // keeps the icon; an icon-only button shows the label as its tooltip
   if (b.classList.contains("ib")) { b.title = text; b.setAttribute("aria-label", text); return; }
   const t = b.querySelector(".bt"); if (t) t.textContent = text; else b.textContent = text;
@@ -1035,7 +1036,7 @@ async function startAnnotation(mode, sid, token = st.switchToken) {
                        majority_voting: $("refMV").checked };
     if (!body.reference.path || !body.reference.label_column) { openRef(); toast("Choose the reference h5ad and its cell type column", 5000); return; }
   } else if (mode === "new" && !body.markers_text.trim()) {
-    openMarkers(); toast("Import a marker list first (Import…), load one, or ask Claude Code to draft one", 5000); return;
+    openMarkers(); toast("Import a marker list first (Import…), load one, or ask the agent to draft one", 5000); return;
   }
   if (mode === "new" && method === "markers") {
     const chk = await post("/api/markers/check", { text: body.markers_text, sample: body.sample_id });
@@ -1436,7 +1437,7 @@ $("nClaude").onclick = async () => {
   try {
     const r = await post("/api/claude/niches", { session: st.sid, n_niches: +$("nN").value, identity: $("nIdentity").value });
     if (r.message && st.chatAvailable) { $("input").value = r.message; send(); }
-    else if (r.claude_code) toast(r.claude_code.reused ? "Claude Code is choosing k; the niches appear here when done" : "Claude Code is opening to choose k", 6000);
+    else if (r.claude_code) toast(r.claude_code.reused ? "The agent is choosing k; the niches appear here when done" : "The agent is opening to choose k", 6000);
   } catch (e) { toast(e.message, 6000); }
 };
 
@@ -1649,7 +1650,7 @@ function renderPriors(box) {  // the priors of this version, each removable (a n
   const h = document.createElement("div"); h.className = "plh"; h.textContent = `Priors (${cons.length})`; box.append(h);
   if (!cons.length) {
     const d = document.createElement("div"); d.className = "hint"; d.style.padding = "2px 4px 6px";
-    d.textContent = "No priors yet. Ask Claude in Claude Code, e.g. “epithelial cells are only in the mucosa”.";
+    d.textContent = "No priors yet. Ask the agent, e.g. “epithelial cells are only in the mucosa”.";
     box.append(d); return;
   }
   cons.forEach((c) => {
@@ -1865,10 +1866,10 @@ function renderPlaus() {
   const judged = !!rv.asked, shown = (x) => !judged || (x.claude && x.claude.keep);
   const dropped = [];
   const adv = st.advice || { items: [], status: {}, categories: {} };
-  $("plnote").textContent = (adv.status.preparing ? "Claude is preparing high-level advice in Claude Code. " : "") + (rv.checking
-    ? `Claude is checking the candidates on the H&E in Claude Code (${rv.checked} of ${rv.checked + rv.unchecked} done). Only the real problems will be listed here.`
-    : judged ? "Checked by Claude on the H&E and with marker biology: only real problems are listed. Claude's own suggestions appear in orange."
-    : "Not checked by Claude yet: these candidates come from the annotation alone and can include false alarms.");
+  $("plnote").textContent = (adv.status.preparing ? "The agent is preparing high-level advice. " : "") + (rv.checking
+    ? `The agent is checking the candidates on the H&E (${rv.checked} of ${rv.checked + rv.unchecked} done). Only the real problems will be listed here.`
+    : judged ? "Checked by the agent on the H&E and with marker biology: only real problems are listed. The agent's own suggestions appear in orange."
+    : "Not checked by the agent yet: these candidates come from the annotation alone and can include false alarms.");
   const box = $("plitems"); box.textContent = "";
   const btn = (text, title, fn) => { const b = document.createElement("button"); b.textContent = text; b.title = title; b.onclick = fn; return b; };
   const item = (cls, l1, l2, buttons) => {
@@ -1881,7 +1882,7 @@ function renderPlaus() {
   const head = (text) => { const h = document.createElement("div"); h.className = "plh"; h.textContent = text; box.append(h); };
   const prop = r.proposal && r.proposal.status !== "dismissed" ? r.proposal : null;
   renderAdvice(adv, btn, head, prop);
-  if (r.suggestions.length || prop) head(`Claude's suggestions (${open.length + (prop ? 1 : 0)} open)`);
+  if (r.suggestions.length || prop) head(`Agent's suggestions (${open.length + (prop ? 1 : 0)} open)`);
   if (prop) {
     const row = document.createElement("div"); row.className = "pla sug";
     const a = document.createElement("div"); a.className = "l1"; a.textContent = `Revised marker list (${prop.n_types} cell types)`;
@@ -1902,7 +1903,7 @@ function renderPlaus() {
                  btn("dismiss", "Hide this suggestion", () => dismissSug(x.id))]);
   });
   const pct = (x) => x == null ? "–" : `${Math.round(100 * x)}%`;
-  const why = (x) => x.claude && x.claude.reason ? `\nClaude: ${x.claude.reason}` : "";
+  const why = (x) => x.claude && x.claude.reason ? `\nAgent: ${x.claude.reason}` : "";
   const checks = [];
   if (r.markers) {
     r.markers.flags.forEach((f) => checks.push({ key: f.key, claude: f.claude, l1: `${f.node} · ${f.marker}`,
@@ -1929,7 +1930,7 @@ function renderPlaus() {
   });
   if (dropped.length) {  // false alarms Claude filtered out, folded away with its reasons
     const det = document.createElement("details"); det.className = "plsolved";
-    const sum = document.createElement("summary"); sum.className = "plh"; sum.textContent = `Filtered out by Claude (${dropped.length})`;
+    const sum = document.createElement("summary"); sum.className = "plh"; sum.textContent = `Filtered out by the agent (${dropped.length})`;
     det.append(sum);
     dropped.forEach((d) => {
       const row = document.createElement("div"); row.className = "pla done";
@@ -1961,7 +1962,7 @@ function renderPlaus() {
 function renderAdvice(adv, btn, head, prop) {
   const box = $("plitems");
   const open = adv.items.filter((x) => x.status === "open");
-  if (open.length) head(`Claude's advice (${open.length})`);
+  if (open.length) head(`Agent's advice (${open.length})`);
   Object.entries(adv.categories).forEach(([cat, label]) => {
     const rows = open.filter((x) => x.category === cat)  // regions the user asked for first, newest first
       .sort((a, b) => (!!b.requested - !!a.requested) || (a.requested ? (a.time < b.time ? 1 : -1) : 0));
@@ -2002,12 +2003,12 @@ function adviceRow(x, btn, adv, prop) {
     b.textContent += `\nPrior: ${act.prior_text}`;
     if (open) c.append(btn("add prior…", "Preview the prior, then add it", () => advicePrior(x)));
   } else if (act.kind === "marker_list") {
-    if (open && prop) c.append(btn("open in Markers…", "Load Claude's revised marker list", () => openProposal(prop)));
+    if (open && prop) c.append(btn("open in Markers…", "Load the agent's revised marker list", () => openProposal(prop)));
   } else if (act.kind === "registration") {
     if (open && !adv.registration_fixed) c.append(btn("correct registration…", "Move every cell onto its nucleus on the image", () => adviceRegistration(x, act)));
     if (adv.registration_fixed) c.append(btn("undo correction", "Put the cells back where the import placed them", () => adviceAct(x, "undo_registration")));
   } else if (act.kind === "claude") {
-    if (open) c.append(btn("ask Claude Code", act.request, () => adviceAct(x, "claude")));
+    if (open) c.append(btn("ask the agent", act.request, () => adviceAct(x, "claude")));
   }
   if (open) c.append(btn("dismiss", "Hide this advice", () => adviceStatus(x.id, "dismissed")));
   else c.append(btn("reopen", "Put it back on the list", () => adviceStatus(x.id, "open")));
@@ -2030,7 +2031,7 @@ async function adviceAct(x, step, extra) {
     if (step === "region") { name = prompt("Save the outline as region (name):", x.action.name); if (!name) return; }
     const r = await post(`/api/s/${st.sid}/advice/act`, { id: x.id, step, name, ...(extra || {}) });
     if (r.reload) { await reloadGeometry(); toast(step === "undo_registration" ? "Registration correction undone" : `Cells moved onto their nuclei (median ${r.moved_um_median} µm, up to ${r.moved_um_max} µm)`, 6000); return; }
-    if (r.claude_code) toast(r.claude_code.reused ? "Sent to Claude Code" : "Claude Code is opening", 4000);
+    if (r.claude_code) toast(r.claude_code.reused ? "Sent to the agent" : "The agent is opening", 4000);
     else if (r.message && step === "claude" && st.chatAvailable) { $("input").value = r.message; send(); }
     else if (r.message) toast(r.message + (r.prior ? " · now add its prior" : ""), 5000);
     if (r.new_version) await refreshVersion(true); else await loadPlaus(false);
@@ -2107,12 +2108,12 @@ async function pollSuggestions() {  // suggestions made in Claude Code show up w
   if (sug.niche && st.nicheSig !== undefined && JSON.stringify(sug.niche) !== st.nicheSig) {
     const fresh = !st.niche || sug.niche[0] !== st.niche.params.run_id;
     await loadNiches(fresh);
-    if (fresh) toast("New niches from Claude: colored by niche", 5000);
+    if (fresh) toast("New niches from the agent: colored by niche", 5000);
   }
   const advSig = JSON.stringify(sug.advice);
   if (st.adviceSig === undefined) st.adviceSig = advSig;  // first look: nothing new yet
   if (advSig !== st.adviceSig) { await adviceArrived(); return; }
-  if (!st.plaus) { if (fresh) { await loadPlaus(false); toast(`Claude made ${fresh} suggestion(s): see the Review panel`, 4000); } return; }
+  if (!st.plaus) { if (fresh) { await loadPlaus(false); toast(`The agent made ${fresh} suggestion(s): see the Review panel`, 4000); } return; }
   if (JSON.stringify(sug.solved) !== JSON.stringify(st.solvedSig) || sug.review !== st.plaus.review_count) { await loadPlaus(false); return; }  // Claude judged candidates
   if (sug.report && sug.report !== st.reportTime && $("rpDlg").open) await openReport();
   st.plaus.suggestions = sug.areas; st.plaus.proposal = sug.proposal; renderPlaus();
@@ -2132,8 +2133,8 @@ async function adviceArrived() {  // new advice from Claude Code: open the Revie
     st.adviceShown = reg.id;
     zoomToPoly(reg.action.outlines.flat(), false); renderPlaus();
     const el = document.querySelector(`.pla.adv[data-id="${reg.id}"]`); if (el) el.scrollIntoView({ block: "nearest" });
-    toast(`Claude outlined “${reg.action.name}”: check it, then click “add region” in the Review panel`, 7000);
-  } else if (fresh.length) toast("Claude's advice is in the Review panel", 4000);
+    toast(`The agent outlined “${reg.action.name}”: check it, then click “add region” in the Review panel`, 7000);
+  } else if (fresh.length) toast("The agent's advice is in the Review panel", 4000);
 }
 $("plaus").onclick = async () => {
   try { await loadPlaus(true); await askClaudeReview(); } catch (e) { toast(e.message, 6000); }
@@ -2143,7 +2144,7 @@ async function askClaudeReview() {  // Claude checks the candidates it has not j
   const r = await post("/api/claude/review", { session: st.sid });
   if (!r.needed) return;
   if (r.message && st.chatAvailable) { $("input").value = r.message; send(); }
-  else if (r.claude_code) toast((r.claude_code.reused ? "Claude Code is checking" : "Claude Code is opening to check") + (r.unchecked ? " the candidates on the H&E" : " the annotation as a whole"), 5000);
+  else if (r.claude_code) toast((r.claude_code.reused ? "The agent is checking" : "The agent is opening to check") + (r.unchecked ? " the candidates on the H&E" : " the annotation as a whole"), 5000);
   await loadPlaus(false);
 }
 $("plclose").onclick = () => { const was = st.mode === "plausibility"; closePlaus(); fillModes(st.lastSummary); drawRegions(); if (was) { refreshOverlay(); loadLegend(); } };
@@ -2342,8 +2343,8 @@ function imForm() {  // show the fields of the chosen options; Align with Claude
   $("imNoImgHint").textContent = imgMode() === "none" ? (imKind() === "xenium" ? "the folder's DAPI image is shown" : "cells on a blank background") : "";
   const can = imgMode() === "file" && $("imNewImg").value.trim() && regMode() === "none";
   $("imNewAlign").disabled = !can;
-  $("imNewAlign").title = can ? "Import, then let your Claude Code align the image with the cells"
-    : imgMode() !== "file" || !$("imNewImg").value.trim() ? "Choose an image first" : "Choose No registration to align with Claude";
+  $("imNewAlign").title = can ? "Import, then let the agent align the image with the cells"
+    : imgMode() !== "file" || !$("imNewImg").value.trim() ? "Choose an image first" : "Choose No registration to align with the agent";
 }
 document.querySelectorAll("input[name=imImgMode], input[name=imRegMode]").forEach((r) => (r.onchange = imForm));
 $("imNewImg").addEventListener("input", imForm); $("imNewImg").addEventListener("change", imForm);
@@ -2351,9 +2352,9 @@ function imExisting() {  // the folded part: image and registration of the selec
   const s = st.sample;
   $("imExisting").hidden = !s;
   if (!s) return;
-  $("imExTitle").textContent = `Image and registration of the selected sample (${s.sample_id})`;
+  $("imExTitle").textContent = `Already imported: change the image or registration of ${s.sample_id}`;
   const shown = s.image_kind && s.image_kind !== "none" ? `${s.image_kind} shown` : "no image shown";
-  const placed = s.registration_by ? `cells placed by ${s.registration_by === "Claude" ? "Claude's alignment" : s.registration_by}` : "no registration";
+  const placed = s.registration_by ? `cells placed by ${placedBy(s.registration_by)}` : "no registration";
   $("imExInfo").textContent = `${shown}; ${placed}` + (s.image_pending ? `; waiting for alignment: ${s.image_pending}` : "");
   $("imAlign").disabled = !(s.image_pending || (s.image_kind && s.image_kind !== "none"));
   $("imUndoPlace").hidden = !s.can_undo_placement;
@@ -2373,7 +2374,7 @@ $("imImgGo").onclick = async () => {
   $("imExStatus").textContent = "adding…";
   try {
     const r = await post(`/api/sample/${st.sample.sample_id}/image`, { path, kind: $("imImgKind").value });
-    $("imExStatus").textContent = r.pending ? "Added; it waits for a registration (Apply, or Align with Claude)." : "Added; the cells are on it.";
+    $("imExStatus").textContent = r.pending ? "Added; it waits for a registration (Apply, or Align with Agent)." : "Added; the cells are on it.";
     await afterPlacement();
   } catch (e) { $("imExStatus").textContent = e.message; }
 };
@@ -2390,7 +2391,7 @@ async function askAlign() {
   try {
     const r = await post("/api/claude/align", { sample: st.sample.sample_id, session: st.sid });
     if (r.message && st.chatAvailable) { $("imDlg").close(); $("input").value = r.message; send(); }
-    else if (r.claude_code) toast(r.claude_code.reused ? "Claude Code is aligning the image; the cells move onto it when done" : "Claude Code is opening to align the image", 7000);
+    else if (r.claude_code) toast(r.claude_code.reused ? "The agent is aligning the image; the cells move onto it when done" : "The agent is opening to align the image", 7000);
     else toast("Open the agent first (Ask Agent)", 5000);
   } catch (e) { toast(e.message, 6000); }
 }
@@ -2450,8 +2451,8 @@ const HELP = `
 <h3>Import</h3><ul>
 <li><b>Import…</b>: the cells (a Xenium folder or h5ad files), then the image (<b>No image</b> or an H&amp;E / DAPI
 file) and the registration (<b>Registration file</b>, or <b>No registration</b>).</li>
-<li>An image without a registration file: <b>Align with Claude</b> (next to No registration, or the yellow bar over the
-map) imports and lets Claude Code find the section and orientation on the image and refine it until the cells sit on
+<li>An image without a registration file: <b>Align with Agent</b> (next to No registration, or the yellow bar over the
+map) imports and lets the agent find the section and orientation on the image and refine it until the cells sit on
 their nuclei. The folded part at the bottom of Import changes the image or registration of the selected sample, or
 undoes an alignment. Regions drawn before the cells move are moved along with them.</li></ul>
 <h3>Several slices</h3><ul>
@@ -2467,7 +2468,7 @@ model, so a name means the same cells in every slice), <b>Run PCA + UMAP</b> mak
 UMAP window shows this slice or all slices, colored by slice too.</li></ul>
 <h3>Working on a server</h3><ul>
 <li><b>This computer</b> (top right): work on a server over SSH instead; the data and the computation stay on the
-server. Choose… then browses the server's files, Save and Export download to this computer, and Claude Code opens here
+server. Choose… then browses the server's files, Save and Export download to this computer, and the agent (Claude Code) opens here
 with its tools on the server. The server needs STAnnotator installed and an SSH login without a password prompt.</li></ul>
 <h3>Map</h3><ul>
 <li>Drag to move, scroll or pinch to zoom; the small map at the bottom right shows where you are.</li>
@@ -2484,9 +2485,9 @@ point; <kbd>Backspace</kbd> removes the last point, <kbd>Esc</kbd> cancels; then
 point there; click a point twice quickly to remove it; <b>Save</b> <kbd>Enter</kbd> or <b>Cancel</b> <kbd>Esc</kbd>.
 With many points on screen, zoom in first.</li>
 <li>Click a region's color square to choose another color; <b>✎</b> renames; <b>×</b> deletes a polygon (priors on it keep applying).</li>
-<li>Ask Claude in Claude Code to draw one (“draw the mucosa”): it appears in the Review panel; click <b>add region</b>.</li></ul>
+<li>Ask the agent to draw one (“draw the mucosa”): it appears in the Review panel; click <b>add region</b>.</li></ul>
 <h3>Priors and corrections</h3><ul>
-<li>Tell Claude in Claude Code (“epithelial cells are only in the mucosa”, “the cells in region X are goblet cells”);
+<li>Tell the agent (Ask Agent) (“epithelial cells are only in the mucosa”, “the cells in region X are goblet cells”);
 it previews the change and asks before adding a prior.</li>
 <li>The <b>Priors</b> list under Regions shows them; <b>×</b> removes one.</li></ul>
 <h3>Annotate</h3><ul>
@@ -2500,9 +2501,9 @@ type, Leiden cluster or niche; scroll to zoom, drag to move, double-click to res
 turn gray; <b>Show on map</b> zooms the map to them; <b>Clear</b> ends the selection.</li>
 <li>Color by <b>Leiden clusters</b> shows the clusters on the map.</li></ul>
 <h3>Review and output</h3><ul>
-<li><b>Agent Review</b> (bar on the map): computed checks, checked by Claude on the H&amp;E; Claude's advice with one-click actions; <b>solve</b> hides an item.</li>
-<li><b>Report</b>: Claude writes the annotation report; <b>Save…</b> keeps it as a Markdown file.</li>
-<li><b>Niches</b>: identity, k and number of niches; <b>Run niches</b>, or <b>Claude picks k</b>.</li>
+<li><b>Agent Review</b> (bar on the map): computed checks, checked by the agent on the H&amp;E; the agent's advice with one-click actions; <b>solve</b> hides an item.</li>
+<li><b>Report</b>: the agent writes the annotation report; <b>Save…</b> keeps it as a Markdown file.</li>
+<li><b>Niches</b>: identity, k and number of niches; <b>Run niches</b>, or <b>Agent picks k</b>.</li>
 <li><b>Undo</b> steps back one change at a time. <b>Export…</b>: the cell table (CSV, with niche, Leiden and UMAP when
 computed), the registration in use (CSV), or the whole analysis as a Jupyter notebook that runs without this app
 (code with this annotation's parameters, and its results).</li>
@@ -2516,9 +2517,9 @@ async function showAbout() {
     ["Build", esc(d.build)], ["Running as", esc(d.app) + (d.standalone ? " (standalone)" : " (from source)")],
     ["System", esc(d.system) + " · Python " + esc(d.python)],
     ["Data folder", esc(d.data_folder)], ["Samples / annotations", `${d.n_samples} / ${d.n_annotations} · ${d.data_size_mb} MB`],
-    ["Claude Code", d.claude_code ? `<span class="ok">found</span> · ${esc(d.claude_code)}` : `<span class="bad">not found</span>: install Claude Code, then click Claude Code`],
-    ["Claude connection", cc.seen ? `<span class="${cc.running ? "ok" : ""}">last used the tools ${esc(cc.last)}</span>` + (cc.running ? " (still open)" : " (closed since)") : `<span class="bad">not yet</span>: click Claude Code and ask something`],
-    ["Claude workspace", esc(d.claude_workspace)],
+    ["Claude Code", d.claude_code ? `<span class="ok">found</span> · ${esc(d.claude_code)}` : `<span class="bad">not found</span>: install Claude Code, then click Ask Agent`],
+    ["Agent connection", cc.seen ? `<span class="${cc.running ? "ok" : ""}">last used the tools ${esc(cc.last)}</span>` + (cc.running ? " (still open)" : " (closed since)") : `<span class="bad">not yet</span>: click Ask Agent and ask something`],
+    ["Agent workspace", esc(d.claude_workspace)],
     ["Libraries", Object.entries(d.libraries).map(([k, v]) => `${k} ${v || "–"}`).join(" · ")]];
   $("hpBody").innerHTML = `<dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>
     <button id="hpCopy">Copy for a bug report</button>`;
@@ -2536,7 +2537,7 @@ $("hpClose").onclick = () => $("hpDlg").close();
 $("clearAll").onclick = async () => {
   const n = st.samples.length;
   if (!n) { toast("There are no samples"); return; }
-  if (!confirm(`Remove all ${n} sample(s)?\n\nEvery sample, all its annotations, regions, priors, niches and Claude Code chats are deleted for good, so you can import from scratch. This cannot be undone. Marker lists are kept.`)) return;
+  if (!confirm(`Remove all ${n} sample(s)?\n\nEvery sample, all its annotations, regions, priors, niches and agent chats are deleted for good, so you can import from scratch. This cannot be undone. Marker lists are kept.`)) return;
   try {
     const r = await post("/api/samples/clear", {});
     toast(`Removed ${r.deleted_samples} sample(s) and ${r.deleted_sessions} annotation(s)`, 4000);
@@ -2549,11 +2550,11 @@ async function openClaudeCode() {
   try {
     const s = st.remote ? await native().claude_status() : await api("/api/claude/status");
     if (s.platform === "Darwin" && !s.claude_code) {
-      $("clMsg").textContent = "Claude Code was not found on this Mac. Install it (docs.claude.com → Claude Code → Setup), log in once with your own Claude account in Terminal, then click Claude Code again.";
+      $("clMsg").textContent = "Claude Code was not found on this Mac. Install it (docs.claude.com → Claude Code → Setup), log in once with your own Claude account in Terminal, then click Ask Agent again.";
       $("clCmd").hidden = true; $("clDlg").showModal(); return;
     }
     const r = await post("/api/claude/code", { sample: st.sample && st.sample.sample_id, session: st.sid });
-    if (r.opened) { toast(r.reused ? "Claude Code is open in Terminal (brought to the front)" : "Claude Code is opening in Terminal, connected to this sample", 4000); return; }
+    if (r.opened) { toast(r.reused ? "The agent (Claude Code) is open in Terminal (brought to the front)" : "The agent (Claude Code) is opening in Terminal, connected to this sample", 4000); return; }
     $("clMsg").textContent = "Run this in a terminal to start Claude Code connected to this app:";
     $("clCmd").textContent = r.command; $("clCmd").hidden = false; $("clDlg").showModal();
   } catch (e) { toast(e.message, 6000); }
@@ -2569,7 +2570,7 @@ async function followAgent() {
   st.lastRequest = r.time;
   st.openedThisVisit[r.sample] = r.session;
   await loadSamples(r.sample);  // the sample may be new (imported by Claude)
-  toast(`Claude opened ${r.sample} (${r.session})`, 4000);
+  toast(`The agent opened ${r.sample} (${r.session})`, 4000);
 }
 setInterval(() => { if (!st.busy) followAgent().catch(() => {}); }, 4000);
 
@@ -2948,8 +2949,8 @@ async function openReport() {
   const r = (await api(`/api/s/${st.sid}/report`)).report;
   st.reportTime = r ? r.time : null;
   $("rpInfo").textContent = r ? `version ${r.version} · ${r.time.replace("T", " ")}` : "";
-  $("rpBody").innerHTML = r ? mdBlock(r.markdown) : "<p>No report yet. Click <b>Ask Claude to write it</b>: your Claude Code gathers the facts of this annotation (method, composition, compartments, quality, open review items) and writes it here.</p>";
-  setLabel($("rpAsk"), r ? "Ask Claude to update it" : "Ask Claude to write it");
+  $("rpBody").innerHTML = r ? mdBlock(r.markdown) : "<p>No report yet. Click <b>Ask Agent to write it</b>: the agent gathers the facts of this annotation (method, composition, compartments, quality, open review items) and writes it here.</p>";
+  setLabel($("rpAsk"), r ? "Ask Agent to update it" : "Ask Agent to write it");
   $("rpSave").disabled = !r;
   if (!$("rpDlg").open) $("rpDlg").showModal();
 }
@@ -2959,7 +2960,7 @@ $("rpAsk").onclick = async () => {
   try {
     const r = await post("/api/claude/report", { session: st.sid });
     if (r.message && st.chatAvailable) { $("rpDlg").close(); $("input").value = r.message; send(); }
-    else if (r.claude_code) toast(r.claude_code.reused ? "Claude Code is writing the report; it appears here when done" : "Claude Code is opening to write the report", 5000);
+    else if (r.claude_code) toast(r.claude_code.reused ? "The agent is writing the report; it appears here when done" : "The agent is opening to write the report", 5000);
     else toast("Open the agent first (Ask Agent)", 5000);
   } catch (e) { toast(e.message, 6000); }
 };
@@ -2979,8 +2980,8 @@ $("export").onclick = () => {
   const placed = st.sample.image_kind && st.sample.image_kind !== "none";
   $("xpReg").disabled = !placed;
   $("xpRegInfo").textContent = placed
-    ? `The affine that places the cells on the image, as used now (made by: ${st.sample.registration_by || "file"}): columns a11, a12, a21, a22, tx, ty (cell um to image pixels). It can be used again as the registration file of an import, or by other tools.`
-    : "The cells are not on an image yet: import an image and its registration, or align it with Claude.";
+    ? `The affine that places the cells on the image, as used now (made by: ${placedBy(st.sample.registration_by || "file")}): columns a11, a12, a21, a22, tx, ty (cell um to image pixels). It can be used again as the registration file of an import, or by other tools.`
+    : "The cells are not on an image yet: import an image and its registration, or align it with the agent.";
   $("xpDlg").showModal();
 };
 $("xpClose").onclick = () => $("xpDlg").close();
@@ -3025,7 +3026,7 @@ document.addEventListener("keydown", (e) => {
 });
 // ---------------- where the app works: this computer, or a server over SSH (desktop app; remote.py) ----------------
 // On a server the window shows the server's viewer through an SSH tunnel: file choosers browse the server, exports are
-// downloaded into files on this computer, and Claude Code opens here with its tools running on the server.
+// downloaded into files on this computer, and the agent (Claude Code) opens here with its tools running on the server.
 async function pickFiles(kind, multi) {
   return st.remote ? browseServer(kind, multi) : native().pick(kind, !!multi);
 }
@@ -3130,16 +3131,16 @@ api("/api/config").then((c) => {  // the desktop app (or no Claude Code CLI): th
   st.home = c.home;
   if (window.pywebview) initConnection(c.remote).catch(() => {});
   else window.addEventListener("pywebviewready", () => initConnection(c.remote).catch(() => {}));
-  if (c.desktop) { document.body.classList.add("desktop"); $("sideTitle").textContent = "Claude"; }  // Claude Code button in the header
+  if (c.desktop) { document.body.classList.add("desktop"); $("sideTitle").textContent = "Agent"; }  // Claude Code button in the header
   $("mkDraftBox").hidden = c.desktop; $("mkClaudeHint").hidden = !c.desktop;
   if (!c.chat) {
     $("msgs").querySelectorAll(".hint").forEach((h) => h.remove());
     const box = document.createElement("div"); box.className = "claudebox hint";
     const p = document.createElement("div");
-    p.textContent = "Talk to Claude in Claude Code, with your own Claude account: priors (“epithelial cells are only in the mucosa”), corrections, “review my annotation”, a marker list for a new panel. Everything Claude changes appears here within a few seconds.";
+    p.textContent = "Talk to the agent (Claude Code, with your own Claude account): priors (“epithelial cells are only in the mucosa”), corrections, “review my annotation”, a marker list for a new panel. Everything the agent changes appears here within a few seconds.";
     box.append(p);
     if (c.desktop) {
-      const b = document.createElement("button"); b.className = "primary"; b.textContent = "Open in Claude Code"; b.onclick = openClaudeCode;
+      const b = document.createElement("button"); b.className = "primary"; b.textContent = "Ask Agent"; b.onclick = openClaudeCode;
       box.append(b);
     }
     $("msgs").append(box); $("composer").hidden = true;

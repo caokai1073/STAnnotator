@@ -55,9 +55,10 @@ Click **Import…** in the app (or use the commands below): the cells, then **No
 | image | the H&E (or a fluorescence image) as a pyramidal TIFF / OME-TIFF, or **No image**. |
 | registration | an affine CSV with columns `a11,a12,a21,a22,tx,ty` (`px = a11*x + a12*y + tx`, `py = a21*x + a22*y + ty`; cell um to image full-resolution pixels; with one row per section, the row of the chosen section) or a Xenium Explorer alignment matrix (3x3 CSV, image pixels to morphology pixels); or **No registration**. |
 
-The folded part at the bottom of the dialog adds or changes the image or registration of the selected sample later.
+The folded part at the bottom of the dialog, **Already imported: change the image or registration**, is for the sample
+already open: add or replace its image, give it a registration file, align it with the agent, or undo an alignment.
 Until the image is registered the cells are shown on a blank background (or the DAPI) with a yellow bar over the
-map. **No registration file?** **Align with Claude** (next to No registration, or the bar) asks your Claude Code to align it:
+map. **No registration file?** **Align with Agent** (next to No registration, or the bar) asks the agent (your Claude Code) to align it:
 the tissue on the image is matched with the cells' footprint over 4 rotations, mirroring and a range of pixel sizes
 (around the size stored in an OME-TIFF), Claude picks the right section and orientation from the candidates' figures,
 and a refinement moves the cells onto their nuclei (nuclei on the image vs cell centroids in windows, affine fit,
@@ -259,13 +260,13 @@ by Claude show up within a few seconds.
 10. **Niches** (fourth row): places where cells of similar make-up live together. Every cell gets an identity, its
    weights on NMF gene programs (*Identity: NMF programs*, independent of the annotation) or its cell type; the
    identities are averaged over the cell and its *k* nearest cells and clustered (k-means) into the chosen number of
-   niches. **Run niches** uses one k everywhere; **Claude picks k** asks Claude Code to choose k per drawn region
+   niches. **Run niches** uses one k everywhere; **Agent picks k** asks the agent to choose k per drawn region
    from cell density and cell types (or a radius, so neighborhoods cover a similar stretch of tissue in dense and
    sparse areas), run it and name the niches. The result appears as *Color by: niche* (names in the legend) and as
    a `niche` column in Export CSV. On SCP2927 section 147328 (356,629 cells) a run takes about 6 s (1.5 s once the
    NMF is cached) and the 8 niches match the tissue layers (surface epithelium, crypt base, lamina propria, lymphoid
    follicles, muscularis mucosae, muscularis propria, submucosal vessels and stroma).
-11. **Report** shows the annotation report Claude writes (**Ask Claude to write it**): sample, method and inputs,
+11. **Report** shows the annotation report the agent writes (**Ask Agent to write it**): sample, method and inputs,
    composition, compartments, quality and open questions, from the tools' facts. **Save…** writes it as Markdown.
 
 The app has no chat box of its own: you talk to Claude in Claude Code. The web viewer on a
