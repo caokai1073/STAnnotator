@@ -828,7 +828,7 @@ async function selectSample(id) {
   st.sliceSwitch = false;
   fillSessions(sid);
   setMarkers("", "");  // no default list: import or load one for this sample
-  if (sid) await startAnnotation("continue", sid, token); else st.wantMode = null;
+  if (sid) await startAnnotation("continue", sid, token); else st.wantMode = st.keepView = null;
 }
 
 function reportState() {  // so Claude (use_viewer_session) knows what the user is looking at
@@ -841,7 +841,7 @@ function closeSession() {
   $("legend").hidden = true; $("cellcard").classList.remove("show");
   $("empty").style.display = "flex";
   ["undo", "export", "send", "plaus", "report", "nRun", "nClaude", "eRun", "eShow"].forEach((b) => ($(b).disabled = true));
-  closeEmbedding(); st.emb = null; EM.selAll = null; setSelection(null); $("einfo").textContent = "";
+  closeEmbedding(); st.emb = null; EM.selAll = null; EM.lassoRaw = null; setSelection(null); $("einfo").textContent = "";
   st.niche = null; st.nicheSig = undefined; $("nicheinfo").textContent = "";
   $("carryWrap").style.visibility = "hidden";
   $("input").disabled = true; $("composerhint").textContent = "Annotate a sample first.";
@@ -923,7 +923,33 @@ async function openSession(sid) {
   await loadEmbedding(false);
   loadGenes(st.sample.sample_id).catch(() => {});
   await refreshVersion(true);
+  await restoreView();
   await loadChat();
+}
+// Stepping to another slice keeps what is shown: the color mode (st.wantMode, in fillModes), the legend filters, the
+// embedding window with its settings, and, on an embedding of all slices together, its zoom and the lasso selection.
+// Hidden H&E or cells, opacity and dot size are settings of the page and stay as they are.
+function viewState() {
+  const em = !$("empanel").hidden && st.emb;
+  return { filters: Object.fromEntries(Object.entries(st.filters).map(([k, v]) => [k, new Set(v)])),
+           em: em ? { kind: $("emKind").value, color: $("emColor").value, scope: $("emScope").value, run: st.emb.run_id,
+                      joint: !!st.emb.project, view: EM.norm ? emRawView() : null, lasso: EM.lassoRaw || null } : null };
+}
+async function restoreView() {
+  const k = st.keepView; st.keepView = null;
+  if (!k) return;
+  st.filters = k.filters;
+  if (k.em && st.emb) {
+    $("emKind").value = k.em.kind; $("emColor").value = k.em.color;
+    if (!$("emScope").hidden) $("emScope").value = k.em.scope;
+    await openEmbedding();
+    if (k.em.joint && st.emb.project && st.emb.run_id === k.em.run) {  // the same UMAP of all slices
+      if (k.em.view) setEmRawView(k.em.view);
+      if (k.em.lasso) { EM.lassoRaw = k.em.lasso; selectRaw(k.em.lasso); }
+      drawEM();
+    }
+  }
+  GL.colorKey = null; refreshOverlay(); await loadLegend();
 }
 
 // ---------------- embedding (PCA, UMAP, Leiden) and selecting cells on it ----------------
@@ -934,7 +960,8 @@ function withSel(arr, sel) {  // cells outside the selection are grayed out (map
   const out = new Uint8Array(arr);
   for (let i = 0; i < sel.length; i++) {
     const j = 4 * i;
-    if (sel[i]) out[j + 3] = 255; else { out[j] = out[j + 1] = out[j + 2] = 175; out[j + 3] = out[j + 3] ? 28 : 0; }
+    if (sel[i]) out[j + 3] = out[j + 3] ? 255 : 0;  // a cell the legend filter hides stays hidden
+    else { out[j] = out[j + 1] = out[j + 2] = 175; out[j + 3] = out[j + 3] ? 28 : 0; }
   }
   return out;
 }
@@ -1042,11 +1069,25 @@ async function loadEMAll() {  // every slice of the project in one picture (a jo
   const gl = EM.gl; gl.bindBuffer(gl.ARRAY_BUFFER, EM.col); gl.bufferData(gl.ARRAY_BUFFER, withSel(EM.colors[ckey], EM.selAll), gl.STATIC_DRAW);
   EM.colKey = ckey;
 }
-function normEM(buf) {
+function normEM(buf) {  // to [-0.95, 0.95]; EM.norm turns these back into UMAP / PCA coordinates
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
   for (let i = 0; i < buf.length; i += 2) { x0 = Math.min(x0, buf[i]); x1 = Math.max(x1, buf[i]); y0 = Math.min(y0, buf[i + 1]); y1 = Math.max(y1, buf[i + 1]); }
   const s = 1.9 / Math.max(x1 - x0, y1 - y0, 1e-9), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
   for (let i = 0; i < buf.length; i += 2) { buf[i] = (buf[i] - cx) * s; buf[i + 1] = (buf[i + 1] - cy) * s; }
+  EM.norm = { s, cx, cy };
+}
+// the view and the lasso in UMAP / PCA coordinates, so they carry over to another slice of a joint embedding
+function emRawView() {
+  const v = EM.view, n = EM.norm;
+  return { cx: -v.x / v.z / n.s + n.cx, cy: -v.y / v.z / n.s + n.cy, half: 1 / (v.z * n.s) };
+}
+function setEmRawView(r) {
+  const n = EM.norm, z = Math.min(200, Math.max(0.5, 1 / (r.half * n.s)));
+  EM.view = { z, x: -(r.cx - n.cx) * n.s * z, y: -(r.cy - n.cy) * n.s * z };
+}
+function canvasToRaw([cx, cy]) {
+  const v = EM.view, n = EM.norm;
+  return [(((cx - 210) / 190 - v.x) / v.z) / n.s + n.cx, ((-(cy - 190) / 190 - v.y) / v.z) / n.s + n.cy];
 }
 async function loadEMData() {
   if (emAll()) return loadEMAll();
@@ -1054,11 +1095,7 @@ async function loadEMData() {
   const kind = $("emKind").value, key = `${st.sample.sample_id}|${kind}|${st.emb.run_id}`;
   if (EM.xyKey !== key) {
     const buf = new Float32Array(await (await fetch(`/api/sample/${st.sample.sample_id}/embedding.bin?kind=${kind}&r=${st.emb.run_id}`)).arrayBuffer());
-    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-    for (let i = 0; i < buf.length; i += 2) { x0 = Math.min(x0, buf[i]); x1 = Math.max(x1, buf[i]); y0 = Math.min(y0, buf[i + 1]); y1 = Math.max(y1, buf[i + 1]); }
-    const s = 1.9 / Math.max(x1 - x0, y1 - y0, 1e-9), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-    for (let i = 0; i < buf.length; i += 2) { buf[i] = (buf[i] - cx) * s; buf[i + 1] = (buf[i + 1] - cy) * s; }
-    EM.xy = buf; EM.n = buf.length / 2; EM.xyKey = key; EM.view = { z: 1, x: 0, y: 0 };
+    normEM(buf); EM.xy = buf; EM.n = buf.length / 2; EM.xyKey = key; EM.view = { z: 1, x: 0, y: 0 };
     const gl = EM.gl; gl.bindBuffer(gl.ARRAY_BUFFER, EM.pos); gl.bufferData(gl.ARRAY_BUFFER, buf, gl.STATIC_DRAW);
   }
   const cm = $("emColor").value === "map" ? st.mode : $("emColor").value;
@@ -1113,11 +1150,16 @@ function setSelection(sel) {
 }
 function lassoSelect(path) {
   if (path.length < 3) return;
+  EM.lassoRaw = path.map(canvasToRaw);
+  selectRaw(EM.lassoRaw);
+}
+function selectRaw(poly) {  // the cells inside a polygon in UMAP / PCA coordinates
+  const path = poly, n = EM.norm;
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
   path.forEach(([x, y]) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); });
   const sel = new Uint8Array(EM.n), m = path.length;
   for (let i = 0; i < EM.n; i++) {
-    const [px, py] = emToCanvas(EM.xy[2 * i], EM.xy[2 * i + 1]);
+    const px = EM.xy[2 * i] / n.s + n.cx, py = EM.xy[2 * i + 1] / n.s + n.cy;
     if (px < x0 || px > x1 || py < y0 || py > y1) continue;
     let inside = false;
     for (let a = 0, b = m - 1; a < m; b = a++) {
@@ -1166,8 +1208,8 @@ function lassoSelect(path) {
   c.addEventListener("dblclick", () => { EM.view = { z: 1, x: 0, y: 0 }; drawEM(); });
 })();
 $("emLasso").onclick = () => { EM.lasso = !EM.lasso; $("emLasso").classList.toggle("on", EM.lasso); $("emcanvas").classList.toggle("lasso", EM.lasso); };
-$("emClear").onclick = () => { EM.selAll = null; setSelection(null); };
-$("emScope").onchange = () => { EM.selAll = null; setSelection(null); loadEMData().then(drawEM); };
+$("emClear").onclick = () => { EM.selAll = null; EM.lassoRaw = null; setSelection(null); };
+$("emScope").onchange = () => { EM.selAll = null; EM.lassoRaw = null; setSelection(null); loadEMData().then(drawEM); };
 $("emZoom").onclick = () => {  // fit the map to the selected cells
   if (!st.sel || !GL.posArr) return;
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
@@ -2237,7 +2279,8 @@ undoes an alignment. Regions drawn before the cells move are moved along with th
 <h3>Several slices</h3><ul>
 <li>Import an h5ad and tick several sections (or give several Xenium folders): each slice becomes a sample of one
 project, with its metadata (condition, day, …); several image files go to the slices whose section their file
-names hold. <b>◀ ▶</b> or <kbd>[</kbd> <kbd>]</kbd> step through the slices (keeping <b>Color by</b>);
+names hold. <b>◀ ▶</b> or <kbd>[</kbd> <kbd>]</kbd> step through the slices and keep what is shown (Color by, legend
+filters, hidden H&amp;E, the UMAP window and, on a UMAP of all slices, its zoom and selection);
 <b>Slices…</b> shows them side by side; <b>Compare…</b> shows the cell type, lineage, niche or cluster composition of
 each slice, grouped by a metadata column (<b>Save CSV…</b>).</li>
 <li><b>all slices together</b>: <b>Annotate</b> annotates all slices of the project at once (one marker step and one
@@ -2481,7 +2524,7 @@ function sliceNav() {
 }
 async function gotoSlice(id) {
   if (!id || (st.sample && id === st.sample.sample_id)) return;
-  st.wantMode = st.mode !== "cells" ? st.mode : null; st.sliceSwitch = true;
+  st.wantMode = st.mode !== "cells" ? st.mode : null; st.sliceSwitch = true; st.keepView = viewState();
   $("sample").value = id; await selectSample(id);
 }
 function stepSlice(d) {
@@ -2508,7 +2551,7 @@ async function annotateProject() {  // one marker annotation of all slices; then
   try {
     await projectJob("annotate", { markers_text: text, resolution: $("mkAuto").checked ? "auto" : +$("mkRes").value,
                                    carry: !!st.sid && $("carry").checked }, $("pfill"), $("pstage"));
-    st.wantMode = st.mode !== "cells" ? st.mode : null; st.sliceSwitch = true;
+    st.wantMode = st.mode !== "cells" ? st.mode : null; st.sliceSwitch = true; st.keepView = viewState();
     projectOf(st.sample.sample_id).samples.forEach((id) => delete st.openedThisVisit[id]);  // open the new joint annotations
     await loadSamples(st.sample.sample_id);
     setTimeout(() => $("progress").classList.remove("show"), 800);
