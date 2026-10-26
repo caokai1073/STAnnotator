@@ -1,11 +1,11 @@
 ---
 name: spatial-annotation
-description: Interactive spatial transcriptomics cell type annotation with natural-language spatial priors (celltypeagent MCP tools). Use when the user wants to annotate or correct cell types in a Xenium sample, add rules such as "epithelial cells are only in the mucosa", inspect conflicts or H&E, use the regions the user drew, review cells, or export results.
+description: Interactive spatial transcriptomics cell type annotation with natural-language spatial priors (stagent MCP tools). Use when the user wants to annotate or correct cell types in a Xenium sample, add rules such as "epithelial cells are only in the mucosa", inspect conflicts or H&E, use the regions the user drew, review cells, or export results.
 ---
 
 # Spatial annotation agent
 
-You translate the user's intent into calls to the `celltypeagent` MCP tools. You never compute or edit
+You translate the user's intent into calls to the `stagent` MCP tools. You never compute or edit
 labels yourself: every label comes from the engine, and every change is a versioned, reproducible step.
 Users are biologists and pathologists; keep the conversation in their language and in their terms.
 
@@ -70,7 +70,7 @@ apply here, the region assignment is wrong, a technical artifact, or a cell stat
 - Record verdicts with `record_verdicts` only when the user (or a named pathologist) states the verdict.
   Never record a verdict on your own judgement. Put the reviewer's name in `reviewer` when given.
 - For systematic review by pathologists, point them to the review page
-  (`.venv/bin/python -m celltypeagent.review_app`, then http://localhost:8765/?session=<session_id>) instead of
+  (`.venv/bin/python -m stagent.review_app`, then http://localhost:8765/?session=<session_id>) instead of
   reviewing cell by cell in chat. Their verdicts land in the same session; read them with `review_progress`.
 - If many cells in a group are judged `reference_right`, suggest weakening (`update_constraint` with
   `moderate`/`weak`) or narrowing the constraint; do not silently keep a rule the reviewer contradicted.

@@ -1,4 +1,4 @@
-"""Command line: celltypeagent {app, make-app, import, import-xenium, samples, viewer, mcp}."""
+"""Command line: stagent {app, make-app, import, import-xenium, samples, viewer, mcp}."""
 import argparse, os, platform, shutil, sys
 from pathlib import Path
 from . import config
@@ -26,18 +26,18 @@ def make_app(dest=None):
     import subprocess, tempfile
     from importlib.metadata import version
     if platform.system() != "Darwin":
-        raise SystemExit("make-app builds a macOS app; on this system run: celltypeagent app")
+        raise SystemExit("make-app builds a macOS app; on this system run: stagent app")
     dest = Path(dest or Path.home() / "Applications").expanduser()
     app = dest / "STAnnotator.app"
     if app.exists():
         shutil.rmtree(app)
     (app / "Contents" / "MacOS").mkdir(parents=True)
     (app / "Contents" / "Resources").mkdir()
-    (app / "Contents" / "Info.plist").write_text(APP_PLIST.format(version=version("celltypeagent")))
+    (app / "Contents" / "Info.plist").write_text(APP_PLIST.format(version=version("stagent")))
     exe = app / "Contents" / "MacOS" / "STAnnotator"
     exe.write_text("#!/bin/sh\n"
-                   f'export CELLTYPEAGENT_HOME="{config.HOME}"\n'
-                   f'exec "{sys.executable}" -m celltypeagent.desktop "$@" >> "{config.HOME / "app.log"}" 2>&1\n')
+                   f'export STAGENT_HOME="{config.HOME}"\n'
+                   f'exec "{sys.executable}" -m stagent.desktop "$@" >> "{config.HOME / "app.log"}" 2>&1\n')
     exe.chmod(0o755)
     icon = config.PACKAGE / "data" / "app_icon.png"
     try:  # .icns from the PNG with the system's iconutil
@@ -58,7 +58,7 @@ def make_app(dest=None):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="celltypeagent", description="Spatial cell type annotation with Claude.")
+    ap = argparse.ArgumentParser(prog="stagent", description="Spatial cell type annotation with Claude.")
     sub = ap.add_subparsers(dest="cmd", required=True)
     im = sub.add_parser("import", help="import one sample from h5ad + registered H&E + registration file")
     im.add_argument("--name", required=True, help="sample id used in the viewer and in Claude")
@@ -110,7 +110,7 @@ def main(argv=None):
         t = list_samples()
         print(t.to_string(index=False) if len(t) else f"no samples in {config.SAMPLES}")
     elif a.cmd == "viewer":
-        sys.argv = ["celltypeagent-web", "--port", str(a.port)]
+        sys.argv = ["stagent-web", "--port", str(a.port)]
         from .webapp import main as web
         web()
     elif a.cmd == "remote-serve":

@@ -1,5 +1,5 @@
 [project]
-name = "celltypeagent"
+name = "stagent"
 version = "0.2.0"
 description = "Spatial transcriptomics cell type annotation driven by natural-language spatial priors"
 requires-python = ">=3.11"
@@ -14,17 +14,18 @@ app = ["pywebview>=5"]  # the desktop window (macOS: WebKit through PyObjC)
 gpu = ["torch"]  # optional: exact kNN on an NVIDIA / Apple GPU in the marker step
 
 [project.scripts]
-celltypeagent = "celltypeagent.cli:main"
-celltypeagent-mcp = "celltypeagent.mcp_server:main"
-celltypeagent-review = "celltypeagent.review_app:main"
-celltypeagent-web = "celltypeagent.webapp:main"
+stagent = "stagent.cli:main"
+celltypeagent = "stagent.cli:main"  # the old name, for installations and app settings that still use it
+stagent-mcp = "stagent.mcp_server:main"
+stagent-review = "stagent.review_app:main"
+stagent-web = "stagent.webapp:main"
 
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["celltypeagent"]
+packages = ["stagent"]
 
 [tool.setuptools.package-data]
-celltypeagent = ["static/*", "static/vendor/*", "data/*"]
+stagent = ["static/*", "static/vendor/*", "data/*"]

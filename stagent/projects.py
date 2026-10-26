@@ -4,7 +4,7 @@ Every slice stays a sample of its own (its cells, image and registration); a pro
 of each (the section value and the metadata that is constant within it, e.g. condition, day, mouse), so the viewer
 can step through the slices, show them side by side, and later annotate and compare them jointly.
 
-$CELLTYPEAGENT_HOME/projects/<project_id>.json:
+$STAGENT_HOME/projects/<project_id>.json:
   {"project_id", "name", "samples": [sample ids in order], "slices": {sample_id: {"section", "metadata"}}, "created_at"}
 """
 import json, re, time

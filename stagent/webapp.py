@@ -1,6 +1,6 @@
 """Main web app: pick a sample, annotate it, view the result on the H&E, and talk to the agent.
 
-Run:  python -m celltypeagent.webapp [--port 8765]
+Run:  python -m stagent.webapp [--port 8765]
 Then open http://localhost:8765 (forward the port from the server first).
 
 Everything runs on this server. The chat box calls the locally installed Claude Code CLI in print mode with
@@ -458,7 +458,7 @@ async def review_page(req):
 
 
 def desktop_mode():
-    return os.environ.get("CELLTYPEAGENT_DESKTOP") == "1"
+    return os.environ.get("STAGENT_DESKTOP") == "1"
 
 
 def api_config(req):
@@ -466,7 +466,7 @@ def api_config(req):
     own Claude Code instead."""
     return _json({"chat": not desktop_mode() and shutil.which("claude") is not None, "desktop": desktop_mode(),
                   "home": str(config.HOME), "platform": sys.platform, "build": config.build(),
-                  "remote": os.environ.get("CELLTYPEAGENT_REMOTE") == "1", "host": platform.node()})
+                  "remote": os.environ.get("STAGENT_REMOTE") == "1", "host": platform.node()})
 
 
 FS_KINDS = {"h5ad": (".h5ad",), "image": (".tif", ".tiff", ".btf"), "csv": (".csv", ".tsv", ".txt"),
@@ -1541,7 +1541,7 @@ async def api_markers_draft(req: Request):
         prompt += f"\nStart from this existing list and revise it:\n```\n{current}\n```"
     args = ["claude", "-p", prompt, "--output-format", "stream-json", "--verbose", "--tools", "",
             "--mcp-config", str(CHAT_MCP), "--strict-mcp-config",
-            "--allowedTools", "mcp__celltypeagent__get_panel_genes mcp__celltypeagent__check_marker_list",
+            "--allowedTools", "mcp__stagent__get_panel_genes mcp__stagent__check_marker_list",
             "--append-system-prompt", DRAFT_PROMPT]
 
     async def stream():
@@ -1573,10 +1573,10 @@ async def api_markers_draft(req: Request):
 
 
 # ---------------- chat bridge to Claude Code ----------------
-SYSTEM_PROMPT = """You are the annotation assistant inside the celltypeagent web viewer.
+SYSTEM_PROMPT = """You are the annotation assistant inside the stagent web viewer.
 The user looks at their sample on the H&E with cells colored by type and types into a chat box.
 The active session is {sid} (sample {sample}). It is already loaded: never call start_session,
-resume_session or list_sessions. Use only the celltypeagent tools.
+resume_session or list_sessions. Use only the stagent tools.
 
 Reply in the language the context line names (it is detected from the user's message), briefly (2-6
 sentences, no tables unless asked); keep cell type and region names as they are. Do not announce what you are
@@ -1651,8 +1651,8 @@ async def api_chat(req: Request):
     meta_p = s.dir / "chat_meta.json"
     meta = json.load(open(meta_p)) if meta_p.exists() else {}
     args = ["claude", "-p", prompt, "--output-format", "stream-json", "--verbose", "--tools", "",
-            "--mcp-config", str(CHAT_MCP), "--strict-mcp-config", "--allowedTools", "mcp__celltypeagent",
-            "--disallowedTools", " ".join(f"mcp__celltypeagent__{t}" for t in BLOCKED),
+            "--mcp-config", str(CHAT_MCP), "--strict-mcp-config", "--allowedTools", "mcp__stagent",
+            "--disallowedTools", " ".join(f"mcp__stagent__{t}" for t in BLOCKED),
             "--append-system-prompt", SYSTEM_PROMPT.format(sid=sid, sample=s.sample_id)]
     if meta.get("claude_session"):
         args += ["--resume", meta["claude_session"]]
@@ -1698,7 +1698,7 @@ def api_chat_log(req):
 
 def build_app(port):
     claudelink.write_viewer_state(port=port, pid=os.getpid(), mode="desktop" if desktop_mode() else "web")
-    CHAT_MCP.write_text(json.dumps({"mcpServers": {"celltypeagent": {"type": "http", "url": f"http://127.0.0.1:{port}/mcp"}}}))
+    CHAT_MCP.write_text(json.dumps({"mcpServers": {"stagent": {"type": "http", "url": f"http://127.0.0.1:{port}/mcp"}}}))
     mcp_http = mcp_server.mcp.streamable_http_app()
 
     @contextlib.asynccontextmanager

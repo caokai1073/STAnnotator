@@ -2,7 +2,7 @@
 import json, shutil, time
 from pathlib import Path
 import numpy as np
-from celltypeagent.session import Session, list_samples
+from stagent.session import Session, list_samples
 
 t0 = time.time()
 print(list_samples().head(3).to_string())
@@ -48,7 +48,7 @@ v = s.label_cells(s.types[int(np.bincount(s.result()["pred"][s.result()["region"
                   region="patch A", text="smoke test")
 print("label_cells in region:", s.diff(v - 1, v)["n_label_changes"], "changes")
 s.record_verdicts([int(c.cell.iloc[0])], "reference_right", note="smoke test")
-from celltypeagent import plausibility, markerqc
+from stagent import plausibility, markerqc
 ps = plausibility.summary(s, top=3)
 print("plausibility:", ps["n_out_of_place_cells"], "out-of-place cells,", ps["n_candidate_areas"], "candidate areas; grid", ps["grid"])
 print("overview", plausibility.fig_overview(s, highlight=["Epithelial"]))
@@ -61,7 +61,7 @@ q = markerqc.check(s)
 print("marker check:", len(q["nodes"]), "nodes,", len(q["flags"]), "flags; unassigned", (q["unassigned"] or {}).get("n_cells"))
 print("proposal diff:", markerqc.propose(s, s.scheme["text"].replace("Goblet cells: ", "Goblet cells: MUC2+ ", 1)
                                          if "MUC2" in s.panel else s.scheme["text"], "smoke test")["diff"])
-from celltypeagent import insights, advice
+from stagent import insights, advice
 comp = insights.compartment(s, ["Epithelial"])
 print("compartment:", comp["n_pieces"], "pieces,", comp["n_cells"], "cells; fig", insights.fig_compartment(s, comp, "mucosa"))
 advice.store_compartment(s, "mucosa", comp, {"lineages": ["Epithelial"]})
@@ -77,15 +77,15 @@ new = advice.add(s, [{"category": "compartments", "title": "mucosa", "text": "sm
                      {"category": "qc", "title": "registration", "text": "smoke test", "action": {"kind": "registration"}}])
 print("advice:", [(x["id"], x["action"]["kind"]) for x in new], advice.status(s))
 print("report:", advice.write_report(s, "# Report\n\n" + json.dumps(insights.annotation_facts(s), default=str)[:400])["path"])
-from celltypeagent import embedding, config
+from stagent import embedding, config
 had_embedding = (config.SAMPLES / s.sample_id / "embedding").exists()
 em = embedding.run(s)
 print("embedding:", em["n_clusters"], "Leiden clusters,", em["seconds"], "s; umap", embedding.coords(s.sample_id).shape)
-from celltypeagent import niches
+from stagent import niches
 ns = niches.run(s, k=15, n_niches=6)
 print("niches:", [(x["niche"], x["n_cells"], list(x["cell_types"])[:2]) for x in ns["niches"]])
 print("niches by radius:", niches.run(s, radius_um=40, n_niches=6)["params"]["k_range"], "| context:", niches.context(s)["regions"][0]["radius_um_covered_by_k"])
-from celltypeagent import notebook
+from stagent import notebook
 print("notebook:", notebook.build(s), "| csv columns:", list(s.export_table().columns)[-6:])
 v = s.undo(); print("undo:", s.state(v)["message"])
 v = s.revert(2)

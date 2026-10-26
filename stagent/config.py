@@ -1,7 +1,8 @@
 """Paths and devices.
 
-All data lives under one home directory: $CELLTYPEAGENT_HOME, default ~/celltypeagent
-  samples/<sample_id>/   imported samples (celltypeagent import ...)
+All data lives under one home directory: $STAGENT_HOME, default ~/stagent (the older names still work:
+$CELLTYPEAGENT_HOME, and an existing ~/celltypeagent folder when there is no ~/stagent)
+  samples/<sample_id>/   imported samples (stagent import ...)
   sessions/<session_id>/ annotations, versions, chats
   marker_lists/          marker lists saved from the viewer
   trash/                 samples reset in the viewer
@@ -10,7 +11,15 @@ import os, sys
 from pathlib import Path
 
 PACKAGE = Path(__file__).parent
-HOME = Path(os.environ.get("CELLTYPEAGENT_HOME", Path.home() / "celltypeagent")).expanduser()
+def _home():
+    for var in ("STAGENT_HOME", "CELLTYPEAGENT_HOME"):
+        if os.environ.get(var):
+            return Path(os.environ[var]).expanduser()
+    new, old = Path.home() / "stagent", Path.home() / "celltypeagent"
+    return old if old.is_dir() and not new.exists() else new
+
+
+HOME = _home()
 WORK = HOME  # older name kept for the analysis scripts
 SAMPLES = HOME / "samples"
 SESSIONS = HOME / "sessions"
@@ -18,7 +27,7 @@ TRASH = HOME / "trash"
 USER_MARKERS = HOME / "marker_lists"
 CHAT_MCP = HOME / "chat_mcp.json"
 # working directory of the Claude Code CLI behind the viewer's chat box (only used when `claude` is installed)
-ROOT = Path(os.environ.get("CELLTYPEAGENT_ROOT", PACKAGE.parent))
+ROOT = Path(os.environ.get("STAGENT_ROOT", PACKAGE.parent))
 # H&E pixel size used when a sample's meta.json does not record one (bundles made before import existed)
 HE_UM_PER_PX = 0.69
 # a standalone app (PyInstaller): there is no "python -m", the app's executable takes the subcommands itself
@@ -29,7 +38,7 @@ if FROZEN:  # numba (pynndescent) caches compiled code; the app bundle is read-o
 
 def self_command(*args):
     """Command line that runs one of this installation's subcommands (mcp, viewer, ...)."""
-    return [sys.executable, *args] if FROZEN else [sys.executable, "-m", "celltypeagent.cli", *args]
+    return [sys.executable, *args] if FROZEN else [sys.executable, "-m", "stagent.cli", *args]
 
 
 def ensure_dirs():

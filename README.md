@@ -6,7 +6,7 @@ with Claude: spatial priors ("epithelial cells are only in the mucosa"), correct
 cells"), or requests to split a mixed cluster. Claude turns each request into an explicit constraint, correction
 or re-clustering step; the probabilistic model does the annotation, flags conflicts for review, and versions
 every step. Everything runs on your own computer; images and expression data never leave it. (The Python package
-and its command are called `celltypeagent`.)
+and its command are called `stagent`; the older name `celltypeagent` still works.)
 
 ## 1. Install
 
@@ -38,11 +38,11 @@ the app and choose Open (or allow it in System Settings -> Privacy & Security).
    On Windows use `.venv\Scripts\...` in place of `.venv/bin/...`. Add `gpu` (`".[app,gpu]"`) to install PyTorch,
    which only speeds up the marker step on an NVIDIA or Apple GPU.
 
-3. macOS: `.venv/bin/celltypeagent make-app` puts an **STAnnotator** launcher in `~/Applications` (it runs this
-   folder's environment). Elsewhere: `.venv/bin/celltypeagent app` (`--browser` for the browser instead of a window).
+3. macOS: `.venv/bin/stagent make-app` puts an **STAnnotator** launcher in `~/Applications` (it runs this
+   folder's environment). Elsewhere: `.venv/bin/stagent app` (`--browser` for the browser instead of a window).
 
-Your data and annotations are kept in one data folder, `~/celltypeagent` by default (`CELLTYPEAGENT_HOME` sets
-another one).
+Your data and annotations are kept in one data folder, `~/stagent` by default (`STAGENT_HOME` sets
+another one; a data folder of an older version, `~/celltypeagent`, is used as it is when there is no `~/stagent`).
 
 ## 2. Import a sample
 
@@ -70,8 +70,8 @@ at least 90% of the cells on the image. Regions drawn before the cells move are 
 From the command line (`--he` and `--registration` are optional):
 
 ```bash
-.venv/bin/celltypeagent import-xenium --name ln1 --xenium /path/to/output-XETG... [--he he.ome.tif --registration he_imagealignment.csv]
-.venv/bin/celltypeagent import --name <sample_id> --h5ad cells.h5ad [--he he.ome.tif --registration alignment.csv] \
+.venv/bin/stagent import-xenium --name ln1 --xenium /path/to/output-XETG... [--he he.ome.tif --registration he_imagealignment.csv]
+.venv/bin/stagent import --name <sample_id> --h5ad cells.h5ad [--he he.ome.tif --registration alignment.csv] \
   [--section-column donor_id --section 147328]
 ```
 
@@ -118,7 +118,7 @@ eight images with sizes, MD5 checksums and download links; 1.4-2.1 GB each). Eac
 
 ```bash
 D=~/Downloads/SCP2927
-.venv/bin/celltypeagent import --name 147328 \
+.venv/bin/stagent import --name 147328 \
   --h5ad $D/scp_xenium_human_{epi,fib,lymph,myeloid,stroma}.h5ad \
   --he $D/human_slideid-0050423-108731-147328.ome.tif \
   --registration examples/scp2927/registration.csv \
@@ -148,8 +148,8 @@ Claude answers in the language you write in.
 
 The app can work on a server over SSH: the data and every computation stay on the server, this computer shows the
 viewer and runs Claude Code. Click **This computer** (in the toolbar on the right) -> **A server over SSH**, enter the server (a `Host`
-of `~/.ssh/config` or `user@server`), the full path of STAnnotator's `celltypeagent` command there and, optionally,
-its data folder (default `~/celltypeagent` on the server), then **Test** and **Connect**. The app remembers the
+of `~/.ssh/config` or `user@server`), the full path of STAnnotator's `stagent` command there and, optionally,
+its data folder (default `~/stagent` on the server), then **Test** and **Connect**. The app remembers the
 server and connects again when it starts; **This computer** -> **Use this computer** goes back.
 
 On the server, install STAnnotator once (the same version as the app; no window needed):
@@ -157,13 +157,13 @@ On the server, install STAnnotator once (the same version as the app; no window 
 ```bash
 cd ~ && unzip -oq STAnnotator-<version>.zip && cd STAnnotator
 uv venv .venv --python 3.12 && uv pip install --python .venv/bin/python -e .
-# the command to enter in the app: ~/STAnnotator/.venv/bin/celltypeagent
+# the command to enter in the app: ~/STAnnotator/.venv/bin/stagent
 ```
 
 The SSH login must work without a password prompt (a key: `ssh-keygen`, then `ssh-copy-id <server>`; or ssh-agent).
 While connected, **Choose…** buttons browse the server's files, **Export…** and the other Save buttons download into
 files on this computer, and **Ask Agent** opens Claude Code here with its tools running on the server (through `ssh`), on the
-same data as the viewer. The viewer keeps running on the server between connections (`celltypeagent remote-serve`
+same data as the viewer. The viewer keeps running on the server between connections (`stagent remote-serve`
 starts it, on the server's own localhost only; its process id is in `<data folder>/remote_viewer.json`).
 
 ## 4. The viewer
@@ -174,7 +174,7 @@ the bottom **Reset** and **Remove all**. On the map, next to the **Color by** ba
 (Claude Code), **Agent Review** and **Report**. **›** at its top (or `t`) folds it to the right edge for a bigger map,
 **‹** brings it back.
 
-The app's window (or the web viewer: `.venv/bin/celltypeagent viewer`, then http://localhost:8765). Changes made
+The app's window (or the web viewer: `.venv/bin/stagent viewer`, then http://localhost:8765). Changes made
 by Claude show up within a few seconds.
 
 1. Pick a sample; earlier annotations are under **Annotation** (Data tab). Choose the **Method** (Annotate tab): *Marker genes* (a marker
@@ -344,16 +344,16 @@ colors are immediate.
 
 ## Troubleshooting
 
-- The app does not open: see `<data folder>/app.log`; run `.venv/bin/celltypeagent app` in a terminal to see
+- The app does not open: see `<data folder>/app.log`; run `.venv/bin/stagent app` in a terminal to see
   errors, or `--browser` to use the browser. The web viewer logs to `<data folder>/viewer.log`.
 - Claude Code does not open: it must be installed and logged in (`claude` works in Terminal). By hand:
-  `cd ~/celltypeagent/claude_workspace && claude --mcp-config celltypeagent_mcp.json`.
+  `cd ~/stagent/claude_workspace && claude --mcp-config stagent_mcp.json`.
 - Import says too few cells land on the H&E: check the registration file, `--section`, and that the cell
   coordinates are in micrometers.
 
 ## Other clients
 
-- Claude Code without the app: `claude mcp add celltypeagent -e CELLTYPEAGENT_HOME=$HOME/celltypeagent -- $PWD/.venv/bin/python -m celltypeagent.mcp_server`
+- Claude Code without the app: `claude mcp add stagent -e STAGENT_HOME=$HOME/stagent -- $PWD/.venv/bin/python -m stagent.mcp_server`
   (run in this folder). `.claude/skills/spatial-annotation/` holds the agent's working rules for Claude Code.
 - Shared server: the viewer binds to localhost only. Others reach it through an SSH tunnel
   (`ssh -N -L 8765:localhost:8765 <user>@<server>`), then open http://localhost:8765. The conflict review page for
@@ -381,8 +381,8 @@ The hardened-runtime exceptions it uses (`packaging/macos/entitlements.plist`) a
 ## Layout
 
 ```
-celltypeagent/     Python package
-  cli.py           celltypeagent app / make-app / import / import-xenium / samples / viewer / mcp
+stagent/     Python package
+  cli.py           stagent app / make-app / import / import-xenium / samples / viewer / mcp
   desktop.py       the desktop app (pywebview window around the local server)
   claudelink.py    connection to the user's Claude Code; viewer <-> agent handoff files
   importer.py      Xenium output folder, or h5ad + H&E + registration -> sample bundle

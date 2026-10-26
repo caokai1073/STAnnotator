@@ -9,7 +9,7 @@ source's cell metadata in `obs` (`x`, `y` in um, also in `obsm["spatial"]`; the 
 In the app: **Import... > New sample > h5ad**, choose the file, name it. Or:
 
 ```bash
-.venv/bin/celltypeagent import --name cadinu_D0_m3a_s2 --h5ad examples/cadinu_merfish/cadinu_merfish_D0_m3a_1_slice_2.h5ad
+.venv/bin/stagent import --name cadinu_D0_m3a_s2 --h5ad examples/cadinu_merfish/cadinu_merfish_D0_m3a_1_slice_2.h5ad
 ```
 
 (From the full file: `--h5ad /path/to/Cadinu_MERFISH_DSS/adata.h5ad --section-column Slice_ID --section

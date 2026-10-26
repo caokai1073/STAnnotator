@@ -1,6 +1,6 @@
 """Lab server only: build SCP2927 per-sample bundles from the analysis pipeline outputs.
 
-Usage: python -m celltypeagent.prepare
+Usage: python -m stagent.prepare
 Each bundle (work/samples/<sample_id>/) holds:
   cells.parquet   one row per cell: global index, coordinates (um and H&E level-0 px), lineage,
                   reference label (dataset annotation, shown for comparison only), pathologist region,
@@ -10,14 +10,14 @@ Each bundle (work/samples/<sample_id>/) holds:
   tiles.parquet   H&E tiles of this sample with their domain (for domain example sheets)
   counts.npz      raw counts (CSR, rows in cells.parquet order) for re-prediction after model updates
   meta.json       sample metadata, type list, H&E path, source folder
-Also builds the reference pool for the expression model (celltypeagent.model.build_reference).
+Also builds the reference pool for the expression model (stagent.model.build_reference).
 """
 import glob, json
 from pathlib import Path
 import numpy as np, pandas as pd, scipy.sparse as sp
 from . import config, model
 
-# Lab-server inputs for SCP2927 (Pokatayev et al., Nature 2026); other users import data with `celltypeagent import`
+# Lab-server inputs for SCP2927 (Pokatayev et al., Nature 2026); other users import data with `stagent import`
 SOURCE_DIR = Path("/data/kai/endothelial/data/SCP2927")
 HE_DIR = SOURCE_DIR / "HE"
 REGISTRATION = Path("/data/kai/endothelial/hne_veins2/registration/transforms_final_lvl0.csv")

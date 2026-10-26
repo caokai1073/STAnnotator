@@ -1,6 +1,6 @@
 """MCP server exposing the annotation engine as tools (stdio transport).
 
-Run: python -m celltypeagent.mcp_server
+Run: python -m stagent.mcp_server
 The server keeps one active session; every tool that changes state creates a new version.
 Tool results are compact JSON; figure tools also return the PNG so the client can display it.
 """
@@ -128,7 +128,7 @@ Every change is a version (history, diff, revert). export writes a CSV with one 
 language of the user's message, keeping cell type and region names as they are."""
 
 
-mcp = FastMCP("celltypeagent", instructions=INSTRUCTIONS)
+mcp = FastMCP("stagent", instructions=INSTRUCTIONS)
 _active: dict = {}
 
 

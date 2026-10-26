@@ -1,6 +1,6 @@
 """STAnnotator desktop app: the viewer in a native window, with its local server running inside the app.
 
-    celltypeagent app [--browser]          (or: python -m celltypeagent.desktop)
+    stagent app [--browser]          (or: python -m stagent.desktop)
 
 The window is pywebview (WebKit on macOS); without pywebview, or with --browser, the viewer opens in the default
 browser instead. Claude is used through the user's own Claude Code (MCP), not inside the app.
@@ -165,11 +165,11 @@ def _mac_identity():
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="celltypeagent app", description=__doc__.splitlines()[0])
+    ap = argparse.ArgumentParser(prog="stagent app", description=__doc__.splitlines()[0])
     ap.add_argument("--browser", action="store_true", help="open the viewer in the default browser instead of a window")
     ap.add_argument("--port", type=int, default=8765)
     a = ap.parse_args(argv)
-    os.environ["CELLTYPEAGENT_DESKTOP"] = "1"  # the page then offers Claude Code instead of a chat box
+    os.environ["STAGENT_DESKTOP"] = "1"  # the page then offers Claude Code instead of a chat box
     config.ensure_dirs()
     port = free_port(a.port)
     server = start_server(port)

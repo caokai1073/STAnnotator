@@ -15,7 +15,7 @@ def show(res, n=400):
 
 
 async def main():
-    params = StdioServerParameters(command=PY, args=["-m", "celltypeagent.mcp_server"], env=dict(os.environ))
+    params = StdioServerParameters(command=PY, args=["-m", "stagent.mcp_server"], env=dict(os.environ))
     async with stdio_client(params) as (r, w):
         async with ClientSession(r, w) as s:
             await s.initialize()
@@ -41,7 +41,7 @@ async def main():
                 show(res)
                 if name == "start_session":
                     sid = json.loads(res.content[0].text)["session_id"]
-                    from celltypeagent.session import Session  # the user draws a region in the viewer
+                    from stagent.session import Session  # the user draws a region in the viewer
                     import numpy as np
                     c = Session(sid).cells
                     cx, cy, h = float(np.median(c.px)), float(np.median(c.py)), 2500.0
@@ -54,7 +54,7 @@ async def main():
                 show(await s.call_tool("show_conflicts", {"group_id": gid, "n": 3}))
             print("\n>> history")
             show(await s.call_tool("history", {}), 600)
-    from celltypeagent import config
+    from stagent import config
     shutil.rmtree(config.SESSIONS / sid)  # keep the sessions folder free of test sessions
 
 

@@ -1,6 +1,6 @@
 """Review web app for pathologists: browse conflict groups, inspect H&E, record verdicts.
 
-Run:  python -m celltypeagent.review_app [--host 127.0.0.1] [--port 8765]
+Run:  python -m stagent.review_app [--host 127.0.0.1] [--port 8765]
 Data never leaves the server. Remote reviewers connect through an SSH tunnel:
       ssh -L 8765:localhost:8765 <server>   then open http://localhost:8765
 Verdicts go to the session's verdicts.jsonl through Session.record_verdicts, the same API the agent uses.

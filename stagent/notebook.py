@@ -99,7 +99,7 @@ def _sources():
     out = {"config": CONFIG_STUB}
     for name in CARRIED:
         try:
-            out[name] = inspect.getsource(importlib.import_module(f"celltypeagent.{name}"))
+            out[name] = inspect.getsource(importlib.import_module(f"stagent.{name}"))
         except (OSError, TypeError):
             f = config.PACKAGE / "algorithm_src" / f"{name}.py"
             if not f.exists():

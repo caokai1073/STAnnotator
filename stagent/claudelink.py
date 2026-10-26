@@ -16,7 +16,7 @@ CLAUDE_PATHS = ["~/.local/bin", "~/.claude/local", "/opt/homebrew/bin", "/usr/lo
 
 def server_entry():
     cmd = config.self_command("mcp")
-    return {"command": cmd[0], "args": cmd[1:], "env": {"CELLTYPEAGENT_HOME": str(config.HOME)}}
+    return {"command": cmd[0], "args": cmd[1:], "env": {"STAGENT_HOME": str(config.HOME)}}
 
 
 _shell_claude = None
@@ -66,10 +66,10 @@ def status():
 # ---------------- Claude Code workspace ----------------
 CLAUDE_MD = """# STAnnotator workspace
 
-This folder connects Claude Code to the STAnnotator app (celltypeagent tools, data folder {home}).
-Use only the celltypeagent tools. The user looks at the sample in the app; call use_viewer_session to load what
+This folder connects Claude Code to the STAnnotator app (stagent tools, data folder {home}).
+Use only the stagent tools. The user looks at the sample in the app; call use_viewer_session to load what
 they are looking at before acting, and open_viewer after starting a new annotation (it shows it in the app). Follow the instructions of
-the celltypeagent MCP server. Reply in the user's language.
+the stagent MCP server. Reply in the user's language.
 """
 
 
@@ -79,12 +79,12 @@ def workspace(remote=None):
     if remote:
         from . import remote as rm
         ws = config.HOME / f"claude_workspace_{re.sub(r'[^A-Za-z0-9_.-]+', '_', remote['host'])}"
-        entry, home = rm.mcp_entry(remote), f"{remote.get('home') or '~/celltypeagent'} on {remote['host']}"
+        entry, home = rm.mcp_entry(remote), f"{remote.get('home') or '~/stagent'} on {remote['host']}"
     else:
         ws, entry, home = config.HOME / "claude_workspace", server_entry(), config.HOME
     (ws / ".claude").mkdir(parents=True, exist_ok=True)
-    (ws / "celltypeagent_mcp.json").write_text(json.dumps({"mcpServers": {"celltypeagent": entry}}, indent=2))
-    (ws / ".claude" / "settings.json").write_text(json.dumps({"permissions": {"allow": ["mcp__celltypeagent"]}}, indent=2))
+    (ws / "stagent_mcp.json").write_text(json.dumps({"mcpServers": {"stagent": entry}}, indent=2))
+    (ws / ".claude" / "settings.json").write_text(json.dumps({"permissions": {"allow": ["mcp__stagent"]}}, indent=2))
     (ws / "CLAUDE.md").write_text(CLAUDE_MD.format(home=home))
     return ws
 
@@ -92,7 +92,7 @@ def workspace(remote=None):
 def claude_code_command(prompt=None, remote=None):
     ws = workspace(remote)
     # the prompt goes first: --mcp-config takes several values and would swallow it
-    cmd = f'cd "{ws}" && claude ' + (f"'{prompt}' " if prompt else "") + f'--mcp-config "{ws / "celltypeagent_mcp.json"}"'
+    cmd = f'cd "{ws}" && claude ' + (f"'{prompt}' " if prompt else "") + f'--mcp-config "{ws / "stagent_mcp.json"}"'
     return cmd, ws
 
 
@@ -141,7 +141,7 @@ def open_claude_code(sample=None, session=None, request=None, send_if_open=False
     request: the first message (otherwise Claude loads the session and waits); with send_if_open it is also typed into
     a Claude Code window that is already open. On a server the app reaches over SSH, Claude Code runs on the user's
     computer: the request goes back to the app there (which calls this with remote=its connection)."""
-    if remote is None and os.environ.get("CELLTYPEAGENT_REMOTE") == "1":
+    if remote is None and os.environ.get("STAGENT_REMOTE") == "1":
         return {"remote": True, "args": {"sample": sample, "session": session, "request": request,
                                          "send_if_open": send_if_open}}
     prompt = None
@@ -160,7 +160,7 @@ def open_claude_code(sample=None, session=None, request=None, send_if_open=False
     script = ws / "start_claude.command"
     exe = claude_code_path()
     # the prompt goes first: --mcp-config takes several values and would swallow it
-    args = (f"'{prompt}' " if prompt else "") + f'--mcp-config "{ws / "celltypeagent_mcp.json"}"'
+    args = (f"'{prompt}' " if prompt else "") + f'--mcp-config "{ws / "stagent_mcp.json"}"'
     body = ["#!/bin/zsh -il", f'cd "{ws}"']  # interactive login shell: the same PATH as the user's Terminal
     if exe:
         body.append(f'exec "{exe}" {args}')

@@ -1,8 +1,8 @@
 """Import one sample (tissue section) into the data folder, from either source:
 
-  h5ad    celltypeagent import --name 147328 --h5ad a.h5ad [b.h5ad ...] --he slide.ome.tif --registration reg.csv
+  h5ad    stagent import --name 147328 --h5ad a.h5ad [b.h5ad ...] --he slide.ome.tif --registration reg.csv
                                [--section-column donor_id --section 147328] [--region-column histopathology]
-  Xenium  celltypeagent import-xenium --name ln1 --xenium /path/to/output-XETG... [--he he.ome.tif --registration
+  Xenium  stagent import-xenium --name ln1 --xenium /path/to/output-XETG... [--he he.ome.tif --registration
                                he_imagealignment.csv]
 
 h5ad: AnnData files with raw counts (layer "counts", X, or raw.X when X is normalized) and cell coordinates in micrometers (obs
@@ -17,7 +17,7 @@ registration: either an affine CSV with columns a11,a12,a21,a22,tx,ty mapping ce
   (px = a11*x + a12*y + tx, py = a21*x + a22*y + ty; with several rows, the row whose other columns contain the
   section value is used), or a Xenium Explorer alignment matrix (3x3 CSV mapping H&E pixels to Xenium morphology
   pixels of --xenium-px-um).
-Output: $CELLTYPEAGENT_HOME/samples/<name>/ with cells.parquet, counts.npz, genes.txt and meta.json.
+Output: $STAGENT_HOME/samples/<name>/ with cells.parquet, counts.npz, genes.txt and meta.json.
 
 The cells, the image and the registration can come one at a time: a sample needs only its cells; set_image and
 set_registration add the others later (in any order), and place_cells puts the cells on the image with an affine

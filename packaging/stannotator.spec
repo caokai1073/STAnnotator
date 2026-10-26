@@ -6,13 +6,13 @@ from pathlib import Path
 from PyInstaller.utils.hooks import collect_all, copy_metadata
 
 ROOT = Path(SPECPATH).parent
-datas = [(str(ROOT / "celltypeagent" / "static"), "celltypeagent/static"),
-         (str(ROOT / "celltypeagent" / "data"), "celltypeagent/data")]
+datas = [(str(ROOT / "stagent" / "static"), "stagent/static"),
+         (str(ROOT / "stagent" / "data"), "stagent/data")]
 # source of the modules an exported notebook carries (the bundle otherwise holds only compiled code)
 import ast, re
-CARRIED = ast.literal_eval(re.search(r"^CARRIED = (\[.*?\])", (ROOT / "celltypeagent" / "notebook.py").read_text(), re.M).group(1))
-datas += [(str(ROOT / "celltypeagent" / f"{m}.py"), "celltypeagent/algorithm_src") for m in CARRIED]
-binaries, hidden = [], ["celltypeagent.mcp_server", "celltypeagent.webapp", "celltypeagent.desktop"]
+CARRIED = ast.literal_eval(re.search(r"^CARRIED = (\[.*?\])", (ROOT / "stagent" / "notebook.py").read_text(), re.M).group(1))
+datas += [(str(ROOT / "stagent" / f"{m}.py"), "stagent/algorithm_src") for m in CARRIED]
+binaries, hidden = [], ["stagent.mcp_server", "stagent.webapp", "stagent.desktop"]
 
 # Left out to keep the app small; none of it is ever imported by the app, so nothing it does changes:
 # - imagecodecs: the codecs of other file formats (CZI, FITS, AVIF, ...). Images are read with tifffile, which can call

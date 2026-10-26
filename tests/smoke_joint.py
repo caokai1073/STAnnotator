@@ -4,9 +4,9 @@ import os, shutil, tempfile, time
 import h5py
 import numpy as np
 EX = os.path.join(os.path.dirname(__file__), "..", "examples", "cadinu_merfish")
-home = tempfile.mkdtemp(prefix="celltypeagent_joint_")
-os.environ["CELLTYPEAGENT_HOME"] = home
-from celltypeagent import importer, joint, projects
+home = tempfile.mkdtemp(prefix="stagent_joint_")
+os.environ["STAGENT_HOME"] = home
+from stagent import importer, joint, projects
 try:
     h5 = os.path.join(home, "two.h5ad")
     shutil.copy(os.path.join(EX, "cadinu_merfish_D0_m3a_1_slice_2.h5ad"), h5)

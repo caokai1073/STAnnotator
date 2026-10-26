@@ -2,7 +2,7 @@
 viewer and runs Claude Code.
 
 On the server (started by the app over SSH):
-    celltypeagent remote-serve [--check]
+    stagent remote-serve [--check]
 starts the viewer in the background on the server's own localhost (or finds the one already running with the same
 code), records it in <data folder>/remote_viewer.json and prints {"port", "build", "home", ...} as JSON.
 
@@ -48,7 +48,7 @@ def serve(check=False):
                 pass
         from .desktop import free_port
         port = free_port(8790)
-        env = dict(os.environ, CELLTYPEAGENT_DESKTOP="1", CELLTYPEAGENT_REMOTE="1")
+        env = dict(os.environ, STAGENT_DESKTOP="1", STAGENT_REMOTE="1")
         log = open(config.HOME / "remote_viewer.log", "a")
         p = subprocess.Popen(config.self_command("viewer", "--port", str(port)), env=env, stdin=subprocess.DEVNULL,
                              stdout=log, stderr=log, start_new_session=True)  # outlives the SSH session
@@ -66,14 +66,14 @@ def serve(check=False):
 
 # ---------------- on this computer ----------------
 def _ssh(*args):
-    """ssh without prompts; CELLTYPEAGENT_SSH_CONFIG points at another ssh config (tests)."""
-    extra = ["-F", os.environ["CELLTYPEAGENT_SSH_CONFIG"]] if os.environ.get("CELLTYPEAGENT_SSH_CONFIG") else []
+    """ssh without prompts; STAGENT_SSH_CONFIG points at another ssh config (tests)."""
+    extra = ["-F", os.environ["STAGENT_SSH_CONFIG"]] if os.environ.get("STAGENT_SSH_CONFIG") else []
     return ["ssh", *extra, "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", "-o", "ServerAliveInterval=30", *args]
 
 
 def ssh_hosts():
     """Host names of ~/.ssh/config (no patterns), for the connection dialog."""
-    f = Path(os.environ.get("CELLTYPEAGENT_SSH_CONFIG") or Path.home() / ".ssh" / "config")
+    f = Path(os.environ.get("STAGENT_SSH_CONFIG") or Path.home() / ".ssh" / "config")
     if not f.exists():
         return []
     out = []
@@ -96,8 +96,9 @@ def _path(p):
 
 def remote_command(conn, *args):
     """The shell command that runs a subcommand of STAnnotator on the server, with its data folder."""
-    env = f"CELLTYPEAGENT_HOME={_path(conn['home'])} " if conn.get("home", "").strip() else ""
-    return f"env {env}{_path(conn.get('command') or 'celltypeagent')} " + " ".join(shlex.quote(a) for a in args)
+    home = _path(conn["home"]) if conn.get("home", "").strip() else ""
+    env = f"STAGENT_HOME={home} CELLTYPEAGENT_HOME={home} " if home else ""  # the old name for older servers
+    return f"env {env}{_path(conn.get('command') or 'stagent')} " + " ".join(shlex.quote(a) for a in args)
 
 
 def _explain(err, conn):
@@ -110,8 +111,8 @@ def _explain(err, conn):
     if "timed out" in e or "Connection refused" in e or "No route" in e:
         return f"Cannot reach {conn['host']}: {e.splitlines()[-1]}"
     if "not found" in e or "No such file" in e:
-        return (f"STAnnotator was not found on the server at {conn.get('command') or 'celltypeagent'}. Give the full "
-                f"path of its 'celltypeagent' command (e.g. /path/to/STAnnotator/.venv/bin/celltypeagent). ({e.splitlines()[-1]})")
+        return (f"STAnnotator was not found on the server at {conn.get('command') or 'stagent'}. Give the full "
+                f"path of its 'stagent' command (e.g. /path/to/STAnnotator/.venv/bin/stagent). ({e.splitlines()[-1]})")
     return e.splitlines()[-1] if e else "unknown error"
 
 
