@@ -459,7 +459,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <label><input type="radio" name="imImgMode" value="none" checked> No image</label>
       <label><input type="radio" name="imImgMode" value="file"> Image file</label>
       <span class="hint" id="imNoImgHint"></span></span><span></span></div>
-    <div class="frow" id="imImgRow" hidden><span></span><input type="text" id="imNewImg" placeholder="H&amp;E or fluorescence image: pyramidal TIFF / OME-TIFF"><button data-pick="image" data-target="imNewImg">Choose…</button></div>
+    <div class="frow" id="imImgRow" hidden><span></span><textarea id="imNewImg" rows="1" placeholder="H&amp;E or fluorescence image: pyramidal TIFF / OME-TIFF; for several slices one per line, each file name holding its section"></textarea><button data-pick="image" data-multi="1" data-target="imNewImg">Choose…</button></div>
     <div class="frow" id="imImgKindRow" hidden><span>Image kind</span><select id="imNewImgKind"><option value="H&amp;E">H&amp;E</option><option value="DAPI">DAPI / fluorescence</option></select><span></span></div>
     <div class="frow"><span>Registration</span><span class="choice">
       <label><input type="radio" name="imRegMode" value="file"> Registration file</label>
@@ -782,6 +782,8 @@ function fillModes(sm) {
   avail.forEach(([v, t]) => add(v, t));
   add(st.showMore ? "__less" : "__more", st.showMore ? "fewer options" : "more…");
   sel.disabled = false;
+  // stepping through slices keeps the color mode; applied here, once the new annotation's options are known
+  if (st.wantMode) { st.mode = st.wantMode; st.wantMode = null; }
   const cur = st.mode.startsWith("gene:") ? "gene" : st.mode;
   if (!avail.some(([v]) => v === cur)) st.mode = "type";
   sel.value = st.mode.startsWith("gene:") ? "gene" : st.mode;
@@ -826,7 +828,7 @@ async function selectSample(id) {
   st.sliceSwitch = false;
   fillSessions(sid);
   setMarkers("", "");  // no default list: import or load one for this sample
-  if (sid) await startAnnotation("continue", sid, token);
+  if (sid) await startAnnotation("continue", sid, token); else st.wantMode = null;
 }
 
 function reportState() {  // so Claude (use_viewer_session) knows what the user is looking at
@@ -903,7 +905,6 @@ async function startAnnotation(mode, sid, token = st.switchToken) {
 
 async function openSession(sid) {
   st.sid = sid;
-  if (st.wantMode) { st.mode = st.wantMode; st.wantMode = null; }  // keep the color mode across slices
   $("empty").style.display = "none";
   ["undo", "export", "send", "plaus", "report", "nRun", "eRun"].forEach((b) => ($(b).disabled = false));
   $("nClaude").disabled = !st.desktop && !st.chatAvailable;
@@ -914,6 +915,10 @@ async function openSession(sid) {
   if (st.vocab.method === "scref" && st.vocab.reference) setReference(st.vocab.reference);
   if (st.vocab.method === "existing" && st.vocab.existing) inspectEx({ path: st.vocab.existing.path }, st.vocab.existing);
   if (["markers", "scref", "existing"].includes(st.vocab.method)) { $("method").value = st.vocab.method; showMethod(); }
+  if (st.wantMode && st.wantMode.startsWith("gene:")) {  // a gene kept from the last slice must be in this panel
+    await loadGenes(st.sample.sample_id).catch(() => {});
+    if (!(st.genes || []).includes(st.wantMode.slice(5))) st.wantMode = null;
+  }
   await loadNiches(false);
   await loadEmbedding(false);
   loadGenes(st.sample.sample_id).catch(() => {});
@@ -2103,7 +2108,7 @@ function imSections() {  // one section: a sample; several sections or folders: 
   const many = secs.length > 1;
   $("imNameLabel").textContent = many ? "Project name" : "Sample name";
   $("imProjectHint").hidden = !many;
-  $("imProjectHint").textContent = many ? `${secs.length} slices, one sample each (named <project>_<section>); with one image file per slice, give a table (CSV/TSV: section, image path) as the image; a registration file has one row per section.` : "";
+  $("imProjectHint").textContent = many ? `${secs.length} slices, one sample each (named <project>_<section>). Images: one for all slices, or one per slice whose file name holds the section (e.g. …_147328_HE.ome.tif), or a table (CSV/TSV: section, image path). A registration file has one row per section.` : "";
   if (!many && secs.length === 1 && imKind() === "h5ad" && !$("imName").value) $("imName").value = secs[0].replace(/[^A-Za-z0-9_.-]+/g, "_");
   $("imRegSecRow").hidden = $("imRegSecRow").hidden || many;
 }
@@ -2185,7 +2190,8 @@ function alignBar() {  // an image waits for its alignment
 }
 async function importSample() {  // returns true when the sample was imported
   const kind = imKind(), name = $("imName").value.trim();
-  const image = imgMode() === "file" ? $("imNewImg").value.trim() : "";
+  const images = imgMode() === "file" ? $("imNewImg").value.split("\n").map((s) => s.trim()).filter(Boolean) : [];
+  const image = images.length > 1 ? images : (images[0] || "");
   const registration = regMode() === "file" ? $("imNewReg").value.trim() : "";
   const body = kind === "xenium"
     ? { kind, name, folders: chosenFolders(), description: $("imDesc").value }
@@ -2195,7 +2201,9 @@ async function importSample() {  // returns true when the sample was imported
   if (kind === "h5ad" && $("imSecCol").value && !body.sections.length) { $("imStatus").textContent = "Tick the section(s) to import"; return false; }
   Object.assign(body, { he: image, he_kind: $("imNewImgKind").value, registration, registration_section: $("imNewRegSec").value.trim() });
   if (!name) { $("imStatus").textContent = "Give the sample a name"; return false; }
-  if (imgMode() === "file" && !image) { $("imStatus").textContent = "Choose the image, or No image"; return false; }
+  if (imgMode() === "file" && !images.length) { $("imStatus").textContent = "Choose the image, or No image"; return false; }
+  const nSlices = kind === "h5ad" ? body.sections.length : body.folders.length;
+  if (images.length > 1 && nSlices < 2) { $("imStatus").textContent = "One image per sample (several images are for several slices)"; return false; }
   if (regMode() === "file" && !registration) { $("imStatus").textContent = "Choose the registration file, or No registration"; return false; }
   $("imGo").disabled = $("imNewAlign").disabled = true; $("imStatus").textContent = "importing…";
   try {
@@ -2228,7 +2236,8 @@ their nuclei. The folded part at the bottom of Import changes the image or regis
 undoes an alignment. Regions drawn before the cells move are moved along with them.</li></ul>
 <h3>Several slices</h3><ul>
 <li>Import an h5ad and tick several sections (or give several Xenium folders): each slice becomes a sample of one
-project, with its metadata (condition, day, …). <b>◀ ▶</b> or <kbd>[</kbd> <kbd>]</kbd> step through the slices;
+project, with its metadata (condition, day, …); several image files go to the slices whose section their file
+names hold. <b>◀ ▶</b> or <kbd>[</kbd> <kbd>]</kbd> step through the slices (keeping <b>Color by</b>);
 <b>Slices…</b> shows them side by side; <b>Compare…</b> shows the cell type, lineage, niche or cluster composition of
 each slice, grouped by a metadata column (<b>Save CSV…</b>).</li>
 <li><b>all slices together</b>: <b>Annotate</b> annotates all slices of the project at once (one marker step and one
@@ -2411,7 +2420,10 @@ $("mkDraft").onclick = async () => {
   $("mkDraft").disabled = false;
 };
 
-$("sample").onchange = (e) => selectSample(e.target.value);
+$("sample").onchange = (e) => {  // another slice of the same project: like ◀ ▶ (keeps the color mode)
+  const p = st.sample && projectOf(st.sample.sample_id);
+  return p && p.samples.includes(e.target.value) ? gotoSlice(e.target.value) : selectSample(e.target.value);
+};
 $("annotate").onclick = () => (projectMode() && $("method").value === "markers" ? annotateProject() : startAnnotation("new"));
 $("session").onchange = (e) => { closeSession(); if (e.target.value) startAnnotation("continue", e.target.value); };
 $("mode").onchange = (e) => {

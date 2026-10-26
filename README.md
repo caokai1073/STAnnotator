@@ -77,8 +77,10 @@ From the command line (`--he` and `--registration` are optional):
 
 Tick several sections of an h5ad in **Import…** (or give several Xenium folders, one per line): each slice becomes
 a sample `<project>_<section>` of one project, with the metadata that is constant within the slice (condition, day,
-mouse, …). With one image per slice, the image is a table (CSV/TSV: section, image path); a registration file has
-one row per section. In the app, **◀ ▶** (or `[` `]`) step through the slices, **Slices…** shows them side by side and
+mouse, …). Images: one file for all slices, one file per slice whose name holds the section (e.g.
+`..._147328_HE.ome.tif`; choose them together), or a table (CSV/TSV: section, image path); a registration file has
+one row per section. Without an image, the cells are drawn on a blank background wherever their coordinates are
+(negative ones too). In the app, **◀ ▶** (or `[` `]`) step through the slices, **Slices…** shows them side by side and
 **Compare…** shows the composition (cell types, lineages, niches or Leiden clusters) of each slice grouped by a
 metadata column, with **Save CSV…**.
 

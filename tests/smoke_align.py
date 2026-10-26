@@ -2,7 +2,7 @@
 Runs in a temporary data folder. Needs the SCP2927 example files (paths below)."""
 import os, shutil, sys, tempfile, time
 import numpy as np
-H5AD = os.environ.get("SMOKE_H5AD", "/data2/celltypeagent/share/validation/scp2927/scp2927_147328.h5ad")
+H5AD = os.environ.get("SMOKE_H5AD", "/data2/celltypeagent/share/validation/scp2927/scp2927_2sections.h5ad")
 HE = os.environ.get("SMOKE_HE", "/data/kai/endothelial/data/SCP2927/HE/human_slideid-0050423-108731-147328.ome.tif")
 REG = os.path.join(os.path.dirname(__file__), "..", "examples", "scp2927", "registration.csv")
 home = tempfile.mkdtemp(prefix="celltypeagent_align_")

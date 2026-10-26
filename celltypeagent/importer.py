@@ -25,7 +25,7 @@ found otherwise (e.g. by align.py). Until an image is registered the cells are s
 Xenium DAPI image) and the image waits in meta["image_pending"]. Moving the cells to a new placement moves the
 outlines drawn on the old one with them (regions, proposed areas).
 """
-import json, time
+import json, re, time
 from pathlib import Path
 import h5py, numpy as np, pandas as pd, scipy.sparse as sp
 from scipy.spatial import cKDTree
@@ -594,26 +594,29 @@ def set_registration(sample_id, path, section=None, progress=print):
 
 
 # ---------------- several slices at once (a project) ----------------
-def section_metadata(path, section_column, value, max_values=60):
-    """obs columns of an h5ad that hold one value within a section (condition, day, mouse, ...): {column: value}."""
-    out = {}
-    with h5py.File(path, "r") as h:
-        obs = h["obs"]
-        sec = np.array([str(v) for v in _read_column(obs[section_column])])
-        rows = sec == str(value)
-        for c in obs.keys():
-            if c in ("_index", obs.attrs.get("_index"), section_column) or c.startswith("__"):
+def section_metadata(paths, section_column, value, max_values=60):
+    """obs columns of h5ad file(s) that hold one value within a section (condition, day, mouse, ...): {column: value}.
+    Several files (one per lineage, or one per section) are read together: only the cells of the section count."""
+    seen = {}
+    for path in [paths] if isinstance(paths, (str, Path)) else paths:
+        with h5py.File(path, "r") as h:
+            obs = h["obs"]
+            if section_column not in obs:
                 continue
-            g = obs[c]
-            categorical = isinstance(g, h5py.Group) and "categories" in g
-            if not categorical and not (isinstance(g, h5py.Dataset) and g.dtype.kind in "SOU"):
+            rows = np.array([str(v) for v in _read_column(obs[section_column])]) == str(value)
+            if not rows.any():
                 continue
-            if categorical and len(g["categories"]) > max_values:
-                continue
-            vals = {str(v) for v in np.asarray(_read_column(g), dtype=object)[rows]}
-            if len(vals) == 1:
-                out[c] = vals.pop()
-    return out
+            for c in obs.keys():
+                if c in ("_index", obs.attrs.get("_index"), section_column) or c.startswith("__"):
+                    continue
+                g = obs[c]
+                categorical = isinstance(g, h5py.Group) and "categories" in g
+                if not categorical and not (isinstance(g, h5py.Dataset) and g.dtype.kind in "SOU"):
+                    continue
+                if categorical and len(g["categories"]) > max_values:
+                    continue
+                seen.setdefault(c, set()).update(str(v) for v in np.asarray(_read_column(g), dtype=object)[rows])
+    return {c: v.pop() for c, v in seen.items() if len(v) == 1}
 
 
 def _image_table(path):
@@ -625,28 +628,56 @@ def _image_table(path):
     return {str(a).strip(): str(b).strip() for a, b in zip(df.iloc[:, 0], df.iloc[:, 1])}
 
 
+def _slice_images(he, keys):
+    """{slice key: image path or None}: one image for all slices, a table (section, image), or several image files
+    matched to the slices by name (the file name holds the section value or Xenium folder name, e.g.
+    scp2927_147328_HE.ome.tif for section 147328)."""
+    if not he:
+        return {}
+    files = [he] if isinstance(he, (str, Path)) else [str(p) for p in he if str(p).strip()]
+    if len(files) == 1 and str(files[0]).lower().endswith((".csv", ".tsv", ".txt")):
+        table = _image_table(files[0])
+        return {k: table.get(k) for k in keys}
+    if len(files) == 1:
+        return {k: str(files[0]) for k in keys}
+    out, problems = {}, []
+    for k in keys:  # the key as a whole word of the file name (section 1 does not match slice_12)
+        hit = [f for f in files if re.search(rf"(?<![A-Za-z0-9]){re.escape(k)}(?![A-Za-z0-9])", Path(f).name)]
+        if len(hit) == 1:
+            out[k] = hit[0]
+        else:
+            problems.append(f"{k}: {'no image file name holds it' if not hit else 'several images: ' + ', '.join(Path(f).name for f in hit)}")
+    unused = [Path(f).name for f in files if f not in out.values()]
+    if problems:
+        raise ValueError("cannot match the images to the slices by name (" + "; ".join(problems) + ")"
+                         + (f"; unused: {', '.join(unused)}" if unused else "")
+                         + ". Give one image per slice whose file name holds the section, or a table (section, image).")
+    return out
+
+
 def import_project(project, kind, sources, sections=None, section_column=None, he=None, registration=None,
                    he_kind="H&E", region_column=None, description="", overwrite=False, progress=print):
     """Several slices as one project, one sample per slice. kind "h5ad": sources = h5ad file(s) holding the slices,
     sections = the values of section_column to import. kind "xenium": sources = output folders, one per slice.
-    he: one image for all, or a table (CSV/TSV: section or folder name, image path). registration (h5ad): a file with
+    he: one image for all, several images (each slice gets the one whose file name holds its section or folder
+    name), or a table (CSV/TSV: section or folder name, image path). registration (h5ad): a file with
     one row per section, matched by the section value. Images without a registration wait for an alignment."""
     from . import projects
     project = _check_name(project, True)
-    table = _image_table(he) if he and str(he).lower().endswith((".csv", ".tsv", ".txt")) else None
-    done = []
     items = [str(s) for s in sections] if kind == "h5ad" else [str(Path(f).expanduser()) for f in sources]
-    for i, item in enumerate(items):
-        key = item if kind == "h5ad" else Path(item).name
+    keys = [item if kind == "h5ad" else Path(item).name for item in items]
+    images = _slice_images(he, keys)  # before importing anything, so a missing image stops the import early
+    done = []
+    for i, (item, key) in enumerate(zip(items, keys)):
         name = projects.slice_name(project, key)
-        image = table.get(key) if table else he
+        image = images.get(key)
         progress(f"slice {i + 1} of {len(items)}: {key}")
         say = lambda m: progress(f"  {m}")
         if kind == "h5ad":
             import_sample(name, sources, image, registration, section_column, item, region_column=region_column,
                           description=description, overwrite=overwrite, progress=say, he_kind=he_kind,
                           registration_section=item)
-            meta = section_metadata(sources[0], section_column, item) if section_column else {}
+            meta = section_metadata(sources, section_column, item) if section_column else {}
         else:
             import_xenium(name, item, he=image, registration=None, description=description, overwrite=overwrite,
                           progress=say, he_kind=he_kind)

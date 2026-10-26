@@ -67,7 +67,8 @@ class SampleView:
         cells = pd.read_parquet(config.SAMPLES / sample_id / "cells.parquet", columns=["px", "py"])
         px, py = cells.px.to_numpy(), cells.py.to_numpy()
         self.px, self.py = px, py
-        self.ox, self.oy = max(0, int(px.min()) - MARGIN_PX), max(0, int(py.min()) - MARGIN_PX)
+        lo = -math.inf if isinstance(self.slide, render.BlankSlide) else 0  # a blank background has no edge at 0
+        self.ox, self.oy = int(max(lo, math.floor(px.min()) - MARGIN_PX)), int(max(lo, math.floor(py.min()) - MARGIN_PX))
         x1, y1 = min(self.slide.W0, int(px.max()) + MARGIN_PX), min(self.slide.H0, int(py.max()) + MARGIN_PX)
         self.W, self.H = x1 - self.ox, y1 - self.oy
         self.max_level = int(math.ceil(math.log2(max(self.W, self.H))))
