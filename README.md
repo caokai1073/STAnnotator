@@ -176,7 +176,7 @@ the bottom **Reset** and **Remove all**. On the map, next to the **Color by** ba
 The app's window (or the web viewer: `.venv/bin/celltypeagent viewer`, then http://localhost:8765). Changes made
 by Claude show up within a few seconds.
 
-1. Pick a sample; earlier annotations are under **Session**. Choose the **Method**: *Marker genes* (a marker
+1. Pick a sample; earlier annotations are under **Annotation** (Data tab). Choose the **Method** (Annotate tab): *Marker genes* (a marker
    list, **Markers…**), *Single-cell reference* (a labeled reference h5ad, **Reference…**) or *Load existing* (a
    CSV with one cell type per cell, **Annotation file…**), then click
    **Annotate** (about 1 min for 350k cells with markers, seconds with a reference). Regions start empty: you

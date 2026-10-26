@@ -35,7 +35,6 @@ header.collapsed .hrow, header.collapsed .tabs { display: none; }
 .tabs .tab:hover:not(.on) { background: none; color: var(--ink); }
 .tabs .tab.on { background: var(--panel); color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
 .tabs .tab.busy::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
-header .pane { border-top: 0; }
 header .pane:not(.on) { display: none; }
 header .hrow.bottom { margin-top: auto; padding-bottom: 0; }
 header.collapsed .hmini { display: flex; }
@@ -64,10 +63,6 @@ header.collapsed .hmini { display: flex; }
 .gallery canvas { width: 100%; height: 170px; display: block; background: #fafafa; border-radius: 4px; }
 .gallery .tt { font-size: 12px; font-weight: 600; margin-top: 4px; } .gallery .ts { font-size: 11px; color: var(--muted); }
 .num { width: 62px; }
-#nicheinfo, #einfo { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.nslot { flex: 1; min-width: 0; overflow: hidden; position: relative; display: flex; align-items: center; height: 30px; }
-.nslot .progress { position: absolute; inset: 0; max-width: 420px; min-width: 0; }
-.nslot:has(.progress.show) > span { visibility: hidden; }
 .folder { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); min-width: 0;
           flex: 0 1 auto; white-space: nowrap; overflow: hidden; }
 .folder .path { min-width: 60px; flex: 1 1 auto; }
@@ -99,12 +94,50 @@ button:disabled { opacity: .45; cursor: default; }
 /* in the panel: one control per line where it needs the width, the rest side by side */
 header .hrow > * { flex: none; }
 header .sep, header .hrow > .spacer { display: none; }
-header #sampleWrap, header #sessWrap, header .fl:has(#method), header .folder, header .progress, header .nslot,
-header .slnav, header #carryWrap, header #vinfo { flex: 1 1 100%; min-width: 0; }
-header #sample, header #session, header #method { min-width: 0; width: 0; flex: 1 1 auto; }
-header .slnav { flex-wrap: wrap; }
-header #progress:not(.show) { display: none; }  /* the annotation's progress: a line of its own while it runs */
-.cfgslot { display: inline-flex; min-width: 132px; }
+header .folder { flex: 1 1 100%; min-width: 0; }
+/* the tabs: a status card, the settings (labels above aligned fields; the rarely changed ones under Advanced),
+   choices as segmented buttons, switches, and one full-width main button at the bottom */
+header .pane { display: flex; flex-direction: column; gap: 12px; padding: 14px 0 12px; }
+header .progress { min-width: 0; max-width: none; }
+header .progress:not(.show) { display: none; }
+.fld { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.fld > span:first-child { font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.fld select, .fld input { width: 100%; min-width: 0; height: 32px; }
+header #sample, header #session { min-width: 0; }
+.fgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.stat { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; background: var(--bg);
+        font-size: 12.5px; line-height: 1.4; }
+.stat > .ic { margin-top: 1px; color: var(--accent); }
+.stat > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.stat .progress { margin-top: 8px; }
+.stat #pstage, .stat #estage, .stat #nstage { font-size: 11.5px; color: var(--muted); }
+.seg { display: flex; gap: 2px; padding: 3px; background: var(--bg); border-radius: 9px; }
+.seg button { flex: 1 1 0; border: 0; background: none; padding: 5px 4px; font-size: 12px; color: var(--muted); border-radius: 7px; }
+.seg button:hover:not(.on) { background: none; color: var(--ink); }
+.seg button.on { background: var(--panel); color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+select.segsel { display: none; }
+.switch { display: flex; gap: 10px; align-items: flex-start; font-size: 12.5px; cursor: pointer; color: var(--ink); }
+.switch input { appearance: none; -webkit-appearance: none; width: 32px; height: 18px; margin: 1px 0 0; flex: none; border-radius: 9px;
+                background: var(--line); position: relative; cursor: pointer; transition: background-color .15s; }
+.switch input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%;
+                       background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3); transition: left .15s; }
+.switch input:checked { background: var(--accent); }
+.switch input:checked::after { left: 16px; }
+.switch small { display: block; color: var(--muted); font-size: 11.5px; }
+header #carryWrap[style*="hidden"] { display: none; }
+.act2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.act2 > button, .cfgslot > button { width: 100%; }
+.act2 > button:only-child { grid-column: 1 / -1; }
+/* the chosen tab or segment stays white under the mouse (not the accent of other active buttons) */
+.tabs .tab.on:hover:not(:disabled), .seg button.on:hover:not(:disabled) { background: var(--panel); color: var(--ink); filter: none; }
+.cfgslot { display: flex; }
+button.main { width: 100%; padding: 9px 12px; font-weight: 600; margin-top: 2px; }
+.slnav { display: flex; flex-direction: column; gap: 10px; }
+.stepper { display: flex; align-items: center; gap: 8px; }
+.stepper #slPos { flex: 1; text-align: center; font-size: 12.5px; color: var(--muted); }
+details.adv > summary { font-size: 12px; color: var(--muted); cursor: pointer; user-select: none; }
+details.adv > summary:hover { color: var(--ink); }
+details.adv[open] > summary { margin-bottom: 10px; }
 .progress { display: flex; visibility: hidden; align-items: center; gap: 8px; min-width: 180px; flex: 1; max-width: 640px; }
 .progress.show { visibility: visible; }
 .pbar { flex: 1; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; min-width: 120px; }
@@ -296,52 +329,63 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
   <div class="tabs" id="tabs" role="tablist">
     <button class="tab" data-tab="data" role="tab">Data</button><button class="tab" data-tab="annotate" role="tab">Annotate</button>
     <button class="tab" data-tab="embed" role="tab">Embedding</button><button class="tab" data-tab="niches" role="tab">Niches</button></div>
-  <div class="hrow r2 pane" data-pane="data">
-    <label class="fl" id="sampleWrap">Sample <select id="sample"></select></label>
-    <span id="slNav" class="slnav" hidden><button id="slPrev" title="Previous slice of the project ([)">◀</button><button id="slNext" title="Next slice of the project (])">▶</button>
-      <button id="slGallery" title="All slices of the project side by side">Slices…</button>
-      <button id="slCompare" title="Cell type, lineage, niche or cluster shares per slice">Compare…</button>
-      <label class="fl" title="Annotate, embed and find niches for all slices of the project together, so labels, clusters and niches mean the same everywhere"><input type="checkbox" id="projAll" checked> all slices together</label></span>
-    <span class="sep"></span>
-    <label class="fl" id="sessWrap">Session <select id="session" title="Earlier annotations of this sample"></select></label>
+  <div class="pane" data-pane="data">
+    <label class="fld" id="sampleWrap"><span>Sample</span><select id="sample"></select></label>
+    <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-layers"/></svg><div id="sampleInfo">No sample yet</div></div>
+    <div id="slNav" class="slnav" hidden>
+      <div class="stepper"><button id="slPrev" title="Previous slice of the project ([)">◀</button><span id="slPos"></span><button id="slNext" title="Next slice of the project (])">▶</button></div>
+      <div class="act2"><button id="slGallery" title="All slices of the project side by side">Slices…</button><button id="slCompare" title="Cell type, lineage, niche or cluster shares per slice">Compare…</button></div>
+      <label class="switch" title="Annotate, embed and find niches for all slices of the project together, so labels, clusters and niches mean the same everywhere"><input type="checkbox" id="projAll" checked>
+        <span>All slices together<small>one annotation, embedding and set of niches for the project</small></span></label>
+    </div>
+    <label class="fld" id="sessWrap"><span>Annotation</span><select id="session" title="Earlier annotations of this sample"></select></label>
   </div>
-  <div class="hrow pane" data-pane="annotate">
-    <label class="fl">Method <select id="method" title="How cell types are assigned">
-      <option value="markers">Marker genes</option><option value="scref">Single-cell reference</option>
-      <option value="existing">Load existing</option></select></label>
-    <span class="cfgslot">
+  <div class="pane" data-pane="annotate">
+    <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-sparkle"/></svg><div><div id="ainfo">No annotation yet</div>
+      <div class="progress" id="progress"><div class="pbar"><i id="pfill"></i></div><span id="pstage"></span></div></div></div>
+    <div class="fld"><span>Method</span><select id="method" class="segsel" title="How cell types are assigned">
+      <option value="markers" data-short="Markers">Marker genes</option><option value="scref" data-short="Reference">Single-cell reference</option>
+      <option value="existing" data-short="Existing">Load existing</option></select><div class="seg" data-for="method"></div></div>
+    <div class="cfgslot">
       <button id="openMarkers" title="Import, write, check or save the marker gene list used for annotation">Markers…</button>
       <button id="openRef" hidden title="The labeled single-cell reference (h5ad) used for annotation">Reference…</button>
       <button id="openEx" hidden title="A CSV with an existing cell type annotation (one row per cell)">Annotation file…</button>
-    </span>
-    <button id="annotate" class="primary">Annotate</button>
-    <label class="fl carry" id="carryWrap" style="visibility:hidden" title="Start the new annotation with the regions (and their colors), priors and hand corrections of the one that is open; priors and corrections naming cell types the new annotation does not have are dropped">
-      <input type="checkbox" id="carry" checked> keep my regions, priors &amp; corrections</label>
-    <div class="progress" id="progress"><div class="pbar"><i id="pfill"></i></div><span id="pstage"></span></div>
+    </div>
+    <label class="switch" id="carryWrap" style="visibility:hidden" title="Start the new annotation with the regions (and their colors), priors and hand corrections of the one that is open; priors and corrections naming cell types the new annotation does not have are dropped"><input type="checkbox" id="carry" checked>
+      <span>Keep my regions, priors &amp; corrections<small>carried into the new annotation</small></span></label>
+    <button id="annotate" class="primary main">Annotate</button>
   </div>
-  <div class="hrow pane" data-pane="embed">
-    <label class="fl" title="Principal components used for the neighbors, UMAP and Leiden">PCs <input type="number" id="eP" class="num" min="5" max="100" value="30"></label>
-    <label class="fl" title="Neighbors per cell in the kNN graph (UMAP and Leiden)">Neighbors <input type="number" id="eK" class="num" min="5" max="100" value="15"></label>
-    <span class="sep"></span>
-    <label class="fl" title="UMAP min_dist: smaller packs similar cells tighter">Min dist <input type="number" id="eD" class="num" min="0" max="1" step="0.05" value="0.3"></label>
-    <label class="fl" title="Leiden resolution: higher gives more clusters">Leiden res. <input type="number" id="eR" class="num" min="0.1" max="10" step="0.1" value="1"></label>
-    <label class="fl" id="eHarmonyWrap" hidden title="With all slices together: remove slice-to-slice differences (Harmony) from the PCA before neighbors, Leiden and UMAP"><input type="checkbox" id="eHarmony" checked> Harmony</label>
-    <button id="eRun" class="primary" disabled title="Compute PCA, UMAP and Leiden clusters of this sample (expression only; about a minute)">Run PCA + UMAP</button>
-    <button id="eShow" disabled title="Show the embedding in a window on the right">Show UMAP</button>
-    <div class="nslot"><span id="einfo"></span>
-      <div class="progress" id="eprogress"><div class="pbar"><i id="efill"></i></div><span id="estage" style="font-size:12px;color:var(--muted)"></span></div></div>
+  <div class="pane" data-pane="embed">
+    <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-scatter"/></svg><div><div id="einfo">No embedding yet</div>
+      <div class="progress" id="eprogress"><div class="pbar"><i id="efill"></i></div><span id="estage"></span></div></div></div>
+    <div class="fgrid">
+      <label class="fld" title="Leiden resolution: higher gives more clusters"><span>Leiden res.</span><input type="number" id="eR" min="0.1" max="10" step="0.1" value="1"></label>
+      <label class="fld" title="UMAP min_dist: smaller packs similar cells tighter"><span>Min dist</span><input type="number" id="eD" min="0" max="1" step="0.05" value="0.3"></label>
+    </div>
+    <details class="adv"><summary>Advanced</summary><div class="fgrid">
+      <label class="fld" title="Principal components used for the neighbors, UMAP and Leiden"><span>PCs</span><input type="number" id="eP" min="5" max="100" value="30"></label>
+      <label class="fld" title="Neighbors per cell in the kNN graph (UMAP and Leiden)"><span>Neighbors</span><input type="number" id="eK" min="5" max="100" value="15"></label>
+    </div></details>
+    <label class="switch" id="eHarmonyWrap" hidden title="With all slices together: remove slice-to-slice differences (Harmony) from the PCA before neighbors, Leiden and UMAP"><input type="checkbox" id="eHarmony" checked>
+      <span>Harmony<small>remove slice-to-slice differences before the clusters and UMAP</small></span></label>
+    <div class="act2"><button id="eShow" disabled title="Show the embedding in a window on the right">Show UMAP</button></div>
+    <button id="eRun" class="primary main" disabled title="Compute PCA, UMAP and Leiden clusters of this sample (expression only; about a minute)">Run PCA + UMAP</button>
   </div>
-  <div class="hrow pane" data-pane="niches">
-    <label class="fl">Identity <select id="nIdentity" title="What a cell is, before averaging over its neighbors">
-      <option value="nmf">NMF programs</option><option value="cell types">Cell types</option></select></label>
-    <label class="fl" title="Number of NMF gene programs">Programs <input type="number" id="nPrograms" class="num" min="4" max="60" value="20"></label>
-    <span class="sep"></span>
-    <label class="fl" title="Neighbors averaged per cell (the cell itself plus its k nearest cells)">k <input type="number" id="nK" class="num" min="1" max="80" value="15"></label>
-    <label class="fl" title="Number of niches (k-means clusters)">Niches <input type="number" id="nN" class="num" min="2" max="30" value="8"></label>
-    <button id="nRun" class="primary" disabled title="Compute niches with these settings">Run niches</button>
-    <button id="nClaude" disabled title="Ask your Claude Code to choose k per region from cell density and cell types, run the niches and name them">Claude picks k</button>
-    <div class="nslot"><span id="nicheinfo"></span>
-      <div class="progress" id="nprogress"><div class="pbar"><i id="nfill"></i></div><span id="nstage" style="font-size:12px;color:var(--muted)"></span></div></div>
+  <div class="pane" data-pane="niches">
+    <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-grid"/></svg><div><div id="nicheinfo">No niches yet</div>
+      <div class="progress" id="nprogress"><div class="pbar"><i id="nfill"></i></div><span id="nstage"></span></div></div></div>
+    <div class="fld"><span>Cell identity</span><select id="nIdentity" class="segsel" title="What a cell is, before averaging over its neighbors">
+      <option value="nmf" data-short="NMF programs">NMF programs</option><option value="cell types" data-short="Cell types">Cell types</option></select>
+      <div class="seg" data-for="nIdentity"></div></div>
+    <div class="fgrid">
+      <label class="fld" title="Neighbors averaged per cell (the cell itself plus its k nearest cells)"><span>k neighbors</span><input type="number" id="nK" min="1" max="80" value="15"></label>
+      <label class="fld" title="Number of niches (k-means clusters)"><span>Niches</span><input type="number" id="nN" min="2" max="30" value="8"></label>
+    </div>
+    <details class="adv"><summary>Advanced</summary><div class="fgrid">
+      <label class="fld" title="Number of NMF gene programs"><span>NMF programs</span><input type="number" id="nPrograms" min="4" max="60" value="20"></label>
+    </div></details>
+    <div class="act2"><button id="nClaude" disabled title="Ask your Claude Code to choose k per region from cell density and cell types, run the niches and name them">Claude picks k</button></div>
+    <button id="nRun" class="primary main" disabled title="Compute niches with these settings">Run niches</button>
   </div>
   <div class="hrow bottom">
     <button id="reset" class="danger" disabled title="Remove every annotation and chat of this sample">Reset…</button>
@@ -941,7 +985,7 @@ async function selectSample(id) {
   $("path").title = `bundle: ${st.sample.bundle_dir}\nsource: ${st.sample.source_dir}\nH&E: ${st.sample.he_path}`;
   closeSession();
   await openHE(id);
-  alignBar(); miniInfo(); sliceNav();
+  alignBar(); miniInfo(); sliceNav(); sampleInfo();
   fillModes(null); refreshOverlay();  // the cells in gray until there is an annotation
   if (token !== st.switchToken) return;
   // reopen the session last used on this sample, else its most recent one
@@ -966,8 +1010,9 @@ function closeSession() {
   $("legend").hidden = true; $("cellcard").classList.remove("show");
   $("empty").style.display = "flex";
   ["undo", "export", "send", "plaus", "report", "nRun", "nClaude", "eRun", "eShow"].forEach((b) => ($(b).disabled = true));
-  closeEmbedding(); st.emb = null; EM.selAll = null; EM.lassoRaw = null; setSelection(null); $("einfo").textContent = "";
-  st.niche = null; st.nicheSig = undefined; $("nicheinfo").textContent = "";
+  closeEmbedding(); st.emb = null; EM.selAll = null; EM.lassoRaw = null; setSelection(null); $("einfo").textContent = "Open or make an annotation first";
+  st.niche = null; st.nicheSig = undefined; $("nicheinfo").textContent = "Open or make an annotation first";
+  $("ainfo").textContent = "No annotation open: choose a method and click Annotate, or open one in Data → Annotation";
   $("carryWrap").style.visibility = "hidden";
   $("input").disabled = true; $("composerhint").textContent = "Annotate a sample first.";
   $("vinfo").textContent = ""; $("regpanel").hidden = true; drawRegions();
@@ -1095,7 +1140,7 @@ async function loadEmbedding(show) {
   st.emb = r.embedding;
   const e = st.emb;
   $("eShow").disabled = !e;
-  $("einfo").textContent = e ? `${e.n_clusters} Leiden clusters · ${e.n_pcs} PCs · ${e.n_neighbors} neighbors · ${e.seconds} s` : "no embedding yet";
+  $("einfo").textContent = e ? `${e.n_clusters} Leiden clusters · ${e.n_pcs} PCs · ${e.n_neighbors} neighbors · ${e.seconds} s` : "Not computed yet";
   if (e) { $("eP").value = e.n_pcs; $("eK").value = e.n_neighbors; $("eD").value = e.min_dist; $("eR").value = e.resolution; }
   EM.xy = null; EM.xyKey = null; EM.colors = {}; EM.colKey = null; EM.selAll = null;
   $("emScope").hidden = !(e && e.project && projectOf(st.sample.sample_id));
@@ -1354,19 +1399,19 @@ async function loadNiches(show) {
   st.niche = r.summary;
   st.nicheSig = JSON.stringify([st.niche && st.niche.params.run_id, st.niche ? st.niche.niches.map((x) => x.name) : []]);
   const p = st.niche && st.niche.params;
-  $("nicheinfo").textContent = !p ? "no niches yet" :
+  $("nicheinfo").textContent = !p ? "No niches yet" :
     `${p.n_niches} niches · ${p.identity === "nmf" ? `NMF ${p.n_programs} programs` : "cell types"} · ` +
     (p.radius_um ? `cells within ${p.radius_um} µm (k ${p.k_range[0]}–${p.k_range[1]})` :
      Object.keys(p.k_by_region || {}).length ? `k ${p.k} (by region: ${Object.entries(p.k_by_region).map(([a, b]) => `${a} ${b}`).join(", ")})` : `k ${p.k}`);
   if (p) {
-    $("nIdentity").value = p.identity; if (p.n_programs) $("nPrograms").value = p.n_programs;
+    $("nIdentity").value = p.identity; syncSeg("nIdentity"); if (p.n_programs) $("nPrograms").value = p.n_programs;
     $("nK").value = p.k; $("nN").value = p.n_niches; $("nPrograms").disabled = p.identity !== "nmf";
   }
   fillModes(st.lastSummary);
   if (show && st.niche) { st.mode = "niche"; $("mode").value = "niche"; }
   if (st.mode === "niche" || show) { refreshOverlay(); loadLegend(); }
 }
-$("nIdentity").onchange = () => { $("nPrograms").disabled = $("nIdentity").value !== "nmf"; };
+$("nIdentity").onchange = () => { $("nPrograms").disabled = $("nIdentity").value !== "nmf"; syncSeg("nIdentity"); };
 $("nRun").onclick = async () => {
   const body = { identity: $("nIdentity").value, n_programs: +$("nPrograms").value, k: +$("nK").value, n_niches: +$("nN").value };
   $("nRun").disabled = true; $("nprogress").classList.add("show");
@@ -1403,6 +1448,9 @@ async function refreshVersion(force) {
   st.version = v;
   const sm = info.summary;
   st.lastSummary = sm;
+  const how = { markers: "Marker genes", scref: "Single-cell reference", existing: "Loaded annotation" }[st.vocab && st.vocab.method] || "Annotation";
+  $("ainfo").textContent = [`${how} · version ${v}`, sm.constraints.length ? `${sm.constraints.length} priors` : "",
+    sm.corrections.length ? `${sm.corrections.length} corrections` : "", sm.n_conflicts ? `${sm.n_conflicts} conflicts` : ""].filter(Boolean).join(" · ");
   fillModes(sm);
   const counts = [[sm.constraints.length, "prior"], [sm.corrections.length, "correction"], [sm.n_conflicts, "conflict"]];
   $("vinfo").textContent = [`v${v}`, ...counts.filter(([n]) => n).map(([n, w]) => `${n} ${w}${n > 1 ? "s" : ""}`)].join(" · ");  // short on the map
@@ -2153,7 +2201,7 @@ $("input").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shif
 
 // ---------------- single-cell reference ----------------
 function showMethod() {
-  const m = $("method").value;
+  const m = $("method").value; syncSeg("method");
   $("openMarkers").hidden = m !== "markers"; $("openRef").hidden = m !== "scref"; $("openEx").hidden = m !== "existing";
 }
 function openRef() { $("refPick").hidden = !native(); $("refDlg").showModal(); }
@@ -2659,6 +2707,7 @@ function sliceNav() {
   if (!p) return;
   const i = p.samples.indexOf(st.sample.sample_id);
   $("slPrev").disabled = i <= 0; $("slNext").disabled = i >= p.samples.length - 1;
+  $("slPos").textContent = `Slice ${i + 1} of ${p.samples.length}`;
   $("slGallery").title = `All ${p.samples.length} slices of project ${p.name} side by side`;
   $("eHarmonyWrap").hidden = false;
 }
@@ -2806,6 +2855,23 @@ function setHeader(collapsed) {  // the toolbar folds into one thin line; the ma
 }
 $("hdrHide").onclick = () => setHeader(true);
 new ResizeObserver(() => document.documentElement.style.setProperty("--maptop", `${$("maptop").offsetHeight}px`)).observe($("maptop"));
+function segmented(id) {  // a select shown as a row of buttons (the select keeps the value)
+  const sel = $(id), box = document.querySelector(`.seg[data-for="${id}"]`);
+  [...sel.options].forEach((o) => {
+    const b = document.createElement("button"); b.type = "button"; b.dataset.v = o.value; b.title = o.textContent;
+    b.textContent = o.dataset.short || o.textContent;
+    b.onclick = () => { sel.value = o.value; sel.dispatchEvent(new Event("change")); syncSeg(id); };
+    box.append(b);
+  });
+  syncSeg(id);
+}
+function syncSeg(id) { document.querySelectorAll(`.seg[data-for="${id}"] button`).forEach((b) => b.classList.toggle("on", b.dataset.v === $(id).value)); }
+segmented("method"); segmented("nIdentity");
+function sampleInfo() {  // the Data tab's card: what the open sample is
+  const s = st.sample; if (!s) { $("sampleInfo").textContent = "No sample yet"; return; }
+  const img = s.image_pending ? "image waiting for its alignment" : !s.image_kind || s.image_kind === "none" ? "no image" : s.image_kind;
+  $("sampleInfo").textContent = [`${s.n_cells.toLocaleString()} cells`, img, s.description].filter(Boolean).join(" · ");
+}
 function showTab(name) {
   document.querySelectorAll("#tabs .tab").forEach((t) => { t.classList.toggle("on", t.dataset.tab === name); t.setAttribute("aria-selected", t.dataset.tab === name); });
   document.querySelectorAll("header .pane").forEach((p) => p.classList.toggle("on", p.dataset.pane === name));
