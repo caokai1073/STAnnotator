@@ -791,6 +791,73 @@ def api_samples(req):
     return _json(rows)
 
 
+def _project_job(pid, fn):
+    """Run a project-wide analysis in the background; progress under /api/job/project:<id>."""
+    job = f"project:{pid}"
+    if job in JOBS and not JOBS[job]["done"]:
+        return _json({"error": "an analysis of this project is still running"}, 409)
+    JOBS[job] = {"stage": "starting", "progress": 0.0, "done": False, "error": None}
+
+    def work():
+        try:
+            fn(lambda f, m: JOBS[job].update(progress=round(f, 3), stage=m))
+            JOBS[job].update(progress=1.0, stage="done", done=True)
+        except Exception as e:
+            JOBS[job].update(error=f"{type(e).__name__}: {e}", done=True)
+    threading.Thread(target=work, daemon=True).start()
+    return _json({"job": job})
+
+
+async def api_project_annotate(req: Request):
+    from . import joint
+    pid, b = req.path_params["pid"], await req.json()
+    return _project_job(pid, lambda say: joint.annotate(pid, b.get("markers_text", ""), b.get("resolution"),
+                                                        bool(b.get("carry")), say))
+
+
+async def api_project_embed(req: Request):
+    from . import joint
+    pid, b = req.path_params["pid"], await req.json()
+    return _project_job(pid, lambda say: joint.embed(pid, int(b.get("n_pcs", 30)), int(b.get("n_neighbors", 15)),
+                                                     float(b.get("min_dist", 0.3)), float(b.get("resolution", 1.0)),
+                                                     bool(b.get("harmony", True)), say))
+
+
+async def api_project_niches(req: Request):
+    from . import joint
+    pid, b = req.path_params["pid"], await req.json()
+    return _project_job(pid, lambda say: joint.niches(pid, int(b.get("k", 15)), int(b.get("n_niches", 8)),
+                                                      b.get("identity", "nmf"), int(b.get("n_programs", 20)), say))
+
+
+def api_project_composition(req):
+    from . import joint
+    try:
+        return _json(joint.composition(req.path_params["pid"], req.query_params.get("mode", "type")))
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+
+
+def api_project_composition_csv(req):
+    from . import joint
+    c = joint.composition(req.path_params["pid"], req.query_params.get("mode", "type"))
+    df = pd.DataFrame([{"slice": r["section"], **r["metadata"], "n_cells": r["n_cells"], **r["shares"]} for r in c["slices"]]).fillna(0)
+    return Response(df.to_csv(index=False), media_type="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="{c["project"]}_{c["mode"]}_composition.csv"'})
+
+
+async def api_save_text(req: Request):
+    """Desktop app: write a text file the page made to the path chosen in the Save dialog."""
+    if not desktop_mode():
+        return _json({"error": "only in the desktop app"}, 403)
+    b = await req.json()
+    try:
+        Path(b["path"]).expanduser().write_text(b.get("text", ""))
+    except (OSError, KeyError) as e:
+        return _json({"error": str(e)}, 400)
+    return _json({"saved": b["path"]})
+
+
 def api_projects(req):
     from . import projects
     return _json(projects.list_projects())
@@ -1597,6 +1664,12 @@ def build_app(port):
         Mount("/static", StaticFiles(directory=STATIC)),
         Route("/api/samples", api_samples),
         Route("/api/projects", api_projects),
+        Route("/api/save_text", api_save_text, methods=["POST"]),
+        Route("/api/project/{pid}/annotate", api_project_annotate, methods=["POST"]),
+        Route("/api/project/{pid}/embed", api_project_embed, methods=["POST"]),
+        Route("/api/project/{pid}/niches", api_project_niches, methods=["POST"]),
+        Route("/api/project/{pid}/composition", api_project_composition),
+        Route("/api/project/{pid}/composition.csv", api_project_composition_csv),
         Route("/api/config", api_config),
         Route("/api/viewer/state", api_viewer_state, methods=["POST"]),
         Route("/api/viewer/request", api_viewer_request),

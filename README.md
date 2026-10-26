@@ -73,6 +73,22 @@ From the command line (`--he` and `--registration` are optional):
   [--section-column donor_id --section 147328]
 ```
 
+### Several slices (projects)
+
+Tick several sections of an h5ad in **Import…** (or give several Xenium folders, one per line): each slice becomes
+a sample `<project>_<section>` of one project, with the metadata that is constant within the slice (condition, day,
+mouse, …). With one image per slice, the image is a table (CSV/TSV: section, image path); a registration file has
+one row per section. In the app, **◀ ▶** (or `[` `]`) step through the slices, **Slices…** shows them side by side and
+**Compare…** shows the composition (cell types, lineages, niches or Leiden clusters) of each slice grouped by a
+metadata column, with **Save CSV…**.
+
+With **all slices together** ticked, **Annotate** pools the slices (one marker step and one model; each slice gets its
+own session), **Run PCA + UMAP** makes one embedding of all slices (with **Harmony** on the PCs by slice, optional) and
+**Run niches** finds niches shared by all slices. On four slices of the Cadinu et al. MERFISH mouse colon (healthy,
+DSS day 3, 9 and 21; 66,818 cells) the joint annotation took about 15-40 s, the joint embedding 15 s and the niches
+9 s; lineage agreement with the authors' labels was 87-91% on the healthy, day-3 and day-9 slices (74% for another healthy slice
+annotated alone) and 46% on the day-21 slice, whose cells have few transcripts (median 47 vs 67-93).
+
 Then give the sample a marker list (there is no default): **Markers…** -> **Import…** a CSV (or text) file, or
 ask Claude Code "draft a marker list for this panel" and load it under "load a list…". Imported and saved lists
 stay in that list for the next samples. The CSV has one row per cell type:
@@ -348,5 +364,5 @@ celltypeagent/     Python package
   data/            app icon
 examples/scp2927/  registration of the SCP2927 sections
 packaging/         PyInstaller spec, macOS build / signing scripts
-tests/             smoke tests (python tests/smoke_engine.py, tests/smoke_mcp.py; they expect sample 147328 / 167799)
+tests/             smoke tests (python tests/smoke_engine.py, tests/smoke_mcp.py expect sample 147328 / 167799; tests/smoke_joint.py runs in a temporary folder)
 ```

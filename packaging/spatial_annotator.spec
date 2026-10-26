@@ -14,7 +14,7 @@ CARRIED = ast.literal_eval(re.search(r"^CARRIED = (\[.*?\])", (ROOT / "celltypea
 datas += [(str(ROOT / "celltypeagent" / f"{m}.py"), "celltypeagent/algorithm_src") for m in CARRIED]
 binaries, hidden = [], ["celltypeagent.mcp_server", "celltypeagent.webapp", "celltypeagent.desktop"]
 # packages that load parts of themselves dynamically (codecs, event loops, numba-compiled modules, plugins)
-for pkg in ["zarr", "numcodecs", "imagecodecs", "tifffile", "pynndescent", "numba", "llvmlite", "igraph", "umap", "sklearn",
+for pkg in ["zarr", "numcodecs", "imagecodecs", "tifffile", "pynndescent", "numba", "llvmlite", "igraph", "umap", "sklearn", "harmonypy",
             "uvicorn", "mcp", "webview"]:
     try:
         d, b, h = collect_all(pkg)

@@ -37,6 +37,12 @@ header.collapsed .hmini { display: flex; }
 .sep { width: 1px; height: 22px; background: var(--line); flex: none; }
 .slnav { display: inline-flex; gap: 4px; }
 .slnav button { padding: 4px 8px; }
+.cmprow { display: grid; grid-template-columns: 230px 1fr 70px; gap: 8px; align-items: center; margin: 3px 0; font-size: 12px; }
+.cmprow .bar { display: flex; height: 18px; border-radius: 3px; overflow: hidden; background: var(--line); }
+.cmprow .bar span { height: 100%; }
+.cmpgroup { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 10px 0 2px; }
+.cmplegend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 12px; font-size: 12px; }
+.cmplegend span.sw { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
 .seclist { display: flex; flex-wrap: wrap; gap: 4px 14px; max-height: 120px; overflow: auto; font-size: 12.5px; padding: 4px 0; }
 .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; padding: 10px 14px 14px;
            max-height: 75vh; overflow: auto; }
@@ -232,7 +238,9 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <div class="cap"><h1>Spatial Annotator</h1><span id="build" class="buildtag"></span></div>
     <label class="fl">Sample <select id="sample"></select></label>
     <span id="slNav" class="slnav" hidden><button id="slPrev" title="Previous slice of the project ([)">◀</button><button id="slNext" title="Next slice of the project (])">▶</button>
-      <button id="slGallery" title="All slices of the project side by side">Slices…</button></span>
+      <button id="slGallery" title="All slices of the project side by side">Slices…</button>
+      <button id="slCompare" title="Cell type, lineage, niche or cluster shares per slice">Compare…</button>
+      <label class="fl" title="Annotate, embed and find niches for all slices of the project together, so labels, clusters and niches mean the same everywhere"><input type="checkbox" id="projAll" checked> all slices together</label></span>
     <button id="importBtn" title="Add a sample (a Xenium output folder or h5ad), then its image and registration">Import…</button>
     <button id="clearAll" class="danger" hidden title="Delete every sample with all its annotations and chats for good, to import from scratch">Remove all…</button>
     <span class="sep"></span>
@@ -264,6 +272,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <span class="sep"></span>
     <label class="fl" title="UMAP min_dist: smaller packs similar cells tighter">Min dist <input type="number" id="eD" class="num" min="0" max="1" step="0.05" value="0.3"></label>
     <label class="fl" title="Leiden resolution: higher gives more clusters">Leiden res. <input type="number" id="eR" class="num" min="0.1" max="10" step="0.1" value="1"></label>
+    <label class="fl" id="eHarmonyWrap" hidden title="With all slices together: remove slice-to-slice differences (Harmony) from the PCA before neighbors, Leiden and UMAP"><input type="checkbox" id="eHarmony" checked> Harmony</label>
     <button id="eRun" class="primary" disabled title="Compute PCA, UMAP and Leiden clusters of this sample (expression only; about a minute)">Run PCA + UMAP</button>
     <button id="eShow" disabled title="Show the embedding in a window on the right">Show UMAP</button>
     <div class="nslot"><span id="einfo"></span>
@@ -328,8 +337,9 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <div id="empanel" class="float" hidden>
       <div class="lh"><b>Embedding</b>
         <select id="emKind" title="Which embedding"><option value="umap">UMAP</option><option value="pca">PCA (PC1, PC2)</option></select>
+        <select id="emScope" hidden title="Cells of this slice, or of all slices of the project"><option value="slice">this slice</option><option value="all">all slices</option></select>
         <select id="emColor" title="Colors of the points"><option value="map">as the map</option><option value="type">cell type</option>
-          <option value="leiden">Leiden clusters</option><option value="niche">niche</option></select>
+          <option value="leiden">Leiden clusters</option><option value="niche">niche</option><option value="slice">slice</option></select>
         <span class="spacer"></span><button id="emClose" style="padding:1px 7px;font-size:11px" title="Close">×</button></div>
       <div class="emtools">
         <button id="emLasso" title="Draw around cells to select them (or hold Shift and drag); they light up on the map">Select</button>
@@ -526,6 +536,14 @@ T and NK cells: CD3E|NKG7+ EPCAM-
 <dialog id="glDlg" style="width:min(1100px,96vw)">
   <div class="dh"><b id="glTitle">Slices</b><span class="hint" id="glInfo" style="margin-left:8px"></span><span class="spacer"></span><button id="glClose">Close</button></div>
   <div class="gallery" id="glGrid"></div>
+</dialog>
+<dialog id="cmpDlg" style="width:min(1000px,96vw)">
+  <div class="dh"><b id="cmpTitle">Compare slices</b>
+    <select id="cmpMode" style="margin-left:10px"><option value="lineage">lineage</option><option value="type">cell type</option>
+      <option value="niche">niche</option><option value="leiden">Leiden cluster</option></select>
+    <select id="cmpGroup" title="Order and group the slices by"></select>
+    <span class="spacer"></span><button id="cmpCsv">Save CSV…</button><button id="cmpClose">Close</button></div>
+  <div class="imbody"><div id="cmpBars"></div><div id="cmpLegend" class="cmplegend"></div><div class="hint" id="cmpNote"></div></div>
 </dialog>
 <dialog id="hpDlg" style="width:min(760px,95vw)">
   <div class="dh"><b>Spatial Annotator</b><span class="spacer"></span>
@@ -813,7 +831,7 @@ function closeSession() {
   $("legend").hidden = true; $("cellcard").classList.remove("show");
   $("empty").style.display = "flex";
   ["undo", "export", "send", "plaus", "report", "nRun", "nClaude", "eRun", "eShow"].forEach((b) => ($(b).disabled = true));
-  st.emb = null; setSelection(null); closeEmbedding(); $("einfo").textContent = "";
+  closeEmbedding(); st.emb = null; EM.selAll = null; setSelection(null); $("einfo").textContent = "";
   st.niche = null; st.nicheSig = undefined; $("nicheinfo").textContent = "";
   $("carryWrap").style.visibility = "hidden";
   $("input").disabled = true; $("composerhint").textContent = "Annotate a sample first.";
@@ -897,12 +915,13 @@ async function openSession(sid) {
 
 // ---------------- embedding (PCA, UMAP, Leiden) and selecting cells on it ----------------
 const EM = { gl: null, n: 0, xy: null, colors: {}, colKey: null, view: { z: 1, x: 0, y: 0 }, lasso: false, path: null };
-function withSelection(arr) {  // cells outside the selection are grayed out (map and embedding)
-  if (!st.sel) return arr;
+function withSelection(arr) { return withSel(arr, st.sel); }
+function withSel(arr, sel) {  // cells outside the selection are grayed out (map and embedding)
+  if (!sel) return arr;
   const out = new Uint8Array(arr);
-  for (let i = 0; i < st.sel.length; i++) {
+  for (let i = 0; i < sel.length; i++) {
     const j = 4 * i;
-    if (st.sel[i]) out[j + 3] = 255; else { out[j] = out[j + 1] = out[j + 2] = 175; out[j + 3] = out[j + 3] ? 28 : 0; }
+    if (sel[i]) out[j + 3] = 255; else { out[j] = out[j + 1] = out[j + 2] = 175; out[j + 3] = out[j + 3] ? 28 : 0; }
   }
   return out;
 }
@@ -913,7 +932,9 @@ async function loadEmbedding(show) {
   $("eShow").disabled = !e;
   $("einfo").textContent = e ? `${e.n_clusters} Leiden clusters · ${e.n_pcs} PCs · ${e.n_neighbors} neighbors · ${e.seconds} s` : "no embedding yet";
   if (e) { $("eP").value = e.n_pcs; $("eK").value = e.n_neighbors; $("eD").value = e.min_dist; $("eR").value = e.resolution; }
-  EM.xy = null; EM.colors = {}; EM.colKey = null;
+  EM.xy = null; EM.xyKey = null; EM.colors = {}; EM.colKey = null; EM.selAll = null;
+  $("emScope").hidden = !(e && e.project && projectOf(st.sample.sample_id));
+  if ($("emScope").hidden) $("emScope").value = "slice";
   fillModes(st.lastSummary);
   if (show && e) await openEmbedding();
 }
@@ -921,6 +942,11 @@ $("eRun").onclick = async () => {
   const body = { n_pcs: +$("eP").value, n_neighbors: +$("eK").value, min_dist: +$("eD").value, resolution: +$("eR").value };
   $("eRun").disabled = true; $("eprogress").classList.add("show");
   try {
+    if (projectMode()) {  // all slices at once (Harmony when ticked)
+      await projectJob("embed", { ...body, harmony: $("eHarmony").checked }, $("efill"), $("estage"));
+      setSelection(null); await loadEmbedding(true);
+      setTimeout(() => $("eprogress").classList.remove("show"), 800); return;
+    }
     const { job } = await post(`/api/s/${st.sid}/embedding/run`, body);
     for (;;) {
       const j = await api(`/api/job/${job}`);
@@ -963,7 +989,55 @@ function closeEmbedding() {
   $("empanel").hidden = true; $("viewerwrap").classList.remove("em"); $("eShow").textContent = "Show UMAP";
 }
 $("emClose").onclick = closeEmbedding;
+const PALETTE = ["#f58231", "#4363d8", "#3cb44b", "#f032e6", "#42d4f4", "#9a6324", "#911eb4", "#e6194b", "#469990",
+                 "#bfef45", "#808000", "#000075", "#ffe119", "#800000", "#fabed4", "#dcbeff", "#aaffc3", "#a9a9a9"];
+const hexRGB = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+function emAll() { return $("emScope").value === "all" && !!(st.emb && st.emb.project); }
+async function loadEMAll() {  // every slice of the project in one picture (a joint embedding)
+  const p = projectOf(st.sample.sample_id), kind = $("emKind").value;
+  const key = `all|${p.project_id}|${kind}|${st.emb.run_id}`;
+  if (EM.xyKey !== key) {
+    const parts = [];
+    for (const id of p.samples) parts.push(new Float32Array(await (await fetch(`/api/sample/${id}/embedding.bin?kind=${kind}&r=${st.emb.run_id}`)).arrayBuffer()));
+    const buf = new Float32Array(parts.reduce((a, b) => a + b.length, 0));
+    EM.offsets = {}; let o = 0;
+    p.samples.forEach((id, i) => { buf.set(parts[i], o); EM.offsets[id] = [o / 2, (o + parts[i].length) / 2]; o += parts[i].length; });
+    normEM(buf); EM.xy = buf; EM.n = buf.length / 2; EM.xyKey = key; EM.view = { z: 1, x: 0, y: 0 }; EM.selAll = null;
+    const gl = EM.gl; gl.bindBuffer(gl.ARRAY_BUFFER, EM.pos); gl.bufferData(gl.ARRAY_BUFFER, buf, gl.STATIC_DRAW);
+  }
+  const cm = $("emColor").value === "map" ? st.mode : $("emColor").value;
+  const ckey = `all|${cm}|${st.version}|${st.emb.run_id}`;
+  if (!EM.colors[ckey]) {
+    const col = new Uint8Array(EM.n * 4);
+    for (const [i, id] of p.samples.entries()) {
+      const [a, b] = EM.offsets[id];
+      const s = st.samples.find((x) => x.sample_id === id);
+      const sess = s && (s.sessions || []).filter((x) => USER_METHODS.includes(x.method))[0];
+      let part = null;
+      if (cm !== "slice" && sess) {
+        const r = await fetch(`/api/s/${sess.session_id}/colors.bin?${new URLSearchParams({ version: sess.n_versions, mode: cm, only: "" })}`);
+        if (r.ok) part = new Uint8Array(await r.arrayBuffer());
+      }
+      if (!part) {  // by slice (or no annotation)
+        const c = hexRGB(PALETTE[i % PALETTE.length]); part = new Uint8Array((b - a) * 4);
+        for (let j = 0; j < b - a; j++) { part[4 * j] = c[0]; part[4 * j + 1] = c[1]; part[4 * j + 2] = c[2]; part[4 * j + 3] = 220; }
+      }
+      col.set(part, 4 * a);
+    }
+    EM.colors = { [ckey]: col };
+  }
+  const gl = EM.gl; gl.bindBuffer(gl.ARRAY_BUFFER, EM.col); gl.bufferData(gl.ARRAY_BUFFER, withSel(EM.colors[ckey], EM.selAll), gl.STATIC_DRAW);
+  EM.colKey = ckey;
+}
+function normEM(buf) {
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (let i = 0; i < buf.length; i += 2) { x0 = Math.min(x0, buf[i]); x1 = Math.max(x1, buf[i]); y0 = Math.min(y0, buf[i + 1]); y1 = Math.max(y1, buf[i + 1]); }
+  const s = 1.9 / Math.max(x1 - x0, y1 - y0, 1e-9), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  for (let i = 0; i < buf.length; i += 2) { buf[i] = (buf[i] - cx) * s; buf[i + 1] = (buf[i + 1] - cy) * s; }
+}
 async function loadEMData() {
+  if (emAll()) return loadEMAll();
+  if ($("emColor").value === "slice") $("emColor").value = "map";
   const kind = $("emKind").value, key = `${st.sample.sample_id}|${kind}|${st.emb.run_id}`;
   if (EM.xyKey !== key) {
     const buf = new Float32Array(await (await fetch(`/api/sample/${st.sample.sample_id}/embedding.bin?kind=${kind}&r=${st.emb.run_id}`)).arrayBuffer());
@@ -1039,6 +1113,15 @@ function lassoSelect(path) {
     }
     if (inside) sel[i] = 1;
   }
+  if (emAll()) {  // all slices: the map shows the part of the selection in this slice
+    EM.selAll = sel.some((x) => x) ? sel : null;
+    const [a, b] = EM.offsets[st.sample.sample_id];
+    const here = sel.slice(a, b);
+    setSelection(here.some((x) => x) ? here : null);
+    const total = sel.reduce((x, y) => x + y, 0), inHere = here.reduce((x, y) => x + y, 0);
+    if (EM.selAll) $("emInfo").textContent = `${total.toLocaleString()} cells selected, ${inHere.toLocaleString()} in this slice`;
+    return;
+  }
   setSelection(sel.some((x) => x) ? sel : null);
 }
 (() => {  // zoom, pan and lasso on the embedding canvas
@@ -1070,7 +1153,8 @@ function lassoSelect(path) {
   c.addEventListener("dblclick", () => { EM.view = { z: 1, x: 0, y: 0 }; drawEM(); });
 })();
 $("emLasso").onclick = () => { EM.lasso = !EM.lasso; $("emLasso").classList.toggle("on", EM.lasso); $("emcanvas").classList.toggle("lasso", EM.lasso); };
-$("emClear").onclick = () => setSelection(null);
+$("emClear").onclick = () => { EM.selAll = null; setSelection(null); };
+$("emScope").onchange = () => { EM.selAll = null; setSelection(null); loadEMData().then(drawEM); };
 $("emZoom").onclick = () => {  // fit the map to the selected cells
   if (!st.sel || !GL.posArr) return;
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
@@ -1107,6 +1191,10 @@ $("nRun").onclick = async () => {
   const body = { identity: $("nIdentity").value, n_programs: +$("nPrograms").value, k: +$("nK").value, n_niches: +$("nN").value };
   $("nRun").disabled = true; $("nprogress").classList.add("show");
   try {
+    if (projectMode()) {  // one set of niches over all slices
+      await projectJob("niches", body, $("nfill"), $("nstage"));
+      await loadNiches(true); setTimeout(() => $("nprogress").classList.remove("show"), 800); return;
+    }
     const { job } = await post(`/api/s/${st.sid}/niches/run`, body);
     for (;;) {
       const j = await api(`/api/job/${job}`);
@@ -2130,6 +2218,15 @@ file) and the registration (<b>Registration file</b>, or <b>No registration</b>)
 map) imports and lets Claude Code find the section and orientation on the image and refine it until the cells sit on
 their nuclei. The folded part at the bottom of Import changes the image or registration of the selected sample, or
 undoes an alignment. Regions drawn before the cells move are moved along with them.</li></ul>
+<h3>Several slices</h3><ul>
+<li>Import an h5ad and tick several sections (or give several Xenium folders): each slice becomes a sample of one
+project, with its metadata (condition, day, …). <b>◀ ▶</b> or <kbd>[</kbd> <kbd>]</kbd> step through the slices;
+<b>Slices…</b> shows them side by side; <b>Compare…</b> shows the cell type, lineage, niche or cluster composition of
+each slice, grouped by a metadata column (<b>Save CSV…</b>).</li>
+<li><b>all slices together</b>: <b>Annotate</b> annotates all slices of the project at once (one marker step and one
+model, so a name means the same cells in every slice), <b>Run PCA + UMAP</b> makes one embedding of all slices
+(<b>Harmony</b> removes the differences between slices), and <b>Run niches</b> finds niches shared by all slices. The
+UMAP window shows this slice or all slices, colored by slice too.</li></ul>
 <h3>Map</h3><ul>
 <li>Drag to move, scroll or pinch to zoom; the small map at the bottom right shows where you are.</li>
 <li>Click a cell: its type, confidence, alternatives, region (and the gene's transcripts when coloring by a gene).</li>
@@ -2307,7 +2404,7 @@ $("mkDraft").onclick = async () => {
 };
 
 $("sample").onchange = (e) => selectSample(e.target.value);
-$("annotate").onclick = () => startAnnotation("new");
+$("annotate").onclick = () => (projectMode() && $("method").value === "markers" ? annotateProject() : startAnnotation("new"));
 $("session").onchange = (e) => { closeSession(); if (e.target.value) startAnnotation("continue", e.target.value); };
 $("mode").onchange = (e) => {
   if (e.target.value === "__more" || e.target.value === "__less") {  // reveal / hide confidence and clusters
@@ -2355,10 +2452,12 @@ function metaText(md, n = 3) {  // a slice's metadata, condition-like columns fi
 function sliceNav() {
   const p = st.sample && projectOf(st.sample.sample_id);
   $("slNav").hidden = !p;
+  $("eHarmonyWrap").hidden = !p;
   if (!p) return;
   const i = p.samples.indexOf(st.sample.sample_id);
   $("slPrev").disabled = i <= 0; $("slNext").disabled = i >= p.samples.length - 1;
   $("slGallery").title = `All ${p.samples.length} slices of project ${p.name} side by side`;
+  $("eHarmonyWrap").hidden = false;
 }
 async function gotoSlice(id) {
   if (!id || (st.sample && id === st.sample.sample_id)) return;
@@ -2368,6 +2467,34 @@ async function gotoSlice(id) {
 function stepSlice(d) {
   const p = st.sample && projectOf(st.sample.sample_id); if (!p) return;
   gotoSlice(p.samples[p.samples.indexOf(st.sample.sample_id) + d]);
+}
+const projectMode = () => !!(st.sample && projectOf(st.sample.sample_id) && $("projAll").checked);
+async function projectJob(path, body, fill, stage) {  // a project-wide analysis, with its progress in fill / stage
+  const pid = projectOf(st.sample.sample_id).project_id;
+  const { job } = await post(`/api/project/${pid}/${path}`, body);
+  for (;;) {
+    const j = await api(`/api/job/${encodeURIComponent(job)}`);
+    fill.style.width = `${Math.round(100 * j.progress)}%`; stage.textContent = j.error ? `error: ${j.error}` : j.stage;
+    if (j.done) { if (j.error) throw new Error(j.error); return; }
+    await new Promise((r) => setTimeout(r, 800));
+  }
+}
+async function annotateProject() {  // one marker annotation of all slices; then the current slice's new annotation opens
+  const text = $("mkText").value;
+  if (!text.trim()) { openMarkers(); toast("Import a marker list first", 5000); return; }
+  const chk = await post("/api/markers/check", { text, sample: st.sample.sample_id });
+  if (!chk.ok) { openMarkers(); showCheck(chk); toast("Fix the marker list first", 3000); return; }
+  $("annotate").disabled = true; $("progress").classList.add("show");
+  try {
+    await projectJob("annotate", { markers_text: text, resolution: $("mkAuto").checked ? "auto" : +$("mkRes").value,
+                                   carry: !!st.sid && $("carry").checked }, $("pfill"), $("pstage"));
+    st.wantMode = st.mode !== "cells" ? st.mode : null; st.sliceSwitch = true;
+    projectOf(st.sample.sample_id).samples.forEach((id) => delete st.openedThisVisit[id]);  // open the new joint annotations
+    await loadSamples(st.sample.sample_id);
+    setTimeout(() => $("progress").classList.remove("show"), 800);
+    toast("All slices of the project annotated together", 5000);
+  } catch (e) { $("pstage").textContent = `Annotation failed: ${e.message}`; toast($("pstage").textContent, 8000); }
+  finally { $("annotate").disabled = false; }
 }
 $("slPrev").onclick = () => stepSlice(-1);
 $("slNext").onclick = () => stepSlice(1);
@@ -2410,6 +2537,56 @@ async function drawThumb(c, s, mode) {
   }
 }
 $("slGallery").onclick = () => openGallery();
+async function openCompare() {  // shares per slice, grouped by a metadata column (e.g. condition)
+  const p = projectOf(st.sample.sample_id); if (!p) return;
+  const keys = [...new Set(p.samples.flatMap((id) => Object.keys((p.slices[id] || {}).metadata || {})))]
+    .sort((a, b) => CONDITION.test(b) - CONDITION.test(a));
+  const g = $("cmpGroup"); const cur = g.value; g.textContent = "";
+  [["", "no grouping"], ...keys.map((k) => [k, `group by ${k}`])].forEach(([v, l]) => { const o = document.createElement("option"); o.value = v; o.textContent = l; g.append(o); });
+  g.value = keys.includes(cur) ? cur : keys[0] || "";
+  $("cmpTitle").textContent = `Compare the slices of ${p.name}`;
+  if (!$("cmpDlg").open) $("cmpDlg").showModal();
+  await drawCompare();
+}
+async function drawCompare() {
+  const p = projectOf(st.sample.sample_id), mode = $("cmpMode").value, group = $("cmpGroup").value;
+  $("cmpBars").textContent = "loading…"; $("cmpLegend").textContent = "";
+  let c;
+  try { c = await api(`/api/project/${p.project_id}/composition?mode=${mode}`); } catch (e) { $("cmpBars").textContent = e.message; return; }
+  const colors = {};  // the map's colors for types and lineages, a palette otherwise
+  if (st.sid && ["type", "lineage", "niche", "leiden"].includes(mode)) {
+    try { (await api(`/api/s/${st.sid}/legend?version=${st.version}&mode=${mode}`)).items.forEach((it) => (colors[it.key] = rgb(it.color))); } catch (e) {}
+  }
+  c.keys.forEach((k, i) => { if (!colors[k]) colors[k] = PALETTE[i % PALETTE.length]; });
+  const rows = c.slices.slice().sort((a, b) => String(a.metadata[group] || "").localeCompare(String(b.metadata[group] || ""), undefined, { numeric: true }));
+  const box = $("cmpBars"); box.textContent = "";
+  let last = null;
+  rows.forEach((r) => {
+    const gv = group ? r.metadata[group] || "—" : null;
+    if (group && gv !== last) { const h = document.createElement("div"); h.className = "cmpgroup"; h.textContent = `${group}: ${gv}`; box.append(h); last = gv; }
+    const row = document.createElement("div"); row.className = "cmprow";
+    const name = document.createElement("div"); name.textContent = r.section; name.title = Object.entries(r.metadata).map(([k, v]) => `${k}: ${v}`).join("\n");
+    const bar = document.createElement("div"); bar.className = "bar";
+    c.keys.forEach((k) => { const v = r.shares[k] || 0; if (!v) return; const s = document.createElement("span");
+      s.style.width = `${100 * v}%`; s.style.background = colors[k]; s.title = `${k}: ${(100 * v).toFixed(1)}%`; bar.append(s); });
+    const n = document.createElement("div"); n.className = "hint"; n.textContent = `${r.n_cells.toLocaleString()} cells`;
+    row.append(name, bar, n); box.append(row);
+  });
+  c.keys.forEach((k) => { const l = document.createElement("span"); l.innerHTML = `<span class="sw" style="background:${colors[k]}"></span>`; l.append(k); $("cmpLegend").append(l); });
+  $("cmpNote").textContent = mode === "leiden" ? "Leiden clusters of the joint embedding (Run PCA + UMAP with all slices together)."
+    : "From each slice's latest annotation; annotate all slices together so the same names mean the same cells.";
+}
+$("slCompare").onclick = () => openCompare();
+$("cmpMode").onchange = drawCompare; $("cmpGroup").onchange = drawCompare;
+$("cmpClose").onclick = () => $("cmpDlg").close();
+$("cmpCsv").onclick = async () => {
+  const p = projectOf(st.sample.sample_id), mode = $("cmpMode").value, name = `${p.project_id}_${mode}_composition.csv`;
+  if (native()) { const path = await native().save_path(name); if (!path) return;
+    const txt = await (await fetch(`/api/project/${p.project_id}/composition.csv?mode=${mode}`)).text();
+    try { await post("/api/save_text", { path, text: txt }); toast(`Saved ${path}`, 4000); } catch (e) { toast(e.message, 6000); } return; }
+  const a = document.createElement("a"); a.href = `/api/project/${p.project_id}/composition.csv?mode=${mode}`; a.download = name;
+  document.body.append(a); a.click(); a.remove();
+};
 $("glClose").onclick = () => $("glDlg").close();
 function miniInfo() {
   const s = st.sample;
@@ -2525,7 +2702,7 @@ $("xpCsv").onclick = () => exportAs("csv");
 $("xpNb").onclick = () => exportAs("notebook");
 $("xpReg").onclick = () => exportAs("registration");
 document.addEventListener("keydown", (e) => {
-  if ($("mkDlg").open || $("rpDlg").open || $("hpDlg").open || $("xpDlg").open || $("glDlg").open || $("nameDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
+  if ($("mkDlg").open || $("rpDlg").open || $("hpDlg").open || $("xpDlg").open || $("glDlg").open || $("cmpDlg").open || $("nameDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
   if (e.key === "h") $("hide").click();
   if (e.key === "e") $("hideHE").click();
   if (e.key === "[") stepSlice(-1);

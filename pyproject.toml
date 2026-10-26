@@ -6,7 +6,7 @@ requires-python = ">=3.11"
 dependencies = [
   "numpy", "pandas", "scipy", "pyarrow", "matplotlib",
   "tifffile", "zarr>=3", "imagecodecs", "h5py", "mcp>=1.9,<2", "igraph", "pynndescent", "uvicorn",
-  "starlette", "pillow", "scikit-learn", "umap-learn",
+  "starlette", "pillow", "scikit-learn", "umap-learn", "harmonypy",
 ]
 
 [project.optional-dependencies]
