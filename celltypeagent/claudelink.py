@@ -64,9 +64,9 @@ def status():
 
 
 # ---------------- Claude Code workspace ----------------
-CLAUDE_MD = """# Spatial Annotator workspace
+CLAUDE_MD = """# STAnnotator workspace
 
-This folder connects Claude Code to the Spatial Annotator app (celltypeagent tools, data folder {home}).
+This folder connects Claude Code to the STAnnotator app (celltypeagent tools, data folder {home}).
 Use only the celltypeagent tools. The user looks at the sample in the app; call use_viewer_session to load what
 they are looking at before acting, and open_viewer after starting a new annotation (it shows it in the app). Follow the instructions of
 the celltypeagent MCP server. Reply in the user's language.
@@ -90,7 +90,7 @@ def claude_code_command(prompt=None):
     return cmd, ws
 
 
-TAB_TITLE = "Spatial Annotator - Claude Code"
+TAB_TITLE = "STAnnotator - Claude Code"
 # Bring the Terminal tab that runs this app's Claude Code to the front (found by the tty recorded when it was opened,
 # still running claude) and type the given message into it; otherwise open it in a new window (the message goes in as
 # the first prompt). Prints "existing <tty>" or "new <tty>".
@@ -136,7 +136,7 @@ def open_claude_code(sample=None, session=None, request=None, send_if_open=False
     a Claude Code window that is already open."""
     prompt = None
     if session:
-        prompt = (f"I am looking at sample {sample} (session {session}) in the Spatial Annotator app. "
+        prompt = (f"I am looking at sample {sample} (session {session}) in the STAnnotator app. "
                   "Call use_viewer_session to load it, then "
                   + (f"do this: {request}" if request else "wait for my request."))
     elif request:

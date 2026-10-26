@@ -1,6 +1,6 @@
-# PyInstaller spec of the standalone Spatial Annotator app.
-#   macOS (Apple silicon): packaging/macos/build_app.sh  ->  dist/Spatial Annotator.app
-#   Linux (to test the bundle): pyinstaller packaging/spatial_annotator.spec  ->  dist/Spatial Annotator/
+# PyInstaller spec of the standalone STAnnotator app.
+#   macOS (Apple silicon): packaging/macos/build_app.sh  ->  dist/STAnnotator.app
+#   Linux (to test the bundle): pyinstaller packaging/stannotator.spec  ->  dist/STAnnotator/
 import sys
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_all, copy_metadata
@@ -65,13 +65,13 @@ a = Analysis([str(ROOT / "packaging" / "entry.py")], pathex=[str(ROOT)], datas=d
 a.datas = [x for x in a.datas if not dropped_file(x[0])]
 a.binaries = [x for x in a.binaries if not dropped_file(x[0])]
 pyz = PYZ(a.pure)
-exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="Spatial Annotator", console=sys.platform != "darwin",
+exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="STAnnotator", console=sys.platform != "darwin",
           argv_emulation=False, target_arch="arm64" if sys.platform == "darwin" else None)
-coll = COLLECT(exe, a.binaries, a.datas, name="Spatial Annotator")
+coll = COLLECT(exe, a.binaries, a.datas, name="STAnnotator")
 if sys.platform == "darwin":
     icon = ROOT / "packaging" / "macos" / "AppIcon.icns"
-    app = BUNDLE(coll, name="Spatial Annotator.app", icon=str(icon) if icon.exists() else None,
-                 bundle_identifier="io.github.caokai1073.spatialannotator",
-                 info_plist={"CFBundleName": "Spatial Annotator", "CFBundleDisplayName": "Spatial Annotator",
+    app = BUNDLE(coll, name="STAnnotator.app", icon=str(icon) if icon.exists() else None,
+                 bundle_identifier="io.github.caokai1073.stannotator",
+                 info_plist={"CFBundleName": "STAnnotator", "CFBundleDisplayName": "STAnnotator",
                              "CFBundleShortVersionString": "0.2.0", "LSMinimumSystemVersion": "11.0",
                              "NSHighResolutionCapable": True})

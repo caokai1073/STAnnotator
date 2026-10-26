@@ -7,7 +7,7 @@
 #        DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)" packaging/macos/sign_and_notarize.sh
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-APP="dist/Spatial Annotator.app"
+APP="dist/STAnnotator.app"
 ENT=packaging/macos/entitlements.plist
 PROFILE=${NOTARY_PROFILE:-spatial-annotator}
 : "${DEVELOPER_ID:?set DEVELOPER_ID to your 'Developer ID Application: ...' identity}"
@@ -22,11 +22,11 @@ codesign --verify --deep --strict --verbose=2 "$APP"
 ditto -c -k --keepParent "$APP" dist/notarize.zip
 xcrun notarytool submit dist/notarize.zip --keychain-profile "$PROFILE" --wait
 xcrun stapler staple "$APP"
-rm -f dist/notarize.zip dist/SpatialAnnotator.dmg
-hdiutil create -volname "Spatial Annotator" -srcfolder "$APP" -ov -format ULMO dist/SpatialAnnotator.dmg \
-  || hdiutil create -volname "Spatial Annotator" -srcfolder "$APP" -ov -format UDZO dist/SpatialAnnotator.dmg
-codesign --force --timestamp --sign "$DEVELOPER_ID" dist/SpatialAnnotator.dmg
-xcrun notarytool submit dist/SpatialAnnotator.dmg --keychain-profile "$PROFILE" --wait
-xcrun stapler staple dist/SpatialAnnotator.dmg
-spctl --assess --type open --context context:primary-signature -v dist/SpatialAnnotator.dmg
-echo "signed and notarized: dist/SpatialAnnotator.dmg"
+rm -f dist/notarize.zip dist/STAnnotator.dmg
+hdiutil create -volname "STAnnotator" -srcfolder "$APP" -ov -format ULMO dist/STAnnotator.dmg \
+  || hdiutil create -volname "STAnnotator" -srcfolder "$APP" -ov -format UDZO dist/STAnnotator.dmg
+codesign --force --timestamp --sign "$DEVELOPER_ID" dist/STAnnotator.dmg
+xcrun notarytool submit dist/STAnnotator.dmg --keychain-profile "$PROFILE" --wait
+xcrun stapler staple dist/STAnnotator.dmg
+spctl --assess --type open --context context:primary-signature -v dist/STAnnotator.dmg
+echo "signed and notarized: dist/STAnnotator.dmg"

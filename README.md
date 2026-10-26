@@ -1,18 +1,19 @@
-# celltypeagent
+# STAnnotator
 
 Interactive cell type annotation for spatial transcriptomics (Xenium) on the H&E image. Cells are annotated
 from a hierarchical marker gene list (no labeled reference needed). You then refine the result in plain language
 with Claude: spatial priors ("epithelial cells are only in the mucosa"), corrections ("these cells are plasma
 cells"), or requests to split a mixed cluster. Claude turns each request into an explicit constraint, correction
 or re-clustering step; the probabilistic model does the annotation, flags conflicts for review, and versions
-every step. Everything runs on your own computer; images and expression data never leave it.
+every step. Everything runs on your own computer; images and expression data never leave it. (The Python package
+and its command are called `celltypeagent`.)
 
 ## 1. Install
 
 Requirements: a Mac with Apple silicon (macOS 11+), about 8 GB of RAM, and [Claude Code](https://claude.com/claude-code)
 logged in with your own Claude account. (Linux and Windows can run it from source.)
 
-**The app (recommended).** Open `SpatialAnnotator.dmg` and drag **Spatial Annotator** to Applications. It
+**The app (recommended).** Open `STAnnotator.dmg` and drag **STAnnotator** to Applications. It
 contains everything it needs; no Python installation. If the build is not notarized, the first time right-click
 the app and choose Open (or allow it in System Settings -> Privacy & Security).
 
@@ -26,18 +27,18 @@ the app and choose Open (or allow it in System Settings -> Privacy & Security).
    source $HOME/.local/bin/env
    ```
 
-2. Unzip the downloaded `STCellTypeAgent-main.zip` and move the folder somewhere permanent (the app and Claude
+2. Unzip the downloaded `STAnnotator-main.zip` and move the folder somewhere permanent (the app and Claude
    are pointed at it), then install it with the desktop window (`[app]`):
 
    ```bash
-   mkdir -p ~/Applications && mv ~/Downloads/STCellTypeAgent-main ~/Applications/
-   cd ~/Applications/STCellTypeAgent-main && uv venv .venv --python 3.12 && uv pip install --python .venv/bin/python -e ".[app]"
+   mkdir -p ~/Applications && mv ~/Downloads/STAnnotator-main ~/Applications/
+   cd ~/Applications/STAnnotator-main && uv venv .venv --python 3.12 && uv pip install --python .venv/bin/python -e ".[app]"
    ```
 
    On Windows use `.venv\Scripts\...` in place of `.venv/bin/...`. Add `gpu` (`".[app,gpu]"`) to install PyTorch,
    which only speeds up the marker step on an NVIDIA or Apple GPU.
 
-3. macOS: `.venv/bin/celltypeagent make-app` puts a **Spatial Annotator** launcher in `~/Applications` (it runs this
+3. macOS: `.venv/bin/celltypeagent make-app` puts an **STAnnotator** launcher in `~/Applications` (it runs this
    folder's environment). Elsewhere: `.venv/bin/celltypeagent app` (`--browser` for the browser instead of a window).
 
 Your data and annotations are kept in one data folder, `~/celltypeagent` by default (`CELLTYPEAGENT_HOME` sets
@@ -332,11 +333,11 @@ colors are immediate.
 On a Mac with Apple silicon, from this folder:
 
 ```bash
-packaging/macos/build_app.sh            # -> dist/Spatial Annotator.app and dist/SpatialAnnotator.dmg (ad-hoc signed)
+packaging/macos/build_app.sh            # -> dist/STAnnotator.app and dist/STAnnotator.dmg (ad-hoc signed)
 ```
 
-It builds with PyInstaller (`packaging/spatial_annotator.spec`) in its own environment, without PyTorch. The app's
-executable also takes the command-line subcommands (`Spatial Annotator mcp` is what Claude Code starts). To give it a Developer ID signature and Apple's notarization, so that it opens without warnings on other
+It builds with PyInstaller (`packaging/stannotator.spec`) in its own environment, without PyTorch. The app's
+executable also takes the command-line subcommands (`STAnnotator mcp` is what Claude Code starts). To give it a Developer ID signature and Apple's notarization, so that it opens without warnings on other
 Macs (needs an Apple Developer account):
 
 ```bash

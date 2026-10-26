@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build the standalone app on a Mac with Apple silicon: dist/Spatial Annotator.app and dist/SpatialAnnotator.dmg.
+# Build the standalone app on a Mac with Apple silicon: dist/STAnnotator.app and dist/STAnnotator.dmg.
 # Signing and notarization (optional, needs an Apple Developer ID): packaging/macos/sign_and_notarize.sh
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -14,16 +14,21 @@ for s in 16 32 128 256 512; do
   sips -z $((2*s)) $((2*s)) celltypeagent/data/app_icon.png --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null
 done
 iconutil -c icns "$ICONSET" -o packaging/macos/AppIcon.icns
-.build-venv/bin/pyinstaller --noconfirm --clean packaging/spatial_annotator.spec
-codesign --force --deep --sign - "dist/Spatial Annotator.app"   # ad-hoc signature (replaced when notarizing)
-rm -f dist/SpatialAnnotator.dmg
+.build-venv/bin/pyinstaller --noconfirm --clean packaging/stannotator.spec
+codesign --force --deep --sign - "dist/STAnnotator.app"   # ad-hoc signature (replaced when notarizing)
+rm -f dist/STAnnotator.dmg
 # LZMA-compressed disk image (macOS 10.15+, smaller download); zlib where hdiutil does not know ULMO
-hdiutil create -volname "Spatial Annotator" -srcfolder "dist/Spatial Annotator.app" -ov -format ULMO dist/SpatialAnnotator.dmg \
-  || hdiutil create -volname "Spatial Annotator" -srcfolder "dist/Spatial Annotator.app" -ov -format UDZO dist/SpatialAnnotator.dmg
-du -sh "dist/Spatial Annotator.app" dist/SpatialAnnotator.dmg
+hdiutil create -volname "STAnnotator" -srcfolder "dist/STAnnotator.app" -ov -format ULMO dist/STAnnotator.dmg \
+  || hdiutil create -volname "STAnnotator" -srcfolder "dist/STAnnotator.app" -ov -format UDZO dist/STAnnotator.dmg
+du -sh "dist/STAnnotator.app" dist/STAnnotator.dmg
 echo "built: $(cat celltypeagent/data/build.txt)"
 # a launcher made by 'celltypeagent make-app' has the same name and runs an older source folder
-if [ -d "$HOME/Applications/Spatial Annotator.app" ]; then
-  echo "Note: $HOME/Applications/Spatial Annotator.app is a launcher of a source install ($(grep -o '/[^\"]*/.venv' "$HOME/Applications/Spatial Annotator.app/Contents/MacOS/"* 2>/dev/null | head -1))."
+if [ -d "$HOME/Applications/STAnnotator.app" ]; then
+  echo "Note: $HOME/Applications/STAnnotator.app is a launcher of a source install ($(grep -o '/[^\"]*/.venv' "$HOME/Applications/STAnnotator.app/Contents/MacOS/"* 2>/dev/null | head -1))."
   echo "      Spotlight and the Dock may open it instead of this build: move it to the Trash to avoid mixing them up."
 fi
+# the app was called "Spatial Annotator" before: an older copy under that name is not replaced by this one
+for old in "/Applications/Spatial Annotator.app" "$HOME/Applications/Spatial Annotator.app"; do
+  [ -d "$old" ] && echo "Note: $old is the app under its old name; move it to the Trash (your data folder is not in it)."
+done
+true

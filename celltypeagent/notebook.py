@@ -138,9 +138,9 @@ def build(s, version=None):
     dev_text = {"cuda": "an NVIDIA GPU (exact neighbors)", "mps": "an Apple GPU (exact neighbors)"}.get(
         dev, "the CPU (approximate neighbors for large samples, pynndescent)")
     nb.append(_md(f"""
-# Spatial Annotator analysis: sample `{s.sample_id}`, annotation `{s.id}`, version {v}
+# STAnnotator analysis: sample `{s.sample_id}`, annotation `{s.id}`, version {v}
 
-Exported {time.strftime('%Y-%m-%d %H:%M')} (Spatial Annotator build `{config.build()}`). This notebook needs only the
+Exported {time.strftime('%Y-%m-%d %H:%M')} (STAnnotator build `{config.build()}`). This notebook needs only the
 data files and common Python packages: `numpy pandas scipy scikit-learn python-igraph pynndescent umap-learn h5py
 matplotlib`. The outputs below are the results at export time, so it can be read without running it; running it
 from the top repeats the analysis and checks that the labels, Leiden clusters and niches come out the same.

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Spatial Annotator</title>
+<title>STAnnotator</title>
 <script src="/static/vendor/openseadragon.min.js"></script>
 <style>
 :root {
@@ -235,12 +235,12 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 </head>
 <body>
 <header>
-  <div class="hmini"><b>Spatial Annotator</b><span id="miniInfo"></span><span class="spacer"></span>
+  <div class="hmini"><b>STAnnotator</b><span id="miniInfo"></span><span class="spacer"></span>
     <button id="hdrShow" title="Show the toolbar (t)">Show toolbar ▾</button></div>
   <!-- fixed rows (app / data / annotate / embedding / niches / review and export), aligned by a caption column; nothing moves when the
        progress bar or an option appears -->
   <div class="hrow r1">
-    <div class="cap"><h1>Spatial Annotator</h1><span id="build" class="buildtag"></span></div>
+    <div class="cap"><h1>STAnnotator</h1><span id="build" class="buildtag"></span></div>
     <button id="importBtn" title="Add a sample (a Xenium output folder or h5ad), then its image and registration">Import…</button>
     <button id="clearAll" class="danger" hidden title="Delete every sample with all its annotations and chats for good, to import from scratch">Remove all…</button>
     <span class="spacer"></span>
@@ -554,7 +554,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
   <div class="imbody"><div id="cmpBars"></div><div id="cmpLegend" class="cmplegend"></div><div class="hint" id="cmpNote"></div></div>
 </dialog>
 <dialog id="hpDlg" style="width:min(760px,95vw)">
-  <div class="dh"><b>Spatial Annotator</b><span class="spacer"></span>
+  <div class="dh"><b>STAnnotator</b><span class="spacer"></span>
     <button id="hpHow" class="on">How to use</button><button id="hpAbout">About</button><button id="hpClose">Close</button></div>
   <div id="hpBody" class="hpbody"></div>
 </dialog>

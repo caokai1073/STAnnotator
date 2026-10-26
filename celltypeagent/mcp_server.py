@@ -26,7 +26,7 @@ Getting started
   start_session(sample_id, annotation_csv=..., id_column=..., label_column=...) after inspect_annotation. Or
   resume_session from list_sessions. The first
   annotation takes about a minute on a laptop.
-- The user usually has the Spatial Annotator app (or the web viewer) open: call use_viewer_session to load what they
+- The user usually has the STAnnotator app (or the web viewer) open: call use_viewer_session to load what they
   are looking at. After starting a new annotation call open_viewer: a running app switches to it by itself;
   otherwise give the user the link. The viewer shows the cell types on the H&E (or DAPI); the user draws and names
   regions there and can review conflicts. Changes made through these tools appear in the viewer automatically.
@@ -189,7 +189,7 @@ def import_sample(name: str, h5ad: list[str], he: str, registration: str, sectio
 
 @mcp.tool()
 def use_viewer_session() -> str:
-    """Load the sample and annotation the user is looking at in the Spatial Annotator app (or the web viewer) and
+    """Load the sample and annotation the user is looking at in the STAnnotator app (or the web viewer) and
     make it the active session. Call it first when the user refers to what they see."""
     _heartbeat()
     from . import claudelink
@@ -203,7 +203,7 @@ def use_viewer_session() -> str:
 
 @mcp.tool()
 def open_viewer(port: int = 8765) -> str:
-    """Show the active session to the user. If the Spatial Annotator app (or a web viewer) is running, it switches to
+    """Show the active session to the user. If the STAnnotator app (or a web viewer) is running, it switches to
     the session by itself; otherwise a web viewer is started and its link returned."""
     import subprocess, time
     from . import claudelink, config
@@ -212,7 +212,7 @@ def open_viewer(port: int = 8765) -> str:
     if claudelink.viewer_alive(st):
         if s is not None:
             claudelink.request_show(s.sample_id, s.id)
-        where = "the Spatial Annotator app" if st.get("mode") == "desktop" else f"http://localhost:{st['port']}"
+        where = "the STAnnotator app" if st.get("mode") == "desktop" else f"http://localhost:{st['port']}"
         return _j({"shown_in": where, "session": s.id if s else None,
                    "note": "the viewer switches to this session within a few seconds"})
     url = f"http://localhost:{port}"

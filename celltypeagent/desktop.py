@@ -1,4 +1,4 @@
-"""Spatial Annotator desktop app: the viewer in a native window, with its local server running inside the app.
+"""STAnnotator desktop app: the viewer in a native window, with its local server running inside the app.
 
     celltypeagent app [--browser]          (or: python -m celltypeagent.desktop)
 
@@ -8,7 +8,7 @@ browser instead. Claude is used through the user's own Claude Code (MCP), not in
 import argparse, os, socket, sys, threading, time, webbrowser
 from . import config
 
-APP_NAME = "Spatial Annotator"
+APP_NAME = "STAnnotator"
 
 
 def free_port(preferred=8765):

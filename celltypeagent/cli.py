@@ -7,10 +7,10 @@ from . import config
 APP_PLIST = """<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>CFBundleName</key><string>Spatial Annotator</string>
-  <key>CFBundleDisplayName</key><string>Spatial Annotator</string>
-  <key>CFBundleIdentifier</key><string>io.github.caokai1073.spatialannotator</string>
-  <key>CFBundleExecutable</key><string>Spatial Annotator</string>
+  <key>CFBundleName</key><string>STAnnotator</string>
+  <key>CFBundleDisplayName</key><string>STAnnotator</string>
+  <key>CFBundleIdentifier</key><string>io.github.caokai1073.stannotator</string>
+  <key>CFBundleExecutable</key><string>STAnnotator</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>{version}</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
@@ -28,13 +28,13 @@ def make_app(dest=None):
     if platform.system() != "Darwin":
         raise SystemExit("make-app builds a macOS app; on this system run: celltypeagent app")
     dest = Path(dest or Path.home() / "Applications").expanduser()
-    app = dest / "Spatial Annotator.app"
+    app = dest / "STAnnotator.app"
     if app.exists():
         shutil.rmtree(app)
     (app / "Contents" / "MacOS").mkdir(parents=True)
     (app / "Contents" / "Resources").mkdir()
     (app / "Contents" / "Info.plist").write_text(APP_PLIST.format(version=version("celltypeagent")))
-    exe = app / "Contents" / "MacOS" / "Spatial Annotator"
+    exe = app / "Contents" / "MacOS" / "STAnnotator"
     exe.write_text("#!/bin/sh\n"
                    f'export CELLTYPEAGENT_HOME="{config.HOME}"\n'
                    f'exec "{sys.executable}" -m celltypeagent.desktop "$@" >> "{config.HOME / "app.log"}" 2>&1\n')
@@ -83,7 +83,7 @@ def main(argv=None):
     sub.add_parser("samples", help="list imported samples")
     ap_ = sub.add_parser("app", help="start the desktop app (native window)")
     ap_.add_argument("--browser", action="store_true", help="use the default browser instead of a window")
-    ma = sub.add_parser("make-app", help="macOS: create 'Spatial Annotator.app' in ~/Applications")
+    ma = sub.add_parser("make-app", help="macOS: create 'STAnnotator.app' in ~/Applications")
     ma.add_argument("--dest", help="folder for the app (default ~/Applications)")
     vw = sub.add_parser("viewer", help="start the web viewer")
     vw.add_argument("--port", type=int, default=8765)
