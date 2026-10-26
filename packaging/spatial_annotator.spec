@@ -13,6 +13,35 @@ import ast, re
 CARRIED = ast.literal_eval(re.search(r"^CARRIED = (\[.*?\])", (ROOT / "celltypeagent" / "notebook.py").read_text(), re.M).group(1))
 datas += [(str(ROOT / "celltypeagent" / f"{m}.py"), "celltypeagent/algorithm_src") for m in CARRIED]
 binaries, hidden = [], ["celltypeagent.mcp_server", "celltypeagent.webapp", "celltypeagent.desktop"]
+
+# Left out to keep the app small; none of it is ever imported by the app, so nothing it does changes:
+# - imagecodecs: the codecs of other file formats (CZI, FITS, AVIF, ...). Images are read with tifffile, which can call
+#   only the TIFF compressions below (jpeg8 and ljpeg through imagecodecs.jpeg_decode); imagecodecs loads a codec
+#   module when it is first used.
+TIFF_CODECS = {"_ccitt", "_deflate", "_imcd", "_jetraw", "_jpeg2k", "_jpeg8", "_jpegxl", "_jpegxr", "_lerc", "_ljpeg",
+               "_lzma", "_png", "_webp", "_zlib", "_zstd", "_shared", "_shared_cython"}
+# - pyarrow: Flight (RPC) and the S3 file system (optional in pyarrow.fs); the app reads local parquet files only.
+# - cryptography (pulled in by optional parts of mcp), numba's CUDA target (no NVIDIA GPU on a Mac), test suites,
+#   C / Cython sources and headers.
+DROP_MODULES = ["cryptography", "pyarrow.flight", "pyarrow._flight", "pyarrow._s3fs", "numba.cuda"]
+DROP_FILES = re.compile(r"(^|[/\\])(tests|include)([/\\]|$)|\.(pyx|pxd|pxi|h|hpp|c|cpp)$|libarrow_flight|libarrow_s3|"
+                        r"pyarrow[/\\]_(flight|s3fs)\.|^cryptography|[/\\]cryptography[/\\]|numba[/\\]cuda[/\\]")
+
+
+def dropped_module(name):
+    if name.startswith("imagecodecs._") and name.split(".")[1] not in TIFF_CODECS:
+        return True
+    return ".tests" in name or any(name == m or name.startswith(m + ".") for m in DROP_MODULES)
+
+
+def dropped_file(dest):
+    p = Path(dest)
+    if p.parent.name == "imagecodecs" and p.name.startswith("_") and p.name.split(".")[0] not in TIFF_CODECS | {"__init__", "__main__"} \
+            and p.suffix in (".so", ".pyd", ".dylib"):
+        return True
+    return bool(DROP_FILES.search(str(dest)))
+
+
 # packages that load parts of themselves dynamically (codecs, event loops, numba-compiled modules, plugins)
 for pkg in ["zarr", "numcodecs", "imagecodecs", "tifffile", "pynndescent", "numba", "llvmlite", "igraph", "umap", "sklearn", "harmonypy",
             "uvicorn", "mcp", "webview"]:
@@ -20,7 +49,9 @@ for pkg in ["zarr", "numcodecs", "imagecodecs", "tifffile", "pynndescent", "numb
         d, b, h = collect_all(pkg)
     except Exception:
         continue
-    datas += d; binaries += b; hidden += h
+    datas += [x for x in d if not dropped_file(x[1] + "/" + Path(x[0]).name)]
+    binaries += [x for x in b if not dropped_file(x[1] + "/" + Path(x[0]).name)]
+    hidden += [m for m in h if not dropped_module(m)]
 for pkg in ["zarr", "numcodecs", "mcp", "imagecodecs", "tifffile", "uvicorn", "starlette", "pydantic"]:
     try:
         datas += copy_metadata(pkg)
@@ -28,7 +59,11 @@ for pkg in ["zarr", "numcodecs", "mcp", "imagecodecs", "tifffile", "uvicorn", "s
         pass
 
 a = Analysis([str(ROOT / "packaging" / "entry.py")], pathex=[str(ROOT)], datas=datas, binaries=binaries,
-             hiddenimports=hidden, excludes=["torch", "tkinter", "IPython", "pytest", "notebook", "tensorflow", "keras"], noarchive=False)
+             hiddenimports=hidden, excludes=["torch", "tkinter", "IPython", "pytest", "notebook", "tensorflow", "keras"] + DROP_MODULES
+             + [f"imagecodecs.{p.stem.split('.')[0]}" for p in Path(__import__("imagecodecs").__file__).parent.glob("_*")
+                if p.suffix in (".so", ".pyd") and p.stem.split(".")[0] not in TIFF_CODECS], noarchive=False)
+a.datas = [x for x in a.datas if not dropped_file(x[0])]
+a.binaries = [x for x in a.binaries if not dropped_file(x[0])]
 pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="Spatial Annotator", console=sys.platform != "darwin",
           argv_emulation=False, target_arch="arm64" if sys.platform == "darwin" else None)

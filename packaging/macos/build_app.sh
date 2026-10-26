@@ -17,7 +17,9 @@ iconutil -c icns "$ICONSET" -o packaging/macos/AppIcon.icns
 .build-venv/bin/pyinstaller --noconfirm --clean packaging/spatial_annotator.spec
 codesign --force --deep --sign - "dist/Spatial Annotator.app"   # ad-hoc signature (replaced when notarizing)
 rm -f dist/SpatialAnnotator.dmg
-hdiutil create -volname "Spatial Annotator" -srcfolder "dist/Spatial Annotator.app" -ov -format UDZO dist/SpatialAnnotator.dmg
+# LZMA-compressed disk image (macOS 10.15+, smaller download); zlib where hdiutil does not know ULMO
+hdiutil create -volname "Spatial Annotator" -srcfolder "dist/Spatial Annotator.app" -ov -format ULMO dist/SpatialAnnotator.dmg \
+  || hdiutil create -volname "Spatial Annotator" -srcfolder "dist/Spatial Annotator.app" -ov -format UDZO dist/SpatialAnnotator.dmg
 du -sh "dist/Spatial Annotator.app" dist/SpatialAnnotator.dmg
 echo "built: $(cat celltypeagent/data/build.txt)"
 # a launcher made by 'celltypeagent make-app' has the same name and runs an older source folder
