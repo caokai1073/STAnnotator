@@ -18,18 +18,20 @@
 [hidden] { display: none !important; }
 html, body { height: 100%; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
-       display: flex; flex-direction: column; }
-header { display: flex; flex-direction: column; gap: 2px; padding: 6px 14px 8px; background: var(--panel);
-         border-bottom: 1px solid var(--line); }
+       display: flex; flex-direction: row; }
+/* the toolbar is a panel on the right of the map; folded, it is a thin strip on the right edge */
+header { order: 2; width: 360px; flex: none; display: flex; flex-direction: column; gap: 0; padding: 8px 12px 12px;
+         background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; overflow-x: hidden; }
 header h1 { font-size: 16px; margin: 0; font-weight: 650; line-height: 1.2; }
-.hmini { display: none; align-items: center; gap: 12px; font-size: 13px; }
-.hmini #miniInfo { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.hmini button { padding: 2px 10px; font-size: 12px; }
-header.collapsed { padding: 4px 14px; }
+.hmini { display: none; flex-direction: column; align-items: center; gap: 12px; font-size: 13px; height: 100%; }
+.hmini b, .hmini #miniInfo { writing-mode: vertical-rl; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 0; }
+.hmini #miniInfo { color: var(--muted); font-size: 12px; flex: 1; }
+.hmini button { padding: 4px 8px; font-size: 13px; }
+header.collapsed { width: 38px; padding: 8px 4px; overflow: hidden; }
 header.collapsed .hrow { display: none; }
 header.collapsed .hmini { display: flex; }
 .buildtag { display: block; font-size: 10px; font-weight: 400; color: var(--muted); }
-.cap { width: 160px; flex: none; display: flex; flex-direction: column; justify-content: center; }
+.cap { width: 100%; flex: none; display: flex; align-items: center; gap: 6px; }
 .captxt { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .fl { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); white-space: nowrap; }
 .fl select { color: var(--ink); }
@@ -59,13 +61,6 @@ header.collapsed .hmini { display: flex; }
 .folder { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); min-width: 0;
           flex: 0 1 auto; white-space: nowrap; overflow: hidden; }
 .folder .path { min-width: 60px; flex: 1 1 auto; }
-.hrow.r1 { flex-wrap: nowrap; }
-/* the data row stays one line: the sample and session lists give up width first */
-.hrow.r2 { flex-wrap: nowrap; }
-.hrow.r2 > * { flex: none; }
-.hrow.r2 > #sampleWrap { flex: 0 1 520px; min-width: 0; } .hrow.r2 > #sessWrap { flex: 0 1 330px; min-width: 0; }
-.hrow.r2 #sample, .hrow.r2 #session { min-width: 0; width: 0; flex: 1 1 auto; }
-.hrow.r1 > :not(.folder):not(.spacer) { flex: none; }
 button.danger { color: #c0392b; }
 button.danger:hover:not(:disabled) { border-color: #c0392b; }
 .f { display: flex; flex-direction: column; font-size: 11px; color: var(--muted); gap: 2px; }
@@ -79,7 +74,16 @@ button.primary { background: var(--accent); color: #fff; border-color: var(--acc
 button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
 button:disabled { opacity: .45; cursor: default; }
 .spacer { flex: 1; }
-.hrow { display: flex; align-items: center; gap: 10px; min-height: 38px; flex-wrap: wrap; }
+.hrow { display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap; padding: 9px 0; border-top: 1px solid var(--line); }
+.hrow.r1 { border-top: 0; padding-top: 0; }
+/* in the panel: one control per line where it needs the width, the rest side by side */
+header .hrow > * { flex: none; }
+header .sep, header .hrow > .spacer { display: none; }
+header #sampleWrap, header #sessWrap, header .fl:has(#method), header .folder, header .progress, header .nslot,
+header .slnav, header #carryWrap, header #vinfo { flex: 1 1 100%; min-width: 0; }
+header #sample, header #session, header #method { min-width: 0; width: 0; flex: 1 1 auto; }
+header .slnav { flex-wrap: wrap; }
+header #progress:not(.show) { display: none; }  /* the annotation's progress: a line of its own while it runs */
 .cfgslot { display: inline-flex; min-width: 132px; }
 .progress { display: flex; visibility: hidden; align-items: center; gap: 8px; min-width: 180px; flex: 1; max-width: 640px; }
 .progress.show { visibility: visible; }
@@ -87,7 +91,7 @@ button:disabled { opacity: .45; cursor: default; }
 .pbar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
 #pstage { font-size: 12px; color: var(--muted); white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
 #vinfo { font-size: 12px; color: var(--muted); }
-main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 380px; min-height: 0; }
+main { order: 1; flex: 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) 380px; min-height: 0; }
 body.desktop main { grid-template-columns: minmax(0, 1fr); }
 body.desktop #side { display: none; }
 #viewerwrap { position: relative; min-height: 0; }
@@ -180,7 +184,8 @@ body.desktop #side { display: none; }
 #viewerwrap.pl #cellcard { right: 360px; }
 #empanel { top: 10px; right: 10px; width: 420px; display: flex; flex-direction: column; }
 #empanel .lh { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 12px; }
-#empanel .lh select { padding: 2px 6px; font-size: 12px; }
+#empanel .lh select { padding: 2px 6px; font-size: 12px; flex: 1 1 0; min-width: 0; }  /* they share the width; × stays inside */
+#empanel .lh > * { flex-shrink: 0; }
 .emtools { display: flex; align-items: center; gap: 6px; padding: 6px 10px; font-size: 12px; }
 .emtools button { padding: 2px 9px; font-size: 12px; }
 #emcanvas { width: 420px; height: 380px; display: block; background: var(--panel); cursor: grab; touch-action: none; }
@@ -238,19 +243,17 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 </head>
 <body>
 <header>
-  <div class="hmini"><b>STAnnotator</b><span id="miniInfo"></span><span class="spacer"></span>
-    <button id="hdrShow" title="Show the toolbar (t)">Show toolbar ▾</button></div>
-  <!-- fixed rows (app / data / annotate / embedding / niches / review and export), aligned by a caption column; nothing moves when the
-       progress bar or an option appears -->
+  <div class="hmini"><button id="hdrShow" title="Show the toolbar (t)">‹</button><b>STAnnotator</b><span id="miniInfo"></span></div>
+  <!-- the toolbar: a panel on the right of the map, one block per step (app / data / annotate / embedding / niches /
+       review and export), each with its caption; nothing moves when a progress bar or an option appears -->
   <div class="hrow r1">
-    <div class="cap"><h1>STAnnotator</h1><span id="build" class="buildtag"></span></div>
+    <div class="cap"><div><h1>STAnnotator</h1><span id="build" class="buildtag"></span></div>
+      <button id="helpBtn" title="How to use the app, and About (version, Claude connection, data folder)" style="padding:4px 10px;font-weight:600;margin-left:auto">?</button>
+      <button id="hdrHide" title="Fold the toolbar to the right for a bigger map (t)" style="padding:4px 9px">›</button></div>
     <button id="importBtn" title="Add a sample (a Xenium output folder or h5ad), then its image and registration">Import…</button>
     <button id="clearAll" class="danger" hidden title="Delete every sample with all its annotations and chats for good, to import from scratch">Remove all…</button>
-    <span class="spacer"></span>
     <button id="connBtn" hidden title="Work on this computer or on a server over SSH">This computer</button>
     <span class="folder">Data folder <span class="path" id="path">–</span></span>
-    <button id="helpBtn" title="How to use the app, and About (version, Claude connection, data folder)" style="padding:4px 10px;font-weight:600">?</button>
-    <button id="hdrHide" title="Hide the toolbar for a bigger map (t)" style="padding:4px 9px">▴</button>
   </div>
   <div class="hrow r2">
     <div class="cap"><span class="captxt">Data</span></div>
@@ -2336,7 +2339,7 @@ with its tools on the server. The server needs STAnnotator installed and an SSH 
 <li><b>Color by</b> cell type, lineage, <b>gene expression…</b> (type a gene, Enter), region, niche and more. Click legend
 entries to show only those (click again to drop one; <b>show all</b> resets).</li>
 <li><b>Opacity</b> and <b>Dot size</b> sliders; <b>Hide cells</b> <kbd>h</kbd>, <b>Hide H&amp;E</b> <kbd>e</kbd>.</li>
-<li><b>▴</b> (top right) folds the toolbar into one line for a bigger map; <b>Show toolbar</b> or <kbd>t</kbd> brings it back.</li></ul>
+<li><b>›</b> (top of the toolbar on the right) folds the toolbar to the right edge for a bigger map; <b>‹</b> or <kbd>t</kbd> brings it back.</li></ul>
 <h3>Regions</h3><ul>
 <li><b>Draw region</b>: click points on the map; close with a double-click, <kbd>Enter</kbd> or by clicking the first
 point; <kbd>Backspace</kbd> removes the last point, <kbd>Esc</kbd> cancels; then name it. A name can have several polygons.</li>

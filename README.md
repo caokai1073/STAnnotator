@@ -146,7 +146,7 @@ Claude answers in the language you write in.
 ### Working on a server
 
 The app can work on a server over SSH: the data and every computation stay on the server, this computer shows the
-viewer and runs Claude Code. Click **This computer** (top right) -> **A server over SSH**, enter the server (a `Host`
+viewer and runs Claude Code. Click **This computer** (in the toolbar on the right) -> **A server over SSH**, enter the server (a `Host`
 of `~/.ssh/config` or `user@server`), the full path of STAnnotator's `celltypeagent` command there and, optionally,
 its data folder (default `~/celltypeagent` on the server), then **Test** and **Connect**. The app remembers the
 server and connects again when it starts; **This computer** -> **Use this computer** goes back.
@@ -166,6 +166,9 @@ same data as the viewer. The viewer keeps running on the server between connecti
 starts it, on the server's own localhost only; its process id is in `<data folder>/remote_viewer.json`).
 
 ## 4. The viewer
+
+The toolbar is a panel on the right of the map, one block per step (data, annotate, embedding, niches, review and
+export); **›** at its top (or `t`) folds it to the right edge for a bigger map, **‹** brings it back.
 
 The app's window (or the web viewer: `.venv/bin/celltypeagent viewer`, then http://localhost:8765). Changes made
 by Claude show up within a few seconds.
@@ -239,10 +242,10 @@ by Claude show up within a few seconds.
      to 30 um off their nuclei at the corners); after the correction the windows agree within 0.5 um.
    Advice changes nothing until you click; **dismiss** hides it.
    The **Priors** list under Regions shows the priors of the annotation (the user's words and how they were read);
-   **×** removes one (Undo brings it back). **?** (top right) explains every control and, under **About**, shows the
+   **×** removes one (Undo brings it back). **?** (top of the toolbar on the right) explains every control and, under **About**, shows the
    build, the data folder, whether Claude Code was found and when Claude last used the tools, with a button that
    copies these details for a bug report.
-9. **Embedding** (its own toolbar row): **Run PCA + UMAP** computes a PCA, a UMAP and Leiden clusters of the sample from
+9. **Embedding** (its own block of the toolbar): **Run PCA + UMAP** computes a PCA, a UMAP and Leiden clusters of the sample from
    expression only (shared by all its annotations; about 40–50 s for 356,629 cells: the kNN graph comes from the
    fast GPU / pynndescent search and is handed to UMAP, which starts from PC1/PC2 and runs on all cores).
    **Show UMAP** opens a window on the right (UMAP or PC1/PC2, colored as the map, by cell type, Leiden cluster or
