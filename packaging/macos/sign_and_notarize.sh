@@ -3,7 +3,8 @@
 # Needs an Apple Developer account. Once per Mac, store the notary credentials in the keychain:
 #   xcrun notarytool store-credentials spatial-annotator --apple-id YOU@EXAMPLE.COM --team-id TEAMID
 #     (it asks for an app-specific password from appleid.apple.com)
-# Then:  DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)" packaging/macos/sign_and_notarize.sh
+# Then, after packaging/macos/build_app.sh:
+#        DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)" packaging/macos/sign_and_notarize.sh
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 APP="dist/Spatial Annotator.app"
@@ -22,7 +23,8 @@ ditto -c -k --keepParent "$APP" dist/notarize.zip
 xcrun notarytool submit dist/notarize.zip --keychain-profile "$PROFILE" --wait
 xcrun stapler staple "$APP"
 rm -f dist/notarize.zip dist/SpatialAnnotator.dmg
-hdiutil create -volname "Spatial Annotator" -srcfolder "$APP" -ov -format UDZO dist/SpatialAnnotator.dmg
+hdiutil create -volname "Spatial Annotator" -srcfolder "$APP" -ov -format ULMO dist/SpatialAnnotator.dmg \
+  || hdiutil create -volname "Spatial Annotator" -srcfolder "$APP" -ov -format UDZO dist/SpatialAnnotator.dmg
 codesign --force --timestamp --sign "$DEVELOPER_ID" dist/SpatialAnnotator.dmg
 xcrun notarytool submit dist/SpatialAnnotator.dmg --keychain-profile "$PROFILE" --wait
 xcrun stapler staple dist/SpatialAnnotator.dmg
