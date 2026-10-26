@@ -32,7 +32,7 @@ header.collapsed .hrow { display: none; }
 header.collapsed .hmini { display: flex; }
 .buildtag { display: block; font-size: 10px; font-weight: 400; color: var(--muted); }
 .cap { width: 100%; flex: none; display: flex; align-items: center; gap: 6px; }
-.captxt { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.captxt { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .14em; color: var(--muted); }
 .fl { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); white-space: nowrap; }
 .fl select { color: var(--ink); }
 #sample { min-width: 220px; } #session { min-width: 250px; } #method { min-width: 180px; }
@@ -66,15 +66,25 @@ button.danger:hover:not(:disabled) { border-color: #c0392b; }
 .f { display: flex; flex-direction: column; font-size: 11px; color: var(--muted); gap: 2px; }
 .path { font: 11px ui-monospace, monospace; color: var(--muted); max-width: 330px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 select, input[type=text], input[type=number], textarea { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line);
-  border-radius: 6px; padding: 5px 8px; }
-button { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  border-radius: 8px; padding: 5px 8px; }
+button { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+         display: inline-flex; align-items: center; justify-content: center; gap: 6px; line-height: 1.25; white-space: nowrap;
+         transition: background-color .12s, border-color .12s, color .12s;
          padding: 5px 11px; cursor: pointer; }
-button:hover:not(:disabled) { border-color: var(--accent); }
+button:hover:not(:disabled) { border-color: var(--accent); background-color: var(--accent-soft); }
+button.primary:hover:not(:disabled), button.on:hover:not(:disabled) { background-color: var(--accent); filter: brightness(1.08); }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ic { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round;
+      stroke-linejoin: round; }
+button.ib { padding: 6px; }                       /* icon only (the name is its tooltip) */
+button.ib.flip .ic { transform: rotate(180deg); }
+.float button.ib, .dh button.ib, .lh button.ib { border-color: transparent; background: none; color: var(--muted); padding: 5px; }
+.float button.ib:hover, .dh button.ib:hover, .lh button.ib:hover { color: var(--ink); background-color: var(--accent-soft); }
 button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
 button:disabled { opacity: .45; cursor: default; }
 .spacer { flex: 1; }
-.hrow { display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap; padding: 9px 0; border-top: 1px solid var(--line); }
+.hrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 0; border-top: 1px solid var(--line); }
 .hrow.r1 { border-top: 0; padding-top: 0; }
 /* in the panel: one control per line where it needs the width, the rest side by side */
 header .hrow > * { flex: none; }
@@ -102,8 +112,8 @@ body.desktop #side { display: none; }
 #legend .grp.clickable { cursor: pointer; }
 #legend .grp.clickable:hover { color: var(--accent); }
 #legend button:disabled { opacity: .4; }
-.float { position: absolute; background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
-         box-shadow: 0 2px 8px rgba(0,0,0,.12); z-index: 5; }
+.float { position: absolute; background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+         box-shadow: 0 6px 24px rgba(0,0,0,.08), 0 1px 3px rgba(0,0,0,.06); z-index: 5; }
 #tools { top: 10px; left: 10px; padding: 6px 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 #tools label { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
 #legend { left: 10px; bottom: 10px; width: 270px; max-height: 45%; display: flex; flex-direction: column; }
@@ -133,6 +143,7 @@ body.desktop #side { display: none; }
 #regsvg text { font: 600 12px system-ui, sans-serif; paint-order: stroke; stroke: rgba(255,255,255,.85); stroke-width: 3px; }
 #regpanel { top: 62px; left: 10px; width: 310px; max-height: 38%; display: flex; flex-direction: column; }
 #regpanel .lh { display: flex; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 12px; gap: 6px; }
+#regpanel .lh label { white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
 #regpanel .items { overflow: auto; padding: 4px 6px; font-size: 12px; }
 #regpanel.collapsed .items { display: none; }
 .rg { display: flex; align-items: center; gap: 6px; padding: 3px 4px; }
@@ -145,7 +156,8 @@ body.desktop #side { display: none; }
 .colorpick button:hover { transform: scale(1.12); }
 .colorpick button.cur { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--ink); }
 .rg .n { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
-.rg button, .pg button { border: 0; background: none; padding: 0 4px; color: var(--muted); }
+.rg button, .pg button { border: 0; background: none; padding: 2px 3px; color: var(--muted); }
+.rg button .ic, .pg button .ic, .prior button .ic { width: 14px; height: 14px; }
 .rg button:hover, .pg button:hover { color: var(--accent); }
 .pg { display: flex; gap: 6px; padding: 0 4px 2px 21px; color: var(--muted); font-size: 11px; }
 .prior { display: flex; align-items: flex-start; gap: 6px; padding: 3px 4px; border-left: 3px solid var(--accent); margin: 3px 0; }
@@ -208,12 +220,13 @@ body.desktop #side { display: none; }
 .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--panel);
          padding: 8px 14px; border-radius: 6px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 20; max-width: 80vw; }
 .toast.show { opacity: .94; }
-dialog { width: min(1100px, 95vw); border: 1px solid var(--line); border-radius: 10px; padding: 0; background: var(--panel); color: var(--ink); }
+dialog { width: min(1100px, 95vw); border: 1px solid var(--line); border-radius: 14px; padding: 0; background: var(--panel); color: var(--ink);
+         box-shadow: 0 24px 64px rgba(0,0,0,.18); }
 dialog::backdrop { background: rgba(0,0,0,.35); }
 .fbi { display: flex; gap: 8px; padding: 3px 6px; border-radius: 4px; cursor: pointer; user-select: none; }
 .fbi:hover { background: var(--line); } .fbi.on { background: var(--accent); color: #fff; }
 .fbi .sz { margin-left: auto; color: var(--muted); font-size: 11.5px; } .fbi.on .sz { color: #fff; }
-.dh { display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.dh { display: flex; gap: 8px; align-items: center; padding: 12px 14px 12px 18px; border-bottom: 1px solid var(--line); }
 .dbody { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 14px; padding: 12px 14px 14px; }
 .col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .col.side { gap: 6px; }
@@ -242,6 +255,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="ic-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol><symbol id="ic-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></symbol><symbol id="ic-upload" viewBox="0 0 24 24"><path d="M12 16V5M7 9l5-5 5 5M5 20h14"/></symbol><symbol id="ic-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5zM8 4v5h7V4M8 20v-6h8v6"/></symbol><symbol id="ic-help" viewBox="0 0 24 24"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.6 9.4a2.5 2.5 0 1 1 3.6 2.3c-.7.3-1.2 1-1.2 1.8v.4M12 17.2v.1"/></symbol><symbol id="ic-chev-left" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol><symbol id="ic-chev-right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol><symbol id="ic-chev-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol><symbol id="ic-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol><symbol id="ic-grid" viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></symbol><symbol id="ic-chart" viewBox="0 0 24 24"><path d="M4 20h16M7 16v-5M12 16V6M17 16V9"/></symbol><symbol id="ic-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></symbol><symbol id="ic-play" viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></symbol><symbol id="ic-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 15.5l.8 1.7 1.7.8-1.7.8-.8 1.7-.8-1.7-1.7-.8 1.7-.8z"/></symbol><symbol id="ic-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3"/></symbol><symbol id="ic-terminal" viewBox="0 0 24 24"><path d="M3 5h18v14H3zM7 10l3 2-3 2M12.5 15h4.5"/></symbol><symbol id="ic-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM8.6 12.2l2.4 2.4 4.4-4.8"/></symbol><symbol id="ic-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h6"/></symbol><symbol id="ic-share" viewBox="0 0 24 24"><path d="M12 15V4M8 8l4-4 4 4M5 12v8h14v-8"/></symbol><symbol id="ic-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol><symbol id="ic-server" viewBox="0 0 24 24"><path d="M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01"/></symbol><symbol id="ic-monitor" viewBox="0 0 24 24"><path d="M3 4h18v12H3zM8 20h8M12 16v4"/></symbol><symbol id="ic-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></symbol><symbol id="ic-image" viewBox="0 0 24 24"><path d="M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15.5 8.5h.01"/></symbol><symbol id="ic-pen" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"/></symbol><symbol id="ic-lasso" viewBox="0 0 24 24"><path d="M7 15.5C4.6 14.4 3 12.6 3 10.5 3 6.9 7 4 12 4s9 2.9 9 6.5S17 17 12 17c-1 0-2-.1-2.9-.3M7 15.5c-1 .8-1.5 1.7-1.5 2.6C5.5 19.7 7 21 9 21M7 15.5a1.6 1.6 0 1 0 2.3 1"/></symbol><symbol id="ic-target" viewBox="0 0 24 24"><path d="M12 19a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM12 2v4M12 18v4M2 12h4M18 12h4"/></symbol><symbol id="ic-scatter" viewBox="0 0 24 24"><path d="M4 4v16h16M8 15h.01M10 10h.01M14 13h.01M16 8h.01M18 15h.01"/></symbol><symbol id="ic-folder" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v11H3z"/></symbol><symbol id="ic-send" viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-3-7z"/></symbol><symbol id="ic-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></symbol><symbol id="ic-home" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9H4zM10 20v-6h4v6"/></symbol><symbol id="ic-move" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3L9.5 5.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5M3 12l2.5-2.5M3 12l2.5 2.5M21 12l-2.5-2.5M21 12l-2.5 2.5"/></symbol><symbol id="ic-copy" viewBox="0 0 24 24"><path d="M8 8h12v12H8zM4 16V4h12"/></symbol><symbol id="ic-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5zM3 13l9 5 9-5"/></symbol></svg>
 <header>
   <div class="hmini"><button id="hdrShow" title="Show the toolbar (t)">‹</button><b>STAnnotator</b><span id="miniInfo"></span></div>
   <!-- the toolbar: a panel on the right of the map, one block per step (app / data / annotate / embedding / niches /
@@ -596,6 +610,36 @@ T and NK cells: CD3E|NKG7+ EPCAM-
 <div class="toast" id="toast"></div>
 <script>
 const $ = (id) => document.getElementById(id);
+// ---------------- icons: thin line icons from the sprite at the top of the page ----------------
+const icon = (name) => `<svg class="ic" aria-hidden="true"><use href="#ic-${name}"/></svg>`;
+function setLabel(b, text) { const t = b.querySelector(".bt"); if (t) t.textContent = text; else b.textContent = text; }
+function setIcon(b, name) { const u = b.querySelector("use"); if (u) u.setAttribute("href", `#ic-${name}`); }
+function decorate(b, name, only) {  // icon + label, or the icon only (the label becomes its tooltip)
+  const text = b.textContent.trim();
+  b.innerHTML = icon(name);
+  if (only) { b.classList.add("ib"); if (!b.title) b.title = text; b.setAttribute("aria-label", b.title); }
+  else { const t = document.createElement("span"); t.className = "bt"; t.textContent = text; b.append(t); }
+  return b;
+}
+const ICON_ONLY = { hdrShow: "chev-left", hdrHide: "chev-right", helpBtn: "help", slPrev: "chev-left", slNext: "chev-right",
+  lgtoggle: "chev-up", rgtoggle: "chev-up", plclose: "x", emClose: "x", imClose: "x", rcClose: "x", clClose: "x", rpClose: "x",
+  xpClose: "x", glClose: "x", cmpClose: "x", hpClose: "x", cmpCsv: "download", rpSave: "download", mkExport: "download",
+  fbUp: "arrow-up", fbHome: "home" };
+const ICON_TEXT = { importBtn: "upload", clearAll: "trash", connBtn: "monitor", slGallery: "grid", slCompare: "chart",
+  openMarkers: "list", openRef: "file", openEx: "file", annotate: "play", eRun: "play", eShow: "scatter", nRun: "play",
+  nClaude: "sparkle", undo: "undo", claudeBtn: "terminal", plaus: "shield", report: "file", export: "share", reset: "trash",
+  hide: "eye", hideHE: "image", draw: "pen", emLasso: "lasso", emClear: "x", emZoom: "target", send: "send",
+  mkImport: "upload", mkCheck: "check", mkSave: "save", mkDraft: "sparkle", mkClose: "check", imGo: "upload",
+  imNewAlign: "sparkle", imAlign: "sparkle", alignNow: "sparkle", alignReg: "file", imImgGo: "image", imRegGo: "check",
+  imUndoPlace: "undo", refPick: "folder", exPick: "folder", refClose: "check", exClose: "check", rcTest: "check",
+  rcGo: "server", fbOk: "check", rpAsk: "sparkle", xpCsv: "download", xpNb: "download", xpReg: "download",
+  hpCopy: "copy", editSave: "check", nameSave: "check" };
+const ICON_TITLES = { lgtoggle: "Fold or unfold", rgtoggle: "Fold or unfold", cmpCsv: "Save as CSV…", rpSave: "Save as Markdown…",
+  mkExport: "Save the list as CSV…", fbHome: "Home folder", fbUp: "Parent folder", plclose: "Close", emClose: "Close" };
+Object.entries(ICON_TITLES).forEach(([id, t]) => $(id) && ($(id).title = t));
+Object.entries(ICON_ONLY).forEach(([id, n]) => $(id) && decorate($(id), n, true));
+Object.entries(ICON_TEXT).forEach(([id, n]) => $(id) && decorate($(id), n, false));
+document.querySelectorAll("[data-pick]").forEach((b) => decorate(b, "folder", false));
 const st = { samples: [], sample: null, he: null, sid: null, version: null, mode: "type", filters: {}, opacity: 0.85, switchToken: 0, heHidden: false,
              openedThisVisit: {}, dotSize: 1.0,
              hidden: false, busy: false, legend: [], regions: null };
@@ -632,7 +676,7 @@ function openHE(sample) {
     st.he = he;
     const kind = he.image_kind || "H&E";
     $("hideHE").hidden = kind === "none";
-    $("hideHE").textContent = `Hide ${kind === "H&E" ? "H&E" : "image"}`;
+    setLabel($("hideHE"), `Hide ${kind === "H&E" ? "H&E" : "image"}`);
     viewer.addOnceHandler("open", applyHE);
     viewer.open(tileSource((l, x, y) => `/api/sample/${sample}/he/${l}/${x}_${y}.jpg?r=${he.rev}`));  // rev: new cell positions, new tiles
   });
@@ -1063,11 +1107,11 @@ function initEM() {
 async function openEmbedding() {
   if (!st.emb) return;
   if (!EM.gl && !initEM()) { toast("WebGL is not available for the embedding window", 5000); return; }
-  $("empanel").hidden = false; $("viewerwrap").classList.add("em"); $("eShow").textContent = "Hide UMAP";
+  $("empanel").hidden = false; $("viewerwrap").classList.add("em"); setLabel($("eShow"), "Hide UMAP");
   await loadEMData(); drawEM();
 }
 function closeEmbedding() {
-  $("empanel").hidden = true; $("viewerwrap").classList.remove("em"); $("eShow").textContent = "Show UMAP";
+  $("empanel").hidden = true; $("viewerwrap").classList.remove("em"); setLabel($("eShow"), "Show UMAP");
 }
 $("emClose").onclick = closeEmbedding;
 const PALETTE = ["#f58231", "#4363d8", "#3cb44b", "#f032e6", "#42d4f4", "#9a6324", "#911eb4", "#e6194b", "#469990",
@@ -1370,7 +1414,7 @@ async function loadLegend() {
   });
 }
 $("lgall").onclick = () => { filt().clear(); refreshOverlay(); loadLegend(); };
-$("lgtoggle").onclick = () => { $("legend").classList.toggle("collapsed"); $("lgtoggle").textContent = $("legend").classList.contains("collapsed") ? "+" : "−"; };
+$("lgtoggle").onclick = () => { $("legend").classList.toggle("collapsed"); $("lgtoggle").classList.toggle("flip", $("legend").classList.contains("collapsed")); };
 
 // ---------------- cell info on click ----------------
 function imgPointFromEvent(pos) { return heItem().viewerElementToImageCoordinates(pos); }
@@ -1389,7 +1433,7 @@ function showCell(c) {
   viewer.removeOverlay("cellmark");
   if (!c.cell) { card.classList.remove("show"); return; }
   card.textContent = "";
-  const x = document.createElement("button"); x.className = "x"; x.textContent = "×"; x.onclick = () => { card.classList.remove("show"); viewer.removeOverlay("cellmark"); };
+  const x = decorate(Object.assign(document.createElement("button"), { className: "x", title: "Close" }), "x", true); x.onclick = () => { card.classList.remove("show"); viewer.removeOverlay("cellmark"); };
   const lab = document.createElement("div"); lab.className = "lab";
   lab.textContent = c.label + (c.hand_labeled ? "  (labeled by you)" : "");
   const dl = document.createElement("dl");
@@ -1489,15 +1533,16 @@ async function loadRegions() {
     sw.onclick = (e) => { e.stopPropagation(); pickRegionColor(r, sw); };
     const t = document.createElement("span"); t.textContent = r.name;
     const n = document.createElement("span"); n.className = "n"; n.textContent = r.n_cells.toLocaleString();
-    const ren = document.createElement("button"); ren.textContent = "✎"; ren.title = "Rename this region";
+    const ren = decorate(Object.assign(document.createElement("button"), { title: "Rename this region" }), "pen", true);
     ren.onclick = () => renameRegion(r.name);
     row.append(sw, t, n, ren); box.append(row);
     st.regions.polygons.filter((p) => p.name === r.name).forEach((p) => {
       const pr = document.createElement("div"); pr.className = "pg";
       const lab = document.createElement("span"); lab.textContent = `${p.id} · ${p.n_cells_drawn.toLocaleString()} cells when drawn`;
-      const go = document.createElement("button"); go.textContent = "zoom"; go.title = "Zoom to this polygon"; go.onclick = () => zoomTo(p);
-      const ed = document.createElement("button"); ed.textContent = "edit"; ed.title = "Move, add or remove points of this outline"; ed.onclick = () => startEdit(p);
-      const del = document.createElement("button"); del.textContent = "×"; del.title = "Delete this polygon"; del.onclick = () => deleteRegion(p.id);
+      const mk = (n, title) => decorate(Object.assign(document.createElement("button"), { title }), n, true);
+      const go = mk("target", "Zoom to this polygon"); go.onclick = () => zoomTo(p);
+      const ed = mk("move", "Move, add or remove points of this outline"); ed.onclick = () => startEdit(p);
+      const del = mk("trash", "Delete this polygon"); del.onclick = () => deleteRegion(p.id);
       pr.append(lab, go, ed, del); box.append(pr);
     });
   });
@@ -1522,7 +1567,7 @@ function renderPriors(box) {  // the priors of this version, each removable (a n
     const a = document.createElement("div"); a.className = "pt";
     a.textContent = `${c.id} · ${c.text || c.rule}`;
     const b = document.createElement("div"); b.className = "pr"; b.textContent = c.rule.replace(/^C\d+: /, "") + (c.author ? ` · by ${c.author}` : "");
-    const del = document.createElement("button"); del.textContent = "×"; del.title = "Remove this prior (Undo brings it back)";
+    const del = decorate(Object.assign(document.createElement("button"), { title: "Remove this prior (Undo brings it back)" }), "trash", true);
     del.onclick = async () => {
       if (!confirm(`Remove prior ${c.id}?\n\n${c.text || c.rule}`)) return;
       try { const r = await post(`/api/s/${st.sid}/constraint/${c.id}/delete`); toast(r.message, 4000); await refreshVersion(true); }
@@ -1662,14 +1707,14 @@ function startDraw() {
   if (!st.sid) return;
   st.drawing = [];
   viewer.gestureSettingsMouse.dblClickToZoom = false;
-  $("draw").classList.add("on"); $("draw").textContent = "Drawing…"; $("drawhint").hidden = false;
+  $("draw").classList.add("on"); setLabel($("draw"), "Drawing…"); $("drawhint").hidden = false;
   $("osd").style.cursor = "crosshair";
   drawRegions();
 }
 function cancelDraw() {
   st.drawing = null;
   viewer.gestureSettingsMouse.dblClickToZoom = true;
-  $("draw").classList.remove("on"); $("draw").textContent = "Draw region"; $("drawhint").hidden = true;
+  $("draw").classList.remove("on"); setLabel($("draw"), "Draw region"); $("drawhint").hidden = true;
   $("osd").style.cursor = "";
   drawRegions();
 }
@@ -1703,7 +1748,7 @@ $("regname").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.pre
 $("nameCancel").onclick = () => { $("nameDlg").close(); };  // keep the points so the user can continue or Esc
 $("draw").onclick = () => (st.drawing ? cancelDraw() : startDraw());
 $("outlines").onchange = drawRegions;
-$("rgtoggle").onclick = () => { $("regpanel").classList.toggle("collapsed"); $("rgtoggle").textContent = $("regpanel").classList.contains("collapsed") ? "+" : "−"; };
+$("rgtoggle").onclick = () => { $("regpanel").classList.toggle("collapsed"); $("rgtoggle").classList.toggle("flip", $("regpanel").classList.contains("collapsed")); };
 
 // ---------------- plausibility review ----------------
 // Areas where the annotation may contradict the tissue. Candidates are computed from the annotation; Claude reviews
@@ -2763,7 +2808,7 @@ async function openReport() {
   st.reportTime = r ? r.time : null;
   $("rpInfo").textContent = r ? `version ${r.version} · ${r.time.replace("T", " ")}` : "";
   $("rpBody").innerHTML = r ? mdBlock(r.markdown) : "<p>No report yet. Click <b>Ask Claude to write it</b>: your Claude Code gathers the facts of this annotation (method, composition, compartments, quality, open review items) and writes it here.</p>";
-  $("rpAsk").textContent = r ? "Ask Claude to update it" : "Ask Claude to write it";
+  setLabel($("rpAsk"), r ? "Ask Claude to update it" : "Ask Claude to write it");
   $("rpSave").disabled = !r;
   if (!$("rpDlg").open) $("rpDlg").showModal();
 }
@@ -2893,7 +2938,7 @@ $("fbPath").onkeydown = (e) => { if (e.key === "Enter") fbLoad($("fbPath").value
 
 const rcMode = () => document.querySelector("input[name=rcMode]:checked").value;
 const rcConn = () => ({ host: $("rcHost").value.trim(), command: $("rcCmd").value.trim(), home: $("rcHome").value.trim() });
-function rcForm() { $("rcRemote").hidden = rcMode() !== "remote"; $("rcTest").hidden = rcMode() !== "remote"; $("rcGo").textContent = rcMode() === "remote" ? "Connect" : "Use this computer"; }
+function rcForm() { $("rcRemote").hidden = rcMode() !== "remote"; $("rcTest").hidden = rcMode() !== "remote"; setLabel($("rcGo"), rcMode() === "remote" ? "Connect" : "Use this computer"); }
 document.querySelectorAll("input[name=rcMode]").forEach((r) => (r.onchange = rcForm));
 async function openConnection() {
   const c = await native().connection(); st.conn = c;
@@ -2929,7 +2974,7 @@ async function initConnection(serverRemote) {  // in the app: is this page the s
   const c = await native().connection(); st.conn = c;
   st.remote = serverRemote && c.connected ? c : null;
   $("connBtn").hidden = false;
-  $("connBtn").textContent = st.remote ? `Server: ${c.host}` : "This computer";
+  setLabel($("connBtn"), st.remote ? `Server: ${c.host}` : "This computer"); setIcon($("connBtn"), st.remote ? "server" : "monitor");
   $("connBtn").classList.toggle("on", !!st.remote);
   if (st.remote && c.info && c.info.build !== c.local_build)
     toast(`The server runs STAnnotator ${c.info.build}, this app ${c.local_build}: install the same version on both.`, 8000);
