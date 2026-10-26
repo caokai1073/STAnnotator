@@ -22,6 +22,12 @@ body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 syst
 header { display: flex; flex-direction: column; gap: 2px; padding: 6px 14px 8px; background: var(--panel);
          border-bottom: 1px solid var(--line); }
 header h1 { font-size: 16px; margin: 0; font-weight: 650; line-height: 1.2; }
+.hmini { display: none; align-items: center; gap: 12px; font-size: 13px; }
+.hmini #miniInfo { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hmini button { padding: 2px 10px; font-size: 12px; }
+header.collapsed { padding: 4px 14px; }
+header.collapsed .hrow { display: none; }
+header.collapsed .hmini { display: flex; }
 .buildtag { display: block; font-size: 10px; font-weight: 400; color: var(--muted); }
 .cap { width: 160px; flex: none; display: flex; flex-direction: column; justify-content: center; }
 .captxt { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
@@ -207,6 +213,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 </head>
 <body>
 <header>
+  <div class="hmini"><b>Spatial Annotator</b><span id="miniInfo"></span><span class="spacer"></span>
+    <button id="hdrShow" title="Show the toolbar (t)">Show toolbar ▾</button></div>
   <!-- three fixed rows (data / annotate / review and export), aligned by a caption column; nothing moves when the
        progress bar or an option appears -->
   <div class="hrow r1">
@@ -219,6 +227,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <span class="spacer"></span>
     <span class="folder">Data folder <span class="path" id="path">–</span></span>
     <button id="helpBtn" title="How to use the app, and About (version, Claude connection, data folder)" style="padding:4px 10px;font-weight:600">?</button>
+    <button id="hdrHide" title="Hide the toolbar for a bigger map (t)" style="padding:4px 9px">▴</button>
   </div>
   <div class="hrow">
     <div class="cap"><span class="captxt">Annotate</span></div>
@@ -747,7 +756,7 @@ async function selectSample(id) {
   $("path").title = `bundle: ${st.sample.bundle_dir}\nsource: ${st.sample.source_dir}\nH&E: ${st.sample.he_path}`;
   closeSession();
   await openHE(id);
-  alignBar();
+  alignBar(); miniInfo();
   fillModes(null); refreshOverlay();  // the cells in gray until there is an annotation
   if (token !== st.switchToken) return;
   // reopen the session last used on this sample, else its most recent one
@@ -762,6 +771,7 @@ async function selectSample(id) {
 
 function reportState() {  // so Claude (use_viewer_session) knows what the user is looking at
   post("/api/viewer/state", { sample: st.sample && st.sample.sample_id, session: st.sid, version: st.version }).catch(() => {});
+  miniInfo();
 }
 function closeSession() {
   st.sid = null; st.version = null; st.filters = {}; st.regions = null; st.advice = null; st.adviceSig = undefined;
@@ -2056,7 +2066,8 @@ alignment</b> goes back. Regions drawn before move along with the cells.</li></u
 <li>Click a cell: its type, confidence, alternatives, region (and the gene's transcripts when coloring by a gene).</li>
 <li><b>Color by</b> cell type, lineage, <b>gene expression…</b> (type a gene, Enter), region, niche and more. Click legend
 entries to show only those (click again to drop one; <b>show all</b> resets).</li>
-<li><b>Opacity</b> and <b>Dot size</b> sliders; <b>Hide cells</b> <kbd>h</kbd>, <b>Hide H&amp;E</b> <kbd>e</kbd>.</li></ul>
+<li><b>Opacity</b> and <b>Dot size</b> sliders; <b>Hide cells</b> <kbd>h</kbd>, <b>Hide H&amp;E</b> <kbd>e</kbd>.</li>
+<li><b>▴</b> (top right) folds the toolbar into one line for a bigger map; <b>Show toolbar</b> or <kbd>t</kbd> brings it back.</li></ul>
 <h3>Regions</h3><ul>
 <li><b>Draw region</b>: click points on the map; close with a double-click, <kbd>Enter</kbd> or by clicking the first
 point; <kbd>Backspace</kbd> removes the last point, <kbd>Esc</kbd> cancels; then name it. A name can have several polygons.</li>
@@ -2267,6 +2278,19 @@ $("dotsize").oninput = (e) => {  // redraw once the slider rests, not on every s
   store("dotsize", e.target.value);
   if (GL.ok) drawGL(); else { clearTimeout(dotTimer); dotTimer = setTimeout(refreshOverlay, 250); }
 };
+function miniInfo() {
+  const s = st.sample;
+  $("miniInfo").textContent = s ? [s.sample_id, st.sid ? `v${st.version}` : "no annotation open"].join(" · ") : "";
+}
+function setHeader(collapsed) {  // the toolbar folds into one thin line; the map takes the room
+  document.querySelector("header").classList.toggle("collapsed", collapsed);
+  store("header", collapsed ? "collapsed" : "open");
+  miniInfo();
+  setTimeout(() => { window.dispatchEvent(new Event("resize")); drawGL(); drawRegions(); }, 50);
+}
+$("hdrHide").onclick = () => setHeader(true);
+$("hdrShow").onclick = () => setHeader(false);
+if (load("header") === "collapsed") setHeader(true);
 { const v = +load("dotsize"); if (v >= 20 && v <= 300) { $("dotsize").value = v; st.dotSize = v / 100; $("dotsizeVal").textContent = `${st.dotSize.toFixed(1)}×`; } }
 $("reset").onclick = async () => {
   if (st.busy) { toast("Wait until the assistant has answered"); return; }
@@ -2371,6 +2395,7 @@ document.addEventListener("keydown", (e) => {
   if ($("mkDlg").open || $("rpDlg").open || $("hpDlg").open || $("xpDlg").open || $("nameDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
   if (e.key === "h") $("hide").click();
   if (e.key === "e") $("hideHE").click();
+  if (e.key === "t") setHeader(!document.querySelector("header").classList.contains("collapsed"));
   if (st.editing && e.key === "Escape") stopEdit();
   if (st.editing && e.key === "Enter") { e.preventDefault(); saveEdit(); }
   if (st.drawing && e.key === "Escape") cancelDraw();
