@@ -129,7 +129,7 @@ Marker list for the 480-gene IBD panel: `examples/scp2927/ibd_xenium480_markers.
 ## 3. Work with Claude
 
 Claude runs in your own Claude Code, with your own Claude account; the app connects it and shows every change.
-Click **Claude Code** in the app: Terminal opens with Claude Code connected to the app and to the sample you are
+Click **Ask Agent** (the bar on the map) in the app: Terminal opens with Claude Code connected to the app and to the sample you are
 looking at (install Claude Code and log in once beforehand).
 
 Claude loads what you are looking at (`use_viewer_session`), and when it starts a new annotation (for example with
@@ -161,15 +161,16 @@ uv venv .venv --python 3.12 && uv pip install --python .venv/bin/python -e .
 
 The SSH login must work without a password prompt (a key: `ssh-keygen`, then `ssh-copy-id <server>`; or ssh-agent).
 While connected, **Choose…** buttons browse the server's files, **Export…** and the other Save buttons download into
-files on this computer, and **Claude Code** opens here with its tools running on the server (through `ssh`), on the
+files on this computer, and **Ask Agent** opens Claude Code here with its tools running on the server (through `ssh`), on the
 same data as the viewer. The viewer keeps running on the server between connections (`celltypeagent remote-serve`
 starts it, on the server's own localhost only; its process id is in `<data folder>/remote_viewer.json`).
 
 ## 4. The viewer
 
-The toolbar is a panel on the right of the map: Import and the server choice at the top, then the steps **Data**,
-**Annotate**, **Embedding** and **Niches** as tabs (a dot on a tab whose analysis is running), **Review & export**, and
-at the bottom **Reset** and **Remove all**. **›** at its top (or `t`) folds it to the right edge for a bigger map,
+The toolbar is a panel on the right of the map: **Import** and **Export** at the top, the server choice below, then
+the steps **Data**, **Annotate**, **Embedding** and **Niches** as tabs (a dot on a tab whose analysis is running), and at
+the bottom **Reset** and **Remove all**. On the map, next to the **Color by** bar, a bar holds **Undo**, **Ask Agent**
+(Claude Code), **Agent Review** and **Report**. **›** at its top (or `t`) folds it to the right edge for a bigger map,
 **‹** brings it back.
 
 The app's window (or the web viewer: `.venv/bin/celltypeagent viewer`, then http://localhost:8765). Changes made
@@ -219,7 +220,7 @@ by Claude show up within a few seconds.
    **Remove all…** (next to Import, desktop app) deletes every sample with all its annotations and chats for good,
    to import from scratch (it cannot be undone); marker lists stay.
 7. **Markers…** edits, checks, saves and loads marker lists (saved lists go to `<data folder>/marker_lists/`).
-8. **Review annotation** opens the Review panel: computed marker checks (markers that are weak or unspecific in
+8. **Agent Review** (the bar on the map, with **Undo**, **Ask Agent** and **Report**) opens the Review panel: computed marker checks (markers that are weak or unspecific in
    their cells, negative markers that are detected, genes of Unassigned cells) and areas to check (where cells of
    types that form sheets, such as epithelium or smooth muscle, sit apart from their own lineage), outlined on the
    map. Clicking it also asks your Claude Code to check every candidate on the H&E and with marker biology
@@ -230,7 +231,7 @@ by Claude show up within a few seconds.
    Markers…**, then Annotate with "keep my regions, priors & corrections") and areas drawn in orange (**use as region**, then
    Claude applies the agreed prior or correction to that region).
 
-   When the labels changed since Claude's last look, Review annotation also asks Claude for **high-level advice**,
+   When the labels changed since Claude's last look, Agent Review also asks Claude for **high-level advice**,
    listed at the top of the panel in five groups, each with one button:
    - *Compartments*: outlines of the mucosa, muscularis or lymphoid follicles, computed from where a lineage forms
      tissue and checked by Claude on the H&E (drawn in purple; **add region**, then **add prior…** for the prior

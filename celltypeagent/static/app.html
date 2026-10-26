@@ -124,7 +124,20 @@ body.desktop #side { display: none; }
 #legend button:disabled { opacity: .4; }
 .float { position: absolute; background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
          box-shadow: 0 6px 24px rgba(0,0,0,.08), 0 1px 3px rgba(0,0,0,.06); z-index: 5; }
-#tools { top: 10px; left: 10px; padding: 6px 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+/* the bars on top of the map: Color by and the actions, side by side (wrapping on a narrow map); the panels below
+   follow its height (--maptop) and it keeps clear of the windows on the right */
+#maptop { position: absolute; top: 10px; left: 10px; right: 10px; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px;
+          align-items: flex-start; pointer-events: none; }
+#maptop > .float { position: static; pointer-events: auto; }
+#viewerwrap.em #maptop { right: 440px; } #viewerwrap.pl #maptop { right: 360px; }
+#tools, #acts { padding: 6px 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+#tools input[type=range] { width: 80px; }
+#tools #mode { width: 132px; }
+#maptop button { padding: 5px 9px; }
+#maptop button.ib { padding: 5px; }
+#tools, #acts { gap: 6px; }
+#acts #vinfo { font-size: 11.5px; color: var(--muted); padding: 0 2px; }
+header .br { flex: 1 1 100%; height: 0; }
 #tools label { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
 #legend { left: 10px; bottom: 10px; width: 270px; max-height: 45%; display: flex; flex-direction: column; }
 #legend .lh { display: flex; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 12px; gap: 6px; }
@@ -151,7 +164,7 @@ body.desktop #side { display: none; }
 #regsvg .hdl { pointer-events: all; cursor: grab; }
 #regsvg .hdl.mid { cursor: copy; }
 #regsvg text { font: 600 12px system-ui, sans-serif; paint-order: stroke; stroke: rgba(255,255,255,.85); stroke-width: 3px; }
-#regpanel { top: 62px; left: 10px; width: 310px; max-height: 38%; display: flex; flex-direction: column; }
+#regpanel { top: calc(var(--maptop, 44px) + 18px); left: 10px; width: 310px; max-height: 38%; display: flex; flex-direction: column; }
 #regpanel .lh { display: flex; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 12px; gap: 6px; }
 #regpanel .lh label { white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
 #regpanel .items { overflow: auto; padding: 4px 6px; font-size: 12px; }
@@ -254,7 +267,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .choice { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font-size: 13px; }
 .choice button { padding: 2px 10px; font-size: 12.5px; }
 #imExisting summary { cursor: pointer; }
-#alignbar { position: absolute; top: 62px; left: 50%; transform: translateX(-50%); z-index: 6; display: flex; gap: 10px;
+#alignbar { position: absolute; top: calc(var(--maptop, 44px) + 18px); left: 50%; transform: translateX(-50%); z-index: 6; display: flex; gap: 10px;
             align-items: center; padding: 6px 12px; font-size: 12.5px; background: #fff5e0; color: #6b4a00;
             border: 1px solid #f0c674; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
 #alignbar button { padding: 2px 9px; font-size: 12px; }
@@ -275,6 +288,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <button id="helpBtn" title="How to use the app, and About (version, Claude connection, data folder)" style="padding:4px 10px;font-weight:600;margin-left:auto">?</button>
       <button id="hdrHide" title="Fold the toolbar to the right for a bigger map (t)" style="padding:4px 9px">›</button></div>
     <button id="importBtn" title="Add a sample (a Xenium output folder or h5ad), then its image and registration">Import…</button>
+    <button id="export" disabled title="Save the cell table (CSV), the registration, or the analysis as a Jupyter notebook">Export…</button>
+    <span class="br"></span>
     <button id="connBtn" hidden title="Work on this computer or on a server over SSH">This computer</button>
     <span class="folder">Data folder <span class="path" id="path">–</span></span>
   </div>
@@ -328,17 +343,6 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <div class="nslot"><span id="nicheinfo"></span>
       <div class="progress" id="nprogress"><div class="pbar"><i id="nfill"></i></div><span id="nstage" style="font-size:12px;color:var(--muted)"></span></div></div>
   </div>
-  <div class="hrow">
-    <div class="cap"><span class="captxt">Review &amp; export</span></div>
-    <button id="undo" disabled title="Undo the last change">Undo</button>
-    <span class="sep"></span>
-    <button id="claudeBtn" hidden title="Open your own Claude Code in Terminal, connected to the sample open here">Claude Code</button>
-    <button id="plaus" disabled title="Check markers and spatial layout; Claude checks them with the H&amp;E and gives advice">Review annotation</button>
-    <button id="report" disabled title="The annotation report Claude writes: method, composition, compartments, quality, open questions">Report</button>
-    <span class="spacer"></span>
-    <span id="vinfo"></span>
-    <button id="export" disabled title="Save the cell table (CSV) or the analysis as a Jupyter notebook">Export…</button>
-  </div>
   <div class="hrow bottom">
     <button id="reset" class="danger" disabled title="Remove every annotation and chat of this sample">Reset…</button>
     <button id="clearAll" class="danger" hidden title="Delete every sample with all its annotations and chats for good, to import from scratch">Remove all…</button>
@@ -348,6 +352,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
   <section id="viewerwrap">
     <div id="osd"></div>
     <div id="empty"><div>No cell types yet. Check the marker list (<b>Markers…</b>) and click <b>Annotate</b>.</div></div>
+    <div id="maptop">
     <div id="tools" class="float">
       <label>Color by <select id="mode" disabled><option value="">annotate first</option></select></label>
       <input type="text" id="geneInput" list="geneList" placeholder="gene, e.g. EPCAM" hidden autocomplete="off"
@@ -355,8 +360,16 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <label>Opacity <input type="range" id="opacity" min="0" max="100" value="85"></label>
       <label title="Size of the cell dots">Dot size <input type="range" id="dotsize" min="20" max="300" value="100" step="10">
         <span id="dotsizeVal" style="min-width:34px">1.0×</span></label>
-      <button id="hide" title="Show the H&amp;E only (h)">Hide cells</button>
-      <button id="hideHE" title="Show the cells only (e)">Hide H&amp;E</button>
+      <button id="hide" title="Hide the cells: the H&amp;E only (h)">Hide cells</button>
+      <button id="hideHE" title="Hide the H&amp;E: the cells only (e)">Hide H&amp;E</button>
+    </div>
+    <div id="acts" class="float">
+      <button id="undo" disabled title="Undo the last change">Undo</button>
+      <button id="claudeBtn" hidden title="Ask your own agent (Claude Code, in Terminal), connected to the sample open here">Ask Agent</button>
+      <button id="plaus" disabled title="Agent review: computed checks of markers and spatial layout, checked by the agent on the H&amp;E, with its advice">Agent Review</button>
+      <button id="report" disabled title="The annotation report the agent writes: method, composition, compartments, quality, open questions">Report</button>
+      <span id="vinfo"></span>
+    </div>
     </div>
     <div id="legend" class="float" hidden>
       <div class="lh"><b id="lgtitle">Cell types</b><span class="spacer"></span>
@@ -636,7 +649,10 @@ T and NK cells: CD3E|NKG7+ EPCAM-
 const $ = (id) => document.getElementById(id);
 // ---------------- icons: thin line icons from the sprite at the top of the page ----------------
 const icon = (name) => `<svg class="ic" aria-hidden="true"><use href="#ic-${name}"/></svg>`;
-function setLabel(b, text) { const t = b.querySelector(".bt"); if (t) t.textContent = text; else b.textContent = text; }
+function setLabel(b, text) {  // keeps the icon; an icon-only button shows the label as its tooltip
+  if (b.classList.contains("ib")) { b.title = text; b.setAttribute("aria-label", text); return; }
+  const t = b.querySelector(".bt"); if (t) t.textContent = text; else b.textContent = text;
+}
 function setIcon(b, name) { const u = b.querySelector("use"); if (u) u.setAttribute("href", `#ic-${name}`); }
 function decorate(b, name, only) {  // icon + label, or the icon only (the label becomes its tooltip)
   const text = b.textContent.trim();
@@ -648,11 +664,11 @@ function decorate(b, name, only) {  // icon + label, or the icon only (the label
 const ICON_ONLY = { hdrShow: "chev-left", hdrHide: "chev-right", helpBtn: "help", slPrev: "chev-left", slNext: "chev-right",
   lgtoggle: "chev-up", rgtoggle: "chev-up", plclose: "x", emClose: "x", imClose: "x", rcClose: "x", clClose: "x", rpClose: "x",
   xpClose: "x", glClose: "x", cmpClose: "x", hpClose: "x", cmpCsv: "download", rpSave: "download", mkExport: "download",
-  fbUp: "arrow-up", fbHome: "home", rsClose: "x" };
+  fbUp: "arrow-up", fbHome: "home", rsClose: "x", hide: "eye", hideHE: "image" };
 const ICON_TEXT = { importBtn: "upload", clearAll: "trash", connBtn: "monitor", slGallery: "grid", slCompare: "chart",
   openMarkers: "list", openRef: "file", openEx: "file", annotate: "play", eRun: "play", eShow: "scatter", nRun: "play",
-  nClaude: "sparkle", undo: "undo", claudeBtn: "terminal", plaus: "shield", report: "file", export: "share", reset: "trash",
-  hide: "eye", hideHE: "image", draw: "pen", emLasso: "lasso", emClear: "x", emZoom: "target", send: "send",
+  nClaude: "sparkle", undo: "undo", claudeBtn: "sparkle", plaus: "shield", report: "file", export: "share", reset: "trash",
+  draw: "pen", emLasso: "lasso", emClear: "x", emZoom: "target", send: "send",
   mkImport: "upload", mkCheck: "check", mkSave: "save", mkDraft: "sparkle", mkClose: "check", imGo: "upload",
   imNewAlign: "sparkle", imAlign: "sparkle", alignNow: "sparkle", alignReg: "file", imImgGo: "image", imRegGo: "check",
   imUndoPlace: "undo", refPick: "folder", exPick: "folder", refClose: "check", exClose: "check", rcTest: "check",
@@ -700,7 +716,7 @@ function openHE(sample) {
     st.he = he;
     const kind = he.image_kind || "H&E";
     $("hideHE").hidden = kind === "none";
-    setLabel($("hideHE"), `Hide ${kind === "H&E" ? "H&E" : "image"}`);
+    setLabel($("hideHE"), `Hide the ${kind === "H&E" ? "H&E" : "image"}: the cells only (e)`);
     viewer.addOnceHandler("open", applyHE);
     viewer.open(tileSource((l, x, y) => `/api/sample/${sample}/he/${l}/${x}_${y}.jpg?r=${he.rev}`));  // rev: new cell positions, new tiles
   });
@@ -1388,7 +1404,9 @@ async function refreshVersion(force) {
   const sm = info.summary;
   st.lastSummary = sm;
   fillModes(sm);
-  $("vinfo").textContent = `v${v} · ${sm.constraints.length} priors · ${sm.corrections.length} corrections · ${sm.n_conflicts} conflicts`;
+  const counts = [[sm.constraints.length, "prior"], [sm.corrections.length, "correction"], [sm.n_conflicts, "conflict"]];
+  $("vinfo").textContent = [`v${v}`, ...counts.filter(([n]) => n).map(([n, w]) => `${n} ${w}${n > 1 ? "s" : ""}`)].join(" · ");  // short on the map
+  $("vinfo").title = `version ${v} · ` + counts.map(([n, w]) => `${n} ${w}s`).join(" · ");
   const opt = [...$("session").options].find((o) => o.value === st.sid);  // keep the session list's version current
   const rec = st.sample && st.sample.sessions.find((x) => x.session_id === st.sid);
   if (opt && rec) { rec.n_versions = v; opt.textContent = sessionLabel(rec); }
@@ -2325,7 +2343,7 @@ async function askAlign() {
     const r = await post("/api/claude/align", { sample: st.sample.sample_id, session: st.sid });
     if (r.message && st.chatAvailable) { $("imDlg").close(); $("input").value = r.message; send(); }
     else if (r.claude_code) toast(r.claude_code.reused ? "Claude Code is aligning the image; the cells move onto it when done" : "Claude Code is opening to align the image", 7000);
-    else toast("Open Claude Code first (Claude Code button)", 5000);
+    else toast("Open the agent first (Ask Agent)", 5000);
   } catch (e) { toast(e.message, 6000); }
 }
 $("imAlign").onclick = askAlign;
@@ -2434,13 +2452,13 @@ type, Leiden cluster or niche; scroll to zoom, drag to move, double-click to res
 turn gray; <b>Show on map</b> zooms the map to them; <b>Clear</b> ends the selection.</li>
 <li>Color by <b>Leiden clusters</b> shows the clusters on the map.</li></ul>
 <h3>Review and output</h3><ul>
-<li><b>Review annotation</b>: computed checks, checked by Claude on the H&amp;E; Claude's advice with one-click actions; <b>solve</b> hides an item.</li>
+<li><b>Agent Review</b> (bar on the map): computed checks, checked by Claude on the H&amp;E; Claude's advice with one-click actions; <b>solve</b> hides an item.</li>
 <li><b>Report</b>: Claude writes the annotation report; <b>Save…</b> keeps it as a Markdown file.</li>
 <li><b>Niches</b>: identity, k and number of niches; <b>Run niches</b>, or <b>Claude picks k</b>.</li>
 <li><b>Undo</b> steps back one change at a time. <b>Export…</b>: the cell table (CSV, with niche, Leiden and UMAP when
 computed), the registration in use (CSV), or the whole analysis as a Jupyter notebook that runs without this app
 (code with this annotation's parameters, and its results).</li>
-<li><b>Claude Code</b> opens your own Claude Code, connected to this app.</li></ul>`;
+<li><b>Ask Agent</b> (bar on the map) opens your own Claude Code, connected to this app. <b>Undo</b> and <b>Report</b> are there too.</li></ul>`;
 async function showAbout() {
   $("hpBody").innerHTML = "<p>Checking…</p>";
   const d = await api("/api/diagnostics");
@@ -2787,6 +2805,7 @@ function setHeader(collapsed) {  // the toolbar folds into one thin line; the ma
   setTimeout(() => { window.dispatchEvent(new Event("resize")); drawGL(); drawRegions(); }, 50);
 }
 $("hdrHide").onclick = () => setHeader(true);
+new ResizeObserver(() => document.documentElement.style.setProperty("--maptop", `${$("maptop").offsetHeight}px`)).observe($("maptop"));
 function showTab(name) {
   document.querySelectorAll("#tabs .tab").forEach((t) => { t.classList.toggle("on", t.dataset.tab === name); t.setAttribute("aria-selected", t.dataset.tab === name); });
   document.querySelectorAll("header .pane").forEach((p) => p.classList.toggle("on", p.dataset.pane === name));
@@ -2875,7 +2894,7 @@ $("rpAsk").onclick = async () => {
     const r = await post("/api/claude/report", { session: st.sid });
     if (r.message && st.chatAvailable) { $("rpDlg").close(); $("input").value = r.message; send(); }
     else if (r.claude_code) toast(r.claude_code.reused ? "Claude Code is writing the report; it appears here when done" : "Claude Code is opening to write the report", 5000);
-    else toast("Connect Claude Code first (Claude Code button)", 5000);
+    else toast("Open the agent first (Ask Agent)", 5000);
   } catch (e) { toast(e.message, 6000); }
 };
 $("rpSave").onclick = async () => {
