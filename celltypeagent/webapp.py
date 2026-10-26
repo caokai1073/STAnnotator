@@ -877,7 +877,8 @@ def api_project_composition(req):
 def api_project_composition_csv(req):
     from . import joint
     c = joint.composition(req.path_params["pid"], req.query_params.get("mode", "type"))
-    df = pd.DataFrame([{"slice": r["section"], **r["metadata"], "n_cells": r["n_cells"], **r["shares"]} for r in c["slices"]]).fillna(0)
+    df = pd.DataFrame([{"slice": r["section"], **r["metadata"], "n_cells": r["n_cells"], "note": r.get("missing", ""), **r["shares"]}
+                       for r in c["slices"]]).fillna(0)
     return Response(df.to_csv(index=False), media_type="text/csv",
                     headers={"Content-Disposition": f'attachment; filename="{c["project"]}_{c["mode"]}_composition.csv"'})
 
@@ -1210,20 +1211,28 @@ def _sample_sessions(sample):
     return out
 
 
-def api_sample_reset(req):
+async def api_sample_reset(req: Request):
     """Remove every annotation and chat of one sample: its sessions and their Claude Code transcripts are moved to
     work/trash/<time>_<sample>/ (recoverable by hand, invisible to the app and the agent)."""
     sample = req.path_params["sample"]
+    try:
+        with_embedding = bool((await req.json()).get("embedding"))
+    except ValueError:
+        with_embedding = False
     sess = _sample_sessions(sample)
     busy = [d.name for d in sess if d.name in JOBS and not JOBS[d.name]["done"]]
     if busy:
         return _json({"error": "an annotation of this sample is still running; wait until it finishes"}, 409)
-    if not sess:
-        return _json({"deleted_sessions": 0, "deleted_conversations": 0, "trash": None})
+    emb = config.SAMPLES / sample / "embedding"
+    if not sess and not (with_embedding and emb.exists()):
+        return _json({"deleted_sessions": 0, "deleted_conversations": 0, "deleted_embedding": False, "trash": None})
     trash = config.TRASH / f"{time.strftime('%Y%m%d-%H%M%S')}_{sample}"
     trash.mkdir(parents=True)
     n_chats = _trash_sessions(sess, trash)
-    return _json({"deleted_sessions": len(sess), "deleted_conversations": n_chats, "trash": str(trash)})
+    if with_embedding and emb.exists():  # PCA / UMAP / Leiden of the sample (expression only)
+        shutil.move(str(emb), str(trash / "embedding"))
+    return _json({"deleted_sessions": len(sess), "deleted_conversations": n_chats,
+                  "deleted_embedding": with_embedding and (trash / "embedding").exists(), "trash": str(trash)})
 
 
 def _trash_sessions(sess, trash):
@@ -1681,6 +1690,8 @@ async def api_chat(req: Request):
 
 
 def api_chat_log(req):
+    if not (config.SESSIONS / req.path_params["sid"] / "session.json").exists():
+        return _json([])  # an annotation that was just removed
     p = review_app._session(req.path_params["sid"]).dir / "chat.jsonl"
     return _json([json.loads(l) for l in open(p)] if p.exists() else [])
 

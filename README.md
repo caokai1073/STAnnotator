@@ -167,8 +167,10 @@ starts it, on the server's own localhost only; its process id is in `<data folde
 
 ## 4. The viewer
 
-The toolbar is a panel on the right of the map, one block per step (data, annotate, embedding, niches, review and
-export); **›** at its top (or `t`) folds it to the right edge for a bigger map, **‹** brings it back.
+The toolbar is a panel on the right of the map: Import and the server choice at the top, then the steps **Data**,
+**Annotate**, **Embedding** and **Niches** as tabs (a dot on a tab whose analysis is running), **Review & export**, and
+at the bottom **Reset** and **Remove all**. **›** at its top (or `t`) folds it to the right edge for a bigger map,
+**‹** brings it back.
 
 The app's window (or the web viewer: `.venv/bin/celltypeagent viewer`, then http://localhost:8765). Changes made
 by Claude show up within a few seconds.
@@ -211,7 +213,9 @@ by Claude show up within a few seconds.
    that labels, Leiden clusters and niches come out the same: identical when run on the same kind of machine (with
    a GPU and PyTorch, neighbors are exact as in the app; without, large samples use approximate neighbors);
    annotations made with an earlier app version can differ. UMAP coordinates differ slightly (all cores).
-6. **Reset** removes every annotation and chat of the selected sample (moved to `<data folder>/trash/`).
+6. **Reset** removes every annotation and chat of the selected sample (moved to `<data folder>/trash/`); in a project,
+   of this slice or of all slices, and optionally the PCA / UMAP and Leiden clusters too (they are computed from the
+   expression alone and stay otherwise). **Compare…** lists a slice without results as "no annotation".
    **Remove all…** (next to Import, desktop app) deletes every sample with all its annotations and chats for good,
    to import from scratch (it cannot be undone); marker lists stay.
 7. **Markers…** edits, checks, saves and loads marker lists (saved lists go to `<data folder>/marker_lists/`).

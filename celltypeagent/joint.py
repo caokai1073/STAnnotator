@@ -196,6 +196,11 @@ def niches(pid, k=15, n_niches=8, identity="nmf", n_programs=20, progress=None):
     return {"run": run, "sessions": sess}
 
 
+def _n_cells(sid):
+    import pyarrow.parquet as pq
+    return int(pq.ParquetFile(config.SAMPLES / sid / "cells.parquet").metadata.num_rows)
+
+
 def composition(pid, mode="type"):
     """Share of each cell type / lineage / niche / Leiden cluster per slice (latest annotations), with the slices'
     metadata: {"slices": [{sample, section, metadata, n_cells, shares: {key: share}}], "keys": [...]}."""
@@ -205,13 +210,18 @@ def composition(pid, mode="type"):
     sess = latest_sessions(pid)
     rows, keys = [], {}
     for sid in p["samples"]:
+        info = {"sample": sid, "section": p["slices"].get(sid, {}).get("section", sid),
+                "metadata": p["slices"].get(sid, {}).get("metadata", {})}
+        missing = lambda why: rows.append({**info, "n_cells": _n_cells(sid), "shares": {}, "missing": why})
         if mode == "leiden":
             lab = embedding.leiden(sid)
             if lab is None:
+                missing("no PCA + UMAP")
                 continue
             vals = np.char.add("L", (lab + 1).astype(str))
         else:
             if sid not in sess:
+                missing("no annotation")
                 continue
             s = Session(sess[sid])
             if mode == "type":
@@ -221,6 +231,7 @@ def composition(pid, mode="type"):
             elif mode == "niche":
                 meta, lab = nmod.current(s)
                 if meta is None:
+                    missing("no niches")
                     continue
                 vals = np.array(nmod.niche_names(s), dtype=object)[lab]
             else:
@@ -228,7 +239,5 @@ def composition(pid, mode="type"):
         vc = pd.Series(vals).value_counts(normalize=True)
         for k_, v in vc.items():
             keys[k_] = keys.get(k_, 0) + v
-        rows.append({"sample": sid, "section": p["slices"].get(sid, {}).get("section", sid),
-                     "metadata": p["slices"].get(sid, {}).get("metadata", {}), "n_cells": int(len(vals)),
-                     "shares": {str(k_): round(float(v), 4) for k_, v in vc.items()}})
+        rows.append({**info, "n_cells": int(len(vals)), "shares": {str(k_): round(float(v), 4) for k_, v in vc.items()}})
     return {"project": pid, "mode": mode, "slices": rows, "keys": [k_ for k_, _ in sorted(keys.items(), key=lambda x: -x[1])]}
