@@ -143,6 +143,28 @@ a revised marker list) the app switches to it by itself. Examples:
 
 Claude answers in the language you write in.
 
+### Working on a server
+
+The app can work on a server over SSH: the data and every computation stay on the server, this computer shows the
+viewer and runs Claude Code. Click **This computer** (top right) -> **A server over SSH**, enter the server (a `Host`
+of `~/.ssh/config` or `user@server`), the full path of STAnnotator's `celltypeagent` command there and, optionally,
+its data folder (default `~/celltypeagent` on the server), then **Test** and **Connect**. The app remembers the
+server and connects again when it starts; **This computer** -> **Use this computer** goes back.
+
+On the server, install STAnnotator once (the same version as the app; no window needed):
+
+```bash
+cd ~ && unzip -oq STAnnotator-<version>.zip && cd STAnnotator
+uv venv .venv --python 3.12 && uv pip install --python .venv/bin/python -e .
+# the command to enter in the app: ~/STAnnotator/.venv/bin/celltypeagent
+```
+
+The SSH login must work without a password prompt (a key: `ssh-keygen`, then `ssh-copy-id <server>`; or ssh-agent).
+While connected, **Choose…** buttons browse the server's files, **Export…** and the other Save buttons download into
+files on this computer, and **Claude Code** opens here with its tools running on the server (through `ssh`), on the
+same data as the viewer. The viewer keeps running on the server between connections (`celltypeagent remote-serve`
+starts it, on the server's own localhost only; its process id is in `<data folder>/remote_viewer.json`).
+
 ## 4. The viewer
 
 The app's window (or the web viewer: `.venv/bin/celltypeagent viewer`, then http://localhost:8765). Changes made

@@ -6,6 +6,7 @@ The window is pywebview (WebKit on macOS); without pywebview, or with --browser,
 browser instead. Claude is used through the user's own Claude Code (MCP), not inside the app.
 """
 import argparse, os, socket, sys, threading, time, webbrowser
+from pathlib import Path
 from . import config
 
 APP_NAME = "STAnnotator"
@@ -40,10 +41,14 @@ def start_server(port):
 
 
 class Api:
-    """Native functions for the page (window.pywebview.api): file dialogs and opening links."""
+    """Native functions for the page (window.pywebview.api): file dialogs, opening links, and working on a remote
+    server (remote.py): the window then shows the server's viewer through an SSH tunnel."""
 
-    def __init__(self):
+    def __init__(self, local_url=None):
         self._window = None  # private: pywebview exposes public attributes to the page
+        self._local_url = local_url
+        self._conn = None
+        self._auto_tried = False
 
     def pick(self, kind, multiple=False):
         import webview
@@ -71,6 +76,76 @@ class Api:
 
     def open_url(self, url):
         webbrowser.open(url)
+
+    # ---- remote server ----
+    def connection(self):
+        """Where the app works now, the remembered server, the hosts of ~/.ssh/config; auto: connect to the server
+        used last (once, when the app starts)."""
+        from . import remote
+        st = remote.load_settings()
+        auto = st.get("mode") == "remote" and bool(st.get("last")) and not self._auto_tried and not self._conn
+        self._auto_tried = True
+        return {"connected": bool(self._conn), "host": self._conn.conn["host"] if self._conn else None,
+                "info": self._conn.info if self._conn else None, "settings": st, "hosts": remote.ssh_hosts(),
+                "auto": auto, "local_build": config.build()}
+
+    def test_remote(self, conn):
+        from . import remote
+        try:
+            return {"ok": True, **remote.check(conn)}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def connect_remote(self, conn):
+        from . import remote
+        try:
+            c = remote.Connection(conn).start()
+        except Exception as e:
+            return {"error": str(e)}
+        if self._conn:
+            self._conn.stop()
+        self._conn = c
+        remote.save_settings(mode="remote", last={k: conn.get(k, "") for k in ("host", "command", "home")})
+        self._window.load_url(c.url)
+        return {"ok": True, **c.info}
+
+    def use_local(self):
+        from . import remote
+        if self._conn:
+            self._conn.stop()
+            self._conn = None
+        remote.save_settings(mode="local")
+        self._window.load_url(self._local_url)
+        return {"ok": True}
+
+    def claude_status(self):
+        from . import claudelink
+        return claudelink.status()
+
+    def open_claude(self, args):
+        """Claude Code on this computer; with a server connection its tools run on the server."""
+        from . import claudelink
+        return claudelink.open_claude_code(**args, remote=self._conn.conn if self._conn else None)
+
+    def download(self, path, dest):
+        """Save an export of the server's viewer (a URL path) to a file on this computer."""
+        if not self._conn:
+            return {"error": "not connected to a server"}
+        try:
+            return {"saved": dest, "bytes": self._conn.download(path, dest)}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def write_text(self, path, text):
+        try:
+            Path(path).write_text(text)
+            return {"saved": path}
+        except OSError as e:
+            return {"error": str(e)}
+
+    def _close(self):
+        if self._conn:
+            self._conn.stop()
 
 
 def _mac_identity():
@@ -115,10 +190,11 @@ def main(argv=None):
             pass
     else:
         webview.settings["ALLOW_DOWNLOADS"] = True  # links that download files (the app also uses Save dialogs)
-        api = Api()
+        api = Api(url)
         api._window = webview.create_window(APP_NAME, url, js_api=api, width=1500, height=950, min_size=(1000, 650))
         _mac_identity()
         webview.start()
+        api._close()  # the SSH tunnel; the server's viewer keeps running for the next connection
     server.should_exit = True
 
 

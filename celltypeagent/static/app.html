@@ -205,6 +205,9 @@ body.desktop #side { display: none; }
 .toast.show { opacity: .94; }
 dialog { width: min(1100px, 95vw); border: 1px solid var(--line); border-radius: 10px; padding: 0; background: var(--panel); color: var(--ink); }
 dialog::backdrop { background: rgba(0,0,0,.35); }
+.fbi { display: flex; gap: 8px; padding: 3px 6px; border-radius: 4px; cursor: pointer; user-select: none; }
+.fbi:hover { background: var(--line); } .fbi.on { background: var(--accent); color: #fff; }
+.fbi .sz { margin-left: auto; color: var(--muted); font-size: 11.5px; } .fbi.on .sz { color: #fff; }
 .dh { display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line); }
 .dbody { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 14px; padding: 12px 14px 14px; }
 .col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
@@ -244,6 +247,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <button id="importBtn" title="Add a sample (a Xenium output folder or h5ad), then its image and registration">Import…</button>
     <button id="clearAll" class="danger" hidden title="Delete every sample with all its annotations and chats for good, to import from scratch">Remove all…</button>
     <span class="spacer"></span>
+    <button id="connBtn" hidden title="Work on this computer or on a server over SSH">This computer</button>
     <span class="folder">Data folder <span class="path" id="path">–</span></span>
     <button id="helpBtn" title="How to use the app, and About (version, Claude connection, data folder)" style="padding:4px 10px;font-weight:600">?</button>
     <button id="hdrHide" title="Hide the toolbar for a bigger map (t)" style="padding:4px 9px">▴</button>
@@ -506,6 +510,34 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <div class="frow"><span>Lineage column</span><select id="exLin"><option value="">none</option></select><span class="hint">optional</span></div>
   </div>
 </dialog>
+<dialog id="rcDlg" style="width:min(640px,95vw)">
+  <div class="dh"><b>Where STAnnotator works</b><span class="spacer"></span><button id="rcClose">Close</button></div>
+  <div class="imbody">
+    <div class="choice" style="margin-bottom:8px">
+      <label><input type="radio" name="rcMode" value="local"> This computer</label>
+      <label><input type="radio" name="rcMode" value="remote"> A server over SSH (data and computation on the server)</label>
+    </div>
+    <div id="rcRemote">
+      <div class="frow"><span>Server</span><input type="text" id="rcHost" list="rcHosts" placeholder="a Host of ~/.ssh/config, or user@server"><span></span></div>
+      <datalist id="rcHosts"></datalist>
+      <div class="frow"><span>STAnnotator there</span><input type="text" id="rcCmd" placeholder="full path of its celltypeagent command, e.g. ~/STAnnotator/.venv/bin/celltypeagent"><span></span></div>
+      <div class="frow"><span>Data folder there</span><input type="text" id="rcHome" placeholder="default: ~/celltypeagent on the server"><span></span></div>
+      <div class="hint" style="margin:6px 0">The server needs STAnnotator installed (README, "Working on a server") and an SSH login without a
+        password prompt (a key, or ssh-agent). Claude Code runs on this computer; its tools run on the server.</div>
+    </div>
+    <div class="row" style="margin-top:6px"><span class="hint" id="rcStatus"></span><span class="spacer"></span>
+      <button id="rcTest">Test</button><button id="rcGo" class="primary">Connect</button></div>
+  </div>
+</dialog>
+<dialog id="fbDlg" style="width:min(720px,95vw)">
+  <div class="dh"><b id="fbTitle">Choose on the server</b><span class="spacer"></span><button id="fbClose">Cancel</button></div>
+  <div class="imbody">
+    <div class="frow"><span>Folder</span><input type="text" id="fbPath"><button id="fbUp" title="Parent folder">↑</button></div>
+    <div id="fbList" class="clcard" style="height:320px;overflow:auto;gap:0;font-size:13px"></div>
+    <div class="row" style="margin-top:6px"><span class="hint" id="fbInfo"></span><span class="spacer"></span>
+      <button id="fbHome">Home</button><button id="fbOk" class="primary">Choose</button></div>
+  </div>
+</dialog>
 <dialog id="clDlg" style="width:min(600px,95vw)">
   <div class="dh"><b>Claude Code</b><span class="spacer"></span><button id="clClose">Close</button></div>
   <div class="imbody">
@@ -570,7 +602,13 @@ const api = async (path, opts) => {
   if (!r.ok) throw Object.assign(new Error(body.error || r.statusText), { status: r.status, body });
   return body;
 };
-const post = (path, data) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data || {}) });
+const post = async (path, data) => localClaude(await api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data || {}) }));
+async function localClaude(r) {  // on a server: Claude Code opens on this computer (the app), its tools run on the server
+  if (!r || !native()) return r;
+  if (r.remote && r.args) return await native().open_claude(r.args);
+  if (r.claude_code && r.claude_code.remote) r.claude_code = await native().open_claude(r.claude_code.args);
+  return r;
+}
 function toast(msg, ms = 2200) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), ms); }
 function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
 function load(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } }
@@ -2082,14 +2120,14 @@ $("openEx").onclick = openEx;
 $("exClose").onclick = () => $("exDlg").close();
 $("exPath").onchange = () => { const p = $("exPath").value.trim(); if (p) inspectEx({ path: p }); };
 $("exPick").onclick = async () => {
-  if (native()) { const p = await native().pick("csv"); if (p.length) inspectEx({ path: p[0] }); }
+  if (native()) { const p = await pickFiles("csv"); if (p.length) inspectEx({ path: p[0] }); }
   else $("exFile").click();
 };
 $("exFile").onchange = async (e) => { const f = e.target.files[0]; if (f) inspectEx({ text: await f.text(), name: f.name }); e.target.value = ""; };
 $("openRef").onclick = openRef;
 $("refClose").onclick = () => $("refDlg").close();
 $("refPath").onchange = () => inspectRef();
-$("refPick").onclick = async () => { const p = await native().pick("h5ad"); if (p.length) { $("refPath").value = p[0]; inspectRef(); } };
+$("refPick").onclick = async () => { const p = await pickFiles("h5ad"); if (p.length) { $("refPath").value = p[0]; inspectRef(); } };
 
 // ---------------- import ----------------
 const native = () => window.pywebview && window.pywebview.api;  // file dialogs in the desktop app
@@ -2097,12 +2135,13 @@ function imKind() { return document.querySelector("input[name=imKind]:checked").
 function openImport() {
   imForm(); imExisting();
   document.querySelectorAll("#imDlg [data-pick]").forEach((b) => (b.hidden = !native()));
-  $("imStatus").textContent = native() ? "" : "Paste full paths (files on the computer running this viewer).";
+  $("imStatus").textContent = !native() ? "Paste full paths (files on the computer running this viewer)."
+    : st.remote ? `Files on the server ${st.remote.host}: Choose… browses them.` : "";
   $("imDlg").showModal();
 }
 document.querySelectorAll("input[name=imKind]").forEach((r) => (r.onchange = () => { $("imX").hidden = imKind() !== "xenium"; $("imH").hidden = imKind() !== "h5ad"; imForm(); imSections(); }));
 document.querySelectorAll("#imDlg [data-pick]").forEach((b) => (b.onclick = async () => {
-  const paths = await native().pick(b.dataset.pick, !!b.dataset.multi);
+  const paths = await pickFiles(b.dataset.pick, !!b.dataset.multi);
   if (!paths.length) return;
   const target = $(b.dataset.target);
   target.value = paths.join("\n"); target.dispatchEvent(new Event("change"));
@@ -2287,6 +2326,10 @@ each slice, grouped by a metadata column (<b>Save CSV…</b>).</li>
 model, so a name means the same cells in every slice), <b>Run PCA + UMAP</b> makes one embedding of all slices
 (<b>Harmony</b> removes the differences between slices), and <b>Run niches</b> finds niches shared by all slices. The
 UMAP window shows this slice or all slices, colored by slice too.</li></ul>
+<h3>Working on a server</h3><ul>
+<li><b>This computer</b> (top right): work on a server over SSH instead; the data and the computation stay on the
+server. Choose… then browses the server's files, Save and Export download to this computer, and Claude Code opens here
+with its tools on the server. The server needs STAnnotator installed and an SSH login without a password prompt.</li></ul>
 <h3>Map</h3><ul>
 <li>Drag to move, scroll or pinch to zoom; the small map at the bottom right shows where you are.</li>
 <li>Click a cell: its type, confidence, alternatives, region (and the gene's transcripts when coloring by a gene).</li>
@@ -2364,7 +2407,7 @@ $("clearAll").onclick = async () => {
 // ---------------- Claude Code (the user's own, in Terminal) ----------------
 async function openClaudeCode() {
   try {
-    const s = await api("/api/claude/status");
+    const s = st.remote ? await native().claude_status() : await api("/api/claude/status");
     if (s.platform === "Darwin" && !s.claude_code) {
       $("clMsg").textContent = "Claude Code was not found on this Mac. Install it (docs.claude.com → Claude Code → Setup), log in once with your own Claude account in Terminal, then click Claude Code again.";
       $("clCmd").hidden = true; $("clDlg").showModal(); return;
@@ -2415,7 +2458,7 @@ $("mkClose").onclick = () => $("mkDlg").close();
 function setMarkers(text, name) { $("mkText").value = text || ""; $("mkName").value = name || ""; $("mkMsgs").textContent = text ? "" : "Not checked yet."; }
 $("mkImport").onclick = async () => {
   if (native()) {
-    const paths = await native().pick("markers");
+    const paths = await pickFiles("markers");
     if (!paths.length) return;
     try { const r = await post("/api/markers/import", { path: paths[0] }); setMarkers(r.text, r.name); checkMarkers(); loadLibrary(); toast(`Imported ${r.name}`); }
     catch (e) { toast(e.message, 6000); }
@@ -2430,6 +2473,11 @@ $("mkFile").onchange = async (e) => {
 $("mkExport").onclick = async () => {
   const text = $("mkText").value; if (!text.trim()) { toast("The list is empty"); return; }
   const name = ($("mkName").value || "marker_list") + ".csv";
+  if (st.remote) {
+    const path = await native().save_path(name); if (!path) return;
+    const csv = await (await fetch("/api/markers/to_csv", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) })).text();
+    const r = await native().write_text(path, csv); toast(r.error || `Saved ${path}`, r.error ? 6000 : 4000); return;
+  }
   if (native()) {
     const path = await native().save_path(name); if (!path) return;
     try { await post("/api/markers/save_file", { path, text }); toast(`Saved ${path}`, 4000); } catch (e) { toast(e.message, 6000); }
@@ -2644,6 +2692,7 @@ $("cmpMode").onchange = drawCompare; $("cmpGroup").onchange = drawCompare;
 $("cmpClose").onclick = () => $("cmpDlg").close();
 $("cmpCsv").onclick = async () => {
   const p = projectOf(st.sample.sample_id), mode = $("cmpMode").value, name = `${p.project_id}_${mode}_composition.csv`;
+  if (st.remote) { await saveDownload(name, `/api/project/${p.project_id}/composition.csv?mode=${mode}`); return; }
   if (native()) { const path = await native().save_path(name); if (!path) return;
     const txt = await (await fetch(`/api/project/${p.project_id}/composition.csv?mode=${mode}`)).text();
     try { await post("/api/save_text", { path, text: txt }); toast(`Saved ${path}`, 4000); } catch (e) { toast(e.message, 6000); } return; }
@@ -2653,7 +2702,8 @@ $("cmpCsv").onclick = async () => {
 $("glClose").onclick = () => $("glDlg").close();
 function miniInfo() {
   const s = st.sample;
-  $("miniInfo").textContent = s ? [s.sample_id, st.sid ? `v${st.version}` : "no annotation open"].join(" · ") : "";
+  $("miniInfo").textContent = [st.remote ? `on ${st.remote.host}` : null, s && s.sample_id, s && (st.sid ? `v${st.version}` : "no annotation open")]
+    .filter(Boolean).join(" · ");
 }
 function setHeader(collapsed) {  // the toolbar folds into one thin line; the map takes the room
   document.querySelector("header").classList.toggle("collapsed", collapsed);
@@ -2726,6 +2776,7 @@ $("rpAsk").onclick = async () => {
 };
 $("rpSave").onclick = async () => {
   const name = `${st.sample.sample_id}_annotation_report.md`;
+  if (st.remote) { await saveDownload(name, `/api/s/${st.sid}/report.md`); return; }
   if (native()) {
     const path = await native().save_path(name); if (!path) return;
     try { await post(`/api/s/${st.sid}/report/save`, { path }); toast(`Saved ${path}`, 5000); } catch (e) { toast(e.message, 6000); }
@@ -2748,6 +2799,12 @@ async function exportAs(kind) {  // the cell table or the notebook of the curren
   const ext = kind === "notebook" ? "ipynb" : "csv";
   const name = kind === "registration" ? `${st.sample.sample_id}_registration.csv`
     : `${st.sample.sample_id}_v${st.version}_${kind === "notebook" ? "analysis" : "cells"}.${ext}`;
+  if (st.remote) {  // on a server: downloaded through the SSH tunnel into a file on this computer
+    $("xpStatus").textContent = kind === "notebook" ? "Writing the notebook (figures included) and downloading it…" : "Downloading…";
+    const path = await saveDownload(name, kind === "registration" ? `/api/sample/${st.sample.sample_id}/registration.csv`
+      : `/api/s/${st.sid}/export.${ext}?version=${st.version}`);
+    $("xpStatus").textContent = path ? `Saved ${path}` : ""; return;
+  }
   if (native()) {  // the desktop app saves through a Save dialog
     const path = await native().save_path(name); if (!path) return;
     $("xpStatus").textContent = kind === "notebook" ? "Writing the notebook (figures included)…" : "Writing the CSV…";
@@ -2777,12 +2834,113 @@ document.addEventListener("keydown", (e) => {
   if (st.drawing && e.key === "Enter") { e.preventDefault(); finishDraw(); }
   if (st.drawing && e.key === "Backspace") { e.preventDefault(); st.drawing.pop(); drawRegions(); }
 });
+// ---------------- where the app works: this computer, or a server over SSH (desktop app; remote.py) ----------------
+// On a server the window shows the server's viewer through an SSH tunnel: file choosers browse the server, exports are
+// downloaded into files on this computer, and Claude Code opens here with its tools running on the server.
+async function pickFiles(kind, multi) {
+  return st.remote ? browseServer(kind, multi) : native().pick(kind, !!multi);
+}
+async function saveDownload(name, url) {  // an export of the server's viewer into a file on this computer
+  const path = await native().save_path(name); if (!path) return null;
+  const r = await native().download(url, path);
+  if (r.error) { toast(r.error, 7000); return null; }
+  toast(`Saved ${path}`, 4000); return path;
+}
+const FB = { resolve: null, kind: "", multi: false, sel: new Set() };
+async function fbLoad(path) {
+  try {
+    const d = await api(`/api/fs/list?${new URLSearchParams({ path: path || "", kind: FB.kind })}`);
+    FB.dir = d; FB.sel.clear(); $("fbPath").value = d.path; $("fbUp").disabled = !d.parent;
+    const box = $("fbList"); box.textContent = "";
+    const item = (label, cls, size, on) => {
+      const e = document.createElement("div"); e.className = "fbi " + cls;
+      const n = document.createElement("span"); n.textContent = label; e.append(n);
+      if (size != null) { const z = document.createElement("span"); z.className = "sz"; z.textContent = size; e.append(z); }
+      on(e); box.append(e);
+    };
+    d.dirs.forEach((n) => item(`📁 ${n}`, "dir", null, (e) => {
+      e.ondblclick = () => fbLoad(`${d.path.replace(/\/$/, "")}/${n}`);
+      e.onclick = () => { if (FB.kind === "folder") fbToggle(e, `${d.path.replace(/\/$/, "")}/${n}`); else fbLoad(`${d.path.replace(/\/$/, "")}/${n}`); };
+    }));
+    d.files.forEach((f) => item(f.name, "file", f.size > 1e9 ? `${(f.size / 1e9).toFixed(1)} GB` : `${(f.size / 1e6).toFixed(1)} MB`, (e) => {
+      const p = `${d.path.replace(/\/$/, "")}/${f.name}`;
+      e.onclick = () => fbToggle(e, p); e.ondblclick = () => { FB.sel = new Set([p]); fbDone(); };
+    }));
+    if (!d.dirs.length && !d.files.length) { const e = document.createElement("div"); e.className = "hint"; e.textContent = "Nothing to choose here."; box.append(e); }
+    $("fbInfo").textContent = FB.kind === "folder" ? "Click a folder to choose it, double-click to open it" : (FB.multi ? "Click to choose one or several" : "Click to choose, double-click to open");
+  } catch (e) { $("fbInfo").textContent = e.message; }
+}
+function fbToggle(e, p) {
+  if (!FB.multi) { FB.sel.clear(); $("fbList").querySelectorAll(".on").forEach((x) => x.classList.remove("on")); }
+  if (FB.sel.has(p)) { FB.sel.delete(p); e.classList.remove("on"); } else { FB.sel.add(p); e.classList.add("on"); }
+}
+function fbDone() { const r = FB.resolve; FB.resolve = null; $("fbDlg").close(); if (r) r([...FB.sel]); }
+function browseServer(kind, multi) {
+  FB.kind = kind; FB.multi = !!multi;
+  $("fbTitle").textContent = `Choose ${kind === "folder" ? "a folder" : multi ? "files" : "a file"} on ${st.remote.host}`;
+  $("fbDlg").showModal(); fbLoad(load("fbDir") || "");
+  return new Promise((res) => { FB.resolve = res; });
+}
+$("fbOk").onclick = () => { if (FB.dir) store("fbDir", FB.dir.path); fbDone(); };
+$("fbClose").onclick = () => { FB.sel.clear(); fbDone(); };
+$("fbDlg").addEventListener("cancel", () => { FB.sel.clear(); fbDone(); });
+$("fbUp").onclick = () => FB.dir && FB.dir.parent && fbLoad(FB.dir.parent);
+$("fbHome").onclick = () => fbLoad("~");
+$("fbPath").onkeydown = (e) => { if (e.key === "Enter") fbLoad($("fbPath").value.trim()); };
+
+const rcMode = () => document.querySelector("input[name=rcMode]:checked").value;
+const rcConn = () => ({ host: $("rcHost").value.trim(), command: $("rcCmd").value.trim(), home: $("rcHome").value.trim() });
+function rcForm() { $("rcRemote").hidden = rcMode() !== "remote"; $("rcTest").hidden = rcMode() !== "remote"; $("rcGo").textContent = rcMode() === "remote" ? "Connect" : "Use this computer"; }
+document.querySelectorAll("input[name=rcMode]").forEach((r) => (r.onchange = rcForm));
+async function openConnection() {
+  const c = await native().connection(); st.conn = c;
+  const last = (c.settings && c.settings.last) || {};
+  $("rcHost").value = last.host || ""; $("rcCmd").value = last.command || ""; $("rcHome").value = last.home || "";
+  $("rcHosts").textContent = ""; (c.hosts || []).forEach((h) => { const o = document.createElement("option"); o.value = h; $("rcHosts").append(o); });
+  document.querySelector(`input[name=rcMode][value=${st.remote ? "remote" : "local"}]`).checked = true;
+  $("rcStatus").textContent = st.remote ? `Connected to ${st.remote.host} (data folder ${st.home})` : "Working on this computer";
+  rcForm(); $("rcDlg").showModal();
+}
+async function connectRemote(conn, auto) {
+  $("rcStatus").textContent = `Connecting to ${conn.host}… (the first time on a server takes up to a minute)`;
+  if (auto) toast(`Connecting to ${conn.host}…`, 4000);
+  const r = await native().connect_remote(conn);  // on success the window switches to the server's viewer
+  if (r.error) { $("rcStatus").textContent = r.error; if (auto) toast(`Could not connect to ${conn.host}: ${r.error}`, 9000); }
+}
+$("rcTest").onclick = async () => {
+  const conn = rcConn(); if (!conn.host) { $("rcStatus").textContent = "Enter the server"; return; }
+  $("rcStatus").textContent = `Logging in to ${conn.host}…`;
+  const r = await native().test_remote(conn);
+  $("rcStatus").textContent = r.error || `OK: STAnnotator ${r.build} on ${r.host} (${r.system}), data folder ${r.home}`
+    + (r.build !== r.local_build ? `. This app is ${r.local_build}: install the same version on both for the same behavior.` : "");
+};
+$("rcGo").onclick = async () => {
+  if (rcMode() === "local") { if (st.remote) await native().use_local(); else $("rcDlg").close(); return; }
+  const conn = rcConn(); if (!conn.host) { $("rcStatus").textContent = "Enter the server"; return; }
+  await connectRemote(conn, false);
+};
+$("rcClose").onclick = () => $("rcDlg").close();
+$("connBtn").onclick = openConnection;
+async function initConnection(serverRemote) {  // in the app: is this page the server's viewer? reconnect on start
+  if (!native() || !native().connection) return;
+  const c = await native().connection(); st.conn = c;
+  st.remote = serverRemote && c.connected ? c : null;
+  $("connBtn").hidden = false;
+  $("connBtn").textContent = st.remote ? `Server: ${c.host}` : "This computer";
+  $("connBtn").classList.toggle("on", !!st.remote);
+  if (st.remote && c.info && c.info.build !== c.local_build)
+    toast(`The server runs STAnnotator ${c.info.build}, this app ${c.local_build}: install the same version on both.`, 8000);
+  if (!serverRemote && c.auto) connectRemote(c.settings.last, true);
+  miniInfo();
+}
 api("/api/config").then((c) => {  // the desktop app (or no Claude Code CLI): the conversation happens in Claude's apps
   st.chatAvailable = c.chat; st.desktop = c.desktop; st.platform = c.platform;
   $("build").textContent = c.build ? `build ${c.build}` : "";
   $("claudeBtn").hidden = !c.desktop;
   $("clearAll").hidden = !c.desktop;
   st.home = c.home;
+  if (window.pywebview) initConnection(c.remote).catch(() => {});
+  else window.addEventListener("pywebviewready", () => initConnection(c.remote).catch(() => {}));
   if (c.desktop) { document.body.classList.add("desktop"); $("sideTitle").textContent = "Claude"; }  // Claude Code button in the header
   $("mkDraftBox").hidden = c.desktop; $("mkClaudeHint").hidden = !c.desktop;
   if (!c.chat) {

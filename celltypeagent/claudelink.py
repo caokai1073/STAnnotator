@@ -5,7 +5,7 @@ The viewer and the MCP server (started by Claude) are separate processes. They s
 folder: viewer.json (what the viewer shows: port, sample, session) and viewer_request.json (a session the agent
 asks the viewer to show).
 """
-import glob, json, os, platform, shutil, subprocess, time
+import glob, json, os, platform, re, shutil, subprocess, time
 from pathlib import Path
 from . import config
 
@@ -73,18 +73,24 @@ the celltypeagent MCP server. Reply in the user's language.
 """
 
 
-def workspace():
-    """A folder for Claude Code with this installation's MCP server and its tools allowed."""
-    ws = config.HOME / "claude_workspace"
+def workspace(remote=None):
+    """A folder for Claude Code with this installation's MCP server and its tools allowed. remote: a server connection
+    (remote.py); the tools then run on the server through ssh, with the server's data folder."""
+    if remote:
+        from . import remote as rm
+        ws = config.HOME / f"claude_workspace_{re.sub(r'[^A-Za-z0-9_.-]+', '_', remote['host'])}"
+        entry, home = rm.mcp_entry(remote), f"{remote.get('home') or '~/celltypeagent'} on {remote['host']}"
+    else:
+        ws, entry, home = config.HOME / "claude_workspace", server_entry(), config.HOME
     (ws / ".claude").mkdir(parents=True, exist_ok=True)
-    (ws / "celltypeagent_mcp.json").write_text(json.dumps({"mcpServers": {"celltypeagent": server_entry()}}, indent=2))
+    (ws / "celltypeagent_mcp.json").write_text(json.dumps({"mcpServers": {"celltypeagent": entry}}, indent=2))
     (ws / ".claude" / "settings.json").write_text(json.dumps({"permissions": {"allow": ["mcp__celltypeagent"]}}, indent=2))
-    (ws / "CLAUDE.md").write_text(CLAUDE_MD.format(home=config.HOME))
+    (ws / "CLAUDE.md").write_text(CLAUDE_MD.format(home=home))
     return ws
 
 
-def claude_code_command(prompt=None):
-    ws = workspace()
+def claude_code_command(prompt=None, remote=None):
+    ws = workspace(remote)
     # the prompt goes first: --mcp-config takes several values and would swallow it
     cmd = f'cd "{ws}" && claude ' + (f"'{prompt}' " if prompt else "") + f'--mcp-config "{ws / "celltypeagent_mcp.json"}"'
     return cmd, ws
@@ -130,10 +136,14 @@ end run
 """
 
 
-def open_claude_code(sample=None, session=None, request=None, send_if_open=False):
+def open_claude_code(sample=None, session=None, request=None, send_if_open=False, remote=None):
     """Open the user's own Claude Code in Terminal (macOS), connected to this app; elsewhere return the command.
     request: the first message (otherwise Claude loads the session and waits); with send_if_open it is also typed into
-    a Claude Code window that is already open."""
+    a Claude Code window that is already open. On a server the app reaches over SSH, Claude Code runs on the user's
+    computer: the request goes back to the app there (which calls this with remote=its connection)."""
+    if remote is None and os.environ.get("CELLTYPEAGENT_REMOTE") == "1":
+        return {"remote": True, "args": {"sample": sample, "session": session, "request": request,
+                                         "send_if_open": send_if_open}}
     prompt = None
     if session:
         prompt = (f"I am looking at sample {sample} (session {session}) in the STAnnotator app. "
@@ -144,7 +154,7 @@ def open_claude_code(sample=None, session=None, request=None, send_if_open=False
     if prompt:
         prompt = prompt.replace("'", "\u2019")  # it is passed in single quotes to the shell
     send = prompt if (send_if_open and request) else None
-    cmd, ws = claude_code_command(prompt)
+    cmd, ws = claude_code_command(prompt, remote)
     if platform.system() != "Darwin":
         return {"opened": False, "command": cmd}
     script = ws / "start_claude.command"

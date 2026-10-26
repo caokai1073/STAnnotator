@@ -7,7 +7,7 @@ Everything runs on this server. The chat box calls the locally installed Claude 
 the logged-in account (no API key); its only tools are this app's MCP tools, served at /mcp by this same
 process, so the agent and the viewer share one session object. The conflict review page is at /review.
 """
-import argparse, asyncio, colorsys, contextlib, io, json, math, os, re, shutil, sys, threading, time, uuid
+import argparse, asyncio, colorsys, contextlib, io, json, math, os, platform, re, shutil, sys, threading, time, uuid
 from collections import OrderedDict
 from pathlib import Path
 import numpy as np, pandas as pd
@@ -465,8 +465,43 @@ def api_config(req):
     """The built-in chat box (Claude Code CLI) is only for the server viewer; the desktop app connects to the user's
     own Claude Code instead."""
     return _json({"chat": not desktop_mode() and shutil.which("claude") is not None, "desktop": desktop_mode(),
-                  "home": str(config.HOME), "platform": sys.platform,
-                  "build": config.build()})
+                  "home": str(config.HOME), "platform": sys.platform, "build": config.build(),
+                  "remote": os.environ.get("CELLTYPEAGENT_REMOTE") == "1", "host": platform.node()})
+
+
+FS_KINDS = {"h5ad": (".h5ad",), "image": (".tif", ".tiff", ".btf"), "csv": (".csv", ".tsv", ".txt"),
+            "markers": (".csv", ".tsv", ".txt")}
+
+
+def api_fs_list(req):
+    """Folders and files on the computer that runs this server, to choose inputs in the app when it works on a
+    remote server (the app's own file dialogs show the user's computer)."""
+    if not desktop_mode():
+        return _json({"error": "only in the app"}, 403)
+    q = req.query_params
+    p = Path(q.get("path") or "~").expanduser()
+    if p.is_file():
+        p = p.parent
+    if not p.is_dir():
+        return _json({"error": f"no folder {p}"}, 404)
+    kind, dirs, files = q.get("kind", ""), [], []
+    exts = FS_KINDS.get(kind)
+    try:
+        entries = sorted(os.scandir(p), key=lambda e: e.name.lower())
+    except OSError as e:
+        return _json({"error": f"cannot read {p}: {e.strerror}"}, 403)
+    for e in entries[:5000]:
+        if e.name.startswith("."):
+            continue
+        try:
+            if e.is_dir():
+                dirs.append(e.name)
+            elif kind != "folder" and (exts is None or e.name.lower().endswith(exts)):
+                files.append({"name": e.name, "size": e.stat().st_size})
+        except OSError:
+            continue
+    return _json({"path": str(p), "parent": str(p.parent) if p.parent != p else None, "dirs": dirs, "files": files,
+                  "home": str(Path.home())})
 
 
 # ---------------- viewer <-> agent, Claude connection ----------------
@@ -1691,6 +1726,7 @@ def build_app(port):
         Route("/api/s/{sid}/report.md", api_report_md),
         Route("/api/s/{sid}/report/save", api_report_save, methods=["POST"]),
         Route("/api/import/inspect", api_import_inspect, methods=["POST"]),
+        Route("/api/fs/list", api_fs_list),
         Route("/api/import", api_import, methods=["POST"]),
         Route("/api/sample/{sample}/he_info", api_he_info),
         Route("/api/sample/{sample}/he/{level:int}/{xy}", he_tile),

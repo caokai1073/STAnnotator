@@ -88,6 +88,9 @@ def main(argv=None):
     vw = sub.add_parser("viewer", help="start the web viewer")
     vw.add_argument("--port", type=int, default=8765)
     sub.add_parser("mcp", help="run the MCP server on stdio (Claude Code starts this itself)")
+    rs = sub.add_parser("remote-serve", help="on a server: start the viewer in the background for the app on another "
+                                             "computer (it connects over SSH) and print its port")
+    rs.add_argument("--check", action="store_true", help="only print the version and data folder")
     a = ap.parse_args(argv)
     config.ensure_dirs()
     if a.cmd == "import":
@@ -110,6 +113,9 @@ def main(argv=None):
         sys.argv = ["celltypeagent-web", "--port", str(a.port)]
         from .webapp import main as web
         web()
+    elif a.cmd == "remote-serve":
+        from .remote import serve
+        serve(a.check)
     elif a.cmd == "mcp":
         from .mcp_server import main as mcp
         mcp()
