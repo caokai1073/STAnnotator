@@ -597,7 +597,7 @@ def refine_alignment(candidate: str, sample_id: Optional[str] = None) -> str:
 @mcp.tool()
 def apply_alignment(candidate: str, sample_id: Optional[str] = None) -> str:
     """Put the cells on the image with this candidate (refined if it was): the app shows them there at once and
-    outlines drawn before move along. The user can undo it in the app (Import > Registration > Undo alignment)."""
+    outlines drawn before move along. The user can undo it in the app (Import, bottom part: Undo last alignment)."""
     from . import align
     sid = _sample_id(sample_id)
     r = align.apply(align.Sample(sid), candidate)

@@ -748,11 +748,13 @@ async def api_import(req: Request):
         try:
             if b.get("kind") == "xenium":
                 importer.import_xenium(name, b["folder"], he=b.get("he") or None, registration=b.get("registration") or None,
-                                       description=b.get("description", ""), overwrite=bool(b.get("overwrite")), progress=say)
+                                       description=b.get("description", ""), overwrite=bool(b.get("overwrite")), progress=say,
+                                       he_kind=b.get("he_kind") or "H&E", registration_section=b.get("registration_section") or None)
             else:
                 importer.import_sample(name, b["h5ad"], b.get("he") or None, b.get("registration") or None, b.get("section_column") or None,
                                        b.get("section") or None, region_column=b.get("region_column") or None,
-                                       description=b.get("description", ""), overwrite=bool(b.get("overwrite")), progress=say)
+                                       description=b.get("description", ""), overwrite=bool(b.get("overwrite")), progress=say,
+                                       he_kind=b.get("he_kind") or "H&E", registration_section=b.get("registration_section") or None)
             JOBS[job].update(progress=1.0, stage="done", done=True)
         except Exception as e:  # shown in the dialog
             JOBS[job].update(error=f"{type(e).__name__}: {e}", done=True)

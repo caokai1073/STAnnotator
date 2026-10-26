@@ -199,8 +199,9 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .frow input[type=text], .frow textarea, .frow select { width: 100%; min-width: 0; }
 .frow textarea { font: 12px ui-monospace, Menlo, monospace; resize: vertical; }
 .imkind { display: flex; gap: 16px; margin-bottom: 6px; }
-.imtabs { display: inline-flex; gap: 4px; margin-left: 14px; }
-.imtabs button { padding: 3px 10px; font-size: 12.5px; }
+.choice { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font-size: 13px; }
+.choice button { padding: 2px 10px; font-size: 12.5px; }
+#imExisting summary { cursor: pointer; }
 #alignbar { position: absolute; top: 62px; left: 50%; transform: translateX(-50%); z-index: 6; display: flex; gap: 10px;
             align-items: center; padding: 6px 12px; font-size: 12.5px; background: #fff5e0; color: #6b4a00;
             border: 1px solid #f0c674; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
@@ -405,13 +406,9 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <button id="nameCancel">Cancel</button><button id="nameSave" class="primary">Save</button></div>
   </div>
 </dialog>
-<dialog id="imDlg" style="width:min(780px,95vw)">
-  <div class="dh"><b>Import</b>
-    <span class="imtabs"><button data-tab="new" class="on">New sample</button><button data-tab="image">Image</button><button data-tab="reg">Registration</button></span>
-    <span class="spacer"></span><button id="imClose">Close</button></div>
-  <div class="imbody" id="imNew">
-    <div class="hint" style="margin-bottom:4px">The cells and their expression make a sample. Add its image and registration
-      afterwards (tabs above), in any order; without a registration file Claude can align the image.</div>
+<dialog id="imDlg" style="width:min(800px,95vw)">
+  <div class="dh"><b>Import a sample</b><span class="spacer"></span><button id="imClose">Close</button></div>
+  <div class="imbody">
     <div class="imkind">
       <label><input type="radio" name="imKind" value="xenium" checked> Xenium output folder</label>
       <label><input type="radio" name="imKind" value="h5ad"> h5ad</label>
@@ -426,28 +423,31 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <div class="frow"><span>Section</span><select id="imSecCol"><option value="">the file holds one section</option></select><select id="imSec" hidden></select></div>
       <div class="frow"><span>Region column</span><select id="imRegCol"><option value="">none (draw regions yourself)</option></select><span></span></div>
     </div>
+    <div class="frow"><span>Image</span><span class="choice">
+      <label><input type="radio" name="imImgMode" value="none" checked> No image</label>
+      <label><input type="radio" name="imImgMode" value="file"> Image file</label>
+      <span class="hint" id="imNoImgHint"></span></span><span></span></div>
+    <div class="frow" id="imImgRow" hidden><span></span><input type="text" id="imNewImg" placeholder="H&amp;E or fluorescence image: pyramidal TIFF / OME-TIFF"><button data-pick="image" data-target="imNewImg">Choose…</button></div>
+    <div class="frow" id="imImgKindRow" hidden><span>Image kind</span><select id="imNewImgKind"><option value="H&amp;E">H&amp;E</option><option value="DAPI">DAPI / fluorescence</option></select><span></span></div>
+    <div class="frow"><span>Registration</span><span class="choice">
+      <label><input type="radio" name="imRegMode" value="file"> Registration file</label>
+      <label><input type="radio" name="imRegMode" value="none" checked> No registration</label>
+      <button id="imNewAlign" disabled title="Choose an image first">Align with Claude</button></span><span></span></div>
+    <div class="frow" id="imRegRow" hidden><span></span><input type="text" id="imNewReg" placeholder="affine CSV (a11,a12,a21,a22,tx,ty) or Xenium Explorer alignment (3x3)"><button data-pick="csv" data-target="imNewReg">Choose…</button></div>
+    <div class="frow" id="imRegSecRow" hidden><span>Registration row</span><input type="text" id="imNewRegSec" placeholder="only if the file has one row per section; default: the section chosen above"><span></span></div>
     <div class="frow"><span>Sample name</span><input type="text" id="imName" placeholder="short id without spaces"><span></span></div>
     <div class="frow"><span>Description</span><input type="text" id="imDesc" placeholder="optional, e.g. tissue and condition"><span></span></div>
     <div class="row" style="margin-top:6px"><span class="hint" id="imStatus"></span><span class="spacer"></span><button id="imGo" class="primary">Import</button></div>
-  </div>
-  <div class="imbody" id="imImg" hidden>
-    <div class="hint" id="imImgInfo"></div>
-    <div class="frow"><span>Image</span><input type="text" id="imImgPath" placeholder="H&amp;E or fluorescence image: pyramidal TIFF / OME-TIFF"><button data-pick="image" data-target="imImgPath">Choose…</button></div>
-    <div class="frow"><span>Kind</span><select id="imImgKind"><option value="H&amp;E">H&amp;E</option><option value="DAPI">DAPI / fluorescence</option></select><span></span></div>
-    <div class="row" style="margin-top:6px"><span class="hint" id="imImgStatus"></span><span class="spacer"></span><button id="imImgGo" class="primary">Add image</button></div>
-  </div>
-  <div class="imbody" id="imReg" hidden>
-    <div class="hint" id="imRegInfo"></div>
-    <div class="frow"><span>Registration file</span><input type="text" id="imRegPath" placeholder="affine CSV (a11,a12,a21,a22,tx,ty) or Xenium Explorer alignment (3x3)"><button data-pick="csv" data-target="imRegPath">Choose…</button></div>
-    <div class="frow"><span>Section</span><input type="text" id="imRegSec" placeholder="only if the file has one row per section (e.g. the donor id)"><span></span></div>
-    <div class="row" style="margin-top:6px"><span class="hint" id="imRegStatus"></span><span class="spacer"></span><button id="imRegGo" class="primary">Apply registration</button></div>
-    <div class="clcard" style="margin-top:12px">
-      <b>No registration file?</b>
-      <div class="hint">Claude Code finds where the cells lie on the image: it compares the tissue with the cells' footprint
-        over rotations, mirroring and pixel sizes, picks the right section and orientation by looking at the candidates,
-        then refines it until the cells sit on their nuclei (about a minute or two).</div>
-      <div class="row"><button id="imAlign">Align with Claude</button><button id="imUndoPlace" hidden>Undo last alignment</button><span class="spacer"></span></div>
-    </div>
+    <details id="imExisting" class="clcard" style="margin-top:12px">
+      <summary><b id="imExTitle">Image and registration of the selected sample</b></summary>
+      <div class="hint" id="imExInfo" style="margin:4px 0"></div>
+      <div class="frow"><span>Image</span><input type="text" id="imImgPath" placeholder="H&amp;E or fluorescence image"><button data-pick="image" data-target="imImgPath">Choose…</button></div>
+      <div class="frow"><span>Image kind</span><select id="imImgKind"><option value="H&amp;E">H&amp;E</option><option value="DAPI">DAPI / fluorescence</option></select><button id="imImgGo">Add image</button></div>
+      <div class="frow"><span>Registration</span><input type="text" id="imRegPath" placeholder="registration file"><button data-pick="csv" data-target="imRegPath">Choose…</button></div>
+      <div class="frow"><span>Registration row</span><input type="text" id="imRegSec" placeholder="only if the file has one row per section"><button id="imRegGo">Apply</button></div>
+      <div class="row"><button id="imAlign">Align with Claude</button><button id="imUndoPlace" hidden>Undo last alignment</button>
+        <span class="hint" id="imExStatus"></span><span class="spacer"></span></div>
+    </details>
   </div>
 </dialog>
 <dialog id="refDlg" style="width:min(760px,95vw)">
@@ -682,7 +682,7 @@ async function loadSamples(select) {
   st.samples = await api("/api/samples");
   const sel = $("sample"); sel.textContent = "";
   if (!st.samples.length) {  // a fresh install: nothing imported yet
-    $("empty").firstElementChild.textContent = "No samples yet. Click Import… to add a Xenium output folder, or h5ad + H&E + registration.";
+    $("empty").firstElementChild.textContent = "No samples yet. Click Import… to add a Xenium output folder or h5ad files (with or without an image).";
     $("empty").style.display = "flex"; $("annotate").disabled = true;
     return;
   }
@@ -1917,12 +1917,12 @@ $("refPick").onclick = async () => { const p = await native().pick("h5ad"); if (
 const native = () => window.pywebview && window.pywebview.api;  // file dialogs in the desktop app
 function imKind() { return document.querySelector("input[name=imKind]:checked").value; }
 function openImport() {
-  imTab(document.querySelector(".imtabs button.on") ? document.querySelector(".imtabs button.on").dataset.tab : "new");
+  imForm(); imExisting();
   document.querySelectorAll("#imDlg [data-pick]").forEach((b) => (b.hidden = !native()));
   $("imStatus").textContent = native() ? "" : "Paste full paths (files on the computer running this viewer).";
   $("imDlg").showModal();
 }
-document.querySelectorAll("input[name=imKind]").forEach((r) => (r.onchange = () => { $("imX").hidden = imKind() !== "xenium"; $("imH").hidden = imKind() !== "h5ad"; }));
+document.querySelectorAll("input[name=imKind]").forEach((r) => (r.onchange = () => { $("imX").hidden = imKind() !== "xenium"; $("imH").hidden = imKind() !== "h5ad"; imForm(); }));
 document.querySelectorAll("#imDlg [data-pick]").forEach((b) => (b.onclick = async () => {
   const paths = await native().pick(b.dataset.pick, !!b.dataset.multi);
   if (!paths.length) return;
@@ -1962,21 +1962,30 @@ $("imSecCol").onchange = () => {
 };
 $("imSec").onchange = () => { if ($("imSec").value) $("imName").value = $("imSec").value.replace(/[^A-Za-z0-9_.-]+/g, "_"); };
 $("imClose").onclick = () => $("imDlg").close();
-function imTab(tab) {
-  document.querySelectorAll(".imtabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
-  $("imNew").hidden = tab !== "new"; $("imImg").hidden = tab !== "image"; $("imReg").hidden = tab !== "reg";
-  const s = st.sample, none = !s;
-  $("imImgGo").disabled = $("imRegGo").disabled = $("imAlign").disabled = none;
-  if (none) { $("imImgInfo").textContent = $("imRegInfo").textContent = "Import a sample first (New sample)."; return; }
-  const shown = s.image_kind && s.image_kind !== "none" ? `${s.image_kind} shown: ${s.he_path}` : "no image shown (cells on a blank background)";
-  const pend = s.image_pending ? ` · waiting for alignment: ${s.image_pending}` : "";
-  $("imImgInfo").textContent = `For sample ${s.sample_id}: ${shown}${pend}`;
-  $("imRegInfo").textContent = `For sample ${s.sample_id}: ` + (s.registration_by ? `cells placed by ${s.registration_by === "Claude" ? "Claude's alignment" : s.registration_by === "file" ? "a registration file" : s.registration_by}` : "no registration yet") + pend;
+const imgMode = () => document.querySelector("input[name=imImgMode]:checked").value;
+const regMode = () => document.querySelector("input[name=imRegMode]:checked").value;
+function imForm() {  // show the fields of the chosen options; Align with Claude needs an image and no registration file
+  $("imImgRow").hidden = $("imImgKindRow").hidden = imgMode() !== "file";
+  $("imRegRow").hidden = $("imRegSecRow").hidden = regMode() !== "file";
+  $("imNoImgHint").textContent = imgMode() === "none" ? (imKind() === "xenium" ? "the folder's DAPI image is shown" : "cells on a blank background") : "";
+  const can = imgMode() === "file" && $("imNewImg").value.trim() && regMode() === "none";
+  $("imNewAlign").disabled = !can;
+  $("imNewAlign").title = can ? "Import, then let your Claude Code align the image with the cells"
+    : imgMode() !== "file" || !$("imNewImg").value.trim() ? "Choose an image first" : "Choose No registration to align with Claude";
+}
+document.querySelectorAll("input[name=imImgMode], input[name=imRegMode]").forEach((r) => (r.onchange = imForm));
+$("imNewImg").addEventListener("input", imForm); $("imNewImg").addEventListener("change", imForm);
+function imExisting() {  // the folded part: image and registration of the selected sample
+  const s = st.sample;
+  $("imExisting").hidden = !s;
+  if (!s) return;
+  $("imExTitle").textContent = `Image and registration of the selected sample (${s.sample_id})`;
+  const shown = s.image_kind && s.image_kind !== "none" ? `${s.image_kind} shown` : "no image shown";
+  const placed = s.registration_by ? `cells placed by ${s.registration_by === "Claude" ? "Claude's alignment" : s.registration_by}` : "no registration";
+  $("imExInfo").textContent = `${shown}; ${placed}` + (s.image_pending ? `; waiting for alignment: ${s.image_pending}` : "");
   $("imAlign").disabled = !(s.image_pending || (s.image_kind && s.image_kind !== "none"));
-  $("imAlign").title = $("imAlign").disabled ? "Add the image first (Image tab)" : "";
   $("imUndoPlace").hidden = !s.can_undo_placement;
 }
-document.querySelectorAll(".imtabs button").forEach((b) => (b.onclick = () => imTab(b.dataset.tab)));
 async function afterPlacement(msg) {  // the sample's image or cell positions changed
   const id = st.sample.sample_id, before = `${st.sample.image_kind}|${st.sample.he_path}`;
   st.samples = await api("/api/samples");
@@ -1984,27 +1993,26 @@ async function afterPlacement(msg) {  // the sample's image or cell positions ch
   Object.assign(st.sample, fresh, { sessions: st.sample.sessions, allSessions: st.sample.allSessions });
   const sameImage = before === `${st.sample.image_kind}|${st.sample.he_path}`;  // else show the whole new image
   if (st.sid) await reloadGeometry(sameImage); else { await openHE(id); GL.colorKey = null; fillModes(null); refreshOverlay(); }
-  alignBar(); imTab(document.querySelector(".imtabs button.on").dataset.tab);
+  alignBar(); imExisting();
   if (msg) toast(msg, 6000);
 }
 $("imImgGo").onclick = async () => {
-  const path = $("imImgPath").value.trim(); if (!path) { $("imImgStatus").textContent = "Choose the image"; return; }
-  $("imImgStatus").textContent = "adding…";
+  const path = $("imImgPath").value.trim(); if (!path) { $("imExStatus").textContent = "Choose the image"; return; }
+  $("imExStatus").textContent = "adding…";
   try {
     const r = await post(`/api/sample/${st.sample.sample_id}/image`, { path, kind: $("imImgKind").value });
-    $("imImgStatus").textContent = r.pending ? "Added. It waits for a registration: Registration tab." : "Added; the cells are on it.";
+    $("imExStatus").textContent = r.pending ? "Added; it waits for a registration (Apply, or Align with Claude)." : "Added; the cells are on it.";
     await afterPlacement();
-    if (r.pending) imTab("reg");
-  } catch (e) { $("imImgStatus").textContent = e.message; }
+  } catch (e) { $("imExStatus").textContent = e.message; }
 };
 $("imRegGo").onclick = async () => {
-  const path = $("imRegPath").value.trim(); if (!path) { $("imRegStatus").textContent = "Choose the registration file"; return; }
-  $("imRegStatus").textContent = "applying…";
+  const path = $("imRegPath").value.trim(); if (!path) { $("imExStatus").textContent = "Choose the registration file"; return; }
+  $("imExStatus").textContent = "applying…";
   try {
     const r = await post(`/api/sample/${st.sample.sample_id}/registration`, { path, section: $("imRegSec").value.trim() });
-    $("imRegStatus").textContent = r.stored ? "Stored; add the image to see the cells on it." : "Applied: the cells are on the image.";
+    $("imExStatus").textContent = r.stored ? "Stored; add the image to see the cells on it." : "Applied: the cells are on the image.";
     await afterPlacement();
-  } catch (e) { $("imRegStatus").textContent = e.message; }
+  } catch (e) { $("imExStatus").textContent = e.message; }
 };
 async function askAlign() {
   try {
@@ -2016,7 +2024,7 @@ async function askAlign() {
 }
 $("imAlign").onclick = askAlign;
 $("alignNow").onclick = askAlign;
-$("alignReg").onclick = () => { openImport(); imTab("reg"); };
+$("alignReg").onclick = () => { openImport(); $("imExisting").open = true; };
 $("imUndoPlace").onclick = async () => {
   if (!confirm("Go back to where the cells were before the last alignment or registration?")) return;
   try { await post(`/api/sample/${st.sample.sample_id}/placement/undo`); await afterPlacement("Back to the earlier placement"); }
@@ -2028,15 +2036,20 @@ function alignBar() {  // an image waits for its alignment
   if (s && s.image_pending) $("alignmsg").textContent = "This sample's image is not aligned yet: the cells are shown on a blank background.";
   $("alignNow").hidden = !st.desktop && !st.chatAvailable;
 }
-$("imGo").onclick = async () => {
+async function importSample() {  // returns true when the sample was imported
   const kind = imKind(), name = $("imName").value.trim();
+  const image = imgMode() === "file" ? $("imNewImg").value.trim() : "";
+  const registration = regMode() === "file" ? $("imNewReg").value.trim() : "";
   const body = kind === "xenium"
     ? { kind, name, folder: $("imFolder").value.trim(), description: $("imDesc").value }
     : { kind, name, h5ad: $("imH5").value.split("\n").map((s) => s.trim()).filter(Boolean),
         section_column: $("imSecCol").value, section: $("imSecCol").value ? $("imSec").value : "",
         region_column: $("imRegCol").value, description: $("imDesc").value };
-  if (!name) { $("imStatus").textContent = "Give the sample a name"; return; }
-  $("imGo").disabled = true; $("imStatus").textContent = "importing…";
+  Object.assign(body, { he: image, he_kind: $("imNewImgKind").value, registration, registration_section: $("imNewRegSec").value.trim() });
+  if (!name) { $("imStatus").textContent = "Give the sample a name"; return false; }
+  if (imgMode() === "file" && !image) { $("imStatus").textContent = "Choose the image, or No image"; return false; }
+  if (regMode() === "file" && !registration) { $("imStatus").textContent = "Choose the registration file, or No registration"; return false; }
+  $("imGo").disabled = $("imNewAlign").disabled = true; $("imStatus").textContent = "importing…";
   try {
     const { job } = await post("/api/import", body);
     for (;;) {
@@ -2045,22 +2058,25 @@ $("imGo").onclick = async () => {
       $("imStatus").textContent = j.error || j.stage;
       if (j.done) { if (j.error) throw new Error(j.error); break; }
     }
-    toast(`Imported ${name}. Add its image and registration in the next tabs if it has them.`, 6000);
+    $("imDlg").close();
+    toast(`Imported ${name}`, 4000);
     await loadSamples(name);
-    imTab("image");
-    if (!st.vocab) { openMarkers(); toast("Now import a marker list for this sample (Import…), or ask Claude Code to draft one", 6000); }
-  } catch (e) { $("imStatus").textContent = e.message; }
-  $("imGo").disabled = false;
-};
+    return true;
+  } catch (e) { $("imStatus").textContent = e.message; return false; }
+  finally { $("imGo").disabled = false; imForm(); }
+}
+$("imGo").onclick = importSample;
+$("imNewAlign").onclick = async () => { if (await importSample()) await askAlign(); };  // import, then Claude aligns
 $("importBtn").onclick = openImport;
 // ---------------- help and about ----------------
 const HELP = `
 <h3>Import</h3><ul>
-<li><b>Import…</b> has three tabs: <b>New sample</b> (the cells: a Xenium folder or h5ad files), <b>Image</b> (H&amp;E or
-DAPI for the selected sample) and <b>Registration</b> (the alignment file). Add them in any order.</li>
-<li>No registration file? <b>Align with Claude</b> (Registration tab, or the yellow bar over the map): Claude Code finds
-the section and orientation on the image and refines it until the cells sit on their nuclei. <b>Undo last
-alignment</b> goes back. Regions drawn before move along with the cells.</li></ul>
+<li><b>Import…</b>: the cells (a Xenium folder or h5ad files), then the image (<b>No image</b> or an H&amp;E / DAPI
+file) and the registration (<b>Registration file</b>, or <b>No registration</b>).</li>
+<li>An image without a registration file: <b>Align with Claude</b> (next to No registration, or the yellow bar over the
+map) imports and lets Claude Code find the section and orientation on the image and refine it until the cells sit on
+their nuclei. The folded part at the bottom of Import changes the image or registration of the selected sample, or
+undoes an alignment. Regions drawn before the cells move are moved along with them.</li></ul>
 <h3>Map</h3><ul>
 <li>Drag to move, scroll or pinch to zoom; the small map at the bottom right shows where you are.</li>
 <li>Click a cell: its type, confidence, alternatives, region (and the gene's transcripts when coloring by a gene).</li>
@@ -2366,7 +2382,7 @@ $("export").onclick = () => {
   const placed = st.sample.image_kind && st.sample.image_kind !== "none";
   $("xpReg").disabled = !placed;
   $("xpRegInfo").textContent = placed
-    ? `The affine that places the cells on the image, as used now (made by: ${st.sample.registration_by || "file"}): columns a11, a12, a21, a22, tx, ty (cell um to image pixels). It can be imported again under Import > Registration, or used by other tools.`
+    ? `The affine that places the cells on the image, as used now (made by: ${st.sample.registration_by || "file"}): columns a11, a12, a21, a22, tx, ty (cell um to image pixels). It can be used again as the registration file of an import, or by other tools.`
     : "The cells are not on an image yet: import an image and its registration, or align it with Claude.";
   $("xpDlg").showModal();
 };

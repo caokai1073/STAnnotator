@@ -242,7 +242,7 @@ def _check_name(name, overwrite):
 
 
 def _write_bundle(name, ids, xy, X, genes, image, A, regions, description, source, progress, image_kind,
-                  registration=None, image_pending=None):
+                  registration=None, image_pending=None, pending_kind="H&E"):
     """Map cells onto the background image, check the registration, estimate depth and write the bundle.
     registration: the affine of a registration file (kept even before there is an image to use it on)."""
     out = config.SAMPLES / name
@@ -275,7 +275,8 @@ def _write_bundle(name, ids, xy, X, genes, image, A, regions, description, sourc
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "source": source, "placement_affine": A.tolist(),
             "registration_affine": None if registration is None else np.asarray(registration).tolist(),
             "registration_by": "file" if registration is not None else None,
-            "image_pending": str(Path(image_pending).resolve()) if image_pending else None}
+            "image_pending": str(Path(image_pending).resolve()) if image_pending else None,
+            "image_pending_kind": pending_kind}
     json.dump(meta, open(out / "meta.json", "w"), indent=1)
     progress(f"imported sample {name} into {out}")
     return meta
@@ -283,7 +284,7 @@ def _write_bundle(name, ids, xy, X, genes, image, A, regions, description, sourc
 
 def import_sample(name, h5ad, he=None, registration=None, section_column=None, section=None, x_column=None, y_column=None,
                   counts_layer=None, region_column=None, xenium_px_um=0.2125, description="", overwrite=False,
-                  progress=print):
+                  progress=print, he_kind="H&E", registration_section=None):
     name = _check_name(name, overwrite)
     h5ad = [h5ad] if isinstance(h5ad, (str, Path)) else list(h5ad)
     parts = []
@@ -312,16 +313,16 @@ def import_sample(name, h5ad, he=None, registration=None, section_column=None, s
     candidates = ()
     if section is None:  # values that are the same for every cell (e.g. the donor id) can pick the registration row
         candidates = [v[0] for v in inspect_h5ad(h5ad)["columns"].values() if len(v) == 1]
-    R = load_registration(registration, section, xenium_px_um, candidates, progress) if registration else None
+    R = load_registration(registration, registration_section or section, xenium_px_um, candidates, progress) if registration else None
     regions = np.concatenate([q["regions"] for q in parts]) if region_column else None
     if he and R is None:
-        progress("  the image waits for a registration (Import > Registration, or Align with Claude)")
-    image, A, kind = (he, R, "H&E") if he and R is not None else (None, BLANK, "none")
+        progress("  the image waits for a registration (a registration file, or Align with Claude)")
+    image, A, kind = (he, R, he_kind) if he and R is not None else (None, BLANK, "none")
     return _write_bundle(name, ids, xy, X, genes, image, A, regions, description,
                          {"kind": "h5ad", "h5ad": [str(Path(p).resolve()) for p in h5ad], "section_column": section_column,
                           "section": section, "registration": str(Path(registration).resolve()) if registration else None,
                           "region_column": region_column, "candidates": [str(c) for c in candidates]}, progress, kind,
-                         registration=R, image_pending=he if he and R is None else None)
+                         registration=R, image_pending=he if he and R is None else None, pending_kind=he_kind)
 
 
 # ---------------- Xenium output folder ----------------
@@ -378,7 +379,8 @@ def inspect_xenium(xenium_dir):
     return info
 
 
-def import_xenium(name, xenium_dir, he=None, registration=None, description="", overwrite=False, progress=print):
+def import_xenium(name, xenium_dir, he=None, registration=None, description="", overwrite=False, progress=print,
+                  he_kind="H&E", registration_section=None):
     name = _check_name(name, overwrite)
     d = Path(xenium_dir).expanduser()
     info = inspect_xenium(d)
@@ -394,16 +396,16 @@ def import_xenium(name, xenium_dir, he=None, registration=None, description="", 
     xy = cells[["x_centroid", "y_centroid"]].to_numpy(float)
     progress(f"{len(cells):,} cells, {len(genes)} genes")
     ps = info["pixel_size_um"]
-    R = load_registration(registration, None, ps) if registration else None
+    R = load_registration(registration, registration_section, ps) if registration else None
     if he and R is not None:
-        A, image, kind = R, he, "H&E"
+        A, image, kind = R, he, he_kind
     elif info["morphology"]:
         A, image, kind = np.array([[1 / ps, 0, 0], [0, 1 / ps, 0]]), info["morphology"], "DAPI"
     else:
         progress("  no H&E and no morphology image: the viewer shows the cells on a blank background")
         A, image, kind = BLANK, None, "none"
     if he and R is None:
-        progress("  the H&E waits for its alignment (Import > Registration, or Align with Claude)")
+        progress("  the H&E waits for its alignment (a registration file, or Align with Claude)")
     return _write_bundle(name, cells.cell_id.to_numpy(), xy, X, genes, image, A, None, description,
                          {"kind": "xenium", "folder": str(d), "registration": str(Path(registration).resolve())
                           if registration else None, **{k: v for k, v in info.items() if k != "folder"}},

@@ -45,16 +45,18 @@ another one).
 
 ## 2. Import a sample
 
-Click **Import…** in the app (or use the commands below). It has three tabs, and the parts can come in any order:
+Click **Import…** in the app (or use the commands below): the cells, then **No image** or an image file, then a
+**Registration file** or **No registration**:
 
-| tab | what it takes |
+| part | what it takes |
 |---|---|
-| **New sample** | the cells. A Xenium output folder (`cells.parquet` or `cells.csv.gz` and `cell_feature_matrix.h5` or `cell_feature_matrix/`; control probes are dropped; its DAPI image `morphology_focus/` is shown until an H&E is aligned), or AnnData file(s) with raw counts (layer `counts`, `X`, or `raw.X` when `X` is normalized, as scanpy leaves it) and cell centroids in micrometers (`obs` columns `x_centroid`/`y_centroid` or `x`/`y`, or `obsm["spatial"]`); several files (e.g. one per lineage) are merged and cell type labels in them are ignored. The dialog lists the h5ad's columns to pick the section when a file holds several. |
-| **Image** | the H&E (or a fluorescence image) of the selected sample, as a pyramidal TIFF / OME-TIFF. |
-| **Registration** | an affine CSV with columns `a11,a12,a21,a22,tx,ty` (`px = a11*x + a12*y + tx`, `py = a21*x + a22*y + ty`; cell um to image full-resolution pixels; with one row per section, give the section value) or a Xenium Explorer alignment matrix (3x3 CSV, image pixels to morphology pixels). |
+| cells | a Xenium output folder (`cells.parquet` or `cells.csv.gz` and `cell_feature_matrix.h5` or `cell_feature_matrix/`; control probes are dropped; its DAPI image `morphology_focus/` is shown unless an H&E is aligned), or AnnData file(s) with raw counts (layer `counts`, `X`, or `raw.X` when `X` is normalized, as scanpy leaves it) and cell centroids in micrometers (`obs` columns `x_centroid`/`y_centroid` or `x`/`y`, or `obsm["spatial"]`); several files (e.g. one per lineage) are merged and cell type labels in them are ignored. The dialog lists the h5ad's columns to pick the section when a file holds several. |
+| image | the H&E (or a fluorescence image) as a pyramidal TIFF / OME-TIFF, or **No image**. |
+| registration | an affine CSV with columns `a11,a12,a21,a22,tx,ty` (`px = a11*x + a12*y + tx`, `py = a21*x + a22*y + ty`; cell um to image full-resolution pixels; with one row per section, the row of the chosen section) or a Xenium Explorer alignment matrix (3x3 CSV, image pixels to morphology pixels); or **No registration**. |
 
+The folded part at the bottom of the dialog adds or changes the image or registration of the selected sample later.
 Until the image is registered the cells are shown on a blank background (or the DAPI) with a yellow bar over the
-map. **No registration file?** **Align with Claude** (Registration tab, or the bar) asks your Claude Code to align it:
+map. **No registration file?** **Align with Claude** (next to No registration, or the bar) asks your Claude Code to align it:
 the tissue on the image is matched with the cells' footprint over 4 rotations, mirroring and a range of pixel sizes
 (around the size stored in an OME-TIFF), Claude picks the right section and orientation from the candidates' figures,
 and a refinement moves the cells onto their nuclei (nuclei on the image vs cell centroids in windows, affine fit,
