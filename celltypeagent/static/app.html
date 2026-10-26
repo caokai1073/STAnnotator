@@ -53,13 +53,18 @@ header.collapsed .hmini { display: flex; }
 .gallery .tt { font-size: 12px; font-weight: 600; margin-top: 4px; } .gallery .ts { font-size: 11px; color: var(--muted); }
 .num { width: 62px; }
 #nicheinfo, #einfo { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.nslot { flex: 1; min-width: 0; position: relative; display: flex; align-items: center; height: 30px; }
+.nslot { flex: 1; min-width: 0; overflow: hidden; position: relative; display: flex; align-items: center; height: 30px; }
 .nslot .progress { position: absolute; inset: 0; max-width: 420px; min-width: 0; }
 .nslot:has(.progress.show) > span { visibility: hidden; }
 .folder { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); min-width: 0;
           flex: 0 1 auto; white-space: nowrap; overflow: hidden; }
 .folder .path { min-width: 60px; flex: 1 1 auto; }
 .hrow.r1 { flex-wrap: nowrap; }
+/* the data row stays one line: the sample and session lists give up width first */
+.hrow.r2 { flex-wrap: nowrap; }
+.hrow.r2 > * { flex: none; }
+.hrow.r2 > #sampleWrap { flex: 0 1 520px; min-width: 0; } .hrow.r2 > #sessWrap { flex: 0 1 330px; min-width: 0; }
+.hrow.r2 #sample, .hrow.r2 #session { min-width: 0; width: 0; flex: 1 1 auto; }
 .hrow.r1 > :not(.folder):not(.spacer) { flex: none; }
 button.danger { color: #c0392b; }
 button.danger:hover:not(:disabled) { border-color: #c0392b; }
@@ -76,7 +81,7 @@ button:disabled { opacity: .45; cursor: default; }
 .spacer { flex: 1; }
 .hrow { display: flex; align-items: center; gap: 10px; min-height: 38px; flex-wrap: wrap; }
 .cfgslot { display: inline-flex; min-width: 132px; }
-.progress { display: flex; visibility: hidden; align-items: center; gap: 8px; min-width: 280px; flex: 1; max-width: 640px; }
+.progress { display: flex; visibility: hidden; align-items: center; gap: 8px; min-width: 180px; flex: 1; max-width: 640px; }
 .progress.show { visibility: visible; }
 .pbar { flex: 1; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; min-width: 120px; }
 .pbar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
@@ -232,23 +237,26 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 <header>
   <div class="hmini"><b>Spatial Annotator</b><span id="miniInfo"></span><span class="spacer"></span>
     <button id="hdrShow" title="Show the toolbar (t)">Show toolbar ▾</button></div>
-  <!-- three fixed rows (data / annotate / review and export), aligned by a caption column; nothing moves when the
+  <!-- fixed rows (app / data / annotate / embedding / niches / review and export), aligned by a caption column; nothing moves when the
        progress bar or an option appears -->
   <div class="hrow r1">
     <div class="cap"><h1>Spatial Annotator</h1><span id="build" class="buildtag"></span></div>
-    <label class="fl">Sample <select id="sample"></select></label>
-    <span id="slNav" class="slnav" hidden><button id="slPrev" title="Previous slice of the project ([)">◀</button><button id="slNext" title="Next slice of the project (])">▶</button>
-      <button id="slGallery" title="All slices of the project side by side">Slices…</button>
-      <button id="slCompare" title="Cell type, lineage, niche or cluster shares per slice">Compare…</button>
-      <label class="fl" title="Annotate, embed and find niches for all slices of the project together, so labels, clusters and niches mean the same everywhere"><input type="checkbox" id="projAll" checked> all slices together</label></span>
     <button id="importBtn" title="Add a sample (a Xenium output folder or h5ad), then its image and registration">Import…</button>
     <button id="clearAll" class="danger" hidden title="Delete every sample with all its annotations and chats for good, to import from scratch">Remove all…</button>
-    <span class="sep"></span>
-    <label class="fl" id="sessWrap">Session <select id="session" title="Earlier annotations of this sample"></select></label>
     <span class="spacer"></span>
     <span class="folder">Data folder <span class="path" id="path">–</span></span>
     <button id="helpBtn" title="How to use the app, and About (version, Claude connection, data folder)" style="padding:4px 10px;font-weight:600">?</button>
     <button id="hdrHide" title="Hide the toolbar for a bigger map (t)" style="padding:4px 9px">▴</button>
+  </div>
+  <div class="hrow r2">
+    <div class="cap"><span class="captxt">Data</span></div>
+    <label class="fl" id="sampleWrap">Sample <select id="sample"></select></label>
+    <span id="slNav" class="slnav" hidden><button id="slPrev" title="Previous slice of the project ([)">◀</button><button id="slNext" title="Next slice of the project (])">▶</button>
+      <button id="slGallery" title="All slices of the project side by side">Slices…</button>
+      <button id="slCompare" title="Cell type, lineage, niche or cluster shares per slice">Compare…</button>
+      <label class="fl" title="Annotate, embed and find niches for all slices of the project together, so labels, clusters and niches mean the same everywhere"><input type="checkbox" id="projAll" checked> all slices together</label></span>
+    <span class="sep"></span>
+    <label class="fl" id="sessWrap">Session <select id="session" title="Earlier annotations of this sample"></select></label>
   </div>
   <div class="hrow">
     <div class="cap"><span class="captxt">Annotate</span></div>
@@ -2249,7 +2257,7 @@ it previews the change and asks before adding a prior.</li>
 <h3>Annotate</h3><ul>
 <li><b>Method</b>: marker genes (<b>Markers…</b>), a single-cell reference (<b>Reference…</b>) or an existing annotation
 (<b>Annotation file…</b>). <b>Annotate</b> makes a new annotation; <b>keep my regions, priors &amp; corrections</b> carries them over.</li></ul>
-<h3>Embedding (third row)</h3><ul>
+<h3>Embedding</h3><ul>
 <li><b>Run PCA + UMAP</b> computes PCA, UMAP and Leiden clusters from the expression (about a minute; shared by all
 annotations of the sample). <b>Show UMAP</b> opens the window on the right: UMAP or PCA, colored as the map, by cell
 type, Leiden cluster or niche; scroll to zoom, drag to move, double-click to reset.</li>

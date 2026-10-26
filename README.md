@@ -216,7 +216,7 @@ by Claude show up within a few seconds.
    **×** removes one (Undo brings it back). **?** (top right) explains every control and, under **About**, shows the
    build, the data folder, whether Claude Code was found and when Claude last used the tools, with a button that
    copies these details for a bug report.
-9. **Embedding** (third row): **Run PCA + UMAP** computes a PCA, a UMAP and Leiden clusters of the sample from
+9. **Embedding** (its own toolbar row): **Run PCA + UMAP** computes a PCA, a UMAP and Leiden clusters of the sample from
    expression only (shared by all its annotations; about 40–50 s for 356,629 cells: the kNN graph comes from the
    fast GPU / pynndescent search and is handed to UMAP, which starts from PC1/PC2 and runs on all cores).
    **Show UMAP** opens a window on the right (UMAP or PC1/PC2, colored as the map, by cell type, Leiden cluster or
