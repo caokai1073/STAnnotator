@@ -377,14 +377,18 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <div class="fld"><span>Cell identity</span><select id="nIdentity" class="segsel" title="What a cell is, before averaging over its neighbors">
       <option value="nmf" data-short="NMF programs">NMF programs</option><option value="cell types" data-short="Cell types">Cell types</option></select>
       <div class="seg" data-for="nIdentity"></div></div>
+    <div class="fld"><span>Neighborhood size k</span><select id="nKMode" class="segsel" title="How many neighbors each cell is averaged over">
+      <option value="fixed" data-short="Set k">Set k (the same everywhere)</option>
+      <option value="agent" data-short="Agent chooses">The agent chooses k per region</option></select><div class="seg" data-for="nKMode"></div></div>
+    <div class="hint" id="nKHint" hidden>The agent looks at the cell density and cell types of each region, picks k there, runs the niches
+      and names them; they appear here when done.</div>
     <div class="fgrid">
-      <label class="fld" title="Neighbors averaged per cell (the cell itself plus its k nearest cells)"><span>k neighbors</span><input type="number" id="nK" min="1" max="80" value="15"></label>
+      <label class="fld" id="nKWrap" title="Neighbors averaged per cell (the cell itself plus its k nearest cells)"><span>k neighbors</span><input type="number" id="nK" min="1" max="80" value="15"></label>
       <label class="fld" title="Number of niches (k-means clusters)"><span>Niches</span><input type="number" id="nN" min="2" max="30" value="8"></label>
     </div>
     <details class="adv"><summary>Advanced</summary><div class="fgrid">
       <label class="fld" title="Number of NMF gene programs"><span>NMF programs</span><input type="number" id="nPrograms" min="4" max="60" value="20"></label>
     </div></details>
-    <div class="act2"><button id="nClaude" disabled title="Ask the agent to choose k per region from cell density and cell types, run the niches and name them">Agent picks k</button></div>
     <button id="nRun" class="primary main" disabled title="Compute niches with these settings">Run niches</button>
   </div>
   <div class="hrow bottom">
@@ -712,7 +716,7 @@ const ICON_ONLY = { hdrShow: "chev-left", hdrHide: "chev-right", helpBtn: "help"
   fbUp: "arrow-up", fbHome: "home", rsClose: "x", hide: "eye", hideHE: "image" };
 const ICON_TEXT = { importBtn: "import", clearAll: "trash", connBtn: "monitor", slGallery: "grid", slCompare: "chart",
   openMarkers: "list", openRef: "file", openEx: "file", annotate: "play", eRun: "play", eShow: "scatter", nRun: "play",
-  nClaude: "sparkle", undo: "undo", claudeBtn: "sparkle", plaus: "shield", report: "file", export: "share", reset: "trash",
+  undo: "undo", claudeBtn: "sparkle", plaus: "shield", report: "file", export: "share", reset: "trash",
   draw: "pen", emLasso: "lasso", emClear: "x", emZoom: "target", send: "send",
   mkImport: "import", mkCheck: "check", mkSave: "save", mkDraft: "sparkle", mkClose: "check", imGo: "import",
   imNewAlign: "sparkle", imAlign: "sparkle", alignNow: "sparkle", alignReg: "file", imImgGo: "image", imRegGo: "check",
@@ -1010,7 +1014,7 @@ function closeSession() {
   cancelDraw(); if (st.editing) stopEdit(); closePlaus();
   $("legend").hidden = true; $("cellcard").classList.remove("show");
   $("empty").style.display = "flex";
-  ["undo", "export", "send", "plaus", "report", "nRun", "nClaude", "eRun", "eShow"].forEach((b) => ($(b).disabled = true));
+  ["undo", "export", "send", "plaus", "report", "nRun", "eRun", "eShow"].forEach((b) => ($(b).disabled = true));
   closeEmbedding(); st.emb = null; EM.selAll = null; EM.lassoRaw = null; setSelection(null); $("einfo").textContent = "Open or make an annotation first";
   st.niche = null; st.nicheSig = undefined; $("nicheinfo").textContent = "Open or make an annotation first";
   $("ainfo").textContent = "No annotation open: choose a method and click Annotate, or open one in Data → Annotation";
@@ -1078,7 +1082,7 @@ async function openSession(sid) {
   st.sid = sid;
   $("empty").style.display = "none";
   ["undo", "export", "send", "plaus", "report", "nRun", "eRun"].forEach((b) => ($(b).disabled = false));
-  $("nClaude").disabled = !st.desktop && !st.chatAvailable;
+  syncKMode();
   $("carryWrap").style.visibility = "visible";
   $("input").disabled = false; $("composerhint").textContent = "Tip: refer to regions you drew by their name.";
   st.vocab = await api(`/api/s/${sid}/vocab`);
@@ -1415,6 +1419,7 @@ async function loadNiches(show) {
 }
 $("nIdentity").onchange = () => { $("nPrograms").disabled = $("nIdentity").value !== "nmf"; syncSeg("nIdentity"); };
 $("nRun").onclick = async () => {
+  if ($("nKMode").value === "agent") return agentNiches();
   const body = { identity: $("nIdentity").value, n_programs: +$("nPrograms").value, k: +$("nK").value, n_niches: +$("nN").value };
   $("nRun").disabled = true; $("nprogress").classList.add("show");
   try {
@@ -1434,13 +1439,24 @@ $("nRun").onclick = async () => {
   } catch (e) { toast(`Niches failed: ${e.message}`, 8000); }
   finally { $("nRun").disabled = false; }
 };
-$("nClaude").onclick = async () => {
+async function agentNiches() {  // the agent chooses k per region, runs the niches and names them
   try {
     const r = await post("/api/claude/niches", { session: st.sid, n_niches: +$("nN").value, identity: $("nIdentity").value });
     if (r.message && st.chatAvailable) { $("input").value = r.message; send(); }
     else if (r.claude_code) toast(r.claude_code.reused ? "The agent is choosing k; the niches appear here when done" : "The agent is opening to choose k", 6000);
   } catch (e) { toast(e.message, 6000); }
-};
+}
+function syncKMode() {  // "Agent chooses" needs an agent (the app's Claude Code, or the server viewer's chat)
+  const ok = st.desktop || st.chatAvailable, agent = $("nKMode").value === "agent" && ok;
+  if (!ok) $("nKMode").value = "fixed";
+  const ab = document.querySelector('.seg[data-for="nKMode"] button[data-v="agent"]');
+  if (ab) { ab.disabled = !ok; ab.title = ok ? "The agent chooses k per region" : "Needs the agent (the app's Ask Agent)"; }
+  syncSeg("nKMode");
+  $("nKWrap").hidden = agent; $("nKHint").hidden = !agent;
+  setLabel($("nRun"), agent ? "Ask the agent to run niches" : "Run niches"); setIcon($("nRun"), agent ? "sparkle" : "play");
+  $("nRun").title = agent ? "The agent chooses k per region from cell density and cell types, runs the niches and names them" : "Compute niches with these settings";
+}
+$("nKMode").onchange = syncKMode;
 
 async function refreshVersion(force) {
   if (!st.sid) return;
@@ -2504,7 +2520,7 @@ turn gray; <b>Show on map</b> zooms the map to them; <b>Clear</b> ends the selec
 <h3>Review and output</h3><ul>
 <li><b>Agent Review</b> (bar on the map): computed checks, checked by the agent on the H&amp;E; the agent's advice with one-click actions; <b>solve</b> hides an item.</li>
 <li><b>Report</b>: the agent writes the annotation report; <b>Save…</b> keeps it as a Markdown file.</li>
-<li><b>Niches</b>: identity, k and number of niches; <b>Run niches</b>, or <b>Agent picks k</b>.</li>
+<li><b>Niches</b>: identity, k and number of niches; <b>Run niches</b>; with <b>k: Agent chooses</b> the agent picks k per region, runs and names them.</li>
 <li><b>Undo</b> steps back one change at a time. <b>Export…</b>: the cell table (CSV, with niche, Leiden and UMAP when
 computed), the registration in use (CSV), or the whole analysis as a Jupyter notebook that runs without this app
 (code with this annotation's parameters, and its results).</li>
@@ -2868,7 +2884,7 @@ function segmented(id) {  // a select shown as a row of buttons (the select keep
   syncSeg(id);
 }
 function syncSeg(id) { document.querySelectorAll(`.seg[data-for="${id}"] button`).forEach((b) => b.classList.toggle("on", b.dataset.v === $(id).value)); }
-segmented("method"); segmented("nIdentity");
+segmented("method"); segmented("nIdentity"); segmented("nKMode");
 function sampleInfo() {  // the Data tab's card: what the open sample is
   const s = st.sample; if (!s) { $("sampleInfo").textContent = "No sample yet"; return; }
   const img = s.image_pending ? "image waiting for its alignment" : !s.image_kind || s.image_kind === "none" ? "no image" : s.image_kind;
@@ -3126,6 +3142,7 @@ async function initConnection(serverRemote) {  // in the app: is this page the s
 }
 api("/api/config").then((c) => {  // the desktop app (or no Claude Code CLI): the conversation happens in Claude's apps
   st.chatAvailable = c.chat; st.desktop = c.desktop; st.platform = c.platform;
+  syncKMode();
   $("build").textContent = c.build ? `build ${c.build}` : "";
   $("claudeBtn").hidden = !c.desktop;
   $("clearAll").hidden = !c.desktop;

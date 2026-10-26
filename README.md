@@ -260,7 +260,7 @@ by Claude show up within a few seconds.
 10. **Niches** (fourth row): places where cells of similar make-up live together. Every cell gets an identity, its
    weights on NMF gene programs (*Identity: NMF programs*, independent of the annotation) or its cell type; the
    identities are averaged over the cell and its *k* nearest cells and clustered (k-means) into the chosen number of
-   niches. **Run niches** uses one k everywhere; **Agent picks k** asks the agent to choose k per drawn region
+   niches. **Run niches** uses one k everywhere (**k: Set k**); with **k: Agent chooses** the same button asks the agent to choose k per drawn region
    from cell density and cell types (or a radius, so neighborhoods cover a similar stretch of tissue in dense and
    sparse areas), run it and name the niches. The result appears as *Color by: niche* (names in the legend) and as
    a `niche` column in Export CSV. On SCP2927 section 147328 (356,629 cells) a run takes about 6 s (1.5 s once the
