@@ -49,7 +49,7 @@ Click **Import…** in the app (or use the commands below). It has three tabs, a
 
 | tab | what it takes |
 |---|---|
-| **New sample** | the cells. A Xenium output folder (`cells.parquet` or `cells.csv.gz` and `cell_feature_matrix.h5` or `cell_feature_matrix/`; control probes are dropped; its DAPI image `morphology_focus/` is shown until an H&E is aligned), or AnnData file(s) with raw counts (layer `counts`, or `X`) and cell centroids in micrometers (`obs` columns `x_centroid`/`y_centroid` or `x`/`y`, or `obsm["spatial"]`); several files (e.g. one per lineage) are merged and cell type labels in them are ignored. The dialog lists the h5ad's columns to pick the section when a file holds several. |
+| **New sample** | the cells. A Xenium output folder (`cells.parquet` or `cells.csv.gz` and `cell_feature_matrix.h5` or `cell_feature_matrix/`; control probes are dropped; its DAPI image `morphology_focus/` is shown until an H&E is aligned), or AnnData file(s) with raw counts (layer `counts`, `X`, or `raw.X` when `X` is normalized, as scanpy leaves it) and cell centroids in micrometers (`obs` columns `x_centroid`/`y_centroid` or `x`/`y`, or `obsm["spatial"]`); several files (e.g. one per lineage) are merged and cell type labels in them are ignored. The dialog lists the h5ad's columns to pick the section when a file holds several. |
 | **Image** | the H&E (or a fluorescence image) of the selected sample, as a pyramidal TIFF / OME-TIFF. |
 | **Registration** | an affine CSV with columns `a11,a12,a21,a22,tx,ty` (`px = a11*x + a12*y + tx`, `py = a21*x + a22*y + ty`; cell um to image full-resolution pixels; with one row per section, give the section value) or a Xenium Explorer alignment matrix (3x3 CSV, image pixels to morphology pixels). |
 

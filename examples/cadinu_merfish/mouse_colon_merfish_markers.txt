@@ -1,0 +1,29 @@
+Epithelial: Vil1+ Itgb2-
+  Stem cells: Lgr5|Ascl2|Smoc2+ Axin2+ Rnf43+ Mki67-
+  Transit-amplifying cells: Mki67+ Cenpf+ Foxm1+ Pcna+
+  Goblet cells: Spdef+ Atoh1+ Muc4+ Mki67-
+  Colonocytes: Cldn23|Lgals2|Nox1+ Cldn4+ Mki67- Spdef-
+  Enteroendocrine cells: Neurod1+ Neurog3+ Isl1+
+  Tuft cells: Pou2f3+ Dclk1+ Il25+
+Immune: Ptprc|Itgb2|Rac2+ Vil1-
+  T cells: Cd3e|Cd3d|Trdc+ Cd2+
+    CD4 T cells: Cd4+ Cd40lg+ Cd8a-
+    Tregs: Foxp3+ Ctla4+ Il2ra+
+    CD8 T cells: Cd8a|Cd8b1+ Cd4-
+    gd T cells: Trdc+ Cd4- Cd8b1-
+  ILCs and NK cells: Ncr1|Klrb1c|Rorc+ Cd3e-
+  B cells: Cd19|Ms4a1|Cd79a|Pax5+ Prdm1-
+  Plasma cells: Prdm1+ Tnfrsf17+ Pou2af1+ Ms4a1-
+  Macrophages: Csf1r+ Adgre1+ Mrc1|Cd163+ Itgax-
+  Dendritic cells: Itgax+ Xcr1|Clec9a|Ccr7|Zbtb46+
+  Neutrophils: Csf3r+ Cxcr2+ Mmp8|Mmp9+
+  Mast cells: Kit+ Fcer1a+ Cma1+
+Fibroblasts: Col1a2+ Dpt+ Pdgfra+ Flnc-
+Smooth muscle cells: Flnc+ Tnnt2+ Tagln+ Pdgfra-
+Pericytes: Notch3+ Cspg4+ Pdgfrb+ Pecam1-
+Endothelial: Pecam1|Cdh5|Kdr|Esam+ Acvrl1+
+  Blood vessel EC: Kdr+ Esam+ Lyve1-
+  Lymphatic EC: Lyve1+ Prox1+ Flt4+ Ccl21a+
+Enteric glia: Gfap+ Ncam1+ Mpz|Ngfr+
+Enteric neurons: Tubb3+ Chat|Nos1+ L1cam+ Nrcam+
+Interstitial cells of Cajal: Kit+ Itgb2- Fcer1a-

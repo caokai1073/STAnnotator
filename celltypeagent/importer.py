@@ -5,7 +5,7 @@
   Xenium  celltypeagent import-xenium --name ln1 --xenium /path/to/output-XETG... [--he he.ome.tif --registration
                                he_imagealignment.csv]
 
-h5ad: AnnData files with raw counts (layer "counts", or X) and cell coordinates in micrometers (obs
+h5ad: AnnData files with raw counts (layer "counts", X, or raw.X when X is normalized) and cell coordinates in micrometers (obs
   x_centroid/y_centroid, x/y, or obsm["spatial"]). Several files (e.g. one per lineage) are merged; cell type
   annotations in them are ignored.
 Xenium: the output folder of the Xenium instrument / Xenium Ranger: cells.parquet or cells.csv.gz, and
@@ -91,11 +91,32 @@ def _rows_matrix(h, path, rows, n_cols):
     return sp.csr_matrix(g[np.sort(rows)] if len(rows) else np.zeros((0, n_cols)))
 
 
+def _is_counts(h, path):
+    """Whether the matrix at path holds whole numbers (raw counts), from a sample of its values."""
+    g = h[path]
+    v = g["data"][:20000] if isinstance(g, h5py.Group) else np.asarray(g[:min(200, g.shape[0])]).ravel()
+    v = v[v != 0]
+    return not len(v) or bool(np.allclose(v, np.round(v)))
+
+
+def _counts_source(h, counts_layer=None):
+    """(matrix path, var group) of the raw counts: the named layer, layers["counts"], X, or raw.X (scanpy keeps the
+    counts there when X is normalized)."""
+    if counts_layer:
+        return f"layers/{counts_layer}", "var"
+    if "layers" in h and "counts" in h["layers"]:
+        return "layers/counts", "var"
+    if not _is_counts(h, "X") and "raw" in h and "X" in h["raw"] and _is_counts(h, "raw/X"):
+        return "raw/X", "raw/var"
+    return "X", "var"
+
+
 def read_h5ad(path, section_column=None, section=None, x_column=None, y_column=None, counts_layer=None,
               region_column=None):
     with h5py.File(path, "r") as h:
         names = _index(h["obs"])
-        genes = _index(h["var"])
+        mpath, vgroup = _counts_source(h, counts_layer)
+        genes = _index(h[vgroup])
         rows = np.arange(len(names))
         if section_column:
             if section_column not in h["obs"]:
@@ -112,8 +133,7 @@ def read_h5ad(path, section_column=None, section=None, x_column=None, y_column=N
                 xy = h["obsm"]["spatial"][:][rows, :2].astype(float)
             else:
                 raise ValueError(f"{path}: no cell coordinates found; pass --x-column / --y-column")
-        layer = counts_layer or ("counts" if "layers" in h and "counts" in h["layers"] else None)
-        X = _rows_matrix(h, f"layers/{layer}" if layer else "X", rows, len(genes)).astype(np.float32)
+        X = _rows_matrix(h, mpath, rows, len(genes)).astype(np.float32)
         regions = _read_column(h["obs"][region_column])[rows] if region_column else None
     if X.nnz and not np.allclose(X.data[:10000], np.round(X.data[:10000])):
         raise ValueError(f"{path}: the matrix is not raw counts; pass --counts-layer with the layer holding counts")
@@ -131,8 +151,8 @@ def inspect_h5ad(paths, max_values=60):
             pair = next(([a, b] for a, b in COORD_COLUMNS if a in obs and b in obs), None)
             files.append({"path": str(p), "n_cells": int(n),
                           "coordinates": pair or ("obsm['spatial']" if "obsm" in h and "spatial" in h["obsm"] else None),
-                          "counts_layer": "counts" if "layers" in h and "counts" in h["layers"] else "X",
-                          "n_genes": int(len(_index(h["var"])))})
+                          "counts_layer": _counts_source(h)[0].replace("layers/", ""),
+                          "n_genes": int(len(_index(h[_counts_source(h)[1]])))})
             for c in obs.keys():
                 if c in ("_index", obs.attrs.get("_index")) or c.startswith("__"):
                     continue
