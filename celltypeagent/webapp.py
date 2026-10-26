@@ -744,15 +744,26 @@ async def api_import(req: Request):
         JOBS[job]["log"].append(msg)
         JOBS[job].update(stage=msg, progress=min(0.95, JOBS[job]["progress"] + 0.15))
 
+    sections = [s for s in (b.get("sections") or []) if s]
+    folders = [f for f in (b.get("folders") or []) if f]
+
     def work():
         try:
-            if b.get("kind") == "xenium":
-                importer.import_xenium(name, b["folder"], he=b.get("he") or None, registration=b.get("registration") or None,
+            if len(sections) > 1 or len(folders) > 1:  # several slices: a project, one sample per slice
+                importer.import_project(name, b.get("kind", "h5ad"), b.get("h5ad") if b.get("kind") == "h5ad" else folders,
+                                        sections=sections, section_column=b.get("section_column") or None,
+                                        he=b.get("he") or None, registration=b.get("registration") or None,
+                                        he_kind=b.get("he_kind") or "H&E", region_column=b.get("region_column") or None,
+                                        description=b.get("description", ""), overwrite=bool(b.get("overwrite")),
+                                        progress=say)
+            elif b.get("kind") == "xenium":
+                importer.import_xenium(name, b.get("folder") or folders[0], he=b.get("he") or None, registration=b.get("registration") or None,
                                        description=b.get("description", ""), overwrite=bool(b.get("overwrite")), progress=say,
                                        he_kind=b.get("he_kind") or "H&E", registration_section=b.get("registration_section") or None)
             else:
                 importer.import_sample(name, b["h5ad"], b.get("he") or None, b.get("registration") or None, b.get("section_column") or None,
-                                       b.get("section") or None, region_column=b.get("region_column") or None,
+                                       b.get("section") or (sections[0] if sections else None),
+                                       region_column=b.get("region_column") or None,
                                        description=b.get("description", ""), overwrite=bool(b.get("overwrite")), progress=say,
                                        he_kind=b.get("he_kind") or "H&E", registration_section=b.get("registration_section") or None)
             JOBS[job].update(progress=1.0, stage="done", done=True)
@@ -774,9 +785,15 @@ def api_samples(req):
                          "image_pending": meta.get("image_pending"), "registration_by": meta.get("registration_by"),
                          "has_registration": bool(meta.get("registration_affine")),
                          "can_undo_placement": bool(meta.get("placement_previous")),
+                         "project": meta.get("project"), "metadata": meta.get("metadata") or {},
                          "sessions": mine.sort_values("created_at", ascending=False)[["session_id", "created_at", "n_versions", "method"]]
                          .to_dict("records") if len(mine) else []})
     return _json(rows)
+
+
+def api_projects(req):
+    from . import projects
+    return _json(projects.list_projects())
 
 
 def api_he_info(req):
@@ -1579,6 +1596,7 @@ def build_app(port):
         Route("/", index), Route("/review", review_page),
         Mount("/static", StaticFiles(directory=STATIC)),
         Route("/api/samples", api_samples),
+        Route("/api/projects", api_projects),
         Route("/api/config", api_config),
         Route("/api/viewer/state", api_viewer_state, methods=["POST"]),
         Route("/api/viewer/request", api_viewer_request),

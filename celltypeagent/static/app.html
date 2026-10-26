@@ -35,6 +35,16 @@ header.collapsed .hmini { display: flex; }
 .fl select { color: var(--ink); }
 #sample { min-width: 220px; } #session { min-width: 250px; } #method { min-width: 180px; }
 .sep { width: 1px; height: 22px; background: var(--line); flex: none; }
+.slnav { display: inline-flex; gap: 4px; }
+.slnav button { padding: 4px 8px; }
+.seclist { display: flex; flex-wrap: wrap; gap: 4px 14px; max-height: 120px; overflow: auto; font-size: 12.5px; padding: 4px 0; }
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; padding: 10px 14px 14px;
+           max-height: 75vh; overflow: auto; }
+.gallery .tile { border: 1px solid var(--line); border-radius: 8px; padding: 6px; cursor: pointer; background: var(--panel); }
+.gallery .tile:hover { border-color: var(--accent); }
+.gallery .tile.cur { box-shadow: 0 0 0 2px var(--accent); }
+.gallery canvas { width: 100%; height: 170px; display: block; background: #fafafa; border-radius: 4px; }
+.gallery .tt { font-size: 12px; font-weight: 600; margin-top: 4px; } .gallery .ts { font-size: 11px; color: var(--muted); }
 .num { width: 62px; }
 #nicheinfo, #einfo { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .nslot { flex: 1; min-width: 0; position: relative; display: flex; align-items: center; height: 30px; }
@@ -221,6 +231,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
   <div class="hrow r1">
     <div class="cap"><h1>Spatial Annotator</h1><span id="build" class="buildtag"></span></div>
     <label class="fl">Sample <select id="sample"></select></label>
+    <span id="slNav" class="slnav" hidden><button id="slPrev" title="Previous slice of the project ([)">◀</button><button id="slNext" title="Next slice of the project (])">▶</button>
+      <button id="slGallery" title="All slices of the project side by side">Slices…</button></span>
     <button id="importBtn" title="Add a sample (a Xenium output folder or h5ad), then its image and registration">Import…</button>
     <button id="clearAll" class="danger" hidden title="Delete every sample with all its annotations and chats for good, to import from scratch">Remove all…</button>
     <span class="sep"></span>
@@ -414,13 +426,15 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <label><input type="radio" name="imKind" value="h5ad"> h5ad</label>
     </div>
     <div id="imX">
-      <div class="frow"><span>Xenium folder</span><input type="text" id="imFolder" placeholder="the instrument's output folder (output-XETG…)"><button data-pick="folder" data-target="imFolder">Choose…</button></div>
+      <div class="frow"><span>Xenium folder(s)</span><textarea id="imFolder" rows="2" placeholder="the instrument's output folder (output-XETG…); one per line for several slices (a project)"></textarea><button data-pick="folder" data-multi="1" data-target="imFolder">Choose…</button></div>
       <div class="hint" id="imXinfo"></div>
     </div>
     <div id="imH" hidden>
       <div class="frow"><span>h5ad file(s)</span><textarea id="imH5" rows="2" placeholder="one path per line; several files (e.g. one per lineage) are merged"></textarea><button data-pick="h5ad" data-multi="1" data-target="imH5">Choose…</button></div>
       <div class="hint" id="imHinfo"></div>
-      <div class="frow"><span>Section</span><select id="imSecCol"><option value="">the file holds one section</option></select><select id="imSec" hidden></select></div>
+      <div class="frow"><span>Section</span><select id="imSecCol"><option value="">the file holds one section</option></select><span></span></div>
+      <div class="frow" id="imSecRow" hidden><span>Sections</span><div><label class="hint"><input type="checkbox" id="imSecAll"> all</label>
+        <div class="seclist" id="imSecList"></div></div><span></span></div>
       <div class="frow"><span>Region column</span><select id="imRegCol"><option value="">none (draw regions yourself)</option></select><span></span></div>
     </div>
     <div class="frow"><span>Image</span><span class="choice">
@@ -435,7 +449,8 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <button id="imNewAlign" disabled title="Choose an image first">Align with Claude</button></span><span></span></div>
     <div class="frow" id="imRegRow" hidden><span></span><input type="text" id="imNewReg" placeholder="affine CSV (a11,a12,a21,a22,tx,ty) or Xenium Explorer alignment (3x3)"><button data-pick="csv" data-target="imNewReg">Choose…</button></div>
     <div class="frow" id="imRegSecRow" hidden><span>Registration row</span><input type="text" id="imNewRegSec" placeholder="only if the file has one row per section; default: the section chosen above"><span></span></div>
-    <div class="frow"><span>Sample name</span><input type="text" id="imName" placeholder="short id without spaces"><span></span></div>
+    <div class="frow"><span id="imNameLabel">Sample name</span><input type="text" id="imName" placeholder="short id without spaces"><span></span></div>
+    <div class="hint" id="imProjectHint" hidden></div>
     <div class="frow"><span>Description</span><input type="text" id="imDesc" placeholder="optional, e.g. tissue and condition"><span></span></div>
     <div class="row" style="margin-top:6px"><span class="hint" id="imStatus"></span><span class="spacer"></span><button id="imGo" class="primary">Import</button></div>
     <details id="imExisting" class="clcard" style="margin-top:12px">
@@ -507,6 +522,10 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <div class="row"><span class="spacer"></span><button id="xpReg" class="primary">Save registration…</button></div></div>
     <div class="hint" id="xpStatus"></div>
   </div>
+</dialog>
+<dialog id="glDlg" style="width:min(1100px,96vw)">
+  <div class="dh"><b id="glTitle">Slices</b><span class="hint" id="glInfo" style="margin-left:8px"></span><span class="spacer"></span><button id="glClose">Close</button></div>
+  <div class="gallery" id="glGrid"></div>
 </dialog>
 <dialog id="hpDlg" style="width:min(760px,95vw)">
   <div class="dh"><b>Spatial Annotator</b><span class="spacer"></span>
@@ -678,8 +697,9 @@ async function refreshOverlay() {
 try { initGL(); } catch (e) { GL.ok = false; console.warn("WebGL unavailable, using overlay tiles:", e); }
 
 // ---------------- samples and annotation ----------------
-async function loadSamples(select) {
+async function loadSamples(select, project) {
   st.samples = await api("/api/samples");
+  st.projects = await api("/api/projects").catch(() => []);
   const sel = $("sample"); sel.textContent = "";
   if (!st.samples.length) {  // a fresh install: nothing imported yet
     $("empty").firstElementChild.textContent = "No samples yet. Click Import… to add a Xenium output folder or h5ad files (with or without an image).";
@@ -688,12 +708,24 @@ async function loadSamples(select) {
   }
   $("annotate").disabled = false;
   $("empty").firstElementChild.innerHTML = "No cell types yet. Check the marker list (<b>Markers…</b>) and click <b>Annotate</b>.";
-  st.samples.forEach((s) => {
-    const o = document.createElement("option");
-    o.value = s.sample_id;
-    o.textContent = [s.sample_id, s.description || [s.disease, s.location].filter(Boolean).join(" · "), `${s.n_cells.toLocaleString()} cells`].filter(Boolean).join(" · ");
-    sel.append(o);
+  const label = (s) => [s.sample_id, s.description || [s.disease, s.location].filter(Boolean).join(" · "), `${s.n_cells.toLocaleString()} cells`].filter(Boolean).join(" · ");
+  const inProject = new Set();
+  st.projects.forEach((p) => {  // the slices of a project together, with what distinguishes them
+    const g = document.createElement("optgroup"); g.label = `project ${p.name} (${p.samples.length} slices)`;
+    p.samples.forEach((id) => {
+      const s = st.samples.find((x) => x.sample_id === id); if (!s) return;
+      inProject.add(id);
+      const o = document.createElement("option"); o.value = id;
+      const md = metaText(s.metadata);
+      o.textContent = [p.slices[id] ? p.slices[id].section : id, md, `${s.n_cells.toLocaleString()} cells`].filter(Boolean).join(" · ");
+      g.append(o);
+    });
+    sel.append(g);
   });
+  st.samples.filter((s) => !inProject.has(s.sample_id)).forEach((s) => {
+    const o = document.createElement("option"); o.value = s.sample_id; o.textContent = label(s); sel.append(o);
+  });
+  if (project) { const p = st.projects.find((x) => x.project_id === project); if (p) select = p.samples[0]; }
   const url = new URLSearchParams(location.search);  // links from the agent: ?sample=...&session=...
   const want = select || url.get("sample") || load("sample");
   if (st.samples.some((s) => s.sample_id === want)) sel.value = want;
@@ -756,14 +788,16 @@ async function selectSample(id) {
   $("path").title = `bundle: ${st.sample.bundle_dir}\nsource: ${st.sample.source_dir}\nH&E: ${st.sample.he_path}`;
   closeSession();
   await openHE(id);
-  alignBar(); miniInfo();
+  alignBar(); miniInfo(); sliceNav();
   fillModes(null); refreshOverlay();  // the cells in gray until there is an annotation
   if (token !== st.switchToken) return;
   // reopen the session last used on this sample, else its most recent one
   const ids = st.sample.sessions.map((x) => x.session_id);
   // reopen an annotation only if it was open on this sample earlier in this visit; a fresh page shows none
   const remembered = st.openedThisVisit[id];
-  const sid = ids.includes(remembered) ? remembered : null;
+  let sid = ids.includes(remembered) ? remembered : null;
+  if (!sid && st.sliceSwitch && ids.length) sid = ids[0];  // stepping through a project: its latest annotation
+  st.sliceSwitch = false;
   fillSessions(sid);
   setMarkers("", "");  // no default list: import or load one for this sample
   if (sid) await startAnnotation("continue", sid, token);
@@ -843,6 +877,7 @@ async function startAnnotation(mode, sid, token = st.switchToken) {
 
 async function openSession(sid) {
   st.sid = sid;
+  if (st.wantMode) { st.mode = st.wantMode; st.wantMode = null; }  // keep the color mode across slices
   $("empty").style.display = "none";
   ["undo", "export", "send", "plaus", "report", "nRun", "eRun"].forEach((b) => ($(b).disabled = false));
   $("nClaude").disabled = !st.desktop && !st.chatAvailable;
@@ -1922,7 +1957,7 @@ function openImport() {
   $("imStatus").textContent = native() ? "" : "Paste full paths (files on the computer running this viewer).";
   $("imDlg").showModal();
 }
-document.querySelectorAll("input[name=imKind]").forEach((r) => (r.onchange = () => { $("imX").hidden = imKind() !== "xenium"; $("imH").hidden = imKind() !== "h5ad"; imForm(); }));
+document.querySelectorAll("input[name=imKind]").forEach((r) => (r.onchange = () => { $("imX").hidden = imKind() !== "xenium"; $("imH").hidden = imKind() !== "h5ad"; imForm(); imSections(); }));
 document.querySelectorAll("#imDlg [data-pick]").forEach((b) => (b.onclick = async () => {
   const paths = await native().pick(b.dataset.pick, !!b.dataset.multi);
   if (!paths.length) return;
@@ -1931,13 +1966,13 @@ document.querySelectorAll("#imDlg [data-pick]").forEach((b) => (b.onclick = asyn
 }));
 const baseName = (p) => p.replace(/[\\/]+$/, "").split(/[\\/]/).pop().replace(/\.(h5ad|ome\.tif|tif)$/i, "").replace(/[^A-Za-z0-9_.-]+/g, "_").slice(0, 40);
 $("imFolder").onchange = async () => {
-  const folder = $("imFolder").value.trim(); if (!folder) return;
-  $("imXinfo").textContent = "checking…";
+  const folders = chosenFolders(), folder = folders[0]; if (!folder) return;
+  $("imXinfo").textContent = "checking…"; imSections();
   try {
     const r = await post("/api/import/inspect", { kind: "xenium", folder });
-    $("imXinfo").textContent = `${r.n_cells.toLocaleString()} cells` + (r.panel_name ? ` · ${r.panel_name}` : "") +
+    $("imXinfo").textContent = (folders.length > 1 ? `${folders.length} folders; the first: ` : "") + `${r.n_cells.toLocaleString()} cells` + (r.panel_name ? ` · ${r.panel_name}` : "") +
       ` · pixel ${r.pixel_size_um} µm · ` + (r.morphology ? "DAPI image found" : "no morphology image (cells on a blank background unless you add an H&E)");
-    if (!$("imName").value) $("imName").value = baseName(folder);
+    if (!$("imName").value) $("imName").value = baseName(folders.length > 1 ? folder.replace(/[\\/][^\\/]+[\\/]?$/, "") : folder);
   } catch (e) { $("imXinfo").textContent = e.message; }
 };
 $("imH5").onchange = async () => {
@@ -1955,12 +1990,28 @@ $("imH5").onchange = async () => {
     if (!$("imName").value) $("imName").value = baseName(h5ad[0]);
   } catch (e) { $("imHinfo").textContent = e.message; }
 };
-$("imSecCol").onchange = () => {
+$("imSecCol").onchange = () => {  // the sections of the chosen column, each with a check box (several: a project)
   const vals = (st.imCols || {})[$("imSecCol").value] || [];
-  const sel = $("imSec"); sel.textContent = ""; sel.hidden = !vals.length;
-  vals.forEach((v) => { const o = document.createElement("option"); o.value = v; o.textContent = v; sel.append(o); });
+  const box = $("imSecList"); box.textContent = ""; $("imSecRow").hidden = !vals.length; $("imSecAll").checked = false;
+  vals.forEach((v) => {
+    const l = document.createElement("label"); const c = document.createElement("input");
+    c.type = "checkbox"; c.value = v; c.onchange = imSections; l.append(c, ` ${v}`); box.append(l);
+  });
+  imSections();
 };
-$("imSec").onchange = () => { if ($("imSec").value) $("imName").value = $("imSec").value.replace(/[^A-Za-z0-9_.-]+/g, "_"); };
+$("imSecAll").onchange = () => { document.querySelectorAll("#imSecList input").forEach((c) => (c.checked = $("imSecAll").checked)); imSections(); };
+const chosenSections = () => [...document.querySelectorAll("#imSecList input:checked")].map((c) => c.value);
+const chosenFolders = () => $("imFolder").value.split("\n").map((s) => s.trim()).filter(Boolean);
+function imSections() {  // one section: a sample; several sections or folders: a project of slices
+  const secs = imKind() === "h5ad" ? chosenSections() : chosenFolders();
+  const many = secs.length > 1;
+  $("imNameLabel").textContent = many ? "Project name" : "Sample name";
+  $("imProjectHint").hidden = !many;
+  $("imProjectHint").textContent = many ? `${secs.length} slices, one sample each (named <project>_<section>); with one image file per slice, give a table (CSV/TSV: section, image path) as the image; a registration file has one row per section.` : "";
+  if (!many && secs.length === 1 && imKind() === "h5ad" && !$("imName").value) $("imName").value = secs[0].replace(/[^A-Za-z0-9_.-]+/g, "_");
+  $("imRegSecRow").hidden = $("imRegSecRow").hidden || many;
+}
+$("imFolder").addEventListener("input", imSections);
 $("imClose").onclick = () => $("imDlg").close();
 const imgMode = () => document.querySelector("input[name=imImgMode]:checked").value;
 const regMode = () => document.querySelector("input[name=imRegMode]:checked").value;
@@ -2041,10 +2092,11 @@ async function importSample() {  // returns true when the sample was imported
   const image = imgMode() === "file" ? $("imNewImg").value.trim() : "";
   const registration = regMode() === "file" ? $("imNewReg").value.trim() : "";
   const body = kind === "xenium"
-    ? { kind, name, folder: $("imFolder").value.trim(), description: $("imDesc").value }
+    ? { kind, name, folders: chosenFolders(), description: $("imDesc").value }
     : { kind, name, h5ad: $("imH5").value.split("\n").map((s) => s.trim()).filter(Boolean),
-        section_column: $("imSecCol").value, section: $("imSecCol").value ? $("imSec").value : "",
+        section_column: $("imSecCol").value, sections: $("imSecCol").value ? chosenSections() : [],
         region_column: $("imRegCol").value, description: $("imDesc").value };
+  if (kind === "h5ad" && $("imSecCol").value && !body.sections.length) { $("imStatus").textContent = "Tick the section(s) to import"; return false; }
   Object.assign(body, { he: image, he_kind: $("imNewImgKind").value, registration, registration_section: $("imNewRegSec").value.trim() });
   if (!name) { $("imStatus").textContent = "Give the sample a name"; return false; }
   if (imgMode() === "file" && !image) { $("imStatus").textContent = "Choose the image, or No image"; return false; }
@@ -2059,8 +2111,9 @@ async function importSample() {  // returns true when the sample was imported
       if (j.done) { if (j.error) throw new Error(j.error); break; }
     }
     $("imDlg").close();
-    toast(`Imported ${name}`, 4000);
-    await loadSamples(name);
+    const many = (body.sections || body.folders || []).length > 1;
+    toast(many ? `Imported project ${name}` : `Imported ${name}`, 4000);
+    await loadSamples(many ? null : name, many ? name : null);
     return true;
   } catch (e) { $("imStatus").textContent = e.message; return false; }
   finally { $("imGo").disabled = false; imForm(); }
@@ -2294,6 +2347,70 @@ $("dotsize").oninput = (e) => {  // redraw once the slider rests, not on every s
   store("dotsize", e.target.value);
   if (GL.ok) drawGL(); else { clearTimeout(dotTimer); dotTimer = setTimeout(refreshOverlay, 250); }
 };
+const projectOf = (id) => (st.projects || []).find((p) => p.samples.includes(id));
+const CONDITION = /type|condition|group|disease|stage|day|treat|time|state|genotype/i;
+function metaText(md, n = 3) {  // a slice's metadata, condition-like columns first
+  return Object.entries(md || {}).sort((a, b) => CONDITION.test(b[0]) - CONDITION.test(a[0])).slice(0, n).map(([, v]) => v).join(" · ");
+}
+function sliceNav() {
+  const p = st.sample && projectOf(st.sample.sample_id);
+  $("slNav").hidden = !p;
+  if (!p) return;
+  const i = p.samples.indexOf(st.sample.sample_id);
+  $("slPrev").disabled = i <= 0; $("slNext").disabled = i >= p.samples.length - 1;
+  $("slGallery").title = `All ${p.samples.length} slices of project ${p.name} side by side`;
+}
+async function gotoSlice(id) {
+  if (!id || (st.sample && id === st.sample.sample_id)) return;
+  st.wantMode = st.mode !== "cells" ? st.mode : null; st.sliceSwitch = true;
+  $("sample").value = id; await selectSample(id);
+}
+function stepSlice(d) {
+  const p = st.sample && projectOf(st.sample.sample_id); if (!p) return;
+  gotoSlice(p.samples[p.samples.indexOf(st.sample.sample_id) + d]);
+}
+$("slPrev").onclick = () => stepSlice(-1);
+$("slNext").onclick = () => stepSlice(1);
+async function openGallery() {  // every slice of the project, drawn the same way
+  const p = st.sample && projectOf(st.sample.sample_id); if (!p) return;
+  const mode = st.mode || "type";
+  $("glTitle").textContent = `Project ${p.name}`;
+  $("glInfo").textContent = `${p.samples.length} slices · colored by ${mode === "cells" ? "nothing (no annotation)" : mode.replace("gene:", "")} · click a slice to open it`;
+  const grid = $("glGrid"); grid.textContent = "";
+  $("glDlg").showModal();
+  for (const id of p.samples) {
+    const s = st.samples.find((x) => x.sample_id === id); if (!s) continue;
+    const tile = document.createElement("div"); tile.className = "tile" + (id === st.sample.sample_id ? " cur" : "");
+    const c = document.createElement("canvas"); c.width = 460; c.height = 340;
+    const tt = document.createElement("div"); tt.className = "tt"; tt.textContent = p.slices[id] ? p.slices[id].section : id;
+    const ts = document.createElement("div"); ts.className = "ts";
+    ts.textContent = [metaText(s.metadata), `${s.n_cells.toLocaleString()} cells`].filter(Boolean).join(" · ");
+    tile.append(c, tt, ts); tile.onclick = () => { $("glDlg").close(); gotoSlice(id); };
+    grid.append(tile);
+    drawThumb(c, s, mode).catch(() => {});
+  }
+}
+async function drawThumb(c, s, mode) {
+  const pos = new Float32Array(await (await fetch(`/api/sample/${s.sample_id}/cells.bin`)).arrayBuffer());
+  const sess = (s.sessions || []).filter((x) => USER_METHODS.includes(x.method));
+  let col = null;
+  if (sess.length && mode !== "cells") {
+    const r = await fetch(`/api/s/${sess[0].session_id}/colors.bin?${new URLSearchParams({ version: sess[0].n_versions, mode, only: "" })}`);
+    if (r.ok) col = new Uint8Array(await r.arrayBuffer());
+  }
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (let i = 0; i < pos.length; i += 2) { x0 = Math.min(x0, pos[i]); x1 = Math.max(x1, pos[i]); y0 = Math.min(y0, pos[i + 1]); y1 = Math.max(y1, pos[i + 1]); }
+  const k = Math.min((c.width - 10) / (x1 - x0 || 1), (c.height - 10) / (y1 - y0 || 1));
+  const ox = (c.width - k * (x1 - x0)) / 2, oy = (c.height - k * (y1 - y0)) / 2;
+  const ctx = c.getContext("2d"); ctx.clearRect(0, 0, c.width, c.height);
+  for (let i = 0; i < pos.length / 2; i++) {
+    const a = col ? col[4 * i + 3] : 200; if (!a) continue;
+    ctx.fillStyle = col ? `rgb(${col[4 * i]},${col[4 * i + 1]},${col[4 * i + 2]})` : "#888";
+    ctx.fillRect(ox + k * (pos[2 * i] - x0), oy + k * (pos[2 * i + 1] - y0), 1.4, 1.4);
+  }
+}
+$("slGallery").onclick = () => openGallery();
+$("glClose").onclick = () => $("glDlg").close();
 function miniInfo() {
   const s = st.sample;
   $("miniInfo").textContent = s ? [s.sample_id, st.sid ? `v${st.version}` : "no annotation open"].join(" · ") : "";
@@ -2408,9 +2525,11 @@ $("xpCsv").onclick = () => exportAs("csv");
 $("xpNb").onclick = () => exportAs("notebook");
 $("xpReg").onclick = () => exportAs("registration");
 document.addEventListener("keydown", (e) => {
-  if ($("mkDlg").open || $("rpDlg").open || $("hpDlg").open || $("xpDlg").open || $("nameDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
+  if ($("mkDlg").open || $("rpDlg").open || $("hpDlg").open || $("xpDlg").open || $("glDlg").open || $("nameDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
   if (e.key === "h") $("hide").click();
   if (e.key === "e") $("hideHE").click();
+  if (e.key === "[") stepSlice(-1);
+  if (e.key === "]") stepSlice(1);
   if (e.key === "t") setHeader(!document.querySelector("header").classList.contains("collapsed"));
   if (st.editing && e.key === "Escape") stopEdit();
   if (st.editing && e.key === "Enter") { e.preventDefault(); saveEdit(); }
