@@ -209,6 +209,18 @@ def viewer_state():
         return {}
 
 
+def write_viewer_selection(sel):
+    """The cells selected in the viewer ({sample_id: rows}, or None), as of the last analysis run there."""
+    _vfile("viewer_selection.json").write_text(json.dumps({"selection": sel, "updated": time.time()}))
+
+
+def viewer_selection():
+    try:
+        return json.loads(_vfile("viewer_selection.json").read_text()).get("selection")
+    except (OSError, ValueError):
+        return None
+
+
 def viewer_alive(state=None):
     """The viewer recorded in viewer.json answers on its port."""
     import urllib.request

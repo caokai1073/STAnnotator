@@ -7,7 +7,7 @@ embed(): PCA of the pooled cells (optionally corrected for slice-to-slice differ
   Leiden and UMAP on all cells at once; each slice keeps its part (embedding/ of the sample).
 niches(): every cell's identity (NMF programs fitted on the pooled cells, or its cell type) averaged over its
   neighbors within its own slice, then one k-means over all slices; each slice's annotation keeps its part.
-composition(): the share of each cell type (or lineage, niche, Leiden cluster) per slice, for comparing them.
+Comparing the slices (composition, DE genes) is in analysis.py.
 """
 import json, time
 import numpy as np, pandas as pd, scipy.sparse as sp
@@ -194,50 +194,3 @@ def niches(pid, k=15, n_niches=8, identity="nmf", n_programs=20, progress=None):
                    "seconds": 0, "names": {}, "project": pid}, open(d / "run.json", "w"), indent=1)
     say(1.0, "done")
     return {"run": run, "sessions": sess}
-
-
-def _n_cells(sid):
-    import pyarrow.parquet as pq
-    return int(pq.ParquetFile(config.SAMPLES / sid / "cells.parquet").metadata.num_rows)
-
-
-def composition(pid, mode="type"):
-    """Share of each cell type / lineage / niche / Leiden cluster per slice (latest annotations), with the slices'
-    metadata: {"slices": [{sample, section, metadata, n_cells, shares: {key: share}}], "keys": [...]}."""
-    from .session import Session
-    from . import embedding, niches as nmod
-    p = projects.load(pid)
-    sess = latest_sessions(pid)
-    rows, keys = [], {}
-    for sid in p["samples"]:
-        info = {"sample": sid, "section": p["slices"].get(sid, {}).get("section", sid),
-                "metadata": p["slices"].get(sid, {}).get("metadata", {})}
-        missing = lambda why: rows.append({**info, "n_cells": _n_cells(sid), "shares": {}, "missing": why})
-        if mode == "leiden":
-            lab = embedding.leiden(sid)
-            if lab is None:
-                missing("no PCA + UMAP")
-                continue
-            vals = np.char.add("L", (lab + 1).astype(str))
-        else:
-            if sid not in sess:
-                missing("no annotation")
-                continue
-            s = Session(sess[sid])
-            if mode == "type":
-                vals = s.labels()
-            elif mode == "lineage":
-                vals = s.lineage_labels()
-            elif mode == "niche":
-                meta, lab = nmod.current(s)
-                if meta is None:
-                    missing("no niches")
-                    continue
-                vals = np.array(nmod.niche_names(s), dtype=object)[lab]
-            else:
-                raise ValueError("mode must be type, lineage, niche or leiden")
-        vc = pd.Series(vals).value_counts(normalize=True)
-        for k_, v in vc.items():
-            keys[k_] = keys.get(k_, 0) + v
-        rows.append({**info, "n_cells": int(len(vals)), "shares": {str(k_): round(float(v), 4) for k_, v in vc.items()}})
-    return {"project": pid, "mode": mode, "slices": rows, "keys": [k_ for k_, _ in sorted(keys.items(), key=lambda x: -x[1])]}

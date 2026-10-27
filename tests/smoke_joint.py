@@ -1,12 +1,12 @@
 """A project of two slices (the example MERFISH slice cut in halves): import, joint annotation, joint embedding with
-Harmony, joint niches, composition. Runs in a temporary data folder."""
+Harmony, joint niches, composition and DE genes. Runs in a temporary data folder."""
 import os, shutil, tempfile, time
 import h5py
 import numpy as np
 EX = os.path.join(os.path.dirname(__file__), "..", "examples", "cadinu_merfish")
 home = tempfile.mkdtemp(prefix="stagent_joint_")
 os.environ["STAGENT_HOME"] = home
-from stagent import importer, joint, projects
+from stagent import analysis, importer, joint, projects
 try:
     h5 = os.path.join(home, "two.h5ad")
     shutil.copy(os.path.join(EX, "cadinu_merfish_D0_m3a_1_slice_2.h5ad"), h5)
@@ -29,8 +29,14 @@ try:
     t = time.time()
     joint.niches("demo", n_niches=5)
     print("joint niches:", f"{time.time() - t:.0f}s")
+    c = analysis.cells(pid="demo")
     for mode in ("lineage", "niche", "leiden"):
-        c = joint.composition("demo", mode)
-        print(mode, {r["section"]: (r["n_cells"], {k: r["shares"].get(k, 0) for k in c["keys"][:3]}) for r in c["slices"]})
+        x = analysis.crosstab(c, "slice", mode)
+        print(mode, {r["row"]: (r["n_cells"], {k: r["shares"].get(k, 0) for k in x["keys"][:3]}) for r in x["table"]})
+    t = time.time()
+    d = analysis.de(c, "niche", c.options()["niche"][0], top=5)
+    print("DE of", d["group"], [g["gene"] for g in d["up"]], d["per_slice_check"], f"{time.time() - t:.0f}s")
+    m = analysis.markers(c, "leiden", top=3)
+    print("top genes per Leiden cluster:", {g["group"]: [x["gene"] for x in g["genes"]] for g in m["groups"][:4]})
 finally:
     shutil.rmtree(home)

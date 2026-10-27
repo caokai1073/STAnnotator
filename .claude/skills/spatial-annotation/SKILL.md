@@ -112,6 +112,16 @@ apply here, the region assignment is wrong, a technical artifact, or a cell stat
   correct the registration, or ask you to do something).
 - A report: `annotation_facts` plus the review results, saved with `write_report` (the viewer's Report button).
 
+## Comparing groups and slices
+
+- `analysis_groupings` lists what cells can be grouped by (cell type, lineage, region, niche, leiden, selection,
+  slice, slice metadata) with their values; `scope="project"` pools the latest annotation of every slice.
+- `de_genes` (one group vs the rest or another group, optionally `within` a subset), `group_markers` (top genes of
+  every group), `composition` (one grouping split over another, with enrichment; per-slice shares for metadata rows).
+- Rank genes by AUC and fold change, not p-values. With several slices trust what holds in every slice; with one
+  slice per side say that a slice effect cannot be told from a group effect. Genes of neighboring cell types may be
+  segmentation spillover. Say which claims come from the data and which from general knowledge.
+
 ## History and output
 
 - Every change is a version. Mention version numbers. Offer `revert` when the user is unhappy with a change;

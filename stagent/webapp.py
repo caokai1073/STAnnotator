@@ -866,21 +866,95 @@ async def api_project_niches(req: Request):
                                                       b.get("identity", "nmf"), int(b.get("n_programs", 20)), say))
 
 
-def api_project_composition(req):
-    from . import joint
+# ---------------- differential expression and composition ----------------
+ANALYSES = LRU(8)   # recent results, for their CSV
+
+
+def _analysis_cells(b):
+    """The cell table of an analysis request: {session, version, scope ("slice" or "project"), selection}; the
+    selection ({sample_id: rows}) is also kept for the agent's tools."""
+    from . import analysis
+    s = review_app._session(b["session"])
+    sel = b.get("selection") or None
+    claudelink.write_viewer_selection(sel)
+    if b.get("scope") == "project":
+        from . import projects
+        pid = projects.project_of(s.sample_id)
+        if not pid:
+            raise ValueError("this sample is not part of a project")
+        return analysis.cells(pid=pid, selection=sel, get_session=review_app._session)
+    v = b.get("version")
+    return analysis.cells(s, None if v is None else int(v), selection=(sel or {}).get(s.sample_id) if sel else None)
+
+
+async def api_analysis_options(req: Request):
+    b = await req.json()
     try:
-        return _json(joint.composition(req.path_params["pid"], req.query_params.get("mode", "type")))
+        c = await asyncio.to_thread(_analysis_cells, b)
     except ValueError as e:
         return _json({"error": str(e)}, 400)
+    return _json({"groupings": c.options(), "missing": c.missing, "n_cells": len(c.labels)})
 
 
-def api_project_composition_csv(req):
-    from . import joint
-    c = joint.composition(req.path_params["pid"], req.query_params.get("mode", "type"))
-    df = pd.DataFrame([{"slice": r["section"], **r["metadata"], "n_cells": r["n_cells"], "note": r.get("missing", ""), **r["shares"]}
-                       for r in c["slices"]]).fillna(0)
-    return Response(df.to_csv(index=False), media_type="text/csv",
-                    headers={"Content-Disposition": f'attachment; filename="{c["project"]}_{c["mode"]}_composition.csv"'})
+async def api_analysis_run(req: Request):
+    """kind "de" (by, group, reference, within), "markers" (by, within) or "composition" (rows, cols, within)."""
+    from . import analysis
+    b = await req.json()
+
+    def work():
+        c = _analysis_cells(b)
+        within = {k: v for k, v in (b.get("within") or {}).items() if v not in (None, "", [])}
+        if b["kind"] == "de":
+            r = analysis.de(c, b["by"], b["group"], b.get("reference") or "rest", within, top=60, full=True)
+            table = r.pop("table")
+        elif b["kind"] == "markers":
+            r = analysis.markers(c, b["by"], top=10, within=within)
+            table = pd.DataFrame([{"group": g["group"], "n_cells": g["n_cells"], **x} for g in r["groups"] for x in g["genes"]])
+        elif b["kind"] == "composition":
+            r = analysis.crosstab(c, b["rows"], b["cols"], within)
+            table = pd.DataFrame([{b["rows"]: x["row"], "n_cells": x["n_cells"], **x["shares"]} for x in r["table"]]).fillna(0)
+        else:
+            raise ValueError("kind must be de, markers or composition")
+        key = uuid.uuid4().hex[:12]
+        ANALYSES[key] = table
+        while len(ANALYSES) > ANALYSES.n:
+            ANALYSES.popitem(last=False)
+        return {**r, "id": key}
+    try:
+        return _json(await asyncio.to_thread(work))
+    except (ValueError, KeyError) as e:
+        return _json({"error": str(e).strip("'")}, 400)
+
+
+ANALYSIS_ASK = {
+    "de": ("Interpret the DE genes I found in the app: de_genes(by={by}, group={group}, reference={reference}, "
+           "within={within}, scope={scope}). Say in a few lines what sets the group apart, which genes point to which "
+           "cell states, programs or neighbors (possibly spillover), how consistent it is across slices, and what to "
+           "check next."),
+    "markers": ("Interpret the top genes per group I found in the app: group_markers(by={by}, within={within}, "
+                "scope={scope}). Say in a few lines what each group seems to be and which groups look alike."),
+    "composition": ("Interpret the composition I looked at in the app: composition(rows={rows}, cols={cols}, "
+                    "within={within}, scope={scope}). Say in a few lines which differences stand out (enrichment), "
+                    "whether they hold in every slice, and what they may mean for the tissue."),
+}
+ANALYSIS_ASK_END = " Separate what the data show from what general knowledge suggests. Do not change the annotation."
+
+
+async def api_claude_analysis(req: Request):
+    b = await req.json()
+    s = review_app._session(b["session"])
+    q = b["request"]
+    args = {k: json.dumps(q.get(k), ensure_ascii=False) for k in ("by", "group", "reference", "rows", "cols", "scope")}
+    args["within"] = json.dumps(q.get("within") or None, ensure_ascii=False)
+    return _json(_ask_claude(s, ANALYSIS_ASK[q["kind"]].format(**args) + ANALYSIS_ASK_END))
+
+
+def api_analysis_csv(req):
+    t = ANALYSES.get(req.path_params["key"])
+    if t is None:
+        return _json({"error": "this result is gone: run it again"}, 404)
+    return Response(t.to_csv(index=False), media_type="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="{req.query_params.get("name", "analysis.csv")}"'})
 
 
 async def api_save_text(req: Request):
@@ -1715,8 +1789,10 @@ def build_app(port):
         Route("/api/project/{pid}/annotate", api_project_annotate, methods=["POST"]),
         Route("/api/project/{pid}/embed", api_project_embed, methods=["POST"]),
         Route("/api/project/{pid}/niches", api_project_niches, methods=["POST"]),
-        Route("/api/project/{pid}/composition", api_project_composition),
-        Route("/api/project/{pid}/composition.csv", api_project_composition_csv),
+        Route("/api/analysis/options", api_analysis_options, methods=["POST"]),
+        Route("/api/analysis/run", api_analysis_run, methods=["POST"]),
+        Route("/api/analysis/{key}.csv", api_analysis_csv),
+        Route("/api/claude/analysis", api_claude_analysis, methods=["POST"]),
         Route("/api/config", api_config),
         Route("/api/viewer/state", api_viewer_state, methods=["POST"]),
         Route("/api/viewer/request", api_viewer_request),

@@ -47,13 +47,24 @@ header.collapsed .hmini { display: flex; }
 .sep { width: 1px; height: 22px; background: var(--line); flex: none; }
 .slnav { display: inline-flex; gap: 4px; }
 .slnav button { padding: 4px 8px; }
-.cmprow { display: grid; grid-template-columns: 230px 1fr 70px; gap: 8px; align-items: center; margin: 3px 0; font-size: 12px; }
+.cmprow { display: grid; grid-template-columns: 230px 1fr 104px; gap: 8px; align-items: center; margin: 3px 0; font-size: 12px; }
 .cmprow .bar { display: flex; height: 18px; border-radius: 3px; overflow: hidden; background: var(--line); }
 .cmprow .bar span { height: 100%; }
 .cmprow .bar.none { align-items: center; padding-left: 8px; font-size: 11px; color: var(--muted); }
 .cmpgroup { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 10px 0 2px; }
 .cmplegend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 12px; font-size: 12px; }
 .cmplegend span.sw { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+#anBody { max-height: 62vh; overflow: auto; }
+table.an { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+table.an th { text-align: right; font-weight: 600; color: var(--muted); padding: 5px 8px; border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; background: var(--panel); white-space: nowrap; }
+table.an td { text-align: right; padding: 3px 8px; border-bottom: 1px solid var(--line); }
+table.an th:first-child, table.an td:first-child { text-align: left; }
+table.an td.genes { text-align: left; }
+table.an td.heat { min-width: 44px; }
+.gene { cursor: pointer; color: var(--accent); margin-right: 8px; white-space: nowrap; }
+.gene:hover { text-decoration: underline; }
+#anSeg { display: inline-flex; margin-left: 12px; }
 .seclist { display: flex; flex-wrap: wrap; gap: 4px 14px; max-height: 120px; overflow: auto; font-size: 12.5px; padding: 4px 0; }
 .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; padding: 10px 14px 14px;
            max-height: 75vh; overflow: auto; }
@@ -328,7 +339,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
   </div>
   <div class="tabs" id="tabs" role="tablist">
     <button class="tab" data-tab="data" role="tab">Data</button><button class="tab" data-tab="annotate" role="tab">Annotate</button>
-    <button class="tab" data-tab="embed" role="tab">Embedding</button><button class="tab" data-tab="niches" role="tab">Niches</button></div>
+    <button class="tab" data-tab="embed" role="tab">Embedding</button><button class="tab" data-tab="niches" role="tab">Niches</button>
+    <button class="tab" data-tab="compare" role="tab">Compare</button></div>
   <div class="pane" data-pane="data">
     <label class="fld" id="sampleWrap"><span>Sample</span><select id="sample"></select></label>
     <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-layers"/></svg><div id="sampleInfo">No sample yet</div></div>
@@ -390,6 +402,34 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <label class="fld" title="Number of NMF gene programs"><span>NMF programs</span><input type="number" id="nPrograms" min="4" max="60" value="20"></label>
     </div></details>
     <button id="nRun" class="primary main" disabled title="Compute niches with these settings">Run niches</button>
+  </div>
+  <div class="pane" data-pane="compare">
+    <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-chart"/></svg><div id="aninfo">Open or make an annotation first</div></div>
+    <div class="fld" id="aScopeWrap" hidden><span>Cells</span><select id="aScope" class="segsel" title="The cells compared">
+      <option value="slice" data-short="This slice">This slice</option>
+      <option value="project" data-short="All slices">All slices of the project, pooled (each slice's latest annotation)</option></select>
+      <div class="seg" data-for="aScope"></div></div>
+    <div class="fld"><span>Analysis</span><select id="aKind" class="segsel" title="What to compare">
+      <option value="de" data-short="DE genes">Genes that differ between one group and the rest or another group</option>
+      <option value="markers" data-short="Top genes">The top genes of every group</option>
+      <option value="composition" data-short="Composition">How the cells of one grouping split over another</option></select>
+      <div class="seg" data-for="aKind"></div></div>
+    <label class="fld an-de an-mk"><span id="aByLbl">Compare by</span><select id="aBy" title="What the groups are"></select></label>
+    <div class="fgrid an-de">
+      <label class="fld"><span>Group</span><select id="aGroup"></select></label>
+      <label class="fld"><span>Versus</span><select id="aRef"></select></label>
+    </div>
+    <div class="fgrid an-cp">
+      <label class="fld" title="One bar per value"><span>Rows</span><select id="aRows"></select></label>
+      <label class="fld" title="The shares in each bar"><span>Split by</span><select id="aCols"></select></label>
+    </div>
+    <div class="fgrid">
+      <label class="fld" title="Use only these cells (e.g. one cell type, region or slice)"><span>Only within</span><select id="aWBy"></select></label>
+      <label class="fld"><span>&nbsp;</span><select id="aWVal" disabled></select></label>
+    </div>
+    <div class="hint" id="aHint"></div>
+    <div class="act2"><button id="aLast" hidden title="Show the last result again">Last result</button></div>
+    <button id="aRun" class="primary main" disabled>Find DE genes</button>
   </div>
   <div class="hrow bottom">
     <button id="reset" class="danger" disabled title="Remove every annotation and chat of this sample">Reset…</button>
@@ -679,13 +719,10 @@ T and NK cells: CD3E|NKG7+ EPCAM-
   <div class="dh"><b id="glTitle">Slices</b><span class="hint" id="glInfo" style="margin-left:8px"></span><span class="spacer"></span><button id="glClose">Close</button></div>
   <div class="gallery" id="glGrid"></div>
 </dialog>
-<dialog id="cmpDlg" style="width:min(1000px,96vw)">
-  <div class="dh"><b id="cmpTitle">Compare slices</b>
-    <select id="cmpMode" style="margin-left:10px"><option value="lineage">lineage</option><option value="type">cell type</option>
-      <option value="niche">niche</option><option value="leiden">Leiden cluster</option></select>
-    <select id="cmpGroup" title="Order and group the slices by"></select>
-    <span class="spacer"></span><button id="cmpCsv">Save CSV…</button><button id="cmpClose">Close</button></div>
-  <div class="imbody"><div id="cmpBars"></div><div id="cmpLegend" class="cmplegend"></div><div class="hint" id="cmpNote"></div></div>
+<dialog id="anDlg" style="width:min(1000px,96vw)">
+  <div class="dh"><b id="anTitle">Compare</b><span id="anSeg" class="seg"></span><span class="spacer"></span>
+    <button id="anAsk" hidden title="Ask the agent what this result may mean">Ask Agent</button><button id="anCsv">Save CSV…</button><button id="anClose">Close</button></div>
+  <div class="imbody"><div class="hint" id="anSub"></div><div id="anBody"></div><div id="anLegend" class="cmplegend"></div><div class="hint" id="anNote"></div></div>
 </dialog>
 <dialog id="hpDlg" style="width:min(760px,95vw)">
   <div class="dh"><b>STAnnotator</b><span class="spacer"></span>
@@ -712,7 +749,7 @@ function decorate(b, name, only) {  // icon + label, or the icon only (the label
 }
 const ICON_ONLY = { hdrShow: "chev-left", hdrHide: "chev-right", helpBtn: "help", slPrev: "chev-left", slNext: "chev-right",
   lgtoggle: "chev-up", rgtoggle: "chev-up", plclose: "x", emClose: "x", imClose: "x", rcClose: "x", clClose: "x", rpClose: "x",
-  xpClose: "x", glClose: "x", cmpClose: "x", hpClose: "x", cmpCsv: "download", rpSave: "download", mkExport: "download",
+  xpClose: "x", glClose: "x", anClose: "x", hpClose: "x", anCsv: "download", rpSave: "download", mkExport: "download",
   fbUp: "arrow-up", fbHome: "home", rsClose: "x", hide: "eye", hideHE: "image" };
 const ICON_TEXT = { importBtn: "import", clearAll: "trash", connBtn: "monitor", slGallery: "grid", slCompare: "chart",
   openMarkers: "list", openRef: "file", openEx: "file", annotate: "play", eRun: "play", eShow: "scatter", nRun: "play",
@@ -722,8 +759,8 @@ const ICON_TEXT = { importBtn: "import", clearAll: "trash", connBtn: "monitor", 
   imNewAlign: "sparkle", imAlign: "sparkle", alignNow: "sparkle", alignReg: "file", imImgGo: "image", imRegGo: "check",
   imUndoPlace: "undo", refPick: "folder", exPick: "folder", refClose: "check", exClose: "check", rcTest: "check",
   rcGo: "server", fbOk: "check", rpAsk: "sparkle", xpCsv: "download", xpNb: "download", xpReg: "download",
-  hpCopy: "copy", editSave: "check", nameSave: "check", rsGo: "trash" };
-const ICON_TITLES = { lgtoggle: "Fold or unfold", rgtoggle: "Fold or unfold", cmpCsv: "Save as CSV…", rpSave: "Save as Markdown…",
+  hpCopy: "copy", editSave: "check", nameSave: "check", rsGo: "trash", aRun: "play", aLast: "list", anAsk: "sparkle" };
+const ICON_TITLES = { lgtoggle: "Fold or unfold", rgtoggle: "Fold or unfold", anCsv: "Save as CSV…", rpSave: "Save as Markdown…",
   mkExport: "Save the list as CSV…", fbHome: "Home folder", fbUp: "Parent folder", plclose: "Close", emClose: "Close" };
 Object.entries(ICON_TITLES).forEach(([id, t]) => $(id) && ($(id).title = t));
 Object.entries(ICON_ONLY).forEach(([id, n]) => $(id) && decorate($(id), n, true));
@@ -1007,7 +1044,7 @@ async function selectSample(id) {
 
 function reportState() {  // so Claude (use_viewer_session) knows what the user is looking at
   post("/api/viewer/state", { sample: st.sample && st.sample.sample_id, session: st.sid, version: st.version }).catch(() => {});
-  miniInfo();
+  miniInfo(); anRefresh();
 }
 function closeSession() {
   st.sid = null; st.version = null; st.filters = {}; st.regions = null; st.advice = null; st.adviceSig = undefined;
@@ -1316,7 +1353,7 @@ function emOverlay() {
   return EM.overlay;
 }
 function setSelection(sel) {
-  st.sel = sel;
+  st.sel = sel; anRefresh();
   const n = sel ? sel.reduce((a, b) => a + b, 0) : 0;
   $("emInfo").textContent = sel ? `${n.toLocaleString()} cells selected` : "";
   $("emClear").disabled = $("emZoom").disabled = !sel;
@@ -2477,8 +2514,7 @@ undoes an alignment. Regions drawn before the cells move are moved along with th
 project, with its metadata (condition, day, …); several image files go to the slices whose section their file
 names hold. <b>◀ ▶</b> or <kbd>[</kbd> <kbd>]</kbd> step through the slices and keep what is shown (Color by, legend
 filters, hidden H&amp;E, the UMAP window and, on a UMAP of all slices, its zoom and selection);
-<b>Slices…</b> shows them side by side; <b>Compare…</b> shows the cell type, lineage, niche or cluster composition of
-each slice, grouped by a metadata column (<b>Save CSV…</b>).</li>
+<b>Slices…</b> shows them side by side; <b>Compare…</b> opens the Compare tab on the lineage composition of every slice.</li>
 <li><b>all slices together</b>: <b>Annotate</b> annotates all slices of the project at once (one marker step and one
 model, so a name means the same cells in every slice), <b>Run PCA + UMAP</b> makes one embedding of all slices
 (<b>Harmony</b> removes the differences between slices), and <b>Run niches</b> finds niches shared by all slices. The
@@ -2521,6 +2557,13 @@ turn gray; <b>Show on map</b> zooms the map to them; <b>Clear</b> ends the selec
 <li><b>Agent Review</b> (bar on the map): computed checks, checked by the agent on the H&amp;E; the agent's advice with one-click actions; <b>solve</b> hides an item.</li>
 <li><b>Report</b>: the agent writes the annotation report; <b>Save…</b> keeps it as a Markdown file.</li>
 <li><b>Niches</b>: identity, k and number of niches; <b>Run niches</b>; with <b>k: Agent chooses</b> the agent picks k per region, runs and names them.</li>
+<li><b>Compare</b>, for this slice or all slices pooled: <b>DE genes</b> of one group (a cell type, lineage, region,
+niche, Leiden cluster, the cells selected in the UMAP window, a slice or a metadata value such as condition) against
+the other cells or another group, optionally only within e.g. one cell type (Wilcoxon test, genes ranked by AUC;
+with several slices it checks the change in every slice); <b>Top genes</b> of every group; <b>Composition</b>: how
+one grouping splits over another (cell types per niche, niches per slice or per condition), as shares or as
+enrichment. Click a gene to color the map by it; <b>Ask Agent</b> asks the agent what the result may mean;
+<b>Save CSV…</b> keeps every gene.</li>
 <li><b>Undo</b> steps back one change at a time. <b>Export…</b>: the cell table (CSV, with niche, Leiden and UMAP when
 computed), the registration in use (CSV), or the whole analysis as a Jupyter notebook that runs without this app
 (code with this annotation's parameters, and its results).</li>
@@ -2807,58 +2850,220 @@ async function drawThumb(c, s, mode) {
   }
 }
 $("slGallery").onclick = () => openGallery();
-async function openCompare() {  // shares per slice, grouped by a metadata column (e.g. condition)
-  const p = projectOf(st.sample.sample_id); if (!p) return;
-  const keys = [...new Set(p.samples.flatMap((id) => Object.keys((p.slices[id] || {}).metadata || {})))]
-    .sort((a, b) => CONDITION.test(b) - CONDITION.test(a));
-  const g = $("cmpGroup"); const cur = g.value; g.textContent = "";
-  [["", "no grouping"], ...keys.map((k) => [k, `group by ${k}`])].forEach(([v, l]) => { const o = document.createElement("option"); o.value = v; o.textContent = l; g.append(o); });
-  g.value = keys.includes(cur) ? cur : keys[0] || "";
-  $("cmpTitle").textContent = `Compare the slices of ${p.name}`;
-  if (!$("cmpDlg").open) $("cmpDlg").showModal();
-  await drawCompare();
-}
-async function drawCompare() {
-  const p = projectOf(st.sample.sample_id), mode = $("cmpMode").value, group = $("cmpGroup").value;
-  $("cmpBars").textContent = "loading…"; $("cmpLegend").textContent = "";
-  let c;
-  try { c = await api(`/api/project/${p.project_id}/composition?mode=${mode}`); } catch (e) { $("cmpBars").textContent = e.message; return; }
-  const colors = {};  // the map's colors for types and lineages, a palette otherwise
-  if (st.sid && ["type", "lineage", "niche", "leiden"].includes(mode)) {
-    try { (await api(`/api/s/${st.sid}/legend?version=${st.version}&mode=${mode}`)).items.forEach((it) => (colors[it.key] = rgb(it.color))); } catch (e) {}
+// ---------------- Compare: DE genes, top genes per group, composition (one slice or all slices pooled) ----------------
+const AN = { opts: null, key: "", last: null, req: null, view: "" };
+const AN_LABEL = { "cell type": "cell type", leiden: "Leiden cluster", selection: "UMAP selection" };
+const anLabel = (g) => AN_LABEL[g] || g;
+const AN_LEGEND = { "cell type": "type", lineage: "lineage", niche: "niche", leiden: "leiden", region: "region" };
+function anScope() { return $("aScope").value === "project" && st.sample && projectOf(st.sample.sample_id) ? "project" : "slice"; }
+function anSelection() {  // the cells selected in the UMAP window, {sample_id: rows}
+  const rows = (sel) => { const r = []; for (let i = 0; i < sel.length; i++) if (sel[i]) r.push(i); return r; };
+  if (anScope() === "project" && EM.selAll && EM.offsets) {
+    const out = {};
+    Object.entries(EM.offsets).forEach(([s, [a, b]]) => { const r = rows(EM.selAll.subarray(a, b)); if (r.length) out[s] = r; });
+    return Object.keys(out).length ? out : null;
   }
-  c.keys.forEach((k, i) => { if (!colors[k]) colors[k] = PALETTE[i % PALETTE.length]; });
-  const rows = c.slices.slice().sort((a, b) => String(a.metadata[group] || "").localeCompare(String(b.metadata[group] || ""), undefined, { numeric: true }));
-  const box = $("cmpBars"); box.textContent = "";
-  let last = null;
-  rows.forEach((r) => {
-    const gv = group ? r.metadata[group] || "—" : null;
-    if (group && gv !== last) { const h = document.createElement("div"); h.className = "cmpgroup"; h.textContent = `${group}: ${gv}`; box.append(h); last = gv; }
-    const row = document.createElement("div"); row.className = "cmprow";
-    const name = document.createElement("div"); name.textContent = r.section; name.title = Object.entries(r.metadata).map(([k, v]) => `${k}: ${v}`).join("\n");
-    const bar = document.createElement("div"); bar.className = "bar";
-    if (r.missing) { bar.classList.add("none"); bar.textContent = r.missing; }
-    c.keys.forEach((k) => { const v = r.shares[k] || 0; if (!v) return; const s = document.createElement("span");
-      s.style.width = `${100 * v}%`; s.style.background = colors[k]; s.title = `${k}: ${(100 * v).toFixed(1)}%`; bar.append(s); });
-    const n = document.createElement("div"); n.className = "hint"; n.textContent = `${r.n_cells.toLocaleString()} cells`;
-    row.append(name, bar, n); box.append(row);
-  });
-  c.keys.forEach((k) => { const l = document.createElement("span"); l.innerHTML = `<span class="sw" style="background:${colors[k]}"></span>`; l.append(k); $("cmpLegend").append(l); });
-  $("cmpNote").textContent = mode === "leiden" ? "Leiden clusters of the joint embedding (Run PCA + UMAP with all slices together)."
-    : "From each slice's latest annotation; annotate all slices together so the same names mean the same cells.";
+  return st.sel ? { [st.sample.sample_id]: rows(st.sel) } : null;
 }
-$("slCompare").onclick = () => openCompare();
-$("cmpMode").onchange = drawCompare; $("cmpGroup").onchange = drawCompare;
-$("cmpClose").onclick = () => $("cmpDlg").close();
-$("cmpCsv").onclick = async () => {
-  const p = projectOf(st.sample.sample_id), mode = $("cmpMode").value, name = `${p.project_id}_${mode}_composition.csv`;
-  if (st.remote) { await saveDownload(name, `/api/project/${p.project_id}/composition.csv?mode=${mode}`); return; }
-  if (native()) { const path = await native().save_path(name); if (!path) return;
-    const txt = await (await fetch(`/api/project/${p.project_id}/composition.csv?mode=${mode}`)).text();
-    try { await post("/api/save_text", { path, text: txt }); toast(`Saved ${path}`, 4000); } catch (e) { toast(e.message, 6000); } return; }
-  const a = document.createElement("a"); a.href = `/api/project/${p.project_id}/composition.csv?mode=${mode}`; a.download = name;
-  document.body.append(a); a.click(); a.remove();
+function anRefresh() {  // the Compare tab follows the open annotation and the selection
+  if (document.querySelector('header .pane[data-pane="compare"]').classList.contains("on")) setTimeout(() => loadAnOptions(), 0);
+}
+const anBody = () => ({ session: st.sid, version: st.version, scope: anScope(), selection: anSelection() });
+function fillSelect(id, items, keep, first) {  // items: [value, label]; keeps the chosen value when it is still there
+  const sel = $(id), cur = keep !== undefined ? keep : sel.value; sel.textContent = "";
+  (first ? [first, ...items] : items).forEach(([v, l]) => { const o = document.createElement("option"); o.value = v; o.textContent = l; sel.append(o); });
+  if ([...sel.options].some((o) => o.value === cur)) sel.value = cur;
+}
+async function loadAnOptions(force) {  // the groupings of the open annotation (or of the project's slices)
+  const p = st.sample && projectOf(st.sample.sample_id);
+  $("aScopeWrap").hidden = !p;
+  if (!st.sid) { $("aninfo").textContent = "Open or make an annotation first"; $("aRun").disabled = true; AN.key = ""; return; }
+  const sel = anSelection();
+  const key = [st.sid, st.version, anScope(), sel ? Object.entries(sel).map(([s, r]) => `${s}:${r.length}`).join() : ""].join("|");
+  if (!force && key === AN.key) return;
+  AN.key = key; $("aRun").disabled = true; $("aninfo").textContent = "Loading the groupings…";
+  try { AN.opts = await post("/api/analysis/options", anBody()); } catch (e) { $("aninfo").textContent = e.message; AN.key = ""; return; }
+  const g = AN.opts.groupings, many = Object.keys(g).filter((k) => g[k].length > 1);
+  const items = (ks) => ks.map((k) => [k, anLabel(k)]);
+  const pick = (id, prefs, ks) => fillSelect(id, items(ks), [$(id).value, ...prefs].find((x) => ks.includes(x)));
+  pick("aBy", ["niche", "cell type"], many);
+  pick("aRows", anScope() === "project" ? ["slice", "niche"] : ["niche", "region"], many);
+  pick("aCols", ["cell type", "lineage"], Object.keys(g));
+  fillSelect("aWBy", items(many), undefined, ["", "all cells"]);
+  anGroups(); anWithin();
+  const miss = Object.entries(AN.opts.missing || {}).map(([k, s]) => `no ${anLabel(k)} in ${s.length} slice(s)`);
+  $("aninfo").textContent = [`${AN.opts.n_cells.toLocaleString()} cells`, anScope() === "project" ? "all slices pooled" : "this slice",
+    sel ? "UMAP selection available" : null, ...miss].filter(Boolean).join(" · ");
+  $("aRun").disabled = !many.length;
+}
+function anGroups() {
+  const vals = (AN.opts && AN.opts.groupings[$("aBy").value]) || [];
+  fillSelect("aGroup", vals.map((v) => [v, v]));
+  const ref = vals.filter((v) => v !== $("aGroup").value);
+  fillSelect("aRef", ref.map((v) => [v, v]), undefined, ["rest", "all other cells"]);
+}
+function anWithin() {
+  const by = $("aWBy").value, vals = by && AN.opts ? AN.opts.groupings[by] || [] : [];
+  fillSelect("aWVal", vals.map((v) => [v, v])); $("aWVal").disabled = !by;
+}
+function syncAnKind() {
+  const k = $("aKind").value;
+  document.querySelectorAll("[data-pane=compare] .an-de").forEach((e) => (e.hidden = k !== "de" && !(k === "markers" && e.classList.contains("an-mk"))));
+  document.querySelectorAll("[data-pane=compare] .an-cp").forEach((e) => (e.hidden = k !== "composition"));
+  $("aByLbl").textContent = k === "markers" ? "Group by" : "Compare by";
+  setLabel($("aRun"), { de: "Find DE genes", markers: "Find top genes", composition: "Show composition" }[k]);
+  $("aHint").textContent = {
+    de: "Wilcoxon test on log-normalized expression; genes ranked by AUC (0.5 = no difference). Click a gene to color the map by it.",
+    markers: "Every group against the other cells: what sets each niche, cluster or region apart.",
+    composition: "Shares of each value per row, and how much more or less common it is than if the two were unrelated.",
+  }[k];
+}
+$("aKind").onchange = syncAnKind;
+$("aScope").onchange = () => loadAnOptions(true);
+$("aBy").onchange = anGroups;
+$("aGroup").onchange = () => { const r = $("aRef").value; anGroups(); if ([...$("aRef").options].some((o) => o.value === r)) $("aRef").value = r; };
+$("aWBy").onchange = anWithin;
+document.querySelector('#tabs .tab[data-tab="compare"]').addEventListener("click", () => loadAnOptions());
+// fillSelect(), loadAnOptions() etc. are defined before the page's first annotation is opened
+$("aRun").onclick = async () => {
+  const kind = $("aKind").value, b = { ...anBody(), kind }, w = $("aWBy").value;
+  b.within = w ? { [w]: $("aWVal").value } : {};
+  if (kind === "de") Object.assign(b, { by: $("aBy").value, group: $("aGroup").value, reference: $("aRef").value });
+  else if (kind === "markers") b.by = $("aBy").value;
+  else Object.assign(b, { rows: $("aRows").value, cols: $("aCols").value });
+  $("aRun").disabled = true; const label = $("aRun").textContent; setLabel($("aRun"), "Running…");
+  try {
+    AN.last = await post("/api/analysis/run", b); AN.req = { ...b, selection: undefined }; AN.view = "";
+    $("aLast").hidden = false; await showAnalysis();
+  } catch (e) { toast(e.message, 7000); }
+  finally { $("aRun").disabled = false; setLabel($("aRun"), label); }
 };
+$("aLast").onclick = () => showAnalysis();
+function anSeg(opts, cur, on) {  // the dialog's toggle (up / down genes, shares / enrichment)
+  const box = $("anSeg"); box.textContent = ""; box.hidden = !opts.length;
+  opts.forEach(([v, l]) => { const b = document.createElement("button"); b.type = "button"; b.textContent = l; b.classList.toggle("on", v === cur);
+    b.onclick = () => on(v); box.append(b); });
+}
+function colorByGene(g) {
+  $("anDlg").close();
+  if (![...$("mode").options].some((o) => o.value === "gene")) { toast("Annotate first to color the map by a gene"); return; }
+  $("mode").value = "gene"; $("geneInput").hidden = false; $("geneInput").value = g; setGene();
+  toast(`The map shows ${g}; Compare → Last result brings the table back`, 4000);
+}
+const geneLink = (g, title) => { const s = document.createElement("span"); s.className = "gene"; s.textContent = g; if (title) s.title = title; s.onclick = () => colorByGene(g); return s; };
+const fmt = (v, d = 2) => (v === null || v === undefined ? "" : Number(v).toFixed(d));
+function anTable(head, rows) {
+  const tb = document.createElement("table"); tb.className = "an";
+  const tr = document.createElement("tr"); head.forEach((h) => { const th = document.createElement("th"); th.innerHTML = h; tr.append(th); }); tb.append(tr);
+  rows.forEach((cells) => { const r = document.createElement("tr");
+    cells.forEach((c) => { const td = document.createElement("td"); if (c instanceof Node) td.append(c); else td.textContent = c; r.append(td); }); tb.append(r); });
+  return tb;
+}
+async function showAnalysis() {
+  const r = AN.last, q = AN.req; if (!r) return;
+  const within = Object.entries(r.within || {}).map(([k, v]) => `${anLabel(k)} ${v}`).join(", ");
+  const where = [r.scope === "project" ? "all slices pooled" : "this slice", within && `only ${within}`].filter(Boolean).join(" · ");
+  $("anBody").textContent = ""; $("anLegend").textContent = ""; $("anNote").textContent = r.note || "";
+  $("anAsk").hidden = !(st.desktop || st.chatAvailable);
+  if (q.kind === "de") {
+    const ref = r.reference === "rest" ? "all other cells" : r.reference;
+    $("anTitle").textContent = `${r.group} vs ${ref}`;
+    $("anSub").textContent = `${anLabel(r.by)} · ${where} · ${r.n_group.toLocaleString()} vs ${r.n_reference.toLocaleString()} cells` +
+      (r.n_tested[0] < r.n_group || r.n_tested[1] < r.n_reference ? ` (test on ${r.n_tested[0].toLocaleString()} vs ${r.n_tested[1].toLocaleString()})` : "") +
+      (r.per_slice_check ? ` · per-slice check: ${r.per_slice_check}` : "");
+    const dir = AN.view || "up";
+    anSeg([["up", `Up (${r.n_up})`], ["down", `Down (${r.n_down})`]], dir, (v) => { AN.view = v; showAnalysis(); });
+    const list = r[dir], slc = list.length && ("slices_same_direction" in list[0] ? "slices_same_direction" : "slices_separate" in list[0] ? "slices_separate" : null);
+    const head = ["Gene", "AUC", "log<sub>2</sub> FC", "% group", "% reference", "Mean group", "Mean ref.", "FDR"];
+    if (slc) head.push(slc === "slices_same_direction" ? "Same in slices" : "Slices apart");
+    $("anBody").append(list.length ? anTable(head, list.map((x) => [geneLink(x.gene), fmt(x.auc, 3), fmt(x.log2fc), fmt(100 * x.pct_group, 0),
+      fmt(100 * x.pct_reference, 0), fmt(x.mean_group), fmt(x.mean_reference), x.fdr ? Number(x.fdr).toExponential(1) : "< 1e-300",
+      ...(slc ? [slc === "slices_same_direction" ? x[slc] : x[slc] ? "yes" : "no"] : [])]))
+      : Object.assign(document.createElement("div"), { className: "hint", textContent: "No significant genes in this direction." }));
+    if (list.length < r[dir === "up" ? "n_up" : "n_down"]) $("anNote").textContent = `The ${list.length} strongest shown; Save CSV has every gene. ` + r.note;
+  } else if (q.kind === "markers") {
+    $("anTitle").textContent = `Top genes per ${anLabel(r.by)}`;
+    $("anSub").textContent = where + (r.skipped_small.length ? ` · skipped (under 30 cells): ${r.skipped_small.join(", ")}` : "");
+    anSeg([], "", null);
+    $("anBody").append(anTable(["Group", "Cells", "Top genes (by AUC)"], r.groups.map((g) => {
+      const box = document.createElement("span");
+      g.genes.forEach((x) => box.append(geneLink(x.gene, `AUC ${fmt(x.auc, 3)} · log2 FC ${fmt(x.log2fc)} · ${fmt(100 * x.pct_group, 0)}% vs ${fmt(100 * x.pct_rest, 0)}%`)));
+      return [g.group, g.n_cells.toLocaleString(), box];
+    })));
+    $("anBody").querySelectorAll("td:last-child").forEach((td) => td.classList.add("genes"));
+  } else {
+    $("anTitle").textContent = `${anLabel(r.cols)} per ${anLabel(r.rows)}`;
+    $("anSub").textContent = `${where} · ${r.n_cells.toLocaleString()} cells`;
+    const view = AN.view || "shares";
+    anSeg([["shares", "Shares"], ["enrichment", "Enrichment"]], view, (v) => { AN.view = v; showAnalysis(); });
+    const colors = {};
+    if (st.sid && AN_LEGEND[r.cols]) {
+      try { (await api(`/api/s/${st.sid}/legend?version=${st.version}&mode=${AN_LEGEND[r.cols]}`)).items.forEach((it) => (colors[it.key] = rgb(it.color))); } catch (e) {}
+    }
+    r.keys.forEach((k, i) => { if (!colors[k]) colors[k] = PALETTE[i % PALETTE.length]; });
+    const box = $("anBody");
+    if (view === "enrichment") {
+      const cell = (v) => { const td = document.createElement("span"); if (v === undefined) return "";
+        const s = v.toFixed(1); td.textContent = s === "-0.0" || s === "0.0" ? "0.0" : `${v > 0 ? "+" : ""}${s}`; return td; };
+      const tb = anTable([anLabel(r.rows), "Cells", ...r.keys], r.table.map((x) => [x.row, x.n_cells.toLocaleString(), ...r.keys.map((k) => cell(x.enrichment[k]))]));
+      tb.querySelectorAll("tr").forEach((tr, i) => { if (!i) return; [...tr.children].slice(2).forEach((td, j) => {
+        const v = r.table[i - 1].enrichment[r.keys[j]]; td.classList.add("heat"); if (v === undefined) return;
+        const a = Math.min(Math.abs(v) / 3, 1) * 0.55; td.style.background = v > 0 ? `rgba(200,60,40,${a})` : `rgba(40,90,200,${a})`;
+        td.title = `${r.keys[j]} in ${r.table[i - 1].row}: ${(100 * (r.table[i - 1].shares[r.keys[j]] || 0)).toFixed(1)}%, ${Math.pow(2, v).toFixed(2)}× expected`; }); });
+      box.append(tb);
+      $("anNote").textContent = "log2(observed / expected if the two groupings were unrelated): +1 is twice as common, −1 half as common.";
+    } else {
+      const bar = (name, n, shares, enr, title) => {
+        const row = document.createElement("div"); row.className = "cmprow";
+        const nm = document.createElement("div"); nm.textContent = name; if (title) nm.title = title;
+        const b = document.createElement("div"); b.className = "bar";
+        r.keys.forEach((k) => { const v = shares[k] || 0; if (!v) return; const s = document.createElement("span");
+          s.style.width = `${100 * v}%`; s.style.background = colors[k];
+          s.title = `${k}: ${(100 * v).toFixed(1)}%` + (enr && enr[k] !== undefined ? ` (${Math.pow(2, enr[k]).toFixed(2)}× expected)` : ""); b.append(s); });
+        const c = document.createElement("div"); c.className = "hint"; c.textContent = `${n.toLocaleString()} cells`;
+        row.append(nm, b, c); box.append(row);
+      };
+      r.table.forEach((x) => {
+        if (r.by_slice) {
+          const h = document.createElement("div"); h.className = "cmpgroup"; h.textContent = `${anLabel(r.rows)}: ${x.row}`; box.append(h);
+          const sl = r.by_slice.filter((s) => s[r.rows] === x.row);
+          if (sl.length > 1) bar("all (pooled)", x.n_cells, x.shares, x.enrichment);
+          sl.forEach((s) => bar(`slice ${s.slice}`, s.n_cells, s.shares, sl.length === 1 ? x.enrichment : null));
+        } else bar(x.row, x.n_cells, x.shares, x.enrichment);
+      });
+      $("anNote").textContent = r.scope === "project" ? "From each slice's latest annotation; annotate, embed and find niches with all slices together so the same names mean the same cells." : "";
+    }
+    if (view === "shares") r.keys.forEach((k) => { const l = document.createElement("span"); l.innerHTML = `<span class="sw" style="background:${colors[k]}"></span>`; l.append(k); $("anLegend").append(l); });
+    if (r.missing && Object.keys(r.missing).length) $("anNote").textContent += " Missing: " + Object.entries(r.missing).map(([k, s]) => `${anLabel(k)} in ${s.join(", ")}`).join("; ") + ".";
+  }
+  if (!$("anDlg").open) $("anDlg").showModal();
+}
+$("anClose").onclick = () => $("anDlg").close();
+$("anCsv").onclick = async () => {
+  const r = AN.last, q = AN.req; if (!r) return;
+  const part = q.kind === "de" ? `de_${r.group}_vs_${r.reference}` : q.kind === "markers" ? `top_genes_by_${r.by}` : `${r.cols}_per_${r.rows}`;
+  const name = `${st.sample.sample_id}_${part}`.replace(/[^A-Za-z0-9_.-]+/g, "_") + ".csv", url = `/api/analysis/${r.id}.csv?name=${encodeURIComponent(name)}`;
+  if (st.remote) { await saveDownload(name, url); return; }
+  if (native()) { const path = await native().save_path(name); if (!path) return;
+    try { const res = await fetch(url); if (!res.ok) throw new Error((await res.json()).error);
+      await post("/api/save_text", { path, text: await res.text() }); toast(`Saved ${path}`, 4000); } catch (e) { toast(e.message, 6000); } return; }
+  const a = document.createElement("a"); a.href = url; a.download = name; document.body.append(a); a.click(); a.remove();
+};
+$("anAsk").onclick = async () => {
+  try {
+    const r = await post("/api/claude/analysis", { session: st.sid, request: AN.req });
+    if (r.message && st.chatAvailable) { $("anDlg").close(); $("input").value = r.message; send(); }
+    else if (r.claude_code) toast(r.claude_code.reused ? "Asked the agent; its answer appears in Claude Code" : "The agent is opening to look at this result", 5000);
+    else toast("Open the agent first (Ask Agent)", 5000);
+  } catch (e) { toast(e.message, 6000); }
+};
+$("slCompare").onclick = async () => {  // the Data tab's shortcut: the composition of every slice
+  $("aScope").value = "project"; syncSeg("aScope"); $("aKind").value = "composition"; syncSeg("aKind"); syncAnKind();
+  showTab("compare"); await loadAnOptions(true);
+  $("aRows").value = "slice"; $("aCols").value = st.mode === "niche" ? "niche" : "lineage"; $("aWBy").value = ""; anWithin();
+  $("aRun").click();
+};
+syncAnKind();
 $("glClose").onclick = () => $("glDlg").close();
 function miniInfo() {
   const s = st.sample;
@@ -2884,7 +3089,7 @@ function segmented(id) {  // a select shown as a row of buttons (the select keep
   syncSeg(id);
 }
 function syncSeg(id) { document.querySelectorAll(`.seg[data-for="${id}"] button`).forEach((b) => b.classList.toggle("on", b.dataset.v === $(id).value)); }
-segmented("method"); segmented("nIdentity"); segmented("nKMode");
+segmented("method"); segmented("nIdentity"); segmented("nKMode"); segmented("aScope"); segmented("aKind");
 function sampleInfo() {  // the Data tab's card: what the open sample is
   const s = st.sample; if (!s) { $("sampleInfo").textContent = "No sample yet"; return; }
   const img = s.image_pending ? "image waiting for its alignment" : !s.image_kind || s.image_kind === "none" ? "no image" : s.image_kind;
@@ -2896,7 +3101,7 @@ function showTab(name) {
   store("tab", name);
 }
 document.querySelectorAll("#tabs .tab").forEach((t) => (t.onclick = () => showTab(t.dataset.tab)));
-showTab(["data", "annotate", "embed", "niches"].includes(load("tab")) ? load("tab") : "data");
+showTab(["data", "annotate", "embed", "niches", "compare"].includes(load("tab")) ? load("tab") : "data");
 setInterval(() => document.querySelectorAll("header .pane").forEach((p) =>  // a running analysis shows on its tab
   document.querySelector(`#tabs .tab[data-tab=${p.dataset.pane}]`).classList.toggle("busy", !!p.querySelector(".progress.show"))), 700);
 $("hdrShow").onclick = () => setHeader(false);
@@ -3029,7 +3234,7 @@ $("xpCsv").onclick = () => exportAs("csv");
 $("xpNb").onclick = () => exportAs("notebook");
 $("xpReg").onclick = () => exportAs("registration");
 document.addEventListener("keydown", (e) => {
-  if ($("mkDlg").open || $("rpDlg").open || $("hpDlg").open || $("xpDlg").open || $("glDlg").open || $("cmpDlg").open || $("nameDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
+  if ($("mkDlg").open || $("rpDlg").open || $("hpDlg").open || $("xpDlg").open || $("glDlg").open || $("anDlg").open || $("nameDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
   if (e.key === "h") $("hide").click();
   if (e.key === "e") $("hideHE").click();
   if (e.key === "[") stepSlice(-1);

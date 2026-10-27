@@ -122,7 +122,18 @@ Niches (the viewer's Niches row, or when asked): run_niches averages each cell's
 its cell type) over its k nearest cells and clusters the averages. When asked to choose k: niche_context, then k
 per drawn region or radius_um so neighborhoods span the tissue scale that matters (small in dense epithelium, larger
 in sparse stroma). Afterwards niche_summary and show_niches; name the niches (name_niches) from their composition,
-genes and place, cautiously.
+genes and place, cautiously; group_markers(by="niche") gives each niche's genes.
+
+Comparing groups (when asked, e.g. "what differs between N3 and N5", "fibroblasts in the mucosa vs elsewhere",
+"which niches does UC have more of"): analysis_groupings lists what cells can be grouped by (cell type, lineage,
+region, niche, leiden, selection = the cells the user selected in the viewer, slice, and the slices' metadata such as
+condition) and their values. de_genes compares a group with the rest or with another group, within a subset;
+group_markers gives the top genes of every group; composition splits one grouping over another (cell types per niche,
+niches per region, niches per slice). scope="project" pools the latest annotation of every slice of the project.
+Rank DE genes by AUC and fold change rather than p-values (cells are not independent replicates); with several
+slices trust what holds in every slice (slices_same_direction / slices_separate), and with one slice per side say a
+slice effect cannot be told from a group effect. A gene of the neighboring cell types may be spillover. Interpret the
+genes with care and say which claims come from the data and which from general knowledge.
 
 Every change is a version (history, diff, revert). export writes a CSV with one row per cell. Reply briefly, in the
 language of the user's message, keeping cell type and region names as they are."""
@@ -604,6 +615,70 @@ def apply_alignment(candidate: str, sample_id: Optional[str] = None) -> str:
     if "session" in _active and _active["session"].sample_id == sid:
         _active["session"] = Session(_active["session"].id)
     return _j(r)
+
+
+# ---------------- differential expression and composition ----------------
+def _cells(scope, uses_selection=False):
+    from . import analysis, claudelink, projects
+    s = _s()
+    sel = claudelink.viewer_selection() if uses_selection else None
+    if scope == "project":
+        pid = projects.project_of(s.sample_id)
+        if not pid:
+            raise ValueError("this sample is not part of a project: use scope='slice'")
+        return analysis.cells(pid=pid, selection=sel)
+    if scope != "slice":
+        raise ValueError("scope must be 'slice' or 'project'")
+    return analysis.cells(s, selection=(sel or {}).get(s.sample_id) if sel else None)
+
+
+def _uses_selection(*names):
+    return any(n == "selection" for n in names) or any(isinstance(n, dict) and "selection" in n for n in names)
+
+
+@mcp.tool()
+def analysis_groupings(scope: str = "slice") -> str:
+    """What the cells can be grouped by for de_genes, group_markers and composition, with the values of each (largest
+    first): cell type, lineage, region, niche, leiden, selection (the cells the user selected in the viewer when
+    they last ran an analysis there), slice, and the slices' metadata columns that differ between slices.
+    scope = "slice" (the active annotation) or "project" (the latest annotation of every slice of its project)."""
+    c = _cells(scope, uses_selection=True)
+    opts = c.options()
+    return _j({"scope": scope, "n_cells": len(c.labels), "groupings": {k: v[:40] for k, v in opts.items()},
+               "missing": c.missing})
+
+
+@mcp.tool()
+def de_genes(by: str, group: Union[str, list], reference: Union[str, list] = "rest", within: Optional[dict] = None,
+             scope: str = "slice", top: int = 20) -> str:
+    """Differentially expressed genes of a group of cells: group = a value (or list) of grouping by, reference =
+    "rest" (every other cell with a value of by) or another value (or list); within = {grouping: value(s)} limits
+    both sides (e.g. by="region", group="mucosa", within={"cell type": "Fibroblasts"}). Wilcoxon test on
+    log-normalized expression; returns the top up and down genes ranked by AUC, with log2 fold change, detection
+    rates, FDR and, with several slices, the per-slice check. scope as in analysis_groupings."""
+    from . import analysis
+    c = _cells(scope, _uses_selection(by, within))
+    return _j(analysis.de(c, by, group, reference, within, max(1, min(int(top), 100))))
+
+
+@mcp.tool()
+def group_markers(by: str, top: int = 8, within: Optional[dict] = None, scope: str = "slice") -> str:
+    """The top genes (by AUC) of every group of grouping by against the other cells, e.g. by="niche" for what sets
+    each niche apart, by="leiden" for the clusters; groups under 30 cells are skipped."""
+    from . import analysis
+    c = _cells(scope, _uses_selection(by, within))
+    return _j(analysis.markers(c, by, max(1, min(int(top), 30)), within))
+
+
+@mcp.tool()
+def composition(rows: str, cols: str, within: Optional[dict] = None, scope: str = "slice") -> str:
+    """How the cells of one grouping split over another: per value of rows its cell count, the share of each value of
+    cols and the log2 enrichment over independence, e.g. rows="niche", cols="cell type"; rows="region",
+    cols="niche"; scope="project", rows="slice" (or a metadata column such as condition, which also gives every
+    slice's shares), cols="niche"."""
+    from . import analysis
+    c = _cells(scope, _uses_selection(rows, cols, within))
+    return _j(analysis.crosstab(c, rows, cols, within))
 
 
 # ---------------- niches ----------------

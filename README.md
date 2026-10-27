@@ -84,8 +84,7 @@ mouse, …). Images: one file for all slices, one file per slice whose name hold
 one row per section. Without an image, the cells are drawn on a blank background wherever their coordinates are
 (negative ones too). In the app, **◀ ▶** (or `[` `]`) step through the slices and keep what is shown (Color by, legend filters, hidden H&E, the UMAP
 window and, on a UMAP of all slices, its zoom and the cells selected on it), **Slices…** shows them side by side and
-**Compare…** shows the composition (cell types, lineages, niches or Leiden clusters) of each slice grouped by a
-metadata column, with **Save CSV…**.
+**Compare…** opens the **Compare** tab on the composition of every slice.
 
 With **all slices together** ticked, **Annotate** pools the slices (one marker step and one model; each slice gets its
 own session), **Run PCA + UMAP** makes one embedding of all slices (with **Harmony** on the PCs by slice, optional) and
@@ -169,7 +168,7 @@ starts it, on the server's own localhost only; its process id is in `<data folde
 ## 4. The viewer
 
 The toolbar is a panel on the right of the map: **Import** and **Export** at the top, the server choice below, then
-the steps **Data**, **Annotate**, **Embedding** and **Niches** as tabs (a dot on a tab whose analysis is running), and at
+the steps **Data**, **Annotate**, **Embedding**, **Niches** and **Compare** as tabs (a dot on a tab whose analysis is running), and at
 the bottom **Reset** and **Remove all**. On the map, next to the **Color by** bar, a bar holds **Undo**, **Ask Agent**
 (Claude Code), **Agent Review** and **Report**. **›** at its top (or `t`) folds it to the right edge for a bigger map,
 **‹** brings it back.
@@ -266,7 +265,22 @@ by Claude show up within a few seconds.
    a `niche` column in Export CSV. On SCP2927 section 147328 (356,629 cells) a run takes about 6 s (1.5 s once the
    NMF is cached) and the 8 niches match the tissue layers (surface epithelium, crypt base, lamina propria, lymphoid
    follicles, muscularis mucosae, muscularis propria, submucosal vessels and stroma).
-11. **Report** shows the annotation report the agent writes (**Ask Agent to write it**): sample, method and inputs,
+11. **Compare** (fifth tab), for this slice or all slices of a project pooled:
+   - **DE genes**: the genes that differ between one group and the other cells (or another group). A group is a cell
+     type, lineage, region, niche, Leiden cluster, the cells selected in the UMAP window, a slice, or a value of a
+     slice metadata column such as condition; **Only within** restricts both sides (e.g. fibroblasts in the mucosa vs
+     fibroblasts elsewhere). Wilcoxon rank-sum test on log-normalized expression (up to 20,000 random cells per side;
+     means and detection on all cells), genes ranked by AUC with log2 fold change and FDR. With pooled slices the
+     change is checked in every slice that has both groups, or, when the groups are different slices, every slice
+     of the group against every slice of the reference; with one slice per side the app says that a slice effect
+     cannot be told from a group effect. Click a gene to color the map by it.
+   - **Top genes**: every group against the rest (what sets each niche or cluster apart).
+   - **Composition**: how one grouping splits over another (cell types per niche, niches per region, niches per
+     slice or per condition, with every slice's own bar), as shares or as log2 enrichment over independence.
+   **Ask Agent** asks the agent to interpret the result (it calls the same analysis through `de_genes`,
+   `group_markers` or `composition`); **Save CSV…** keeps the full table. On SCP2927 (559,539 cells, 480 genes) a DE
+   run takes 1-2 s and the top genes of 8 niches about 10 s.
+12. **Report** shows the annotation report the agent writes (**Ask Agent to write it**): sample, method and inputs,
    composition, compartments, quality and open questions, from the tools' facts. **Save…** writes it as Markdown.
 
 The app has no chat box of its own: you talk to Claude in Claude Code. The web viewer on a
