@@ -4,7 +4,7 @@ Epithelial: EPCAM KRT8 KRT18 CDH1 CLDN18 -PTPRC
   Neck mucous cells: MUC6 TFF2 -MUC5AC
   Chief cells: PGC PGA3 LIPF CHIA PGA4 -ATP4A
   Parietal cells: ATP4A! ATP4B! CBLIF GIF
-  Enteroendocrine cells: CHGA CHGB GAST SST GHRL SCG5
+  Enteroendocrine cells: CHGA CHGB GAST SST GHRL SCG5 NEUROD1 PAX6 INSM1 ISL1
   Proliferating cells: MKI67 TOP2A PCLAF UBE2C
   Intestinal metaplasia: CDX2 MUC2 TFF3 REG4
 @immune

@@ -10,3 +10,7 @@ and organ atlases (Human Cell Atlas, Tabula Sapiens, the Gut Cell Atlas, the Hum
 atlas, Allen Brain Cell atlas).
 
 `@immune` inserts the lines of `immune.txt`; `Myeloid > Kupffer cells: ...` adds a type under one of an included file.
+
+The Xenium Prime 5K panel leaves out most very abundant genes (ALB, INS, MYH11, KRT5, COL1A1, …); lower-abundance
+markers it has follow the classic ones on each line (e.g. smooth muscle MYLK SMTN KCNMB1 SYNM, fibroblasts PI16 MFAP5,
+hepatocytes AHSG ARG1 CYP2C8, beta cells PDX1 SLC30A8), so the lists hold up on 5K panels too.
