@@ -630,9 +630,8 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <div class="frow"><span>Counts <b class="req" title="required">*</b></span><textarea id="imXCounts" class="xin" rows="1" wrap="off" placeholder="cell_feature_matrix.h5 (or matrix.mtx.gz, barcodes.tsv.gz and features.tsv.gz)"></textarea><button data-pick="xcounts" data-multi="1" data-target="imXCounts">Choose…</button></div>
       <div class="frow"><span>Experiment<small class="opt">optional</small></span><textarea id="imXExp" class="xin" rows="1" wrap="off" placeholder="experiment.xenium: pixel size (else 0.2125 µm), for Xenium Explorer alignments"></textarea><button data-pick="xexp" data-multi="1" data-target="imXExp">Choose…</button></div>
       <div class="frow"><span>DAPI image<small class="opt">optional</small></span><textarea id="imXDapi" class="xin" rows="1" wrap="off" placeholder="morphology_focus/ch0000_dapi.ome.tif: background without an H&amp;E (large)"></textarea><button data-pick="ximage" data-multi="1" data-target="imXDapi">Choose…</button></div>
-      <div class="frow"><span>or the folder<small class="opt">instead of the files</small></span><textarea id="imFolder" class="xin" rows="1" wrap="off" placeholder="the whole output folder (output-XETG…), one per line"></textarea><button data-pick="folder" data-multi="1" data-target="imFolder">Choose…</button></div>
       <div class="hint" style="margin-left:138px">Several slices (a project): one file per line in each field, matched by the start of the names
-        (GSM1_cells.parquet goes with GSM1_cell_feature_matrix.h5), or one folder per line.</div>
+        (GSM1_cells.parquet goes with GSM1_cell_feature_matrix.h5).</div>
       <div class="hint" id="imXinfo" style="margin-left:138px"></div>
     </div>
     <div id="imH" hidden>
@@ -643,21 +642,21 @@ T and NK cells: CD3E|NKG7+ EPCAM-
         <div class="seclist" id="imSecList"></div></div><span></span></div>
       <div class="frow"><span>Region column</span><select id="imRegCol"><option value="">none (draw regions yourself)</option></select><span></span></div>
     </div>
-    <div class="frow"><span>Image</span><span class="choice">
-      <label><input type="radio" name="imImgMode" value="none" checked> No image</label>
-      <label><input type="radio" name="imImgMode" value="file"> Image file</label>
+    <div class="frow"><span>H&amp;E image<small class="opt">optional</small></span><span class="choice">
+      <label><input type="radio" name="imImgMode" value="none" checked> No H&amp;E</label>
+      <label><input type="radio" name="imImgMode" value="file"> H&amp;E file</label>
       <span class="hint" id="imNoImgHint"></span></span><span></span></div>
-    <div class="frow" id="imImgRow" hidden><span></span><textarea id="imNewImg" rows="1" placeholder="H&amp;E or fluorescence image: pyramidal TIFF / OME-TIFF; for several slices one per line, each file name holding its section"></textarea><button data-pick="image" data-multi="1" data-target="imNewImg">Choose…</button></div>
-    <div class="frow" id="imImgKindRow" hidden><span>Image kind</span><select id="imNewImgKind"><option value="H&amp;E">H&amp;E</option><option value="DAPI">DAPI / fluorescence</option></select><span></span></div>
-    <div class="frow"><span>Registration</span><span class="choice">
+    <div class="frow" id="imImgRow" hidden><span></span><textarea id="imNewImg" rows="1" placeholder="the registered H&amp;E: pyramidal TIFF / OME-TIFF; for several slices one per line, each file name holding its section"></textarea><button data-pick="image" data-multi="1" data-target="imNewImg">Choose…</button></div>
+    <div class="frow" id="imImgKindRow" hidden><span>Image kind</span><select id="imNewImgKind" title="h5ad / RDS: a DAPI or fluorescence image can stand in for the H&amp;E"><option value="H&amp;E">H&amp;E</option><option value="DAPI">DAPI / fluorescence instead</option></select><span></span></div>
+    <div class="frow"><span>Registration<small class="opt">optional</small></span><span class="choice">
       <label><input type="radio" name="imRegMode" value="file"> Registration file</label>
       <label><input type="radio" name="imRegMode" value="none" checked> No registration</label>
       <button id="imNewAlign" disabled title="Choose an image first">Align with Agent</button></span><span></span></div>
     <div class="frow" id="imRegRow" hidden><span></span><input type="text" id="imNewReg" placeholder="affine CSV (a11,a12,a21,a22,tx,ty) or Xenium Explorer alignment (3x3)"><button data-pick="csv" data-target="imNewReg">Choose…</button></div>
     <div class="frow" id="imRegSecRow" hidden><span>Registration row</span><input type="text" id="imNewRegSec" placeholder="only if the file has one row per section; default: the section chosen above"><span></span></div>
-    <div class="frow"><span id="imNameLabel">Sample name</span><input type="text" id="imName" placeholder="short id without spaces"><span></span></div>
+    <div class="frow"><span><span id="imNameLabel">Sample name</span><small class="opt">optional</small></span><input type="text" id="imName" placeholder="short id without spaces; by default from the file names"><span></span></div>
     <div class="hint" id="imProjectHint" hidden></div>
-    <div class="frow"><span>Description</span><input type="text" id="imDesc" placeholder="optional, e.g. tissue and condition"><span></span></div>
+    <div class="frow"><span>Description<small class="opt">optional</small></span><input type="text" id="imDesc" placeholder="e.g. tissue and condition"><span></span></div>
     <div class="row" style="margin-top:6px"><span class="hint" id="imStatus"></span><span class="spacer"></span><button id="imGo" class="primary">Import</button></div>
     <details id="imExisting" class="clcard" style="margin-top:12px">
       <summary><b id="imExTitle">Already imported: change the image or registration</b></summary>
@@ -2524,7 +2523,7 @@ document.querySelectorAll("#imDlg [data-pick]").forEach((b) => (b.onclick = asyn
 const baseName = (p) => p.replace(/[\\/]+$/, "").split(/[\\/]/).pop().replace(/\.(h5ad|rds|rda|rdata|ome\.tif|tif)$/i, "").replace(/[^A-Za-z0-9_.-]+/g, "_").slice(0, 40);
 function xeniumEntries() {  // the fields as import entries: one slice field by field, or files matched by name
   const L = (id) => $(id).value.split("\n").map((s) => s.trim()).filter(Boolean);
-  const cells = L("imXCells"), counts = L("imXCounts"), exp = L("imXExp"), dapi = L("imXDapi"), out = L("imFolder");
+  const cells = L("imXCells"), counts = L("imXCounts"), exp = L("imXExp"), dapi = L("imXDapi"), out = [];
   if (cells.length === 1 && [1, 3].includes(counts.length) && exp.length <= 1 && dapi.length <= 1)
     out.push({ fields: { cells, counts, experiment: exp, morphology: dapi } });
   else out.push(...cells, ...counts, ...exp, ...dapi);
@@ -2541,11 +2540,11 @@ async function inspectXenium() {  // the slices found in the files and folders g
       (x.morphology ? " · DAPI image" : " · no DAPI image");
     $("imXinfo").textContent = (r.slices.length > 1 ? `${r.slices.length} slices:\n` : "") + r.slices.map(line).join("\n");
     $("imXinfo").style.whiteSpace = "pre-line";
-    if (!$("imName").value) $("imName").value = baseName(r.slices.length > 1 ? r.slices[0].folder : r.slices[0].key);
+    imDefaultName(baseName(r.slices.length > 1 ? r.slices[0].folder : r.slices[0].key));
   } catch (e) { $("imXinfo").textContent = e.message; }
   imSections();
 }
-document.querySelectorAll("#imX textarea.xin").forEach((x) => (x.onchange = inspectXenium));
+document.querySelectorAll("#imX textarea.xin").forEach((x) => (x.onchange = () => (st.imXPending = inspectXenium())));
 $("imH5").onchange = async () => {
   const h5ad = $("imH5").value.split("\n").map((s) => s.trim()).filter(Boolean); if (!h5ad.length) return;
   $("imHinfo").textContent = "checking…";
@@ -2558,7 +2557,7 @@ $("imH5").onchange = async () => {
       const sel = $(id); sel.length = 1;
       Object.entries(r.columns).forEach(([c, v]) => { const o = document.createElement("option"); o.value = c; o.textContent = `${c} (${v.length} value${v.length === 1 ? "" : "s"})`; sel.append(o); });
     }
-    if (!$("imName").value) $("imName").value = baseName(h5ad[0]);
+    imDefaultName(baseName(h5ad[0]));
   } catch (e) { $("imHinfo").textContent = e.message; }
 };
 $("imSecCol").onchange = () => {  // the sections of the chosen column, each with a check box (several: a project)
@@ -2578,14 +2577,19 @@ function imSections() {  // one section: a sample; several sections or folders: 
   $("imNameLabel").textContent = many ? "Project name" : "Sample name";
   $("imProjectHint").hidden = !many;
   $("imProjectHint").textContent = many ? `${secs.length} slices, one sample each (named <project>_<section>). Images: one for all slices, or one per slice whose file name holds the section (e.g. …_147328_HE.ome.tif), or a table (CSV/TSV: section, image path). A registration file has one row per section.` : "";
-  if (!many && secs.length === 1 && imKind() === "h5ad" && !$("imName").value) $("imName").value = secs[0].replace(/[^A-Za-z0-9_.-]+/g, "_");
+  if (!many && secs.length === 1 && imKind() === "h5ad") imDefaultName(secs[0].replace(/[^A-Za-z0-9_.-]+/g, "_"));
   $("imRegSecRow").hidden = $("imRegSecRow").hidden || many;
 }
 $("imClose").onclick = () => $("imDlg").close();
+function imDefaultName(n) {  // the name used when the field is left empty, shown in it
+  st.imDefault = n; $("imName").placeholder = n ? `${n} (from the file names)` : "short id without spaces; by default from the file names";
+}
 const imgMode = () => document.querySelector("input[name=imImgMode]:checked").value;
 const regMode = () => document.querySelector("input[name=imRegMode]:checked").value;
 function imForm() {  // show the fields of the chosen options; Align with Claude needs an image and no registration file
-  $("imImgRow").hidden = $("imImgKindRow").hidden = imgMode() !== "file";
+  $("imImgRow").hidden = imgMode() !== "file";
+  $("imImgKindRow").hidden = imgMode() !== "file" || imKind() === "xenium";  // Xenium has its own DAPI field
+  if (imKind() === "xenium") $("imNewImgKind").value = "H&E";
   $("imRegRow").hidden = $("imRegSecRow").hidden = regMode() !== "file";
   $("imNoImgHint").textContent = imgMode() === "none" ? (imKind() === "xenium" ? "the DAPI image is shown when given, else a blank background" : "cells on a blank background") : "";
   const can = imgMode() === "file" && $("imNewImg").value.trim() && regMode() === "none";
@@ -2657,7 +2661,8 @@ function alignBar() {  // an image waits for its alignment
   $("alignNow").hidden = !st.desktop && !st.chatAvailable;
 }
 async function importSample() {  // returns true when the sample was imported
-  const kind = imKind(), name = $("imName").value.trim();
+  if (imKind() === "xenium" && st.imXPending) await st.imXPending;  // the fields were just edited: their check first
+  const kind = imKind(), name = $("imName").value.trim() || st.imDefault || "";
   const images = imgMode() === "file" ? $("imNewImg").value.split("\n").map((s) => s.trim()).filter(Boolean) : [];
   const image = images.length > 1 ? images : (images[0] || "");
   const registration = regMode() === "file" ? $("imNewReg").value.trim() : "";
@@ -2668,9 +2673,9 @@ async function importSample() {  // returns true when the sample was imported
         region_column: $("imRegCol").value, description: $("imDesc").value };
   if (kind === "h5ad" && $("imSecCol").value && !body.sections.length) { $("imStatus").textContent = "Tick the section(s) to import"; return false; }
   Object.assign(body, { he: image, he_kind: $("imNewImgKind").value, registration, registration_section: $("imNewRegSec").value.trim() });
-  if (!name) { $("imStatus").textContent = "Give the sample a name"; return false; }
-  if (imgMode() === "file" && !images.length) { $("imStatus").textContent = "Choose the image, or No image"; return false; }
-  if (kind === "xenium" && !(st.imXSlices || []).length) { $("imStatus").textContent = "Give the cells and counts files (or the output folder); check the message under the fields"; return false; }
+  if (!name) { $("imStatus").textContent = "Give a name (none could be taken from the files)"; return false; }
+  if (imgMode() === "file" && !images.length) { $("imStatus").textContent = "Choose the H&E file, or No H&E"; return false; }
+  if (kind === "xenium" && !(st.imXSlices || []).length) { $("imStatus").textContent = "Give the cells and counts files; check the message under the fields"; return false; }
   const nSlices = kind === "h5ad" ? body.sections.length : st.imXSlices.length;
   if (images.length > 1 && nSlices < 2) { $("imStatus").textContent = "One image per sample (several images are for several slices)"; return false; }
   if (regMode() === "file" && !registration) { $("imStatus").textContent = "Choose the registration file, or No registration"; return false; }
@@ -2697,14 +2702,14 @@ $("importBtn").onclick = openImport;
 // ---------------- help and about ----------------
 const HELP = `
 <h3>Import</h3><ul>
-<li><b>Import…</b>: the cells (Xenium: only cells.parquet and cell_feature_matrix.h5 are needed, optionally experiment.xenium and the DAPI image, or the whole output folder; h5ad files; or an R file .rds / .rda with a Seurat or SpatialExperiment object, read without R), then the image (<b>No image</b> or an H&amp;E / DAPI
-file) and the registration (<b>Registration file</b>, or <b>No registration</b>).</li>
+<li><b>Import…</b>: the cells (Xenium: cells.parquet and cell_feature_matrix.h5, optionally experiment.xenium and the DAPI image, each in its field; h5ad files; or an R file .rds / .rda with a Seurat or SpatialExperiment object, read without R), then the <b>H&amp;E image</b> (<b>No H&amp;E</b> or an <b>H&amp;E file</b>; for an h5ad a DAPI /
+fluorescence image can stand in for it, under Image kind) and the registration (<b>Registration file</b>, or <b>No registration</b>).</li>
 <li>An image without a registration file: <b>Align with Agent</b> (next to No registration, or the yellow bar over the
 map) imports and lets the agent find the section and orientation on the image and refine it until the cells sit on
 their nuclei. The folded part at the bottom of Import changes the image or registration of the selected sample, or
 undoes an alignment. Regions drawn before the cells move are moved along with them.</li></ul>
 <h3>Several slices</h3><ul>
-<li>Import an h5ad and tick several sections (or give the Xenium files or folders of several slices): each slice becomes a sample of one
+<li>Import an h5ad and tick several sections (or give the Xenium files of several slices, one per line in each field): each slice becomes a sample of one
 project, with its metadata (condition, day, …); several image files go to the slices whose section their file
 names hold. <b>◀ ▶</b> or <kbd>[</kbd> <kbd>]</kbd> step through the slices and keep what is shown (Color by, legend
 filters, hidden H&amp;E, the UMAP window and, on a UMAP of all slices, its zoom and selection);
