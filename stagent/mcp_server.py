@@ -180,6 +180,7 @@ def _s() -> Session:
         raise ValueError("no active session; call start_session or resume_session first")
     if _active["session"].stale():  # the cells moved (registration corrected in the app): reload
         _active["session"] = Session(_active["session"].id)
+    _active["session"].actor = "agent"  # its changes for one request are undone together in the viewer
     return _active["session"]
 
 

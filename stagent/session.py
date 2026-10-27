@@ -17,6 +17,8 @@ import numpy as np, pandas as pd, scipy.sparse as sp
 from scipy.spatial import cKDTree
 from . import config, vocab, markers, regions as regmod, constraints as cmod, conflicts as confmod, render
 
+AGENT_GAP_S = 90  # the agent's changes this close together belong to one request (one Undo)
+
 
 def _tag(s):
     return hashlib.md5(str(s).encode()).hexdigest()[:8]
@@ -113,6 +115,7 @@ class Session:
             self.node_names = self.types
         self.cells = pd.read_parquet(sd / "cells.parquet")
         self._cells_mtime = (sd / "cells.parquet").stat().st_mtime
+        self.actor = "viewer"  # "agent" when the agent's tools change it (mcp_server sets it)
         self._counts = None
         self._cache, self._bases, self._nbr_frac_cache = {}, {}, {}
         self._lock = threading.RLock()
@@ -253,7 +256,15 @@ class Session:
             cur = self.state()
             if expected_parent is not None and cur["version"] != expected_parent:
                 raise ValueError(f"session moved on to v{cur['version']} (you were on v{expected_parent}); reload and retry")
+            # one user action = one group of versions: every change made in the viewer is its own group; the agent's
+            # changes for one request (consecutive, less than AGENT_GAP_S apart) share one, so Undo takes them back together
+            group = f"g{cur['version'] + 1}"
+            if self.actor == "agent" and action != "undo" and cur.get("by") == "agent" and cur.get("group"):
+                gap = time.time() - time.mktime(time.strptime(cur["created_at"], "%Y-%m-%dT%H:%M:%S"))
+                if gap < AGENT_GAP_S:
+                    group = cur["group"]
             new = {"version": cur["version"] + 1, "parent": cur["version"], "created_at": _now(), "action": action,
+                   "by": self.actor, "group": group,
                    "message": message, "regions": regions if regions is not None else cur["regions"],
                    "constraints": constraints if constraints is not None else cur["constraints"],
                    "corrections": corrections if corrections is not None else cur.get("corrections", []),
@@ -704,19 +715,33 @@ class Session:
 
     def add_region(self, name, polygon_px, author=None, expected_parent=None):
         """Save a polygon drawn on the map (H&E level-0 pixels) as (part of) region `name`."""
+        return self.add_region_pieces(name, [polygon_px], author, expected_parent)
+
+    def add_region_pieces(self, name, polygons_px, author=None, expected_parent=None):
+        """Save several polygons (e.g. the pieces of an outline the agent proposed) as region `name`, in one version
+        (one Undo takes them all back). Pieces without cells are left out."""
         name = regmod.validate_name(name)
-        rows = regmod.cells_in_polygon(self.cells.px.to_numpy(), self.cells.py.to_numpy(), polygon_px)
-        if not len(rows):
-            raise vocab.VocabError("the polygon contains no cells")
         cur = self.state()
-        ops = cur["regions"].get("ops", [])
-        i = 1
-        while f"R{i}" in {o.get("id") for o in ops}:
-            i += 1
-        op = {"op": "polygon", "id": f"R{i}", "name": name, "polygon": [[float(x), float(y)] for x, y in polygon_px],
-              "cells": self.cells.cell.to_numpy()[rows].tolist(), "author": author, "created_at": _now()}
-        reg = dict(cur["regions"], ops=ops + [op])
-        return self._commit("add_region", f"R{i}: {len(rows)} cells drawn as region {name}", regions=reg,
+        ops = list(cur["regions"].get("ops", []))
+        used, ids, n = {o.get("id") for o in ops}, [], 0
+        cell_ids = self.cells.cell.to_numpy()
+        for poly in polygons_px:
+            rows = regmod.cells_in_polygon(self.cells.px.to_numpy(), self.cells.py.to_numpy(), poly)
+            if not len(rows):
+                continue
+            i = 1
+            while f"R{i}" in used:
+                i += 1
+            used.add(f"R{i}")
+            ids.append(f"R{i}")
+            n += len(rows)
+            ops.append({"op": "polygon", "id": f"R{i}", "name": name, "polygon": [[float(x), float(y)] for x, y in poly],
+                        "cells": cell_ids[rows].tolist(), "author": author, "created_at": _now()})
+        if not ids:
+            raise vocab.VocabError("the polygon contains no cells" if len(polygons_px) == 1 else "the outline contains no cells")
+        msg = (f"{ids[0]}: {n} cells drawn as region {name}" if len(ids) == 1 else
+               f"{ids[0]}-{ids[-1]}: {n} cells in {len(ids)} pieces drawn as region {name}")
+        return self._commit("add_region", msg, regions=dict(cur["regions"], ops=ops),
                             expected_parent=expected_parent or cur["version"])
 
     def edit_region(self, rid, polygon_px, author=None, message=None):
@@ -851,9 +876,19 @@ class Session:
         done = self.state(eff)
         if done["parent"] is None:
             raise ValueError("nothing to undo")
-        target = self.state(done["parent"]).get("restores", done["parent"])
+        first = done  # the first version of the same user action (group)
+        while done.get("group") and first["parent"] is not None:
+            prev = self.state(first["parent"])
+            if prev.get("group") != done["group"] or prev["action"] == "undo" or prev["parent"] is None:
+                break
+            first = prev
+        target = self.state(first["parent"]).get("restores", first["parent"])
         old = self.state(target)
-        return self._commit("undo", f"undo v{eff} ({done['message'][:60]})", regions=old["regions"],
+        n = eff - first["version"] + 1
+        what = (f"undo v{eff} ({done['message'][:60]})" if n == 1 else
+                f"undo v{first['version']}-v{eff}: {n} changes" + (" by the agent" if done.get("by") == "agent" else "")
+                + f" ({first['message'][:40]} ... {done['message'][:40]})")
+        return self._commit("undo", what, regions=old["regions"],
                             constraints=old["constraints"], corrections=old.get("corrections", []),
                             marker_step=old.get("marker_step", {"ops": []}), expected_parent=cur["version"],
                             extra={"restores": target})

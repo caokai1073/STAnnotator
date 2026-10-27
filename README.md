@@ -199,8 +199,10 @@ by Claude show up within a few seconds.
    and offers it in the Review panel, which opens by itself and shows the outline on the map (other advice stays).
    Click **add region** to keep it, then **edit** to adjust it.
 4. Hand-labeled cells are locked and fine-tune the expression model (only the involved cell types can move),
-   so similar cells elsewhere update too. Every step is a version; **Undo** steps back one change at a time (clicking it again goes further
-   back; it never undoes the undo).
+   so similar cells elsewhere update too. Every step is a version; **Undo** takes back your last action (clicking it again goes further
+   back; it never undoes the undo). One action is one version made in the app (an outline of the agent added as a region is one
+   version, however many pieces it has) or all the versions the agent made for one request (its changes less than 90 s
+   apart): they go back together.
 5. **Export…** saves the **cells table** (CSV, one row per cell: `cell_id`, `region`, `cell_type`, `lineage`,
    `level_1`… the full type path, `confidence`, `expression_label`, `marker_cluster`, `hand_labeled`, and when
    computed `niche`, `leiden`, `umap_1`, `umap_2`; then `x_um`, `y_um`), the **registration** (CSV: the affine

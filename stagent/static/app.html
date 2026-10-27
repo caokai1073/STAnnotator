@@ -500,7 +500,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <button id="hideHE" title="Hide the H&amp;E: the cells only (e)">Hide H&amp;E</button>
     </div>
     <div id="acts" class="float">
-      <button id="undo" disabled title="Undo the last change">Undo</button>
+      <button id="undo" disabled title="Undo your last action (everything the agent changed for one request goes back at once)">Undo</button>
       <button id="claudeBtn" hidden title="Ask your own agent (Claude Code, in Terminal), connected to the sample open here">Ask Agent</button>
       <button id="plaus" disabled title="Agent review of one part of the analysis (annotation, spatial organization, embedding, niches, compare, signaling): its advice, checked by the agent itself">Agent Review</button>
       <button id="report" disabled title="The annotation report the agent writes: method, composition, compartments, quality, open questions">Report</button>
@@ -2747,7 +2747,7 @@ neighboring cells between groups (cell types by default): contact signals within
 within 50 µm, weighted by distance; tested against random groups. <b>Interactions</b>, a sender × receiver
 <b>Network</b> and <b>Pathways</b>; <b>receivers</b> / <b>senders</b> colors the map by where one signal is received or
 sent. <b>Compare groups</b> runs it per condition, slice, region or niche and lists the largest differences.</li>
-<li><b>Undo</b> steps back one change at a time. <b>Export…</b>: the cell table (CSV, with niche, Leiden and UMAP when
+<li><b>Undo</b> takes back your last action: one region you drew, an outline of the agent added as a region (all its pieces), one prior, or everything the agent changed for one request (its changes less than 90 s apart); click again to go further back. <b>Export…</b>: the cell table (CSV, with niche, Leiden and UMAP when
 computed), the registration in use (CSV), or the whole analysis as a Jupyter notebook that runs without this app
 (code with this annotation's parameters, and its results).</li>
 <li><b>Ask Agent</b> (bar on the map) opens your own Claude Code, connected to this app. <b>Undo</b> and <b>Report</b> are there too.</li></ul>`;
