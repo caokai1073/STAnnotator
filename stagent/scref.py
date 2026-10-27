@@ -11,7 +11,7 @@ a lineage. Optional majority voting (as in CellTypist): the sample is over-clust
 mean of its cells' probabilities, so a cluster agrees on one label.
 """
 import numpy as np, pandas as pd, scipy.sparse as sp, h5py
-from .importer import _index, _read_column, _rows_matrix
+from .importer import _index, _read_column, _rows_matrix, as_h5ad
 
 CAP = 3000        # reference cells per label used for training
 MIN_CELLS = 10    # labels with fewer reference cells are left out
@@ -81,7 +81,7 @@ def _label_columns(obs):
 
 def inspect(path, panel):
     """For the Reference dialog: cells, label column candidates, gene naming and overlap with the panel."""
-    with h5py.File(path, "r") as h:
+    with h5py.File(as_h5ad(path), "r") as h:
         mpath, vg = _matrix_source(h)
         src, pidx, _ = _match_genes(h[vg], panel)
         return {"path": str(path), "n_cells": int(len(_index(h["obs"]))), "matrix": mpath, "gene_names": src,
@@ -92,6 +92,7 @@ def inspect(path, panel):
 
 def scan_labels(path, label_column, group_column=None):
     """Labels kept for training (>= MIN_CELLS cells) with their cell counts, and each label's group (lineage)."""
+    path = as_h5ad(path)
     with h5py.File(path, "r") as h:
         obs = h["obs"]
         if label_column not in obs:
@@ -119,6 +120,7 @@ def load_training(path, label_column, panel, seed=0, progress=None):
     rows = np.sort(np.concatenate([rng.choice(np.where(labels == t)[0], min(CAP, natural[t]), replace=False)
                                    for t in types]))
     say(0.3, f"reading {len(rows):,} reference cells")
+    path = as_h5ad(path)
     with h5py.File(path, "r") as h:
         mpath, vg = _matrix_source(h)
         _, pidx, ridx = _match_genes(h[vg], panel)

@@ -490,7 +490,7 @@ def api_config(req):
                   "remote": os.environ.get("STAGENT_REMOTE") == "1", "host": platform.node()})
 
 
-FS_KINDS = {"h5ad": (".h5ad",), "image": (".tif", ".tiff", ".btf"), "csv": (".csv", ".tsv", ".txt"),
+FS_KINDS = {"h5ad": (".h5ad", ".rds", ".rda", ".rdata"), "image": (".tif", ".tiff", ".btf"), "csv": (".csv", ".tsv", ".txt"),
             "markers": (".csv", ".tsv", ".txt")}
 
 
@@ -784,7 +784,7 @@ async def api_import_inspect(req: Request):
             return _json(importer.inspect_xenium(b["folder"]))
         paths = [p for p in b.get("h5ad", []) if p]
         if not paths:
-            raise ValueError("choose one or more h5ad files")
+            raise ValueError("choose one or more h5ad or RDS files")
         return _json(importer.inspect_h5ad(paths))
     except (ValueError, OSError, KeyError) as e:
         return _json({"error": str(e)}, 400)

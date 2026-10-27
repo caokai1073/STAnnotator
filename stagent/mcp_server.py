@@ -15,7 +15,8 @@ INSTRUCTIONS = """You help a biologist annotate cell types in imaging spatial tr
 computer. The tools compute every result; never invent cell types, regions, numbers or files.
 
 Getting started
-- list_samples. If the sample is not there, ask for: the h5ad file(s) (raw counts, cell coordinates in um), the
+- list_samples. If the sample is not there, ask for: the h5ad file(s) or an R file (.rds / .rda with a Seurat or
+  SpatialExperiment object; read without R) (raw counts, cell coordinates in um), the
   registered H&E image, and the registration file (affine CSV or Xenium Explorer matrix); for an h5ad holding several
   sections also the obs column and value of the section. Then call import_sample with those paths.
 - start_session(sample_id, markers_text) runs a marker-based annotation (no labeled reference is used; the data is
@@ -192,7 +193,7 @@ def import_sample(name: str, h5ad: list[str], he: str, registration: str, sectio
                   section: Optional[str] = None, region_column: Optional[str] = None, counts_layer: Optional[str] = None,
                   description: str = "") -> str:
     """Import one tissue section from files on this computer: h5ad file(s) with raw counts and cell coordinates in
-    um (several files are merged), the registered H&E image (pyramidal TIFF / OME-TIFF), and the registration file
+    um (several files are merged; an .rds / .rda with a Seurat or SpatialExperiment object works too, read without R), the registered H&E image (pyramidal TIFF / OME-TIFF), and the registration file
     (affine CSV a11,a12,a21,a22,tx,ty from cell um to H&E pixels, or a Xenium Explorer 3x3 matrix). For an h5ad with
     several sections give section_column and section. region_column optionally imports region annotations.
     Cell type annotations in the h5ad are ignored. Takes from seconds to a few minutes for large files."""

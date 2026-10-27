@@ -58,7 +58,7 @@ class Api:
             res = self._window.create_file_dialog(mode)
         else:
             mode = fd.OPEN if fd else webview.OPEN_DIALOG
-            types = {"h5ad": ("AnnData (*.h5ad)", "All files (*.*)"),
+            types = {"h5ad": ("AnnData or R (*.h5ad;*.rds;*.rda;*.RData)", "All files (*.*)"),
                      "image": ("Images (*.tif;*.tiff;*.btf)", "All files (*.*)"),
                      "csv": ("CSV (*.csv)", "All files (*.*)"),
                      "markers": ("Marker lists (*.csv;*.txt)", "All files (*.*)")}.get(kind, ("All files (*.*)",))

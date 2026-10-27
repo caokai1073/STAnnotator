@@ -60,9 +60,9 @@ def make_app(dest=None):
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="stagent", description="Spatial cell type annotation with Claude.")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    im = sub.add_parser("import", help="import one sample from h5ad + registered H&E + registration file")
+    im = sub.add_parser("import", help="import one sample from h5ad / RDS + registered H&E + registration file")
     im.add_argument("--name", required=True, help="sample id used in the viewer and in Claude")
-    im.add_argument("--h5ad", required=True, nargs="+", help="one or more h5ad files (merged)")
+    im.add_argument("--h5ad", required=True, nargs="+", help="one or more h5ad files, or R files (.rds / .rda) with a Seurat or SpatialExperiment object (merged)")
     im.add_argument("--he", help="H&E image (pyramidal TIFF / OME-TIFF); without --registration it waits for an alignment")
     im.add_argument("--registration", help="affine CSV (a11,a12,a21,a22,tx,ty) or Xenium Explorer 3x3 matrix")
     im.add_argument("--section-column", help="obs column that identifies the section (if the h5ad holds several)")

@@ -7,7 +7,8 @@
 
 h5ad: AnnData files with raw counts (layer "counts", X, or raw.X when X is normalized) and cell coordinates in micrometers (obs
   x_centroid/y_centroid, x/y, or obsm["spatial"]). Several files (e.g. one per lineage) are merged; cell type
-  annotations in them are ignored.
+  annotations in them are ignored. An R file (.rds, .rda / .RData) with a Seurat or SpatialExperiment object is read
+  without R (rds.py) and stands in for an h5ad: it is converted once into converted/ of the data folder.
 Xenium: the output folder of the Xenium instrument / Xenium Ranger: cells.parquet or cells.csv.gz, and
   cell_feature_matrix.h5 or cell_feature_matrix/ (only "Gene Expression" features are kept). The background image is
   the H&E when given (with its Xenium Explorer alignment file), otherwise the DAPI morphology image of the folder,
@@ -25,7 +26,7 @@ found otherwise (e.g. by align.py). Until an image is registered the cells are s
 Xenium DAPI image) and the image waits in meta["image_pending"]. Moving the cells to a new placement moves the
 outlines drawn on the old one with them (regions, proposed areas).
 """
-import json, re, time
+import hashlib, json, re, time
 from pathlib import Path
 import h5py, numpy as np, pandas as pd, scipy.sparse as sp
 from scipy.spatial import cKDTree
@@ -35,6 +36,74 @@ COORD_COLUMNS = [("x_centroid", "y_centroid"), ("x", "y"), ("center_x", "center_
 DEPTH_MARKERS, DEPTH_MIN_COUNTS, DEPTH_MIN_FRAC, DEPTH_K, DEPTH_CORE = ("EPCAM", "KRT8"), 3, 0.05, 30, 0.3
 BLANK = np.array([[2.0, 0, 0], [0, 2.0, 0]])  # placement without an image: 0.5 um per pixel of a blank background
 MIN_INSIDE = 0.9  # share of cells that must fall inside the image for a registration to be accepted
+
+
+# ---------------- R files (Seurat, SpatialExperiment) as h5ad ----------------
+R_SUFFIXES = (".rds", ".rda", ".rdata")
+
+
+def as_h5ad(path, progress=None):
+    """An R file as an h5ad in the data folder's converted/ (made once per version of the file, older conversions of
+    the same file removed); any other path unchanged."""
+    p = Path(path).expanduser()
+    if p.suffix.lower() not in R_SUFFIXES:
+        return str(path)
+    stat = p.stat()
+    who = hashlib.sha1(str(p.resolve()).encode()).hexdigest()[:8]
+    ver = hashlib.sha1(f"{stat.st_mtime_ns}|{stat.st_size}".encode()).hexdigest()[:8]
+    d = config.HOME / "converted"
+    out = d / f"{re.sub(r'[^A-Za-z0-9_.-]+', '_', p.stem)}_{who}_{ver}.h5ad"
+    if out.exists():
+        return str(out)
+    from . import rds
+    (progress or (lambda m: None))(f"reading the R file {p.name}")
+    tab = rds.table(p)
+    d.mkdir(parents=True, exist_ok=True)
+    for old in d.glob(f"*_{who}_*.h5ad"):
+        old.unlink()
+    tmp = out.with_suffix(".part")
+    write_h5ad(tmp, tab["cell_id"], tab["genes"], tab["X"], tab["obs"], tab["xy"])
+    tmp.rename(out)
+    return str(out)
+
+
+def _write_column(g, name, values):
+    v = pd.Series(values)
+    if pd.api.types.is_bool_dtype(v) or pd.api.types.is_numeric_dtype(v):
+        g.create_dataset(name, data=v.to_numpy(dtype=bool if pd.api.types.is_bool_dtype(v) else None))
+        g[name].attrs.update({"encoding-type": "array", "encoding-version": "0.2.0"})
+        return
+    v = v.astype(object).where(v.notna(), None)
+    cats = sorted({str(x) for x in v if x is not None})
+    pos = {c: i for i, c in enumerate(cats)}
+    c = g.create_group(name)
+    c.attrs.update({"encoding-type": "categorical", "encoding-version": "0.2.0", "ordered": False})
+    c.create_dataset("codes", data=np.array([pos[str(x)] if x is not None else -1 for x in v], np.int32))
+    c.create_dataset("categories", data=np.array(cats, dtype=object), dtype=h5py.string_dtype())
+
+
+def _write_frame(g, index, df):
+    g.attrs.update({"encoding-type": "dataframe", "encoding-version": "0.2.0", "_index": "_index"})
+    g.attrs.create("column-order", np.array([str(c) for c in df.columns], dtype=object), dtype=h5py.string_dtype())
+    g.create_dataset("_index", data=np.array([str(x) for x in index], dtype=object), dtype=h5py.string_dtype())
+    for c in df.columns:
+        _write_column(g, str(c), df[c].to_numpy())
+
+
+def write_h5ad(path, cell_ids, genes, X, obs, xy=None):
+    """A minimal AnnData file: counts in X (CSR), obs with the cell metadata, var with the genes, obsm["spatial"]."""
+    X = sp.csr_matrix(X, dtype=np.float32)
+    with h5py.File(path, "w") as h:
+        h.attrs.update({"encoding-type": "anndata", "encoding-version": "0.1.0"})
+        g = h.create_group("X")
+        g.attrs.update({"encoding-type": "csr_matrix", "encoding-version": "0.1.0", "shape": X.shape})
+        for k in ("data", "indices", "indptr"):
+            g.create_dataset(k, data=getattr(X, k), compression="gzip", compression_opts=4)
+        _write_frame(h.create_group("obs"), cell_ids, obs.reset_index(drop=True))
+        _write_frame(h.create_group("var"), genes, pd.DataFrame(index=range(len(genes))))
+        m = h.create_group("obsm")
+        if xy is not None:
+            m.create_dataset("spatial", data=np.asarray(xy, float))
 
 
 # ---------------- reading AnnData (h5ad) with h5py: only the selected rows are loaded ----------------
@@ -113,6 +182,7 @@ def _counts_source(h, counts_layer=None):
 
 def read_h5ad(path, section_column=None, section=None, x_column=None, y_column=None, counts_layer=None,
               region_column=None):
+    shown, path = path, as_h5ad(path)
     with h5py.File(path, "r") as h:
         names = _index(h["obs"])
         mpath, vgroup = _counts_source(h, counts_layer)
@@ -132,11 +202,13 @@ def read_h5ad(path, section_column=None, section=None, x_column=None, y_column=N
             elif "obsm" in h and "spatial" in h["obsm"]:
                 xy = h["obsm"]["spatial"][:][rows, :2].astype(float)
             else:
-                raise ValueError(f"{path}: no cell coordinates found; pass --x-column / --y-column")
+                raise ValueError(f"{shown}: no cell coordinates found (h5ad: obs x/y or obsm['spatial']; Seurat: an "
+                                 "FOV with centroids or meta.data x/y; SpatialExperiment: spatialCoords); pass "
+                                 "--x-column / --y-column")
         X = _rows_matrix(h, mpath, rows, len(genes)).astype(np.float32)
         regions = _read_column(h["obs"][region_column])[rows] if region_column else None
     if X.nnz and not np.allclose(X.data[:10000], np.round(X.data[:10000])):
-        raise ValueError(f"{path}: the matrix is not raw counts; pass --counts-layer with the layer holding counts")
+        raise ValueError(f"{shown}: the matrix is not raw counts; pass --counts-layer with the layer holding counts")
     return {"cell_id": names[rows], "xy": xy, "X": sp.csr_matrix(X), "genes": list(genes), "regions": regions}
 
 
@@ -144,12 +216,13 @@ def inspect_h5ad(paths, max_values=60):
     """For the import dialog: cells per file, coordinates found, raw-count layer, and obs columns that could name
     the section or a region annotation (few distinct values) with their values."""
     files, cols = [], {}
-    for p in paths:
+    for shown in paths:
+        p = as_h5ad(shown)
         with h5py.File(p, "r") as h:
             obs = h["obs"]
             n = len(_index(obs))
             pair = next(([a, b] for a, b in COORD_COLUMNS if a in obs and b in obs), None)
-            files.append({"path": str(p), "n_cells": int(n),
+            files.append({"path": str(shown), "n_cells": int(n),
                           "coordinates": pair or ("obsm['spatial']" if "obsm" in h and "spatial" in h["obsm"] else None),
                           "counts_layer": _counts_source(h)[0].replace("layers/", ""),
                           "n_genes": int(len(_index(h[_counts_source(h)[1]])))})
@@ -290,6 +363,7 @@ def import_sample(name, h5ad, he=None, registration=None, section_column=None, s
     parts = []
     for p in h5ad:
         progress(f"reading {p}")
+        as_h5ad(p, progress)
         parts.append(read_h5ad(p, section_column, section, x_column, y_column, counts_layer, region_column))
         if not len(parts[-1]["cell_id"]):
             progress(f"  no cells of section {section!r} in {p}")
@@ -599,7 +673,7 @@ def section_metadata(paths, section_column, value, max_values=60):
     Several files (one per lineage, or one per section) are read together: only the cells of the section count."""
     seen = {}
     for path in [paths] if isinstance(paths, (str, Path)) else paths:
-        with h5py.File(path, "r") as h:
+        with h5py.File(as_h5ad(path), "r") as h:
             obs = h["obs"]
             if section_column not in obs:
                 continue

@@ -51,7 +51,7 @@ Click **Import…** in the app (or use the commands below): the cells, then **No
 
 | part | what it takes |
 |---|---|
-| cells | a Xenium output folder (`cells.parquet` or `cells.csv.gz` and `cell_feature_matrix.h5` or `cell_feature_matrix/`; control probes are dropped; its DAPI image `morphology_focus/` is shown unless an H&E is aligned), or AnnData file(s) with raw counts (layer `counts`, `X`, or `raw.X` when `X` is normalized, as scanpy leaves it) and cell centroids in micrometers (`obs` columns `x_centroid`/`y_centroid` or `x`/`y`, or `obsm["spatial"]`); several files (e.g. one per lineage) are merged and cell type labels in them are ignored. The dialog lists the h5ad's columns to pick the section when a file holds several. |
+| cells | a Xenium output folder (`cells.parquet` or `cells.csv.gz` and `cell_feature_matrix.h5` or `cell_feature_matrix/`; control probes are dropped; its DAPI image `morphology_focus/` is shown unless an H&E is aligned), or AnnData file(s) with raw counts (layer `counts`, `X`, or `raw.X` when `X` is normalized, as scanpy leaves it) and cell centroids in micrometers (`obs` columns `x_centroid`/`y_centroid` or `x`/`y`, or `obsm["spatial"]`); several files (e.g. one per lineage) are merged and cell type labels in them are ignored. The dialog lists the h5ad's columns to pick the section when a file holds several. An R file (`.rds`, `.rda` / `.RData`) works in place of an h5ad, read without R: a Seurat object (v3/v4 `Assay` counts, or v5 `Assay5` counts layers, also split per sample; coordinates from an FOV's centroids as `LoadXenium` / `CreateFOV` make them, SlideSeq coordinates, or `meta.data` columns) or a SpatialExperiment / SingleCellExperiment (assay `counts`, `spatialCoords` or `colData` columns); its `meta.data` / `colData` columns act as obs columns. It is converted once into `converted/` of the data folder; normalized and scaled data, graphs, reductions and commands are skipped while reading. |
 | image | the H&E (or a fluorescence image) as a pyramidal TIFF / OME-TIFF, or **No image**. |
 | registration | an affine CSV with columns `a11,a12,a21,a22,tx,ty` (`px = a11*x + a12*y + tx`, `py = a21*x + a22*y + ty`; cell um to image full-resolution pixels; with one row per section, the row of the chosen section) or a Xenium Explorer alignment matrix (3x3 CSV, image pixels to morphology pixels); or **No registration**. |
 
@@ -318,7 +318,7 @@ trained on them adds a confidence per cell and lets priors and corrections act. 
 loaded back. Example: `share/celltype.csv` holds the published cell types of SCP2927 section 147328
 (`cell_id, cell_type, lineage`).
 
-**Single-cell reference** (like CellTypist). Give a labeled single-cell h5ad of the same tissue, its cell type
+**Single-cell reference** (like CellTypist). Give a labeled single-cell h5ad (or a Seurat / SingleCellExperiment `.rds`) of the same tissue, its cell type
 column, and optionally a coarser group column (used as lineages for colors and priors). A multinomial logistic
 regression is trained on up to 3,000 reference cells per label, on the genes the reference shares with the panel,
 and labels every cell; both sides are normalized on the shared genes only, so a whole-transcriptome reference
@@ -422,7 +422,8 @@ stagent/     Python package
   cli.py           stagent app / make-app / import / import-xenium / samples / viewer / mcp
   desktop.py       the desktop app (pywebview window around the local server)
   claudelink.py    connection to the user's Claude Code; viewer <-> agent handoff files
-  importer.py      Xenium output folder, or h5ad + H&E + registration -> sample bundle
+  importer.py      Xenium output folder, or h5ad / RDS + H&E + registration -> sample bundle
+  rds.py           R data files (.rds / .rda) read without R: Seurat, SpatialExperiment -> cells, genes, counts, xy
   markers.py       marker list parsing, hierarchical Leiden annotation, re-clustering
   model.py         expression model (training, fine-tuning on corrections)
   constraints.py   priors and Bayesian reweighting
