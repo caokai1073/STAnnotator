@@ -281,9 +281,24 @@ def bins(a):
     return b
 
 
+ROLE_BINS = (("none", "no signal", (200, 200, 200), 30), ("weak", "weak signal", (225, 215, 160), 140),
+             ("sender", "sends", (33, 102, 172), 240), ("receiver", "receives", (214, 96, 77), 240),
+             ("both", "sends and receives", (118, 42, 131), 250))
+
+
+def role_bins(send, recv):
+    """Role (index into ROLE_BINS) of every cell in one signal: sends or receives strongly (above the median of the
+    cells with that signal), both, only weakly, or not at all."""
+    strong = lambda a: (a > np.median(a[a > 0])) if (a > 0).any() else np.zeros(len(a), bool)
+    s, r = strong(send), strong(recv)
+    b = np.where((send > 0) | (recv > 0), 1, 0)
+    b[s & ~r], b[r & ~s], b[s & r] = 2, 3, 4
+    return b
+
+
 def activity(s, ligand, receptor, side="receiver", category=None, contact_um=CONTACT_UM, secreted_um=SECRETED_UM):
     """Per cell of one annotation: the signal it receives (its receptor times the ligand of its neighbors, weighted)
-    or sends (its ligand times the receptor of its neighbors)."""
+    or sends (its ligand times the receptor of its neighbors); side="both": (sends, receives)."""
     from . import model
     idx = {g: i for i, g in enumerate(s.panel)}
     li = [idx.get(g) for g in ligand.split("_")]
@@ -301,6 +316,6 @@ def activity(s, ligand, receptor, side="receiver", category=None, contact_um=CON
     L, R = _expr(X, li, cache), _expr(X, ri, cache)
     n = len(s.cells)
     wsum = np.maximum(np.bincount(dst, w, n), 1e-12)
-    if side == "receiver":   # mean ligand around each cell, times its receptor
-        return R * np.bincount(dst, w * L[src], n) / wsum
-    return L * np.bincount(dst, w * R[src], n) / wsum   # weights are symmetric enough: neighbors' receptor
+    recv = R * np.bincount(dst, w * L[src], n) / wsum   # mean ligand around each cell, times its receptor
+    send = L * np.bincount(dst, w * R[src], n) / wsum   # its ligand times the receptor around it
+    return (send, recv) if side == "both" else recv if side == "receiver" else send

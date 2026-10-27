@@ -184,9 +184,9 @@ def colors_for(s: Session, version, mode, only):
             out[:, 3] = 200
             out[r["region"] == "unknown", 3] = 70
         elif mode.startswith("lr:"):
-            b = lr_bins(s, mode)
-            out[:, :3] = np.array([x[2] for x in communication.BINS], np.uint8)[b]
-            out[:, 3] = np.array([x[3] for x in communication.BINS], np.uint8)[b]
+            b, table = lr_bins(s, mode), lr_table(mode)
+            out[:, :3] = np.array([x[2] for x in table], np.uint8)[b]
+            out[:, 3] = np.array([x[3] for x in table], np.uint8)[b]
         elif mode.startswith("gene:"):
             b = gene_bins(s, mode)
             out[:, :3] = np.array([x[2] for x in GENE_BINS], np.uint8)[b]
@@ -254,12 +254,20 @@ def gene_bins(s, mode):
 _lr_cache = LRU(6)
 
 
+def lr_table(mode):
+    """The bins of a color mode "lr:<ligand>~<receptor>~<both|receiver|sender>": the cells' roles (both), or the
+    percentiles of one side."""
+    return communication.ROLE_BINS if mode.endswith("~both") else communication.BINS
+
+
 def lr_bins(s, mode):
-    """Signal bin (index into communication.BINS) of every cell for color mode
-    "lr:<ligand>~<receptor>~<receiver|sender>"."""
-    lig, rec, side = (mode.split(":", 1)[1].split("~") + ["receiver"])[:3]
-    return _lr_cache.get_or((s.sample_id, s._cells_mtime, mode),
-                            lambda: communication.bins(communication.activity(s, lig, rec, side)))
+    """Bin (index into lr_table(mode)) of every cell."""
+    lig, rec, side = (mode.split(":", 1)[1].split("~") + ["both"])[:3]
+
+    def make():
+        a = communication.activity(s, lig, rec, side)
+        return communication.role_bins(*a) if side == "both" else communication.bins(a)
+    return _lr_cache.get_or((s.sample_id, s._cells_mtime, mode), make)
 
 
 def niche_rgb(s):
@@ -296,7 +304,7 @@ def cell_keys(s: Session, version, mode):
     if mode.startswith("gene:"):
         return np.array([x[0] for x in GENE_BINS], dtype=object)[gene_bins(s, mode)]
     if mode.startswith("lr:"):
-        return np.array([x[0] for x in communication.BINS], dtype=object)[lr_bins(s, mode)]
+        return np.array([x[0] for x in lr_table(mode)], dtype=object)[lr_bins(s, mode)]
     if mode == "leiden":
         lab = embedding.leiden(s.sample_id)
         return np.array([f"L{i + 1}" for i in lab], dtype=object) if lab is not None else np.full(n, "", dtype=object)
@@ -344,8 +352,9 @@ def legend_for(s: Session, version, mode):
         return sorted([{"key": f"L{i + 1}", "label": f"L{i + 1}", "color": cluster_rgb(i), "count": int(n[i])}
                        for i in range(len(n))], key=lambda x: -x["count"])
     if mode.startswith("lr:"):
-        n = np.bincount(lr_bins(s, mode), minlength=len(communication.BINS))
-        return [{"key": k, "label": lab, "color": c, "count": int(n[i])} for i, (k, lab, c, _) in enumerate(communication.BINS)][::-1]
+        table = lr_table(mode)
+        n = np.bincount(lr_bins(s, mode), minlength=len(table))
+        return [{"key": k, "label": lab, "color": c, "count": int(n[i])} for i, (k, lab, c, _) in enumerate(table)][::-1]
     if mode.startswith("gene:"):
         n = np.bincount(gene_bins(s, mode), minlength=len(GENE_BINS))
         return [{"key": k, "label": lab, "color": c, "count": int(n[i])} for i, (k, lab, c, _) in enumerate(GENE_BINS)][::-1]

@@ -730,24 +730,30 @@ def compare_communication(split: str, by: str = "cell type", within: Optional[di
 
 
 @mcp.tool()
-def show_communication(ligand: str, receptor: str, side: str = "receiver") -> list:
-    """Whole sample: the H&E (left) and every cell colored by how much of one ligand-receptor signal it receives
-    (side="receiver": its receptor times the ligand around it) or sends (side="sender"), in percentiles of the cells
-    with a signal. ligand / receptor are gene symbols (a complex's subunits joined by "_", as cell_communication
-    lists them with "+")."""
+def show_communication(ligand: str, receptor: str, side: str = "both") -> list:
+    """Whole sample: the H&E (left) and every cell colored by its part in one ligand-receptor signal. side="both":
+    cells that send it (their ligand times the receptor around them), receive it (their receptor times the ligand
+    around them), both, or only weakly (strong = above the median of the cells with that signal); side="receiver" or
+    "sender": percentiles of that side. ligand / receptor are gene symbols (a complex's subunits joined by "_", as
+    cell_communication lists them with "+")."""
     from . import communication, plausibility
     s = _s()
     lig, rec = ligand.replace("+", "_"), receptor.replace("+", "_")
-    b = communication.bins(communication.activity(s, lig, rec, side))
-    names = np.array([x[1] for x in communication.BINS], dtype=object)
-    pal = {x[1]: x[2] for x in communication.BINS}
+    a = communication.activity(s, lig, rec, side)
+    if side == "both":
+        b, table = communication.role_bins(*a), communication.ROLE_BINS
+    else:
+        b, table = communication.bins(a), communication.BINS
+    names = np.array([x[1] for x in table], dtype=object)
+    pal = {x[1]: x[2] for x in table}
     out = s.dir / "figures" / f"ccc_{lig}_{rec}_{side}.jpg"
     out.parent.mkdir(exist_ok=True)
     png = render.tissue_overview(s.meta.get("he_path"), s.cells.px.to_numpy(), s.cells.py.to_numpy(), names[b], pal,
                                  plausibility.grid(s), [], out,
-                                 title=f"{lig.replace('_', '+')} -> {rec.replace('_', '+')}: {side}s",
-                                 image_kind=s.meta.get("image_kind", "H&E"), colored_by=f"{side} signal")
-    return [_j({"path": png, "cells_with_signal": int((b > 0).sum()), "n_cells": int(len(b))}), Image(path=png)]
+                                 title=f"{lig.replace('_', '+')} -> {rec.replace('_', '+')}",
+                                 image_kind=s.meta.get("image_kind", "H&E"),
+                                 colored_by="sender / receiver role" if side == "both" else f"{side} signal")
+    return [_j({"path": png, "cells": {x[1]: int((b == i).sum()) for i, x in enumerate(table)}}), Image(path=png)]
 
 
 # ---------------- niches ----------------

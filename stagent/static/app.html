@@ -2782,8 +2782,8 @@ analysis chosen in the tab.</li>
 CellPhoneDB v5 and the OmniPath consensus, merged; a pair counts when all its genes are in the panel) scored on
 neighboring cells between groups (cell types by default): contact signals within 15 µm, secreted and ECM signals
 within 50 µm, weighted by distance; tested against random groups. <b>Interactions</b>, a sender × receiver
-<b>Network</b> and <b>Pathways</b>; <b>receivers</b> / <b>senders</b> colors the map by where one signal is received or
-sent. <b>Compare groups</b> runs it per condition, slice, region or niche and lists the largest differences.</li>
+<b>Network</b> and <b>Pathways</b>; <b>show on map</b> colors the cells that send one signal (blue), receive it (red) or
+both (purple); click a legend entry to show one role. <b>Compare groups</b> runs it per condition, slice, region or niche and lists the largest differences.</li>
 <li><b>Undo</b> takes back your last action: one region you drew, an outline of the agent added as a region (all its pieces), one prior, or everything the agent changed for one request (its changes less than 90 s apart); click again to go further back. <b>Export…</b>: the cell table (CSV, with niche, Leiden and UMAP when
 computed), the registration in use (CSV), or the whole analysis as a Jupyter notebook that runs without this app
 (code with this annotation's parameters, and its results).</li>
@@ -3368,7 +3368,8 @@ $("slCompare").onclick = async () => {  // the Data tab's shortcut: the composit
 syncAnKind();
 // ---------------- Signaling: cell-cell communication between groups of neighboring cells ----------------
 const SG = { key: "", opts: null };
-const lrTitle = (m) => { const [l, r, side] = m.slice(3).split("~"); return `${l.replace(/_/g, "+")} → ${r.replace(/_/g, "+")}: ${side === "sender" ? "sending" : "receiving"} cells`; };
+const lrTitle = (m) => { const [l, r, side] = m.slice(3).split("~");
+  return `${l.replace(/_/g, "+")} → ${r.replace(/_/g, "+")}` + (side === "both" ? "" : `: ${side === "sender" ? "sending" : "receiving"} cells`); };
 function sgScope() { return $("sScope").value === "project" && st.sample && projectOf(st.sample.sample_id) ? "project" : "slice"; }
 const sgSelection = () => anSelection(sgScope());
 const sgBody = () => ({ session: st.sid, version: st.version, scope: sgScope(), selection: sgSelection() });
@@ -3431,7 +3432,8 @@ function colorBySignal(lig, rec, side) {
   $("anDlg").close();
   st.lrMode = `lr:${lig}~${rec}~${side}`; st.mode = st.lrMode;
   fillModes(st.lastSummary); refreshOverlay(); loadLegend();
-  toast(`The map shows the cells ${side === "sender" ? "sending" : "receiving"} ${lig.replace(/_/g, "+")} → ${rec.replace(/_/g, "+")}; Signaling → Last result brings the table back`, 5000);
+  toast(`The map shows ${side === "both" ? "the cells sending and receiving" : side === "sender" ? "the cells sending" : "the cells receiving"} ${lig.replace(/_/g, "+")} → ${rec.replace(/_/g, "+")}` +
+    (side === "both" ? " (click a legend entry to show one role)" : "") + "; Signaling → Last result brings the table back", 6000);
 }
 function showSignal(r, q) {  // the dialog's views of a communication result
   const within = Object.entries(r.within || {}).map(([k, v]) => `${anLabel(k)} ${v}`).join(", ");
@@ -3439,11 +3441,10 @@ function showSignal(r, q) {  // the dialog's views of a communication result
   const box = $("anBody");
   const mapLinks = (x) => { const s = document.createElement("span");
     const [lig, rec] = [x.ligand || x.interaction.split(" → ")[0].replace(/\+/g, "_"), x.receptor || x.interaction.split(" → ")[1].replace(/\+/g, "_")];
-    const a = Object.assign(document.createElement("span"), { className: "gene", textContent: "receivers", title: "Color the map by the signal each cell receives" });
-    a.onclick = () => colorBySignal(lig, rec, "receiver");
-    const b = Object.assign(document.createElement("span"), { className: "gene", textContent: "senders", title: "Color the map by the signal each cell sends" });
-    b.onclick = () => colorBySignal(lig, rec, "sender");
-    s.append(a, b); return s; };
+    const a = Object.assign(document.createElement("span"), { className: "gene", textContent: "show on map",
+      title: "Color the map by the cells that send this signal (blue), receive it (red) or both (purple)" });
+    a.onclick = () => colorBySignal(lig, rec, "both");
+    s.append(a); return s; };
   if (q.kind === "compare") {
     $("anTitle").textContent = `Communication across ${anLabel(r.split)}`;
     $("anSub").textContent = `${anLabel(r.by)} · ${where} · significant: ` + Object.entries(r.n_significant).map(([k, v]) => `${k} ${v}`).join(", ");
