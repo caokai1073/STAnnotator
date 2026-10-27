@@ -491,7 +491,9 @@ def api_config(req):
 
 
 FS_KINDS = {"h5ad": (".h5ad", ".rds", ".rda", ".rdata"),
-            "xenium": (".parquet", ".csv.gz", ".h5", ".xenium", ".mtx.gz", ".tsv.gz", ".ome.tif"), "image": (".tif", ".tiff", ".btf"), "csv": (".csv", ".tsv", ".txt"),
+            "xenium": (".parquet", ".csv.gz", ".h5", ".xenium", ".mtx.gz", ".tsv.gz", ".ome.tif"),
+            "xcells": (".parquet", ".csv.gz"), "xcounts": (".h5", ".mtx.gz", ".tsv.gz"), "xexp": (".xenium",),
+            "ximage": (".ome.tif", ".tif", ".tiff"), "image": (".tif", ".tiff", ".btf"), "csv": (".csv", ".tsv", ".txt"),
             "markers": (".csv", ".tsv", ".txt")}
 
 

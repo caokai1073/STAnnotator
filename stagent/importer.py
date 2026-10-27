@@ -429,6 +429,9 @@ def xenium_sources(entries):
     entries = [entries] if isinstance(entries, (str, Path, dict)) else list(entries)
     out, loose = [], {}
     for e in entries:
+        if isinstance(e, dict) and "fields" in e:  # one slice, its files given by what they are
+            out.append(_slice_from_fields(e["fields"]))
+            continue
         if isinstance(e, dict):
             out.append(e)
             continue
@@ -473,6 +476,36 @@ def xenium_sources(entries):
         for s in out:
             s["key"] = f"{Path(s['folder']).name}_{s['key']}" if s["key"] != Path(s["folder"]).name else s["key"]
     return out
+
+
+def _slice_from_fields(fields):
+    """One slice from the import dialog's fields: {"cells": path, "counts": [h5] or [mtx, barcodes, features],
+    "experiment": path, "morphology": path} (the last two optional). The files may have any names."""
+    one = lambda k: (fields.get(k) or [None])[0] if isinstance(fields.get(k), list) else fields.get(k)
+    cells = one("cells")
+    if not cells:
+        raise ValueError("choose the cells file (cells.parquet or cells.csv.gz)")
+    files = {"cells": str(Path(cells).expanduser())}
+    counts = [str(Path(p).expanduser()) for p in (fields.get("counts") or [])]
+    if len(counts) == 1:
+        files["matrix"] = counts[0]
+    elif len(counts) == 3:
+        for p in counts:
+            r = _xenium_role(Path(p).name)
+            if not r or r[0] not in ("matrix.mtx.gz", "barcodes.tsv.gz", "features.tsv.gz"):
+                raise ValueError(f"{Path(p).name}: with three count files they are matrix.mtx.gz, barcodes.tsv.gz and features.tsv.gz")
+            files[r[0]] = p
+    else:
+        raise ValueError("choose the counts: cell_feature_matrix.h5, or matrix.mtx.gz, barcodes.tsv.gz and features.tsv.gz")
+    for k in ("experiment", "morphology"):
+        if one(k):
+            files[k] = str(Path(one(k)).expanduser())
+    for p in [v for k, v in files.items()]:
+        if not Path(p).is_file():
+            raise ValueError(f"{p}: no such file")
+    r = _xenium_role(Path(cells).name)
+    key = r[1] if r and r[1] else Path(cells).parent.name if r else Path(cells).name.split(".")[0]  # GSM1_cells.parquet: GSM1
+    return {"key": key, "folder": str(Path(cells).expanduser().parent), "files": files}
 
 
 def _source(src):

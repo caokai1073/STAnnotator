@@ -60,6 +60,10 @@ class Api:
             mode = fd.OPEN if fd else webview.OPEN_DIALOG
             types = {"h5ad": ("AnnData or R (*.h5ad;*.rds;*.rda;*.RData)", "All files (*.*)"),
                      "xenium": ("Xenium files (*.parquet;*.csv.gz;*.h5;*.xenium;*.mtx.gz;*.tsv.gz;*.ome.tif)", "All files (*.*)"),
+                     "xcells": ("Xenium cells (*.parquet;*.csv.gz)", "All files (*.*)"),
+                     "xcounts": ("Xenium counts (*.h5;*.mtx.gz;*.tsv.gz)", "All files (*.*)"),
+                     "xexp": ("Xenium experiment (*.xenium)", "All files (*.*)"),
+                     "ximage": ("Images (*.ome.tif;*.tif;*.tiff)", "All files (*.*)"),
                      "image": ("Images (*.tif;*.tiff;*.btf)", "All files (*.*)"),
                      "csv": ("CSV (*.csv)", "All files (*.*)"),
                      "markers": ("Marker lists (*.csv;*.txt)", "All files (*.*)")}.get(kind, ("All files (*.*)",))

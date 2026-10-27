@@ -318,6 +318,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .imbody { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 4px; }
 .frow { display: grid; grid-template-columns: 130px minmax(0, 1fr) auto; gap: 8px; align-items: center; margin: 3px 0; }
 .frow > span:first-child { font-size: 12.5px; color: var(--muted); }
+.frow small.opt { display: block; font-size: 10.5px; opacity: .8; }
+.frow b.req { color: var(--warn); font-weight: 600; }
 .frow input[type=text], .frow textarea, .frow select { width: 100%; min-width: 0; }
 .frow textarea { font: 12px ui-monospace, Menlo, monospace; resize: vertical; }
 .imkind { display: flex; gap: 16px; margin-bottom: 6px; }
@@ -624,13 +626,13 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <label title="AnnData (.h5ad), or an R file (.rds / .rda) with a Seurat or SpatialExperiment object"><input type="radio" name="imKind" value="h5ad"> h5ad / RDS</label>
     </div>
     <div id="imX">
-      <div class="frow"><span>Xenium files</span><textarea id="imFolder" rows="3" placeholder="cells.parquet and cell_feature_matrix.h5 of the Xenium output (optional: experiment.xenium, morphology_focus/ch0000_dapi.ome.tif), or the whole output folder; one per line. Several slices: their folders, or all their files (e.g. GSM1_cells.parquet, GSM1_cell_feature_matrix.h5, GSM2_…)"></textarea>
-        <span style="display:flex;flex-direction:column;gap:4px"><button data-pick="xenium" data-multi="1" data-append="1" data-target="imFolder" title="Choose the files">Files…</button>
-        <button data-pick="folder" data-multi="1" data-append="1" data-target="imFolder" title="Choose output folders">Folder…</button></span></div>
-      <div class="hint" style="margin-left:138px">Only these files are needed, not the whole output: <b>cells.parquet</b> (or cells.csv.gz) and
-        <b>cell_feature_matrix.h5</b> (or matrix.mtx.gz, barcodes.tsv.gz and features.tsv.gz). Optional: <b>experiment.xenium</b> (the pixel
-        size, for an H&amp;E alignment file of Xenium Explorer) and <b>morphology_focus/ch0000_dapi.ome.tif</b> (the DAPI background when there
-        is no H&amp;E). A prefix in the names is fine (GSM1234_cells.parquet).</div>
+      <div class="frow"><span>Cells <b class="req" title="required">*</b></span><textarea id="imXCells" class="xin" rows="1" wrap="off" placeholder="cells.parquet (or cells.csv.gz)"></textarea><button data-pick="xcells" data-multi="1" data-target="imXCells">Choose…</button></div>
+      <div class="frow"><span>Counts <b class="req" title="required">*</b></span><textarea id="imXCounts" class="xin" rows="1" wrap="off" placeholder="cell_feature_matrix.h5 (or matrix.mtx.gz, barcodes.tsv.gz and features.tsv.gz)"></textarea><button data-pick="xcounts" data-multi="1" data-target="imXCounts">Choose…</button></div>
+      <div class="frow"><span>Experiment<small class="opt">optional</small></span><textarea id="imXExp" class="xin" rows="1" wrap="off" placeholder="experiment.xenium: pixel size (else 0.2125 µm), for Xenium Explorer alignments"></textarea><button data-pick="xexp" data-multi="1" data-target="imXExp">Choose…</button></div>
+      <div class="frow"><span>DAPI image<small class="opt">optional</small></span><textarea id="imXDapi" class="xin" rows="1" wrap="off" placeholder="morphology_focus/ch0000_dapi.ome.tif: background without an H&amp;E (large)"></textarea><button data-pick="ximage" data-multi="1" data-target="imXDapi">Choose…</button></div>
+      <div class="frow"><span>or the folder<small class="opt">instead of the files</small></span><textarea id="imFolder" class="xin" rows="1" wrap="off" placeholder="the whole output folder (output-XETG…), one per line"></textarea><button data-pick="folder" data-multi="1" data-target="imFolder">Choose…</button></div>
+      <div class="hint" style="margin-left:138px">Several slices (a project): one file per line in each field, matched by the start of the names
+        (GSM1_cells.parquet goes with GSM1_cell_feature_matrix.h5), or one folder per line.</div>
       <div class="hint" id="imXinfo" style="margin-left:138px"></div>
     </div>
     <div id="imH" hidden>
@@ -2520,8 +2522,16 @@ document.querySelectorAll("#imDlg [data-pick]").forEach((b) => (b.onclick = asyn
   target.value = [...had, ...paths.filter((p) => !had.includes(p))].join("\n"); target.dispatchEvent(new Event("change"));
 }));
 const baseName = (p) => p.replace(/[\\/]+$/, "").split(/[\\/]/).pop().replace(/\.(h5ad|rds|rda|rdata|ome\.tif|tif)$/i, "").replace(/[^A-Za-z0-9_.-]+/g, "_").slice(0, 40);
-$("imFolder").onchange = async () => {  // the slices found in the files and folders given
-  const entries = chosenFolders(); st.imXSlices = null; if (!entries.length) { $("imXinfo").textContent = ""; imSections(); return; }
+function xeniumEntries() {  // the fields as import entries: one slice field by field, or files matched by name
+  const L = (id) => $(id).value.split("\n").map((s) => s.trim()).filter(Boolean);
+  const cells = L("imXCells"), counts = L("imXCounts"), exp = L("imXExp"), dapi = L("imXDapi"), out = L("imFolder");
+  if (cells.length === 1 && [1, 3].includes(counts.length) && exp.length <= 1 && dapi.length <= 1)
+    out.push({ fields: { cells, counts, experiment: exp, morphology: dapi } });
+  else out.push(...cells, ...counts, ...exp, ...dapi);
+  return out;
+}
+async function inspectXenium() {  // the slices found in the files and folders given
+  const entries = xeniumEntries(); st.imXSlices = null; if (!entries.length) { $("imXinfo").textContent = ""; imSections(); return; }
   $("imXinfo").textContent = "checking…";
   try {
     const r = await post("/api/import/inspect", { kind: "xenium", entries });
@@ -2534,7 +2544,8 @@ $("imFolder").onchange = async () => {  // the slices found in the files and fol
     if (!$("imName").value) $("imName").value = baseName(r.slices.length > 1 ? r.slices[0].folder : r.slices[0].key);
   } catch (e) { $("imXinfo").textContent = e.message; }
   imSections();
-};
+}
+document.querySelectorAll("#imX textarea.xin").forEach((x) => (x.onchange = inspectXenium));
 $("imH5").onchange = async () => {
   const h5ad = $("imH5").value.split("\n").map((s) => s.trim()).filter(Boolean); if (!h5ad.length) return;
   $("imHinfo").textContent = "checking…";
@@ -2561,7 +2572,6 @@ $("imSecCol").onchange = () => {  // the sections of the chosen column, each wit
 };
 $("imSecAll").onchange = () => { document.querySelectorAll("#imSecList input").forEach((c) => (c.checked = $("imSecAll").checked)); imSections(); };
 const chosenSections = () => [...document.querySelectorAll("#imSecList input:checked")].map((c) => c.value);
-const chosenFolders = () => $("imFolder").value.split("\n").map((s) => s.trim()).filter(Boolean);
 function imSections() {  // one section: a sample; several sections or folders: a project of slices
   const secs = imKind() === "h5ad" ? chosenSections() : (st.imXSlices || []).map((x) => x.key);
   const many = secs.length > 1;
@@ -2571,7 +2581,6 @@ function imSections() {  // one section: a sample; several sections or folders: 
   if (!many && secs.length === 1 && imKind() === "h5ad" && !$("imName").value) $("imName").value = secs[0].replace(/[^A-Za-z0-9_.-]+/g, "_");
   $("imRegSecRow").hidden = $("imRegSecRow").hidden || many;
 }
-$("imFolder").addEventListener("input", imSections);
 $("imClose").onclick = () => $("imDlg").close();
 const imgMode = () => document.querySelector("input[name=imImgMode]:checked").value;
 const regMode = () => document.querySelector("input[name=imRegMode]:checked").value;
@@ -2653,7 +2662,7 @@ async function importSample() {  // returns true when the sample was imported
   const image = images.length > 1 ? images : (images[0] || "");
   const registration = regMode() === "file" ? $("imNewReg").value.trim() : "";
   const body = kind === "xenium"
-    ? { kind, name, folders: chosenFolders(), description: $("imDesc").value }
+    ? { kind, name, folders: xeniumEntries(), description: $("imDesc").value }
     : { kind, name, h5ad: $("imH5").value.split("\n").map((s) => s.trim()).filter(Boolean),
         section_column: $("imSecCol").value, sections: $("imSecCol").value ? chosenSections() : [],
         region_column: $("imRegCol").value, description: $("imDesc").value };
@@ -2661,7 +2670,7 @@ async function importSample() {  // returns true when the sample was imported
   Object.assign(body, { he: image, he_kind: $("imNewImgKind").value, registration, registration_section: $("imNewRegSec").value.trim() });
   if (!name) { $("imStatus").textContent = "Give the sample a name"; return false; }
   if (imgMode() === "file" && !images.length) { $("imStatus").textContent = "Choose the image, or No image"; return false; }
-  if (kind === "xenium" && !(st.imXSlices || []).length) { $("imStatus").textContent = "Give the Xenium files (cells.parquet and cell_feature_matrix.h5) or their folder"; return false; }
+  if (kind === "xenium" && !(st.imXSlices || []).length) { $("imStatus").textContent = "Give the cells and counts files (or the output folder); check the message under the fields"; return false; }
   const nSlices = kind === "h5ad" ? body.sections.length : st.imXSlices.length;
   if (images.length > 1 && nSlices < 2) { $("imStatus").textContent = "One image per sample (several images are for several slices)"; return false; }
   if (regMode() === "file" && !registration) { $("imStatus").textContent = "Choose the registration file, or No registration"; return false; }
