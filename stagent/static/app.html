@@ -779,8 +779,10 @@ T and NK cells: CD3E|NKG7+ EPCAM-
   <div class="gallery" id="glGrid"></div>
 </dialog>
 <dialog id="anDlg" style="width:min(1000px,96vw)">
-  <div class="dh"><b id="anTitle">Compare</b><span id="anSeg" class="seg"></span><span class="spacer"></span>
-    <button id="anAsk" hidden title="Ask the agent what this result may mean">Ask Agent</button><button id="anCsv">Save CSV…</button><button id="anClose">Close</button></div>
+  <div class="dh"><b id="anTitle">Compare</b><span id="anSeg" class="seg"></span>
+    <label id="anNWrap" class="hint" hidden style="margin-left:12px;display:inline-flex;align-items:center;gap:5px"><span id="anNLabel">genes</span>
+      <input type="number" id="anN" style="width:58px;height:28px"></label><span class="spacer"></span>
+    <button id="anAsk" hidden title="Ask the agent what this result may mean">Ask Agent</button><button id="anFig" hidden title="Save the dot plot as an SVG file">Save figure…</button><button id="anCsv">Save CSV…</button><button id="anClose">Close</button></div>
   <div class="imbody"><div class="hint" id="anSub"></div><div id="anBody"></div><div id="anLegend" class="cmplegend"></div><div class="hint" id="anNote"></div></div>
 </dialog>
 <dialog id="hpDlg" style="width:min(760px,95vw)">
@@ -818,7 +820,7 @@ const ICON_TEXT = { importBtn: "import", clearAll: "trash", connBtn: "monitor", 
   imNewAlign: "sparkle", imAlign: "sparkle", alignNow: "sparkle", alignReg: "file", imImgGo: "image", imRegGo: "check",
   imUndoPlace: "undo", refPick: "folder", exPick: "folder", refClose: "check", exClose: "check", rcTest: "check",
   rcGo: "server", fbOk: "check", rpAsk: "sparkle", xpCsv: "download", xpNb: "download", xpReg: "download",
-  hpCopy: "copy", editSave: "check", nameSave: "check", rsGo: "trash", aRun: "play", aLast: "list", anAsk: "sparkle", sRun: "play", sLast: "list", rvGo: "sparkle", rvShow: "list" };
+  hpCopy: "copy", editSave: "check", nameSave: "check", rsGo: "trash", anFig: "download", aRun: "play", aLast: "list", anAsk: "sparkle", sRun: "play", sLast: "list", rvGo: "sparkle", rvShow: "list" };
 const ICON_TITLES = { lgtoggle: "Fold or unfold", rgtoggle: "Fold or unfold", anCsv: "Save as CSV…", rpSave: "Save as Markdown…",
   mkExport: "Save the list as CSV…", fbHome: "Home folder", fbUp: "Parent folder", plclose: "Close", emClose: "Close" };
 Object.entries(ICON_TITLES).forEach(([id, t]) => $(id) && ($(id).title = t));
@@ -2739,8 +2741,11 @@ niche, Leiden cluster, the cells selected in the UMAP window, a slice or a metad
 the other cells or another group, optionally only within e.g. one cell type (Wilcoxon test, genes ranked by AUC;
 with several slices it checks the change in every slice); <b>Top genes</b> of every group; <b>Composition</b>: how
 one grouping splits over another (cell types per niche, niches per slice or per condition), as shares or as
-enrichment. Click a gene to color the map by it; <b>Ask Agent</b> asks the agent what the result may mean;
-<b>Save CSV…</b> keeps every gene.</li>
+enrichment. DE genes and Top genes also show a <b>Dot plot</b> (share of cells detecting each gene and its mean
+expression, per group); the number next to it sets how many genes the table and the plot show (DE: 5–60; Top genes:
+1–15 per group), <b>Save figure…</b> writes it as SVG. Click a gene to color the map by it; <b>Ask Agent</b> asks the
+agent what the result may mean; <b>Save CSV…</b> keeps every gene. <b>Last result</b> reopens the last result of the
+analysis chosen in the tab.</li>
 <li><b>Signaling</b> (cell-cell communication), for this slice or all slices pooled: ligand-receptor pairs (CellChatDB v2,
 CellPhoneDB v5 and the OmniPath consensus, merged; a pair counts when all its genes are in the panel) scored on
 neighboring cells between groups (cell types by default): contact signals within 15 µm, secreted and ECM signals
@@ -3035,7 +3040,7 @@ async function drawThumb(c, s, mode) {
 }
 $("slGallery").onclick = () => openGallery();
 // ---------------- Compare: DE genes, top genes per group, composition (one slice or all slices pooled) ----------------
-const AN = { opts: null, key: "", last: null, req: null, view: "" };
+const AN = { opts: null, key: "", last: null, req: null, view: "", by: {}, n: { de: 20, markers: 5 } };
 const AN_LABEL = { "cell type": "cell type", leiden: "Leiden cluster", selection: "UMAP selection" };
 const anLabel = (g) => AN_LABEL[g] || g;
 const AN_LEGEND = { "cell type": "type", lineage: "lineage", niche: "niche", leiden: "leiden", region: "region" };
@@ -3103,7 +3108,7 @@ function syncAnKind() {
     composition: "Shares of each value per row, and how much more or less common it is than if the two were unrelated.",
   }[k];
 }
-$("aKind").onchange = syncAnKind;
+$("aKind").onchange = () => { syncAnKind(); syncLast(); };
 $("aScope").onchange = () => loadAnOptions(true);
 $("aBy").onchange = anGroups;
 $("aGroup").onchange = () => { const r = $("aRef").value; anGroups(); if ([...$("aRef").options].some((o) => o.value === r)) $("aRef").value = r; };
@@ -3118,12 +3123,16 @@ $("aRun").onclick = async () => {
   else Object.assign(b, { rows: $("aRows").value, cols: $("aCols").value });
   $("aRun").disabled = true; const label = $("aRun").textContent; setLabel($("aRun"), "Running…");
   try {
-    AN.last = await post("/api/analysis/run", b); AN.req = { ...b, selection: undefined }; AN.view = "";
-    $("aLast").hidden = false; await showAnalysis();
+    AN.last = await post("/api/analysis/run", b); AN.req = { ...b, selection: undefined }; AN.sel = b.selection; AN.view = "";
+    AN.by[kind] = { last: AN.last, req: AN.req, sel: AN.sel }; syncLast(); await showAnalysis();
   } catch (e) { toast(e.message, 7000); }
   finally { $("aRun").disabled = false; setLabel($("aRun"), label); }
 };
-$("aLast").onclick = () => { if (AN.cmp) { AN.last = AN.cmp.last; AN.req = AN.cmp.req; AN.view = ""; } showAnalysis(); };
+function openLast(kind) { const x = AN.by[kind]; if (!x) return; AN.last = x.last; AN.req = x.req; AN.sel = x.sel; AN.view = ""; showAnalysis(); }
+function syncLast() {  // Last result shows the last result of the analysis chosen in the tab
+  $("aLast").hidden = !AN.by[$("aKind").value]; $("sLast").hidden = !AN.by[$("sKind").value];
+}
+$("aLast").onclick = () => openLast($("aKind").value);
 function anSeg(opts, cur, on) {  // the dialog's toggle (up / down genes, shares / enrichment)
   const box = $("anSeg"); box.textContent = ""; box.hidden = !opts.length;
   opts.forEach(([v, l]) => { const b = document.createElement("button"); b.type = "button"; b.textContent = l; b.classList.toggle("on", v === cur);
@@ -3146,15 +3155,14 @@ function anTable(head, rows) {
 }
 async function showAnalysis() {
   const r = AN.last, q = AN.req; if (!r) return;
+  $("anNWrap").hidden = $("anFig").hidden = true; AN.svg = null;
   if (q.kind === "run" || q.kind === "compare") {
-    AN.sig = { last: r, req: q };
     $("anBody").textContent = ""; $("anLegend").textContent = ""; $("anNote").textContent = "";
     $("anAsk").hidden = !(st.desktop || st.chatAvailable);
     showSignal(r, q);
     if (!$("anDlg").open) $("anDlg").showModal();
     return;
   }
-  AN.cmp = { last: r, req: q };
   const within = Object.entries(r.within || {}).map(([k, v]) => `${anLabel(k)} ${v}`).join(", ");
   const where = [r.scope === "project" ? "all slices pooled" : "this slice", within && `only ${within}`].filter(Boolean).join(" · ");
   $("anBody").textContent = ""; $("anLegend").textContent = ""; $("anNote").textContent = r.note || "";
@@ -3165,23 +3173,50 @@ async function showAnalysis() {
     $("anSub").textContent = `${anLabel(r.by)} · ${where} · ${r.n_group.toLocaleString()} vs ${r.n_reference.toLocaleString()} cells` +
       (r.n_tested[0] < r.n_group || r.n_tested[1] < r.n_reference ? ` (test on ${r.n_tested[0].toLocaleString()} vs ${r.n_tested[1].toLocaleString()})` : "") +
       (r.per_slice_check ? ` · per-slice check: ${r.per_slice_check}` : "");
-    const dir = AN.view || "up";
-    anSeg([["up", `Up (${r.n_up})`], ["down", `Down (${r.n_down})`]], dir, (v) => { AN.view = v; showAnalysis(); });
-    const list = r[dir], slc = list.length && ("slices_same_direction" in list[0] ? "slices_same_direction" : "slices_separate" in list[0] ? "slices_separate" : null);
+    const dir = AN.view || "up", N = AN.n.de;
+    anSeg([["up", `Up (${r.n_up})`], ["down", `Down (${r.n_down})`], ["dots", "Dot plot"]], dir, (v) => { AN.view = v; showAnalysis(); });
+    $("anNWrap").hidden = false; $("anNLabel").textContent = dir === "dots" ? "genes each way" : "genes";
+    Object.assign($("anN"), { min: 5, max: 60, value: N });
+    if (dir === "dots") {
+      const up = r.up.slice(0, Math.min(N, 30)).map((x) => x.gene), down = r.down.slice(0, Math.min(N, 30)).map((x) => x.gene);
+      $("anFig").hidden = false;
+      $("anNote").textContent = `Top ${up.length} up and ${down.length} down genes (by AUC) over the ${anLabel(r.by)} groups; ${r.group}` +
+        (r.reference !== "rest" ? ` and ${r.reference}` : "") + " first. Click a gene to color the map by it.";
+      if (!$("anDlg").open) $("anDlg").showModal();
+      if (!up.length && !down.length) { $("anBody").textContent = "No significant genes."; }
+      else await showDots([...up, ...down], { highlight: [r.group], breaks: [[0, "up"], ...(down.length ? [[up.length, "down"]] : [])] },
+                          [r.group, ...(r.reference !== "rest" ? [r.reference] : [])]);
+      return;
+    }
+    const list = r[dir].slice(0, N), slc = list.length && ("slices_same_direction" in list[0] ? "slices_same_direction" : "slices_separate" in list[0] ? "slices_separate" : null);
     const head = ["Gene", "AUC", "log<sub>2</sub> FC", "% group", "% reference", "Mean group", "Mean ref.", "FDR"];
     if (slc) head.push(slc === "slices_same_direction" ? "Same in slices" : "Slices apart");
     $("anBody").append(list.length ? anTable(head, list.map((x) => [geneLink(x.gene), fmt(x.auc, 3), fmt(x.log2fc), fmt(100 * x.pct_group, 0),
       fmt(100 * x.pct_reference, 0), fmt(x.mean_group), fmt(x.mean_reference), x.fdr ? Number(x.fdr).toExponential(1) : "< 1e-300",
       ...(slc ? [slc === "slices_same_direction" ? x[slc] : x[slc] ? "yes" : "no"] : [])]))
       : Object.assign(document.createElement("div"), { className: "hint", textContent: "No significant genes in this direction." }));
-    if (list.length < r[dir === "up" ? "n_up" : "n_down"]) $("anNote").textContent = `The ${list.length} strongest shown; Save CSV has every gene. ` + r.note;
+    if (list.length < r[dir === "up" ? "n_up" : "n_down"]) $("anNote").textContent = `The ${list.length} strongest shown (up to 60 with the number above); Save CSV has every gene. ` + r.note;
   } else if (q.kind === "markers") {
     $("anTitle").textContent = `Top genes per ${anLabel(r.by)}`;
     $("anSub").textContent = where + (r.skipped_small.length ? ` · skipped (under 30 cells): ${r.skipped_small.join(", ")}` : "");
-    anSeg([], "", null);
+    const view = AN.view || "table", N = AN.n.markers;
+    anSeg([["table", "Table"], ["dots", "Dot plot"]], view, (v) => { AN.view = v; showAnalysis(); });
+    $("anNWrap").hidden = false; $("anNLabel").textContent = "genes per group";
+    Object.assign($("anN"), { min: 1, max: 15, value: N });
+    if (view === "dots") {  // the top genes of every group, group by group, over all groups
+      const genes = [], breaks = [];
+      r.groups.forEach((g) => { const mine = g.genes.slice(0, N).map((x) => x.gene).filter((x) => !genes.includes(x));
+        if (mine.length) { breaks.push([genes.length, g.group]); genes.push(...mine); } });
+      $("anFig").hidden = false;
+      $("anNote").textContent = `The top ${N} gene(s) of each group (by AUC; a gene already shown for an earlier group is not repeated). Click a gene to color the map by it.`;
+      if (!$("anDlg").open) $("anDlg").showModal();
+      if (!genes.length) $("anBody").textContent = "No top genes.";
+      else await showDots(genes.slice(0, 200), { breaks: breaks.length <= 30 ? breaks : [] }, r.groups.map((g) => g.group));
+      return;
+    }
     $("anBody").append(anTable(["Group", "Cells", "Top genes (by AUC)"], r.groups.map((g) => {
       const box = document.createElement("span");
-      g.genes.forEach((x) => box.append(geneLink(x.gene, `AUC ${fmt(x.auc, 3)} · log2 FC ${fmt(x.log2fc)} · ${fmt(100 * x.pct_group, 0)}% vs ${fmt(100 * x.pct_rest, 0)}%`)));
+      g.genes.slice(0, N).forEach((x) => box.append(geneLink(x.gene, `AUC ${fmt(x.auc, 3)} · log2 FC ${fmt(x.log2fc)} · ${fmt(100 * x.pct_group, 0)}% vs ${fmt(100 * x.pct_rest, 0)}%`)));
       return [g.group, g.n_cells.toLocaleString(), box];
     })));
     $("anBody").querySelectorAll("td:last-child").forEach((td) => td.classList.add("genes"));
@@ -3293,7 +3328,7 @@ function syncSgKind() {
   document.querySelectorAll("[data-pane=signal] .s-cmp").forEach((e) => (e.style.visibility = cmp ? "visible" : "hidden"));
   setLabel($("sRun"), cmp ? "Compare" : "Find interactions");
 }
-$("sKind").onchange = syncSgKind;
+$("sKind").onchange = () => { syncSgKind(); syncLast(); };
 $("sScope").onchange = () => loadSigOptions(true);
 $("sWBy").onchange = sgWithin;
 document.querySelector('#tabs .tab[data-tab="signal"]').addEventListener("click", () => loadSigOptions());
@@ -3312,13 +3347,14 @@ $("sRun").onclick = async () => {
       if (j.done) { if (j.error) throw new Error(j.error); break; }
       await new Promise((r) => setTimeout(r, 600));
     }
-    AN.last = j.result; AN.req = { ...b, selection: undefined }; AN.view = ""; $("sLast").hidden = false;
+    AN.last = j.result; AN.req = { ...b, selection: undefined }; AN.sel = b.selection; AN.view = "";
+    AN.by[kind] = { last: AN.last, req: AN.req, sel: AN.sel }; syncLast();
     setTimeout(() => $("sprogress").classList.remove("show"), 800);
     await showAnalysis();
   } catch (e) { toast(e.message, 8000); $("sprogress").classList.remove("show"); }
   finally { $("sRun").disabled = false; }
 };
-$("sLast").onclick = () => { if (AN.sig) { AN.last = AN.sig.last; AN.req = AN.sig.req; AN.view = ""; } showAnalysis(); };
+$("sLast").onclick = () => openLast($("sKind").value);
 function colorBySignal(lig, rec, side) {
   $("anDlg").close();
   st.lrMode = `lr:${lig}~${rec}~${side}`; st.mode = st.lrMode;
@@ -3376,6 +3412,92 @@ function showSignal(r, q) {  // the dialog's views of a communication result
   }
 }
 syncSgKind();
+// ---------------- dot plot of genes over groups (DE genes, top genes per group) ----------------
+const VIRIDIS = [[68, 1, 84], [59, 82, 139], [33, 145, 140], [94, 201, 98], [253, 231, 37]];
+function viridis(v) {  // v in 0..1
+  const x = Math.max(0, Math.min(1, v)) * (VIRIDIS.length - 1), i = Math.min(Math.floor(x), VIRIDIS.length - 2), f = x - i;
+  return `rgb(${VIRIDIS[i].map((c, k) => Math.round(c + f * (VIRIDIS[i + 1][k] - c))).join(",")})`;
+}
+const svgEsc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+function dotPlotSVG(d, opts = {}) {  // d: {groups, n_cells, genes, pct, mean}; opts: {highlight, breaks: [[index, label]]}
+  const C = 18, R = 7.5, nG = d.genes.length, nR = d.groups.length;
+  const left = Math.min(230, 12 + 6.6 * Math.max(...d.groups.map((g) => String(g).length), 4)), top = 92, legendH = 64;
+  const W = left + nG * C + 150, H = top + nR * C + legendH;
+  const lo = [], hi = [];  // each gene's color scaled over the groups (0 = its lowest group mean, 1 = its highest)
+  for (let j = 0; j < nG; j++) { const col = d.mean.map((r) => r[j]); lo.push(Math.min(...col)); hi.push(Math.max(...col)); }
+  const out = [`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="currentColor">`];
+  const br = opts.breaks || [];
+  br.forEach(([j, label], k) => {  // gene blocks (up / down genes, the groups): a bracket with the label, cut to fit
+    const x = left + j * C, end = left + (k + 1 < br.length ? br[k + 1][0] : nG) * C, w = end - x;
+    if (j > 0) out.push(`<line x1="${x}" y1="${top - 4}" x2="${x}" y2="${top + nR * C}" stroke="#999" stroke-width="0.6" stroke-dasharray="3,2"/>`);
+    out.push(`<path d="M${x + 2} 20 V16 H${end - 2} V20" fill="none" stroke="#999" stroke-width="0.8"/>`);
+    const fit = Math.max(1, Math.floor(w / 6)), text = label.length > fit ? label.slice(0, Math.max(1, fit - 1)) + "…" : label;
+    out.push(`<text x="${(x + end) / 2}" y="12" font-size="10" font-weight="600" text-anchor="middle"><title>${svgEsc(label)}</title>${svgEsc(text)}</text>`);
+  });
+  d.genes.forEach((g, j) => {
+    const x = left + j * C + C / 2;
+    out.push(`<text class="dpgene" data-gene="${svgEsc(g)}" x="${x}" y="${top - 6}" transform="rotate(-55 ${x} ${top - 6})" style="cursor:pointer">${svgEsc(g)}</text>`);
+  });
+  d.groups.forEach((grp, i) => {
+    const y = top + i * C + C / 2;
+    const hl = (opts.highlight || []).includes(grp);
+    out.push(`<text x="${left - 6}" y="${y + 4}" text-anchor="end"${hl ? ' font-weight="700"' : ""}>${svgEsc(grp)}</text>`);
+    if (hl) out.push(`<rect x="${left}" y="${top + i * C}" width="${nG * C}" height="${C}" fill="#0f7c86" fill-opacity="0.08"/>`);
+    d.genes.forEach((g, j) => {
+      const p = d.pct[i][j], m = d.mean[i][j], r = R * Math.sqrt(p);
+      if (r < 0.4) return;
+      const v = hi[j] > lo[j] ? (m - lo[j]) / (hi[j] - lo[j]) : 0.5;
+      out.push(`<circle cx="${left + j * C + C / 2}" cy="${y}" r="${r.toFixed(2)}" fill="${viridis(v)}"><title>${svgEsc(g)} in ${svgEsc(grp)}: ${Math.round(100 * p)}% of ${d.n_cells[i].toLocaleString()} cells, mean ${m.toFixed(2)}</title></circle>`);
+    });
+  });
+  const ly = top + nR * C + 22, lx = left;  // legends: dot size = % detecting, color = scaled mean
+  out.push(`<text x="${lx}" y="${ly - 6}" font-size="10">% of cells detecting</text>`);
+  [0.25, 0.5, 0.75, 1].forEach((p, k) => {
+    out.push(`<circle cx="${lx + 8 + k * 34}" cy="${ly + 10}" r="${(R * Math.sqrt(p)).toFixed(2)}" fill="#888"/>`);
+    out.push(`<text x="${lx + 18 + k * 34}" y="${ly + 14}" font-size="9">${p * 100}</text>`);
+  });
+  const cx = lx + 170;
+  out.push(`<text x="${cx}" y="${ly - 6}" font-size="10">mean expression (scaled per gene)</text>`);
+  for (let k = 0; k < 40; k++) out.push(`<rect x="${cx + k * 3}" y="${ly + 4}" width="3.2" height="10" fill="${viridis(k / 39)}"/>`);
+  out.push(`<text x="${cx}" y="${ly + 26}" font-size="9">low</text><text x="${cx + 120}" y="${ly + 26}" font-size="9" text-anchor="end">high</text>`);
+  out.push("</svg>");
+  return out.join("");
+}
+async function showDots(genes, opts, first) {  // fetch the dot plot data of the result shown and draw it
+  const q = AN.req, box = $("anBody");
+  box.textContent = "Drawing…";
+  try {
+    const d = await post("/api/analysis/dots", { session: q.session, version: q.version, scope: q.scope, selection: AN.sel,
+      by: q.by, genes, within: q.within, first });
+    if (AN.req !== q || !$("anDlg").open) return;  // another result was opened, or the window closed, meanwhile
+    box.innerHTML = dotPlotSVG(d, opts);
+    box.querySelectorAll(".dpgene").forEach((t) => (t.onclick = () => colorByGene(t.dataset.gene)));
+    AN.svg = dotPlotSVG(d, opts).replace('fill="currentColor"', 'fill="#222"');
+    if (d.n_groups_total > d.groups.length) $("anNote").textContent = `The ${d.groups.length} largest of ${d.n_groups_total} groups. ` + $("anNote").textContent;
+  } catch (e) { box.textContent = e.message; }
+}
+async function saveClientText(name, text, type) {  // a file made in the page: Save dialog in the app, a download in a browser
+  if (native()) {
+    const path = await native().save_path(name); if (!path) return;
+    if (st.remote) { const r = await native().write_text(path, text); toast(r.error || `Saved ${path}`, r.error ? 6000 : 4000); return; }
+    try { await post("/api/save_text", { path, text }); toast(`Saved ${path}`, 4000); } catch (e) { toast(e.message, 6000); }
+    return;
+  }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name;
+  document.body.append(a); a.click(); a.remove();
+}
+$("anFig").onclick = () => {
+  if (!AN.svg) return;
+  const r = AN.last, part = AN.req.kind === "de" ? `de_${r.group}_vs_${r.reference}` : `top_genes_by_${r.by}`;
+  saveClientText(`${st.sample.sample_id}_${part}_dotplot.svg`.replace(/[^A-Za-z0-9_.-]+/g, "_"), AN.svg, "image/svg+xml");
+};
+$("anN").onchange = () => {  // also fires when the box loses focus: redraw only when the number changed
+  const kind = AN.req && AN.req.kind, lim = kind === "de" ? [5, 60] : [1, 15];
+  const n = Math.max(lim[0], Math.min(lim[1], Math.round(+$("anN").value) || lim[0]));
+  $("anN").value = n;
+  if (n === AN.n[kind]) return;
+  AN.n[kind] = n; showAnalysis();
+};
 $("glClose").onclick = () => $("glDlg").close();
 function miniInfo() {
   const s = st.sample;

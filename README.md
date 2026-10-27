@@ -288,6 +288,11 @@ by Claude show up within a few seconds.
    - **Top genes**: every group against the rest (what sets each niche or cluster apart).
    - **Composition**: how one grouping splits over another (cell types per niche, niches per region, niches per
      slice or per condition, with every slice's own bar), as shares or as log2 enrichment over independence.
+   DE genes and Top genes also show a **Dot plot** (one row per group, dot size = share of cells detecting the gene,
+   color = its mean expression scaled per gene; the DE group first): the number in the window sets how many genes the
+   table and the plot show (DE: 5–60, the plot the top N up and down; Top genes: 1–15 per group), **Save figure…**
+   writes the plot as SVG, and a click on a gene colors the map by it. **Last result** reopens the last result of
+   the analysis chosen in the tab (DE genes, Top genes or Composition; in Signaling, Interactions or Compare groups).
    **Ask Agent** asks the agent to interpret the result (it calls the same analysis through `de_genes`,
    `group_markers` or `composition`); **Save CSV…** keeps the full table. On SCP2927 (559,539 cells, 480 genes) a DE
    run takes 1-2 s and the top genes of 8 niches about 10 s.

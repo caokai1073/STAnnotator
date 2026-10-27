@@ -947,13 +947,22 @@ async def api_project_niches(req: Request):
 ANALYSES = LRU(8)   # recent results, for their CSV
 
 
+_cell_tables = LRU(2)  # the last cell tables (dot plots of one result ask for them again and again)
+
+
 def _analysis_cells(b):
     """The cell table of an analysis request: {session, version, scope ("slice" or "project"), selection}; the
     selection ({sample_id: rows}) is also kept for the agent's tools."""
-    from . import analysis
     s = review_app._session(b["session"])
     sel = b.get("selection") or None
     claudelink.write_viewer_selection(sel)
+    key = (s.id, b.get("version"), b.get("scope"), json.dumps(sel, sort_keys=True) if sel else "",
+           (niches.current(s)[0] or {}).get("run_id"), (embedding.current(s.sample_id) or {}).get("run_id"), s.versions()[-1])
+    return _cell_tables.get_or(key, lambda: _make_cells(s, b, sel))
+
+
+def _make_cells(s, b, sel):
+    from . import analysis
     if b.get("scope") == "project":
         from . import projects
         pid = projects.project_of(s.sample_id)
@@ -985,7 +994,7 @@ async def api_analysis_run(req: Request):
             r = analysis.de(c, b["by"], b["group"], b.get("reference") or "rest", within, top=60, full=True)
             table = r.pop("table")
         elif b["kind"] == "markers":
-            r = analysis.markers(c, b["by"], top=10, within=within)
+            r = analysis.markers(c, b["by"], top=15, within=within)
             table = pd.DataFrame([{"group": g["group"], "n_cells": g["n_cells"], **x} for g in r["groups"] for x in g["genes"]])
         elif b["kind"] == "composition":
             r = analysis.crosstab(c, b["rows"], b["cols"], within)
@@ -1070,6 +1079,22 @@ async def api_claude_analysis(req: Request):
                                                                   "split", "resource")}
     args["within"] = json.dumps(q.get("within") or None, ensure_ascii=False)
     return _json(_ask_claude(s, ANALYSIS_ASK[q["kind"]].format(**args) + ANALYSIS_ASK_END))
+
+
+async def api_analysis_dots(req: Request):
+    """Dot plot data of genes over the groups of a grouping: {session, version, scope, selection, by, genes, within,
+    first}."""
+    from . import analysis
+    b = await req.json()
+
+    def work():
+        c = _analysis_cells(b)
+        within = {k: v for k, v in (b.get("within") or {}).items() if v not in (None, "", [])}
+        return analysis.dots(c, b["by"], list(b["genes"])[:200], within, tuple(b.get("first") or ()))
+    try:
+        return _json(await asyncio.to_thread(work))
+    except (ValueError, KeyError) as e:
+        return _json({"error": str(e).strip("'")}, 400)
 
 
 def api_analysis_csv(req):
@@ -1914,6 +1939,7 @@ def build_app(port):
         Route("/api/project/{pid}/niches", api_project_niches, methods=["POST"]),
         Route("/api/analysis/options", api_analysis_options, methods=["POST"]),
         Route("/api/analysis/run", api_analysis_run, methods=["POST"]),
+        Route("/api/analysis/dots", api_analysis_dots, methods=["POST"]),
         Route("/api/analysis/{key}.csv", api_analysis_csv),
         Route("/api/claude/analysis", api_claude_analysis, methods=["POST"]),
         Route("/api/communication/run", api_communication_run, methods=["POST"]),

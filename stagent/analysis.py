@@ -317,6 +317,31 @@ def crosstab(c, rows, cols, within=None, top_cols=None):
     return res
 
 
+def dots(c, by, genes, within=None, first=(), max_groups=25):
+    """Dot plot data: for every group of grouping by (within the filter; the groups in first, then the largest, at
+    most max_groups) the share of its cells detecting each gene and the mean log-normalized expression."""
+    col = _column(c, by)
+    m = _within(c, within) & pd.notna(col)
+    vc = pd.Series(col[m]).value_counts()
+    order = [g for g in first if g in vc.index] + [g for g in vc.index if g not in first]
+    order = order[:max_groups]
+    pos = {g: i for i, g in enumerate(c.genes)}
+    missing = [g for g in genes if g not in pos]
+    if missing:
+        raise ValueError(f"not in the panel: {', '.join(missing[:5])}")
+    gi = {g: i for i, g in enumerate(order)}
+    rows = np.where(m & np.isin(col, order))[0]
+    G = sp.csr_matrix((np.ones(len(rows), np.float32), ([gi[x] for x in col[rows]], rows)), shape=(len(order), len(col)))
+    X = c.X[:, [pos[g] for g in genes]].tocsc()
+    n = np.asarray(G.sum(1)).ravel()
+    det = X.copy()
+    det.data = (det.data > 0).astype(np.float32)
+    pct = np.asarray((G @ det).todense()) / n[:, None]
+    mean = np.asarray((G @ X).todense()) / n[:, None]
+    return {"by": by, "groups": [str(g) for g in order], "n_cells": [int(x) for x in n], "genes": list(genes),
+            "pct": np.round(pct, 3).tolist(), "mean": np.round(mean, 3).tolist(), "n_groups_total": int(len(vc))}
+
+
 # ---------------- the analyses the user ran in the app ----------------
 def headline(kind, r):
     """A few lines of a result, for the log the agent reads."""
