@@ -490,7 +490,8 @@ def api_config(req):
                   "remote": os.environ.get("STAGENT_REMOTE") == "1", "host": platform.node()})
 
 
-FS_KINDS = {"h5ad": (".h5ad", ".rds", ".rda", ".rdata"), "image": (".tif", ".tiff", ".btf"), "csv": (".csv", ".tsv", ".txt"),
+FS_KINDS = {"h5ad": (".h5ad", ".rds", ".rda", ".rdata"),
+            "xenium": (".parquet", ".csv.gz", ".h5", ".xenium", ".mtx.gz", ".tsv.gz", ".ome.tif"), "image": (".tif", ".tiff", ".btf"), "csv": (".csv", ".tsv", ".txt"),
             "markers": (".csv", ".tsv", ".txt")}
 
 
@@ -837,7 +838,7 @@ async def api_import_inspect(req: Request):
     b = await req.json()
     try:
         if b.get("kind") == "xenium":
-            return _json(importer.inspect_xenium(b["folder"]))
+            return _json(importer.inspect_xenium_many(b.get("entries") or [b["folder"]]))
         paths = [p for p in b.get("h5ad", []) if p]
         if not paths:
             raise ValueError("choose one or more h5ad or RDS files")
@@ -858,11 +859,12 @@ async def api_import(req: Request):
         JOBS[job].update(stage=msg, progress=min(0.95, JOBS[job]["progress"] + 0.15))
 
     sections = [s for s in (b.get("sections") or []) if s]
-    folders = [f for f in (b.get("folders") or []) if f]
+    folders = [f for f in (b.get("folders") or []) if f]  # Xenium: folders and / or files
 
     def work():
         try:
-            if len(sections) > 1 or len(folders) > 1:  # several slices: a project, one sample per slice
+            n_xenium = len(importer.xenium_sources(folders)) if b.get("kind") == "xenium" and folders else 0
+            if len(sections) > 1 or n_xenium > 1:  # several slices: a project, one sample per slice
                 importer.import_project(name, b.get("kind", "h5ad"), b.get("h5ad") if b.get("kind") == "h5ad" else folders,
                                         sections=sections, section_column=b.get("section_column") or None,
                                         he=b.get("he") or None, registration=b.get("registration") or None,
@@ -870,7 +872,7 @@ async def api_import(req: Request):
                                         description=b.get("description", ""), overwrite=bool(b.get("overwrite")),
                                         progress=say)
             elif b.get("kind") == "xenium":
-                importer.import_xenium(name, b.get("folder") or folders[0], he=b.get("he") or None, registration=b.get("registration") or None,
+                importer.import_xenium(name, importer.xenium_sources(folders)[0] if folders else b["folder"], he=b.get("he") or None, registration=b.get("registration") or None,
                                        description=b.get("description", ""), overwrite=bool(b.get("overwrite")), progress=say,
                                        he_kind=b.get("he_kind") or "H&E", registration_section=b.get("registration_section") or None)
             else:

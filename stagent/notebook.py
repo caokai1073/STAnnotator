@@ -178,10 +178,9 @@ unpack = lambda s, dtype: np.frombuffer(zlib.decompress(base64.b64decode(s)), dt
                   "every cell to the epithelium (`depth_um`, used by depth priors) is computed as at import."))
     if src.get("kind") == "xenium":
         read = f'''
-XENIUM = r"{src.get('folder')}"
-from pathlib import Path
-c = sa.importer._xenium_cells(Path(XENIUM))
-bc, genes, X = sa.importer._xenium_matrix(Path(XENIUM))
+XENIUM = {_py({"key": src.get("key") or "", "folder": src.get("folder"), "files": src["files"]}) if src.get("files") else _py(src.get("folder"))}
+c = sa.importer._xenium_cells(XENIUM)
+bc, genes, X = sa.importer._xenium_matrix(XENIUM)
 pos = pd.Series(np.arange(len(bc)), index=bc)
 c = c[c.cell_id.isin(pos.index)]
 counts = X[pos[c.cell_id].to_numpy()].tocsr()

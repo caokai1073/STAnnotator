@@ -3,14 +3,15 @@
   h5ad    stagent import --name 147328 --h5ad a.h5ad [b.h5ad ...] --he slide.ome.tif --registration reg.csv
                                [--section-column donor_id --section 147328] [--region-column histopathology]
   Xenium  stagent import-xenium --name ln1 --xenium /path/to/output-XETG... [--he he.ome.tif --registration
-                               he_imagealignment.csv]
+                               he_imagealignment.csv]   (or --xenium cells.parquet cell_feature_matrix.h5 ...)
 
 h5ad: AnnData files with raw counts (layer "counts", X, or raw.X when X is normalized) and cell coordinates in micrometers (obs
   x_centroid/y_centroid, x/y, or obsm["spatial"]). Several files (e.g. one per lineage) are merged; cell type
   annotations in them are ignored. An R file (.rds, .rda / .RData) with a Seurat or SpatialExperiment object is read
   without R (rds.py) and stands in for an h5ad: it is converted once into converted/ of the data folder.
-Xenium: the output folder of the Xenium instrument / Xenium Ranger: cells.parquet or cells.csv.gz, and
-  cell_feature_matrix.h5 or cell_feature_matrix/ (only "Gene Expression" features are kept). The background image is
+Xenium: the output folder of the Xenium instrument / Xenium Ranger, or only the files read from it (xenium_sources):
+  cells.parquet or cells.csv.gz, and cell_feature_matrix.h5 or cell_feature_matrix/ (only "Gene Expression" features
+  are kept); optional experiment.xenium (pixel size) and morphology_focus/ch0000_dapi.ome.tif (DAPI image). The background image is
   the H&E when given (with its Xenium Explorer alignment file), otherwise the DAPI morphology image of the folder,
   otherwise none.
 H&E: pyramidal TIFF / OME-TIFF.
@@ -399,68 +400,159 @@ def import_sample(name, h5ad, he=None, registration=None, section_column=None, s
                          registration=R, image_pending=he if he and R is None else None, pending_kind=he_kind)
 
 
-# ---------------- Xenium output folder ----------------
+# ---------------- Xenium output (the folder, or only the files an import reads) ----------------
 MORPHOLOGY = ["morphology_focus/ch0000_dapi.ome.tif", "morphology_focus.ome.tif", "morphology_mip.ome.tif"]
+# what an import reads, by the end of the file name (a prefix such as GSM1234_ is allowed): the cells and the counts
+# are needed; experiment.xenium (the pixel size) and the DAPI image (the background when there is no H&E) are optional
+XENIUM_FILES = {"cells": ("cells.parquet", "cells.csv.gz"), "matrix": ("cell_feature_matrix.h5",),
+                "matrix.mtx.gz": ("matrix.mtx.gz",), "barcodes.tsv.gz": ("barcodes.tsv.gz",),
+                "features.tsv.gz": ("features.tsv.gz",), "experiment": ("experiment.xenium",),
+                "morphology": ("ch0000_dapi.ome.tif", "morphology_focus.ome.tif", "morphology_mip.ome.tif")}
+XENIUM_NEEDED = "cells.parquet (or cells.csv.gz) and cell_feature_matrix.h5 (or its matrix.mtx.gz, barcodes.tsv.gz, features.tsv.gz)"
 
 
-def _xenium_cells(d):
-    if (d / "cells.parquet").exists():
-        c = pd.read_parquet(d / "cells.parquet", columns=["cell_id", "x_centroid", "y_centroid"])
-    elif (d / "cells.csv.gz").exists():
-        c = pd.read_csv(d / "cells.csv.gz", usecols=["cell_id", "x_centroid", "y_centroid"])
+def _xenium_role(name):
+    """(role, prefix) of a file of a Xenium output, or None."""
+    low = name.lower()
+    for role, ends in XENIUM_FILES.items():
+        for e in ends:
+            if low.endswith(e):
+                return role, name[:len(name) - len(e)].rstrip("_-. ")
+    return None
+
+
+def xenium_sources(entries):
+    """Slices of Xenium output from folders and / or files: [{"key", "folder", "files": {role: path}}]. A folder is
+    one slice when it holds the standard files (cell_feature_matrix/ and morphology_focus/ too); otherwise, like a
+    list of files, its files are grouped by folder and name prefix (GSM1_cells.parquet, GSM1_cell_feature_matrix.h5,
+    GSM2_... are two slices). Slices without cells or counts are an error."""
+    entries = [entries] if isinstance(entries, (str, Path, dict)) else list(entries)
+    out, loose = [], {}
+    for e in entries:
+        if isinstance(e, dict):
+            out.append(e)
+            continue
+        p = Path(e).expanduser()
+        if p.is_dir():
+            files = {}
+            for role, ends in XENIUM_FILES.items():
+                hit = next((p / x for x in ends if (p / x).exists()), None)
+                if hit:
+                    files[role] = str(hit)
+            if (p / "cell_feature_matrix").is_dir() and "matrix" not in files:
+                files["mtx_dir"] = str(p / "cell_feature_matrix")
+            m = next((p / x for x in MORPHOLOGY if (p / x).exists()), None)
+            if m:
+                files["morphology"] = str(m)
+            if "cells" in files:
+                out.append({"key": p.name, "folder": str(p), "files": files})
+                continue
+            children = [c for c in sorted(p.iterdir()) if c.is_file()]
+        elif p.is_file():
+            children = [p]
+        else:
+            raise ValueError(f"{p}: no such file or folder")
+        for c in children:
+            r = _xenium_role(c.name)
+            if r:
+                loose.setdefault((str(c.parent), r[1]), {})[r[0]] = str(c)
+    for (folder, prefix), files in loose.items():
+        out.append({"key": prefix or Path(folder).name, "folder": folder, "files": files})
+    if not out:
+        raise ValueError(f"no Xenium files found: an import needs {XENIUM_NEEDED}")
+    for s in out:
+        f = s["files"]
+        if all(k in f for k in ("matrix.mtx.gz", "barcodes.tsv.gz", "features.tsv.gz")) and "matrix" not in f:
+            f["mtx"] = [f["matrix.mtx.gz"], f["barcodes.tsv.gz"], f["features.tsv.gz"]]
+        lacks = [w for w, ok in (("cells.parquet or cells.csv.gz", "cells" in f),
+                                 ("cell_feature_matrix.h5", any(k in f for k in ("matrix", "mtx", "mtx_dir")))) if not ok]
+        if lacks:
+            raise ValueError(f"{s['key']}: missing {' and '.join(lacks)} (an import needs {XENIUM_NEEDED})")
+    keys = [s["key"] for s in out]
+    if len(set(keys)) < len(keys):  # the same prefix in two folders: name them by folder too
+        for s in out:
+            s["key"] = f"{Path(s['folder']).name}_{s['key']}" if s["key"] != Path(s["folder"]).name else s["key"]
+    return out
+
+
+def _source(src):
+    """One slice's files (a folder or a slice of xenium_sources)."""
+    if isinstance(src, dict):
+        return src
+    s = xenium_sources(list(src) if isinstance(src, (list, tuple)) else [src])
+    if len(s) != 1:
+        raise ValueError(f"{src} holds {len(s)} slices: import them as a project")
+    return s[0]
+
+
+def _xenium_cells(src):
+    f = _source(src)["files"]["cells"]
+    if f.endswith(".parquet"):
+        c = pd.read_parquet(f, columns=["cell_id", "x_centroid", "y_centroid"])
     else:
-        raise ValueError(f"{d}: no cells.parquet or cells.csv.gz (is this a Xenium output folder?)")
+        c = pd.read_csv(f, usecols=["cell_id", "x_centroid", "y_centroid"])
     c["cell_id"] = [x.decode() if isinstance(x, bytes) else str(x) for x in c.cell_id]
     return c
 
 
-def _xenium_matrix(d):
+def _xenium_matrix(src):
     """(barcodes, genes, cells x genes CSR) with only "Gene Expression" features."""
-    if (d / "cell_feature_matrix.h5").exists():
-        with h5py.File(d / "cell_feature_matrix.h5", "r") as h:
+    f = _source(src)["files"]
+    if "matrix" in f:
+        with h5py.File(f["matrix"], "r") as h:
             m = h["matrix"]
             n_feat, n_cells = (int(v) for v in m["shape"][:])
             X = sp.csr_matrix((m["data"][:], m["indices"][:], m["indptr"][:]), shape=(n_cells, n_feat))
             bc = _strings(m["barcodes"][:])
             names, ftype = _strings(m["features/name"][:]), _strings(m["features/feature_type"][:])
-    elif (d / "cell_feature_matrix").is_dir():
-        import scipy.io
-        md = d / "cell_feature_matrix"
-        X = sp.csr_matrix(scipy.io.mmread(md / "matrix.mtx.gz").T)
-        bc = pd.read_csv(md / "barcodes.tsv.gz", header=None)[0].astype(str).to_numpy()
-        f = pd.read_csv(md / "features.tsv.gz", header=None, sep="\t")
-        names, ftype = f[1].astype(str).to_numpy(), f[2].astype(str).to_numpy()
     else:
-        raise ValueError(f"{d}: no cell_feature_matrix.h5 or cell_feature_matrix/ folder")
+        import scipy.io
+        names3 = ("matrix.mtx.gz", "barcodes.tsv.gz", "features.tsv.gz")
+        mtx, barcodes, features = (f["mtx"] if "mtx" in f else [str(Path(f["mtx_dir"]) / x) for x in names3]
+                                   if "mtx_dir" in f else [f[x] for x in names3])
+        X = sp.csr_matrix(scipy.io.mmread(mtx).T)
+        bc = pd.read_csv(barcodes, header=None)[0].astype(str).to_numpy()
+        ft = pd.read_csv(features, header=None, sep="\t")
+        names, ftype = ft[1].astype(str).to_numpy(), ft[2].astype(str).to_numpy()
     keep = np.where(ftype == "Gene Expression")[0]
     if not len(keep):
         raise ValueError("the matrix has no 'Gene Expression' features")
     return bc, [str(g) for g in names[keep]], X[:, keep].astype(np.float32).tocsr()
 
 
-def inspect_xenium(xenium_dir):
+def inspect_xenium(src):
     """What an import would use: counts, panel size, pixel size and the morphology image found."""
-    d = Path(xenium_dir).expanduser()
-    info = {"folder": str(d), "pixel_size_um": 0.2125, "morphology": None}
-    if (d / "experiment.xenium").exists():
-        e = json.load(open(d / "experiment.xenium"))
+    s = _source(src)
+    f = s["files"]
+    info = {"folder": s["folder"], "key": s["key"], "files": {k: v for k, v in f.items() if k != "mtx"},
+            "pixel_size_um": 0.2125, "morphology": f.get("morphology")}
+    if "experiment" in f:
+        e = json.load(open(f["experiment"]))
         info["pixel_size_um"] = float(e.get("pixel_size", 0.2125))
         info.update({k: e[k] for k in ("panel_name", "panel_num_targets_predesigned", "region_name", "run_name")
                      if k in e})
-    info["morphology"] = next((str(d / m) for m in MORPHOLOGY if (d / m).exists()), None)
-    c = _xenium_cells(d)
-    info["n_cells"] = int(len(c))
+    if f["cells"].endswith(".parquet"):
+        import pyarrow.parquet as pq
+        info["n_cells"] = int(pq.ParquetFile(f["cells"]).metadata.num_rows)
+    else:
+        info["n_cells"] = int(len(_xenium_cells(s)))
     return info
+
+
+def inspect_xenium_many(entries):
+    """For the import dialog: every slice found in the folders and files given."""
+    sl = [inspect_xenium(s) for s in xenium_sources(entries)]
+    return {"slices": sl, "n_cells": sum(x["n_cells"] for x in sl)}
 
 
 def import_xenium(name, xenium_dir, he=None, registration=None, description="", overwrite=False, progress=print,
                   he_kind="H&E", registration_section=None):
     name = _check_name(name, overwrite)
-    d = Path(xenium_dir).expanduser()
-    info = inspect_xenium(d)
-    progress(f"reading {d}")
-    cells = _xenium_cells(d)
-    bc, genes, X = _xenium_matrix(d)
+    src = _source(xenium_dir)
+    info = inspect_xenium(src)
+    progress(f"reading {src['key']}")
+    cells = _xenium_cells(src)
+    bc, genes, X = _xenium_matrix(src)
     pos = pd.Series(np.arange(len(bc)), index=bc)
     missing = ~cells.cell_id.isin(pos.index)
     if missing.any():
@@ -481,7 +573,7 @@ def import_xenium(name, xenium_dir, he=None, registration=None, description="", 
     if he and R is None:
         progress("  the H&E waits for its alignment (a registration file, or Align with Claude)")
     return _write_bundle(name, cells.cell_id.to_numpy(), xy, X, genes, image, A, None, description,
-                         {"kind": "xenium", "folder": str(d), "registration": str(Path(registration).resolve())
+                         {"kind": "xenium", "folder": src["folder"], "registration": str(Path(registration).resolve())
                           if registration else None, **{k: v for k, v in info.items() if k != "folder"}},
                          progress, kind, registration=R, image_pending=he if he and R is None else None)
 
@@ -738,8 +830,8 @@ def import_project(project, kind, sources, sections=None, section_column=None, h
     one row per section, matched by the section value. Images without a registration wait for an alignment."""
     from . import projects
     project = _check_name(project, True)
-    items = [str(s) for s in sections] if kind == "h5ad" else [str(Path(f).expanduser()) for f in sources]
-    keys = [item if kind == "h5ad" else Path(item).name for item in items]
+    items = [str(s) for s in sections] if kind == "h5ad" else xenium_sources(sources)
+    keys = [item if kind == "h5ad" else item["key"] for item in items]
     images = _slice_images(he, keys)  # before importing anything, so a missing image stops the import early
     done = []
     for i, (item, key) in enumerate(zip(items, keys)):

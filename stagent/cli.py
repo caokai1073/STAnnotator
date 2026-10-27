@@ -73,9 +73,10 @@ def main(argv=None):
     im.add_argument("--xenium-px-um", type=float, default=0.2125, help="morphology pixel size for Xenium Explorer matrices")
     im.add_argument("--description", default="")
     im.add_argument("--overwrite", action="store_true")
-    ix = sub.add_parser("import-xenium", help="import one sample from a Xenium output folder")
+    ix = sub.add_parser("import-xenium", help="import one sample from a Xenium output folder, or only its files")
     ix.add_argument("--name", required=True, help="sample id used in the viewer and in Claude")
-    ix.add_argument("--xenium", required=True, help="Xenium output folder (cells.parquet / cells.csv.gz, cell_feature_matrix.h5)")
+    ix.add_argument("--xenium", required=True, nargs="+", help="Xenium output folder, or its files: cells.parquet (or "
+                    "cells.csv.gz) and cell_feature_matrix.h5, optionally experiment.xenium and the DAPI ome.tif")
     ix.add_argument("--he", help="optional H&E image registered with Xenium Explorer")
     ix.add_argument("--registration", help="the H&E's alignment file (Xenium Explorer) or an affine CSV")
     ix.add_argument("--description", default="")

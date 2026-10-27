@@ -54,7 +54,7 @@ Click **Import…** in the app (or use the commands below): the cells, then **No
 
 | part | what it takes |
 |---|---|
-| cells | a Xenium output folder (`cells.parquet` or `cells.csv.gz` and `cell_feature_matrix.h5` or `cell_feature_matrix/`; control probes are dropped; its DAPI image `morphology_focus/` is shown unless an H&E is aligned), or AnnData file(s) with raw counts (layer `counts`, `X`, or `raw.X` when `X` is normalized, as scanpy leaves it) and cell centroids in micrometers (`obs` columns `x_centroid`/`y_centroid` or `x`/`y`, or `obsm["spatial"]`); several files (e.g. one per lineage) are merged and cell type labels in them are ignored. The dialog lists the h5ad's columns to pick the section when a file holds several. An R file (`.rds`, `.rda` / `.RData`) works in place of an h5ad, read without R: a Seurat object (v3/v4 `Assay` counts, or v5 `Assay5` counts layers, also split per sample; coordinates from an FOV's centroids as `LoadXenium` / `CreateFOV` make them, SlideSeq coordinates, or `meta.data` columns) or a SpatialExperiment / SingleCellExperiment (assay `counts`, `spatialCoords` or `colData` columns); its `meta.data` / `colData` columns act as obs columns. It is converted once into `converted/` of the data folder; normalized and scaled data, graphs, reductions and commands are skipped while reading. |
+| cells | Xenium: only `cells.parquet` (or `cells.csv.gz`) and `cell_feature_matrix.h5` (or `matrix.mtx.gz`, `barcodes.tsv.gz`, `features.tsv.gz`) are needed, optionally `experiment.xenium` (pixel size) and `morphology_focus/ch0000_dapi.ome.tif` (shown unless an H&E is aligned); give these files (**Files…**; a name prefix such as `GSM1234_` is fine, and the files of several slices are grouped by prefix) or the whole output folder; control probes are dropped; or AnnData file(s) with raw counts (layer `counts`, `X`, or `raw.X` when `X` is normalized, as scanpy leaves it) and cell centroids in micrometers (`obs` columns `x_centroid`/`y_centroid` or `x`/`y`, or `obsm["spatial"]`); several files (e.g. one per lineage) are merged and cell type labels in them are ignored. The dialog lists the h5ad's columns to pick the section when a file holds several. An R file (`.rds`, `.rda` / `.RData`) works in place of an h5ad, read without R: a Seurat object (v3/v4 `Assay` counts, or v5 `Assay5` counts layers, also split per sample; coordinates from an FOV's centroids as `LoadXenium` / `CreateFOV` make them, SlideSeq coordinates, or `meta.data` columns) or a SpatialExperiment / SingleCellExperiment (assay `counts`, `spatialCoords` or `colData` columns); its `meta.data` / `colData` columns act as obs columns. It is converted once into `converted/` of the data folder; normalized and scaled data, graphs, reductions and commands are skipped while reading. |
 | image | the H&E (or a fluorescence image) as a pyramidal TIFF / OME-TIFF, or **No image**. |
 | registration | an affine CSV with columns `a11,a12,a21,a22,tx,ty` (`px = a11*x + a12*y + tx`, `py = a21*x + a22*y + ty`; cell um to image full-resolution pixels; with one row per section, the row of the chosen section) or a Xenium Explorer alignment matrix (3x3 CSV, image pixels to morphology pixels); or **No registration**. |
 
@@ -80,7 +80,7 @@ From the command line (`--he` and `--registration` are optional):
 
 ### Several slices (projects)
 
-Tick several sections of an h5ad in **Import…** (or give several Xenium folders, one per line): each slice becomes
+Tick several sections of an h5ad in **Import…** (or give the Xenium files or folders of several slices): each slice becomes
 a sample `<project>_<section>` of one project, with the metadata that is constant within the slice (condition, day,
 mouse, …). Images: one file for all slices, one file per slice whose name holds the section (e.g.
 `..._147328_HE.ome.tif`; choose them together), or a table (CSV/TSV: section, image path); a registration file has
@@ -441,7 +441,7 @@ stagent/     Python package
   cli.py           stagent app / make-app / import / import-xenium / samples / viewer / mcp
   desktop.py       the desktop app (pywebview window around the local server)
   claudelink.py    connection to the user's Claude Code; viewer <-> agent handoff files
-  importer.py      Xenium output folder, or h5ad / RDS + H&E + registration -> sample bundle
+  importer.py      Xenium files (or output folder), or h5ad / RDS + H&E + registration -> sample bundle
   rds.py           R data files (.rds / .rda) read without R: Seurat, SpatialExperiment -> cells, genes, counts, xy
   markers.py       marker list parsing, hierarchical Leiden annotation, re-clustering
   model.py         expression model (training, fine-tuning on corrections)
