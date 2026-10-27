@@ -18,7 +18,15 @@ PROFILE=${NOTARY_PROFILE:-stannotator}
 : "${DEVELOPER_ID:?set DEVELOPER_ID to your 'Developer ID Application: ...' identity (security find-identity -v -p codesigning)}"
 [ -d "$APP" ] || { echo "no $APP: run packaging/macos/build_app.sh first"; exit 1; }
 if ! security find-identity -v -p codesigning | grep -qF "$DEVELOPER_ID"; then
-  echo "the identity \"$DEVELOPER_ID\" is not in your keychain; these are:"; security find-identity -v -p codesigning; exit 1
+  echo "the identity \"$DEVELOPER_ID\" is not in your keychain; these are:"; security find-identity -v -p codesigning
+  if ! security find-identity -v -p codesigning | grep -q "Developer ID Application:"; then
+    echo "None is a \"Developer ID Application\" certificate, the kind that signs apps for other Macs (\"Apple"
+    echo "Development\" and \"Apple Distribution\" are for Xcode and the App Store). Create it in Xcode > Settings >"
+    echo "Accounts > Manage Certificates > + > Developer ID Application (account holder only)."
+  else
+    echo "Set DEVELOPER_ID to the whole quoted name of the \"Developer ID Application: ...\" line above."
+  fi
+  exit 1
 fi
 if ! xcrun notarytool history --keychain-profile "$PROFILE" >/dev/null 2>&1; then
   echo "no notary credentials named $PROFILE: run once"
