@@ -15,7 +15,10 @@ logged in with your own Claude account. (Linux and Windows can run it from sourc
 
 **The app (recommended).** Open `STAnnotator.dmg` and drag **STAnnotator** to Applications. It
 contains everything it needs; no Python installation. If the build is not notarized, the first time right-click
-the app and choose Open (or allow it in System Settings -> Privacy & Security).
+the app and choose Open (or allow it in System Settings -> Privacy & Security). To build a signed and notarized
+DMG that opens without warnings, set up a Developer ID certificate and notary credentials once (see the top of
+`packaging/macos/sign_and_notarize.sh`), then run
+`DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)" bash packaging/macos/build_app.sh`.
 
 **From source** (developers, Linux/Windows, or before a .dmg exists):
 

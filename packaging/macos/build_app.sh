@@ -1,6 +1,7 @@
 #!/bin/bash
 # Build the standalone app on a Mac with Apple silicon: dist/STAnnotator.app and dist/STAnnotator.dmg.
-# Signing and notarization (optional, needs an Apple Developer ID): packaging/macos/sign_and_notarize.sh
+# With DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)" set, the app and the DMG are also signed and
+# notarized (packaging/macos/sign_and_notarize.sh, which explains the one-time setup); otherwise signed ad hoc.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 [ "$(uname -m)" = "arm64" ] || { echo "build on an Apple silicon Mac"; exit 1; }
@@ -20,6 +21,7 @@ rm -f dist/STAnnotator.dmg
 # LZMA-compressed disk image (macOS 10.15+, smaller download); zlib where hdiutil does not know ULMO
 hdiutil create -volname "STAnnotator" -srcfolder "dist/STAnnotator.app" -ov -format ULMO dist/STAnnotator.dmg \
   || hdiutil create -volname "STAnnotator" -srcfolder "dist/STAnnotator.app" -ov -format UDZO dist/STAnnotator.dmg
+if [ -n "${DEVELOPER_ID:-}" ]; then bash packaging/macos/sign_and_notarize.sh; fi
 du -sh "dist/STAnnotator.app" dist/STAnnotator.dmg
 echo "built: $(cat stagent/data/build.txt)"
 # a launcher made by 'stagent make-app' has the same name and runs an older source folder
