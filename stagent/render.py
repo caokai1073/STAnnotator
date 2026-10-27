@@ -301,3 +301,28 @@ def conflict_sheet(cells, rows, he_path, labels, out, half_um=120.0, title="", l
     fig.suptitle(title + "  [cyan = cell; dots = cells colored by current lineage]", fontsize=8)
     plt.tight_layout(); plt.savefig(out, dpi=70, pil_kwargs={"quality": 80}); plt.close()
     return str(out)
+
+
+def embedding_plot(Y, labels, out, title="", max_n=200000, seed=0):
+    """A UMAP / PCA scatter colored by a grouping (the largest groups in DISTINCT colors, the rest gray)."""
+    idx = np.arange(len(Y))
+    if len(idx) > max_n:
+        idx = np.random.default_rng(seed).choice(idx, max_n, replace=False)
+    lab = np.asarray(labels, dtype=object)[idx].astype(str)
+    keys = pd_value_counts(lab)
+    pal = {k: DISTINCT[i % len(DISTINCT)] for i, k in enumerate(keys[:len(DISTINCT) * 2])}
+    fig, ax = plt.subplots(figsize=(9, 7.5), dpi=100)
+    for k in keys:
+        m = lab == k
+        ax.scatter(Y[idx][m, 0], Y[idx][m, 1], s=0.6, c=pal.get(k, "#cccccc"), linewidths=0, rasterized=True)
+    hs = [plt.Line2D([], [], marker="o", ls="", color=pal[k], label=str(k)) for k in keys if k in pal]
+    ax.legend(handles=hs, loc="center left", bbox_to_anchor=(1.01, 0.5), fontsize=7, frameon=False, markerscale=1.5)
+    ax.set_xticks([]); ax.set_yticks([]); ax.set_title(title, fontsize=9)
+    plt.tight_layout(); plt.savefig(out, dpi=100, pil_kwargs={"quality": 85}); plt.close()
+    return str(out)
+
+
+def pd_value_counts(a):
+    """Distinct values of a, most frequent first."""
+    v, n = np.unique(np.asarray(a, dtype=str), return_counts=True)
+    return [x for _, x in sorted(zip(-n, v))]

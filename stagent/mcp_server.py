@@ -94,23 +94,33 @@ Reviewing an annotation ("does this make sense?", "check my annotation", "review
   - priors or cluster labels.
   Change nothing without the user's agreement.
 
-High-level review (when the app asks for advice, or the user asks what you think of the annotation as a whole)
-- Evidence: sample_context, show_tissue_overview, preview_compartment, type_confusion, type_structure (large or
-  suspicious types), spatial_profile, qc_overview, check_registration, review_markers. Think as a pathologist and a
-  single-cell analyst together, in five categories:
-  compartments: the compartments on the H&E (mucosa, submucosa, muscularis, lymphoid follicles, ulcer, serosa);
-    propose regions from preview_compartment outlines that fit the H&E, with the prior that would use them;
-  taxonomy: types to merge (high type_confusion and no difference in markers or position), to split (type_structure
-    sub-clusters with distinct genes and position, or another type hidden inside), or missing (Unassigned genes);
-  organization: expected gradients and neighbors (stem cells at the crypt base, mature colonocytes at the top, B
-    cells in follicles, ICC between muscle layers), found or contradicted;
-  context: site and disease and what they imply (inflamed IBD: neutrophils, CXCL1+ colonocytes, plasma cell shifts;
-    ileum vs colon: Paneth cells); what the composition suggests and what to check;
-  qc: registration (check_registration), low-quality tiles, spillover, segmentation; only real issues.
-- Record with add_advice (one action per item when one fits). Do not repeat what the review candidates already
-  show; a few well-supported items beat many. Check every compartment outline on the H&E before proposing it.
-  Regions are the user's: propose outlines to add, never region columns of the dataset. A claim about a type
-  (mislabelled share, missing type) cites the sub-cluster sizes it rests on; say "about" when it is an estimate.
+Reviewing (Agent Review: the user picks one part of the analysis; or when asked what you think of it)
+- Review only the part asked for, as a pathologist and a single-cell analyst together. Gather the evidence:
+  annotation: sample_context, type_confusion, type_structure (large or suspicious types), review_markers,
+    qc_overview, check_registration; categories taxonomy (types to merge, split or add, citing sub-cluster sizes),
+    context (site and disease and what they imply: inflamed IBD neutrophils, CXCL1+ colonocytes, plasma cell shifts;
+    ileum vs colon Paneth cells), qc (registration, low-quality tiles, spillover, segmentation; only real issues);
+  organization: show_tissue_overview, preview_compartment, spatial_profile, list_regions, composition(rows="region");
+    compartments (outlines that fit the H&E, proposed as regions with the prior that would use them; check every
+    outline on the H&E), organization (expected gradients and neighbors: stem cells at the crypt base, B cells in
+    follicles, ICC between muscle layers, found or contradicted);
+  embedding: embedding_facts, show_embedding (by cell type, leiden, slice); clusters (mixed clusters, types split
+    over clusters, clusters that are another type), integration (clusters of one slice, batch), parameters
+    (resolution, neighbors);
+  niches: niche_summary, show_niches, group_markers(by="niche"), composition(rows="niche", cols="region"),
+    niche_context; niches (what each is on the H&E, names, niches to merge or split), parameters (k, number);
+  compare: recent_analyses(section="compare"), then rerun them (de_genes, group_markers, composition); findings
+    (what the genes or shares mean), design (replicate slices, spillover, confounded groups), next (the comparison
+    that would settle it);
+  signaling: recent_analyses(section="signaling"), cell_communication / compare_communication, show_communication
+    for striking pairs; interactions (which fit the tissue, which are artifacts), design (panel coverage, distances,
+    replicate slices), next.
+- Then review your own advice: draft_advice(scope, items), check every draft as a skeptical reviewer (rerun the tool
+  that would confirm or refute it, look at the figure, weigh spillover, segmentation, batch, too few cells, panel
+  limits), and record check_advice with keep / drop, a reason and the evidence. Only kept items reach the user; a
+  few well-supported items beat many. If you can start a subagent, let it check the drafts without your reasoning.
+  Do not repeat what the review candidates already show. Regions are the user's: propose outlines to add, never
+  region columns of the dataset. Say "about" when a number is an estimate. Change nothing while reviewing.
 - A report (the viewer's Report button, or when asked): gather annotation_facts, session_summary, sample_context,
   list_advice, check_plausibility and review_markers, and save it with write_report.
 
@@ -519,7 +529,7 @@ def preview_compartment(name: str, lineages: list[str], max_dist_um: float = 30.
     """Outline where the given lineages / types form tissue (cells within max_dist_um of where they are dense, holes
     filled), e.g. name="mucosa", lineages=["Epithelial"]; "muscularis" from smooth muscle; "follicles" from B cells
     (max_dist_um ~15). Returns the outline on the H&E and the stats (pieces, cells, composition). Check the figure
-    against the H&E before proposing it (add_advice with action {"kind": "region", "compartment": name}). Changes
+    against the H&E before proposing it (draft_advice scope "organization", action {"kind": "region", "compartment": name}). Changes
     nothing."""
     from . import insights, advice
     s = _s()
@@ -832,7 +842,7 @@ def qc_overview() -> list:
 def check_registration() -> str:
     """Offset between the nuclei on the H&E (or DAPI) and the cell centroids, per window and as an affine fit (scale,
     rotation, offset at the corners). A max offset above ~8 um with a small fit residual means the cells sit off their
-    nuclei: propose the correction (add_advice category "qc", action {"kind": "registration"})."""
+    nuclei: propose the correction (draft_advice scope "annotation", category "qc", action {"kind": "registration"})."""
     from . import insights
     r = insights.registration(_s())
     if r.get("affine_fit"):
@@ -841,31 +851,104 @@ def check_registration() -> str:
 
 
 @mcp.tool()
-def add_advice(items: list[dict]) -> str:
-    """Record your high-level advice for the user's Review panel (replaces your earlier open advice, except regions
-    the user asked for with propose_region; at most 12,
-    keep only what matters, most important first). Each item: {"category": compartments | taxonomy | organization |
-    context | qc, "title": short, "text": the finding with its evidence and what to do (2-4 sentences),
+def draft_advice(scope: str, items: list[dict]) -> str:
+    """Your draft advice on one part of the analysis (replaces your earlier drafts on it; at most 12). Drafts are not
+    shown to the user: check each with check_advice first. scope and its categories:
+      annotation: taxonomy | context | qc;   organization: compartments | organization;
+      embedding: clusters | integration | parameters;   niches: niches | parameters;
+      compare: findings | design | next;   signaling: interactions | design | next.
+    Each item: {"category", "title": short, "text": the finding with its evidence and what to do (2-4 sentences),
     "action": optional, one of
       {"kind": "region", "compartment": <name from preview_compartment>, "name": region name, "prior": optional spec}
       {"kind": "prior", "prior": {"kind", "text", "types", "mode", "weight", "regions" | "max_depth_um" |
                                   "neighbor_types" + "min_frac"}}   (as for preview_constraint)
       {"kind": "marker_list"}   (after propose_marker_list)
       {"kind": "registration"}  (after check_registration)
-      {"kind": "claude", "request": what you would do when the user asks, e.g. a re-clustering}}.
-    The user acts with one click in the viewer; nothing changes before."""
+      {"kind": "niche_names", "names": {"N1": "...", ...}}
+      {"kind": "show", "mode": "gene:<gene>" | "lr:<ligand>~<receptor>~receiver" | "niche" | "leiden" | "type"}
+      {"kind": "rerun", "tab": "embed" | "niches" | "compare" | "signal", "params": the tab's settings, e.g.
+         embed {"resolution", "min_dist", "n_pcs", "n_neighbors"}, niches {"k", "n_niches", "identity"},
+         compare {"kind": "de" | "markers" | "composition", "by", "group", "reference", "rows", "cols", "within"},
+         signal {"kind": "run" | "compare", "by", "split", "within", "contact_um", "secreted_um"}}
+      {"kind": "claude", "request": what you would do when the user asks, e.g. a re-clustering}}."""
     from . import advice
-    new = advice.add(_s(), items)
-    return _j([{k: x[k] for k in ("id", "category", "title")} | {"action": (x["action"] or {}).get("kind")} for x in new])
+    new = advice.draft(_s(), scope, items)
+    return _j({"drafts": [{k: x[k] for k in ("id", "category", "title")} for x in new],
+               "next": "check every draft against the data (check_advice): keep only what holds up"})
 
 
 @mcp.tool()
-def list_advice(status: Optional[str] = None) -> str:
-    """Your high-level advice and what the user did with it (status open | done | dismissed)."""
+def check_advice(verdicts: list[dict]) -> str:
+    """Your check of your drafts, as a skeptical reviewer: [{"id", "keep": true/false, "reason": one line,
+    "evidence": what you checked (tool, numbers, figure) for a kept item}]. Before keeping a draft, test it: rerun
+    the tool that would confirm or refute it, look at the figure on the H&E, and weigh other explanations (spillover,
+    segmentation, slice or batch effects, too few cells, panel limits, broadly expressed genes). Keep only advice
+    that holds up and changes what the user should do. Kept items replace your earlier open advice on that part and
+    appear in the Review panel; dropped ones are folded away there with your reason. The user acts with one click;
+    nothing changes before."""
+    from . import advice
+    return _j(advice.check(_s(), verdicts))
+
+
+@mcp.tool()
+def list_advice(scope: Optional[str] = None, status: Optional[str] = None) -> str:
+    """Your advice and what the user did with it (status draft | open | filtered | done | dismissed), for one scope
+    (annotation, organization, embedding, niches, compare, signaling) or all."""
     from . import advice
     return _j([{k: v for k, v in x.items() if k != "action"} | {"action": {k: v for k, v in (x["action"] or {}).items()
                                                                       if k not in ("polygons_px", "correction_px")}}
-               for x in advice.items(_s(), status)])
+               for x in advice.items(_s(), status, scope)])
+
+
+@mcp.tool()
+def recent_analyses(section: Optional[str] = None) -> str:
+    """The analyses the user ran in the app on this annotation, newest last: section "compare" (DE genes, top genes,
+    composition) or "signaling" (cell-cell communication), each with its settings and headline result. Rerun one
+    with de_genes, group_markers, composition, cell_communication or compare_communication to see it in full."""
+    from . import analysis
+    return _j(analysis.recent(_s(), section))
+
+
+def _embedding_cells(scope):
+    from . import embedding, analysis
+    s = _s()
+    meta = embedding.current(s.sample_id)
+    if meta is None:
+        raise ValueError("no PCA + UMAP yet: the user runs it in the Embed tab")
+    if scope == "project" or (scope == "auto" and meta.get("project")):
+        c = _cells("project")
+    else:
+        c = analysis.cells(s)
+    if "leiden" not in c.labels.columns:
+        raise ValueError("no Leiden clusters in these cells")
+    return c, meta
+
+
+@mcp.tool()
+def embedding_facts(scope: str = "auto") -> str:
+    """The PCA + UMAP of the sample (or of all slices, for a joint embedding; scope "auto" follows how it was made):
+    its parameters, every Leiden cluster with its size, purity (share of its main cell type) and types, every type
+    with the clusters holding 10% or more of it, mixed clusters, types split over 3+ clusters, and with several slices
+    the clusters made almost only of one slice."""
+    from . import analysis
+    c, meta = _embedding_cells(scope)
+    return _j(analysis.embedding_facts(c, meta))
+
+
+@mcp.tool()
+def show_embedding(color: str = "cell type", scope: str = "auto") -> list:
+    """The UMAP colored by a grouping (cell type, lineage, leiden, niche, slice, region, ...)."""
+    from . import embedding
+    c, meta = _embedding_cells(scope)
+    if color not in c.labels.columns:
+        raise ValueError(f"color must be one of {list(c.labels.columns)}")
+    Y = np.vstack([embedding.coords(x.sample_id, "umap") for x in c.sessions])
+    s = _s()
+    out = s.dir / "figures" / f"umap_{color.replace(' ', '_')}_{'all' if c.pid else 'slice'}.jpg"
+    out.parent.mkdir(exist_ok=True)
+    png = render.embedding_plot(Y, c.labels[color].to_numpy(), out,
+                                title=f"UMAP ({'all slices' if c.pid else s.sample_id}), colored by {color}")
+    return [_j({"path": png, "n_cells": int(len(Y))}), Image(path=png)]
 
 
 @mcp.tool()

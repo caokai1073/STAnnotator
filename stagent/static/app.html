@@ -245,6 +245,18 @@ header .br { flex: 1 1 100%; height: 0; }
 .pla .l2 { color: var(--muted); font-size: 11.5px; white-space: pre-wrap; }
 .pla.mk { border-left-color: #8a8f94; }
 .pla.adv { border-left-color: #7b5cd6; background: rgba(123,92,214,.06); }
+.pla .chk { color: var(--muted); font-size: 11px; margin-top: 2px; }
+.pla .chk::before { content: "✓ checked: "; color: #3a9a5b; font-weight: 600; }
+#plScope { font-size: 12px; max-width: 170px; }
+.rvlist { display: flex; flex-direction: column; gap: 6px; }
+.rvopt { display: grid; grid-template-columns: 22px 1fr; gap: 2px 8px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+.rvopt:hover { background: var(--bg); }
+.rvopt.on { border-color: var(--accent); background: var(--accent-soft); }
+.rvopt.off { opacity: .5; cursor: default; }
+.rvopt input { margin: 2px 0 0; grid-row: span 3; }
+.rvopt b { font-size: 13px; }
+.rvopt .hint { font-size: 12px; }
+.rvopt .rvst { font-size: 11.5px; color: var(--accent); }
 .pla .l2.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
 .plh.cat { text-transform: none; letter-spacing: 0; font-weight: 600; color: #7b5cd6; margin-top: 6px; }
 #rpBody { overflow: auto; max-height: 70vh; padding: 4px 18px 14px; font-size: 13px; line-height: 1.5; }
@@ -490,7 +502,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <div id="acts" class="float">
       <button id="undo" disabled title="Undo the last change">Undo</button>
       <button id="claudeBtn" hidden title="Ask your own agent (Claude Code, in Terminal), connected to the sample open here">Ask Agent</button>
-      <button id="plaus" disabled title="Agent review: computed checks of markers and spatial layout, checked by the agent on the H&amp;E, with its advice">Agent Review</button>
+      <button id="plaus" disabled title="Agent review of one part of the analysis (annotation, spatial organization, embedding, niches, compare, signaling): its advice, checked by the agent itself">Agent Review</button>
       <button id="report" disabled title="The annotation report the agent writes: method, composition, compartments, quality, open questions">Report</button>
       <span id="vinfo"></span>
     </div>
@@ -503,7 +515,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     </div>
     <div id="cellcard" class="float"></div>
     <div id="plpanel" class="float" hidden>
-      <div class="lh"><b id="pltitle">Review</b><span class="spacer"></span>
+      <div class="lh"><b id="pltitle">Review</b><select id="plScope" title="Which part of the analysis the panel shows"></select><span class="spacer"></span>
         <button id="plclose" style="padding:1px 7px;font-size:11px" title="Close">×</button></div>
       <div class="hint" id="plnote"></div>
       <div class="items" id="plitems"></div>
@@ -702,6 +714,17 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <button id="fbHome">Home</button><button id="fbOk" class="primary">Choose</button></div>
   </div>
 </dialog>
+<dialog id="rvDlg" style="width:min(600px,95vw)">
+  <div class="dh"><b>Agent Review</b><span class="spacer"></span><button id="rvClose">Close</button></div>
+  <div class="imbody">
+    <div class="hint" style="margin-bottom:8px">Choose what the agent reviews. It looks only at that part, drafts its advice, then checks
+      every draft against the data and keeps only what holds up; what it drops stays folded away with its reason.</div>
+    <div class="rvlist" id="rvList"></div>
+    <div class="row" style="margin-top:12px"><span class="hint" id="rvNote"></span><span class="spacer"></span>
+      <button id="rvShow" title="Open the Review panel on this part without asking the agent">Show panel</button>
+      <button id="rvGo" class="primary">Review</button></div>
+  </div>
+</dialog>
 <dialog id="rsDlg" style="width:min(560px,95vw)">
   <div class="dh"><b>Reset</b><span class="spacer"></span><button id="rsClose">Close</button></div>
   <div class="imbody">
@@ -785,7 +808,7 @@ function decorate(b, name, only) {  // icon + label, or the icon only (the label
 }
 const ICON_ONLY = { hdrShow: "chev-left", hdrHide: "chev-right", helpBtn: "help", slPrev: "chev-left", slNext: "chev-right",
   lgtoggle: "chev-up", rgtoggle: "chev-up", plclose: "x", emClose: "x", imClose: "x", rcClose: "x", clClose: "x", rpClose: "x",
-  xpClose: "x", glClose: "x", anClose: "x", hpClose: "x", anCsv: "download", rpSave: "download", mkExport: "download",
+  xpClose: "x", glClose: "x", anClose: "x", rvClose: "x", hpClose: "x", anCsv: "download", rpSave: "download", mkExport: "download",
   fbUp: "arrow-up", fbHome: "home", rsClose: "x", hide: "eye", hideHE: "image" };
 const ICON_TEXT = { importBtn: "import", clearAll: "trash", connBtn: "monitor", slGallery: "grid", slCompare: "chart",
   openMarkers: "list", openRef: "file", openEx: "file", annotate: "play", eRun: "play", eShow: "scatter", nRun: "play",
@@ -795,7 +818,7 @@ const ICON_TEXT = { importBtn: "import", clearAll: "trash", connBtn: "monitor", 
   imNewAlign: "sparkle", imAlign: "sparkle", alignNow: "sparkle", alignReg: "file", imImgGo: "image", imRegGo: "check",
   imUndoPlace: "undo", refPick: "folder", exPick: "folder", refClose: "check", exClose: "check", rcTest: "check",
   rcGo: "server", fbOk: "check", rpAsk: "sparkle", xpCsv: "download", xpNb: "download", xpReg: "download",
-  hpCopy: "copy", editSave: "check", nameSave: "check", rsGo: "trash", aRun: "play", aLast: "list", anAsk: "sparkle", sRun: "play", sLast: "list" };
+  hpCopy: "copy", editSave: "check", nameSave: "check", rsGo: "trash", aRun: "play", aLast: "list", anAsk: "sparkle", sRun: "play", sLast: "list", rvGo: "sparkle", rvShow: "list" };
 const ICON_TITLES = { lgtoggle: "Fold or unfold", rgtoggle: "Fold or unfold", anCsv: "Save as CSV…", rpSave: "Save as Markdown…",
   mkExport: "Save the list as CSV…", fbHome: "Home folder", fbUp: "Parent folder", plclose: "Close", emClose: "Close" };
 Object.entries(ICON_TITLES).forEach(([id, t]) => $(id) && ($(id).title = t));
@@ -1943,13 +1966,15 @@ async function loadPlaus(switchMode) {
   st.solvedSig = [r_solved_areas(st.plaus), (st.plaus.solved || []).filter((x) => x.kind === "marker").length];
   st.sugKey = JSON.stringify({ areas: st.plaus.suggestions, proposal: st.plaus.proposal, solved: st.solvedSig, review: st.plaus.review_count });
   st.adviceRuns = (st.advice.status.last_run || {}).time || null;
-  st.adviceSig = JSON.stringify([st.advice.status.n_runs, st.advice.items.length]);
+  st.adviceSig = JSON.stringify(st.advice.signature);
   renderPlaus();
   fillModes(st.lastSummary);
   if (switchMode) { st.mode = "plausibility"; $("mode").value = "plausibility"; refreshOverlay(); await loadLegend(); }
 }
 function renderPlaus() {
   const r = st.plaus;
+  fillPlScope();
+  if (st.rvScope && st.rvScope !== "annotation") { renderScope(st.rvScope); return; }
   $("pltitle").textContent = `Review · v${r.version}`;
   const open = r.suggestions.filter((x) => x.status === "open");
   // once Claude was asked, only the candidates it kept as real problems are listed; the rest never shows up
@@ -1972,7 +1997,7 @@ function renderPlaus() {
   };
   const head = (text) => { const h = document.createElement("div"); h.className = "plh"; h.textContent = text; box.append(h); };
   const prop = r.proposal && r.proposal.status !== "dismissed" ? r.proposal : null;
-  renderAdvice(adv, btn, head, prop);
+  renderAdvice(adv, btn, head, prop, "annotation");
   if (r.suggestions.length || prop) head(`Agent's suggestions (${open.length + (prop ? 1 : 0)} open)`);
   if (prop) {
     const row = document.createElement("div"); row.className = "pla sug";
@@ -2050,18 +2075,31 @@ function renderPlaus() {
   drawRegions();
 }
 // Claude's high-level advice (compartments, cell types, spatial organization, context, technical), each with one action
-function renderAdvice(adv, btn, head, prop) {
+function renderAdvice(adv, btn, head, prop, scope) {
   const box = $("plitems");
-  const open = adv.items.filter((x) => x.status === "open");
+  const sc = (adv.scopes || []).find((x) => x.scope === scope) || { categories: adv.categories };
+  const mine = adv.items.filter((x) => (x.scope || "annotation") === scope || (scope === "annotation" && x.requested && !x.scope));
+  const open = mine.filter((x) => x.status === "open");
   if (open.length) head(`Agent's advice (${open.length})`);
-  Object.entries(adv.categories).forEach(([cat, label]) => {
+  Object.entries(sc.categories).forEach(([cat, label]) => {
     const rows = open.filter((x) => x.category === cat)  // regions the user asked for first, newest first
       .sort((a, b) => (!!b.requested - !!a.requested) || (a.requested ? (a.time < b.time ? 1 : -1) : 0));
     if (!rows.length) return;
     const h = document.createElement("div"); h.className = "plh cat"; h.textContent = label; box.append(h);
     rows.forEach((x) => box.append(adviceRow(x, btn, adv, prop)));
   });
-  const closed = adv.items.filter((x) => x.status !== "open");
+  const filtered = mine.filter((x) => x.status === "filtered");
+  if (filtered.length) {  // drafts the agent dropped after checking them, with its reasons
+    const det = document.createElement("details"); det.className = "plsolved";
+    const sum = document.createElement("summary"); sum.className = "plh"; sum.textContent = `Dropped by the agent after checking (${filtered.length})`;
+    det.append(sum);
+    filtered.forEach((x) => { const row = document.createElement("div"); row.className = "pla done";
+      const a = document.createElement("div"); a.className = "l1"; a.textContent = x.title;
+      const b = document.createElement("div"); b.className = "l2"; b.textContent = (x.check && x.check.reason) || "";
+      row.append(a, b); det.append(row); });
+    box.append(det);
+  }
+  const closed = mine.filter((x) => x.status === "done" || x.status === "dismissed");
   if (closed.length) {
     const det = document.createElement("details"); det.className = "plsolved";
     const sum = document.createElement("summary"); sum.className = "plh"; sum.textContent = `Advice taken or dismissed (${closed.length})`;
@@ -2077,6 +2115,8 @@ function adviceRow(x, btn, adv, prop) {
   a.textContent = x.title + (x.status === "done" ? `  (done${x.note ? ": " + x.note : ""})` : x.status === "dismissed" ? "  (dismissed)" : "");
   const b = document.createElement("div"); b.className = "l2 clamp"; b.textContent = x.text;
   b.title = "Click to read all"; b.onclick = () => b.classList.toggle("clamp");
+  const chk = x.check && x.check.keep ? Object.assign(document.createElement("div"), { className: "chk",
+    textContent: [x.check.reason, x.check.evidence].filter(Boolean).join(" · ") }) : null;
   const c = document.createElement("div"); c.className = "l3";
   const act = x.action || {}, open = x.status === "open";
   if (act.kind === "region") {
@@ -2100,11 +2140,81 @@ function adviceRow(x, btn, adv, prop) {
     if (adv.registration_fixed) c.append(btn("undo correction", "Put the cells back where the import placed them", () => adviceAct(x, "undo_registration")));
   } else if (act.kind === "claude") {
     if (open) c.append(btn("ask the agent", act.request, () => adviceAct(x, "claude")));
+  } else if (act.kind === "niche_names") {
+    b.textContent += "\nNames: " + Object.entries(act.names).map(([k, v]) => `${k} ${v}`).join(", ");
+    if (open) c.append(btn("name the niches", "Use these names in the legend", async () => {
+      await adviceAct(x, "niche_names"); await loadNiches(false); if (st.mode === "niche") { refreshOverlay(); loadLegend(); } }));
+  } else if (act.kind === "show") {
+    c.append(btn("show on map", `Color the map: ${act.mode}`, () => adviceShow(x, act.mode)));
+  } else if (act.kind === "rerun") {
+    const tabName = { embed: "Embed", niches: "Niches", compare: "Compare", signal: "Signaling" }[act.tab];
+    b.textContent += "\nSettings: " + Object.entries(act.params).map(([k, v]) => `${k} ${typeof v === "object" ? JSON.stringify(v) : v}`).join(", ");
+    if (open) c.append(btn(`put in ${tabName}`, `Put these settings in the ${tabName} tab; then click its Run button`, () => adviceRerun(x, act)));
   }
   if (open) c.append(btn("dismiss", "Hide this advice", () => adviceStatus(x.id, "dismissed")));
   else c.append(btn("reopen", "Put it back on the list", () => adviceStatus(x.id, "open")));
-  row.append(a, b, c);
+  row.append(a, b, ...(chk ? [chk] : []), c);
   return row;
+}
+async function adviceShow(x, mode) {  // color the map as the advice says
+  if (mode.startsWith("gene:")) {
+    const g = mode.slice(5);
+    if (!(st.genes || []).some((y) => y.toUpperCase() === g.toUpperCase())) { toast(`${g} is not in this panel`, 4000); return; }
+    $("mode").value = "gene"; $("geneInput").hidden = false; $("geneInput").value = g; setGene();
+  } else if (mode.startsWith("lr:")) {
+    st.lrMode = mode; st.mode = mode; fillModes(st.lastSummary); refreshOverlay(); loadLegend();
+  } else {
+    if (![...$("mode").options].some((o) => o.value === mode)) { toast(`Nothing to color by ${mode} yet`, 4000); return; }
+    st.mode = mode; $("mode").value = mode; $("geneInput").hidden = true; refreshOverlay(); loadLegend();
+  }
+  post(`/api/s/${st.sid}/advice/act`, { id: x.id, step: "show" }).catch(() => {});
+}
+async function adviceRerun(x, act) {  // the advice's settings, put in their tab; the user runs it
+  const p = act.params, set = (id, v) => { if (v !== undefined && $(id)) { $(id).value = v; if ($(id).classList.contains("segsel")) syncSeg(id); } };
+  const within = (wby, wval, w) => { const k = w && Object.keys(w)[0]; set(wby, k || ""); $(wby).dispatchEvent(new Event("change")); if (k) set(wval, Array.isArray(w[k]) ? w[k][0] : w[k]); };
+  showTab(act.tab);
+  if (act.tab === "embed") { set("eR", p.resolution); set("eD", p.min_dist); set("eP", p.n_pcs); set("eK", p.n_neighbors); }
+  else if (act.tab === "niches") {
+    set("nKMode", "fixed"); syncKMode(); set("nK", p.k); set("nN", p.n_niches); set("nPrograms", p.n_programs);
+    if (p.identity) { set("nIdentity", p.identity); $("nIdentity").dispatchEvent(new Event("change")); }
+  } else if (act.tab === "compare") {
+    if (p.scope) set("aScope", p.scope);
+    await loadAnOptions(true);
+    if (p.kind) { set("aKind", p.kind); syncAnKind(); }
+    if (p.by) { set("aBy", p.by); anGroups(); }
+    set("aGroup", p.group); anGroups(); if (p.group) set("aGroup", p.group); set("aRef", p.reference || "rest");
+    set("aRows", p.rows); set("aCols", p.cols); within("aWBy", "aWVal", p.within);
+  } else if (act.tab === "signal") {
+    if (p.scope) set("sScope", p.scope);
+    await loadSigOptions(true);
+    if (p.kind) { set("sKind", p.kind); syncSgKind(); }
+    set("sBy", p.by); set("sSplit", p.split); within("sWBy", "sWVal", p.within);
+    set("sContact", p.contact_um); set("sSecreted", p.secreted_um); set("sMinPct", p.min_pct); set("sRes", p.resource);
+  }
+  if (document.querySelector("header").classList.contains("collapsed")) setHeader(false);
+  post(`/api/s/${st.sid}/advice/act`, { id: x.id, step: "rerun" }).catch(() => {});
+  toast("The settings are in the tab: check them and click Run", 5000);
+}
+function fillPlScope() {  // the panel's choice of part, with the number of open items of each
+  const sel = $("plScope"), adv = st.advice || {}; sel.textContent = "";
+  (adv.scopes || []).forEach((x) => { const o = document.createElement("option"); o.value = x.scope;
+    o.textContent = x.label + (x.status.n_open ? ` (${x.status.n_open})` : ""); sel.append(o); });
+  sel.value = st.rvScope || "annotation";
+}
+$("plScope").onchange = () => { st.rvScope = $("plScope").value; renderPlaus(); };
+function renderScope(scope) {  // the Review panel for one part other than the annotation: the agent's checked advice
+  const adv = st.advice || { items: [], scopes: [] }, sc = adv.scopes.find((x) => x.scope === scope);
+  $("pltitle").textContent = "Review";
+  const s = sc.status, box = $("plitems"); box.textContent = "";
+  const when = s.last_run ? s.last_run.time.slice(11, 16) : null;
+  $("plnote").textContent = s.preparing ? `The agent is reviewing the ${sc.label.toLowerCase()}` + (s.n_drafts ? ` and checking its ${s.n_drafts} draft suggestion(s)` : "") + ". Only what holds up will be listed here."
+    : sc.unavailable && !s.n_runs ? `Nothing to review yet: ${sc.unavailable}.`
+    : when ? `Reviewed by the agent at ${when}: ${s.n_open} suggestion(s) kept after its own check` + (s.n_filtered ? `, ${s.n_filtered} dropped` : "") + "."
+    : "Not reviewed yet: click Agent Review and choose this part.";
+  const btn = (text, title, fn) => { const b = document.createElement("button"); b.textContent = text; b.title = title; b.onclick = fn; return b; };
+  const head = (text) => { const h = document.createElement("div"); h.className = "plh"; h.textContent = text; box.append(h); };
+  renderAdvice(adv, btn, head, null, scope);
+  drawRegions();
 }
 async function reloadGeometry(keepView = true) {  // the cells moved on the image: reopen it in place, keeping the view
   const vp = viewer.viewport, center = vp.getCenter(), zoom = vp.getZoom();
@@ -2219,6 +2329,7 @@ async function adviceArrived() {  // new advice from Claude Code: open the Revie
   const before = new Set(((st.advice || {}).items || []).map((x) => x.id));
   await loadPlaus(false);
   const fresh = st.advice.items.filter((x) => !before.has(x.id) && x.status === "open");
+  if (fresh.length && fresh[0].scope && fresh[0].scope !== st.rvScope) { st.rvScope = fresh[0].scope; renderPlaus(); }
   const reg = fresh.filter((x) => x.requested && x.action && x.action.outlines).sort((a, b) => (a.time < b.time ? 1 : -1))[0];
   if (reg) {
     st.adviceShown = reg.id;
@@ -2227,15 +2338,38 @@ async function adviceArrived() {  // new advice from Claude Code: open the Revie
     toast(`The agent outlined “${reg.action.name}”: check it, then click “add region” in the Review panel`, 7000);
   } else if (fresh.length) toast("The agent's advice is in the Review panel", 4000);
 }
-$("plaus").onclick = async () => {
-  try { await loadPlaus(true); await askClaudeReview(); } catch (e) { toast(e.message, 6000); }
+$("plaus").onclick = () => openReviewChooser().catch((e) => toast(e.message, 6000));
+async function openReviewChooser() {  // what the agent reviews: one part of the analysis
+  const adv = await api(`/api/s/${st.sid}/advice`); st.advice = adv;
+  const agent = st.desktop || st.chatAvailable, box = $("rvList"); box.textContent = "";
+  const pick = st.rvScope && adv.scopes.some((x) => x.scope === st.rvScope && !x.unavailable) ? st.rvScope : "annotation";
+  adv.scopes.forEach((x) => {
+    const s = x.status, lab = document.createElement("label"); lab.className = "rvopt" + (x.unavailable ? " off" : "");
+    const r = Object.assign(document.createElement("input"), { type: "radio", name: "rvScope", value: x.scope, disabled: !!x.unavailable, checked: x.scope === pick });
+    const st_ = s.preparing ? "the agent is reviewing it now" : s.last_run ? `reviewed ${s.last_run.time.slice(5, 16).replace("T", " ")} · ${s.n_open} open, ${s.n_filtered} dropped after checking` : "";
+    lab.append(r, Object.assign(document.createElement("b"), { textContent: x.label }),
+      Object.assign(document.createElement("span"), { className: "hint", textContent: x.unavailable ? `Not yet: ${x.unavailable}` : x.what }),
+      Object.assign(document.createElement("span"), { className: "rvst", textContent: st_ }));
+    r.onchange = syncRv; box.append(lab);
+  });
+  $("rvNote").textContent = agent ? "" : "No agent connected: the computed annotation checks are shown without its review.";
+  $("rvGo").disabled = !agent;
+  syncRv(); $("rvDlg").showModal();
+}
+function syncRv() { document.querySelectorAll(".rvopt").forEach((l) => l.classList.toggle("on", l.querySelector("input").checked)); }
+const rvChosen = () => (document.querySelector("input[name=rvScope]:checked") || {}).value || "annotation";
+$("rvClose").onclick = () => $("rvDlg").close();
+$("rvShow").onclick = async () => { st.rvScope = rvChosen(); $("rvDlg").close(); await loadPlaus(st.rvScope === "annotation"); };
+$("rvGo").onclick = async () => {
+  st.rvScope = rvChosen(); $("rvDlg").close();
+  try { await loadPlaus(st.rvScope === "annotation"); await askClaudeReview(st.rvScope); } catch (e) { toast(e.message, 6000); }
 };
-async function askClaudeReview() {  // Claude checks the candidates it has not judged yet; the panel follows its verdicts
+async function askClaudeReview(scope = "annotation") {  // the agent reviews one part; the panel follows its checked advice
   if (!st.desktop && !st.chatAvailable) return;
-  const r = await post("/api/claude/review", { session: st.sid });
+  const r = await post("/api/claude/review", { session: st.sid, scope });
   if (!r.needed) return;
   if (r.message && st.chatAvailable) { $("input").value = r.message; send(); }
-  else if (r.claude_code) toast((r.claude_code.reused ? "The agent is checking" : "The agent is opening to check") + (r.unchecked ? " the candidates on the H&E" : " the annotation as a whole"), 5000);
+  else if (r.claude_code) toast((r.claude_code.reused ? "The agent is reviewing" : "The agent is opening to review") + (scope === "annotation" && r.unchecked ? " the candidates on the H&E" : ` the ${scope}`), 5000);
   await loadPlaus(false);
 }
 $("plclose").onclick = () => { const was = st.mode === "plausibility"; closePlaus(); fillModes(st.lastSummary); drawRegions(); if (was) { refreshOverlay(); loadLegend(); } };
@@ -2591,7 +2725,13 @@ type, Leiden cluster or niche; scroll to zoom, drag to move, double-click to res
 turn gray; <b>Show on map</b> zooms the map to them; <b>Clear</b> ends the selection.</li>
 <li>Color by <b>Leiden clusters</b> shows the clusters on the map.</li></ul>
 <h3>Review and output</h3><ul>
-<li><b>Agent Review</b> (bar on the map): computed checks, checked by the agent on the H&amp;E; the agent's advice with one-click actions; <b>solve</b> hides an item.</li>
+<li><b>Agent Review</b> (bar on the map): choose what the agent reviews: <b>Annotation</b> (the computed checks of
+markers and out-of-place cells, judged on the H&amp;E, and advice on the cell types), <b>Spatial organization</b>
+(compartments proposed as regions, gradients and neighbors), <b>Embedding</b>, <b>Niches</b>, <b>Compare</b> or
+<b>Signaling</b> (the analyses you ran there). The agent drafts its advice, checks every draft against the data and
+keeps only what holds up (each kept item says what it checked; dropped drafts are folded away with the reason). One
+click acts on an item: add a region or a prior, name the niches, color the map, or put suggested settings in a
+tab. The panel's menu switches between the parts; <b>solve</b> hides a computed check.</li>
 <li><b>Report</b>: the agent writes the annotation report; <b>Save…</b> keeps it as a Markdown file.</li>
 <li><b>Niches</b>: identity, k and number of niches; <b>Run niches</b>; with <b>k: Agent chooses</b> the agent picks k per region, runs and names them.</li>
 <li><b>Compare</b>, for this slice or all slices pooled: <b>DE genes</b> of one group (a cell type, lineage, region,
@@ -3406,7 +3546,7 @@ $("xpCsv").onclick = () => exportAs("csv");
 $("xpNb").onclick = () => exportAs("notebook");
 $("xpReg").onclick = () => exportAs("registration");
 document.addEventListener("keydown", (e) => {
-  if ($("mkDlg").open || $("rpDlg").open || $("hpDlg").open || $("xpDlg").open || $("glDlg").open || $("anDlg").open || $("nameDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
+  if ($("mkDlg").open || $("rpDlg").open || $("hpDlg").open || $("xpDlg").open || $("glDlg").open || $("anDlg").open || $("rvDlg").open || $("nameDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
   if (e.key === "h") $("hide").click();
   if (e.key === "e") $("hideHE").click();
   if (e.key === "[") stepSlice(-1);

@@ -70,12 +70,14 @@ print("structure:", len(insights.type_structure(s, "Smooth muscle cells")["subcl
 print("profile:", len(insights.spatial_profile(s)["types"]), "types; qc hotspots", insights.qc_overview(s)["hotspot_tiles"]["low_density"][:3])
 reg = insights.registration(s)
 print("registration:", reg["offset_um"], (reg["affine_fit"] or {}).get("max_offset_um"))
-new = advice.add(s, [{"category": "compartments", "title": "mucosa", "text": "smoke test",
+new = advice.draft(s, "organization", [{"category": "compartments", "title": "mucosa", "text": "smoke test",
                       "action": {"kind": "region", "compartment": "mucosa", "name": "mucosa_smoke",
                                  "prior": {"kind": "region", "text": "Epithelial only in mucosa_smoke", "types": ["Epithelial"],
-                                           "regions": ["mucosa_smoke"], "mode": "only", "weight": "strong"}}},
-                     {"category": "qc", "title": "registration", "text": "smoke test", "action": {"kind": "registration"}}])
-print("advice:", [(x["id"], x["action"]["kind"]) for x in new], advice.status(s))
+                                           "regions": ["mucosa_smoke"], "mode": "only", "weight": "strong"}}}])
+new += advice.draft(s, "annotation", [{"category": "qc", "title": "registration", "text": "smoke test", "action": {"kind": "registration"}}])
+print("checked:", advice.check(s, [{"id": new[0]["id"], "keep": True, "reason": "fits the H&E", "evidence": "smoke"},
+                                   {"id": new[1]["id"], "keep": False, "reason": "smoke test drop"}]))
+print("advice:", [(x["id"], x["action"]["kind"]) for x in new], advice.status(s, "organization"), advice.status(s, "annotation"))
 print("report:", advice.write_report(s, "# Report\n\n" + json.dumps(insights.annotation_facts(s), default=str)[:400])["path"])
 from stagent import embedding, config
 had_embedding = (config.SAMPLES / s.sample_id / "embedding").exists()

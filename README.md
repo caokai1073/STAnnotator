@@ -220,31 +220,40 @@ by Claude show up within a few seconds.
    **Remove all…** (next to Import, desktop app) deletes every sample with all its annotations and chats for good,
    to import from scratch (it cannot be undone); marker lists stay.
 7. **Markers…** edits, checks, saves and loads marker lists (saved lists go to `<data folder>/marker_lists/`).
-8. **Agent Review** (the bar on the map, with **Undo**, **Ask Agent** and **Report**) opens the Review panel: computed marker checks (markers that are weak or unspecific in
-   their cells, negative markers that are detected, genes of Unassigned cells) and areas to check (where cells of
-   types that form sheets, such as epithelium or smooth muscle, sit apart from their own lineage), outlined on the
-   map. Clicking it also asks your Claude Code to check every candidate on the H&E and with marker biology
-   (record_review); while Claude checks, unchecked candidates are not listed, and afterwards only the real problems
-   are shown, each with Claude's reason (false alarms are folded under "Filtered out by Claude"). Verdicts carry over
-   to later versions, so only new candidates are checked again. **solve** removes an item you have dealt with. Asking Claude Code "review my annotation" lets Claude review markers and layout with the
-   H&E and its knowledge of the tissue. Its suggestions appear in the panel: a revised marker list (**open in
-   Markers…**, then Annotate with "keep my regions, priors & corrections") and areas drawn in orange (**use as region**, then
-   Claude applies the agreed prior or correction to that region).
-
-   When the labels changed since Claude's last look, Agent Review also asks Claude for **high-level advice**,
-   listed at the top of the panel in five groups, each with one button:
-   - *Compartments*: outlines of the mucosa, muscularis or lymphoid follicles, computed from where a lineage forms
-     tissue and checked by Claude on the H&E (drawn in purple; **add region**, then **add prior…** for the prior
-     that uses it).
-   - *Cell types*: types to merge (the model hardly tells them apart), to split (sub-clusters with their own genes
-     and place), or missing (**open in Markers…** for a revised list, **ask Claude Code** for a re-clustering).
-   - *Spatial organization*: expected gradients and neighbors, found or contradicted (**add prior…**).
-   - *Sample context*: what the composition says about site and disease, and what to check.
-   - *Technical*: low-quality tiles, marker spillover next to the epithelium, and the registration. The registration
-     check correlates the nuclei on the H&E (hematoxylin) or DAPI with the cell centroids in windows across the
-     section and fits an affine; **correct registration…** moves every cell onto its nucleus (regions keep their
-     cells; **undo correction** puts them back). On SCP2927 section 147328 it found a 0.28% scale mismatch (cells up
-     to 30 um off their nuclei at the corners); after the correction the windows agree within 0.5 um.
+8. **Agent Review** (the bar on the map, with **Undo**, **Ask Agent** and **Report**) asks which part of the analysis
+   the agent should review: **Annotation**, **Spatial organization**, **Embedding**, **Niches**, **Compare** or
+   **Signaling** (the last four once they have been run; Compare and Signaling review the analyses you ran in
+   those tabs, which the app logs for the agent). The agent looks only at that part, drafts its advice
+   (`draft_advice`), then checks every draft as a skeptical reviewer: it reruns the tool that would confirm or
+   refute it, looks at the figure on the H&E and weighs other explanations (spillover, segmentation, batch, too few
+   cells, panel limits), and records `check_advice`. Only the drafts that hold up reach the Review panel, each with
+   what was checked ("✓ checked: ..."); the dropped ones are folded under "Dropped by the agent after checking" with
+   the reason. The panel's menu switches between the parts (with the number of open items of each); **Show panel**
+   in the dialog opens a part without asking the agent.
+   - *Annotation*: computed marker checks (markers that are weak or unspecific in their cells, negative markers that
+     are detected, genes of Unassigned cells) and areas to check (cells of sheet-forming types, such as epithelium
+     or smooth muscle, apart from their own lineage), outlined on the map. The agent checks every candidate on the
+     H&E and with marker biology (`record_review`); afterwards only the real problems are shown, each with its
+     reason (false alarms are folded away). Verdicts carry over to later versions, so only new candidates are
+     checked again; **solve** removes an item you have dealt with. When the labels changed since its last look it
+     also gives advice on *Cell types* (types to merge, split or add: **open in Markers…** for a revised list, **ask
+     the agent** for a re-clustering), *Sample context* and *Technical* problems: low-quality tiles, marker
+     spillover next to the epithelium, and the registration. The registration check correlates the nuclei on the
+     H&E (hematoxylin) or DAPI with the cell centroids in windows across the section and fits an affine;
+     **correct registration…** moves every cell onto its nucleus (regions keep their cells; **undo correction**
+     puts them back). On SCP2927 section 147328 it found a 0.28% scale mismatch (cells up to 30 um off their nuclei
+     at the corners); after the correction the windows agree within 0.5 um.
+   - *Spatial organization*: compartments (outlines of the mucosa, muscularis or lymphoid follicles, computed from
+     where a lineage forms tissue and checked on the H&E; **add region**, then **add prior…** for the prior that
+     uses it), and gradients and neighbors, found or contradicted (**add prior…**).
+   - *Embedding*: Leiden clusters against the cell types (mixed clusters, types split over clusters) and, for a
+     joint embedding, clusters made of one slice (`embedding_facts`, `show_embedding`); **put in Embed** fills in
+     suggested settings.
+   - *Niches*: what each niche is on the H&E, names (**name the niches**), k and the number of niches (**put in
+     Niches**).
+   - *Compare* and *Signaling*: what the DE genes, compositions or interactions you looked at mean, the caveats
+     (replicate slices, spillover, panel coverage) and the analysis that would settle a question (**put in
+     Compare / Signaling**); **show on map** colors the map by a gene or a signal.
    Advice changes nothing until you click; **dismiss** hides it.
    The **Priors** list under Regions shows the priors of the annotation (the user's words and how they were read);
    **×** removes one (Undo brings it back). **?** (top of the toolbar on the right) explains every control and, under **About**, shows the

@@ -542,14 +542,32 @@ def api_claude_status(req):
     return _json(claudelink.status())
 
 
-REVIEW_REQUEST = ("Check the review candidates of version {v} (I clicked Review annotation): look at every candidate "
-                  "area on the H&E with show_area and judge every marker check, then record each verdict with "
-                  "record_review, keeping only real annotation problems.")
-ADVICE_REQUEST = ("Then give high-level advice on version {v} (compartments, cell types, spatial organization, sample "
-                  "context, technical): gather the evidence (sample_context, show_tissue_overview, preview_compartment, "
-                  "type_confusion, type_structure, spatial_profile, qc_overview, check_registration) and record a few "
-                  "well-supported items with add_advice.")
-REVIEW_END = " Do not change the annotation. Then sum up in three lines."
+REVIEW_REQUEST = ("Check the review candidates of version {v} (I clicked Agent Review: Annotation): look at every "
+                  "candidate area on the H&E with show_area and judge every marker check, then record each verdict "
+                  "with record_review, keeping only real annotation problems.")
+SCOPE_REQUEST = {
+    "annotation": ("review the cell types of version {v}: gather sample_context, type_confusion, type_structure, "
+                   "review_markers, qc_overview and check_registration; advice in the categories taxonomy, context, qc"),
+    "organization": ("review the spatial organization of version {v}: gather show_tissue_overview, preview_compartment, "
+                     "spatial_profile, list_regions and composition(rows='region'); advice in the categories "
+                     "compartments (outlines checked on the H&E) and organization"),
+    "embedding": ("review the PCA + UMAP and its Leiden clusters: gather embedding_facts and show_embedding (by cell "
+                  "type, leiden and, with several slices, slice); advice in the categories clusters, integration, "
+                  "parameters"),
+    "niches": ("review the niches: gather niche_summary, show_niches, group_markers(by='niche'), "
+               "composition(rows='niche', cols='region') and niche_context; advice in the categories niches and "
+               "parameters"),
+    "compare": ("review the comparisons I ran in the Compare tab: recent_analyses(section='compare'), then rerun "
+                "them in full (de_genes, group_markers, composition); advice in the categories findings, design, next"),
+    "signaling": ("review the cell-cell communication I ran in the Signaling tab: recent_analyses(section='signaling'), "
+                  "then cell_communication / compare_communication and show_communication for the striking pairs; "
+                  "advice in the categories interactions, design, next"),
+}
+SCOPE_LEAD = "I clicked Agent Review: {label}. Review only this part: {what}. "
+SCOPE_CHECK = ("Draft your advice with draft_advice(scope='{scope}'), then check every draft as a skeptical reviewer "
+               "(rerun the tool that would confirm or refute it, look at the figure, weigh other explanations) and "
+               "record check_advice: keep only what holds up, with the evidence; drop the rest with the reason.")
+REVIEW_END = " Do not change the annotation or the analyses. Then sum up in three lines."
 REPORT_REQUEST = ("Write the annotation report of version {v} (I clicked Report): gather annotation_facts, "
                   "session_summary, sample_context, list_advice, check_plausibility and review_markers, and save it "
                   "with write_report. Do not change the annotation.")
@@ -562,26 +580,57 @@ def _ask_claude(s, text):
     return {"claude_code": claudelink.open_claude_code(s.sample_id, s.id, text, send_if_open=True)}
 
 
+def review_scopes(s):
+    """The parts of the analysis the agent can review, whether each has something to review, and its status."""
+    from . import analysis, joint
+    emb = embedding.current(s.sample_id)
+    pid = (emb or {}).get("project")
+    n_comp, n_sig = len(analysis.recent(s, "compare")), len(analysis.recent(s, "signaling"))
+    avail = {"annotation": None, "organization": None,
+             "embedding": None if emb else "run PCA + UMAP first (Embed tab)",
+             "niches": None if niches.current(s)[0] else "run the niches first (Niches tab)",
+             "compare": None if n_comp else "run a comparison first (Compare tab)",
+             "signaling": None if n_sig else "run the cell-cell communication first (Signaling tab)"}
+    what = {"annotation": "cell types and markers: the computed review candidates, types to merge, split or add, "
+                          "sample context, technical problems",
+            "organization": "compartments on the H&E (proposed as regions), gradients and neighbors",
+            "embedding": "Leiden clusters against the cell types" + (", slices mixing (joint embedding)" if pid else "")
+                         + ", parameters",
+            "niches": "what each niche is, names, k and number of niches",
+            "compare": f"the {n_comp} comparison(s) you ran: findings, caveats, next analyses",
+            "signaling": f"the {n_sig} communication analysis(es) you ran: interactions, caveats, next analyses"}
+    return [{"scope": k, "label": v["label"], "categories": v["categories"], "what": what[k], "unavailable": avail[k],
+             "status": advice.status(s, k)} for k, v in advice.SCOPES.items()]
+
+
 async def api_claude_review(req: Request):
-    """Review annotation: ask the user's Claude Code to check the candidates Claude has not judged yet and, when the
-    labels changed since its last advice, for high-level advice."""
+    """Agent Review of one part of the analysis (scope). Annotation: the candidates the agent has not judged yet and,
+    when the labels changed since its last advice, advice on the cell types. Other scopes: always asked."""
     b = await req.json()
     s = review_app._session(b["session"])
-    st = claudereview.status(s)
-    adv = advice.status(s)
-    want_advice = b.get("advice", True) and not adv["current"]
-    if not st["unchecked"] and not want_advice:
-        return _json({"needed": False, **st, "advice": adv})
+    scope = b.get("scope", "annotation")
+    if scope not in advice.SCOPES:
+        return _json({"error": f"unknown scope {scope!r}"}, 400)
     v = s.state()["version"]
+    label = advice.SCOPES[scope]["label"]
     parts = []
-    if st["unchecked"]:
-        claudereview.request(s)
-        parts.append(REVIEW_REQUEST.format(v=v))
-    if want_advice:
-        advice.request(s)
-        parts.append(ADVICE_REQUEST.format(v=v) if parts else ADVICE_REQUEST.format(v=v).replace("Then give", "Give", 1))
+    if scope == "annotation":
+        st = claudereview.status(s)
+        want_advice = b.get("advice", True) and not advice.status(s, scope)["current"]
+        if not st["unchecked"] and not want_advice:
+            return _json({"needed": False, **st, "advice": advice.status(s, scope)})
+        if st["unchecked"]:
+            claudereview.request(s)
+            parts.append(REVIEW_REQUEST.format(v=v))
+        if want_advice:
+            advice.request(s, scope)
+            parts.append(f"Then {SCOPE_REQUEST[scope].format(v=v)}. {SCOPE_CHECK.format(scope=scope)}" if parts else
+                         SCOPE_LEAD.format(label=label, what=SCOPE_REQUEST[scope].format(v=v)) + SCOPE_CHECK.format(scope=scope))
+    else:
+        advice.request(s, scope)
+        parts.append(SCOPE_LEAD.format(label=label, what=SCOPE_REQUEST[scope].format(v=v)) + SCOPE_CHECK.format(scope=scope))
     text = " ".join(parts) + REVIEW_END
-    return _json({"needed": True, **_ask_claude(s, text), **claudereview.status(s), "advice": advice.status(s)})
+    return _json({"needed": True, **_ask_claude(s, text), **claudereview.status(s), "advice": advice.status(s, scope)})
 
 
 NICHE_K_REQUEST = ("Choose the neighborhood size k for the niche analysis of version {v} (I clicked 'Claude picks "
@@ -671,13 +720,15 @@ def api_advice(req):
     v = view(s.sample_id)
     out = []
     for x in advice.items(s):
+        if x["status"] == "draft":  # the agent has not checked it yet
+            continue
         a = dict(x["action"] or {})
         if "polygons_px" in a:
             a["outlines"] = [_viewer_poly(v, p) for p in a.pop("polygons_px")]
         a.pop("correction_px", None)
         out.append(x | {"action": a or None})
     rep = advice.report(s)
-    return _json({"items": out, "categories": advice.CATEGORIES, "status": advice.status(s),
+    return _json({"items": out, "categories": advice.CATEGORIES, "status": advice.status(s), "scopes": review_scopes(s), "signature": advice.signature(s),
                   "report": rep and {k: rep[k] for k in ("version", "time") if k in rep},
                   "registration_fixed": bool(s.meta.get("registration_fixes"))})
 
@@ -729,6 +780,13 @@ async def api_advice_act(req: Request):
             return _json(r | {"reload": True})
         if step == "claude":
             return _json(_ask_claude(s, a["request"]))
+        if step == "niche_names":
+            names = niches.set_names(s, a["names"])
+            advice.set_status(s, x["id"], "done", "niches named")
+            return _json({"names": names, "message": "Niches named"})
+        if step in ("show", "rerun"):  # done in the page; noted so the agent sees it was used
+            advice.set_status(s, x["id"], "done", "shown on the map" if step == "show" else f"settings put in the {a['tab']} tab")
+            return _json({"ok": True})
         raise ValueError(f"unknown step {step!r}")
     except (ValueError, KeyError) as e:
         return _json({"error": str(e)}, 400)
@@ -940,6 +998,7 @@ async def api_analysis_run(req: Request):
         ANALYSES[key] = table
         while len(ANALYSES) > ANALYSES.n:
             ANALYSES.popitem(last=False)
+        analysis.log_run(review_app._session(b["session"]), b, r)
         return {**r, "id": key}
     try:
         return _json(await asyncio.to_thread(work))
@@ -974,6 +1033,8 @@ async def api_communication_run(req: Request):
             ANALYSES[key] = table
             while len(ANALYSES) > ANALYSES.n:
                 ANALYSES.popitem(last=False)
+            from . import analysis
+            analysis.log_run(review_app._session(b["session"]), b, r)
             JOBS[job].update(progress=1.0, stage="done", done=True, result={**r, "id": key, "kind": b.get("kind", "run")})
         except Exception as e:
             JOBS[job].update(error=f"{type(e).__name__}: {e}" if not isinstance(e, (ValueError, KeyError)) else str(e).strip("'"),
@@ -1164,7 +1225,7 @@ def api_area_suggestions(req):
     return _json({"areas": _suggestions(s, view(s.sample_id)), "proposal": markerqc.proposal(s),
                   "solved": [len(plausibility.solved_areas(s)), len(markerqc.solved(s))],
                   "review": len(claudereview.load(s)["areas"]) + len(claudereview.load(s)["markers"]),
-                  "advice": [len(advice.load(s)["runs"]), len(advice.load(s)["items"])],
+                  "advice": advice.signature(s),
                   "report": (advice.report(s) or {}).get("time"),
                   "niche": [(niches.current(s)[0] or {}).get("run_id"), niches.niche_names(s)]})
 
@@ -1761,10 +1822,10 @@ When asked to check the review candidates (after Review annotation): look at eve
 show_area and judge every marker check, then record each verdict with record_review (keep only real problems; cells at
 the edge of a sheet, next to mislabeled neighbors or where few cells were segmented are false alarms). Do not change
 the annotation while checking.
-When asked for high-level advice: gather sample_context, show_tissue_overview, preview_compartment, type_confusion,
-type_structure, spatial_profile, qc_overview and check_registration, and record a few well-supported items with
-add_advice (categories compartments, taxonomy, organization, context, qc; one action each when one fits). When asked
-for a report: annotation_facts plus the review results, saved with write_report.
+When asked to review one part of the analysis (annotation, organization, embedding, niches, compare, signaling):
+gather its evidence, draft a few items with draft_advice(scope=...), check every draft as a skeptical reviewer and
+record check_advice (keep only what holds up, with the evidence). When asked for a report: annotation_facts plus
+the review results, saved with write_report.
 If a request cannot be expressed with the tools, say so plainly."""
 
 BLOCKED = ["start_session", "resume_session", "list_sessions", "list_samples", "set_region_source"]

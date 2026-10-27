@@ -103,13 +103,16 @@ apply here, the region assignment is wrong, a technical artifact, or a cell stat
   carry_from_current=True)` when the user asks you to run it), `suggest_areas` (drawn on the map; the user adopts them as regions),
   `preview_recluster`. Once a suggested region exists, preview an exclude prior on it (or `label_cells` with
   `only_types` when the user names the target type) and apply it after a go-ahead.
-- High-level advice (when asked what you think of the annotation as a whole, or by the viewer's Review annotation):
-  `sample_context`, `preview_compartment` (outline of where a lineage forms tissue, e.g. the mucosa from the
-  epithelium; check it on the H&E), `type_confusion` (types to merge), `type_structure` (a type to split, or another
-  type hidden in it), `spatial_profile` (gradients and neighbors), `qc_overview` and `check_registration`. Record a
-  few well-supported items with `add_advice` in five categories (compartments, taxonomy, organization, context, qc),
-  each with one action the user takes in the Review panel (add a region, add a prior, open the proposed marker list,
-  correct the registration, or ask you to do something).
+- Agent Review (the user picks one part; or when asked what you think of it): review only that part.
+  annotation: `sample_context`, `type_confusion`, `type_structure`, `review_markers`, `qc_overview`,
+  `check_registration`; organization: `show_tissue_overview`, `preview_compartment` (check outlines on the H&E),
+  `spatial_profile`, `composition(rows="region")`; embedding: `embedding_facts`, `show_embedding`; niches:
+  `niche_summary`, `show_niches`, `group_markers(by="niche")`; compare / signaling: `recent_analyses`, then rerun them.
+- Review your own advice before the user sees it: `draft_advice(scope, items)`, then check every draft as a skeptical
+  reviewer (rerun the tool that would refute it, look at the figure, weigh spillover, batch, too few cells, panel
+  limits) and record `check_advice` with keep / drop, a reason and the evidence. Kept items appear in the Review
+  panel with one action each (region, prior, marker list, registration, niche names, show on map, settings for a
+  tab, or a request to you); dropped ones stay folded away with your reason.
 - A report: `annotation_facts` plus the review results, saved with `write_report` (the viewer's Report button).
 
 ## Comparing groups and slices

@@ -14,7 +14,10 @@ de(): genes that differ between a group of cells and the rest (or another group)
 markers(): the top genes of every group of a grouping against the rest of the cells.
 crosstab(): how the cells of one grouping split over another (cell types per niche, niches per slice, ...), with the
   enrichment over what independence predicts and, for slice-level rows, every slice's own shares.
+log_run() / recent(): the analyses the user ran in the app (request and headline), for the agent's review.
+embedding_facts(): Leiden clusters against the labels and, in a joint embedding, against the slices.
 """
+import json, time
 import numpy as np, pandas as pd, scipy.sparse as sp
 from . import config, embedding, model, niches as nmod, projects
 
@@ -312,3 +315,85 @@ def crosstab(c, rows, cols, within=None, top_cols=None):
     if c.missing:
         res["missing"] = c.missing
     return res
+
+
+# ---------------- the analyses the user ran in the app ----------------
+def headline(kind, r):
+    """A few lines of a result, for the log the agent reads."""
+    if kind == "de":
+        return {"n_group": r["n_group"], "n_reference": r["n_reference"], "n_up": r["n_up"], "n_down": r["n_down"],
+                "top_up": [x["gene"] for x in r["up"][:8]], "top_down": [x["gene"] for x in r["down"][:8]],
+                "per_slice_check": r.get("per_slice_check")}
+    if kind == "markers":
+        return {"groups": {g["group"]: [x["gene"] for x in g["genes"][:5]] for g in r["groups"][:20]}}
+    if kind == "composition":
+        return {"rows": [x["row"] for x in r["table"][:20]], "keys": r["keys"][:20], "n_cells": r["n_cells"]}
+    if kind == "run":
+        return {"n_pairs_panel": r["n_pairs_panel"], "n_significant": r["n_significant"],
+                "top": [f'{x["interaction"]}: {x["sender"]} -> {x["receiver"]}' for x in r["interactions"][:8]]}
+    if kind == "compare":
+        return {"values": r["values"], "n_significant": r["n_significant"],
+                "top": [f'{x["interaction"]}: {x["sender"]} -> {x["receiver"]}' for x in r["interactions"][:8]]}
+    return {}
+
+
+def log_run(s, request, result):
+    """Note an analysis the user ran in the app (in the annotation they had open), keeping the last 30."""
+    f = s.dir / "analyses.json"
+    try:
+        log = json.load(open(f)) if f.exists() else []
+    except ValueError:
+        log = []
+    req = {k: v for k, v in request.items() if k not in ("session", "selection", "version")}
+    if request.get("selection"):
+        req["selection_cells"] = sum(len(v) for v in request["selection"].values())
+    kind = request.get("kind")
+    log.append({"time": time.strftime("%Y-%m-%dT%H:%M:%S"), "section": "signaling" if kind in ("run", "compare") else "compare",
+                "request": req, "headline": headline(kind, result)})
+    json.dump(log[-30:], open(f, "w"), indent=1)
+
+
+def recent(s, section=None):
+    f = s.dir / "analyses.json"
+    log = json.load(open(f)) if f.exists() else []
+    return [x for x in log if section is None or x["section"] == section]
+
+
+# ---------------- embedding ----------------
+def embedding_facts(c, meta, top=3):
+    """Leiden clusters against the cell types (purity, types split over several clusters) and, with several slices,
+    against the slices (clusters made of one slice)."""
+    lab, typ = c.labels["leiden"].to_numpy(), c.labels["cell type"].to_numpy()
+    ok = pd.notna(lab)
+    ct = pd.crosstab(pd.Series(lab[ok], name="leiden"), pd.Series(typ[ok], name="type"))
+    clusters = []
+    for k in ct.sum(1).sort_values(ascending=False).index:
+        row = ct.loc[k]
+        n = int(row.sum())
+        sh = (row / n).sort_values(ascending=False)
+        clusters.append({"cluster": k, "n_cells": n, "purity": round(float(sh.iloc[0]), 2),
+                         "types": {str(a): round(float(b), 2) for a, b in sh.head(top).items() if b > 0}})
+    types = []
+    for t_ in ct.sum(0).sort_values(ascending=False).index:
+        col = ct[t_]
+        sh = (col / col.sum()).sort_values(ascending=False)
+        types.append({"type": str(t_), "n_cells": int(col.sum()),
+                      "clusters": {str(a): round(float(b), 2) for a, b in sh.items() if b >= 0.1}})
+    out = {"params": meta, "n_cells": int(ok.sum()), "n_clusters": len(clusters),
+           "median_purity": round(float(np.median([x["purity"] for x in clusters])), 2) if clusters else None,
+           "mixed_clusters": [x["cluster"] for x in clusters if x["purity"] < 0.5],
+           "split_types": [x["type"] for x in types if len(x["clusters"]) >= 3],
+           "clusters": clusters, "types": types}
+    sl = c.labels["slice"].to_numpy()
+    if len(set(sl[ok])) > 1:
+        overall = pd.Series(sl[ok]).value_counts(normalize=True)
+        xs = pd.crosstab(pd.Series(lab[ok], name="leiden"), pd.Series(sl[ok], name="slice"))
+        one = []
+        for k, row in xs.iterrows():
+            sh = row / row.sum()
+            top_s = sh.idxmax()
+            if sh[top_s] >= 0.8 and overall[top_s] < 0.6 and row.sum() >= 50:
+                one.append({"cluster": k, "slice": str(top_s), "share": round(float(sh[top_s]), 2), "n_cells": int(row.sum())})
+        out["slices"] = {"overall_shares": {str(a): round(float(b), 3) for a, b in overall.items()},
+                         "single_slice_clusters": one}
+    return out
