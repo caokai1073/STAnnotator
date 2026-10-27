@@ -135,6 +135,12 @@ slices trust what holds in every slice (slices_same_direction / slices_separate)
 slice effect cannot be told from a group effect. A gene of the neighboring cell types may be spillover. Interpret the
 genes with care and say which claims come from the data and which from general knowledge.
 
+Cell-cell communication (when asked, or the app's Signaling tab): cell_communication scores ligand-receptor pairs
+on neighboring cells between groups (cell types by default); compare_communication repeats it per condition, slice,
+region or niche; show_communication shows on the H&E where one signal is received or sent. Co-expression in
+neighbors suggests signaling, it does not prove it; mention how few pairs a small panel covers, broadly expressed
+genes and spillover, and check striking results on the map.
+
 Every change is a version (history, diff, revert). export writes a CSV with one row per cell. Reply briefly, in the
 language of the user's message, keeping cell type and region names as they are."""
 
@@ -681,6 +687,56 @@ def composition(rows: str, cols: str, within: Optional[dict] = None, scope: str 
     return _j(analysis.crosstab(c, rows, cols, within))
 
 
+@mcp.tool()
+def cell_communication(by: str = "cell type", within: Optional[dict] = None, scope: str = "slice",
+                       resource: str = "all", contact_um: float = 15, secreted_um: float = 50, min_pct: float = 0.1,
+                       nonprotein: bool = False, top: int = 30) -> str:
+    """Cell-cell communication between the groups of grouping by (cells inside within): ligand-receptor pairs whose
+    genes are in the panel (resource "all" = CellChatDB v2 + CellPhoneDB v5 + OmniPath consensus, or one of them),
+    scored on actual neighbor pairs: contact signals within contact_um, secreted and ECM signals within secreted_um
+    (Gaussian weights). Returns the top significant sender -> receiver interactions (score, specificity over random
+    labels, colocalization of expressing cells, detection, neighbor pairs, FDR), the sender x receiver network
+    (count and summed score), the leading pathways, and how many pairs the panel covers."""
+    from . import communication
+    c = _cells(scope, _uses_selection(by, within))
+    r = communication.run(c, by, within, resource, contact_um, secreted_um, min_pct, nonprotein, max(1, min(int(top), 100)))
+    r.pop("table")
+    return _j(r)
+
+
+@mcp.tool()
+def compare_communication(split: str, by: str = "cell type", within: Optional[dict] = None, scope: str = "project",
+                          resource: str = "all", top: int = 30) -> str:
+    """The communication analysis in every group of split (e.g. a metadata column such as condition, slice, region,
+    niche): the interactions significant in at least one group with their score in each, largest differences first."""
+    from . import communication
+    c = _cells(scope, _uses_selection(split, by, within))
+    r = communication.compare(c, split, by, within, max(1, min(int(top), 100)), resource=resource)
+    r.pop("table")
+    return _j(r)
+
+
+@mcp.tool()
+def show_communication(ligand: str, receptor: str, side: str = "receiver") -> list:
+    """Whole sample: the H&E (left) and every cell colored by how much of one ligand-receptor signal it receives
+    (side="receiver": its receptor times the ligand around it) or sends (side="sender"), in percentiles of the cells
+    with a signal. ligand / receptor are gene symbols (a complex's subunits joined by "_", as cell_communication
+    lists them with "+")."""
+    from . import communication, plausibility
+    s = _s()
+    lig, rec = ligand.replace("+", "_"), receptor.replace("+", "_")
+    b = communication.bins(communication.activity(s, lig, rec, side))
+    names = np.array([x[1] for x in communication.BINS], dtype=object)
+    pal = {x[1]: x[2] for x in communication.BINS}
+    out = s.dir / "figures" / f"ccc_{lig}_{rec}_{side}.jpg"
+    out.parent.mkdir(exist_ok=True)
+    png = render.tissue_overview(s.meta.get("he_path"), s.cells.px.to_numpy(), s.cells.py.to_numpy(), names[b], pal,
+                                 plausibility.grid(s), [], out,
+                                 title=f"{lig.replace('_', '+')} -> {rec.replace('_', '+')}: {side}s",
+                                 image_kind=s.meta.get("image_kind", "H&E"), colored_by=f"{side} signal")
+    return [_j({"path": png, "cells_with_signal": int((b > 0).sum()), "n_cells": int(len(b))}), Image(path=png)]
+
+
 # ---------------- niches ----------------
 @mcp.tool()
 def niche_context() -> str:
@@ -723,7 +779,7 @@ def show_niches() -> list:
     out = s.dir / "figures" / f"niches_{meta['run_id']}.jpg"
     png = render.tissue_overview(s.meta.get("he_path"), s.cells.px.to_numpy(), s.cells.py.to_numpy(), names[lab], pal,
                                  plausibility.grid(s), [], out, title=f"niches ({meta['identity']}, k={meta['k']})",
-                                 image_kind=s.meta.get("image_kind", "H&E"))
+                                 image_kind=s.meta.get("image_kind", "H&E"), colored_by="niche")
     return [_j({"path": png}), Image(path=png)]
 
 

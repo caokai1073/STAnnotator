@@ -167,7 +167,7 @@ def _legend(fig, palette, highlight):
 
 
 def tissue_overview(he_path, px, py, lin, palette, g, areas, out, highlight=None, title="", image_kind="H&E",
-                    area_label="candidate areas"):
+                    area_label="candidate areas", colored_by="lineage"):
     """Whole sample: the image (H&E or DAPI) with the tile grid (left), cells colored by lineage with candidate areas
     outlined (right). Without an image only the right panel is drawn."""
     box = (g["x0"], g["y0"], g["x0"] + g["nx"] * g["tile_px"], g["y0"] + g["ny"] * g["tile_px"])
@@ -192,8 +192,8 @@ def tissue_overview(he_path, px, py, lin, palette, g, areas, out, highlight=None
             ax[k].plot(poly[:, 0], poly[:, 1], color="red", lw=1.1, ls="--")
         ax[1].text(poly[:, 0].min(), poly[:, 1].min(), a["id"], color="red", fontsize=7, fontweight="bold",
                    va="bottom", ha="left")
-    ax[1].set_title(("" if he_path else f"no image; {g['tile_um']} um tiles; ") + "cells colored by lineage" + (" (highlighted: " + ", ".join(sorted(highlight)) + ")" if highlight else "")
-                    + f"; red dashed = {area_label}", fontsize=8, pad=14)
+    ax[1].set_title(("" if he_path else f"no image; {g['tile_um']} um tiles; ") + f"cells colored by {colored_by}" + (" (highlighted: " + ", ".join(sorted(highlight)) + ")" if highlight else "")
+                    + (f"; red dashed = {area_label}" if areas else ""), fontsize=8, pad=14)
     _legend(fig, palette, highlight)
     fig.suptitle(title, fontsize=9)
     plt.tight_layout(rect=(0, 0.04, 1, 0.98)); plt.savefig(out, dpi=100, pil_kwargs={"quality": 82}); plt.close()

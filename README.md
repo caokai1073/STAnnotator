@@ -168,7 +168,7 @@ starts it, on the server's own localhost only; its process id is in `<data folde
 ## 4. The viewer
 
 The toolbar is a panel on the right of the map: **Import** and **Export** at the top, the server choice below, then
-the steps **Data**, **Annotate**, **Embedding**, **Niches** and **Compare** as tabs (a dot on a tab whose analysis is running), and at
+the steps **Data**, **Annotate**, **Embed**, **Niches**, **Compare** and **Signaling** as tabs (a dot on a tab whose analysis is running), and at
 the bottom **Reset** and **Remove all**. On the map, next to the **Color by** bar, a bar holds **Undo**, **Ask Agent**
 (Claude Code), **Agent Review** and **Report**. **›** at its top (or `t`) folds it to the right edge for a bigger map,
 **‹** brings it back.
@@ -280,7 +280,30 @@ by Claude show up within a few seconds.
    **Ask Agent** asks the agent to interpret the result (it calls the same analysis through `de_genes`,
    `group_markers` or `composition`); **Save CSV…** keeps the full table. On SCP2927 (559,539 cells, 480 genes) a DE
    run takes 1-2 s and the top genes of 8 niches about 10 s.
-12. **Report** shows the annotation report the agent writes (**Ask Agent to write it**): sample, method and inputs,
+12. **Signaling** (sixth tab): cell-cell communication, for this slice or all slices of a project pooled.
+   - Ligand-receptor pairs: CellChatDB v2 (pathways and the kind of signaling), CellPhoneDB v5 (human) and the
+     OmniPath consensus that LIANA uses (CellPhoneDB, CellChatDB, ICELLNET, connectomeDB2020, CellTalkDB), merged into
+     `stagent/data/lr_human.csv.gz` (6,521 pairs) and `lr_mouse.csv.gz` (5,792) by `python -m stagent.lr_resource`;
+     or one of them, or your own CSV (agent tools). A pair counts when every gene of the ligand and receptor
+     (complexes have several subunits; a complex's level is its lowest subunit) is in the panel: 109 pairs for the
+     480-gene Xenium IBD panel, about 1,200 for the 990-gene MERFISH mouse colon panel. Small-molecule signals (an
+     enzyme stands in for the molecule) are off unless switched on.
+   - Scoring at single-cell resolution: neighbor pairs are actual cells, never across slices. Contact signals:
+     cells within 15 µm; secreted and ECM signals: the 30 nearest cells within 50 µm, weighted by a Gaussian of the
+     distance. The score of sender group A → receiver group B is the mean of ligand (sender) × receptor (receiver)
+     over their neighbor pairs (log-normalized expression); it is tested against random group labels (the
+     CellPhoneDB idea) with a z-score that counts distinct cells rather than pairs (on SCP2927 it is more
+     conservative than 100 label permutations), FDR over all tests; tested only when the ligand is detected in 10% of
+     A and the receptor in 10% of B. Colocalization above 1 means the expressing cells sit together more than the
+     group averages imply.
+   - Results: **Interactions** (score, specificity, colocalization, detection, neighbor pairs, FDR), a sender ×
+     receiver **Network**, **Pathways**; **receivers** / **senders** colors the map by the signal each cell receives
+     (its receptor × the ligand around it) or sends. On SCP2927 section 147328, CCL19 → CCR7 is received in the
+     lymphoid follicles. **Compare groups** runs it per condition, slice, region or niche (largest differences
+     first; with one slice per group the app says a slice effect cannot be told apart). Agent tools:
+     `cell_communication`, `compare_communication`, `show_communication` (the signal on the H&E). A run on 356,629
+     cells takes about 10 s.
+13. **Report** shows the annotation report the agent writes (**Ask Agent to write it**): sample, method and inputs,
    composition, compartments, quality and open questions, from the tools' facts. **Save…** writes it as Markdown.
 
 The app has no chat box of its own: you talk to Claude in Claude Code. The web viewer on a

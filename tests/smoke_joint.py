@@ -1,12 +1,12 @@
 """A project of two slices (the example MERFISH slice cut in halves): import, joint annotation, joint embedding with
-Harmony, joint niches, composition and DE genes. Runs in a temporary data folder."""
+Harmony, joint niches, composition, DE genes and cell-cell communication. Runs in a temporary data folder."""
 import os, shutil, tempfile, time
 import h5py
 import numpy as np
 EX = os.path.join(os.path.dirname(__file__), "..", "examples", "cadinu_merfish")
 home = tempfile.mkdtemp(prefix="stagent_joint_")
 os.environ["STAGENT_HOME"] = home
-from stagent import analysis, importer, joint, projects
+from stagent import analysis, communication, importer, joint, projects
 try:
     h5 = os.path.join(home, "two.h5ad")
     shutil.copy(os.path.join(EX, "cadinu_merfish_D0_m3a_1_slice_2.h5ad"), h5)
@@ -38,5 +38,11 @@ try:
     print("DE of", d["group"], [g["gene"] for g in d["up"]], d["per_slice_check"], f"{time.time() - t:.0f}s")
     m = analysis.markers(c, "leiden", top=3)
     print("top genes per Leiden cluster:", {g["group"]: [x["gene"] for x in g["genes"]] for g in m["groups"][:4]})
+    t = time.time()
+    r = communication.run(c, "lineage", top=5)
+    print("communication:", r["n_pairs_panel"], "pairs in the panel,", r["n_significant"], "significant;",
+          [(x["interaction"], x["sender"], x["receiver"]) for x in r["interactions"][:3]], f"{time.time() - t:.0f}s")
+    r = communication.compare(c, "slice", "lineage", top=3)
+    print("communication by slice:", r["n_significant"], [x["interaction"] for x in r["interactions"]])
 finally:
     shutil.rmtree(home)

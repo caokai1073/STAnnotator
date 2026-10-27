@@ -20,6 +20,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from . import config, vocab, mcp_server, review_app, render
 from . import markers, markerqc, plausibility, claudelink, claudereview, importer, advice, niches, embedding
+from . import communication
 from .session import Session, list_samples, list_sessions, panel_genes
 
 STATIC = Path(__file__).parent / "static"
@@ -182,6 +183,10 @@ def colors_for(s: Session, version, mode, only):
             out[:, :3] = np.array([rgbs.get(x, GRAY) for x in r["region"]], np.uint8)
             out[:, 3] = 200
             out[r["region"] == "unknown", 3] = 70
+        elif mode.startswith("lr:"):
+            b = lr_bins(s, mode)
+            out[:, :3] = np.array([x[2] for x in communication.BINS], np.uint8)[b]
+            out[:, 3] = np.array([x[3] for x in communication.BINS], np.uint8)[b]
         elif mode.startswith("gene:"):
             b = gene_bins(s, mode)
             out[:, :3] = np.array([x[2] for x in GENE_BINS], np.uint8)[b]
@@ -246,6 +251,17 @@ def gene_bins(s, mode):
     return np.digitize(c, [1, 2, 4, 8])
 
 
+_lr_cache = LRU(6)
+
+
+def lr_bins(s, mode):
+    """Signal bin (index into communication.BINS) of every cell for color mode
+    "lr:<ligand>~<receptor>~<receiver|sender>"."""
+    lig, rec, side = (mode.split(":", 1)[1].split("~") + ["receiver"])[:3]
+    return _lr_cache.get_or((s.sample_id, s._cells_mtime, mode),
+                            lambda: communication.bins(communication.activity(s, lig, rec, side)))
+
+
 def niche_rgb(s):
     meta, _ = niches.current(s)
     return [tuple(int(h[i:i + 2], 16) for i in (1, 3, 5)) for h in
@@ -279,6 +295,8 @@ def cell_keys(s: Session, version, mode):
         return k
     if mode.startswith("gene:"):
         return np.array([x[0] for x in GENE_BINS], dtype=object)[gene_bins(s, mode)]
+    if mode.startswith("lr:"):
+        return np.array([x[0] for x in communication.BINS], dtype=object)[lr_bins(s, mode)]
     if mode == "leiden":
         lab = embedding.leiden(s.sample_id)
         return np.array([f"L{i + 1}" for i in lab], dtype=object) if lab is not None else np.full(n, "", dtype=object)
@@ -325,6 +343,9 @@ def legend_for(s: Session, version, mode):
         n = np.bincount(lab)
         return sorted([{"key": f"L{i + 1}", "label": f"L{i + 1}", "color": cluster_rgb(i), "count": int(n[i])}
                        for i in range(len(n))], key=lambda x: -x["count"])
+    if mode.startswith("lr:"):
+        n = np.bincount(lr_bins(s, mode), minlength=len(communication.BINS))
+        return [{"key": k, "label": lab, "color": c, "count": int(n[i])} for i, (k, lab, c, _) in enumerate(communication.BINS)][::-1]
     if mode.startswith("gene:"):
         n = np.bincount(gene_bins(s, mode), minlength=len(GENE_BINS))
         return [{"key": k, "label": lab, "color": c, "count": int(n[i])} for i, (k, lab, c, _) in enumerate(GENE_BINS)][::-1]
@@ -926,6 +947,41 @@ async def api_analysis_run(req: Request):
         return _json({"error": str(e).strip("'")}, 400)
 
 
+async def api_communication_run(req: Request):
+    """Cell-cell communication in the background (kind "run" or "compare"); progress and result under
+    /api/job/ccc:<session>."""
+    b = await req.json()
+    job = f"ccc:{b['session']}"
+    if job in JOBS and not JOBS[job]["done"]:
+        return _json({"error": "a communication analysis of this annotation is still running"}, 409)
+    JOBS[job] = {"stage": "starting", "progress": 0.0, "done": False, "error": None}
+
+    def work():
+        try:
+            c = _analysis_cells(b)
+            say = lambda f, m: JOBS[job].update(progress=round(f, 3), stage=m)
+            within = {k: v for k, v in (b.get("within") or {}).items() if v not in (None, "", [])}
+            kw = dict(by=b.get("by") or "cell type", within=within, resource=b.get("resource") or "all",
+                      contact_um=float(b.get("contact_um") or communication.CONTACT_UM),
+                      secreted_um=float(b.get("secreted_um") or communication.SECRETED_UM),
+                      min_pct=float(b.get("min_pct", 10)) / 100, nonprotein=bool(b.get("nonprotein")))
+            if b.get("kind") == "compare":
+                r = communication.compare(c, b["split"], top=80, **kw, progress=say)
+            else:
+                r = communication.run(c, top=80, **kw, progress=say)
+            table = r.pop("table")
+            key = uuid.uuid4().hex[:12]
+            ANALYSES[key] = table
+            while len(ANALYSES) > ANALYSES.n:
+                ANALYSES.popitem(last=False)
+            JOBS[job].update(progress=1.0, stage="done", done=True, result={**r, "id": key, "kind": b.get("kind", "run")})
+        except Exception as e:
+            JOBS[job].update(error=f"{type(e).__name__}: {e}" if not isinstance(e, (ValueError, KeyError)) else str(e).strip("'"),
+                             done=True)
+    threading.Thread(target=work, daemon=True).start()
+    return _json({"job": job})
+
+
 ANALYSIS_ASK = {
     "de": ("Interpret the DE genes I found in the app: de_genes(by={by}, group={group}, reference={reference}, "
            "within={within}, scope={scope}). Say in a few lines what sets the group apart, which genes point to which "
@@ -936,6 +992,13 @@ ANALYSIS_ASK = {
     "composition": ("Interpret the composition I looked at in the app: composition(rows={rows}, cols={cols}, "
                     "within={within}, scope={scope}). Say in a few lines which differences stand out (enrichment), "
                     "whether they hold in every slice, and what they may mean for the tissue."),
+    "run": ("Interpret the cell-cell communication I found in the app: cell_communication(by={by}, within={within}, "
+            "scope={scope}, resource={resource}). Say in a few lines which signaling axes and pathways stand out between "
+            "which groups, which fit the tissue, which may be artifacts (spillover, broadly expressed genes), and what to "
+            "check next (e.g. show_communication on the H&E)."),
+    "compare": ("Interpret the comparison of cell-cell communication I made in the app: compare_communication("
+                "split={split}, by={by}, within={within}, scope={scope}, resource={resource}). Say in a few lines which "
+                "interactions differ between the groups, how much to trust it (replicate slices), and what it may mean."),
 }
 ANALYSIS_ASK_END = " Separate what the data show from what general knowledge suggests. Do not change the annotation."
 
@@ -944,7 +1007,8 @@ async def api_claude_analysis(req: Request):
     b = await req.json()
     s = review_app._session(b["session"])
     q = b["request"]
-    args = {k: json.dumps(q.get(k), ensure_ascii=False) for k in ("by", "group", "reference", "rows", "cols", "scope")}
+    args = {k: json.dumps(q.get(k), ensure_ascii=False) for k in ("by", "group", "reference", "rows", "cols", "scope",
+                                                                  "split", "resource")}
     args["within"] = json.dumps(q.get("within") or None, ensure_ascii=False)
     return _json(_ask_claude(s, ANALYSIS_ASK[q["kind"]].format(**args) + ANALYSIS_ASK_END))
 
@@ -1793,6 +1857,7 @@ def build_app(port):
         Route("/api/analysis/run", api_analysis_run, methods=["POST"]),
         Route("/api/analysis/{key}.csv", api_analysis_csv),
         Route("/api/claude/analysis", api_claude_analysis, methods=["POST"]),
+        Route("/api/communication/run", api_communication_run, methods=["POST"]),
         Route("/api/config", api_config),
         Route("/api/viewer/state", api_viewer_state, methods=["POST"]),
         Route("/api/viewer/request", api_viewer_request),

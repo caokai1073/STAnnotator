@@ -60,7 +60,8 @@ table.an th { text-align: right; font-weight: 600; color: var(--muted); padding:
   position: sticky; top: 0; background: var(--panel); white-space: nowrap; }
 table.an td { text-align: right; padding: 3px 8px; border-bottom: 1px solid var(--line); }
 table.an th:first-child, table.an td:first-child { text-align: left; }
-table.an td.genes { text-align: left; }
+table.an td { white-space: nowrap; }
+table.an td.genes { text-align: left; white-space: normal; }
 table.an td.heat { min-width: 44px; }
 .gene { cursor: pointer; color: var(--accent); margin-right: 8px; white-space: nowrap; }
 .gene:hover { text-decoration: underline; }
@@ -339,8 +340,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
   </div>
   <div class="tabs" id="tabs" role="tablist">
     <button class="tab" data-tab="data" role="tab">Data</button><button class="tab" data-tab="annotate" role="tab">Annotate</button>
-    <button class="tab" data-tab="embed" role="tab">Embedding</button><button class="tab" data-tab="niches" role="tab">Niches</button>
-    <button class="tab" data-tab="compare" role="tab">Compare</button></div>
+    <button class="tab" data-tab="embed" role="tab" title="PCA, UMAP and Leiden clusters">Embed</button><button class="tab" data-tab="niches" role="tab">Niches</button>
+    <button class="tab" data-tab="compare" role="tab" title="DE genes, top genes per group, composition">Compare</button><button class="tab" data-tab="signal" role="tab" title="Cell-cell communication: ligand-receptor signaling between neighboring cells">Signaling</button></div>
   <div class="pane" data-pane="data">
     <label class="fld" id="sampleWrap"><span>Sample</span><select id="sample"></select></label>
     <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-layers"/></svg><div id="sampleInfo">No sample yet</div></div>
@@ -430,6 +431,41 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <div class="hint" id="aHint"></div>
     <div class="act2"><button id="aLast" hidden title="Show the last result again">Last result</button></div>
     <button id="aRun" class="primary main" disabled>Find DE genes</button>
+  </div>
+  <div class="pane" data-pane="signal">
+    <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-share"/></svg><div><div id="sinfo">Open or make an annotation first</div>
+      <div class="progress" id="sprogress"><div class="pbar"><i id="sfill"></i></div><span id="sstage"></span></div></div></div>
+    <div class="fld" id="sScopeWrap" hidden><span>Cells</span><select id="sScope" class="segsel" title="The cells analyzed">
+      <option value="slice" data-short="This slice">This slice</option>
+      <option value="project" data-short="All slices">All slices of the project, pooled (each slice's latest annotation)</option></select>
+      <div class="seg" data-for="sScope"></div></div>
+    <div class="fld"><span>Analysis</span><select id="sKind" class="segsel" title="What to find">
+      <option value="run" data-short="Interactions">Ligand-receptor interactions between groups of neighboring cells</option>
+      <option value="compare" data-short="Compare groups">The same in each group of a grouping (condition, slice, region, niche), side by side</option></select>
+      <div class="seg" data-for="sKind"></div></div>
+    <div class="fgrid">
+      <label class="fld" title="Senders and receivers are groups of this grouping"><span>Between</span><select id="sBy"></select></label>
+      <label class="fld s-cmp" title="Run it in every group of this grouping and compare"><span>Compare across</span><select id="sSplit"></select></label>
+    </div>
+    <div class="fgrid">
+      <label class="fld" title="Use only these cells (e.g. one region, niche or slice)"><span>Only within</span><select id="sWBy"></select></label>
+      <label class="fld"><span>&nbsp;</span><select id="sWVal" disabled></select></label>
+    </div>
+    <details class="adv"><summary>Advanced</summary>
+      <label class="fld" title="Curated ligand-receptor pairs; a pair is used when all its genes are in the panel"><span>Ligand-receptor pairs</span><select id="sRes">
+        <option value="all">CellChatDB + CellPhoneDB + OmniPath consensus</option><option value="CellChatDB">CellChatDB v2</option>
+        <option value="CellPhoneDB">CellPhoneDB v5 (human)</option><option value="consensus">OmniPath consensus (LIANA)</option></select></label>
+      <div class="fgrid" style="margin-top:10px">
+        <label class="fld" title="Contact signaling: cells whose centers are this close"><span>Contact µm</span><input type="number" id="sContact" min="5" max="50" step="1" value="15"></label>
+        <label class="fld" title="Secreted and ECM signaling: neighbors within this distance, weighted by distance"><span>Secreted µm</span><input type="number" id="sSecreted" min="10" max="200" step="5" value="50"></label>
+        <label class="fld" title="The ligand must be detected in this share of the senders, the receptor in this share of the receivers"><span>Min. % detected</span><input type="number" id="sMinPct" min="0" max="100" step="1" value="10"></label>
+      </div>
+      <label class="switch" style="margin-top:10px" title="Signals by small molecules (e.g. glutamate, prostaglandins), represented by the enzymes that make them"><input type="checkbox" id="sNonprot">
+        <span>Small-molecule signals<small>an enzyme stands in for the molecule</small></span></label>
+    </details>
+    <div class="hint" id="sHint">Ligand on a sender cell, receptor on a neighbor: scored on neighboring cells, tested against random groups. Click an interaction to see on the map where it is received or sent.</div>
+    <div class="act2"><button id="sLast" hidden title="Show the last result again">Last result</button></div>
+    <button id="sRun" class="primary main" disabled>Find interactions</button>
   </div>
   <div class="hrow bottom">
     <button id="reset" class="danger" disabled title="Remove every annotation and chat of this sample">Reset…</button>
@@ -759,7 +795,7 @@ const ICON_TEXT = { importBtn: "import", clearAll: "trash", connBtn: "monitor", 
   imNewAlign: "sparkle", imAlign: "sparkle", alignNow: "sparkle", alignReg: "file", imImgGo: "image", imRegGo: "check",
   imUndoPlace: "undo", refPick: "folder", exPick: "folder", refClose: "check", exClose: "check", rcTest: "check",
   rcGo: "server", fbOk: "check", rpAsk: "sparkle", xpCsv: "download", xpNb: "download", xpReg: "download",
-  hpCopy: "copy", editSave: "check", nameSave: "check", rsGo: "trash", aRun: "play", aLast: "list", anAsk: "sparkle" };
+  hpCopy: "copy", editSave: "check", nameSave: "check", rsGo: "trash", aRun: "play", aLast: "list", anAsk: "sparkle", sRun: "play", sLast: "list" };
 const ICON_TITLES = { lgtoggle: "Fold or unfold", rgtoggle: "Fold or unfold", anCsv: "Save as CSV…", rpSave: "Save as Markdown…",
   mkExport: "Save the list as CSV…", fbHome: "Home folder", fbUp: "Parent folder", plclose: "Close", emClose: "Close" };
 Object.entries(ICON_TITLES).forEach(([id, t]) => $(id) && ($(id).title = t));
@@ -987,6 +1023,7 @@ function fillModes(sm) {
   if (st.plaus) avail.push(["plausibility", "out-of-place cells"]);
   if (st.niche) avail.push(["niche", "niche"]);
   if (st.emb) avail.push(["leiden", "Leiden clusters"]);
+  if (st.lrMode) avail.push(["lr", "ligand-receptor signal"]);
   const extra = [["confidence", "confidence"]];
   if (st.vocab && st.vocab.method === "markers") extra.push(["cluster", "clusters (marker step)"]);
   if (st.showMore) avail.push(...extra);
@@ -995,9 +1032,9 @@ function fillModes(sm) {
   sel.disabled = false;
   // stepping through slices keeps the color mode; applied here, once the new annotation's options are known
   if (st.wantMode) { st.mode = st.wantMode; st.wantMode = null; }
-  const cur = st.mode.startsWith("gene:") ? "gene" : st.mode;
-  if (!avail.some(([v]) => v === cur)) st.mode = "type";
-  sel.value = st.mode.startsWith("gene:") ? "gene" : st.mode;
+  const modeOpt = (m) => (m.startsWith("gene:") ? "gene" : m.startsWith("lr:") ? "lr" : m);
+  if (!avail.some(([v]) => v === modeOpt(st.mode))) st.mode = "type";
+  sel.value = modeOpt(st.mode);
   $("geneInput").hidden = sel.value !== "gene";
 }
 const USER_METHODS = ["markers", "scref", "existing"];  // annotations made in the app (not the lab's benchmark ones)
@@ -1529,7 +1566,7 @@ async function loadLegend() {
   st.legend = r.items;
   const f = filt();
   $("legend").hidden = false;
-  $("lgtitle").textContent = (st.mode.startsWith("gene:") ? `${st.mode.slice(5)} transcripts` : MODE_TITLES[st.mode]) + (f.size ? ` (${f.size} shown)` : "");
+  $("lgtitle").textContent = (st.mode.startsWith("gene:") ? `${st.mode.slice(5)} transcripts` : st.mode.startsWith("lr:") ? lrTitle(st.mode) : MODE_TITLES[st.mode]) + (f.size ? ` (${f.size} shown)` : "");
   $("lgall").disabled = !f.size;
   const box = $("lgitems"); box.textContent = "";
   const toggle = (keys) => {
@@ -2564,6 +2601,12 @@ with several slices it checks the change in every slice); <b>Top genes</b> of ev
 one grouping splits over another (cell types per niche, niches per slice or per condition), as shares or as
 enrichment. Click a gene to color the map by it; <b>Ask Agent</b> asks the agent what the result may mean;
 <b>Save CSV…</b> keeps every gene.</li>
+<li><b>Signaling</b> (cell-cell communication), for this slice or all slices pooled: ligand-receptor pairs (CellChatDB v2,
+CellPhoneDB v5 and the OmniPath consensus, merged; a pair counts when all its genes are in the panel) scored on
+neighboring cells between groups (cell types by default): contact signals within 15 µm, secreted and ECM signals
+within 50 µm, weighted by distance; tested against random groups. <b>Interactions</b>, a sender × receiver
+<b>Network</b> and <b>Pathways</b>; <b>receivers</b> / <b>senders</b> colors the map by where one signal is received or
+sent. <b>Compare groups</b> runs it per condition, slice, region or niche and lists the largest differences.</li>
 <li><b>Undo</b> steps back one change at a time. <b>Export…</b>: the cell table (CSV, with niche, Leiden and UMAP when
 computed), the registration in use (CSV), or the whole analysis as a Jupyter notebook that runs without this app
 (code with this annotation's parameters, and its results).</li>
@@ -2728,6 +2771,7 @@ $("mode").onchange = (e) => {
     return;
   }
   $("geneInput").hidden = true;
+  if (e.target.value === "lr") { st.mode = st.lrMode; refreshOverlay(); loadLegend(); return; }
   st.mode = e.target.value; refreshOverlay();
   if (st.sid) { loadLegend(); emFollow(); }
 };
@@ -2856,17 +2900,18 @@ const AN_LABEL = { "cell type": "cell type", leiden: "Leiden cluster", selection
 const anLabel = (g) => AN_LABEL[g] || g;
 const AN_LEGEND = { "cell type": "type", lineage: "lineage", niche: "niche", leiden: "leiden", region: "region" };
 function anScope() { return $("aScope").value === "project" && st.sample && projectOf(st.sample.sample_id) ? "project" : "slice"; }
-function anSelection() {  // the cells selected in the UMAP window, {sample_id: rows}
+function anSelection(scope = anScope()) {  // the cells selected in the UMAP window, {sample_id: rows}
   const rows = (sel) => { const r = []; for (let i = 0; i < sel.length; i++) if (sel[i]) r.push(i); return r; };
-  if (anScope() === "project" && EM.selAll && EM.offsets) {
+  if (scope === "project" && EM.selAll && EM.offsets) {
     const out = {};
     Object.entries(EM.offsets).forEach(([s, [a, b]]) => { const r = rows(EM.selAll.subarray(a, b)); if (r.length) out[s] = r; });
     return Object.keys(out).length ? out : null;
   }
   return st.sel ? { [st.sample.sample_id]: rows(st.sel) } : null;
 }
-function anRefresh() {  // the Compare tab follows the open annotation and the selection
+function anRefresh() {  // the Compare and Signaling tabs follow the open annotation and the selection
   if (document.querySelector('header .pane[data-pane="compare"]').classList.contains("on")) setTimeout(() => loadAnOptions(), 0);
+  if (document.querySelector('header .pane[data-pane="signal"]').classList.contains("on")) setTimeout(() => loadSigOptions(), 0);
 }
 const anBody = () => ({ session: st.sid, version: st.version, scope: anScope(), selection: anSelection() });
 function fillSelect(id, items, keep, first) {  // items: [value, label]; keeps the chosen value when it is still there
@@ -2938,7 +2983,7 @@ $("aRun").onclick = async () => {
   } catch (e) { toast(e.message, 7000); }
   finally { $("aRun").disabled = false; setLabel($("aRun"), label); }
 };
-$("aLast").onclick = () => showAnalysis();
+$("aLast").onclick = () => { if (AN.cmp) { AN.last = AN.cmp.last; AN.req = AN.cmp.req; AN.view = ""; } showAnalysis(); };
 function anSeg(opts, cur, on) {  // the dialog's toggle (up / down genes, shares / enrichment)
   const box = $("anSeg"); box.textContent = ""; box.hidden = !opts.length;
   opts.forEach(([v, l]) => { const b = document.createElement("button"); b.type = "button"; b.textContent = l; b.classList.toggle("on", v === cur);
@@ -2961,6 +3006,15 @@ function anTable(head, rows) {
 }
 async function showAnalysis() {
   const r = AN.last, q = AN.req; if (!r) return;
+  if (q.kind === "run" || q.kind === "compare") {
+    AN.sig = { last: r, req: q };
+    $("anBody").textContent = ""; $("anLegend").textContent = ""; $("anNote").textContent = "";
+    $("anAsk").hidden = !(st.desktop || st.chatAvailable);
+    showSignal(r, q);
+    if (!$("anDlg").open) $("anDlg").showModal();
+    return;
+  }
+  AN.cmp = { last: r, req: q };
   const within = Object.entries(r.within || {}).map(([k, v]) => `${anLabel(k)} ${v}`).join(", ");
   const where = [r.scope === "project" ? "all slices pooled" : "this slice", within && `only ${within}`].filter(Boolean).join(" · ");
   $("anBody").textContent = ""; $("anLegend").textContent = ""; $("anNote").textContent = r.note || "";
@@ -3041,7 +3095,8 @@ async function showAnalysis() {
 $("anClose").onclick = () => $("anDlg").close();
 $("anCsv").onclick = async () => {
   const r = AN.last, q = AN.req; if (!r) return;
-  const part = q.kind === "de" ? `de_${r.group}_vs_${r.reference}` : q.kind === "markers" ? `top_genes_by_${r.by}` : `${r.cols}_per_${r.rows}`;
+  const part = q.kind === "de" ? `de_${r.group}_vs_${r.reference}` : q.kind === "markers" ? `top_genes_by_${r.by}`
+    : q.kind === "run" ? `communication_${r.by}` : q.kind === "compare" ? `communication_by_${r.split}` : `${r.cols}_per_${r.rows}`;
   const name = `${st.sample.sample_id}_${part}`.replace(/[^A-Za-z0-9_.-]+/g, "_") + ".csv", url = `/api/analysis/${r.id}.csv?name=${encodeURIComponent(name)}`;
   if (st.remote) { await saveDownload(name, url); return; }
   if (native()) { const path = await native().save_path(name); if (!path) return;
@@ -3064,6 +3119,123 @@ $("slCompare").onclick = async () => {  // the Data tab's shortcut: the composit
   $("aRun").click();
 };
 syncAnKind();
+// ---------------- Signaling: cell-cell communication between groups of neighboring cells ----------------
+const SG = { key: "", opts: null };
+const lrTitle = (m) => { const [l, r, side] = m.slice(3).split("~"); return `${l.replace(/_/g, "+")} → ${r.replace(/_/g, "+")}: ${side === "sender" ? "sending" : "receiving"} cells`; };
+function sgScope() { return $("sScope").value === "project" && st.sample && projectOf(st.sample.sample_id) ? "project" : "slice"; }
+const sgSelection = () => anSelection(sgScope());
+const sgBody = () => ({ session: st.sid, version: st.version, scope: sgScope(), selection: sgSelection() });
+async function loadSigOptions(force) {
+  const p = st.sample && projectOf(st.sample.sample_id);
+  $("sScopeWrap").hidden = !p;
+  if (!st.sid) { $("sinfo").textContent = "Open or make an annotation first"; $("sRun").disabled = true; SG.key = ""; return; }
+  const sel = sgSelection();
+  const key = [st.sid, st.version, sgScope(), sel ? Object.entries(sel).map(([s, r]) => `${s}:${r.length}`).join() : ""].join("|");
+  if (!force && key === SG.key) return;
+  SG.key = key; $("sRun").disabled = true; $("sinfo").textContent = "Loading the groupings…";
+  try { SG.opts = await post("/api/analysis/options", sgBody()); } catch (e) { $("sinfo").textContent = e.message; SG.key = ""; return; }
+  const g = SG.opts.groupings, many = Object.keys(g).filter((k) => g[k].length > 1);
+  const items = (ks) => ks.map((k) => [k, anLabel(k)]);
+  fillSelect("sBy", items(many), [$("sBy").value, "cell type"].find((x) => many.includes(x)));
+  const splits = many.filter((k) => k !== "cell type" && k !== "lineage");
+  fillSelect("sSplit", items(splits), [$("sSplit").value, ...Object.keys(g).filter((k) => !BUILTIN_GROUPINGS.includes(k)), "slice", "region", "niche"].find((x) => splits.includes(x)));
+  fillSelect("sWBy", items(many), undefined, ["", "all cells"]); sgWithin();
+  $("sinfo").textContent = [`${SG.opts.n_cells.toLocaleString()} cells`, sgScope() === "project" ? "all slices pooled" : "this slice"].join(" · ");
+  $("sRun").disabled = !many.length;
+}
+const BUILTIN_GROUPINGS = ["cell type", "lineage", "region", "niche", "leiden", "selection", "slice"];
+function sgWithin() {
+  const by = $("sWBy").value, vals = by && SG.opts ? SG.opts.groupings[by] || [] : [];
+  fillSelect("sWVal", vals.map((v) => [v, v])); $("sWVal").disabled = !by;
+}
+function syncSgKind() {
+  const cmp = $("sKind").value === "compare";
+  document.querySelectorAll("[data-pane=signal] .s-cmp").forEach((e) => (e.style.visibility = cmp ? "visible" : "hidden"));
+  setLabel($("sRun"), cmp ? "Compare" : "Find interactions");
+}
+$("sKind").onchange = syncSgKind;
+$("sScope").onchange = () => loadSigOptions(true);
+$("sWBy").onchange = sgWithin;
+document.querySelector('#tabs .tab[data-tab="signal"]').addEventListener("click", () => loadSigOptions());
+$("sRun").onclick = async () => {
+  const kind = $("sKind").value, w = $("sWBy").value;
+  const b = { ...sgBody(), kind, by: $("sBy").value, within: w ? { [w]: $("sWVal").value } : {}, resource: $("sRes").value,
+    contact_um: +$("sContact").value, secreted_um: +$("sSecreted").value, min_pct: +$("sMinPct").value, nonprotein: $("sNonprot").checked };
+  if (kind === "compare") b.split = $("sSplit").value;
+  $("sRun").disabled = true; $("sprogress").classList.add("show");
+  try {
+    const { job } = await post("/api/communication/run", b);
+    let j;
+    for (;;) {
+      j = await api(`/api/job/${encodeURIComponent(job)}`);
+      $("sfill").style.width = `${Math.round(100 * j.progress)}%`; $("sstage").textContent = j.error ? `error: ${j.error}` : j.stage;
+      if (j.done) { if (j.error) throw new Error(j.error); break; }
+      await new Promise((r) => setTimeout(r, 600));
+    }
+    AN.last = j.result; AN.req = { ...b, selection: undefined }; AN.view = ""; $("sLast").hidden = false;
+    setTimeout(() => $("sprogress").classList.remove("show"), 800);
+    await showAnalysis();
+  } catch (e) { toast(e.message, 8000); $("sprogress").classList.remove("show"); }
+  finally { $("sRun").disabled = false; }
+};
+$("sLast").onclick = () => { if (AN.sig) { AN.last = AN.sig.last; AN.req = AN.sig.req; AN.view = ""; } showAnalysis(); };
+function colorBySignal(lig, rec, side) {
+  $("anDlg").close();
+  st.lrMode = `lr:${lig}~${rec}~${side}`; st.mode = st.lrMode;
+  fillModes(st.lastSummary); refreshOverlay(); loadLegend();
+  toast(`The map shows the cells ${side === "sender" ? "sending" : "receiving"} ${lig.replace(/_/g, "+")} → ${rec.replace(/_/g, "+")}; Signaling → Last result brings the table back`, 5000);
+}
+function showSignal(r, q) {  // the dialog's views of a communication result
+  const within = Object.entries(r.within || {}).map(([k, v]) => `${anLabel(k)} ${v}`).join(", ");
+  const where = [r.scope === "project" ? "all slices pooled" : "this slice", within && `only ${within}`].filter(Boolean).join(" · ");
+  const box = $("anBody");
+  const mapLinks = (x) => { const s = document.createElement("span");
+    const [lig, rec] = [x.ligand || x.interaction.split(" → ")[0].replace(/\+/g, "_"), x.receptor || x.interaction.split(" → ")[1].replace(/\+/g, "_")];
+    const a = Object.assign(document.createElement("span"), { className: "gene", textContent: "receivers", title: "Color the map by the signal each cell receives" });
+    a.onclick = () => colorBySignal(lig, rec, "receiver");
+    const b = Object.assign(document.createElement("span"), { className: "gene", textContent: "senders", title: "Color the map by the signal each cell sends" });
+    b.onclick = () => colorBySignal(lig, rec, "sender");
+    s.append(a, b); return s; };
+  if (q.kind === "compare") {
+    $("anTitle").textContent = `Communication across ${anLabel(r.split)}`;
+    $("anSub").textContent = `${anLabel(r.by)} · ${where} · significant: ` + Object.entries(r.n_significant).map(([k, v]) => `${k} ${v}`).join(", ");
+    anSeg([], "", null);
+    const ratio = Object.keys(r.interactions[0] || {}).find((k) => k.startsWith("log2("));
+    const head = ["Interaction", "Sender → receiver", ...r.values.map((v) => `Score ${v}`)];
+    if (ratio) head.push(ratio.replace("log2", "log<sub>2</sub>"));
+    head.push("Map");
+    box.append(anTable(head, r.interactions.map((x) => [x.interaction, `${x.sender} → ${x.receiver}`,
+      ...r.values.map((v) => `${fmt(x[`score:${v}`], 3)}${x[`significant:${v}`] ? "" : " (n.s.)"}`), ...(ratio ? [fmt(x[ratio])] : []), mapLinks(x)])));
+    $("anNote").textContent = r.note;
+    return;
+  }
+  $("anTitle").textContent = `Communication between ${anLabel(r.by)}s`;
+  $("anSub").textContent = `${where} · ${r.n_pairs_panel} of ${r.n_pairs_resource} ligand-receptor pairs in the panel · ` +
+    `${r.n_significant} significant of ${r.n_tested} tested · contact ${r.contact_um} µm, secreted ${r.secreted_um} µm`;
+  const view = AN.view || "interactions";
+  anSeg([["interactions", "Interactions"], ["network", "Network"], ["pathways", "Pathways"]], view, (v) => { AN.view = v; showAnalysis(); });
+  if (view === "interactions") {
+    box.append(r.interactions.length ? anTable(["Interaction", "Sender → receiver", "Pathway", "Score", "Specificity", "Coloc.", "% ligand", "% receptor", "Pairs", "FDR", "Map"],
+      r.interactions.map((x) => [x.interaction, `${x.sender} → ${x.receiver}`, x.pathway || "", fmt(x.score, 3), fmt(x.specificity, 1),
+        fmt(x.colocalization), fmt(100 * x.pct_ligand, 0), fmt(100 * x.pct_receptor, 0), x.neighbor_pairs.toLocaleString(),
+        x.fdr ? Number(x.fdr).toExponential(1) : "< 1e-300", mapLinks(x)]))
+      : Object.assign(document.createElement("div"), { className: "hint", textContent: "No significant interactions." }));
+    $("anNote").textContent = (r.interactions.length < r.n_significant ? `The ${r.interactions.length} strongest shown; Save CSV has every tested one. ` : "") +
+      "Score: mean ligand × receptor over neighboring sender–receiver pairs; specificity: score over random groups; coloc.: above 1 when the expressing cells sit together more than the group averages imply. " + r.note;
+  } else if (view === "network") {
+    const g = r.groups, mx = Math.max(1, ...r.network.count.flat());
+    const tb = anTable(["Sender ↓ / receiver →", ...g], g.map((a, i) => [a, ...g.map((b, j) => { const v = r.network.count[i][j]; return v ? String(v) : ""; })]));
+    tb.querySelectorAll("tr").forEach((tr, i) => { if (!i) return; [...tr.children].slice(1).forEach((td, j) => {
+      const v = r.network.count[i - 1][j]; td.classList.add("heat"); if (!v) return;
+      td.style.background = `rgba(15,124,134,${0.1 + 0.6 * v / mx})`; td.title = `${g[i - 1]} → ${g[j]}: ${v} interactions, summed score ${fmt(r.network.score[i - 1][j], 2)}`; }); });
+    box.append(tb);
+    $("anNote").textContent = "Number of significant interactions from each sender group (rows) to each receiver group (columns); hover for the summed score.";
+  } else {
+    box.append(anTable(["Pathway", "Interactions", "Summed score", "Main sender → receiver"], r.pathways.map((p) => [p.pathway, p.n, fmt(p.score, 2), p.top.join(", ")])));
+    $("anNote").textContent = "Pathways from CellChatDB / CellPhoneDB; \"other\" holds pairs without one.";
+  }
+}
+syncSgKind();
 $("glClose").onclick = () => $("glDlg").close();
 function miniInfo() {
   const s = st.sample;
@@ -3089,7 +3261,7 @@ function segmented(id) {  // a select shown as a row of buttons (the select keep
   syncSeg(id);
 }
 function syncSeg(id) { document.querySelectorAll(`.seg[data-for="${id}"] button`).forEach((b) => b.classList.toggle("on", b.dataset.v === $(id).value)); }
-segmented("method"); segmented("nIdentity"); segmented("nKMode"); segmented("aScope"); segmented("aKind");
+segmented("method"); segmented("nIdentity"); segmented("nKMode"); segmented("aScope"); segmented("aKind"); segmented("sScope"); segmented("sKind");
 function sampleInfo() {  // the Data tab's card: what the open sample is
   const s = st.sample; if (!s) { $("sampleInfo").textContent = "No sample yet"; return; }
   const img = s.image_pending ? "image waiting for its alignment" : !s.image_kind || s.image_kind === "none" ? "no image" : s.image_kind;
@@ -3101,7 +3273,7 @@ function showTab(name) {
   store("tab", name);
 }
 document.querySelectorAll("#tabs .tab").forEach((t) => (t.onclick = () => showTab(t.dataset.tab)));
-showTab(["data", "annotate", "embed", "niches", "compare"].includes(load("tab")) ? load("tab") : "data");
+showTab(["data", "annotate", "embed", "niches", "compare", "signal"].includes(load("tab")) ? load("tab") : "data");
 setInterval(() => document.querySelectorAll("header .pane").forEach((p) =>  // a running analysis shows on its tab
   document.querySelector(`#tabs .tab[data-tab=${p.dataset.pane}]`).classList.toggle("busy", !!p.querySelector(".progress.show"))), 700);
 $("hdrShow").onclick = () => setHeader(false);

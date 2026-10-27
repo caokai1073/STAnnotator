@@ -122,6 +122,13 @@ apply here, the region assignment is wrong, a technical artifact, or a cell stat
   slice per side say that a slice effect cannot be told from a group effect. Genes of neighboring cell types may be
   segmentation spillover. Say which claims come from the data and which from general knowledge.
 
+## Cell-cell communication
+
+- `cell_communication` (ligand-receptor pairs scored on neighboring cells between groups), `compare_communication`
+  (per condition, slice, region or niche), `show_communication` (where one signal is received or sent, on the H&E).
+- Co-expression in neighbors suggests signaling, it does not prove it. Say how many pairs the panel covers, watch
+  for broadly expressed genes and spillover, and check striking results with `show_communication`.
+
 ## History and output
 
 - Every change is a version. Mention version numbers. Offer `revert` when the user is unhappy with a change;
