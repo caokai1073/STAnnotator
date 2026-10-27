@@ -117,7 +117,13 @@ FOCUS_SCRIPT = """on run argv
                 set selected of t to true
                 set index of w to 1
                 activate
-                if theText is not "" then do script theText in t
+                if theText is not "" then
+                  do script theText in t
+                  -- Claude Code takes text that arrives at once as a paste, return included, and waits for
+                  -- Enter: a lone return a moment later submits it (an Enter on an empty prompt does nothing)
+                  delay 0.7
+                  do script "" in t
+                end if
                 return "existing " & theTTY
               end if
             end if
