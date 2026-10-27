@@ -28,4 +28,4 @@ build-backend = "setuptools.build_meta"
 packages = ["stagent"]
 
 [tool.setuptools.package-data]
-stagent = ["static/*", "static/vendor/*", "data/*"]
+stagent = ["static/*", "static/vendor/*", "data/*", "data/organs/*"]
