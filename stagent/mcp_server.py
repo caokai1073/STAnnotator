@@ -31,7 +31,8 @@ Getting started
   are looking at. After starting a new annotation call open_viewer: a running app switches to it by itself;
   otherwise give the user the link. The viewer shows the cell types on the H&E (or DAPI); the user draws and names
   regions there and can review conflicts. Changes made through these tools appear in the viewer automatically.
-- A new gene panel needs its own marker list: draft one from get_panel_genes, validate it with check_marker_list,
+- A new gene panel needs its own marker list: start from organ_marker_draft (built-in lists of common organs pruned
+  to the panel; search the literature for types it lacks), or draft one from get_panel_genes; validate it with check_marker_list,
   and save it with save_marker_list; the user loads it in the viewer's "Markers..." dialog and clicks Annotate (or
   start_session(markers_text=...) when the user asks you to run it).
 
@@ -1025,6 +1026,23 @@ def get_panel_genes(sample_id: Optional[str] = None) -> str:
     sid = sample_id or (_active["session"].sample_id if "session" in _active else None)
     genes = panel_genes(sid)
     return _j({"n_genes": len(genes), "genes": genes})
+
+
+@mcp.tool()
+def organ_marker_draft(organ: str, sample_id: Optional[str] = None) -> str:
+    """The built-in marker list of an organ, pruned to a sample's panel (default: the active session's sample): a
+    marker list CSV with the cell types the panel can resolve (two markers in the panel, or one decisive marker), and
+    the types left out with their markers (in_panel: those the panel has). organ: one of the built-in organs (listed
+    when the name is unknown), or "other" for immune and stromal cells only. A starting point: add the tissue's own
+    cell types the panel can resolve, check_marker_list, then save_marker_list."""
+    from . import organs
+    from .session import panel_genes
+    sid = sample_id or (_active["session"].sample_id if "session" in _active else None)
+    try:
+        d = organs.draft(organs.safe_name(organ), panel_genes(sid))
+    except ValueError as e:
+        return _j({"error": str(e), "organs": organs.organs()})
+    return _j(d)
 
 
 @mcp.tool()

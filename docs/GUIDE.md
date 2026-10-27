@@ -51,8 +51,14 @@ DSS day 3, 9 and 21; 66,818 cells) the joint annotation took about 15-40 s, the 
 9 s; lineage agreement with the authors' labels was 87-91% on the healthy, day-3 and day-9 slices (74% for another healthy slice
 annotated alone) and 46% on the day-21 slice, whose cells have few transcripts (median 47 vs 67-93).
 
-Then give the sample a marker list (there is no default): **Markers…** -> **Import…** a CSV (or text) file, or
-ask Claude Code "draft a marker list for this panel" and load it under "load a list…". Imported and saved lists
+Then give the sample a marker list: **Markers…** -> **Import…** a CSV (or text) file, or **Start from an organ**:
+choose the organ (brain, breast, colon, heart, kidney, liver, lung, lymph node / tonsil, pancreas, skin, small
+intestine, stomach) and **Use built-in list** keeps the cell types your panel can resolve (two of their markers in the
+panel, or one decisive marker such as INS) with their first markers, and lists what it left out. **Refine with the
+agent** asks the agent to complete it for the tissue and panel (searching the literature for types the built-in list
+lacks) and save it under "load a list…"; for an organ that is not built in (**Other organ…**) the agent starts from
+the immune and stromal cells and adds the organ's own. The built-in lists are in `stagent/data/organs/` (sources in
+its README). You can also ask Claude Code "draft a marker list for this panel" and load it under "load a list…". Imported and saved lists
 stay in that list for the next samples. The CSV has one row per cell type:
 
 | cell_type | parent | positive_markers | negative_markers |

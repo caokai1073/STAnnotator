@@ -1,0 +1,8 @@
+# Heart
+Cardiomyocytes: TNNT2 ACTN2 MYH7 MYH6 TTN RYR2 -PTPRC
+  Ventricular cardiomyocytes: MYL2! MYL3 MYH7 -NPPA
+  Atrial cardiomyocytes: NPPA MYL7 MYL4 -MYL2
+Mesothelial cells: MSLN UPK3B WT1 CALB2
+Adipocytes: ADIPOQ PLIN1 LEP PLIN4
+@immune
+@stroma

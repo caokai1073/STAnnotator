@@ -1,0 +1,14 @@
+# Kidney
+Epithelial: PAX8 PAX2 KRT8 KRT18 CDH16 -PTPRC
+  Podocytes: NPHS1! NPHS2! PODXL WT1 PTPRO CLIC5
+  Parietal epithelial cells: CLDN1 VCAM1 CFH -NPHS1
+  Proximal tubule: LRP2 CUBN SLC34A1 SLC5A12 HNF4A SLC22A6 -UMOD
+  Thin limb: CRYAB AKR1B1 SH3GL3 -UMOD
+  Thick ascending limb: UMOD! SLC12A1! CASR EGF
+  Distal convoluted tubule: SLC12A3! CALB1 PVALB TRPM6
+  Connecting tubule: CALB1 SLC8A1 SCNN1G -SLC12A3
+  Principal cells: AQP2! AQP3 GATA3 SCNN1G FXYD4
+  Intercalated cells: ATP6V1G3 FOXI1 ATP6V0D2 SLC4A1 SLC26A4 -AQP2
+Mesangial cells: PDGFRB ITGA8 PIEZO2 POSTN GATA3 -NPHS1
+@immune
+@stroma

@@ -596,6 +596,12 @@ T and NK cells: CD3E|NKG7+ EPCAM-
         <span class="spacer"></span><span class="hint" id="mkSum"></span></div>
     </div>
     <div class="col side">
+      <div class="h">Start from an organ</div>
+      <div class="row"><select id="mkOrgan" title="Built-in marker lists of common organs" style="flex:1"></select></div>
+      <input type="text" id="mkOrganOther" hidden placeholder="the organ, e.g. prostate" style="margin-top:4px">
+      <div class="row" style="margin-top:4px"><button id="mkOrganUse" title="The organ's built-in list, keeping the cell types this panel can resolve">Use built-in list</button>
+        <button id="mkOrganAgent" title="The agent completes the list for this tissue and panel (searching the literature for what the built-in list lacks)">Refine with the agent</button></div>
+      <div id="mkOrganMsg" class="hint"></div>
       <div class="h">Check</div><div id="mkMsgs" class="hint">Not checked yet.</div>
       <div id="mkDraftBox">
       <div class="h">Draft with the agent</div>
@@ -823,7 +829,7 @@ const ICON_TEXT = { importBtn: "import", clearAll: "trash", connBtn: "monitor", 
   openMarkers: "list", openRef: "file", openEx: "file", annotate: "play", eRun: "play", eShow: "scatter", nRun: "play",
   undo: "undo", claudeBtn: "sparkle", plaus: "shield", report: "file", export: "share", reset: "trash",
   draw: "pen", emLasso: "lasso", emClear: "x", emZoom: "target", send: "send",
-  mkImport: "import", mkCheck: "check", mkSave: "save", mkDraft: "sparkle", mkClose: "check", imGo: "import",
+  mkImport: "import", mkCheck: "check", mkSave: "save", mkDraft: "sparkle", mkOrganUse: "list", mkOrganAgent: "sparkle", mkClose: "check", imGo: "import",
   imNewAlign: "sparkle", imAlign: "sparkle", alignNow: "sparkle", alignReg: "file", imImgGo: "image", imRegGo: "check",
   imUndoPlace: "undo", refPick: "folder", exPick: "folder", refClose: "check", exClose: "check", rcTest: "check",
   rcGo: "server", fbOk: "check", rpAsk: "sparkle", xpCsv: "download", xpNb: "download", xpReg: "download",
@@ -2850,7 +2856,46 @@ setInterval(() => { if (!st.busy) followAgent().catch(() => {}); }, 4000);
 
 // ---------------- header actions ----------------
 // ---------------- marker list dialog ----------------
-function openMarkers() { $("mkDlg").showModal(); loadLibrary(); }
+function openMarkers() { $("mkDlg").showModal(); loadLibrary(); loadOrgans(); }
+async function loadOrgans() {  // the built-in organ lists, and "other" for an organ the agent looks up
+  const sel = $("mkOrgan"); if (sel.options.length) return;
+  const r = await api("/api/markers/organs");
+  r.organs.filter((o) => o.organ !== "other").forEach((o) => { const x = document.createElement("option"); x.value = o.organ; x.textContent = o.label; sel.append(x); });
+  const x = document.createElement("option"); x.value = "other"; x.textContent = "Other organ… (the agent looks it up)"; sel.append(x);
+  syncOrgan();
+}
+function syncOrgan() {
+  const other = $("mkOrgan").value === "other";
+  $("mkOrganOther").hidden = !other;
+  setLabel($("mkOrganUse"), other ? "Immune and stromal cells" : "Use built-in list");
+  $("mkOrganAgent").disabled = !(st.desktop || st.chatAvailable);
+}
+$("mkOrgan").onchange = syncOrgan;
+$("mkOrganUse").onclick = async () => {  // the organ's built-in list pruned to this sample's panel
+  if (!st.sample) { toast("Import a sample first"); return; }
+  const organ = $("mkOrgan").value, msg = $("mkOrganMsg"); msg.textContent = "…";
+  try {
+    const d = await post("/api/markers/organ_draft", { organ, sample: st.sample.sample_id });
+    $("mkText").value = d.csv; $("mkName").value = `${organ}_${st.sample.sample_id}`.slice(0, 60); checkMarkers();
+    const left = d.dropped.map((x) => x.type), mer = d.merged.map((x) => `${x.type} (into ${x.into})`);
+    msg.textContent = `${d.n_types} cell types this panel can resolve.` + (left.length ? ` Left out (markers not in the panel): ${left.join(", ")}.` : "") +
+      (mer.length ? ` Only subtype left, so merged: ${mer.join(", ")}.` : "") + " Edit it, or let the agent complete it.";
+  } catch (e) { msg.textContent = e.message; }
+};
+$("mkOrganAgent").onclick = async () => {  // the agent completes the list for this tissue (and looks up an organ not built in)
+  if (!st.sample) { toast("Import a sample first"); return; }
+  const organ = $("mkOrgan").value === "other" ? $("mkOrganOther").value.trim() : $("mkOrgan").value;
+  if (!organ) { toast("Name the organ"); return; }
+  try {
+    const r = await post("/api/claude/markers", { sample: st.sample.sample_id, organ });
+    if (r.message && st.chatAvailable) {  // the server viewer: its own drafting, with the request as instructions
+      $("mkInstr").value = r.message; $("mkRevise").checked = false; $("mkDraft").click();
+    } else if (r.claude_code) {
+      $("mkOrganMsg").textContent = "The agent is drafting the list in Claude Code; when it is saved, choose it under “load a list…”.";
+      toast(r.claude_code.reused ? "Sent to the agent" : "The agent is opening", 4000);
+    }
+  } catch (e) { toast(e.message, 6000); }
+};
 async function loadLibrary() {
   const rows = await api("/api/markers/library");
   const sel = $("mkLib"); const keep = sel.value; sel.length = 1;
@@ -2903,6 +2948,7 @@ $("mkExport").onclick = async () => {
   document.body.append(a); a.click(); a.remove();
 };
 $("mkCheck").onclick = checkMarkers;
+$("mkLib").addEventListener("focus", loadLibrary);  // lists the agent saved meanwhile
 $("mkLib").onchange = async (e) => { if (!e.target.value) return; const r = await api(`/api/markers/library/${encodeURIComponent(e.target.value)}`); $("mkText").value = r.text; $("mkName").value = r.name; checkMarkers(); };
 $("mkSave").onclick = async () => { try { const r = await post("/api/markers/save", { name: $("mkName").value, text: $("mkText").value }); toast(`Saved as ${r.name}`); loadLibrary(); } catch (e) { toast(e.message); } };
 $("mkDraft").onclick = async () => {

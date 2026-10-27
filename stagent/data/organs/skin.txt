@@ -1,0 +1,11 @@
+# Skin
+Keratinocytes: KRT5 KRT14 KRT1 KRT10 DSP SFN -PTPRC
+  Basal keratinocytes: KRT15 COL17A1 TP63 KRT5 KRT14 -KRT10
+  Suprabasal keratinocytes: KRT1 KRT10 KRTDAP DMKN SBSN -KRT15
+  Granular keratinocytes: LOR FLG IVL SPRR2E -KRT15
+Melanocytes: PMEL! MLANA! TYR DCT TYRP1
+Sweat gland cells: DCD! SCGB2A2 MUCL1 KRT19 PIP
+@immune
+Myeloid > Langerhans cells: CD207! CD1A
+@stroma
+Adipocytes: ADIPOQ PLIN1 LEP PLIN4

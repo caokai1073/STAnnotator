@@ -1,0 +1,3 @@
+# Other tissue (immune and stromal cells only; the agent adds the organ's own cell types)
+@immune
+@stroma

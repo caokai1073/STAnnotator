@@ -1628,6 +1628,54 @@ async def api_markers_check(req: Request):
     return _json({k: p[k] for k in ("ok", "errors", "warnings", "n_types", "depth", "genes", "canonical")})
 
 
+def api_markers_organs(req):
+    from . import organs
+    return _json({"organs": organs.organs()})
+
+
+async def api_markers_organ_draft(req: Request):
+    """The built-in list of an organ pruned to the sample's panel: {organ, sample}."""
+    from . import organs
+    b = await req.json()
+    try:
+        return _json(organs.draft(b["organ"], panel_genes(b.get("sample") or None)))
+    except (ValueError, KeyError) as e:
+        return _json({"error": str(e).strip("'")}, 400)
+
+
+ORGAN_REQUEST = ("Draft a marker list for {label} for sample {sample} (I chose this organ in Markers…). Start from "
+                 "organ_marker_draft(organ='{organ}', sample_id='{sample}'): the built-in list pruned to the panel, with "
+                 "the types it had to leave out. {extra}Then add the cell types specific to this tissue that the panel "
+                 "can resolve and the draft lacks, and remove types the panel cannot separate (get_panel_genes). Use the "
+                 "built-in markers where they fit; for other types search the literature online for their markers when "
+                 "you are not sure. Validate with check_marker_list, save the list with save_marker_list(name="
+                 "'{name}', sample_id='{sample}'), and tell me in three lines what you changed; I load it in Markers… "
+                 "(load a list…).")
+
+
+async def api_claude_markers(req: Request):
+    """Ask the agent to draft the marker list of an organ for a sample, from the built-in list."""
+    from . import organs
+    b = await req.json()
+    sample, organ = b.get("sample") or "", (b.get("organ") or "").strip()
+    if not sample or not organ:
+        return _json({"error": "choose a sample and an organ"}, 400)
+    built = {o["organ"]: o["label"] for o in organs.organs()}
+    if organ in built and organ != "other":
+        label, key, extra = built[organ], organ, ""
+    else:
+        label, key = organ, "other"
+        extra = (f"There is no built-in list for {organ}: that draft holds only immune and stromal cells; add the "
+                 f"organ's own (parenchymal) cell types and their markers from the literature (search online). ")
+    text = ORGAN_REQUEST.format(label=label, organ=key, sample=sample, extra=extra,
+                                name=f"{organs.safe_name(organ)}_{sample}"[:60])
+    if not desktop_mode():  # the server viewer drafts it itself (Markers… > Draft), without web search
+        return _json({"message": f"Organ: {label}. Start from organ_marker_draft(organ='{key}', sample_id='{sample}') "
+                                 "and complete it for this tissue: add the cell types specific to it that the panel can "
+                                 "resolve, and remove those it cannot separate."})
+    return _json({"claude_code": claudelink.open_claude_code(sample, None, text, send_if_open=True)})
+
+
 def _library_files():
     return sorted([f for f in LIBRARY.glob("*") if f.suffix in (".txt", ".csv")]) if LIBRARY.exists() else []
 
@@ -1762,12 +1810,12 @@ async def api_markers_draft(req: Request):
     b = await req.json()
     instr = (b.get("instructions") or "").strip() or "Draft a complete list for this tissue."
     current = (b.get("current") or "").strip()
-    prompt = f"Tissue / context: {b.get('context', 'human intestine (IBD)')}.{language_line(b.get('instructions'))}\nRequest: {instr}"
+    prompt = f"Tissue / context: {b.get('context') or 'see the request'}.{language_line(b.get('instructions'))}\nRequest: {instr}"
     if current:
         prompt += f"\nStart from this existing list and revise it:\n```\n{current}\n```"
     args = ["claude", "-p", prompt, "--output-format", "stream-json", "--verbose", "--tools", "",
             "--mcp-config", str(CHAT_MCP), "--strict-mcp-config",
-            "--allowedTools", "mcp__stagent__get_panel_genes mcp__stagent__check_marker_list",
+            "--allowedTools", "mcp__stagent__get_panel_genes mcp__stagent__check_marker_list mcp__stagent__organ_marker_draft",
             "--append-system-prompt", DRAFT_PROMPT]
 
     async def stream():
@@ -2020,6 +2068,9 @@ def build_app(port):
         Route("/api/existing/inspect", api_existing_inspect, methods=["POST"]),
         Route("/api/s/{sid}/export_to", api_export_to, methods=["POST"]),
         Route("/api/markers/draft", api_markers_draft, methods=["POST"]),
+        Route("/api/markers/organs", api_markers_organs),
+        Route("/api/markers/organ_draft", api_markers_organ_draft, methods=["POST"]),
+        Route("/api/claude/markers", api_claude_markers, methods=["POST"]),
     ] + [r for r in review_app.app.routes if r.path != "/"] + list(mcp_http.routes)
     return Starlette(routes=routes, lifespan=lifespan)
 

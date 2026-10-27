@@ -1,0 +1,4 @@
+# the gut wall's nerves and pacemaker cells
+Glia: PLP1 S100B SOX10 GFAP CDH19 NRXN1
+Neurons: ELAVL4 PRPH PHOX2B SNAP25 UCHL1 RET CHAT NOS1
+ICC: ANO1! KIT -PTPRC -CPA3
