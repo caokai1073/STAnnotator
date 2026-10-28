@@ -2844,7 +2844,8 @@ function imPairs(secs) {  // several slices: which image and registration file e
   box.textContent = "In order:\n" + secs.map((k, i) => `${i + 1}. ${k} ← ${[pick(imgs, i, "image"), pick(regs, i, "registration"), geos.length ? (geos.length === secs.length ? `regions ${base(geos[i])}` : `regions: ${geos.length} files for ${secs.length} slices`) : ""].filter(Boolean).join(" · ")}`).join("\n");
 }
 ["imNewImg", "imNewReg", "imNewGeo"].forEach((id) => ["input", "change"].forEach((ev) => $(id).addEventListener(ev, () => imPairs())));
-function imDefaultName(n) {  // the name used when the field is left empty, shown in it
+function imDefaultName(n) {  // the name used when the field is left empty, shown in it (made unique: cells, cells_2, ...)
+  if (n) { const used = new Set((st.samples || []).map((s) => s.sample_id)); let i = 2; const b = n; while (used.has(n)) n = `${b}_${i++}`; }
   st.imDefault = n; $("imName").placeholder = n ? `${n} (from the file names)` : "short id without spaces; by default from the file names";
 }
 const imgMode = () => document.querySelector("input[name=imImgMode]:checked").value;

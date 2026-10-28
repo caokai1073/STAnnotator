@@ -507,7 +507,7 @@ def _slice_from_fields(fields):
         if not Path(p).is_file():
             raise ValueError(f"{p}: no such file")
     r = _xenium_role(Path(cells).name)
-    key = r[1] if r and r[1] else Path(cells).parent.name if r else Path(cells).name.split(".")[0]  # GSM1_cells.parquet: GSM1
+    key = r[1] if r and r[1] else Path(cells).name.split(".")[0]  # GSM1_cells.parquet: GSM1; cells.parquet: cells
     return {"key": key, "folder": str(Path(cells).expanduser().parent), "files": files}
 
 
@@ -659,7 +659,7 @@ def flat_sources(kind, entries):
                 if not Path(v).is_file():
                     raise ValueError(f"{v}: no such file")
             r = _flat_role(kind, Path(f.get("counts", "")).name)
-            key = r[1] if r and r[1] else Path(f["counts"]).parent.name if r else Path(f.get("counts", "x")).name.split(".")[0]
+            key = r[1] if r and r[1] else Path(f.get("counts", "x")).name.split(".")[0]  # the file's name, not its folder
             fielded.append({"key": key, "folder": str(Path(f.get("counts", ".")).parent), "files": f})
             continue
         p = Path(e).expanduser()
