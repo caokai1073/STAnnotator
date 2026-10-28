@@ -149,6 +149,12 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
 
 1. Pick a sample; earlier annotations are under **Annotation** (Data tab). **Rename** next to it changes the name
    the app shows (a slice: its name in the project, and the project's name); the id, files and annotations stay.
+   **Save…** under Annotation (Data tab) writes the open annotation into one file (`.stannot`): every version with its
+   regions, priors and corrections, the marker step and model, niches and their names, review verdicts and advice,
+   the PCA / UMAP / Leiden clusters, and the last result of each Compare and Signaling analysis (these are kept with
+   the annotation, so **Last result** also works after a restart). Chats are left out. **Load…** opens such a file as
+   a new annotation of the sample with the same cells and genes (here or in another data folder); a different PCA /
+   UMAP of that sample goes to the trash first.
    **Filter cells and genes…** (Data tab) deletes cells with fewer or more transcripts than you set, fewer genes,
    or a mitochondrial share (MT- genes, when the panel has them) above a percentage, and genes detected in fewer
    cells than you set; histograms show where each threshold cuts and the dialog counts what goes. Empty fields are

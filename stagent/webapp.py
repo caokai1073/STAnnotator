@@ -963,6 +963,62 @@ async def api_project_niches(req: Request):
 ANALYSES = LRU(8)   # recent results, for their CSV
 
 
+def _keep_result(b, kind, result, table):
+    """The last result of each analysis kind, kept in the annotation's folder (results/<kind>.json and its full table
+    as parquet): Last result works after a reload, and a saved annotation keeps it."""
+    s = review_app._session(b["session"])
+    d = s.dir / "results"
+    d.mkdir(exist_ok=True)
+    f = d / f"{kind}.json"
+    try:
+        old = json.load(open(f))["result"].get("id") if f.exists() else None
+        if old and (d / f"{old}.parquet").exists():
+            (d / f"{old}.parquet").unlink()
+    except (ValueError, KeyError, OSError):
+        pass
+    try:
+        table.to_parquet(d / f"{result['id']}.parquet")
+    except Exception as e:  # the result stays; only its CSV is missing after a restart
+        print(f"could not keep the table of {kind}: {e}", file=sys.stderr)
+    req = {k: v for k, v in b.items() if k not in ("session", "selection")}
+    json.dump({"time": time.strftime("%Y-%m-%dT%H:%M:%S"), "request": req, "selection": b.get("selection"),
+               "result": result}, open(f, "w"), default=_json_default)
+
+
+def _json_default(o):
+    if isinstance(o, np.generic):
+        return o.item()
+    if isinstance(o, np.ndarray):
+        return o.tolist()
+    return str(o)
+
+
+def _table(key):
+    """A result's full table: in memory, else kept in an annotation's results/ folder."""
+    t = ANALYSES.get(key)
+    if t is None and re.fullmatch(r"[0-9a-f]{12}", key or "") and config.SESSIONS.exists():
+        f = next(config.SESSIONS.glob(f"*/results/{key}.parquet"), None)
+        if f is not None:
+            t = ANALYSES[key] = pd.read_parquet(f)
+            while len(ANALYSES) > ANALYSES.n:
+                ANALYSES.popitem(last=False)
+    return t
+
+
+def api_results(req):
+    """The last result of each analysis of an annotation, {kind: {request, selection, result}}."""
+    s = review_app._session(req.path_params["sid"])
+    out = {}
+    for f in sorted((s.dir / "results").glob("*.json")) if (s.dir / "results").exists() else []:
+        try:
+            x = json.load(open(f))
+        except ValueError:
+            continue
+        x["request"]["session"] = s.id
+        out[f.stem] = x
+    return _json(out)
+
+
 _cell_tables = LRU(2)  # the last cell tables (dot plots of one result ask for them again and again)
 
 
@@ -1022,6 +1078,7 @@ async def api_analysis_run(req: Request):
         while len(ANALYSES) > ANALYSES.n:
             ANALYSES.popitem(last=False)
         analysis.log_run(review_app._session(b["session"]), b, r)
+        _keep_result(b, b["kind"], {**r, "id": key}, table)
         return {**r, "id": key}
     try:
         return _json(await asyncio.to_thread(work))
@@ -1058,6 +1115,7 @@ async def api_communication_run(req: Request):
                 ANALYSES.popitem(last=False)
             from . import analysis
             analysis.log_run(review_app._session(b["session"]), b, r)
+            _keep_result(b, b.get("kind", "run"), {**r, "id": key, "kind": b.get("kind", "run")}, table)
             JOBS[job].update(progress=1.0, stage="done", done=True, result={**r, "id": key, "kind": b.get("kind", "run")})
         except Exception as e:
             JOBS[job].update(error=f"{type(e).__name__}: {e}" if not isinstance(e, (ValueError, KeyError)) else str(e).strip("'"),
@@ -1114,7 +1172,7 @@ async def api_analysis_dots(req: Request):
 
 
 def api_analysis_csv(req):
-    t = ANALYSES.get(req.path_params["key"])
+    t = _table(req.path_params["key"])
     if t is None:
         return _json({"error": "this result is gone: run it again"}, 404)
     return Response(t.to_csv(index=False), media_type="text/csv",
@@ -1122,7 +1180,7 @@ def api_analysis_csv(req):
 
 
 def api_communication_bubble(req):
-    t = ANALYSES.get(req.path_params["key"])
+    t = _table(req.path_params["key"])
     if t is None or "significant" not in t:
         return _json({"error": "this result is gone: run it again"}, 404)
     n = max(1, min(60, int(req.query_params.get("n", 20))))
@@ -1578,6 +1636,59 @@ async def api_sample_rename(req: Request):
     except ValueError as e:
         return _json({"error": str(e)}, 400)
     _cell_tables.clear()  # slice names are labels of the analyses
+    return _json(r)
+
+
+# ---------------- an annotation as one file (bundle.py) ----------------
+BUNDLES = config.HOME / "cache" / "bundles"
+
+
+async def api_bundle_save(req: Request):
+    """{path}: write the annotation there (desktop app); else keep it for a download from /api/bundle/<key>."""
+    from . import bundle
+    sid, b = req.path_params["sid"], await req.json()
+    if b.get("path"):
+        if not desktop_mode():
+            return _json({"error": "only in the desktop app"}, 403)
+        try:
+            info = await asyncio.to_thread(bundle.save, sid, Path(b["path"]).expanduser())
+        except (ValueError, OSError) as e:
+            return _json({"error": str(e)}, 400)
+        return _json({"saved": b["path"], "info": info})
+    BUNDLES.mkdir(parents=True, exist_ok=True)
+    for old in sorted(BUNDLES.glob("*.stannot"), key=lambda p: p.stat().st_mtime)[:-2]:  # keep the last few
+        old.unlink(missing_ok=True)
+    key = uuid.uuid4().hex[:12]
+    try:
+        info = await asyncio.to_thread(bundle.save, sid, BUNDLES / f"{key}.stannot")
+    except (ValueError, OSError) as e:
+        return _json({"error": str(e)}, 400)
+    return _json({"key": key, "info": info})
+
+
+def api_bundle_get(req):
+    key = req.path_params["key"]
+    f = BUNDLES / f"{key}.stannot"
+    if not re.fullmatch(r"[0-9a-f]{12}", key) or not f.exists():
+        return _json({"error": "this file is gone: save it again"}, 404)
+    return FileResponse(f, media_type="application/zip", filename=req.query_params.get("name", "annotation.stannot"))
+
+
+async def api_bundle_load(req: Request):
+    """Load a saved annotation: JSON {path} (a file on this computer), or the file itself as the request body;
+    ?sample= the sample to try first."""
+    from . import bundle
+    sample = req.query_params.get("sample") or None
+    try:
+        if req.headers.get("content-type", "").startswith("application/json"):
+            src = Path((await req.json())["path"]).expanduser()
+        else:
+            src = io.BytesIO(await req.body())
+        r = await asyncio.to_thread(bundle.load, src, sample)
+    except (ValueError, OSError, KeyError, __import__("zipfile").BadZipFile) as e:
+        return _json({"error": str(e) if not isinstance(e, __import__("zipfile").BadZipFile) else "this is not a saved annotation (not a zip file)"}, 400)
+    if r["embedding_loaded"]:
+        _cell_tables.clear()
     return _json(r)
 
 
@@ -2218,6 +2329,10 @@ def build_app(port):
         Route("/api/sample/{sample}/rename", api_sample_rename, methods=["POST"]),
         Route("/api/sample/{sample}/qc", api_sample_qc),
         Route("/api/proposals", api_proposals),
+        Route("/api/s/{sid}/results", api_results),
+        Route("/api/s/{sid}/bundle", api_bundle_save, methods=["POST"]),
+        Route("/api/bundle/{key}", api_bundle_get),
+        Route("/api/bundle-load", api_bundle_load, methods=["POST"]),
         Route("/api/proposal/{pid}/decide", api_proposal_decide, methods=["POST"]),
         Route("/api/sample/{sample}/filter", api_sample_filter, methods=["POST"]),
         Route("/api/sample/{sample}/placement/undo", api_sample_placement_undo, methods=["POST"]),

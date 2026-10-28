@@ -383,6 +383,9 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
         <span>All slices together<small>one annotation, embedding and set of niches for the project</small></span></label>
     </div>
     <label class="fld" id="sessWrap"><span>Annotation</span><select id="session" title="Earlier annotations of this sample"></select></label>
+    <div class="act2"><button id="anSave" disabled title="Save the open annotation as one file: cell types with every version, regions, priors, corrections, niches, the PCA / UMAP, the last results of Compare and Signaling">Save…</button>
+      <button id="anLoad" disabled title="Load a saved annotation (.stannot) for the sample with the same cells">Load…</button></div>
+    <input type="file" id="anLoadFile" accept=".stannot,.zip" hidden>
   </div>
   <div class="pane" data-pane="annotate">
     <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-sparkle"/></svg><div><div id="ainfo">No annotation yet</div>
@@ -1217,7 +1220,7 @@ async function selectSample(id) {
   st.sample.allSessions = st.sample.sessions;
   st.sample.sessions = st.sample.sessions.filter((x) => USER_METHODS.includes(x.method));
   $("sampleRename").disabled = false;
-  $("qfBtn").disabled = false;
+  $("qfBtn").disabled = false; $("anLoad").disabled = false;
   $("reset").disabled = !st.sample.allSessions.length && !projectOf(id);  // in a project: also to reset the other slices
   store("sample", id);
   $("path").textContent = st.sample.bundle_dir;
@@ -1251,6 +1254,8 @@ function closeSession() {
   ["undo", "export", "send", "plaus", "report", "nRun", "eRun", "eShow"].forEach((b) => ($(b).disabled = true));
   closeEmbedding(); st.emb = null; EM.selAll = null; EM.lassoRaw = null; setSelection(null); $("einfo").textContent = "Open or make an annotation first";
   st.niche = null; st.nicheSig = undefined; $("nicheinfo").textContent = "Open or make an annotation first";
+  try { AN.by = {}; syncLast(); } catch (e) { /* before the analyses' code is set up */ }
+  $("anSave").disabled = true;
   $("ainfo").textContent = "No annotation open: choose a method and click Annotate, or open one in Data → Annotation";
   $("carryWrap").style.visibility = "hidden";
   $("input").disabled = true; $("composerhint").textContent = "Annotate a sample first.";
@@ -1330,6 +1335,8 @@ async function openSession(sid) {
   }
   await loadNiches(false);
   await loadEmbedding(false);
+  loadResults(sid).catch(() => {});
+  $("anSave").disabled = false;
   loadGenes(st.sample.sample_id).catch(() => {});
   await refreshVersion(true);
   await restoreView();
@@ -3241,6 +3248,53 @@ $("rnSave").onclick = async () => {
 };
 $("rnCancel").onclick = () => $("rnDlg").close();
 ["rnName", "rnProject"].forEach((id) => $(id).addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("rnSave").click(); } }));
+// ---------------- an annotation as one file: save and load (bundle.py) ----------------
+$("anSave").onclick = async () => {
+  if (!st.sid) return;
+  const name = `${sampleName(st.sample).replace(/[^A-Za-z0-9_.-]+/g, "_")}_v${st.version}.stannot`;
+  try {
+    if (native() && !st.remote) {
+      const path = await native().save_path(name); if (!path) return;
+      toast("Saving…", 20000);
+      await post(`/api/s/${st.sid}/bundle`, { path }); toast(`Saved ${path}`, 5000); return;
+    }
+    toast("Saving…", 20000);
+    const { key } = await post(`/api/s/${st.sid}/bundle`, {}), url = `/api/bundle/${key}?name=${encodeURIComponent(name)}`;
+    if (st.remote) { await saveDownload(name, url); return; }
+    const a = document.createElement("a"); a.href = url; a.download = name; document.body.append(a); a.click(); a.remove();
+    toast("Saved", 2500);
+  } catch (e) { toast(e.message, 7000); }
+};
+async function anLoaded(r) {
+  st.openedThisVisit[r.sample_id] = r.session_id;
+  await loadSamples(r.sample_id);
+  const sv = r.saved;
+  toast(`Loaded the annotation saved ${sv.saved_at.replace("T", " ").slice(0, 16)} (${sv.n_versions} version${sv.n_versions === 1 ? "" : "s"}` +
+        (sv.has_niches ? ", niches" : "") + (r.embedding_loaded ? ", PCA / UMAP" : "") + (sv.results.length ? `, ${sv.results.length} analysis results` : "") + ")" +
+        (r.replaced_embedding ? "; the sample's earlier PCA / UMAP went to the trash" : ""), 8000);
+}
+$("anLoad").onclick = async () => {
+  if (st.busy) { toast("Wait until the assistant has answered"); return; }
+  if (native() && !st.remote) {  // the desktop app: a file on this computer, read in place
+    const p = await native().pick("bundle", false); if (!p.length) return;
+    toast("Loading…", 20000);
+    try { await anLoaded(await post(`/api/bundle-load?sample=${encodeURIComponent(st.sample.sample_id)}`, { path: p[0] })); }
+    catch (e) { toast(e.message, 9000); }
+    return;
+  }
+  $("anLoadFile").value = ""; $("anLoadFile").click();  // a browser, or the app on a server: the file is sent
+};
+$("anLoadFile").onchange = async () => {
+  const f = $("anLoadFile").files[0]; if (!f) return;
+  toast(`Loading ${f.name}…`, 30000);
+  try {
+    const r = await fetch(`/api/bundle-load?sample=${encodeURIComponent(st.sample.sample_id)}`, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: f });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || r.statusText);
+    await anLoaded(j);
+  } catch (e) { toast(e.message, 9000); }
+};
+
 // ---------------- filtering cells and genes ----------------
 const qfEsc = (x) => String(x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const QF = { keys: ["min_counts", "max_counts", "min_genes", "max_mito_pct", "min_cells"], qc: null, timer: null, token: 0 };
@@ -3534,6 +3588,13 @@ $("aRun").onclick = async () => {
   } catch (e) { toast(e.message, 7000); }
   finally { $("aRun").disabled = false; setLabel($("aRun"), label); }
 };
+async function loadResults(sid) {  // the last result of each analysis, kept with the annotation
+  const r = await api(`/api/s/${sid}/results`);
+  if (sid !== st.sid) return;
+  AN.by = {};
+  Object.entries(r).forEach(([kind, x]) => { AN.by[kind] = { last: x.result, req: x.request, sel: x.selection || undefined }; });
+  syncLast();
+}
 function openLast(kind) { const x = AN.by[kind]; if (!x) return; AN.last = x.last; AN.req = x.req; AN.sel = x.sel; AN.view = ""; showAnalysis(); }
 function syncLast() {  // Last result shows the last result of the analysis chosen in the tab
   $("aLast").hidden = !AN.by[$("aKind").value]; $("sLast").hidden = !AN.by[$("sKind").value];

@@ -66,7 +66,8 @@ class Api:
                      "ximage": ("Images (*.ome.tif;*.tif;*.tiff)", "All files (*.*)"),
                      "image": ("Images (*.tif;*.tiff;*.btf)", "All files (*.*)"),
                      "csv": ("CSV (*.csv)", "All files (*.*)"),
-                     "markers": ("Marker lists (*.csv;*.txt)", "All files (*.*)")}.get(kind, ("All files (*.*)",))
+                     "markers": ("Marker lists (*.csv;*.txt)", "All files (*.*)"),
+                     "bundle": ("Saved annotations (*.stannot;*.zip)", "All files (*.*)")}.get(kind, ("All files (*.*)",))
             res = self._window.create_file_dialog(mode, allow_multiple=bool(multiple), file_types=types)
         return [str(p) for p in res] if res else []
 
