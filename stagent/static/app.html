@@ -4196,8 +4196,13 @@ api("/api/config").then((c) => {  // the desktop app (or no Claude Code CLI): th
   $("claudeBtn").hidden = !c.desktop;
   $("clearAll").hidden = !c.desktop;
   st.home = c.home;
-  if (window.pywebview) initConnection(c.remote).catch(() => {});
-  else window.addEventListener("pywebviewready", () => initConnection(c.remote).catch(() => {}));
+  // pywebview first puts an empty window.pywebview.api, adds its functions a moment later, then fires pywebviewready:
+  // wait until the functions are there (polling as well, in case the event fired before this listener)
+  let tries = 0;
+  const ready = () => (native() && native().connection ? initConnection(c.remote).catch(() => {})
+    : ++tries < 300 && setTimeout(ready, 100));
+  if (window.pywebview) ready();
+  else window.addEventListener("pywebviewready", ready, { once: true });
   if (c.desktop) { document.body.classList.add("desktop"); $("sideTitle").textContent = "Agent"; }  // Claude Code button in the header
   $("mkDraftBox").hidden = c.desktop; $("mkClaudeHint").hidden = !c.desktop;
   if (!c.chat) {
