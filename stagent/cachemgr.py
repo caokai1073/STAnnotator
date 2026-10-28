@@ -1,4 +1,5 @@
-"""The data folder's caches, kept under a size limit (default 5 GB; settings.json "cache_limit_gb", or $STAGENT_CACHE_GB).
+"""The data folder's caches and trash, each kept under a size limit (settings.json "cache_limit_gb", default 5 GB, or
+$STAGENT_CACHE_GB; "trash_limit_gb", default 10 GB, or $STAGENT_TRASH_GB).
 
 Caches are files the app can make again when they are needed: figures the agent looked at, notebook exports, saved
 annotation files waiting for their download, R files converted to h5ad, the alignment figures, and the expression
@@ -6,36 +7,57 @@ model of earlier versions of an annotation (sessions/*/base: each set of correct
 When they add up to more than the limit the oldest go first. Never touched: the cells and counts of a sample, the
 versions of an annotation, its niches and results, anything the latest version of an annotation uses (its expression
 model, marker step and the first model), the trash, and files changed in the last 10 minutes (perhaps still in use).
+
+The trash (trash/ of the data folder) holds what Reset, Remove sample and the cell filter moved away, one folder per
+removal named by its time; past its limit the oldest removals are deleted for good, whole, never one of the last
+10 minutes.
 """
 import json, os, threading, time
 from . import config
 
 DEFAULT_GB = 5.0
+DEFAULT_TRASH_GB = 10.0
 RECENT_S = 600
 KEEP_BASE = {"init.npy", "init_model.npz", "markers_init.npz", "markers_init.json", "reference_cells.npz", "overclusters.npy"}
 
 
-def limit_gb():
-    if os.environ.get("STAGENT_CACHE_GB"):
-        return float(os.environ["STAGENT_CACHE_GB"])
+def _setting(key, env, default):
+    if os.environ.get(env):
+        return float(os.environ[env])
     try:
-        return float(json.load(open(config.HOME / "settings.json")).get("cache_limit_gb", DEFAULT_GB))
+        return float(json.load(open(config.HOME / "settings.json")).get(key, default))
     except (OSError, ValueError, TypeError):
-        return DEFAULT_GB
+        return default
 
 
-def set_limit_gb(gb):
+def limit_gb():
+    return _setting("cache_limit_gb", "STAGENT_CACHE_GB", DEFAULT_GB)
+
+
+def trash_limit_gb():
+    return _setting("trash_limit_gb", "STAGENT_TRASH_GB", DEFAULT_TRASH_GB)
+
+
+def _store(key, gb, what):
     gb = float(gb)
     if not 0.5 <= gb <= 10000:
-        raise ValueError("the cache limit is between 0.5 and 10000 GB")
+        raise ValueError(f"the {what} limit is between 0.5 and 10000 GB")
     f = config.HOME / "settings.json"
     try:
         cur = json.load(open(f)) if f.exists() else {}
     except ValueError:
         cur = {}
-    cur["cache_limit_gb"] = gb
+    cur[key] = gb
     json.dump(cur, open(f, "w"), indent=1)
     return gb
+
+
+def set_limit_gb(gb):
+    return _store("cache_limit_gb", gb, "cache")
+
+
+def set_trash_limit_gb(gb):
+    return _store("trash_limit_gb", gb, "trash")
 
 
 def _latest_state(d):
@@ -96,8 +118,52 @@ def usage():
     by = {}
     for _, kind, size, _ in fs:
         by[kind] = by.get(kind, 0) + size
-    trash = sum(f.stat().st_size for f in config.TRASH.rglob("*") if f.is_file()) if config.TRASH.exists() else 0
-    return {"bytes": sum(by.values()), "limit_gb": limit_gb(), "by_kind": by, "n_files": len(fs), "trash_bytes": trash}
+    tr = trash_entries()
+    return {"bytes": sum(by.values()), "limit_gb": limit_gb(), "by_kind": by, "n_files": len(fs),
+            "trash_bytes": sum(x[1] for x in tr), "trash_entries": len(tr), "trash_limit_gb": trash_limit_gb(),
+            "trash_path": str(config.TRASH)}
+
+
+def _size(p):
+    if p.is_file():
+        return p.stat().st_size
+    return sum(f.stat().st_size for f in p.rglob("*") if f.is_file() and not f.is_symlink())
+
+
+def trash_entries():
+    """[(path, bytes, time)] of the removals in the trash, oldest first (time: the newest file inside)."""
+    out = []
+    for p in config.TRASH.iterdir() if config.TRASH.exists() else []:
+        try:
+            files = [p] if p.is_file() else [f for f in p.rglob("*") if f.is_file()]
+            t = max((f.stat().st_mtime for f in files), default=p.stat().st_mtime)
+            out.append((p, _size(p), t))
+        except OSError:
+            continue
+    return sorted(out, key=lambda x: x[2])
+
+
+def prune_trash(limit=None, everything=False):
+    """Delete the oldest removals until the trash holds at most the limit (everything: all of it, but never one of
+    the last 10 minutes). Returns (removals deleted, bytes freed)."""
+    import shutil
+    cap = (trash_limit_gb() if limit is None else float(limit)) * 1e9
+    tr = trash_entries()
+    total = sum(x[1] for x in tr)
+    n = freed = 0
+    now = time.time()
+    for p, size, t in tr:
+        if not everything and total - freed <= cap:
+            break
+        if now - t < RECENT_S:
+            continue
+        try:
+            shutil.rmtree(p) if p.is_dir() else p.unlink()
+            n += 1
+            freed += size
+        except OSError:
+            pass
+    return n, freed
 
 
 def prune(limit=None, everything=False):
@@ -123,12 +189,13 @@ def prune(limit=None, everything=False):
 
 
 def start(every_s=600):
-    """Prune now and every every_s seconds in the background (the app's lifetime)."""
+    """Prune the caches and the trash now and every every_s seconds in the background (the app's lifetime)."""
     def loop():
         while True:
-            try:
-                prune()
-            except Exception as e:
-                print(f"cache: {e}")
+            for fn in (prune, prune_trash):
+                try:
+                    fn()
+                except Exception as e:
+                    print(f"{fn.__name__}: {e}")
             time.sleep(every_s)
     threading.Thread(target=loop, daemon=True, name="cache-prune").start()

@@ -1771,14 +1771,19 @@ async def api_proposal_decide(req: Request):
 
 
 async def api_cache(req: Request):
-    """GET: the caches' size and limit. POST {limit_gb}: a new limit (pruned at once); {clear: true}: delete them."""
+    """GET: the caches' and the trash's size and limits. POST {limit_gb} / {trash_limit_gb}: a new limit (pruned at
+    once); {clear: true}: delete the caches; {empty_trash: true}: empty the trash."""
     from . import cachemgr
     if req.method == "POST":
         b = await req.json()
         try:
             if b.get("limit_gb") is not None:
                 cachemgr.set_limit_gb(b["limit_gb"])
-            n, freed = await asyncio.to_thread(cachemgr.prune, None, bool(b.get("clear")))
+            if b.get("trash_limit_gb") is not None:
+                cachemgr.set_trash_limit_gb(b["trash_limit_gb"])
+            trash = b.get("trash_limit_gb") is not None or b.get("empty_trash")
+            n, freed = await asyncio.to_thread(cachemgr.prune_trash if trash else cachemgr.prune, None,
+                                               bool(b.get("empty_trash") or b.get("clear")))
         except (ValueError, TypeError) as e:
             return _json({"error": str(e)}, 400)
         return _json(await asyncio.to_thread(cachemgr.usage) | {"deleted": n, "freed_bytes": freed})

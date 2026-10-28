@@ -225,7 +225,9 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
    The caches of the data folder (figures, exports, the expression model of earlier versions, saved files waiting
    for their download, converted R files, alignment figures: all made again when needed) stay under a limit, 5 GB
    by default: past it the oldest go first (checked every 10 minutes). About shows their size, sets the limit and
-   clears them; the trash is not a cache and is emptied by hand.
+   clears them. The trash (`trash/` of the data folder: what Reset, Remove sample and the cell filter moved away, one
+   folder per removal) has a limit of its own, 10 GB by default: past it the oldest removals are deleted for good;
+   About shows its size, sets the limit and empties it.
    **Remove all** (bottom of the toolbar, desktop app) deletes every sample with all its annotations and chats for good,
    to import from scratch (it cannot be undone); marker lists stay.
 7. **Markers…** edits, checks, saves and loads marker lists (saved lists go to `<data folder>/marker_lists/`).

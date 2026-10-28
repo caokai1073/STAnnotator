@@ -3010,15 +3010,24 @@ async function showAbout() {
   const cache = await api("/api/cache").catch(() => null);
   if (cache) rows.splice(5, 0, ["Cache", `<span id="hpCacheUse">${gb(cache.bytes)}</span> of at most <input type="number" id="hpCacheGb" min="0.5" step="0.5" value="${cache.limit_gb}" style="width:64px"> GB
       <button id="hpCacheSet">Set</button> <button id="hpCacheClear">Clear cache</button>
-      <div class="hint">Files made again when needed: figures, exports, the expression model of earlier versions, converted R files; the oldest go first past the limit.` +
-      (cache.trash_bytes ? ` The trash holds ${gb(cache.trash_bytes)} more (removed samples and annotations; empty <code>trash/</code> in the data folder by hand).` : "") + "</div>"]);
+      <div class="hint">Files made again when needed: figures, exports, the expression model of earlier versions, converted R files; the oldest go first past the limit.</div>`],
+    ["Trash", `<span id="hpTrashUse">${gb(cache.trash_bytes)}</span> of at most <input type="number" id="hpTrashGb" min="0.5" step="0.5" value="${cache.trash_limit_gb}" style="width:64px"> GB
+      <button id="hpTrashSet">Set</button> <button id="hpTrashEmpty" class="danger">Empty trash</button>
+      <div class="hint">What Reset, Remove sample and the cell filter moved away (${cache.trash_entries} removal${cache.trash_entries === 1 ? "" : "s"}), in <code>${esc(cache.trash_path)}</code>; past the limit the oldest are deleted for good.</div>`]);
   $("hpBody").innerHTML = `<dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>
     <button id="hpCopy">Copy for a bug report</button>`;
-  const cacheDo = async (body) => {
-    try { const r = await post("/api/cache", body); $("hpCacheUse").textContent = gb(r.bytes); toast(r.deleted ? `Freed ${gb(r.freed_bytes)} (${r.deleted} files)` : "Nothing to free", 4000); }
-    catch (e) { toast(e.message, 6000); }
+  const cacheDo = async (body, what) => {
+    try {
+      const r = await post("/api/cache", body); $("hpCacheUse").textContent = gb(r.bytes); $("hpTrashUse").textContent = gb(r.trash_bytes);
+      toast(r.deleted ? `Freed ${gb(r.freed_bytes)} (${r.deleted} ${what})` : "Nothing to free", 4000);
+    } catch (e) { toast(e.message, 6000); }
   };
-  if (cache) { $("hpCacheSet").onclick = () => cacheDo({ limit_gb: +$("hpCacheGb").value }); $("hpCacheClear").onclick = () => cacheDo({ clear: true }); }
+  if (cache) {
+    $("hpCacheSet").onclick = () => cacheDo({ limit_gb: +$("hpCacheGb").value }, "files");
+    $("hpCacheClear").onclick = () => cacheDo({ clear: true }, "files");
+    $("hpTrashSet").onclick = () => cacheDo({ trash_limit_gb: +$("hpTrashGb").value }, "removals");
+    $("hpTrashEmpty").onclick = () => { if (confirm("Empty the trash? Removed samples and annotations in it are deleted for good.")) cacheDo({ empty_trash: true }, "removals"); };
+  }
   $("hpCopy").onclick = () => { navigator.clipboard.writeText(JSON.stringify(d, null, 1)).then(() => toast("Copied")).catch(() => toast("Could not copy")); };
 }
 function showHelp(tab) {
