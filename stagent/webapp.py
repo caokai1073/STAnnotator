@@ -504,7 +504,7 @@ FS_KINDS = {"h5ad": (".h5ad", ".rds", ".rda", ".rdata"),
             "xenium": (".parquet", ".csv.gz", ".h5", ".xenium", ".mtx.gz", ".tsv.gz", ".ome.tif"),
             "xcells": (".parquet", ".csv.gz"), "xcounts": (".h5", ".mtx.gz", ".tsv.gz"), "xexp": (".xenium",),
             "ximage": (".ome.tif", ".tif", ".tiff"), "image": (".tif", ".tiff", ".btf"), "csv": (".csv", ".tsv", ".txt"),
-            "markers": (".csv", ".tsv", ".txt")}
+            "markers": (".csv", ".tsv", ".txt"), "flat": (".csv", ".csv.gz")}
 
 
 def api_fs_list(req):
@@ -851,6 +851,8 @@ async def api_import_inspect(req: Request):
     try:
         if b.get("kind") == "xenium":
             return _json(importer.inspect_xenium_many(b.get("entries") or [b["folder"]]))
+        if b.get("kind") in importer.FLAT_FILES:
+            return _json(importer.inspect_flat_many(b["kind"], b.get("entries") or []))
         paths = [p for p in b.get("h5ad", []) if p]
         if not paths:
             raise ValueError("choose one or more h5ad or RDS files")
@@ -875,14 +877,20 @@ async def api_import(req: Request):
 
     def work():
         try:
-            n_xenium = len(importer.xenium_sources(folders)) if b.get("kind") == "xenium" and folders else 0
+            kind = b.get("kind", "h5ad")
+            flat = importer.flat_sources(kind, folders) if kind in importer.FLAT_FILES else None
+            n_xenium = len(importer.xenium_sources(folders)) if kind == "xenium" and folders else len(flat or [])
             if len(sections) > 1 or n_xenium > 1:  # several slices: a project, one sample per slice
-                importer.import_project(name, b.get("kind", "h5ad"), b.get("h5ad") if b.get("kind") == "h5ad" else folders,
+                importer.import_project(name, kind, b.get("h5ad") if kind == "h5ad" else folders,
                                         sections=sections, section_column=b.get("section_column") or None,
                                         he=b.get("he") or None, registration=b.get("registration") or None,
                                         he_kind=b.get("he_kind") or "H&E", region_column=b.get("region_column") or None,
                                         description=b.get("description", ""), overwrite=bool(b.get("overwrite")),
                                         progress=say)
+            elif flat:
+                importer.import_flat(kind, name, flat[0], he=b.get("he") or None, registration=b.get("registration") or None,
+                                     description=b.get("description", ""), overwrite=bool(b.get("overwrite")), progress=say,
+                                     he_kind=b.get("he_kind") or "H&E", registration_section=b.get("registration_section") or None)
             elif b.get("kind") == "xenium":
                 importer.import_xenium(name, importer.xenium_sources(folders)[0] if folders else b["folder"], he=b.get("he") or None, registration=b.get("registration") or None,
                                        description=b.get("description", ""), overwrite=bool(b.get("overwrite")), progress=say,

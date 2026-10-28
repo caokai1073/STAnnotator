@@ -25,6 +25,16 @@ refinement 3 s; the result agreed with the nuclei-corrected registration to 0.5 
 cells), while the shipped registration file was 13 um off. **Undo last alignment** goes back. A registration needs
 at least 90% of the cells on the image. Regions drawn before the cells move are moved along with them.
 
+**CosMx** and **MERFISH** (Vizgen MERSCOPE) output: choose the kind in **Import…** and give the files or the folder.
+CosMx: a slide's AtoMx flat files `<slide>_exprMat_file.csv` and `<slide>_metadata_file.csv`; a cell is
+`fov_cellID` (cell_ID 0, transcripts outside cells, is left out) and its position comes from
+`CenterX/Y_global_px` at 0.12028 um per pixel (or `x/y_slide_mm`). MERSCOPE: a region's `cell_by_gene.csv` and
+`cell_metadata.csv` (`center_x`, `center_y` in um). Control probes (NegPrb, Negative, SystemControl, FalseCode, Blank)
+are left out. The instruments' own images (CosMx FOV images, MERSCOPE mosaics) are not read yet: the cells are drawn on
+a blank background, or on your H&E with an affine registration CSV (cell um to H&E pixels; for a project one row per
+slide, named by it), or aligned by Claude (**Align with Agent**). Several slides or regions (one folder or file pair
+each) become a project. Claude can import them too (`import_cosmx_merfish`, through the review window).
+
 From the command line (`--he` and `--registration` are optional):
 
 ```bash

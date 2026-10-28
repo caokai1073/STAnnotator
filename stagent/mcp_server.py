@@ -15,7 +15,8 @@ INSTRUCTIONS = """You help a biologist annotate cell types in imaging spatial tr
 computer. The tools compute every result; never invent cell types, regions, numbers or files.
 
 Getting started
-- list_samples. If the sample is not there, ask for: the h5ad file(s) or an R file (.rds / .rda with a Seurat or
+- list_samples. If the sample is not there: CosMx or MERFISH (MERSCOPE) output goes in with import_cosmx_merfish (its
+  flat files or folders, optionally the user's H&E and registration). Otherwise ask for: the h5ad file(s) or an R file (.rds / .rda with a Seurat or
   SpatialExperiment object; read without R) (raw counts, cell coordinates in um), the
   registered H&E image, and the registration file (affine CSV or Xenium Explorer matrix); for an h5ad holding several
   sections also the obs column and value of the section. Then call import_sample with those paths.
@@ -37,7 +38,7 @@ Getting started
   start_session(markers_text=...) when the user asks you to run it).
 
 Changes to the data are reviewed by the user
-- Every tool that changes data (import_sample, start_session, add / update / remove_constraint, label_cells,
+- Every tool that changes data (import_sample, import_cosmx_merfish, start_session, add / update / remove_constraint, label_cells,
   label_cluster, remove_correction, recluster, revert, apply_alignment, run_niches, name_niches, record_verdicts,
   resolve_rule_suggestion) only proposes the change: the app shows it in a review window with what it does, and it
   is applied only when the user clicks Accept there (Dismiss drops it). The tool waits a little for the decision and
@@ -302,6 +303,17 @@ def _d_import_sample(a):
                         "Adds a sample; nothing that exists now changes."]}
 
 
+def _d_import_cosmx_merfish(a):
+    from . import importer
+    sl = importer.inspect_flat_many(a["kind"], a["paths"])["slices"]
+    det = [f"{x['key']}: {x['n_cells']:,} cells, {x['n_genes']} genes ({x['n_controls']} control probes left out), "
+           f"positions in {x['positions']}" for x in sl]
+    det += [f"Image: {a['he'] or 'none (cells on a blank background)'}; registration: {a['registration'] or 'none'}",
+            "Several slides / regions become a project, one sample each." if len(sl) > 1 else "Adds a sample; nothing that exists now changes."]
+    return {"title": f"Import {importer.FLAT_NAMES[a['kind']]} output as {'project' if len(sl) > 1 else 'sample'} {a['name']}",
+            "session_id": None, "sample_id": a["name"], "details": det}
+
+
 def _d_start_session(a):
     from . import markers
     from .session import panel_genes, filtered_genes
@@ -470,6 +482,30 @@ def _d_resolve_rule_suggestion(a):
 
 
 # ---------------- data and viewer ----------------
+@mcp.tool()
+@_reviewed(_d_import_cosmx_merfish)
+def import_cosmx_merfish(kind: str, name: str, paths: list[str], he: Optional[str] = None,
+                         registration: Optional[str] = None, description: str = "") -> str:
+    """Import CosMx (kind "cosmx": a slide's AtoMx flat files <slide>_exprMat_file.csv and <slide>_metadata_file.csv)
+    or MERFISH (kind "merfish": a MERSCOPE region's cell_by_gene.csv and cell_metadata.csv): paths = those files or
+    their folders (several slides / regions: a project). The instruments' own images are not used: the cells are shown
+    on a blank background, or on the H&E given with a registration file (affine CSV a11,a12,a21,a22,tx,ty from cell um
+    to H&E pixels; one row per slide for a project); an H&E without registration waits for Align with Claude."""
+    from . import importer
+    if kind not in importer.FLAT_FILES:
+        raise ValueError("kind is 'cosmx' or 'merfish'")
+    log = []
+    src = importer.flat_sources(kind, paths)
+    if len(src) > 1:
+        p = importer.import_project(name, kind, paths, he=he, registration=registration, description=description,
+                                    progress=log.append)
+        return _j({"imported_project": p["project_id"], "samples": p["samples"], "log": log[-12:]})
+    meta = importer.import_flat(kind, name, src[0], he=he, registration=registration, description=description,
+                                progress=log.append)
+    return _j({"imported": meta["sample_id"], "n_cells": meta["n_cells"], "n_genes": meta["n_genes"],
+               "image": meta["image_kind"], "log": log[-12:]})
+
+
 @mcp.tool()
 @_reviewed(_d_import_sample)
 def import_sample(name: str, h5ad: list[str], he: str, registration: str, section_column: Optional[str] = None,

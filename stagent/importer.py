@@ -4,6 +4,7 @@
                                [--section-column donor_id --section 147328] [--region-column histopathology]
   Xenium  stagent import-xenium --name ln1 --xenium /path/to/output-XETG... [--he he.ome.tif --registration
                                he_imagealignment.csv]   (or --xenium cells.parquet cell_feature_matrix.h5 ...)
+  CosMx / MERSCOPE (MERFISH): the flat files of a slide or region (import_flat, below; no instrument image).
 
 h5ad: AnnData files with raw counts (layer "counts", X, or raw.X when X is normalized) and cell coordinates in micrometers (obs
   x_centroid/y_centroid, x/y, or obsm["spatial"]). Several files (e.g. one per lineage) are merged; cell type
@@ -613,6 +614,187 @@ def import_xenium(name, xenium_dir, he=None, registration=None, description="", 
                          progress, kind, registration=R, image_pending=he if he and R is None else None)
 
 
+# ---------------- CosMx and MERSCOPE (MERFISH) output: the cells and their counts, without the instrument's images ----
+# CosMx (AtoMx flat files): <slide>_exprMat_file.csv (fov, cell_ID, one column per gene) and <slide>_metadata_file.csv
+#   (fov, cell_ID, CenterX_global_px, CenterY_global_px; pixels of COSMX_PX_UM, or x_slide_mm / y_slide_mm); a cell is
+#   fov_cellID, cell_ID 0 (transcripts outside cells) is left out.
+# MERSCOPE: cell_by_gene.csv (cell id, one column per gene) and cell_metadata.csv (cell id, center_x, center_y in um).
+# Control probes (NegPrb, Negative, SystemControl, FalseCode, Blank) are left out. The cells are shown on a blank
+# background, or on an H&E given with a registration file (affine CSV from cell um to H&E pixels) or aligned by Claude.
+COSMX_PX_UM = 0.12028
+FLAT_FILES = {"cosmx": {"counts": ("exprmat_file.csv", "exprmat_file.csv.gz"), "cells": ("metadata_file.csv", "metadata_file.csv.gz")},
+              "merfish": {"counts": ("cell_by_gene.csv", "cell_by_gene.csv.gz"), "cells": ("cell_metadata.csv", "cell_metadata.csv.gz")}}
+FLAT_NEEDED = {"cosmx": "the expression matrix (*_exprMat_file.csv) and the cell metadata (*_metadata_file.csv)",
+               "merfish": "cell_by_gene.csv and cell_metadata.csv"}
+FLAT_NAMES = {"cosmx": "CosMx", "merfish": "MERSCOPE"}
+CONTROLS = re.compile(r"^(negprb|negative|negcontrol|systemcontrol|falsecode|blank)", re.I)
+COSMX_IDS = ("fov", "cell_id", "cell", "slide", "slide_id", "tissue")
+
+
+def _flat_role(kind, name):
+    low = name.lower()
+    for role, ends in FLAT_FILES[kind].items():
+        for e in ends:
+            if low.endswith(e):
+                return role, name[:len(name) - len(e)].rstrip("_-. ")
+    return None
+
+
+def flat_sources(kind, entries):
+    """Slices of CosMx or MERSCOPE output from folders and / or files: [{"key", "folder", "files": {counts, cells}}],
+    files grouped by folder and name prefix (a CosMx slide's files share its name); a folder without the files is
+    searched one level down (one slice per subfolder)."""
+    entries = [entries] if isinstance(entries, (str, Path)) else list(entries)
+    groups = {}
+
+    def add(f):
+        r = _flat_role(kind, f.name)
+        if r:
+            groups.setdefault((str(f.parent), r[1]), {})[r[0]] = str(f)
+    for e in entries:
+        p = Path(e).expanduser()
+        if p.is_dir():
+            files = [c for c in sorted(p.iterdir()) if c.is_file()]
+            if not any(_flat_role(kind, c.name) for c in files):
+                files = [c for d in sorted(p.iterdir()) if d.is_dir() for c in sorted(d.iterdir()) if c.is_file()]
+            for c in files:
+                add(c)
+        elif p.is_file():
+            add(p)
+        else:
+            raise ValueError(f"{p}: no such file or folder")
+    out = [{"key": prefix or Path(folder).name, "folder": folder, "files": f} for (folder, prefix), f in groups.items()]
+    if not out:
+        raise ValueError(f"no {FLAT_NAMES[kind]} files found: an import needs {FLAT_NEEDED[kind]}")
+    for x in out:
+        lacks = [w for w in ("counts", "cells") if w not in x["files"]]
+        if lacks:
+            raise ValueError(f"{x['key']}: missing the {' and the '.join({'counts': 'counts', 'cells': 'cell metadata'}[w] for w in lacks)} "
+                             f"file (an import needs {FLAT_NEEDED[kind]})")
+    keys = [x["key"] for x in out]
+    if len(set(keys)) < len(keys):
+        for x in out:
+            x["key"] = f"{Path(x['folder']).name}_{x['key']}"
+    return out
+
+
+def _flat_source(kind, src):
+    if isinstance(src, dict):
+        return src
+    s = flat_sources(kind, src)
+    if len(s) != 1:
+        raise ValueError(f"{src} holds {len(s)} slices: import them as a project")
+    return s[0]
+
+
+def _cosmx_id(df):
+    cols = {c.lower(): c for c in df.columns}
+    if "fov" in cols and "cell_id" in cols:
+        return df[cols["fov"]].astype(str) + "_" + df[cols["cell_id"]].astype(str), df[cols["cell_id"]].astype(int) != 0
+    raise ValueError("a CosMx file needs the columns fov and cell_ID")
+
+
+def _flat_counts(kind, path, progress=print):
+    """(cell ids, genes, cells x genes CSR) of a counts file, read in chunks (a CosMx 6K matrix is large)."""
+    head = pd.read_csv(path, nrows=0).columns.tolist()
+    if kind == "cosmx":
+        ids_cols = [c for c in head if c.lower() in COSMX_IDS]
+    else:
+        ids_cols = [head[0]]
+    genes = [c for c in head if c not in ids_cols and not CONTROLS.match(str(c))]
+    n_ctrl = len(head) - len(ids_cols) - len(genes)
+    if not genes:
+        raise ValueError(f"{Path(path).name}: no gene columns")
+    ids, parts, n = [], [], 0
+    for ch in pd.read_csv(path, usecols=ids_cols + genes, chunksize=20000, dtype={g: np.float32 for g in genes}):
+        if kind == "cosmx":
+            cid, ok = _cosmx_id(ch)
+            ch, cid = ch[ok.to_numpy()], cid[ok.to_numpy()]
+        else:
+            cid = ch[ids_cols[0]].astype(str)
+        ids.append(cid.to_numpy(str))
+        parts.append(sp.csr_matrix(ch[genes].to_numpy(np.float32)))
+        n += len(ch)
+        progress(f"  read {n:,} cells")
+    X = sp.vstack(parts).tocsr()
+    if n_ctrl:
+        progress(f"  {n_ctrl} control probes left out")
+    return np.concatenate(ids), [str(g) for g in genes], X
+
+
+def _flat_cells(kind, path):
+    """(cell ids, x / y in um) of a cell metadata file."""
+    head = pd.read_csv(path, nrows=0).columns.tolist()
+    low = {c.lower(): c for c in head}
+    if kind == "cosmx":
+        use = [low[c] for c in ("fov", "cell_id") if c in low]
+        if "centerx_global_px" in low and "centery_global_px" in low:
+            xy_cols, scale = [low["centerx_global_px"], low["centery_global_px"]], COSMX_PX_UM
+        elif "x_slide_mm" in low and "y_slide_mm" in low:
+            xy_cols, scale = [low["x_slide_mm"], low["y_slide_mm"]], 1000.0
+        else:
+            raise ValueError(f"{Path(path).name}: no cell positions (CenterX_global_px / CenterY_global_px or x_slide_mm / y_slide_mm)")
+        c = pd.read_csv(path, usecols=use + xy_cols)
+        cid, ok = _cosmx_id(c)
+        c, cid = c[ok.to_numpy()], cid[ok.to_numpy()]
+    else:
+        if "center_x" not in low or "center_y" not in low:
+            raise ValueError(f"{Path(path).name}: no cell positions (center_x, center_y)")
+        xy_cols, scale = [low["center_x"], low["center_y"]], 1.0
+        c = pd.read_csv(path, usecols=[head[0]] + xy_cols)
+        cid = c[head[0]].astype(str)
+    return cid.to_numpy(str), c[xy_cols].to_numpy(float) * scale
+
+
+def inspect_flat(kind, src):
+    s = _flat_source(kind, src)
+    head = pd.read_csv(s["files"]["counts"], nrows=0).columns.tolist()
+    ids_cols = [c for c in head if c.lower() in COSMX_IDS] if kind == "cosmx" else head[:1]
+    genes = [c for c in head if c not in ids_cols and not CONTROLS.match(str(c))]
+    meta = pd.read_csv(s["files"]["cells"], nrows=0).columns.str.lower().tolist()
+    n_cells = sum(len(ch) for ch in pd.read_csv(s["files"]["cells"], usecols=[0], chunksize=500000))
+    return {"folder": s["folder"], "key": s["key"], "files": s["files"], "n_cells": int(n_cells), "n_genes": len(genes),
+            "n_controls": len(head) - len(ids_cols) - len(genes),
+            "positions": ("pixels x %.5f um" % COSMX_PX_UM if "centerx_global_px" in meta else "mm" if "x_slide_mm" in meta
+                          else "none found") if kind == "cosmx" else ("um" if "center_x" in meta else "none found")}
+
+
+def inspect_flat_many(kind, entries):
+    sl = [inspect_flat(kind, s) for s in flat_sources(kind, entries)]
+    return {"slices": sl, "n_cells": sum(x["n_cells"] for x in sl)}
+
+
+def import_flat(kind, name, src, he=None, registration=None, description="", overwrite=False, progress=print,
+                he_kind="H&E", registration_section=None):
+    """Import one CosMx slide or MERSCOPE region (see above)."""
+    name = _check_name(name, overwrite)
+    s = _flat_source(kind, src)
+    progress(f"reading {s['key']} ({FLAT_NAMES[kind]})")
+    ids, genes, X = _flat_counts(kind, s["files"]["counts"], progress)
+    cid, xy = _flat_cells(kind, s["files"]["cells"])
+    pos = pd.Series(np.arange(len(ids)), index=ids)
+    if pos.index.has_duplicates:
+        raise ValueError("cell ids repeat in the counts file")
+    have = pd.Index(cid).isin(pos.index)
+    if not have.all():
+        progress(f"  {int((~have).sum()):,} cells of the metadata have no counts and are left out")
+    cid, xy = cid[have], xy[have]
+    if not len(cid):
+        raise ValueError("no cell of the metadata file is in the counts file: are they of the same slide?")
+    X = X[pos[cid].to_numpy()]
+    progress(f"{len(cid):,} cells, {len(genes)} genes")
+    R = load_registration(registration, registration_section, progress=progress) if registration else None
+    if he and R is None:
+        progress("  the image waits for a registration (a registration file, or Align with Claude)")
+    image, A, img_kind = (he, R, he_kind) if he and R is not None else (None, BLANK, "none")
+    return _write_bundle(name, cid, xy, X, genes, image, A, None, description,
+                         {"kind": kind, "folder": s["folder"], "files": s["files"],
+                          "registration": str(Path(registration).resolve()) if registration else None,
+                          "pixel_size_um": COSMX_PX_UM if kind == "cosmx" else None},
+                         progress, img_kind, registration=R, image_pending=he if he and R is None else None,
+                         pending_kind=he_kind)
+
+
 def apply_registration_fix(sample_id, correction):
     """Move every cell onto its nucleus on the image: p + A (p - origin) + b in H&E level-0 pixels, the correction
     that insights.registration fitted. The positions as imported are kept (px_import, py_import) for
@@ -859,13 +1041,15 @@ def _slice_images(he, keys):
 def import_project(project, kind, sources, sections=None, section_column=None, he=None, registration=None,
                    he_kind="H&E", region_column=None, description="", overwrite=False, progress=print):
     """Several slices as one project, one sample per slice. kind "h5ad": sources = h5ad file(s) holding the slices,
-    sections = the values of section_column to import. kind "xenium": sources = output folders, one per slice.
+    sections = the values of section_column to import. kind "xenium", "cosmx" or "merfish": sources = output folders
+    or files, one slice per folder / name prefix.
     he: one image for all, several images (each slice gets the one whose file name holds its section or folder
     name), or a table (CSV/TSV: section or folder name, image path). registration (h5ad): a file with
     one row per section, matched by the section value. Images without a registration wait for an alignment."""
     from . import projects
     project = _check_name(project, True)
-    items = [str(s) for s in sections] if kind == "h5ad" else xenium_sources(sources)
+    items = ([str(s) for s in sections] if kind == "h5ad" else flat_sources(kind, sources) if kind in FLAT_FILES
+             else xenium_sources(sources))
     keys = [item if kind == "h5ad" else item["key"] for item in items]
     images = _slice_images(he, keys)  # before importing anything, so a missing image stops the import early
     done = []
@@ -879,6 +1063,10 @@ def import_project(project, kind, sources, sections=None, section_column=None, h
                           description=description, overwrite=overwrite, progress=say, he_kind=he_kind,
                           registration_section=item)
             meta = section_metadata(sources, section_column, item) if section_column else {}
+        elif kind in FLAT_FILES:  # a registration file with one row per slice, matched by its name
+            import_flat(kind, name, item, he=image, registration=registration, description=description,
+                        overwrite=overwrite, progress=say, he_kind=he_kind, registration_section=key)
+            meta = {}
         else:
             import_xenium(name, item, he=image, registration=None, description=description, overwrite=overwrite,
                           progress=say, he_kind=he_kind)

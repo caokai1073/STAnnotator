@@ -335,6 +335,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .frow > span:first-child { font-size: 12.5px; color: var(--muted); }
 .frow small.opt { display: block; font-size: 10.5px; opacity: .8; }
 .frow b.req { color: var(--warn); font-weight: 600; }
+.pickpair { display: flex; gap: 6px; }
 .frow input[type=text], .frow textarea, .frow select { width: 100%; min-width: 0; }
 .frow textarea { font: 12px ui-monospace, Menlo, monospace; resize: vertical; }
 .imkind { display: flex; gap: 16px; margin-bottom: 6px; }
@@ -696,7 +697,15 @@ T and NK cells: CD3E|NKG7+ EPCAM-
   <div class="imbody">
     <div class="imkind">
       <label title="The files of a Xenium output (or its folder)"><input type="radio" name="imKind" value="xenium" checked> Xenium</label>
+      <label title="CosMx (AtoMx export): the expression matrix and cell metadata files of a slide, or their folder"><input type="radio" name="imKind" value="cosmx"> CosMx</label>
+      <label title="MERFISH (Vizgen MERSCOPE output): cell_by_gene.csv and cell_metadata.csv of a region, or its folder"><input type="radio" name="imKind" value="merfish"> MERFISH</label>
       <label title="AnnData (.h5ad), or an R file (.rds / .rda) with a Seurat or SpatialExperiment object"><input type="radio" name="imKind" value="h5ad"> h5ad / RDS</label>
+    </div>
+    <div id="imF" hidden>
+      <div class="frow"><span>Files or folder <b class="req" title="required">*</b></span><textarea id="imFFiles" class="xin" rows="2" wrap="off"></textarea>
+        <span class="pickpair"><button data-pick="flat" data-multi="1" data-target="imFFiles" data-append="1">Files…</button><button data-pick="folder" data-multi="1" data-target="imFFiles" data-append="1">Folder…</button></span></div>
+      <div class="hint" id="imFhelp" style="margin-left:138px"></div>
+      <div class="hint" id="imFinfo" style="margin-left:138px;white-space:pre-line"></div>
     </div>
     <div id="imX">
       <div class="frow"><span>Cells <b class="req" title="required">*</b></span><textarea id="imXCells" class="xin" rows="1" wrap="off" placeholder="cells.parquet (or cells.csv.gz)"></textarea><button data-pick="xcells" data-multi="1" data-target="imXCells">Choose…</button></div>
@@ -2650,7 +2659,35 @@ function openImport() {
     : st.remote ? `Files on the server ${st.remote.host}: Choose… browses them.` : "";
   $("imDlg").showModal();
 }
-document.querySelectorAll("input[name=imKind]").forEach((r) => (r.onchange = () => { $("imX").hidden = imKind() !== "xenium"; $("imH").hidden = imKind() !== "h5ad"; imForm(); imSections(); }));
+const FLAT_HELP = {
+  cosmx: "The AtoMx flat files of a slide: <slide>_exprMat_file.csv and <slide>_metadata_file.csv (or their folder). Cells are fov_cellID, positions from CenterX/Y_global_px (0.12028 µm per pixel); negative and system control probes are left out. The instrument's images are not used: cells on a blank background, or on your H&E.",
+  merfish: "The MERSCOPE output of a region: cell_by_gene.csv and cell_metadata.csv (or the region's folder). Positions are center_x / center_y in µm; Blank probes are left out. The mosaic images are not used: cells on a blank background, or on your H&E.",
+};
+const isFlat = () => ["cosmx", "merfish"].includes(imKind());
+document.querySelectorAll("input[name=imKind]").forEach((r) => (r.onchange = () => {
+  $("imX").hidden = imKind() !== "xenium"; $("imH").hidden = imKind() !== "h5ad"; $("imF").hidden = !isFlat();
+  if (isFlat()) {
+    $("imFhelp").textContent = FLAT_HELP[imKind()] + " Several slides or regions: one folder (or file pair) each, one per line.";
+    $("imFFiles").placeholder = imKind() === "cosmx" ? "<slide>_exprMat_file.csv and <slide>_metadata_file.csv, or their folder" : "cell_by_gene.csv and cell_metadata.csv, or the region folder";
+    if ($("imFFiles").value.trim()) st.imFPending = inspectFlat();
+  }
+  imForm(); imSections();
+}));
+async function inspectFlat() {  // the slides / regions found in the files and folders given
+  const entries = $("imFFiles").value.split("\n").map((x) => x.trim()).filter(Boolean); st.imFSlices = null;
+  if (!entries.length) { $("imFinfo").textContent = ""; imSections(); return; }
+  $("imFinfo").textContent = "checking…";
+  try {
+    const r = await post("/api/import/inspect", { kind: imKind(), entries });
+    st.imFSlices = r.slices;
+    const line = (x) => `${x.key}: ${x.n_cells.toLocaleString()} cells · ${x.n_genes.toLocaleString()} genes` +
+      (x.n_controls ? ` (${x.n_controls} control probes left out)` : "") + ` · positions in ${x.positions}`;
+    $("imFinfo").textContent = (r.slices.length > 1 ? `${r.slices.length} slices:\n` : "") + r.slices.map(line).join("\n");
+    imDefaultName(baseName(r.slices.length > 1 ? r.slices[0].folder : r.slices[0].key));
+  } catch (e) { $("imFinfo").textContent = e.message; }
+  imSections();
+}
+$("imFFiles").onchange = () => (st.imFPending = inspectFlat());
 document.querySelectorAll("#imDlg [data-pick]").forEach((b) => (b.onclick = async () => {
   const paths = await pickFiles(b.dataset.pick, !!b.dataset.multi);
   if (!paths.length) return;
@@ -2709,7 +2746,7 @@ $("imSecCol").onchange = () => {  // the sections of the chosen column, each wit
 $("imSecAll").onchange = () => { document.querySelectorAll("#imSecList input").forEach((c) => (c.checked = $("imSecAll").checked)); imSections(); };
 const chosenSections = () => [...document.querySelectorAll("#imSecList input:checked")].map((c) => c.value);
 function imSections() {  // one section: a sample; several sections or folders: a project of slices
-  const secs = imKind() === "h5ad" ? chosenSections() : (st.imXSlices || []).map((x) => x.key);
+  const secs = imKind() === "h5ad" ? chosenSections() : ((isFlat() ? st.imFSlices : st.imXSlices) || []).map((x) => x.key);
   const many = secs.length > 1;
   $("imNameLabel").textContent = many ? "Project name" : "Sample name";
   $("imProjectHint").hidden = !many;
@@ -2729,6 +2766,8 @@ function imForm() {  // show the fields of the chosen options; Align with Claude
   if (imKind() === "xenium") $("imNewImgKind").value = "H&E";
   $("imRegRow").hidden = $("imRegSecRow").hidden = regMode() !== "file";
   $("imNoImgHint").textContent = imgMode() === "none" ? (imKind() === "xenium" ? "the DAPI image is shown when given, else a blank background" : "cells on a blank background") : "";
+  $("imNewReg").placeholder = isFlat() ? "affine CSV (a11,a12,a21,a22,tx,ty: cell µm to H&E pixels; one row per slice, named by it)"
+    : "affine CSV (a11,a12,a21,a22,tx,ty) or Xenium Explorer alignment (3x3)";
   const can = imgMode() === "file" && $("imNewImg").value.trim() && regMode() === "none";
   $("imNewAlign").disabled = !can;
   $("imNewAlign").title = can ? "Import, then let the agent align the image with the cells"
@@ -2799,12 +2838,14 @@ function alignBar() {  // an image waits for its alignment
 }
 async function importSample() {  // returns true when the sample was imported
   if (imKind() === "xenium" && st.imXPending) await st.imXPending;  // the fields were just edited: their check first
+  if (isFlat() && st.imFPending) await st.imFPending;
   const kind = imKind(), name = $("imName").value.trim() || st.imDefault || "";
   const images = imgMode() === "file" ? $("imNewImg").value.split("\n").map((s) => s.trim()).filter(Boolean) : [];
   const image = images.length > 1 ? images : (images[0] || "");
   const registration = regMode() === "file" ? $("imNewReg").value.trim() : "";
   const body = kind === "xenium"
     ? { kind, name, folders: xeniumEntries(), description: $("imDesc").value }
+    : isFlat() ? { kind, name, folders: $("imFFiles").value.split("\n").map((x) => x.trim()).filter(Boolean), description: $("imDesc").value }
     : { kind, name, h5ad: $("imH5").value.split("\n").map((s) => s.trim()).filter(Boolean),
         section_column: $("imSecCol").value, sections: $("imSecCol").value ? chosenSections() : [],
         region_column: $("imRegCol").value, description: $("imDesc").value };
@@ -2813,7 +2854,8 @@ async function importSample() {  // returns true when the sample was imported
   if (!name) { $("imStatus").textContent = "Give a name (none could be taken from the files)"; return false; }
   if (imgMode() === "file" && !images.length) { $("imStatus").textContent = "Choose the H&E file, or No H&E"; return false; }
   if (kind === "xenium" && !(st.imXSlices || []).length) { $("imStatus").textContent = "Give the cells and counts files; check the message under the fields"; return false; }
-  const nSlices = kind === "h5ad" ? body.sections.length : st.imXSlices.length;
+  if (isFlat() && !(st.imFSlices || []).length) { $("imStatus").textContent = "Give the files or folder; check the message under the field"; return false; }
+  const nSlices = kind === "h5ad" ? body.sections.length : (isFlat() ? st.imFSlices : st.imXSlices).length;
   if (images.length > 1 && nSlices < 2) { $("imStatus").textContent = "One image per sample (several images are for several slices)"; return false; }
   if (regMode() === "file" && !registration) { $("imStatus").textContent = "Choose the registration file, or No registration"; return false; }
   $("imGo").disabled = $("imNewAlign").disabled = true; $("imStatus").textContent = "importing…";
@@ -2839,7 +2881,8 @@ $("importBtn").onclick = openImport;
 // ---------------- help and about ----------------
 const HELP = `
 <h3>Import</h3><ul>
-<li><b>Import…</b>: the cells (Xenium: cells.parquet and cell_feature_matrix.h5, optionally experiment.xenium and the DAPI image, each in its field; h5ad files; or an R file .rds / .rda with a Seurat or SpatialExperiment object, read without R), then the <b>H&amp;E image</b> (<b>No H&amp;E</b> or an <b>H&amp;E file</b>; for an h5ad a DAPI /
+<li><b>Import…</b>: the cells (Xenium: cells.parquet and cell_feature_matrix.h5, optionally experiment.xenium and the DAPI image, each in its field;
+CosMx: a slide's exprMat and metadata files; MERFISH (MERSCOPE): a region's cell_by_gene.csv and cell_metadata.csv, without their instrument images; h5ad files; or an R file .rds / .rda with a Seurat or SpatialExperiment object, read without R), then the <b>H&amp;E image</b> (<b>No H&amp;E</b> or an <b>H&amp;E file</b>; for an h5ad a DAPI /
 fluorescence image can stand in for it, under Image kind) and the registration (<b>Registration file</b>, or <b>No registration</b>).</li>
 <li>An image without a registration file: <b>Align with Agent</b> (next to No registration, or the yellow bar over the
 map) imports and lets the agent find the section and orientation on the image and refine it until the cells sit on
