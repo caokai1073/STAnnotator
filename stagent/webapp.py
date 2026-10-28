@@ -470,10 +470,18 @@ def api_colors_bin(req):
     q = req.query_params
     only = tuple(sorted(filter(None, q.get("only", "").split("|"))))
     try:
-        col = colors_for(s, int(q["version"]), q.get("mode", "type"), only)
+        v, mode = int(q["version"]), q.get("mode", "type")
+        if only and q.get("rest") == "gray":  # the overview: the other cells light gray instead of hidden
+            col = colors_for(s, v, mode, ()).copy()
+            col[~np.isin(cell_keys(s, v, mode), list(only))] = REST_GRAY
+        else:
+            col = colors_for(s, v, mode, only)
     except (KeyError, ValueError) as e:
         return _json({"error": str(e)}, 400)
     return Response(np.ascontiguousarray(col).tobytes(), media_type="application/octet-stream")
+
+
+REST_GRAY = (205, 205, 205, 150)
 
 
 # ---------------- API ----------------

@@ -75,9 +75,11 @@ table.an td.heat { min-width: 44px; }
 .gallery .tile:hover { border-color: var(--accent); }
 .gallery .tile.cur { box-shadow: 0 0 0 2px var(--accent); }
 .gallery canvas { width: 100%; height: 170px; display: block; background: #fafafa; border-radius: 4px; }
-.gllegend { display: flex; flex-wrap: wrap; gap: 3px 12px; padding: 8px 18px 0; max-height: 96px; overflow: auto; font-size: 11.5px; }
+.gllegend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 8px 18px 0; max-height: 120px; overflow: auto; font-size: 11.5px; }
 .gllegend:empty { display: none; }
-.gllegend span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.gllegend label { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; cursor: pointer; }
+.gllegend input { margin: 0; }
+.gllegend #glAll { padding: 1px 8px; font-size: 11px; }
 .gllegend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 .gallery .tt { font-size: 12px; font-weight: 600; margin-top: 4px; } .gallery .ts { font-size: 11px; color: var(--muted); }
 .num { width: 62px; }
@@ -382,8 +384,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <div class="fld" id="sampleWrap"><span>Sample</span><div class="inrow"><select id="sample" aria-label="Sample"></select>
       <button id="sampleRename" disabled title="Rename the sample as the app shows it (a slice: its name in the project)">Rename</button></div></div>
     <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-layers"/></svg><div id="sampleInfo">No sample yet</div></div>
-    <div class="act2"><button id="allSamples" disabled title="Every sample at a glance, colored the same way (cell type, lineage, Leiden, niche, region)">Overview of all samples…</button></div>
-    <div class="act2"><button id="qfBtn" disabled title="Delete cells with few transcripts or genes or a high mitochondrial share, and genes detected in few cells">Filter cells and genes…</button></div>
+    <div class="act2"><button id="allSamples" disabled title="Every sample at a glance, colored the same way (cell type, lineage, Leiden, niche, region)">Overview of all samples</button></div>
+    <div class="act2"><button id="qfBtn" class="primary main" disabled title="Delete cells with few transcripts or genes or a high mitochondrial share, and genes detected in few cells">Filter cells and genes</button></div>
     <div id="slNav" class="slnav" hidden>
       <div class="stepper"><button id="slPrev" title="Previous slice of the project ([)">◀</button><span id="slPos"></span><button id="slNext" title="Next slice of the project (])">▶</button></div>
       <label class="switch" title="Annotate, embed and find niches for all slices of the project together, so labels, clusters and niches mean the same everywhere"><input type="checkbox" id="projAll" checked>
@@ -914,7 +916,7 @@ const ICON_ONLY = { hdrShow: "chev-left", hdrHide: "chev-right", helpBtn: "help"
   lgtoggle: "chev-up", rgtoggle: "chev-up", plclose: "x", emClose: "x", imClose: "x", rcClose: "x", clClose: "x", rpClose: "x",
   xpClose: "x", glClose: "x", anClose: "x", rvClose: "x", hpClose: "x", anCsv: "download", rpSave: "download", mkExport: "download",
   fbUp: "arrow-up", fbHome: "home", rsClose: "x", hide: "eye", hideHE: "image" };
-const ICON_TEXT = { importBtn: "import", clearAll: "trash", rmSample: "trash", allSamples: "grid", connBtn: "monitor", 
+const ICON_TEXT = { qfBtn: "play", importBtn: "import", clearAll: "trash", rmSample: "trash", allSamples: "grid", connBtn: "monitor", 
   openMarkers: "list", openRef: "file", openEx: "file", annotate: "play", eRun: "play", eShow: "scatter", nRun: "play",
   undo: "undo", claudeBtn: "sparkle", plaus: "shield", report: "file", export: "share", reset: "trash",
   draw: "pen", emLasso: "lasso", emClear: "x", emZoom: "target", send: "send",
@@ -2924,7 +2926,7 @@ undoes an alignment. Regions drawn before the cells move are moved along with th
 project, with its metadata (condition, day, …); several image files go to the slices whose section their file
 names hold. <b>◀ ▶</b> or <kbd>[</kbd> <kbd>]</kbd> step through the slices and keep what is shown (Color by, legend
 filters, hidden H&amp;E, the UMAP window and, on a UMAP of all slices, its zoom and selection);
-<b>Overview of all samples…</b> shows them side by side; the Compare tab compares them (scope: all slices, rows by slice).</li>
+<b>Overview of all samples</b> shows them side by side; the Compare tab compares them (scope: all slices, rows by slice).</li>
 <li><b>all slices together</b>: <b>Annotate</b> annotates all slices of the project at once (one marker step and one
 model, so a name means the same cells in every slice), <b>Run PCA + UMAP</b> makes one embedding of all slices
 (<b>Harmony</b> removes the differences between slices), and <b>Run niches</b> finds niches shared by all slices. The
@@ -3586,12 +3588,14 @@ async function openGallery(all) {  // every slice of the project (or every sampl
   $("glDlg").showModal();
   drawGallery();
 }
+// Each tile keeps its image and cells; ticking legend entries only recolors them (the others light gray on every sample)
 async function drawGallery() {
   const mode = $("glMode").value, img = $("glImg").checked, ids = galleryIds(), token = (GL_SCOPE.token = (GL_SCOPE.token || 0) + 1);
+  GL_SCOPE.sel = new Set(); GL_SCOPE.mode = mode;
   $("glInfo").textContent = `${ids.length} ${GL_SCOPE.all ? "samples" : "slices"} · click one to open it`;
-  const grid = $("glGrid"); grid.textContent = ""; $("glLegend").textContent = "";
+  const grid = $("glGrid"); grid.textContent = ""; glLegend(new Map());
   const legend = new Map();
-  const tiles = ids.map((id) => {
+  GL_SCOPE.tiles = ids.map((id) => {
     const s = st.samples.find((x) => x.sample_id === id), pj = projectOf(id);
     const tile = document.createElement("div"); tile.className = "tile" + (st.sample && id === st.sample.sample_id ? " cur" : "");
     const c = document.createElement("canvas"); c.width = 460; c.height = 340;
@@ -3604,62 +3608,96 @@ async function drawGallery() {
     grid.append(tile);
     return { s, c, ts };
   });
-  for (const t of tiles) {  // one after the other: each fetches the cells of a whole sample
+  for (const t of GL_SCOPE.tiles) {  // one after the other: each fetches the cells of a whole sample
     if (token !== GL_SCOPE.token) return;
     try {
-      const r = await drawThumb(t.c, t.s, mode, img);
-      if (r.note) t.ts.textContent += ` · ${r.note}`;
-      r.items.forEach((it) => { const k = it.label; const o = legend.get(k); legend.set(k, { color: o ? o.color : it.color, count: (o ? o.count : 0) + (it.count || 0) }); });
-      if (token !== GL_SCOPE.token) return;
-      $("glLegend").innerHTML = [...legend.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 60)
-        .map(([k, v]) => `<span><i style="background:${rgb(v.color)}"></i>${k.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</span>`).join("");
+      await loadTile(t, mode, img);
+      await paintTile(t, mode, GL_SCOPE.sel);
+      if (t.note) t.ts.textContent += ` · ${t.note}`;
+      t.items.forEach((it) => { const o = legend.get(it.label); legend.set(it.label, { color: o ? o.color : it.color, count: (o ? o.count : 0) + (it.count || 0) }); });
+      if (token === GL_SCOPE.token) glLegend(legend);
     } catch (e) { t.ts.textContent += " · could not draw"; }
+  }
+}
+function glLegend(legend) {  // tick entries to show only them; Show all clears the ticks
+  const box = $("glLegend"); box.textContent = "";
+  if (!legend.size) return;
+  const all = document.createElement("button"); all.id = "glAll"; all.textContent = "Show all"; all.disabled = !GL_SCOPE.sel.size;
+  all.onclick = () => { GL_SCOPE.sel.clear(); box.querySelectorAll("input").forEach((x) => (x.checked = false)); glRecolor(); };
+  box.append(all);
+  [...legend.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 80).forEach(([k, v]) => {
+    const l = document.createElement("label"), cb = document.createElement("input"), i = document.createElement("i");
+    cb.type = "checkbox"; cb.checked = GL_SCOPE.sel.has(k);
+    cb.onchange = () => { if (cb.checked) GL_SCOPE.sel.add(k); else GL_SCOPE.sel.delete(k); glRecolor(); };
+    i.style.background = rgb(v.color); l.append(cb, i, k); l.title = `${v.count.toLocaleString()} cells`; box.append(l);
+  });
+}
+async function glRecolor() {
+  $("glAll").disabled = !GL_SCOPE.sel.size;
+  const token = (GL_SCOPE.paint = (GL_SCOPE.paint || 0) + 1), sel = new Set(GL_SCOPE.sel);
+  for (const t of GL_SCOPE.tiles || []) {
+    if (token !== GL_SCOPE.paint) return;
+    if (t.pos) await paintTile(t, GL_SCOPE.mode, sel).catch(() => {});
   }
 }
 $("glMode").onchange = drawGallery;
 $("glImg").onchange = drawGallery;
-async function drawThumb(c, s, mode, withImage) {  // the sample's cells in the colors of its open or latest annotation, over its image
-  const he = await api(`/api/sample/${s.sample_id}/he_info`);
-  const pos = new Float32Array(await (await fetch(`/api/sample/${s.sample_id}/cells.bin?r=${he.rev}`)).arrayBuffer());
+async function loadTile(t, mode, withImage) {  // the sample's cells, its open or latest annotation and its image, once
+  const s = t.s;
+  t.he = await api(`/api/sample/${s.sample_id}/he_info`);
+  t.pos = new Float32Array(await (await fetch(`/api/sample/${s.sample_id}/cells.bin?r=${t.he.rev}`)).arrayBuffer());
   const sess = (s.sessions || []).filter((x) => USER_METHODS.includes(x.method));
   const open = st.sample && s.sample_id === st.sample.sample_id && st.sid;
-  const sid = open ? st.sid : sess.length ? sess[0].session_id : null, ver = open ? st.version : sess.length ? sess[0].n_versions : null;
-  let col = null, items = [], note = "";
+  t.sid = open ? st.sid : sess.length ? sess[0].session_id : null; t.ver = open ? st.version : sess.length ? sess[0].n_versions : null;
+  t.items = []; t.note = ""; t.colored = false;
   if (mode !== "cells") {
-    if (!sid) note = "no annotation";
+    if (!t.sid) t.note = "no annotation";
     else {
-      const q = new URLSearchParams({ version: ver, mode, only: "" });
-      const r = await fetch(`/api/s/${sid}/colors.bin?${q}`);
-      if (r.ok) {
-        col = new Uint8Array(await r.arrayBuffer());
-        items = ((await api(`/api/s/${sid}/legend?${q}`).catch(() => ({}))).items || []).filter((it) => it.count);
-      } else note = { leiden: "no Leiden clusters (PCA + UMAP)", niche: "no niches", region: "no regions" }[mode] || "not available";
-      if (col && mode === "region" && !items.some((it) => it.key !== "unknown")) { note = "no regions drawn"; items = []; }
+      const q = new URLSearchParams({ version: t.ver, mode });
+      const r = await fetch(`/api/s/${t.sid}/colors.bin?${q}`);  // can this sample be colored this way?
+      if (r.ok) { t.colored = true; t.items = ((await api(`/api/s/${t.sid}/legend?${q}`).catch(() => ({}))).items || []).filter((it) => it.count); }
+      else t.note = { leiden: "no Leiden clusters (PCA + UMAP)", niche: "no niches", region: "no regions" }[mode] || "not available";
+      if (t.colored && mode === "region" && !t.items.some((it) => it.key !== "unknown")) { t.note = "no regions drawn"; t.items = []; t.colored = false; }
     }
   }
-  const W = he.width, H = he.height, k = Math.min((c.width - 8) / W, (c.height - 8) / H);
-  const ox = (c.width - k * W) / 2, oy = (c.height - k * H) / 2;
-  const ctx = c.getContext("2d"); ctx.clearRect(0, 0, c.width, c.height);
-  if (withImage && he.image_kind && he.image_kind !== "none") {  // the lowest level that holds the whole image in one tile
-    const top = Math.ceil(Math.log2(Math.max(W, H))), L = Math.max(0, top - Math.ceil(Math.log2(Math.max(W, H) / he.tile_size)));
-    const im = new Image(); im.src = `/api/sample/${s.sample_id}/he/${L}/0_0.jpg?r=${he.rev}`;
+  const c = t.c, W = t.he.width, H = t.he.height;
+  t.k = Math.min((c.width - 8) / W, (c.height - 8) / H); t.ox = (c.width - t.k * W) / 2; t.oy = (c.height - t.k * H) / 2;
+  t.bg = document.createElement("canvas"); t.bg.width = c.width; t.bg.height = c.height;
+  if (withImage && t.he.image_kind && t.he.image_kind !== "none") {  // the lowest level that holds the whole image in one tile
+    const top = Math.ceil(Math.log2(Math.max(W, H))), L = Math.max(0, top - Math.ceil(Math.log2(Math.max(W, H) / t.he.tile_size)));
+    const im = new Image(); im.src = `/api/sample/${s.sample_id}/he/${L}/0_0.jpg?r=${t.he.rev}`;
     await im.decode().catch(() => {});
     const sc = 2 ** (L - top);
-    if (im.naturalWidth) ctx.drawImage(im, ox, oy, im.naturalWidth / sc * k, im.naturalHeight / sc * k);
+    if (im.naturalWidth) t.bg.getContext("2d").drawImage(im, t.ox, t.oy, im.naturalWidth / sc * t.k, im.naturalHeight / sc * t.k);
   }
+}
+async function paintTile(t, mode, sel) {  // the image, then the cells: light gray ones first, colored ones on top
+  let col = null;
+  if (t.colored) {
+    const keys = sel.size ? t.items.filter((it) => sel.has(it.label)).map((it) => it.key) : [];
+    const q = new URLSearchParams({ version: t.ver, mode, only: sel.size ? (keys.join("|") || "__none__") : "", rest: "gray" });
+    const r = await fetch(`/api/s/${t.sid}/colors.bin?${q}`);
+    if (r.ok) col = new Uint8Array(await r.arrayBuffer());
+  }
+  const c = t.c, ctx = c.getContext("2d"), pos = t.pos, k = t.k;
+  ctx.clearRect(0, 0, c.width, c.height); ctx.drawImage(t.bg, 0, 0);
   const lay = document.createElement("canvas"); lay.width = c.width; lay.height = c.height;  // cells on their own layer, blended over the image
   const lc = lay.getContext("2d"), id = lc.createImageData(c.width, c.height), d = id.data;
-  for (let i = 0; i < pos.length / 2; i++) {
-    const a = col ? col[4 * i + 3] : 200; if (!a) continue;
-    const x = (ox + k * pos[2 * i]) | 0, y = (oy + k * pos[2 * i + 1]) | 0;
-    if (x < 0 || y < 0 || x >= c.width - 1 || y >= c.height - 1) continue;
-    const r = col ? col[4 * i] : 120, g = col ? col[4 * i + 1] : 120, b = col ? col[4 * i + 2] : 120;
-    for (const j of [4 * (y * c.width + x), 4 * (y * c.width + x + 1), 4 * ((y + 1) * c.width + x), 4 * ((y + 1) * c.width + x + 1)]) {
-      d[j] = r; d[j + 1] = g; d[j + 2] = b; d[j + 3] = Math.max(d[j + 3], a);
+  const gray = (i) => col && col[4 * i] === 205 && col[4 * i + 1] === 205 && col[4 * i + 2] === 205;
+  for (const pass of [true, false]) {
+    for (let i = 0; i < pos.length / 2; i++) {
+      if (sel.size && gray(i) !== pass) continue;
+      if (!sel.size && !pass) break;
+      const a = col ? col[4 * i + 3] : 200; if (!a) continue;
+      const x = (t.ox + k * pos[2 * i]) | 0, y = (t.oy + k * pos[2 * i + 1]) | 0;
+      if (x < 0 || y < 0 || x >= c.width - 1 || y >= c.height - 1) continue;
+      const r = col ? col[4 * i] : 120, g = col ? col[4 * i + 1] : 120, b = col ? col[4 * i + 2] : 120;
+      for (const j of [4 * (y * c.width + x), 4 * (y * c.width + x + 1), 4 * ((y + 1) * c.width + x), 4 * ((y + 1) * c.width + x + 1)]) {
+        d[j] = r; d[j + 1] = g; d[j + 2] = b; d[j + 3] = pass && sel.size ? Math.max(d[j + 3], a) : a;
+      }
     }
   }
   lc.putImageData(id, 0, 0); ctx.drawImage(lay, 0, 0);
-  return { items, note };
 }
 $("allSamples").onclick = () => openGallery(true);
 // ---------------- Compare: DE genes, top genes per group, composition (one slice or all slices pooled) ----------------

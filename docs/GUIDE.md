@@ -52,7 +52,7 @@ mouse, …). Images: one file for all slices, one file per slice whose name hold
 `..._147328_HE.ome.tif`; choose them together), or a table (CSV/TSV: section, image path); a registration file has
 one row per section. Without an image, the cells are drawn on a blank background wherever their coordinates are
 (negative ones too). In the app, **◀ ▶** (or `[` `]`) step through the slices and keep what is shown (Color by, legend filters, hidden H&E, the UMAP
-window and, on a UMAP of all slices, its zoom and the cells selected on it); **Overview of all samples…** shows them
+window and, on a UMAP of all slices, its zoom and the cells selected on it); **Overview of all samples** shows them
 side by side and the **Compare** tab compares them (all slices, by slice).
 
 With **all slices together** ticked, **Annotate** pools the slices (one marker step and one model; each slice gets its
@@ -160,9 +160,10 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
 
 1. Pick a sample; earlier annotations are under **Annotation** (Data tab). **Rename** next to it changes the name
    the app shows (a slice: its name in the project, and the project's name); the id, files and annotations stay.
-   **Overview of all samples…** (Data tab) shows every sample side by side, each over its image (the **image** box)
+   **Overview of all samples** (Data tab) shows every sample side by side, each over its image (the **image** box)
    and colored the same way: cell type, lineage, Leiden clusters, niche or region (from the annotation open, else
-   each sample's latest one), with one legend for all; click a sample to open it. **Remove sample** (bottom of the toolbar) removes only the open sample: its cells,
+   each sample's latest one), with one legend for all: tick entries to show only them (e.g. only ILCs; the other
+   cells turn light gray on every sample), **Show all** clears the ticks; click a sample to open it. **Remove sample** (bottom of the toolbar) removes only the open sample: its cells,
    annotations with their chats, regions, niches and PCA / UMAP go to the data folder's `trash/`, a project keeps its
    other slices, and the image and source files stay where they are.
    **Save…** under Annotation (Data tab) writes the open annotation into one file (`.stannot`): every version with its
@@ -171,7 +172,7 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
    the annotation, so **Last result** also works after a restart). Chats are left out. **Load…** opens such a file as
    a new annotation of the sample with the same cells and genes (here or in another data folder); a different PCA /
    UMAP of that sample goes to the trash first.
-   **Filter cells and genes…** (Data tab) deletes cells with fewer or more transcripts than you set, fewer genes,
+   **Filter cells and genes** (Data tab) deletes cells with fewer or more transcripts than you set, fewer genes,
    or a mitochondrial share (MT- genes, when the panel has them) above a percentage, and genes detected in fewer
    cells than you set; histograms show where each threshold cuts and the dialog counts what goes. Empty fields are
    not applied. The data as imported stays in the sample folder (`original/`): new thresholds always start from
