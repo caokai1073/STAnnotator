@@ -141,6 +141,14 @@ header #carryWrap[style*="hidden"] { display: none; }
 .act2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .act2 > button, .cfgslot > button { width: 100%; }
 .act2 > button:only-child { grid-column: 1 / -1; }
+.qfgrid { display: grid; grid-template-columns: minmax(0, 1fr) 210px; gap: 6px 14px; align-items: center; }
+.qfgrid h4 { grid-column: 1 / -1; margin: 8px 0 0; font-size: 12.5px; }
+.qfgrid svg { width: 100%; height: 64px; display: block; }
+.qfgrid .qfin { display: flex; gap: 8px; }
+.qfgrid .qfin .f { flex: 1; } .qfgrid .qfin input { width: 100%; }
+.qfgrid [hidden] { display: none; }
+.qfgrid .qfnone { color: var(--muted); font-size: 12px; grid-column: 1 / -1; }
+#qfPrev { margin-top: 8px; font-size: 12.5px; line-height: 1.5; }
 /* the chosen tab or segment stays white under the mouse (not the accent of other active buttons) */
 .tabs .tab.on:hover:not(:disabled), .seg button.on:hover:not(:disabled) { background: var(--panel); color: var(--ink); filter: none; }
 .cfgslot { display: flex; }
@@ -361,6 +369,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <div class="fld" id="sampleWrap"><span>Sample</span><div class="inrow"><select id="sample" aria-label="Sample"></select>
       <button id="sampleRename" disabled title="Rename the sample as the app shows it (a slice: its name in the project)">Rename</button></div></div>
     <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-layers"/></svg><div id="sampleInfo">No sample yet</div></div>
+    <div class="act2"><button id="qfBtn" disabled title="Delete cells with few transcripts or genes or a high mitochondrial share, and genes detected in few cells">Filter cells and genes…</button></div>
     <div id="slNav" class="slnav" hidden>
       <div class="stepper"><button id="slPrev" title="Previous slice of the project ([)">◀</button><span id="slPos"></span><button id="slNext" title="Next slice of the project (])">▶</button></div>
       <div class="act2"><button id="slGallery" title="All slices of the project side by side">Slices…</button><button id="slCompare" title="Cell type, lineage, niche or cluster shares per slice">Compare…</button></div>
@@ -634,6 +643,31 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <div class="hint" id="rnHint"></div>
     <div class="row"><span class="err" id="rnErr"></span><span class="spacer"></span>
       <button id="rnCancel">Cancel</button><button id="rnSave" class="primary">Save</button></div>
+  </div>
+</dialog>
+<dialog id="qfDlg" style="width:min(640px,95vw)">
+  <div class="dh"><b>Filter cells and genes</b><span class="spacer"></span><button id="qfClose">Close</button></div>
+  <div class="imbody">
+    <div class="hint" id="qfScope"></div>
+    <div class="qfgrid">
+      <h4>Cells</h4>
+      <svg id="qfHcounts" aria-label="Transcripts per cell"></svg>
+      <div class="qfin"><label class="f">Min transcripts<input type="number" min="0" step="1" id="qf_min_counts" placeholder="none"></label>
+        <label class="f">Max transcripts<input type="number" min="0" step="1" id="qf_max_counts" placeholder="none"></label></div>
+      <svg id="qfHgenes" aria-label="Genes per cell"></svg>
+      <div class="qfin"><label class="f">Min genes per cell<input type="number" min="0" step="1" id="qf_min_genes" placeholder="none"></label></div>
+      <svg id="qfHmito" aria-label="Mitochondrial share"></svg>
+      <div class="qfin"><label class="f">Max mitochondrial %<input type="number" min="0" max="100" step="0.5" id="qf_max_mito_pct" placeholder="none"></label></div>
+      <div class="qfnone" id="qfNoMito" hidden>No mitochondrial genes (MT-…) in this panel: imaging panels rarely have them.</div>
+      <h4>Genes</h4>
+      <svg id="qfHcpg" aria-label="Cells per gene"></svg>
+      <div class="qfin"><label class="f">Min cells per gene<input type="number" min="0" step="1" id="qf_min_cells" placeholder="none"></label></div>
+    </div>
+    <div id="qfPrev"></div>
+    <div class="hint" id="qfNote" style="margin-top:6px"></div>
+    <div class="row" style="margin-top:10px"><button id="qfRestore" hidden title="Bring back every cell and gene as imported">Restore all</button>
+      <span class="err" id="qfErr"></span><span class="spacer"></span>
+      <button id="qfCancel">Cancel</button><button id="qfGo" class="primary" disabled>Filter</button></div>
   </div>
 </dialog>
 <dialog id="imDlg" style="width:min(800px,95vw)">
@@ -1026,7 +1060,7 @@ async function loadSamples(select, project) {
   const sel = $("sample"); sel.textContent = "";
   if (!st.samples.length) {  // a fresh install: nothing imported yet
     $("empty").firstElementChild.textContent = "No samples yet. Click Import… to add Xenium files (cells.parquet and cell_feature_matrix.h5), h5ad or RDS files (with or without an image).";
-    $("empty").style.display = "flex"; $("annotate").disabled = true; $("sampleRename").disabled = true;
+    $("empty").style.display = "flex"; $("annotate").disabled = true; $("sampleRename").disabled = true; $("qfBtn").disabled = true;
     return;
   }
   $("annotate").disabled = false;
@@ -1114,6 +1148,7 @@ async function selectSample(id) {
   st.sample.allSessions = st.sample.sessions;
   st.sample.sessions = st.sample.sessions.filter((x) => USER_METHODS.includes(x.method));
   $("sampleRename").disabled = false;
+  $("qfBtn").disabled = false;
   $("reset").disabled = !st.sample.allSessions.length && !projectOf(id);  // in a project: also to reset the other slices
   store("sample", id);
   $("path").textContent = st.sample.bundle_dir;
@@ -3065,6 +3100,116 @@ $("rnSave").onclick = async () => {
 };
 $("rnCancel").onclick = () => $("rnDlg").close();
 ["rnName", "rnProject"].forEach((id) => $(id).addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("rnSave").click(); } }));
+// ---------------- filtering cells and genes ----------------
+const qfEsc = (x) => String(x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const QF = { keys: ["min_counts", "max_counts", "min_genes", "max_mito_pct", "min_cells"], qc: null, timer: null, token: 0 };
+function qfParams() {
+  const p = {};
+  QF.keys.forEach((k) => { const v = $(`qf_${k}`).value.trim(); if (v !== "") p[k] = +v; });
+  return p;
+}
+function qfHist(id, h, o) {  // a histogram (h: edges and counts, over log10(1 + v) when o.log) with the thresholds lo / hi
+  const el = $(id); el.textContent = "";
+  if (!h) return;
+  const W = el.clientWidth || 400, H = 64, B = 13, T = 12, n = h.counts.length, e0 = h.edges[0], e1 = h.edges[n];
+  const f = (v) => (o.log ? Math.log10(1 + v) : v), tx = (u) => ((u - e0) / (e1 - e0)) * W;
+  const mx = Math.max(...h.counts, 1);
+  const lo = o.lo == null ? null : f(o.lo), hi = o.hi == null ? null : f(o.hi);
+  let svg = `<text x="0" y="9" font-size="10.5" style="fill:var(--muted)">${o.label}</text>`;
+  h.counts.forEach((c, i) => {
+    if (!c) return;
+    const mid = (h.edges[i] + h.edges[i + 1]) / 2, gone = (lo != null && mid < lo) || (hi != null && mid > hi);
+    const bh = Math.max(1, (c / mx) * (H - B - T));
+    const x = tx(h.edges[i]), w = tx(h.edges[i + 1]) - x;
+    svg += `<rect x="${x.toFixed(1)}" y="${(H - B - bh).toFixed(1)}" width="${Math.max(w - 1, 0.5).toFixed(1)}" height="${bh.toFixed(1)}" style="fill:var(${gone ? "--warn" : "--accent"});opacity:${gone ? 0.45 : 0.8}"><title>${c.toLocaleString()}</title></rect>`;
+  });
+  const ticks = o.log ? [1, 10, 100, 1000, 10000, 100000].filter((v) => f(v) <= e1) : [0, 5, 10, 20, 50, 100].filter((v) => v <= e1);
+  ticks.forEach((v) => {
+    const x = tx(f(v));
+    svg += `<line x1="${x}" x2="${x}" y1="${H - B}" y2="${H - B + 3}" style="stroke:var(--muted)"/><text x="${Math.min(Math.max(x, 4), W - 4)}" y="${H - 1}" font-size="10" text-anchor="middle" style="fill:var(--muted)">${v.toLocaleString()}</text>`;
+  });
+  [lo, hi].forEach((u) => { if (u != null && u >= e0 && u <= e1) svg += `<line x1="${tx(u)}" x2="${tx(u)}" y1="${T}" y2="${H - B}" style="stroke:var(--warn)" stroke-width="1.5"/>`; });
+  el.innerHTML = `<line x1="0" x2="${W}" y1="${H - B}" y2="${H - B}" style="stroke:var(--line)"/>` + svg;
+}
+function qfDraw() {
+  const q = QF.qc, p = qfParams();
+  if (!q) return;
+  qfHist("qfHcounts", q.counts, { log: true, lo: p.min_counts, hi: p.max_counts, label: `Transcripts per cell (median ${q.median.counts.toLocaleString()})` });
+  qfHist("qfHgenes", q.genes, { log: true, lo: p.min_genes, label: `Genes per cell (median ${q.median.genes.toLocaleString()})` });
+  qfHist("qfHmito", q.mito_pct, { hi: p.max_mito_pct, label: q.mito_pct ? `Mitochondrial % (median ${q.median.mito_pct.toFixed(1)}; ${q.mito_genes.length} MT- genes)` : "" });
+  qfHist("qfHcpg", q.cells_per_gene, { log: true, lo: p.min_cells, label: "Cells each gene is detected in (all cells as imported)" });
+}
+const QF_WHAT = { min_counts: (v) => `fewer than ${v.toLocaleString()} transcripts`, max_counts: (v) => `more than ${v.toLocaleString()} transcripts`,
+                  min_genes: (v) => `fewer than ${v.toLocaleString()} genes`, max_mito_pct: (v) => `more than ${v}% mitochondrial transcripts` };
+function qfPreview() {
+  clearTimeout(QF.timer);
+  QF.timer = setTimeout(async () => {
+    qfDraw();
+    const tok = ++QF.token, p = qfParams(), was = (QF.qc && QF.qc.filter) || null;
+    $("qfErr").textContent = "";
+    if (!Object.keys(p).length) {
+      $("qfPrev").textContent = was ? "No thresholds: Filter brings back every cell and gene as imported." : "Set one or more thresholds; empty ones are not applied.";
+      $("qfGo").disabled = !was; return;
+    }
+    try {
+      const r = await post(`/api/sample/${st.sample.sample_id}/filter`, { params: p, preview: true });
+      if (tok !== QF.token) return;
+      const pct = (a, b) => `${((100 * a) / Math.max(b, 1)).toFixed(1)}%`;
+      const by = Object.entries(r.removed_by).filter(([, v]) => v).map(([k, v]) => `${v.toLocaleString()} with ${QF_WHAT[k](r.params[k])}`);
+      const gr = r.genes_removed;
+      $("qfPrev").innerHTML = `<b>Keeps ${r.n_cells_kept.toLocaleString()} of ${r.n_cells.toLocaleString()} cells</b> (${pct(r.n_cells_kept, r.n_cells)})` +
+        (by.length ? `; removes ${by.join(", ")}${by.length > 1 ? " (a cell can fail several)" : ""}.` : ".") +
+        (r.slices.length > 1 ? `<br>${r.slices.map((x) => `${qfEsc(sliceLabel(x.sample_id))}: ${x.n_cells_kept.toLocaleString()} of ${x.n_cells.toLocaleString()}`).join(" · ")}` : "") +
+        `<br><b>Keeps ${r.n_genes_kept.toLocaleString()} of ${r.n_genes.toLocaleString()} genes</b>` +
+        (gr.length ? `; removes ${qfEsc(gr.slice(0, 12).join(", "))}${gr.length > 12 ? ` and ${gr.length - 12} more` : ""}.` : ".");
+      $("qfGo").disabled = r.n_cells_kept === 0 || r.n_genes_kept === 0;
+      if ($("qfGo").disabled) $("qfErr").textContent = r.n_cells_kept === 0 ? "These thresholds remove every cell" : "These thresholds remove every gene";
+    } catch (e) { if (tok === QF.token) { $("qfErr").textContent = e.message; $("qfGo").disabled = true; } }
+  }, 250);
+}
+function sliceLabel(id) { const p = projectOf(id); return p && p.slices[id] ? p.slices[id].section : sampleName(st.samples.find((x) => x.sample_id === id) || { sample_id: id }); }
+$("qfBtn").onclick = async () => {
+  if (st.busy) { toast("Wait until the assistant has answered"); return; }
+  const id = st.sample.sample_id, p = projectOf(id);
+  QF.qc = null; QF.keys.forEach((k) => ($(`qf_${k}`).value = ""));
+  ["qfPrev", "qfNote", "qfErr"].forEach((x) => ($(x).textContent = ""));
+  $("qfScope").textContent = "Reading the cells…"; $("qfGo").disabled = true; $("qfRestore").hidden = true;
+  $("qfDlg").showModal();
+  try { QF.qc = await api(`/api/sample/${id}/qc`); } catch (e) { $("qfScope").textContent = ""; $("qfErr").textContent = e.message; return; }
+  const q = QF.qc, f = q.filter;
+  $("qfScope").textContent = `${q.n_cells.toLocaleString()} cells and ${q.n_genes.toLocaleString()} genes as imported` +
+    (p ? ` in the ${p.samples.length} slices of project ${p.name}: one filter for all of them, so they keep one gene panel.` : ".") +
+    (f ? ` Filtered now: ${f.n_cells_removed.toLocaleString()} cells and ${f.genes_removed.length} genes removed.` : "");
+  if (f) Object.entries(f.params).forEach(([k, v]) => { if ($(`qf_${k}`)) $(`qf_${k}`).value = v; });
+  $("qfHmito").toggleAttribute("hidden", !q.mito_pct);  // an SVG element has no .hidden
+  $("qf_max_mito_pct").closest(".qfin").hidden = !q.mito_pct; $("qfNoMito").hidden = !!q.mito_pct;
+  $("qfRestore").hidden = !f;
+  const lose = [q.n_sessions ? `${q.n_sessions === 1 ? "the annotation" : `the ${q.n_sessions} annotations`} (with chats)` : "",
+                q.has_embedding ? "the PCA / UMAP" : ""].filter(Boolean).join(" and ");
+  $("qfNote").textContent = "The cells and genes removed are deleted from the data the app and the agent use; the data as imported stays " +
+    "in the sample folder (original/), so Restore all brings them back. Thresholds always apply to the cells as imported." +
+    (lose ? ` Filtering moves ${lose} of ${p ? "the project's slices" : "this sample"} to the trash, since they refer to the cells by number.` : "");
+  qfPreview();
+};
+QF.keys.forEach((k) => $(`qf_${k}`).addEventListener("input", qfPreview));
+async function qfRun(params) {
+  const id = st.sample.sample_id, p = projectOf(id);
+  $("qfGo").disabled = true; $("qfRestore").disabled = true; $("qfErr").textContent = "";
+  $("qfPrev").textContent = Object.keys(params).length ? "Filtering…" : "Restoring…";
+  try {
+    const r = await post(`/api/sample/${id}/filter`, { params });
+    $("qfDlg").close();
+    (p ? p.samples : [id]).forEach((x) => delete st.openedThisVisit[x]);
+    GL.sample = null;  // the cells' positions are read again
+    await loadSamples(id);
+    toast((Object.keys(params).length ? `Filtered: ${(r.n_cells - r.n_cells_kept).toLocaleString()} cells and ${r.genes_removed.length} genes removed` : "All cells and genes restored") +
+          (r.deleted_sessions ? `; ${r.deleted_sessions} annotation(s) moved to the trash` : "") + (r.deleted_embeddings ? "; PCA / UMAP removed" : ""), 7000);
+  } catch (e) { $("qfErr").textContent = e.message; qfPreview(); }
+  $("qfRestore").disabled = false;
+}
+$("qfGo").onclick = () => qfRun(qfParams());
+$("qfRestore").onclick = () => qfRun({});
+$("qfCancel").onclick = $("qfClose").onclick = () => $("qfDlg").close();
 const CONDITION = /type|condition|group|disease|stage|day|treat|time|state|genotype/i;
 function metaText(md, n = 3) {  // a slice's metadata, condition-like columns first
   return Object.entries(md || {}).sort((a, b) => CONDITION.test(b[0]) - CONDITION.test(a[0])).slice(0, n).map(([, v]) => v).join(" · ");
@@ -3791,7 +3936,8 @@ segmented("method"); segmented("nIdentity"); segmented("nKMode"); segmented("aSc
 function sampleInfo() {  // the Data tab's card: what the open sample is
   const s = st.sample; if (!s) { $("sampleInfo").textContent = "No sample yet"; return; }
   const img = s.image_pending ? "image waiting for its alignment" : !s.image_kind || s.image_kind === "none" ? "no image" : s.image_kind;
-  $("sampleInfo").textContent = [`${s.n_cells.toLocaleString()} cells`, img, s.description].filter(Boolean).join(" · ");
+  const filt = s.filter ? `filtered (${s.filter.n_cells_removed.toLocaleString()} cells, ${s.filter.n_genes_removed} genes removed)` : "";
+  $("sampleInfo").textContent = [`${s.n_cells.toLocaleString()} cells`, img, filt, s.description].filter(Boolean).join(" · ");
 }
 function showTab(name) {
   document.querySelectorAll("#tabs .tab").forEach((t) => { t.classList.toggle("on", t.dataset.tab === name); t.setAttribute("aria-selected", t.dataset.tab === name); });

@@ -21,7 +21,7 @@ from starlette.staticfiles import StaticFiles
 from . import config, vocab, mcp_server, review_app, render
 from . import markers, markerqc, plausibility, claudelink, claudereview, importer, advice, niches, embedding
 from . import communication, projects
-from .session import Session, list_samples, list_sessions, panel_genes
+from .session import Session, list_samples, list_sessions, panel_genes, filtered_genes
 
 STATIC = Path(__file__).parent / "static"
 TILE, MARGIN_PX, CELL_RADIUS_UM = 512, 400, 3.45  # dot radius: about a cell's radius
@@ -912,6 +912,8 @@ def api_samples(req):
                          "has_registration": bool(meta.get("registration_affine")),
                          "can_undo_placement": bool(meta.get("placement_previous")),
                          "project": meta.get("project"), "name": meta.get("name"), "metadata": meta.get("metadata") or {},
+                         "filter": {"params": f["params"], "n_cells_removed": f["n_cells_removed"],
+                                    "n_genes_removed": len(f["genes_removed"])} if (f := meta.get("filter")) else None,
                          "sessions": mine.sort_values("created_at", ascending=False)[["session_id", "created_at", "n_versions", "method"]]
                          .to_dict("records") if len(mine) else []})
     return _json(rows)
@@ -1576,6 +1578,61 @@ async def api_sample_rename(req: Request):
     return _json(r)
 
 
+def _filter_ids(sample):
+    """The samples a filter acts on: all slices of the sample's project (one gene panel), else the sample."""
+    pid = projects.project_of(sample)
+    return [x for x in projects.load(pid)["samples"] if (config.SAMPLES / x / "meta.json").exists()] if pid else [sample]
+
+
+async def api_sample_qc(req: Request):
+    from . import qcfilter
+    try:
+        ids = _filter_ids(req.path_params["sample"])
+        r = await asyncio.to_thread(qcfilter.overview, ids)
+    except (ValueError, OSError) as e:
+        return _json({"error": str(e)}, 400)
+    sess = [d for x in ids for d in _sample_sessions(x)]
+    return _json(r | {"n_sessions": len(sess), "has_embedding": any((config.SAMPLES / x / "embedding").exists() for x in ids)})
+
+
+async def api_sample_filter(req: Request):
+    """{params, preview}: preview: what the thresholds keep; else filter the sample (all slices of its project),
+    after moving their annotations, chats and PCA / UMAP to trash/<time>_<sample>_filter/ (they number the cells)."""
+    from . import qcfilter
+    sample, b = req.path_params["sample"], await req.json()
+    try:
+        ids = _filter_ids(sample)
+        if b.get("preview"):
+            return _json(await asyncio.to_thread(qcfilter.preview, ids, b.get("params")))
+        prm = qcfilter.params(b.get("params"))
+        if not prm and not any((config.SAMPLES / x / "original").exists() for x in ids):
+            return _json({"error": "set at least one threshold"}, 400)
+        await asyncio.to_thread(qcfilter.preview, ids, prm)  # checks the thresholds before anything is moved
+    except (ValueError, OSError) as e:
+        return _json({"error": str(e)}, 400)
+    sess = [d for x in ids for d in _sample_sessions(x)]
+    mine = {d.name for d in sess} | {f"embed:{x}" for x in ids} | {f"project:{projects.project_of(sample)}"}
+    if any(not j["done"] and (k in mine or k.split(":", 1)[-1] in mine) for k, j in JOBS.items()):
+        return _json({"error": "an annotation or analysis of this sample is still running; wait until it finishes"}, 409)
+    trash = config.TRASH / f"{time.strftime('%Y%m%d-%H%M%S')}_{sample}_filter"
+    embs = [config.SAMPLES / x / "embedding" for x in ids if (config.SAMPLES / x / "embedding").exists()]
+    n_chats = 0
+    if sess or embs:
+        trash.mkdir(parents=True)
+        n_chats = _trash_sessions(sess, trash)
+        for e in embs:
+            shutil.move(str(e), str(trash / f"embedding_{e.parent.name}"))
+    try:
+        r = await asyncio.to_thread(qcfilter.apply, ids, prm)
+    except (ValueError, OSError) as e:
+        return _json({"error": str(e)}, 400)
+    for x in ids:
+        _reload_sample(x)
+    _cell_tables.clear()
+    return _json(r | {"deleted_sessions": len(sess), "deleted_conversations": n_chats, "deleted_embeddings": len(embs),
+                      "trash": str(trash) if sess or embs else None})
+
+
 async def api_sample_placement_undo(req: Request):
     sample = req.path_params["sample"]
     try:
@@ -1686,7 +1743,7 @@ def api_panel(req):
 
 async def api_markers_check(req: Request):
     b = await req.json()
-    p = markers.parse(b.get("text", ""), panel_genes(b.get("sample") or None))
+    p = markers.parse(b.get("text", ""), panel_genes(b.get("sample") or None), filtered_genes(b.get("sample") or None))
     return _json({k: p[k] for k in ("ok", "errors", "warnings", "n_types", "depth", "genes", "canonical")})
 
 
@@ -2114,6 +2171,8 @@ def build_app(port):
         Route("/api/sample/{sample}/image", api_sample_image, methods=["POST"]),
         Route("/api/sample/{sample}/registration", api_sample_registration, methods=["POST"]),
         Route("/api/sample/{sample}/rename", api_sample_rename, methods=["POST"]),
+        Route("/api/sample/{sample}/qc", api_sample_qc),
+        Route("/api/sample/{sample}/filter", api_sample_filter, methods=["POST"]),
         Route("/api/sample/{sample}/placement/undo", api_sample_placement_undo, methods=["POST"]),
         Route("/api/claude/align", api_claude_align, methods=["POST"]),
         Route("/api/s/{sid}/export", api_export, methods=["POST"]),

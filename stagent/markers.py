@@ -90,9 +90,10 @@ def text_to_csv(text):
     return buf.getvalue()
 
 
-def parse(text, panel):
+def parse(text, panel, removed=()):
     """Return {"ok", "errors", "warnings", "tree", "types", "parent", "top", "genes", "canonical"}.
-    text: the indented text format or a marker list CSV. panel: the sample's genes (None: genes are not checked)."""
+    text: the indented text format or a marker list CSV. panel: the sample's genes (None: genes are not checked).
+    removed: genes of the panel that the sample's filter deleted; markers naming them are left out with a warning."""
     if is_csv(text):
         try:
             text = csv_to_text(text)
@@ -101,12 +102,16 @@ def parse(text, panel):
                     "parent": {}, "top": {}, "genes": [], "canonical": "", "leaves": [UNASSIGNED], "n_types": 0,
                     "depth": 0}
     upper = {g.upper(): g for g in panel} if panel is not None else None
+    removed = {g.upper() for g in removed or ()}
     errors, warnings, roots, stack, names = [], [], [], [], {}
 
     def gene(name, ln):
         if upper is None:
             return name
         g = upper.get(name.upper())
+        if g is None and name.upper() in removed:
+            warnings.append(f"line {ln}: gene {name} was removed by the sample's gene filter; it is left out")
+            return False
         if g is None:
             sug = difflib.get_close_matches(name.upper(), list(upper), n=3, cutoff=0.6)
             errors.append(f"line {ln}: gene {name} is not in the panel" + (f"; did you mean {', '.join(upper[s] for s in sug)}?" if sug else ""))
@@ -132,8 +137,8 @@ def parse(text, panel):
                 errors.append(f"line {ln}: cannot read marker '{tok}'")
                 continue
             genes = [gene(g, ln) for g in m.group(1).split("|") if g]
-            if all(genes):
-                markers.append({"genes": genes, "sign": -1 if m.group(2) == "-" else 1})
+            if None not in genes and any(genes):
+                markers.append({"genes": [g for g in genes if g], "sign": -1 if m.group(2) == "-" else 1})
         if not name:
             errors.append(f"line {ln}: missing type name"); continue
         if name in names or name == UNASSIGNED:

@@ -141,7 +141,14 @@ The app's window (or the web viewer: `.venv/bin/stagent viewer`, then http://loc
 by Claude show up within a few seconds.
 
 1. Pick a sample; earlier annotations are under **Annotation** (Data tab). **Rename** next to it changes the name
-   the app shows (a slice: its name in the project, and the project's name); the id, files and annotations stay. Choose the **Method** (Annotate tab): *Marker genes* (a marker
+   the app shows (a slice: its name in the project, and the project's name); the id, files and annotations stay.
+   **Filter cells and genes…** (Data tab) deletes cells with fewer or more transcripts than you set, fewer genes,
+   or a mitochondrial share (MT- genes, when the panel has them) above a percentage, and genes detected in fewer
+   cells than you set; histograms show where each threshold cuts and the dialog counts what goes. Empty fields are
+   not applied. The data as imported stays in the sample folder (`original/`): new thresholds always start from
+   it, and **Restore all** brings every cell and gene back. In a project one filter covers all slices (they keep
+   one gene panel). Annotations and the PCA / UMAP of the filtered samples go to the trash (they number the
+   cells); marker genes the filter removed are left out of marker lists with a warning. Choose the **Method** (Annotate tab): *Marker genes* (a marker
    list, **Markers…**), *Single-cell reference* (a labeled reference h5ad, **Reference…**) or *Load existing* (a
    CSV with one cell type per cell, **Annotation file…**), then click
    **Annotate** (about 1 min for 350k cells with markers, seconds with a reference). Regions start empty: you

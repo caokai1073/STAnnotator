@@ -27,7 +27,7 @@ found otherwise (e.g. by align.py). Until an image is registered the cells are s
 Xenium DAPI image) and the image waits in meta["image_pending"]. Moving the cells to a new placement moves the
 outlines drawn on the old one with them (regions, proposed areas).
 """
-import hashlib, json, re, time
+import hashlib, json, re, shutil, time
 from pathlib import Path
 import h5py, numpy as np, pandas as pd, scipy.sparse as sp
 from scipy.spatial import cKDTree
@@ -340,6 +340,8 @@ def _write_bundle(name, ids, xy, X, genes, image, A, regions, description, sourc
         cells["pathologist_region"] = np.asarray(regions).astype(str)
         has_regions = bool((~cells.pathologist_region.isin(["", "nan", "None", "Unlabelled", "unknown"])).any())
     out.mkdir(parents=True, exist_ok=True)
+    if (out / "original").exists():  # the data a filter kept from an earlier import of this name
+        shutil.rmtree(out / "original")
     cells.to_parquet(out / "cells.parquet")
     sp.save_npz(out / "counts.npz", X)
     (out / "genes.txt").write_text("\n".join(genes) + "\n")

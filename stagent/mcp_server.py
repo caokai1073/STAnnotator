@@ -1075,9 +1075,9 @@ def save_marker_list(name: str, text: str, sample_id: Optional[str] = None) -> s
     "Markers..." dialog lists it ("load a list..."). Use it for a new panel: draft a list from get_panel_genes,
     check it with check_marker_list, save it, and tell the user to load it and click Annotate."""
     from . import config, markers
-    from .session import panel_genes
+    from .session import panel_genes, filtered_genes
     import re
-    p = markers.parse(text, panel_genes(sample_id))
+    p = markers.parse(text, panel_genes(sample_id), filtered_genes(sample_id))
     if not p["ok"]:
         raise vocab.VocabError("marker list has errors: " + "; ".join(p["errors"][:8]))
     safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", name.strip()).strip("_") or "marker_list"
@@ -1091,11 +1091,11 @@ def save_marker_list(name: str, text: str, sample_id: Optional[str] = None) -> s
 def check_marker_list(text: str, sample_id: Optional[str] = None) -> str:
     """Validate a marker list (format: 'Name: GENE+ GENE- A|B+' per line, children indented two spaces) against a
     sample's panel (default: the active session's sample). Returns errors (with suggestions for genes not in the
-    panel), warnings, and the parsed outline."""
-    from .session import panel_genes
+    panel), warnings (also for genes the sample's filter removed: they are left out), and the parsed outline."""
+    from .session import panel_genes, filtered_genes
     from . import markers
     sid = sample_id or (_active["session"].sample_id if "session" in _active else None)
-    p = markers.parse(text, panel_genes(sid))
+    p = markers.parse(text, panel_genes(sid), filtered_genes(sid))
     return _j({k: p[k] for k in ("ok", "errors", "warnings", "n_types", "depth", "canonical")})
 
 

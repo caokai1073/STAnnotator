@@ -62,7 +62,8 @@ def annotate(pid, markers_text, resolution=None, carry=False, progress=None):
     say = progress or (lambda f, m: None)
     ids, off, counts, panel = _pooled(pid)
     previous = latest_sessions(pid) if carry else {}
-    parsed = markers.parse(markers_text, panel)
+    from .session import filtered_genes
+    parsed = markers.parse(markers_text, panel, filtered_genes(ids[0]))
     if not parsed["ok"]:
         raise ValueError("marker list has errors: " + "; ".join(parsed["errors"][:8]))
     say(0.02, f"marker step on {counts.shape[0]:,} cells of {len(ids)} slices")

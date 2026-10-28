@@ -129,7 +129,8 @@ def proposal(s):
 def propose(s, text, summary=""):
     """Validate a revised marker list and store it as the session's open proposal; return its diff."""
     import difflib, json, time
-    parsed = markers.parse(text, s.panel)
+    from .session import filtered_genes
+    parsed = markers.parse(text, s.panel, filtered_genes(s.sample_id))
     if not parsed["ok"]:
         raise ValueError("marker list has errors: " + "; ".join(parsed["errors"][:8]))
     cur = s.scheme.get("text", "")

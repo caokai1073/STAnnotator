@@ -42,6 +42,13 @@ def panel_genes(sample_id=None):
     return pd.read_csv(config.HOME / "genes.csv", header=None)[0].tolist()  # lab-server bundles
 
 
+def filtered_genes(sample_id):
+    """Genes of the panel that the sample's filter deleted (qcfilter.py)."""
+    if sample_id is None or not (config.SAMPLES / str(sample_id) / "meta.json").exists():
+        return []
+    return (json.load(open(config.SAMPLES / str(sample_id) / "meta.json")).get("filter") or {}).get("genes_removed", [])
+
+
 def sample_cell_ids(sample_id):
     """A sample's original cell ids, in its cell order."""
     c = pd.read_parquet(config.SAMPLES / str(sample_id) / "cells.parquet")
@@ -159,7 +166,7 @@ class Session:
         if method == "markers":
             if not (markers_text or "").strip():
                 raise vocab.VocabError("no marker list: import one (Markers... -> Import) or ask Claude to draft one")
-            parsed = markers.parse(markers_text, panel_genes(sample_id))
+            parsed = markers.parse(markers_text, panel_genes(sample_id), filtered_genes(sample_id))
             if not parsed["ok"]:
                 raise vocab.VocabError("marker list has errors: " + "; ".join(parsed["errors"][:8]))
             scheme = {"kind": "markers", "text": parsed["canonical"], "tree": parsed["tree"], "types": parsed["leaves"],
