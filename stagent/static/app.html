@@ -37,6 +37,8 @@ header.collapsed .hrow, header.collapsed .tabs, header.collapsed .pane { display
 .tabs .tab.busy::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 header .pane:not(.on) { display: none; }
 header .hrow.bottom { margin-top: auto; padding-bottom: 0; }
+header .hrow.bottom { flex-wrap: nowrap; gap: 6px; }  /* Reset, Remove sample, Remove all on one row */
+header .hrow.bottom button { padding: 5px 8px; font-size: 12px; gap: 4px; white-space: nowrap; flex: 0 1 auto; min-width: 0; }
 header.collapsed .hmini { display: flex; }
 .buildtag { display: block; font-size: 10px; font-weight: 400; color: var(--muted); }
 .cap { width: 100%; flex: none; display: flex; align-items: center; gap: 6px; }
@@ -384,7 +386,6 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <div class="act2"><button id="qfBtn" disabled title="Delete cells with few transcripts or genes or a high mitochondrial share, and genes detected in few cells">Filter cells and genes…</button></div>
     <div id="slNav" class="slnav" hidden>
       <div class="stepper"><button id="slPrev" title="Previous slice of the project ([)">◀</button><span id="slPos"></span><button id="slNext" title="Next slice of the project (])">▶</button></div>
-      <div class="act2"><button id="slGallery" title="All slices of the project side by side">Slices…</button><button id="slCompare" title="Cell type, lineage, niche or cluster shares per slice">Compare…</button></div>
       <label class="switch" title="Annotate, embed and find niches for all slices of the project together, so labels, clusters and niches mean the same everywhere"><input type="checkbox" id="projAll" checked>
         <span>All slices together<small>one annotation, embedding and set of niches for the project</small></span></label>
     </div>
@@ -508,9 +509,9 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <button id="sRun" class="primary main" disabled>Find interactions</button>
   </div>
   <div class="hrow bottom">
-    <button id="reset" class="danger" disabled title="Remove every annotation and chat of this sample">Reset…</button>
-    <button id="rmSample" class="danger" disabled title="Remove this sample only: its cells, annotations and chats go to the data folder's trash">Remove sample…</button>
-    <button id="clearAll" class="danger" hidden title="Delete every sample with all its annotations and chats for good, to import from scratch">Remove all…</button>
+    <button id="reset" class="danger" disabled title="Remove every annotation and chat of this sample">Reset</button>
+    <button id="rmSample" class="danger" disabled title="Remove this sample only: its cells, annotations and chats go to the data folder's trash">Remove sample</button>
+    <button id="clearAll" class="danger" hidden title="Delete every sample with all its annotations and chats for good, to import from scratch">Remove all</button>
   </div>
 </header>
 <main>
@@ -913,7 +914,7 @@ const ICON_ONLY = { hdrShow: "chev-left", hdrHide: "chev-right", helpBtn: "help"
   lgtoggle: "chev-up", rgtoggle: "chev-up", plclose: "x", emClose: "x", imClose: "x", rcClose: "x", clClose: "x", rpClose: "x",
   xpClose: "x", glClose: "x", anClose: "x", rvClose: "x", hpClose: "x", anCsv: "download", rpSave: "download", mkExport: "download",
   fbUp: "arrow-up", fbHome: "home", rsClose: "x", hide: "eye", hideHE: "image" };
-const ICON_TEXT = { importBtn: "import", clearAll: "trash", rmSample: "trash", allSamples: "grid", connBtn: "monitor", slGallery: "grid", slCompare: "chart",
+const ICON_TEXT = { importBtn: "import", clearAll: "trash", rmSample: "trash", allSamples: "grid", connBtn: "monitor", 
   openMarkers: "list", openRef: "file", openEx: "file", annotate: "play", eRun: "play", eShow: "scatter", nRun: "play",
   undo: "undo", claudeBtn: "sparkle", plaus: "shield", report: "file", export: "share", reset: "trash",
   draw: "pen", emLasso: "lasso", emClear: "x", emZoom: "target", send: "send",
@@ -2923,7 +2924,7 @@ undoes an alignment. Regions drawn before the cells move are moved along with th
 project, with its metadata (condition, day, …); several image files go to the slices whose section their file
 names hold. <b>◀ ▶</b> or <kbd>[</kbd> <kbd>]</kbd> step through the slices and keep what is shown (Color by, legend
 filters, hidden H&amp;E, the UMAP window and, on a UMAP of all slices, its zoom and selection);
-<b>Slices…</b> shows them side by side; <b>Compare…</b> opens the Compare tab on the lineage composition of every slice.</li>
+<b>Overview of all samples…</b> shows them side by side; the Compare tab compares them (scope: all slices, rows by slice).</li>
 <li><b>all slices together</b>: <b>Annotate</b> annotates all slices of the project at once (one marker step and one
 model, so a name means the same cells in every slice), <b>Run PCA + UMAP</b> makes one embedding of all slices
 (<b>Harmony</b> removes the differences between slices), and <b>Run niches</b> finds niches shared by all slices. The
@@ -3005,8 +3006,19 @@ async function showAbout() {
     ["Agent connection", cc.seen ? `<span class="${cc.running ? "ok" : ""}">last used the tools ${esc(cc.last)}</span>` + (cc.running ? " (still open)" : " (closed since)") : `<span class="bad">not yet</span>: click Ask Agent and ask something`],
     ["Agent workspace", esc(d.claude_workspace)],
     ["Libraries", Object.entries(d.libraries).map(([k, v]) => `${k} ${v || "–"}`).join(" · ")]];
+  const gb = (b) => `${(b / 1e9).toFixed(b < 1e8 ? 2 : 1)} GB`;
+  const cache = await api("/api/cache").catch(() => null);
+  if (cache) rows.splice(5, 0, ["Cache", `<span id="hpCacheUse">${gb(cache.bytes)}</span> of at most <input type="number" id="hpCacheGb" min="0.5" step="0.5" value="${cache.limit_gb}" style="width:64px"> GB
+      <button id="hpCacheSet">Set</button> <button id="hpCacheClear">Clear cache</button>
+      <div class="hint">Files made again when needed: figures, exports, the expression model of earlier versions, converted R files; the oldest go first past the limit.` +
+      (cache.trash_bytes ? ` The trash holds ${gb(cache.trash_bytes)} more (removed samples and annotations; empty <code>trash/</code> in the data folder by hand).` : "") + "</div>"]);
   $("hpBody").innerHTML = `<dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>
     <button id="hpCopy">Copy for a bug report</button>`;
+  const cacheDo = async (body) => {
+    try { const r = await post("/api/cache", body); $("hpCacheUse").textContent = gb(r.bytes); toast(r.deleted ? `Freed ${gb(r.freed_bytes)} (${r.deleted} files)` : "Nothing to free", 4000); }
+    catch (e) { toast(e.message, 6000); }
+  };
+  if (cache) { $("hpCacheSet").onclick = () => cacheDo({ limit_gb: +$("hpCacheGb").value }); $("hpCacheClear").onclick = () => cacheDo({ clear: true }); }
   $("hpCopy").onclick = () => { navigator.clipboard.writeText(JSON.stringify(d, null, 1)).then(() => toast("Copied")).catch(() => toast("Could not copy")); };
 }
 function showHelp(tab) {
@@ -3506,7 +3518,6 @@ function sliceNav() {
   const i = p.samples.indexOf(st.sample.sample_id);
   $("slPrev").disabled = i <= 0; $("slNext").disabled = i >= p.samples.length - 1;
   $("slPos").textContent = `Slice ${i + 1} of ${p.samples.length}`;
-  $("slGallery").title = `All ${p.samples.length} slices of project ${p.name} side by side`;
   $("eHarmonyWrap").hidden = false;
 }
 async function gotoSlice(id) {
@@ -3641,7 +3652,6 @@ async function drawThumb(c, s, mode, withImage) {  // the sample's cells in the 
   lc.putImageData(id, 0, 0); ctx.drawImage(lay, 0, 0);
   return { items, note };
 }
-$("slGallery").onclick = () => openGallery(false);
 $("allSamples").onclick = () => openGallery(true);
 // ---------------- Compare: DE genes, top genes per group, composition (one slice or all slices pooled) ----------------
 const AN = { opts: null, key: "", last: null, req: null, view: "", by: {}, n: { de: 20, markers: 5, run: 20, compare: 20, circle: 40 } };
@@ -3903,12 +3913,6 @@ $("anAsk").onclick = async () => {
     else if (r.claude_code) toast(r.claude_code.reused ? "Asked the agent; its answer appears in Claude Code" : "The agent is opening to look at this result", 5000);
     else toast("Open the agent first (Ask Agent)", 5000);
   } catch (e) { toast(e.message, 6000); }
-};
-$("slCompare").onclick = async () => {  // the Data tab's shortcut: the composition of every slice
-  $("aScope").value = "project"; syncSeg("aScope"); $("aKind").value = "composition"; syncSeg("aKind"); syncAnKind();
-  showTab("compare"); await loadAnOptions(true);
-  $("aRows").value = "slice"; $("aCols").value = st.mode === "niche" ? "niche" : "lineage"; $("aWBy").value = ""; anWithin();
-  $("aRun").click();
 };
 syncAnKind();
 // ---------------- Signaling: cell-cell communication between groups of neighboring cells ----------------

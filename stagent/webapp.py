@@ -1770,6 +1770,21 @@ async def api_proposal_decide(req: Request):
     return _json(rec)
 
 
+async def api_cache(req: Request):
+    """GET: the caches' size and limit. POST {limit_gb}: a new limit (pruned at once); {clear: true}: delete them."""
+    from . import cachemgr
+    if req.method == "POST":
+        b = await req.json()
+        try:
+            if b.get("limit_gb") is not None:
+                cachemgr.set_limit_gb(b["limit_gb"])
+            n, freed = await asyncio.to_thread(cachemgr.prune, None, bool(b.get("clear")))
+        except (ValueError, TypeError) as e:
+            return _json({"error": str(e)}, 400)
+        return _json(await asyncio.to_thread(cachemgr.usage) | {"deleted": n, "freed_bytes": freed})
+    return _json(await asyncio.to_thread(cachemgr.usage))
+
+
 def _filter_ids(sample):
     """The samples a filter acts on: all slices of the sample's project (one gene panel), else the sample."""
     pid = projects.project_of(sample)
@@ -2288,6 +2303,8 @@ def build_app(port):
 
     @contextlib.asynccontextmanager
     async def lifespan(app):
+        from . import cachemgr
+        cachemgr.start()  # the caches stay under their limit while the app runs
         async with mcp_server.mcp.session_manager.run():
             yield
 
@@ -2366,6 +2383,7 @@ def build_app(port):
         Route("/api/sample/{sample}/rename", api_sample_rename, methods=["POST"]),
         Route("/api/sample/{sample}/qc", api_sample_qc),
         Route("/api/proposals", api_proposals),
+        Route("/api/cache", api_cache, methods=["GET", "POST"]),
         Route("/api/s/{sid}/results", api_results),
         Route("/api/s/{sid}/bundle", api_bundle_save, methods=["POST"]),
         Route("/api/bundle/{key}", api_bundle_get),

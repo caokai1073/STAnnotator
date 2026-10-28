@@ -52,8 +52,8 @@ mouse, …). Images: one file for all slices, one file per slice whose name hold
 `..._147328_HE.ome.tif`; choose them together), or a table (CSV/TSV: section, image path); a registration file has
 one row per section. Without an image, the cells are drawn on a blank background wherever their coordinates are
 (negative ones too). In the app, **◀ ▶** (or `[` `]`) step through the slices and keep what is shown (Color by, legend filters, hidden H&E, the UMAP
-window and, on a UMAP of all slices, its zoom and the cells selected on it), **Slices…** shows them side by side and
-**Compare…** opens the **Compare** tab on the composition of every slice.
+window and, on a UMAP of all slices, its zoom and the cells selected on it); **Overview of all samples…** shows them
+side by side and the **Compare** tab compares them (all slices, by slice).
 
 With **all slices together** ticked, **Annotate** pools the slices (one marker step and one model; each slice gets its
 own session), **Run PCA + UMAP** makes one embedding of all slices (with **Harmony** on the PCs by slice, optional) and
@@ -162,8 +162,7 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
    the app shows (a slice: its name in the project, and the project's name); the id, files and annotations stay.
    **Overview of all samples…** (Data tab) shows every sample side by side, each over its image (the **image** box)
    and colored the same way: cell type, lineage, Leiden clusters, niche or region (from the annotation open, else
-   each sample's latest one), with one legend for all; click a sample to open it. **Slices…** does the same for the
-   slices of a project. **Remove sample…** (bottom of the toolbar) removes only the open sample: its cells,
+   each sample's latest one), with one legend for all; click a sample to open it. **Remove sample** (bottom of the toolbar) removes only the open sample: its cells,
    annotations with their chats, regions, niches and PCA / UMAP go to the data folder's `trash/`, a project keeps its
    other slices, and the image and source files stay where they are.
    **Save…** under Annotation (Data tab) writes the open annotation into one file (`.stannot`): every version with its
@@ -222,8 +221,12 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
    annotations made with an earlier app version can differ. UMAP coordinates differ slightly (all cores).
 6. **Reset** removes every annotation and chat of the selected sample (moved to `<data folder>/trash/`); in a project,
    of this slice or of all slices, and optionally the PCA / UMAP and Leiden clusters too (they are computed from the
-   expression alone and stay otherwise). **Compare…** lists a slice without results as "no annotation".
-   **Remove all…** (next to Import, desktop app) deletes every sample with all its annotations and chats for good,
+   expression alone and stay otherwise).
+   The caches of the data folder (figures, exports, the expression model of earlier versions, saved files waiting
+   for their download, converted R files, alignment figures: all made again when needed) stay under a limit, 5 GB
+   by default: past it the oldest go first (checked every 10 minutes). About shows their size, sets the limit and
+   clears them; the trash is not a cache and is emptied by hand.
+   **Remove all** (bottom of the toolbar, desktop app) deletes every sample with all its annotations and chats for good,
    to import from scratch (it cannot be undone); marker lists stay.
 7. **Markers…** edits, checks, saves and loads marker lists (saved lists go to `<data folder>/marker_lists/`).
 8. **Agent Review** (the bar on the map, with **Undo**, **Ask Agent** and **Report**) asks which part of the analysis
