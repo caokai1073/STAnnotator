@@ -3760,14 +3760,16 @@ $("glSave").onclick = () => {  // the tiles as shown, their names and the legend
   const mode = $("glMode").selectedOptions[0].textContent, sel = GL_SCOPE.sel;
   let entries = [...$("glLegend").querySelectorAll("label")].map((l) => ({ name: l.textContent, color: l.querySelector("i").style.background, on: l.querySelector("input").checked }));
   if (sel.size) entries = entries.filter((e) => e.on).concat([{ name: "other cells", color: "rgb(205,205,205)" }]);
-  const out = [], lg = []; let lx = 20, ly = 44;
-  entries.forEach((e) => {  // the legend, wrapped to the figure's width
-    const w = 18 + e.name.length * 5.6 + 12;
-    if (lx + w > W - 20) { lx = 20; ly += 15; }
-    lg.push(`<circle cx="${lx + 5}" cy="${ly - 3.5}" r="4" fill="${e.color}"/><text x="${lx + 13}" y="${ly}" font-size="10">${x(e.name)}</text>`);
-    lx += w;
+  // the legend: aligned columns as wide as the longest entry, filled top to bottom (largest groups first)
+  const out = [], lg = [], colW = Math.min(W - 40, 22 + Math.max(...entries.map((e) => e.name.length), 4) * 5.4), rowH = 15;
+  const nCol = Math.max(1, Math.floor((W - 40 + 12) / (colW + 12))), nRow = Math.ceil(entries.length / nCol);
+  entries.forEach((e, i) => {
+    const lx = 20 + Math.floor(i / nRow) * (colW + 12), ly = 46 + (i % nRow) * rowH;
+    const name = e.name.length > (colW - 22) / 5.4 ? e.name.slice(0, Math.floor((colW - 22) / 5.4) - 1) + "…" : e.name;
+    lg.push(`<circle cx="${lx + 5}" cy="${ly - 3.5}" r="4.5" fill="${e.color}"/><text x="${lx + 15}" y="${ly}" font-size="10">${x(name)}</text>`);
   });
-  const top = (entries.length ? ly + 16 : 34), rows = Math.ceil(n / cols), H = top + rows * (th + cap + gap) + 4;
+  const ly = 46 + (nRow - 1) * rowH;
+  const top = (entries.length ? ly + 18 : 34), rows = Math.ceil(n / cols), H = top + rows * (th + cap + gap) + 4;
   out.push(`<text x="20" y="22" font-size="14" font-weight="600">${x($("glTitle").textContent)} · colored by ${x(mode)}${sel.size ? ` (only ${x([...sel].join(", "))})` : ""}</text>`, ...lg);
   tiles.forEach((t, i) => {
     const cx = 20 + (i % cols) * (tw + gap), cy = top + Math.floor(i / cols) * (th + cap + gap);
