@@ -335,7 +335,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .frow > span:first-child { font-size: 12.5px; color: var(--muted); }
 .frow small.opt { display: block; font-size: 10.5px; opacity: .8; }
 .frow b.req { color: var(--warn); font-weight: 600; }
-.pickpair { display: flex; gap: 6px; }
+#imDlg textarea { resize: none; overflow: hidden; }  /* grows with what is entered (autoGrow) */
 .frow input[type=text], .frow textarea, .frow select { width: 100%; min-width: 0; }
 .frow textarea { font: 12px ui-monospace, Menlo, monospace; resize: vertical; }
 .imkind { display: flex; gap: 16px; margin-bottom: 6px; }
@@ -702,22 +702,22 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <label title="AnnData (.h5ad), or an R file (.rds / .rda) with a Seurat or SpatialExperiment object"><input type="radio" name="imKind" value="h5ad"> h5ad / RDS</label>
     </div>
     <div id="imF" hidden>
-      <div class="frow"><span>Files or folder <b class="req" title="required">*</b></span><textarea id="imFFiles" class="xin" rows="2" wrap="off"></textarea>
-        <span class="pickpair"><button data-pick="flat" data-multi="1" data-target="imFFiles" data-append="1">Files…</button><button data-pick="folder" data-multi="1" data-target="imFFiles" data-append="1">Folder…</button></span></div>
+      <div class="frow"><span>Counts <b class="req" title="required">*</b></span><textarea id="imFCounts" class="fin" rows="1"></textarea><button data-pick="flat" data-target="imFCounts">Choose…</button></div>
+      <div class="frow"><span>Cell metadata <b class="req" title="required">*</b></span><textarea id="imFCells" class="fin" rows="1"></textarea><button data-pick="flat" data-target="imFCells">Choose…</button></div>
       <div class="hint" id="imFhelp" style="margin-left:138px"></div>
       <div class="hint" id="imFinfo" style="margin-left:138px;white-space:pre-line"></div>
     </div>
     <div id="imX">
-      <div class="frow"><span>Cells <b class="req" title="required">*</b></span><textarea id="imXCells" class="xin" rows="1" wrap="off" placeholder="cells.parquet (or cells.csv.gz)"></textarea><button data-pick="xcells" data-multi="1" data-target="imXCells">Choose…</button></div>
-      <div class="frow"><span>Counts <b class="req" title="required">*</b></span><textarea id="imXCounts" class="xin" rows="1" wrap="off" placeholder="cell_feature_matrix.h5 (or matrix.mtx.gz, barcodes.tsv.gz and features.tsv.gz)"></textarea><button data-pick="xcounts" data-multi="1" data-target="imXCounts">Choose…</button></div>
-      <div class="frow"><span>Experiment<small class="opt">optional</small></span><textarea id="imXExp" class="xin" rows="1" wrap="off" placeholder="experiment.xenium: pixel size (else 0.2125 µm), for Xenium Explorer alignments"></textarea><button data-pick="xexp" data-multi="1" data-target="imXExp">Choose…</button></div>
-      <div class="frow"><span>DAPI image<small class="opt">optional</small></span><textarea id="imXDapi" class="xin" rows="1" wrap="off" placeholder="morphology_focus/ch0000_dapi.ome.tif: background without an H&amp;E (large)"></textarea><button data-pick="ximage" data-multi="1" data-target="imXDapi">Choose…</button></div>
+      <div class="frow"><span>Cells <b class="req" title="required">*</b></span><textarea id="imXCells" class="xin" rows="1" placeholder="cells.parquet (or cells.csv.gz)"></textarea><button data-pick="xcells" data-multi="1" data-target="imXCells">Choose…</button></div>
+      <div class="frow"><span>Counts <b class="req" title="required">*</b></span><textarea id="imXCounts" class="xin" rows="1" placeholder="cell_feature_matrix.h5 (or matrix.mtx.gz, barcodes.tsv.gz and features.tsv.gz)"></textarea><button data-pick="xcounts" data-multi="1" data-target="imXCounts">Choose…</button></div>
+      <div class="frow"><span>Experiment<small class="opt">optional</small></span><textarea id="imXExp" class="xin" rows="1" placeholder="experiment.xenium: pixel size (else 0.2125 µm), for Xenium Explorer alignments"></textarea><button data-pick="xexp" data-multi="1" data-target="imXExp">Choose…</button></div>
+      <div class="frow"><span>DAPI image<small class="opt">optional</small></span><textarea id="imXDapi" class="xin" rows="1" placeholder="morphology_focus/ch0000_dapi.ome.tif: background without an H&amp;E (large)"></textarea><button data-pick="ximage" data-multi="1" data-target="imXDapi">Choose…</button></div>
       <div class="hint" style="margin-left:138px">Several slices (a project): one file per line in each field, matched by the start of the names
         (GSM1_cells.parquet goes with GSM1_cell_feature_matrix.h5).</div>
       <div class="hint" id="imXinfo" style="margin-left:138px"></div>
     </div>
     <div id="imH" hidden>
-      <div class="frow"><span>h5ad / RDS file(s)</span><textarea id="imH5" rows="2" placeholder="one path per line (.h5ad, or .rds / .rda with a Seurat or SpatialExperiment object); several files (e.g. one per lineage) are merged"></textarea><button data-pick="h5ad" data-multi="1" data-target="imH5">Choose…</button></div>
+      <div class="frow"><span>h5ad / RDS file(s)</span><textarea id="imH5" rows="1" placeholder="one path per line (.h5ad, or .rds / .rda with a Seurat or SpatialExperiment object); several files (e.g. one per lineage) are merged"></textarea><button data-pick="h5ad" data-multi="1" data-target="imH5">Choose…</button></div>
       <div class="hint" id="imHinfo"></div>
       <div class="frow"><span>Section</span><select id="imSecCol"><option value="">the file holds one section</option></select><span></span></div>
       <div class="frow" id="imSecRow" hidden><span>Sections</span><div><label class="hint"><input type="checkbox" id="imSecAll"> all</label>
@@ -2657,37 +2657,54 @@ function openImport() {
   document.querySelectorAll("#imDlg [data-pick]").forEach((b) => (b.hidden = !native()));
   $("imStatus").textContent = !native() ? "Paste full paths (files on the computer running this viewer)."
     : st.remote ? `Files on the server ${st.remote.host}: Choose… browses them.` : "";
-  $("imDlg").showModal();
+  $("imDlg").showModal(); autoGrowAll();
 }
 const FLAT_HELP = {
-  cosmx: "The AtoMx flat files of a slide: <slide>_exprMat_file.csv and <slide>_metadata_file.csv (or their folder). Cells are fov_cellID, positions from CenterX/Y_global_px (0.12028 µm per pixel); negative and system control probes are left out. The instrument's images are not used: cells on a blank background, or on your H&E.",
-  merfish: "The MERSCOPE output of a region: cell_by_gene.csv and cell_metadata.csv (or the region's folder). Positions are center_x / center_y in µm; Blank probes are left out. The mosaic images are not used: cells on a blank background, or on your H&E.",
+  cosmx: "One slide of an AtoMx export. Cells are fov_cellID, positions from CenterX/Y_global_px (0.12028 µm per pixel); negative and system control probes are left out. The instrument's images are not used: cells on a blank background, or on your H&E.",
+  merfish: "One region of a MERSCOPE output. Positions are center_x / center_y in µm; Blank probes are left out. The mosaic images are not used: cells on a blank background, or on your H&E.",
 };
+const FLAT_PH = { cosmx: ["<slide>_exprMat_file.csv (or .csv.gz)", "<slide>_metadata_file.csv (or .csv.gz)"],
+                  merfish: ["cell_by_gene.csv", "cell_metadata.csv"] };
+const flatField = (id) => $(id).value.split("\n").map((x) => x.trim()).filter(Boolean);
 const isFlat = () => ["cosmx", "merfish"].includes(imKind());
 document.querySelectorAll("input[name=imKind]").forEach((r) => (r.onchange = () => {
   $("imX").hidden = imKind() !== "xenium"; $("imH").hidden = imKind() !== "h5ad"; $("imF").hidden = !isFlat();
+  imDefaultName("");  // the default name comes from this kind's files
   if (isFlat()) {
-    $("imFhelp").textContent = FLAT_HELP[imKind()] + " Several slides or regions: one folder (or file pair) each, one per line.";
-    $("imFFiles").placeholder = imKind() === "cosmx" ? "<slide>_exprMat_file.csv and <slide>_metadata_file.csv, or their folder" : "cell_by_gene.csv and cell_metadata.csv, or the region folder";
-    if ($("imFFiles").value.trim()) st.imFPending = inspectFlat();
+    $("imFhelp").textContent = FLAT_HELP[imKind()] + " Several slides or regions: import them one after the other.";
+    [$("imFCounts").placeholder, $("imFCells").placeholder] = FLAT_PH[imKind()];
+    if ($("imFCounts").value.trim() || $("imFCells").value.trim()) st.imFPending = inspectFlat();
   }
-  imForm(); imSections();
+  imForm(); imSections(); autoGrowAll();
 }));
-async function inspectFlat() {  // the slides / regions found in the files and folders given
-  const entries = $("imFFiles").value.split("\n").map((x) => x.trim()).filter(Boolean); st.imFSlices = null;
-  if (!entries.length) { $("imFinfo").textContent = ""; imSections(); return; }
+function flatEntries() {  // the two fields as one slice
+  const counts = flatField("imFCounts"), cells = flatField("imFCells");
+  if (counts.length > 1 || cells.length > 1) throw new Error("One file in each field: import several slides or regions one after the other");
+  if (!counts.length || !cells.length) return null;
+  return [{ fields: { counts: counts[0], cells: cells[0] } }];
+}
+async function inspectFlat() {  // what the two files hold
+  st.imFSlices = null;
+  let entries;
+  try { entries = flatEntries(); } catch (e) { $("imFinfo").textContent = e.message; imSections(); return; }
+  if (!entries) { $("imFinfo").textContent = ""; imSections(); return; }
   $("imFinfo").textContent = "checking…";
   try {
     const r = await post("/api/import/inspect", { kind: imKind(), entries });
     st.imFSlices = r.slices;
     const line = (x) => `${x.key}: ${x.n_cells.toLocaleString()} cells · ${x.n_genes.toLocaleString()} genes` +
       (x.n_controls ? ` (${x.n_controls} control probes left out)` : "") + ` · positions in ${x.positions}`;
-    $("imFinfo").textContent = (r.slices.length > 1 ? `${r.slices.length} slices:\n` : "") + r.slices.map(line).join("\n");
-    imDefaultName(baseName(r.slices.length > 1 ? r.slices[0].folder : r.slices[0].key));
+    $("imFinfo").textContent = r.slices.map(line).join("\n");
+    imDefaultName(baseName(r.slices[0].key));
   } catch (e) { $("imFinfo").textContent = e.message; }
   imSections();
 }
-$("imFFiles").onchange = () => (st.imFPending = inspectFlat());
+["imFCounts", "imFCells"].forEach((id) => ($(id).onchange = () => (st.imFPending = inspectFlat())));
+// the file fields grow with what they hold (paths wrap), so nothing scrolls inside them
+function autoGrow(t) { if (!t.offsetParent) return; t.style.height = "auto"; t.style.height = `${t.scrollHeight + 2}px`; }
+function autoGrowAll() { document.querySelectorAll("#imDlg textarea").forEach(autoGrow); }
+document.querySelectorAll("#imDlg textarea").forEach((t) => ["input", "change"].forEach((ev) => t.addEventListener(ev, () => autoGrow(t))));
+window.addEventListener("resize", () => { if ($("imDlg").open) autoGrowAll(); });
 document.querySelectorAll("#imDlg [data-pick]").forEach((b) => (b.onclick = async () => {
   const paths = await pickFiles(b.dataset.pick, !!b.dataset.multi);
   if (!paths.length) return;
@@ -2765,8 +2782,9 @@ function imForm() {  // show the fields of the chosen options; Align with Claude
   $("imImgKindRow").hidden = imgMode() !== "file" || imKind() === "xenium";  // Xenium has its own DAPI field
   if (imKind() === "xenium") $("imNewImgKind").value = "H&E";
   $("imRegRow").hidden = $("imRegSecRow").hidden = regMode() !== "file";
+  setTimeout(autoGrowAll);  // rows just shown
   $("imNoImgHint").textContent = imgMode() === "none" ? (imKind() === "xenium" ? "the DAPI image is shown when given, else a blank background" : "cells on a blank background") : "";
-  $("imNewReg").placeholder = isFlat() ? "affine CSV (a11,a12,a21,a22,tx,ty: cell µm to H&E pixels; one row per slice, named by it)"
+  $("imNewReg").placeholder = isFlat() ? "affine CSV (a11,a12,a21,a22,tx,ty): cell µm to H&E pixels"
     : "affine CSV (a11,a12,a21,a22,tx,ty) or Xenium Explorer alignment (3x3)";
   const can = imgMode() === "file" && $("imNewImg").value.trim() && regMode() === "none";
   $("imNewAlign").disabled = !can;
@@ -2845,7 +2863,7 @@ async function importSample() {  // returns true when the sample was imported
   const registration = regMode() === "file" ? $("imNewReg").value.trim() : "";
   const body = kind === "xenium"
     ? { kind, name, folders: xeniumEntries(), description: $("imDesc").value }
-    : isFlat() ? { kind, name, folders: $("imFFiles").value.split("\n").map((x) => x.trim()).filter(Boolean), description: $("imDesc").value }
+    : isFlat() ? { kind, name, folders: flatEntries() || [], description: $("imDesc").value }
     : { kind, name, h5ad: $("imH5").value.split("\n").map((s) => s.trim()).filter(Boolean),
         section_column: $("imSecCol").value, sections: $("imSecCol").value ? chosenSections() : [],
         region_column: $("imRegCol").value, description: $("imDesc").value };
@@ -2854,7 +2872,7 @@ async function importSample() {  // returns true when the sample was imported
   if (!name) { $("imStatus").textContent = "Give a name (none could be taken from the files)"; return false; }
   if (imgMode() === "file" && !images.length) { $("imStatus").textContent = "Choose the H&E file, or No H&E"; return false; }
   if (kind === "xenium" && !(st.imXSlices || []).length) { $("imStatus").textContent = "Give the cells and counts files; check the message under the fields"; return false; }
-  if (isFlat() && !(st.imFSlices || []).length) { $("imStatus").textContent = "Give the files or folder; check the message under the field"; return false; }
+  if (isFlat() && !(st.imFSlices || []).length) { $("imStatus").textContent = "Give the counts and the cell metadata file; check the message under the fields"; return false; }
   const nSlices = kind === "h5ad" ? body.sections.length : (isFlat() ? st.imFSlices : st.imXSlices).length;
   if (images.length > 1 && nSlices < 2) { $("imStatus").textContent = "One image per sample (several images are for several slices)"; return false; }
   if (regMode() === "file" && !registration) { $("imStatus").textContent = "Choose the registration file, or No registration"; return false; }

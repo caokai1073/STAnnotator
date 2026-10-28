@@ -308,9 +308,11 @@ def _d_import_cosmx_merfish(a):
     sl = importer.inspect_flat_many(a["kind"], a["paths"])["slices"]
     det = [f"{x['key']}: {x['n_cells']:,} cells, {x['n_genes']} genes ({x['n_controls']} control probes left out), "
            f"positions in {x['positions']}" for x in sl]
+    if len(sl) > 1:
+        raise ValueError(f"these paths hold {len(sl)} slides or regions: import one at a time")
     det += [f"Image: {a['he'] or 'none (cells on a blank background)'}; registration: {a['registration'] or 'none'}",
-            "Several slides / regions become a project, one sample each." if len(sl) > 1 else "Adds a sample; nothing that exists now changes."]
-    return {"title": f"Import {importer.FLAT_NAMES[a['kind']]} output as {'project' if len(sl) > 1 else 'sample'} {a['name']}",
+            "Adds a sample; nothing that exists now changes."]
+    return {"title": f"Import {importer.FLAT_NAMES[a['kind']]} output as sample {a['name']}",
             "session_id": None, "sample_id": a["name"], "details": det}
 
 
@@ -486,20 +488,19 @@ def _d_resolve_rule_suggestion(a):
 @_reviewed(_d_import_cosmx_merfish)
 def import_cosmx_merfish(kind: str, name: str, paths: list[str], he: Optional[str] = None,
                          registration: Optional[str] = None, description: str = "") -> str:
-    """Import CosMx (kind "cosmx": a slide's AtoMx flat files <slide>_exprMat_file.csv and <slide>_metadata_file.csv)
-    or MERFISH (kind "merfish": a MERSCOPE region's cell_by_gene.csv and cell_metadata.csv): paths = those files or
-    their folders (several slides / regions: a project). The instruments' own images are not used: the cells are shown
-    on a blank background, or on the H&E given with a registration file (affine CSV a11,a12,a21,a22,tx,ty from cell um
-    to H&E pixels; one row per slide for a project); an H&E without registration waits for Align with Claude."""
+    """Import one CosMx slide (kind "cosmx": its AtoMx flat files <slide>_exprMat_file.csv and
+    <slide>_metadata_file.csv) or one MERFISH region (kind "merfish": a MERSCOPE region's cell_by_gene.csv and
+    cell_metadata.csv): paths = those two files or their folder; several slides or regions are imported one after the
+    other. The instruments' own images are not used: the cells are shown on a blank background, or on the H&E given
+    with a registration file (affine CSV a11,a12,a21,a22,tx,ty from cell um to H&E pixels); an H&E without
+    registration waits for Align with Claude."""
     from . import importer
     if kind not in importer.FLAT_FILES:
         raise ValueError("kind is 'cosmx' or 'merfish'")
     log = []
     src = importer.flat_sources(kind, paths)
     if len(src) > 1:
-        p = importer.import_project(name, kind, paths, he=he, registration=registration, description=description,
-                                    progress=log.append)
-        return _j({"imported_project": p["project_id"], "samples": p["samples"], "log": log[-12:]})
+        raise ValueError(f"these paths hold {len(src)} slides or regions ({', '.join(x['key'] for x in src)}): import one at a time")
     meta = importer.import_flat(kind, name, src[0], he=he, registration=registration, description=description,
                                 progress=log.append)
     return _j({"imported": meta["sample_id"], "n_cells": meta["n_cells"], "n_genes": meta["n_genes"],

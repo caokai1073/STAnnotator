@@ -651,7 +651,17 @@ def flat_sources(kind, entries):
         r = _flat_role(kind, f.name)
         if r:
             groups.setdefault((str(f.parent), r[1]), {})[r[0]] = str(f)
+    fielded = []
     for e in entries:
+        if isinstance(e, dict) and "fields" in e:  # one slice, its files given by what they are (the import dialog)
+            f = {k: str(Path(e["fields"][k]).expanduser()) for k in ("counts", "cells") if e["fields"].get(k)}
+            for v in f.values():
+                if not Path(v).is_file():
+                    raise ValueError(f"{v}: no such file")
+            r = _flat_role(kind, Path(f.get("counts", "")).name)
+            key = r[1] if r and r[1] else Path(f["counts"]).parent.name if r else Path(f.get("counts", "x")).name.split(".")[0]
+            fielded.append({"key": key, "folder": str(Path(f.get("counts", ".")).parent), "files": f})
+            continue
         p = Path(e).expanduser()
         if p.is_dir():
             files = [c for c in sorted(p.iterdir()) if c.is_file()]
@@ -663,7 +673,7 @@ def flat_sources(kind, entries):
             add(p)
         else:
             raise ValueError(f"{p}: no such file or folder")
-    out = [{"key": prefix or Path(folder).name, "folder": folder, "files": f} for (folder, prefix), f in groups.items()]
+    out = fielded + [{"key": prefix or Path(folder).name, "folder": folder, "files": f} for (folder, prefix), f in groups.items()]
     if not out:
         raise ValueError(f"no {FLAT_NAMES[kind]} files found: an import needs {FLAT_NEEDED[kind]}")
     for x in out:
