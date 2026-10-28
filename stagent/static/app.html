@@ -110,7 +110,9 @@ header .folder { flex: 1 1 100%; min-width: 0; }
 /* the tabs: a status card, the settings (labels above aligned fields; the rarely changed ones under Advanced),
    choices as segmented buttons, switches, and one full-width main button at the bottom */
 header .pane { display: flex; flex-direction: column; gap: 12px; padding: 14px 0 12px; }
-header .progress { min-width: 0; max-width: none; }
+header .progress { min-width: 0; max-width: none; flex-direction: column; align-items: stretch; gap: 5px; }  /* the bar on its own row, the stage below */
+header .progress .pbar { flex: none; width: 100%; min-width: 0; }
+header #pstage, header #estage, header #nstage, header #sstage { white-space: normal; max-width: none; overflow-wrap: anywhere; }
 header .progress:not(.show) { display: none; }
 .fld { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .fld > span:first-child { font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
@@ -951,6 +953,7 @@ function applyHE() {
   const it = heItem(); if (it) it.setOpacity(st.heHidden ? 0 : 1);
   $("osd").classList.toggle("nohe", st.heHidden);
   $("hideHE").classList.toggle("on", st.heHidden);
+  drawNav();
 }
 function overlayUrl() {
   const q = new URLSearchParams({ size: st.dotSize.toFixed(1), r: st.he ? st.he.rev : 0 });
@@ -1008,12 +1011,16 @@ async function loadPositions(sample) {
   GL.n = buf.byteLength / 8; GL.sample = key; GL.radius = +r.headers.get("X-Radius-Px"); GL.colorKey = null; GL.colors = {};
   const gl = GL.gl; gl.bindBuffer(gl.ARRAY_BUFFER, GL.pos); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(buf), gl.STATIC_DRAW);
 }
+function uploadColors(arr) {  // the cells' colors to the GPU; the overview (navigator) draws the same
+  const gl = GL.gl; gl.bindBuffer(gl.ARRAY_BUFFER, GL.col); gl.bufferData(gl.ARRAY_BUFFER, arr, gl.STATIC_DRAW);
+  GL.curCol = arr; GL.colRev = (GL.colRev || 0) + 1;
+}
 function grayColors() {
   const key = `gray|${GL.sample}`;
   if (GL.colorKey === key) return;
   const a = new Uint8Array(GL.n * 4);
   for (let i = 0; i < GL.n; i++) { a[4 * i] = a[4 * i + 1] = a[4 * i + 2] = 120; a[4 * i + 3] = 215; }
-  const gl = GL.gl; gl.bindBuffer(gl.ARRAY_BUFFER, GL.col); gl.bufferData(gl.ARRAY_BUFFER, withSelection(a), gl.STATIC_DRAW);
+  uploadColors(withSelection(a));
   GL.colorKey = key;
 }
 async function loadColors() {
@@ -1025,11 +1032,12 @@ async function loadColors() {
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
     GL.colors = { [key]: new Uint8Array(await r.arrayBuffer()) };  // keep only the current one
   }
-  const gl = GL.gl; gl.bindBuffer(gl.ARRAY_BUFFER, GL.col); gl.bufferData(gl.ARRAY_BUFFER, withSelection(GL.colors[key]), gl.STATIC_DRAW);
+  uploadColors(withSelection(GL.colors[key]));
   GL.colorKey = key;
 }
 function drawGL() {
   if (!GL.ok) return;
+  drawNav();
   const gl = GL.gl, c = GL.canvas, dpr = window.devicePixelRatio || 1;
   const w = viewer.canvas.clientWidth, h = viewer.canvas.clientHeight;
   if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
@@ -1068,6 +1076,51 @@ async function refreshOverlay() {
   viewer.addTiledImage({ tileSource: tileSource(overlayUrl()), opacity: st.opacity, index: 1, replace: n > 1 });
 }
 try { initGL(); } catch (e) { GL.ok = false; console.warn("WebGL unavailable, using overlay tiles:", e); }
+
+// ---------------- the overview (navigator, bottom right): the image as shown, the cells as colored on the map, the regions ----------------
+const NAV = { sig: null, regions: null };
+function drawNav() {
+  const nav = viewer.navigator, it = nav && nav.world.getItemAt(0);
+  if (!it || !nav.drawer || !st.he) return;
+  let c = $("navcells");
+  if (!c) {
+    c = document.createElement("canvas"); c.id = "navcells";
+    c.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none";
+    nav.canvas.insertBefore(c, nav.drawer.canvas.nextSibling);  // above the image, below the box of the view
+  }
+  it.setOpacity(st.heHidden ? 0 : 1);
+  const dpr = window.devicePixelRatio || 1, w = nav.canvas.clientWidth, h = nav.canvas.clientHeight;
+  const a = it.imageToViewerElementCoordinates(new OpenSeadragon.Point(0, 0));
+  const b = it.imageToViewerElementCoordinates(new OpenSeadragon.Point(st.he.width, st.he.height));
+  const cells = GL.ok && !st.hidden && GL.curCol && GL.posArr && st.sample && GL.sample === glKey(st.sample.sample_id) &&
+                (st.sid || (GL.colorKey || "").startsWith("gray|"));
+  const outlines = st.regions && $("outlines").checked ? st.regions.polygons : [];
+  const sig = [w, h, dpr, a.x, a.y, b.x, b.y, cells && GL.colRev, cells && GL.sample, st.opacity, st.heHidden, outlines.length].join("|");
+  if (sig === NAV.sig && NAV.regions === st.regions) return;
+  NAV.sig = sig; NAV.regions = st.regions;
+  c.width = Math.max(1, Math.round(w * dpr)); c.height = Math.max(1, Math.round(h * dpr));
+  const ctx = c.getContext("2d"), W = c.width, H = c.height;
+  ctx.clearRect(0, 0, W, H);
+  const kx = ((b.x - a.x) / st.he.width) * dpr, ky = ((b.y - a.y) / st.he.height) * dpr, ox = a.x * dpr, oy = a.y * dpr;
+  if (cells) {  // one device pixel per cell, in its map color
+    const img = ctx.createImageData(W, H), d = img.data, P = GL.posArr, C = GL.curCol, op = st.opacity;
+    for (let i = 0; i < GL.n; i++) {
+      const al = C[4 * i + 3]; if (!al) continue;
+      const x = (ox + P[2 * i] * kx) | 0, y = (oy + P[2 * i + 1] * ky) | 0;
+      if (x < 0 || y < 0 || x >= W || y >= H) continue;
+      const j = 4 * (y * W + x);
+      d[j] = C[4 * i]; d[j + 1] = C[4 * i + 1]; d[j + 2] = C[4 * i + 2]; d[j + 3] = Math.round(al * op);
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+  ctx.lineWidth = 1.2 * dpr; ctx.lineJoin = "round";
+  outlines.forEach((p) => {
+    ctx.beginPath();
+    p.polygon.forEach(([x, y], i) => (i ? ctx.lineTo : ctx.moveTo).call(ctx, ox + x * kx, oy + y * ky));
+    ctx.closePath(); ctx.strokeStyle = rgb(p.color); ctx.stroke();
+  });
+}
+viewer.navigator && ["open", "resize", "update-viewport"].forEach((ev) => viewer.navigator.addHandler(ev, () => drawNav()));
 
 // ---------------- samples and annotation ----------------
 async function loadSamples(select, project) {
@@ -1703,7 +1756,9 @@ async function loadLegend() {
   });
 }
 $("lgall").onclick = () => { filt().clear(); refreshOverlay(); loadLegend(); };
-$("lgtoggle").onclick = () => { $("legend").classList.toggle("collapsed"); $("lgtoggle").classList.toggle("flip", $("legend").classList.contains("collapsed")); };
+// the legend sits at the bottom: folding moves its header down, so the arrow points down while it is open
+$("lgtoggle").onclick = () => { $("legend").classList.toggle("collapsed"); $("lgtoggle").classList.toggle("flip", !$("legend").classList.contains("collapsed")); };
+$("lgtoggle").classList.add("flip");
 
 // ---------------- cell info on click ----------------
 function imgPointFromEvent(pos) { return heItem().viewerElementToImageCoordinates(pos); }

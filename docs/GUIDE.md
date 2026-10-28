@@ -160,7 +160,9 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
    CSV with one cell type per cell, **Annotation file…**), then click
    **Annotate** (about 1 min for 350k cells with markers, seconds with a reference). Regions start empty: you
    draw them.
-2. The result is drawn on the H&E: pan and zoom down to single cells; color by cell type, lineage, region,
+2. The result is drawn on the H&E: pan and zoom down to single cells (the overview at the bottom right shows the
+   whole sample as the map does: the image, the cells in their colors and the region outlines, with the box of the
+   current view); color by cell type, lineage, region,
    changes, conflicts, confidence or clusters, or by **gene expression…** (type any panel gene: cells are colored by
    their transcript count, 0 / 1 / 2–3 / 4–7 / 8+, and a clicked cell shows its count). Click a legend entry to show only that type; click a cell for
    its label, alternatives and region. Opacity, dot size, hide cells, hide H&E.
