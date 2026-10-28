@@ -1118,6 +1118,14 @@ def api_analysis_csv(req):
                     headers={"Content-Disposition": f'attachment; filename="{req.query_params.get("name", "analysis.csv")}"'})
 
 
+def api_communication_bubble(req):
+    t = ANALYSES.get(req.path_params["key"])
+    if t is None or "significant" not in t:
+        return _json({"error": "this result is gone: run it again"}, 404)
+    n = max(1, min(60, int(req.query_params.get("n", 20))))
+    return _json(communication.bubble(t, n))
+
+
 async def api_save_text(req: Request):
     """Desktop app: write a text file the page made to the path chosen in the Save dialog."""
     if not desktop_mode():
@@ -2012,6 +2020,7 @@ def build_app(port):
         Route("/api/analysis/run", api_analysis_run, methods=["POST"]),
         Route("/api/analysis/dots", api_analysis_dots, methods=["POST"]),
         Route("/api/analysis/{key}.csv", api_analysis_csv),
+        Route("/api/communication/{key}/bubble", api_communication_bubble),
         Route("/api/claude/analysis", api_claude_analysis, methods=["POST"]),
         Route("/api/communication/run", api_communication_run, methods=["POST"]),
         Route("/api/config", api_config),

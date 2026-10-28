@@ -277,12 +277,14 @@ by Claude show up within a few seconds.
      conservative than 100 label permutations), FDR over all tests; tested only when the ligand is detected in 10% of
      A and the receptor in 10% of B. Colocalization above 1 means the expressing cells sit together more than the
      group averages imply.
-   - Results: **Interactions** (score, specificity, colocalization, detection, neighbor pairs, FDR), a sender ×
-     receiver **Network**, **Pathways**; **show on map** colors the cells by their part in one signal: sending it (its
+   - Results: **Interactions** (score, specificity, colocalization, detection, neighbor pairs, FDR), a **Bubble plot**
+     (the strongest interactions over the sender → receiver pairs; color: score, size: FDR, hollow: not significant), a
+     sender × receiver **Network**, a **Circle plot** (arrows from sender to receiver groups as wide as their number of
+     significant interactions; the number sets how many links), **Pathways**; **Save figure…** writes a plot as SVG; **show on map** colors the cells by their part in one signal: sending it (its
      ligand × the receptor around it; blue), receiving it (its receptor × the ligand around it; red), both (purple), or
      only weakly (above / below the median of the cells with that signal); a legend entry shows one role alone. On
      SCP2927 section 147328, CCL19 → CCR7 is received in the lymphoid follicles. **Compare groups** runs it per condition, slice, region or niche (largest differences
-     first; with one slice per group the app says a slice effect cannot be told apart). Agent tools:
+     first, as a table or a bubble plot with one column per group; with one slice per group the app says a slice effect cannot be told apart). Agent tools:
      `cell_communication`, `compare_communication`, `show_communication` (the signal on the H&E). A run on 356,629
      cells takes about 10 s.
 13. **Report** shows the annotation report the agent writes (**Ask Agent to write it**): sample, method and inputs,

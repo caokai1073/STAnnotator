@@ -807,7 +807,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
   <div class="dh"><b id="anTitle">Compare</b><span id="anSeg" class="seg"></span>
     <label id="anNWrap" class="hint" hidden style="margin-left:12px;display:inline-flex;align-items:center;gap:5px"><span id="anNLabel">genes</span>
       <input type="number" id="anN" style="width:58px;height:28px"></label><span class="spacer"></span>
-    <button id="anAsk" hidden title="Ask the agent what this result may mean">Ask Agent</button><button id="anFig" hidden title="Save the dot plot as an SVG file">Save figure…</button><button id="anCsv">Save CSV…</button><button id="anClose">Close</button></div>
+    <button id="anAsk" hidden title="Ask the agent what this result may mean">Ask Agent</button><button id="anFig" hidden title="Save the figure as an SVG file">Save figure…</button><button id="anCsv">Save CSV…</button><button id="anClose">Close</button></div>
   <div class="imbody"><div class="hint" id="anSub"></div><div id="anBody"></div><div id="anLegend" class="cmplegend"></div><div class="hint" id="anNote"></div></div>
 </dialog>
 <dialog id="hpDlg" style="width:min(760px,95vw)">
@@ -2799,9 +2799,9 @@ analysis chosen in the tab.</li>
 <li><b>Signaling</b> (cell-cell communication), for this slice or all slices pooled: ligand-receptor pairs (CellChatDB v2,
 CellPhoneDB v5 and the OmniPath consensus, merged; a pair counts when all its genes are in the panel) scored on
 neighboring cells between groups (cell types by default): contact signals within 15 µm, secreted and ECM signals
-within 50 µm, weighted by distance; tested against random groups. <b>Interactions</b>, a sender × receiver
-<b>Network</b> and <b>Pathways</b>; <b>show on map</b> colors the cells that send one signal (blue), receive it (red) or
-both (purple); click a legend entry to show one role. <b>Compare groups</b> runs it per condition, slice, region or niche and lists the largest differences.</li>
+within 50 µm, weighted by distance; tested against random groups. <b>Interactions</b>, a <b>Bubble plot</b>, a sender × receiver
+<b>Network</b>, a <b>Circle plot</b> and <b>Pathways</b> (plots: <b>Save figure…</b> as SVG); <b>show on map</b> colors the cells that send one signal (blue), receive it (red) or
+both (purple); click a legend entry to show one role. <b>Compare groups</b> runs it per condition, slice, region or niche and lists the largest differences (table or bubble plot).</li>
 <li><b>Undo</b> takes back your last action: one region you drew, an outline of the agent added as a region (all its pieces), one prior, or everything the agent changed for one request (its changes less than 90 s apart); click again to go further back. <b>Export…</b>: the cell table (CSV, with niche, Leiden and UMAP when
 computed), the registration in use (CSV), or the whole analysis as a Jupyter notebook that runs without this app
 (code with this annotation's parameters, and its results).</li>
@@ -3159,7 +3159,8 @@ async function drawThumb(c, s, mode) {
 }
 $("slGallery").onclick = () => openGallery();
 // ---------------- Compare: DE genes, top genes per group, composition (one slice or all slices pooled) ----------------
-const AN = { opts: null, key: "", last: null, req: null, view: "", by: {}, n: { de: 20, markers: 5 } };
+const AN = { opts: null, key: "", last: null, req: null, view: "", by: {}, n: { de: 20, markers: 5, run: 20, compare: 20, circle: 40 } };
+const AN_N = { de: [5, 60], markers: [1, 15], run: [5, 60], compare: [5, 80], circle: [5, 300] };  // the dialog's number: least, most
 const AN_LABEL = { "cell type": "cell type", leiden: "Leiden cluster", selection: "UMAP selection" };
 const anLabel = (g) => AN_LABEL[g] || g;
 const AN_LEGEND = { "cell type": "type", lineage: "lineage", niche: "niche", leiden: "leiden", region: "region" };
@@ -3272,6 +3273,14 @@ function anTable(head, rows) {
     cells.forEach((c) => { const td = document.createElement("td"); if (c instanceof Node) td.append(c); else td.textContent = c; r.append(td); }); tb.append(r); });
   return tb;
 }
+async function groupColors(by, keys) {  // the map's colors of a grouping's groups, else the palette
+  const colors = {};
+  if (st.sid && AN_LEGEND[by]) {
+    try { (await api(`/api/s/${st.sid}/legend?version=${st.version}&mode=${AN_LEGEND[by]}`)).items.forEach((it) => (colors[it.key] = rgb(it.color))); } catch (e) {}
+  }
+  keys.forEach((k, i) => { if (!colors[k]) colors[k] = PALETTE[i % PALETTE.length]; });
+  return colors;
+}
 async function showAnalysis() {
   const r = AN.last, q = AN.req; if (!r) return;
   $("anNWrap").hidden = $("anFig").hidden = true; AN.svg = null;
@@ -3344,11 +3353,7 @@ async function showAnalysis() {
     $("anSub").textContent = `${where} · ${r.n_cells.toLocaleString()} cells`;
     const view = AN.view || "shares";
     anSeg([["shares", "Shares"], ["enrichment", "Enrichment"]], view, (v) => { AN.view = v; showAnalysis(); });
-    const colors = {};
-    if (st.sid && AN_LEGEND[r.cols]) {
-      try { (await api(`/api/s/${st.sid}/legend?version=${st.version}&mode=${AN_LEGEND[r.cols]}`)).items.forEach((it) => (colors[it.key] = rgb(it.color))); } catch (e) {}
-    }
-    r.keys.forEach((k, i) => { if (!colors[k]) colors[k] = PALETTE[i % PALETTE.length]; });
+    const colors = await groupColors(r.cols, r.keys);
     const box = $("anBody");
     if (view === "enrichment") {
       const cell = (v) => { const td = document.createElement("span"); if (v === undefined) return "";
@@ -3487,7 +3492,7 @@ function showSignal(r, q) {  // the dialog's views of a communication result
   const where = [r.scope === "project" ? "all slices pooled" : "this slice", within && `only ${within}`].filter(Boolean).join(" · ");
   const box = $("anBody");
   const mapLinks = (x) => { const s = document.createElement("span");
-    const [lig, rec] = [x.ligand || x.interaction.split(" → ")[0].replace(/\+/g, "_"), x.receptor || x.interaction.split(" → ")[1].replace(/\+/g, "_")];
+    const [lig, rec] = lrGenes(x);
     const a = Object.assign(document.createElement("span"), { className: "gene", textContent: "show on map",
       title: "Color the map by the cells that send this signal (blue), receive it (red) or both (purple)" });
     a.onclick = () => colorBySignal(lig, rec, "both");
@@ -3495,7 +3500,20 @@ function showSignal(r, q) {  // the dialog's views of a communication result
   if (q.kind === "compare") {
     $("anTitle").textContent = `Communication across ${anLabel(r.split)}`;
     $("anSub").textContent = `${anLabel(r.by)} · ${where} · significant: ` + Object.entries(r.n_significant).map(([k, v]) => `${k} ${v}`).join(", ");
-    anSeg([], "", null);
+    const view = AN.view || "table";
+    anSeg([["table", "Table"], ["bubbles", "Bubble plot"]], view, (v) => { AN.view = v; showAnalysis(); });
+    if (view === "bubbles") {
+      const N = AN.n.compare, list = r.interactions.slice(0, N);
+      $("anNWrap").hidden = false; $("anNLabel").textContent = "interactions"; Object.assign($("anN"), { min: 5, max: 80, value: N });
+      const cells = [];
+      list.forEach((x, i) => r.values.forEach((v, j) => { const s = x[`score:${v}`];
+        if (s > 0) cells.push({ i, j, v: s, on: x[`significant:${v}`], title: `${x.interaction}, ${x.sender} → ${x.receiver} in ${v}: score ${fmt(s, 3)}${x[`significant:${v}`] ? "" : " (not significant)"}` }); }));
+      sgFigure(bubbleSVG({ rows: list.map((x) => `${x.interaction} · ${x.sender} → ${x.receiver}`), lr: list, cols: r.values.map(String), cells,
+        colTitle: anLabel(r.split) }));
+      $("anNote").textContent = `The ${list.length} interactions that differ most between the groups (highest minus lowest score), each in every group. ` +
+        "Click an interaction to see it on the map. " + r.note;
+      return;
+    }
     const ratio = Object.keys(r.interactions[0] || {}).find((k) => k.startsWith("log2("));
     const head = ["Interaction", "Sender → receiver", ...r.values.map((v) => `Score ${v}`)];
     if (ratio) head.push(ratio.replace("log2", "log<sub>2</sub>"));
@@ -3509,7 +3527,39 @@ function showSignal(r, q) {  // the dialog's views of a communication result
   $("anSub").textContent = `${where} · ${r.n_pairs_panel} of ${r.n_pairs_resource} ligand-receptor pairs in the panel · ` +
     `${r.n_significant} significant of ${r.n_tested} tested · contact ${r.contact_um} µm, secreted ${r.secreted_um} µm`;
   const view = AN.view || "interactions";
-  anSeg([["interactions", "Interactions"], ["network", "Network"], ["pathways", "Pathways"]], view, (v) => { AN.view = v; showAnalysis(); });
+  anSeg([["interactions", "Interactions"], ["bubbles", "Bubble plot"], ["network", "Network"], ["circle", "Circle plot"], ["pathways", "Pathways"]],
+    view, (v) => { AN.view = v; showAnalysis(); });
+  if (view === "bubbles") {
+    const N = AN.n.run;
+    $("anNWrap").hidden = false; $("anNLabel").textContent = "interactions"; Object.assign($("anN"), { min: 5, max: 60, value: N });
+    box.textContent = "Drawing…";
+    api(`/api/communication/${r.id}/bubble?n=${N}`).then((b) => {
+      if (AN.last !== r || AN.view !== "bubbles" || AN.n.run !== N) return;  // another view or result meanwhile
+      if (!b.rows.length) { box.textContent = "No significant interactions."; return; }
+      const lfdr = (f) => Math.min(1, -Math.log10(Math.max(f, 1e-10)) / 10);
+      sgFigure(bubbleSVG({ rows: b.rows, lr: b.rows.map((x) => ({ interaction: x })), cols: b.cols.map(([a, c]) => `${a} → ${c}`),
+        cells: b.cells.map(([i, j, v, f, on]) => ({ i, j, v, on, size: lfdr(f),
+          title: `${b.rows[i]}, ${b.cols[j][0]} → ${b.cols[j][1]}: score ${fmt(v, 3)}, FDR ${f ? f.toExponential(1) : "< 1e-300"}${on ? "" : " (not significant)"}` })),
+        colTitle: "sender → receiver", sizes: [[lfdr(0.05), "0.05"], [lfdr(1e-3), "1e-3"], [lfdr(1e-6), "1e-6"], [1, "≤ 1e-10"]] }));
+      $("anNote").textContent = `The ${b.rows.length} of ${b.n_interactions} significant interactions with the highest score, over the ` +
+        `${b.cols.length} of ${b.n_pairs} sender → receiver pairs where they are strongest. Click an interaction to see it on the map. ` + r.note;
+    }).catch((e) => { box.textContent = e.message; });
+    return;
+  }
+  if (view === "circle") {
+    const N = AN.n.circle;
+    $("anNWrap").hidden = false; $("anNLabel").textContent = "strongest links"; Object.assign($("anN"), { min: 5, max: 300, value: N });
+    box.textContent = "Drawing…";
+    groupColors(r.by, r.groups).then((colors) => {
+      if (AN.last !== r || AN.view !== "circle" || AN.n.circle !== N) return;
+      const c = circleSVG(r.groups, r.group_sizes, r.network.count, r.network.score, colors, N);
+      sgFigure(c.svg);
+      $("anNote").textContent = `The ${c.links} strongest of ${c.all} sender → receiver links (by number of significant interactions; the number above sets how many), ` +
+        `as wide as that number; hover for the summed score. Circles as large as the groups; a group's signals to its own cells are in its circle's tooltip.` +
+        (c.cut ? ` The ${c.shown} most connected of ${r.groups.length} groups.` : "");
+    });
+    return;
+  }
   if (view === "interactions") {
     box.append(r.interactions.length ? anTable(["Interaction", "Sender → receiver", "Pathway", "Score", "Specificity", "Coloc.", "% ligand", "% receptor", "Pairs", "FDR", "Map"],
       r.interactions.map((x) => [x.interaction, `${x.sender} → ${x.receiver}`, x.pathway || "", fmt(x.score, 3), fmt(x.specificity, 1),
@@ -3530,6 +3580,86 @@ function showSignal(r, q) {  // the dialog's views of a communication result
     box.append(anTable(["Pathway", "Interactions", "Summed score", "Main sender → receiver"], r.pathways.map((p) => [p.pathway, p.n, fmt(p.score, 2), p.top.join(", ")])));
     $("anNote").textContent = "Pathways from CellChatDB / CellPhoneDB; \"other\" holds pairs without one.";
   }
+}
+function sgFigure(svg) {  // show a signaling figure in the dialog and keep it for Save figure
+  const box = $("anBody");
+  box.innerHTML = svg; $("anFig").hidden = false; AN.svg = svg.replace('fill="currentColor"', 'fill="#222"');
+  box.querySelectorAll("[data-lr]").forEach((e) => (e.onclick = () => { const [l, rr] = e.dataset.lr.split("|"); colorBySignal(l, rr, "both"); }));
+}
+const lrGenes = (x) => [x.ligand || x.interaction.split(" → ")[0].replace(/\+/g, "_"), x.receptor || x.interaction.split(" → ")[1].replace(/\+/g, "_")];
+function bubbleSVG(b) {  // rows (interactions) over columns; cells {i, j, v: score, on: significant, size: 0..1 (fixed if absent), title}
+  const C = 18, R = 7.5, nR = b.rows.length, nC = b.cols.length;
+  const cut = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+  const rl = b.rows.map((s) => cut(s, 56)), cl = b.cols.map((s) => cut(s, 40));
+  const left = Math.min(400, 16 + 7 * Math.max(...rl.map((s) => s.length), 4)), mc = Math.max(...cl.map((s) => s.length), 4);
+  const top = Math.round(24 + 5.2 * mc), legendH = 70, W = Math.max(left + nC * C + Math.round(3.8 * mc) + 20, left + 420), H = top + nR * C + legendH;
+  const vs = b.cells.map((c) => c.v), lo = Math.min(...vs), hi = Math.max(...vs);
+  const col = (v) => viridis(hi > lo ? (v - lo) / (hi - lo) : 0.5);
+  const out = [`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="currentColor">`];
+  if (b.colTitle) out.push(`<text x="${left}" y="12" font-size="10" font-weight="600">${svgEsc(b.colTitle)}</text>`);
+  cl.forEach((s, j) => { const x = left + j * C + C / 2;
+    out.push(`<text x="${x}" y="${top - 6}" transform="rotate(-55 ${x} ${top - 6})"><title>${svgEsc(b.cols[j])}</title>${svgEsc(s)}</text>`); });
+  rl.forEach((s, i) => { const y = top + i * C + C / 2, [l, r] = lrGenes(b.lr[i]);
+    if (i % 2) out.push(`<rect x="${left}" y="${top + i * C}" width="${nC * C}" height="${C}" fill="#888" fill-opacity="0.07"/>`);
+    out.push(`<text x="${left - 6}" y="${y + 4}" text-anchor="end" data-lr="${svgEsc(l)}|${svgEsc(r)}" style="cursor:pointer"><title>${svgEsc(b.rows[i])}: show on the map</title>${svgEsc(s)}</text>`); });
+  b.cells.forEach((c) => {
+    const r = c.size === undefined ? R * 0.8 : 2 + (R - 2) * c.size, x = left + c.j * C + C / 2, y = top + c.i * C + C / 2;
+    out.push(c.on ? `<circle cx="${x}" cy="${y}" r="${r.toFixed(2)}" fill="${col(c.v)}"><title>${svgEsc(c.title)}</title></circle>`
+      : `<circle cx="${x}" cy="${y}" r="${r.toFixed(2)}" fill="none" stroke="${col(c.v)}" stroke-width="1.3"><title>${svgEsc(c.title)}</title></circle>`);
+  });
+  const ly = top + nR * C + 24, lx = left;
+  let x0 = lx;
+  if (b.sizes) {
+    out.push(`<text x="${lx}" y="${ly - 6}" font-size="10">FDR</text>`);
+    b.sizes.forEach(([s, label], k) => { out.push(`<circle cx="${lx + 8 + k * 46}" cy="${ly + 10}" r="${(2 + (R - 2) * s).toFixed(2)}" fill="#888"/>`);
+      out.push(`<text x="${lx + 18 + k * 46}" y="${ly + 14}" font-size="9">${svgEsc(label)}</text>`); });
+    x0 = lx + 8 + b.sizes.length * 46 + 16;
+  }
+  out.push(`<text x="${x0}" y="${ly - 6}" font-size="10">score</text>`);
+  for (let k = 0; k < 40; k++) out.push(`<rect x="${x0 + k * 3}" y="${ly + 4}" width="3.2" height="10" fill="${viridis(k / 39)}"/>`);
+  out.push(`<text x="${x0}" y="${ly + 26}" font-size="9">${hi.toFixed(2) === lo.toFixed(2) ? "" : lo.toFixed(2)}</text><text x="${x0 + 120}" y="${ly + 26}" font-size="9" text-anchor="end">${hi.toFixed(2)}</text>`);
+  const hx = x0 + 150;
+  out.push(`<circle cx="${hx + 6}" cy="${ly + 9}" r="5" fill="none" stroke="#888" stroke-width="1.3"/><text x="${hx + 16}" y="${ly + 13}" font-size="9">not significant</text>`);
+  out.push("</svg>");
+  return out.join("");
+}
+function circleSVG(groups, sizes, count, score, colors, maxLinks) {  // CellChat-style circle plot: arrows sender -> receiver, width by count
+  const MAXG = 30;
+  let idx = groups.map((_, i) => i);
+  const tot = idx.map((i) => count[i].reduce((a, b) => a + b, 0) + count.reduce((a, row) => a + row[i], 0));
+  if (groups.length > MAXG) idx = idx.sort((a, b) => tot[b] - tot[a]).slice(0, MAXG).sort((a, b) => a - b);
+  const W = 760, H = 580, cx = W / 2, cy = H / 2, RR = 205, n = idx.length;
+  const smax = Math.max(...idx.map((i) => sizes[i]), 1);
+  const P = idx.map((g, k) => { const a = -Math.PI / 2 + 2 * Math.PI * k / n;
+    return { g, a, x: cx + RR * Math.cos(a), y: cy + RR * Math.sin(a), r: 5 + 11 * Math.sqrt(sizes[g] / smax) }; });
+  let edges = [];
+  P.forEach((p, a) => P.forEach((q, b) => { const v = count[p.g][q.g]; if (v && a !== b) edges.push({ a, b, v, s: score[p.g][q.g] }); }));
+  const all = edges.length;
+  edges = edges.sort((x, y) => x.v - y.v || x.s - y.s).slice(-maxLinks);  // the strongest drawn last, on top
+  const mx = Math.max(1, ...edges.map((e) => e.v));
+  const out = [`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="currentColor">`];
+  const unit = (dx, dy) => { const l = Math.hypot(dx, dy) || 1; return [dx / l, dy / l]; };
+  edges.forEach((e) => {
+    const p = P[e.a], q = P[e.b], w = 0.6 + 6 * e.v / mx, c = colors[groups[p.g]];
+    const tip = `${groups[p.g]} → ${groups[q.g]}: ${e.v} interactions, summed score ${fmt(e.s, 2)}`;
+    const dx = q.x - p.x, dy = q.y - p.y, L = Math.hypot(dx, dy);
+    const mxp = (p.x + q.x) / 2 - dy / L * L * 0.18, myp = (p.y + q.y) / 2 + dx / L * L * 0.18;  // bowed to one side, so A→B and B→A part
+    const [sx, sy] = unit(mxp - p.x, myp - p.y), [ex, ey] = unit(q.x - mxp, q.y - myp);
+    const x0 = p.x + sx * (p.r + 1), y0 = p.y + sy * (p.r + 1), hl = 5 + w, x1 = q.x - ex * (q.r + 2), y1 = q.y - ey * (q.r + 2);
+    const bx = x1 - ex * hl, by = y1 - ey * hl;
+    out.push(`<g stroke-opacity="0.6" fill-opacity="0.75"><title>${svgEsc(tip)}</title>` +
+      `<path d="M${x0.toFixed(1)} ${y0.toFixed(1)} Q${mxp.toFixed(1)} ${myp.toFixed(1)} ${bx.toFixed(1)} ${by.toFixed(1)}" fill="none" stroke="${c}" stroke-width="${w.toFixed(2)}"/>` +
+      `<path d="M${x1.toFixed(1)} ${y1.toFixed(1)} L${(bx - ey * hl * 0.6).toFixed(1)} ${(by + ex * hl * 0.6).toFixed(1)} L${(bx + ey * hl * 0.6).toFixed(1)} ${(by - ex * hl * 0.6).toFixed(1)}Z" fill="${c}"/></g>`);
+  });
+  P.forEach((p) => {
+    const name = groups[p.g], label = name.length > 26 ? name.slice(0, 25) + "…" : name, ca = Math.cos(p.a), sa = Math.sin(p.a);
+    const self = count[p.g][p.g] ? `; to its own cells: ${count[p.g][p.g]} interactions, summed score ${fmt(score[p.g][p.g], 2)}` : "";
+    out.push(`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${p.r.toFixed(1)}" fill="${colors[name]}" stroke="#fff" stroke-width="1"><title>${svgEsc(name)}: ${sizes[p.g].toLocaleString()} cells${self}</title></circle>`);
+    const d = p.r + 22, tx = p.x + ca * d, ty = p.y + sa * d + 4;
+    out.push(`<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" text-anchor="${Math.abs(ca) < 0.2 ? "middle" : ca > 0 ? "start" : "end"}"><title>${svgEsc(name)}</title>${svgEsc(label)}</text>`);
+  });
+  out.push("</svg>");
+  return { svg: out.join(""), shown: n, cut: groups.length > n, links: edges.length, all };
 }
 syncSgKind();
 // ---------------- dot plot of genes over groups (DE genes, top genes per group) ----------------
@@ -3608,11 +3738,13 @@ async function saveClientText(name, text, type) {  // a file made in the page: S
 }
 $("anFig").onclick = () => {
   if (!AN.svg) return;
-  const r = AN.last, part = AN.req.kind === "de" ? `de_${r.group}_vs_${r.reference}` : `top_genes_by_${r.by}`;
-  saveClientText(`${st.sample.sample_id}_${part}_dotplot.svg`.replace(/[^A-Za-z0-9_.-]+/g, "_"), AN.svg, "image/svg+xml");
+  const r = AN.last, k = AN.req.kind;
+  const part = k === "de" ? `de_${r.group}_vs_${r.reference}_dotplot` : k === "markers" ? `top_genes_by_${r.by}_dotplot`
+    : k === "run" ? `communication_${r.by}_${AN.view}` : `communication_by_${r.split}_${AN.view}`;
+  saveClientText(`${st.sample.sample_id}_${part}.svg`.replace(/[^A-Za-z0-9_.-]+/g, "_"), AN.svg, "image/svg+xml");
 };
 $("anN").onchange = () => {  // also fires when the box loses focus: redraw only when the number changed
-  const kind = AN.req && AN.req.kind, lim = kind === "de" ? [5, 60] : [1, 15];
+  const kind = AN.req && (AN.req.kind === "run" && AN.view === "circle" ? "circle" : AN.req.kind), lim = AN_N[kind] || [1, 15];
   const n = Math.max(lim[0], Math.min(lim[1], Math.round(+$("anN").value) || lim[0]));
   $("anN").value = n;
   if (n === AN.n[kind]) return;

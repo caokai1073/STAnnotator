@@ -213,6 +213,28 @@ def run(c, by="cell type", within=None, resource="all", contact_um=CONTACT_UM, s
             "pathways": pathways, "note": NOTE, "table": t}
 
 
+def bubble(t, n=20, max_pairs=30):
+    """A bubble plot of a run's table: the n interactions with the highest significant score (rows) over the
+    sender -> receiver pairs where they are strongest (columns: each row's strongest pair, then by summed significant
+    score, up to max_pairs), with every tested score in that grid (significant or not)."""
+    sig = t[t.significant]
+    rows = list(sig.groupby("interaction").score.max().sort_values(ascending=False).head(n).index)
+    top = sig[sig.interaction.isin(rows)]
+    best = top.sort_values("score", ascending=False).drop_duplicates("interaction")  # every row's strongest pair first
+    pairs = list(dict.fromkeys([*zip(best.sender, best.receiver),
+                                *top.groupby(["sender", "receiver"]).score.sum().sort_values(ascending=False).index]))
+    pairs = sorted(pairs[:max(max_pairs, len(set(zip(best.sender, best.receiver))))], key=lambda p_: -top[
+        (top.sender == p_[0]) & (top.receiver == p_[1])].score.sum())
+    ri, ci = {r: i for i, r in enumerate(rows)}, {p_: j for j, p_ in enumerate(pairs)}
+    x = t[t.interaction.isin(rows)]
+    cells = [[ri[r.interaction], ci[(r.sender, r.receiver)], round(float(r.score), 4), float(f"{r.fdr:.2e}"), bool(r.significant)]
+             for r in x.itertuples() if (r.sender, r.receiver) in ci]
+    pw = sig.drop_duplicates("interaction").set_index("interaction").pathway
+    return {"rows": rows, "pathways": [pw.get(r, "") for r in rows], "cols": [list(p_) for p_ in pairs], "cells": cells,
+            "n_interactions": int(sig.interaction.nunique()),
+            "n_pairs": int(len(sig.groupby(["sender", "receiver"])))}
+
+
 def _records(t):
     out = []
     for r in t.itertuples():
