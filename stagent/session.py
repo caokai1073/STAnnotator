@@ -216,6 +216,14 @@ class Session:
         s._write(state)
         if carry_from:
             s._carry_over(carry_from)
+        else:  # regions that came with the sample (e.g. QuPath annotations given at import) start every annotation
+            f = config.SAMPLES / str(sample_id) / "regions.geojson"
+            if f.exists():
+                try:
+                    pieces, _ = regmod.parse_geojson(f.read_text())
+                    s.import_regions(pieces, source="the sample's GeoJSON", author="import")
+                except ValueError as e:
+                    print(f"regions of {sample_id} not applied: {e}")
         return s
 
     def _carry_over(self, sid):
@@ -751,6 +759,43 @@ class Session:
         return self._commit("add_region", msg, regions=dict(cur["regions"], ops=ops),
                             expected_parent=expected_parent or cur["version"])
 
+    def import_regions(self, pieces, source="", author=None):
+        """Regions from outlines drawn elsewhere (regions.parse_geojson: name, color, outer ring, holes; H&E level-0
+        pixels), all in one version; the cells inside an outline and outside its holes. Pieces without cells are left
+        out; their colors are taken where the user has not picked one."""
+        cur = self.state()
+        ops = list(cur["regions"].get("ops", []))
+        used, ids, n, empty, per = {o.get("id") for o in ops}, [], 0, 0, {}
+        cell_ids, px, py = self.cells.cell.to_numpy(), self.cells.px.to_numpy(), self.cells.py.to_numpy()
+        for p in pieces:
+            name = regmod.validate_name(p["name"])
+            rows = regmod.cells_in_polygon(px, py, p["outer"])
+            for h in p.get("holes", []):
+                rows = np.setdiff1d(rows, regmod.cells_in_polygon(px, py, h))
+            if not len(rows):
+                empty += 1
+                continue
+            i = 1
+            while f"R{i}" in used:
+                i += 1
+            used.add(f"R{i}"); ids.append(f"R{i}"); n += len(rows); per[name] = per.get(name, 0) + len(rows)
+            op = {"op": "polygon", "id": f"R{i}", "name": name, "polygon": p["outer"], "cells": cell_ids[rows].tolist(),
+                  "author": author, "created_at": _now()}
+            if p.get("holes"):
+                op["holes"] = p["holes"]
+            ops.append(op)
+        if not ids:
+            raise vocab.VocabError("no outline holds any cell: were they drawn on this sample's H&E, in its full-resolution "
+                                   "pixels?")
+        cols = self.region_colors()
+        for p in pieces:
+            if p.get("color") and p["name"] in per and p["name"] not in cols:
+                self.set_region_color(p["name"], p["color"]); cols[p["name"]] = p["color"]
+        msg = (f"{len(ids)} outlines{f' from {source}' if source else ''} as {len(per)} region(s): "
+               + ", ".join(f"{k} ({v} cells)" for k, v in per.items()) + (f"; {empty} without cells left out" if empty else ""))
+        v = self._commit("import_regions", msg, regions=dict(cur["regions"], ops=ops), expected_parent=cur["version"])
+        return {"new_version": v, "regions": per, "n_outlines": len(ids), "n_empty": empty, "message": msg}
+
     def edit_region(self, rid, polygon_px, author=None, message=None):
         """Replace the outline of drawn polygon rid (points moved, added or removed by the user); its cells are
         recomputed, its id and name stay, so priors on the region keep applying."""
@@ -845,7 +890,7 @@ class Session:
         """Drawn polygons and per-region cell counts of a version."""
         r = self.result(version)
         counts = pd.Series(r["region"]).value_counts().to_dict()
-        polys = [{k: o[k] for k in ("id", "name", "polygon", "author", "created_at") if k in o} | {"n_cells_drawn": len(o["cells"])}
+        polys = [{k: o[k] for k in ("id", "name", "polygon", "holes", "author", "created_at") if k in o} | {"n_cells_drawn": len(o["cells"])}
                  for o in r["state"]["regions"].get("ops", []) if o["op"] == "polygon"]
         return {"source": r["state"]["regions"].get("source", "none"), "polygons": polys,
                 "regions": [{"name": n, "n_cells": int(counts.get(n, 0))} for n in self.region_names(version)],

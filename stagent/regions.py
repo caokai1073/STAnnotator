@@ -58,6 +58,43 @@ def validate_name(name):
     return name
 
 
+def parse_geojson(text):
+    """Polygons of a GeoJSON file (e.g. QuPath annotations exported in the image's full-resolution pixels):
+    [{"name", "color" ("#rrggbb" or None), "outer": [[x, y], ...], "holes": [ring, ...]}] and the number of objects
+    left out (points, lines, detections and cells). A region's name is the object's classification, else its name.
+    QuPath writes a FeatureCollection or a plain list of features."""
+    import json
+    try:
+        d = json.loads(text)
+    except ValueError as e:
+        raise ValueError(f"not a GeoJSON file: {e}")
+    feats = d if isinstance(d, list) else d.get("features") if isinstance(d, dict) and d.get("type") == "FeatureCollection" \
+        else [d] if isinstance(d, dict) else []
+    out, skipped = [], 0
+    for i, f in enumerate(feats):
+        geom, props = (f or {}).get("geometry") or {}, (f or {}).get("properties") or {}
+        if str(props.get("objectType", "annotation")).lower() in ("detection", "cell", "tile"):
+            skipped += 1
+            continue
+        cls = props.get("classification") or {}
+        name = (cls.get("name") if isinstance(cls, dict) else cls) or props.get("name") or "annotation"
+        col = cls.get("color") if isinstance(cls, dict) else None
+        color = "#%02x%02x%02x" % tuple(int(c) for c in col[:3]) if isinstance(col, list) and len(col) >= 3 else None
+        polys = [geom["coordinates"]] if geom.get("type") == "Polygon" else geom.get("coordinates", []) \
+            if geom.get("type") == "MultiPolygon" else None
+        if not polys:
+            skipped += 1
+            continue
+        for rings in polys:
+            if rings and len(rings[0]) >= 3:
+                out.append({"name": " ".join(str(name).split())[:MAX_NAME], "color": color,
+                            "outer": [[float(x), float(y)] for x, y, *_ in rings[0]],
+                            "holes": [[[float(x), float(y)] for x, y, *_ in r] for r in rings[1:] if len(r) >= 3]})
+    if not out:
+        raise ValueError("the file has no polygons (QuPath: export the annotations as GeoJSON)")
+    return out, skipped
+
+
 def cells_in_polygon(px, py, polygon):
     from matplotlib.path import Path
     poly = np.asarray(polygon, float)

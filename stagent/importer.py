@@ -849,6 +849,30 @@ def undo_registration_fix(sample_id):
 
 
 # ---------------- adding the image and the registration later ----------------
+def attach_regions(sample_id, path):
+    """Keep a GeoJSON of outlines drawn on the sample's H&E (e.g. QuPath annotations) with the sample: every new
+    annotation of it starts with these regions. Returns the cells each region holds."""
+    from . import regions
+    text = Path(path).expanduser().read_text()
+    pieces, skipped = regions.parse_geojson(text)
+    c = pd.read_parquet(config.SAMPLES / sample_id / "cells.parquet", columns=["px", "py"])
+    px, py = c.px.to_numpy(), c.py.to_numpy()
+    per = {}
+    for p in pieces:
+        rows = regions.cells_in_polygon(px, py, p["outer"])
+        for h in p["holes"]:
+            rows = np.setdiff1d(rows, regions.cells_in_polygon(px, py, h))
+        per[p["name"]] = per.get(p["name"], 0) + len(rows)
+    if not any(per.values()):
+        raise ValueError(f"{Path(path).name}: no outline holds any cell of {sample_id}: was it drawn on this sample's "
+                         "H&E (full-resolution pixels), and is the H&E registered?")
+    (config.SAMPLES / sample_id / "regions.geojson").write_text(text)
+    m = _meta(sample_id)
+    m["regions_geojson"] = {"source": str(Path(path).expanduser().resolve()), "regions": per, "skipped": skipped}
+    json.dump(m, open(config.SAMPLES / sample_id / "meta.json", "w"), indent=1)
+    return per
+
+
 def shown_image(meta):
     """The image the sample shows, or None (none, or unloaded by the user to free memory)."""
     return None if meta.get("image_unloaded") else meta.get("he_path")

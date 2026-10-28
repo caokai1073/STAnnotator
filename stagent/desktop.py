@@ -68,7 +68,8 @@ class Api:
                      "csv": ("CSV (*.csv)", "All files (*.*)"),
                      "markers": ("Marker lists (*.csv;*.txt)", "All files (*.*)"),
                      "bundle": ("Saved annotations (*.stannot;*.zip)", "All files (*.*)"),
-                     "flat": ("CosMx / MERSCOPE files (*.csv;*.csv.gz)", "All files (*.*)")}.get(kind, ("All files (*.*)",))
+                     "flat": ("CosMx / MERSCOPE files (*.csv;*.csv.gz)", "All files (*.*)"),
+                     "geojson": ("GeoJSON (*.geojson;*.json)", "All files (*.*)")}.get(kind, ("All files (*.*)",))
             res = self._window.create_file_dialog(mode, allow_multiple=bool(multiple), file_types=types)
         return [str(p) for p in res] if res else []
 

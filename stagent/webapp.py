@@ -515,7 +515,7 @@ FS_KINDS = {"h5ad": (".h5ad", ".rds", ".rda", ".rdata"),
             "xenium": (".parquet", ".csv.gz", ".h5", ".xenium", ".mtx.gz", ".tsv.gz", ".ome.tif"),
             "xcells": (".parquet", ".csv.gz"), "xcounts": (".h5", ".mtx.gz", ".tsv.gz"), "xexp": (".xenium",),
             "ximage": (".ome.tif", ".tif", ".tiff"), "image": (".tif", ".tiff", ".btf"), "csv": (".csv", ".tsv", ".txt"),
-            "markers": (".csv", ".tsv", ".txt"), "flat": (".csv", ".csv.gz")}
+            "markers": (".csv", ".tsv", ".txt"), "flat": (".csv", ".csv.gz"), "geojson": (".geojson", ".json")}
 
 
 def api_fs_list(req):
@@ -912,6 +912,15 @@ async def api_import(req: Request):
                                        region_column=b.get("region_column") or None,
                                        description=b.get("description", ""), overwrite=bool(b.get("overwrite")), progress=say,
                                        he_kind=b.get("he_kind") or "H&E", registration_section=b.get("registration_section") or None)
+            geo = [g for g in (b.get("regions_geojson") or []) if g]
+            if geo:  # outlines drawn on the H&E (QuPath): one for the sample, or one per slice in their order
+                p = projects.load(name) if (projects.PROJECTS / f"{name}.json").exists() and (len(sections) > 1 or n_xenium > 1) else None
+                ids = p["samples"] if p else [name]
+                if len(geo) != len(ids):
+                    raise ValueError(f"{len(geo)} GeoJSON files for {len(ids)} slices: give one per slice, in their order")
+                for sid, g in zip(ids, geo):
+                    per = importer.attach_regions(sid, g)
+                    say(f"regions of {sid}: " + ", ".join(f"{k} ({v} cells)" for k, v in per.items()))
             JOBS[job].update(progress=1.0, stage="done", done=True)
         except Exception as e:  # shown in the dialog
             JOBS[job].update(error=f"{type(e).__name__}: {e}", done=True)
@@ -1333,6 +1342,8 @@ def api_regions(req):
     colors = region_rgb(s, ver)
     for p in info["polygons"]:
         p["polygon"] = [[x - v.ox, y - v.oy] for x, y in p["polygon"]]  # viewer image coordinates
+        if p.get("holes"):
+            p["holes"] = [[[x - v.ox, y - v.oy] for x, y in h] for h in p["holes"]]
         p["color"] = colors.get(p["name"], GRAY)
     for r in info["regions"]:
         r["color"] = colors.get(r["name"], GRAY)
@@ -1478,6 +1489,20 @@ async def api_region_add(req: Request):
     except ValueError as e:  # VocabError is a ValueError
         return _json({"error": str(e)}, 400)
     return _json({"new_version": ver, "message": s.state(ver)["message"]})
+
+
+async def api_regions_import(req: Request):
+    """Regions from a GeoJSON (QuPath annotations on the H&E): {path} (a file here) or {text, name} (its content)."""
+    from . import regions as regmod
+    s = review_app._session(req.path_params["sid"])
+    b = await req.json()
+    try:
+        text = Path(b["path"]).expanduser().read_text() if b.get("path") else b.get("text") or ""
+        pieces, skipped = regmod.parse_geojson(text)
+        r = await asyncio.to_thread(s.import_regions, pieces, Path(b.get("path") or b.get("name") or "GeoJSON").name, "viewer")
+    except (ValueError, OSError, KeyError) as e:
+        return _json({"error": str(e)}, 400)
+    return _json(r | {"skipped": skipped})
 
 
 async def api_region_edit(req: Request):
@@ -2408,6 +2433,7 @@ def build_app(port):
         Route("/api/s/{sid}/areas/solve", api_area_solve, methods=["POST"]),
         Route("/api/s/{sid}/review/reopen", api_reopen, methods=["POST"]),
         Route("/api/s/{sid}/regions/add", api_region_add, methods=["POST"]),
+        Route("/api/s/{sid}/regions/import", api_regions_import, methods=["POST"]),
         Route("/api/s/{sid}/regions/rename", api_region_rename, methods=["POST"]),
         Route("/api/s/{sid}/regions/color", api_region_color, methods=["POST"]),
         Route("/api/s/{sid}/constraint/{cid}/delete", api_constraint_delete, methods=["POST"]),

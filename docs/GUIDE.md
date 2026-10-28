@@ -25,6 +25,13 @@ refinement 3 s; the result agreed with the nuclei-corrected registration to 0.5 
 cells), while the shipped registration file was 13 um off. **Undo last alignment** goes back. A registration needs
 at least 90% of the cells on the image. Regions drawn before the cells move are moved along with them.
 
+**Regions drawn elsewhere** (e.g. QuPath annotations on the H&E, exported as GeoJSON in the image's full-resolution
+pixels): give the file under **Regions** in **Import…** (several slices: one per slice, in their order) and every
+new annotation of the sample starts with them, or click **Import** in the map's Regions panel to add them to the open
+annotation. A region's name is the object's classification (else its name), its color QuPath's; several outlines of
+one class form one region, holes stay out of it (drawn dashed), and points, lines and cell detections are skipped.
+The H&E must be the image the outlines were drawn on.
+
 **CosMx** and **MERFISH** (Vizgen MERSCOPE) output: choose the kind in **Import…** and give its two files, each in its
 field (Counts, Cell metadata); one slide or region per import (import several one after the other).
 CosMx: a slide's AtoMx flat files `<slide>_exprMat_file.csv` and `<slide>_metadata_file.csv`; a cell is

@@ -579,6 +579,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <div class="lh"><b>Regions</b><span class="spacer"></span>
         <label class="hint" title="Show region outlines"><input type="checkbox" id="outlines" checked> outlines</label>
         <button id="draw" class="primary" style="padding:2px 9px;font-size:12px" title="Click points on the map; double-click, Enter or click the first point to close">Draw region</button>
+        <button id="rgImport" style="padding:2px 8px;font-size:12px" title="Regions from a GeoJSON of outlines drawn on this H&amp;E (e.g. QuPath annotations, exported in full-resolution pixels)">Import</button>
+        <input type="file" id="rgImportFile" accept=".geojson,.json" hidden>
         <button id="rgtoggle" style="padding:1px 7px;font-size:11px">−</button></div>
       <div class="items" id="rgitems"></div>
       <div class="hint" id="drawhint" hidden style="padding:6px 10px;border-top:1px solid var(--line)">
@@ -762,6 +764,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <button id="imNewAlign" disabled title="Choose an image first">Align with Agent</button></span><span></span></div>
     <div class="frow" id="imRegRow" hidden><span></span><textarea id="imNewReg" rows="1" placeholder="affine CSV (a11,a12,a21,a22,tx,ty) or Xenium Explorer alignment (3x3); several slices: one file for all (a row per slice) or one per slice, in their order"></textarea><button data-pick="csv" data-multi="1" data-target="imNewReg">Choose…</button></div>
     <div class="frow" id="imRegSecRow" hidden><span>Registration row</span><input type="text" id="imNewRegSec" placeholder="only if the file has one row per section; default: the section chosen above"><span></span></div>
+    <div class="frow"><span>Regions<small class="opt">optional</small></span><textarea id="imNewGeo" rows="1" placeholder="GeoJSON of outlines drawn on this H&amp;E (e.g. QuPath annotations): they become regions of every new annotation; several slices: one per slice, in their order"></textarea><button data-pick="geojson" data-multi="1" data-target="imNewGeo">Choose…</button></div>
     <div class="frow"><span><span id="imNameLabel">Sample name</span><small class="opt">optional</small></span><input type="text" id="imName" placeholder="short id without spaces; by default from the file names"><span></span></div>
     <div class="hint" id="imProjectHint" hidden></div>
     <div class="hint" id="imPairs" hidden style="margin-left:138px;white-space:pre-line"></div>
@@ -1867,6 +1870,10 @@ function drawRegions() {
       svg.append(svgEl("polygon", { points, fill: col, "fill-opacity": 0.08, stroke: "#000", "stroke-opacity": 0.6,
                                      "stroke-width": 5, "stroke-linejoin": "round" }));
       svg.append(svgEl("polygon", { points, fill: "none", stroke: col, "stroke-width": 2.6, "stroke-linejoin": "round" }));
+      (p.holes || []).forEach((h) => {  // holes of an imported outline: their cells are not in the region
+        const hp = h.map(([x, y]) => toScreen(x, y)).map((q) => `${q.x},${q.y}`).join(" ");
+        svg.append(svgEl("polygon", { points: hp, fill: "none", stroke: col, "stroke-width": 1.8, "stroke-dasharray": "6 4" }));
+      });
       const cx = pts.reduce((a, q) => a + q.x, 0) / pts.length, cy = pts.reduce((a, q) => a + q.y, 0) / pts.length;
       const t = svgEl("text", { x: cx, y: cy, fill: col, "text-anchor": "middle", stroke: "#000", "stroke-width": 3,
                                 "stroke-opacity": 0.7, "paint-order": "stroke", "font-weight": 700 });
@@ -1910,6 +1917,24 @@ function drawRegions() {
 }
 ["animation", "update-viewport", "open", "resize"].forEach((ev) => viewer.addHandler(ev, drawRegions));
 
+async function regionsImported(r) {
+  await refreshVersion(true);
+  toast(`Regions imported: ${Object.entries(r.regions).map(([k, v]) => `${k} (${v.toLocaleString()} cells)`).join(", ")}` +
+        (r.n_empty ? `; ${r.n_empty} outline(s) without cells left out` : "") + (r.skipped ? `; ${r.skipped} other object(s) skipped` : ""), 8000);
+}
+$("rgImport").onclick = async () => {
+  if (!st.sid) return;
+  if (native()) {  // a file on this computer, or on the server when the app works on one
+    const p = await pickFiles("geojson", false); if (!p.length) return;
+    try { await regionsImported(await post(`/api/s/${st.sid}/regions/import`, { path: p[0] })); } catch (e) { toast(e.message, 9000); }
+    return;
+  }
+  $("rgImportFile").value = ""; $("rgImportFile").click();
+};
+$("rgImportFile").onchange = async () => {
+  const f = $("rgImportFile").files[0]; if (!f) return;
+  try { await regionsImported(await post(`/api/s/${st.sid}/regions/import`, { text: await f.text(), name: f.name })); } catch (e) { toast(e.message, 9000); }
+};
 async function loadRegions() {
   if (!st.sid) return;
   st.regions = await api(`/api/s/${st.sid}/regions?version=${st.version}`);
@@ -2810,15 +2835,15 @@ $("imClose").onclick = () => $("imDlg").close();
 function imPairs(secs) {  // several slices: which image and registration file each one gets (by order)
   secs = secs || (imKind() === "h5ad" ? chosenSections() : ((isFlat() ? st.imFSlices : st.imXSlices) || []).map((x) => x.key));
   const L = (id) => $(id).value.split("\n").map((x) => x.trim()).filter(Boolean);
-  const imgs = imgMode() === "file" ? L("imNewImg") : [], regs = regMode() === "file" ? L("imNewReg") : [];
-  const box = $("imPairs"); box.hidden = secs.length < 2 || (!imgs.length && !regs.length);
+  const imgs = imgMode() === "file" ? L("imNewImg") : [], regs = regMode() === "file" ? L("imNewReg") : [], geos = L("imNewGeo");
+  const box = $("imPairs"); box.hidden = secs.length < 2 || (!imgs.length && !regs.length && !geos.length);
   if (box.hidden) return;
   const base = (f) => f.split(/[\\/]/).pop();
   const pick = (list, i, what) => !list.length ? "" : list.length === 1 ? `${what} ${base(list[0])}${what === "registration" ? " (its row)" : ""}`
     : list.length === secs.length ? `${what} ${base(list[i])}` : `${what}: ${list.length} files for ${secs.length} slices`;
-  box.textContent = "In order:\n" + secs.map((k, i) => `${i + 1}. ${k} ← ${[pick(imgs, i, "image"), pick(regs, i, "registration")].filter(Boolean).join(" · ")}`).join("\n");
+  box.textContent = "In order:\n" + secs.map((k, i) => `${i + 1}. ${k} ← ${[pick(imgs, i, "image"), pick(regs, i, "registration"), geos.length ? (geos.length === secs.length ? `regions ${base(geos[i])}` : `regions: ${geos.length} files for ${secs.length} slices`) : ""].filter(Boolean).join(" · ")}`).join("\n");
 }
-["imNewImg", "imNewReg"].forEach((id) => ["input", "change"].forEach((ev) => $(id).addEventListener(ev, () => imPairs())));
+["imNewImg", "imNewReg", "imNewGeo"].forEach((id) => ["input", "change"].forEach((ev) => $(id).addEventListener(ev, () => imPairs())));
 function imDefaultName(n) {  // the name used when the field is left empty, shown in it
   st.imDefault = n; $("imName").placeholder = n ? `${n} (from the file names)` : "short id without spaces; by default from the file names";
 }
@@ -2917,7 +2942,9 @@ async function importSample() {  // returns true when the sample was imported
         section_column: $("imSecCol").value, sections: $("imSecCol").value ? chosenSections() : [],
         region_column: $("imRegCol").value, description: $("imDesc").value };
   if (kind === "h5ad" && $("imSecCol").value && !body.sections.length) { $("imStatus").textContent = "Tick the section(s) to import"; return false; }
-  Object.assign(body, { he: image, he_kind: $("imNewImgKind").value, registration, registration_section: $("imNewRegSec").value.trim() });
+  const geo = $("imNewGeo").value.split("\n").map((x) => x.trim()).filter(Boolean);
+  Object.assign(body, { he: image, he_kind: $("imNewImgKind").value, registration, registration_section: $("imNewRegSec").value.trim(),
+                        regions_geojson: geo });
   if (!name) { $("imStatus").textContent = "Give a name (none could be taken from the files)"; return false; }
   if (imgMode() === "file" && !images.length) { $("imStatus").textContent = "Choose the H&E file, or No H&E"; return false; }
   if (kind === "xenium" && !(st.imXSlices || []).length) { $("imStatus").textContent = "Give the cells and counts files; check the message under the fields"; return false; }
@@ -2926,6 +2953,7 @@ async function importSample() {  // returns true when the sample was imported
   if (images.length > 1 && nSlices < 2) { $("imStatus").textContent = "One image per sample (several images are for several slices)"; return false; }
   if (regMode() === "file" && !registration) { $("imStatus").textContent = "Choose the registration file, or No registration"; return false; }
   if (regs.length > 1 && nSlices < 2) { $("imStatus").textContent = "One registration file per sample (several are for several slices)"; return false; }
+  if (geo.length > Math.max(1, nSlices) || (nSlices > 1 && geo.length && geo.length !== nSlices)) { $("imStatus").textContent = `${geo.length} GeoJSON files for ${nSlices} slice(s): one per slice, in their order`; return false; }
   for (const [what, list] of [["images", images], ["registration files", regs]])
     if (nSlices > 1 && list.length > 1 && list.length !== nSlices) { $("imStatus").textContent = `${list.length} ${what} for ${nSlices} slices: give one for all, or one per slice in their order`; return false; }
   $("imGo").disabled = $("imNewAlign").disabled = true; $("imStatus").textContent = "importing…";
