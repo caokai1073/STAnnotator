@@ -36,22 +36,32 @@ Getting started
   and save it with save_marker_list; the user loads it in the viewer's "Markers..." dialog and clicks Annotate (or
   start_session(markers_text=...) when the user asks you to run it).
 
+Changes to the data are reviewed by the user
+- Every tool that changes data (import_sample, start_session, add / update / remove_constraint, label_cells,
+  label_cluster, remove_correction, recluster, revert, apply_alignment, run_niches, name_niches, record_verdicts,
+  resolve_rule_suggestion) only proposes the change: the app shows it in a review window with what it does, and it
+  is applied only when the user clicks Accept there (Dismiss drops it). The tool waits a little for the decision and
+  returns the outcome (status "accepted by the user and applied" with the result, "dismissed by the user", or
+  "waiting for the user's review"). While waiting, tell the user in one or two sentences what you proposed and why;
+  read the outcome later with pending_changes. The review window is the user's go-ahead: do not ask for it twice in
+  the chat, and never propose a dismissed change again unchanged.
+
 Cell types and markers
 - Cell types are the most specific entries of the marker tree; a type with subtypes is a lineage / group: it can be
   used in priors but is never a label. Use only names from get_vocabulary; ask when the user's words are ambiguous.
 - list_clusters shows the marker-step clusters, their marker scores and the Leiden resolution chosen per level.
 - For a mixed cluster, a type to split further, or a cluster the user keeps correcting: preview_recluster, report
-  the marker-label changes and new clusters, and call recluster only after the user agrees. Report changes inside
+  the marker-label changes and new clusters, then recluster (the user accepts it in the app). Report changes inside
   the re-clustered cells and elsewhere separately. New or removed cell types need a revised marker list and a new
   annotation (start_session with markers_text).
 
 Priors and corrections
 - A general prior ("epithelial cells are only in the mucosa", "Tfh cells sit next to B cells"): map it to a
   constraint (kind region / depth / neighborhood), call preview_constraint, explain your reading and the predicted
-  changes in one or two sentences, and wait for an explicit go-ahead before add_constraint (text = the user's words).
+  changes in one or two sentences, then add_constraint (text = the user's words): the user accepts it in the app.
   Region priors only act on cells inside drawn regions; say which regions exist (list_regions).
 - A correction ("the smooth muscle in mucosa_2 is muscularis mucosae", "root/c27 is neurons"): label_cells
-  (region=..., only_types=... for part of a region) or label_cluster; the instruction is the go-ahead. Report how many
+  (region=..., only_types=... for part of a region) or label_cluster (the user accepts it in the app). Report how many
   cells you labeled and how many others changed because the model was updated; suggest a region or depth prior
   when the types differ mainly by position.
 - Regions are the user's. When the user asks you to draw or outline one ("draw the mucosa", "outline the follicles",
@@ -199,8 +209,269 @@ def _spec(text, types, mode, weight, kind, regions, max_depth_um, neighbor_types
             "max_depth_um": max_depth_um, "neighbor_types": neighbor_types, "min_frac": min_frac}
 
 
+# ---------------- changes to the data wait for the user's Accept in the app ----------------
+# A tool that changes data stores a proposal (proposals.py) with a description of what it would do; the app shows it
+# in a review window and runs the tool only when the user clicks Accept (apply_proposal). The tool waits up to
+# REVIEW_WAIT seconds for the decision and returns the outcome; tools served by the app itself (/mcp, its chat box) run
+# on the app's event loop and cannot wait, so they return at once.
+GATED = {}
+SAME_PROCESS = False  # set by the webapp
+REVIEW_WAIT = float(os.environ.get("STAGENT_REVIEW_WAIT", 45))
+
+
+def _reviewed(describe):
+    """describe(args) -> {"title", "details": [lines], "preview": {...}} (raises ValueError for invalid input)."""
+    import functools, inspect
+
+    def deco(fn):
+        sig = inspect.signature(fn)
+
+        @functools.wraps(fn)
+        def tool(*a, **kw):
+            from . import proposals, claudelink
+            b = sig.bind(*a, **kw); b.apply_defaults()
+            args = dict(b.arguments)
+            d = describe(args)
+            s = _active.get("session")
+            rec = proposals.create(tool=fn.__name__, args=d.pop("args", args), title=d["title"],
+                                   details=d.get("details", []), preview=d.get("preview"),
+                                   session_id=d.get("session_id", s.id if s else None),
+                                   sample_id=d.get("sample_id", s.sample_id if s else None),
+                                   version=d.get("version"), via=_active.get("via", "app"))
+            if not SAME_PROCESS and claudelink.viewer_alive():
+                rec = proposals.wait(rec["id"], REVIEW_WAIT)
+            return _proposal_outcome(rec)
+        GATED[fn.__name__] = fn
+        return tool
+    return deco
+
+
+def _proposal_outcome(rec):
+    from . import claudelink
+    st = rec["status"]
+    if st == "done":
+        if rec.get("session_after") and (not _active.get("session") or _active["session"].id != rec["session_after"]):
+            _active["session"] = Session(rec["session_after"])  # e.g. the annotation start_session made
+        try:
+            result = json.loads(rec["result"])
+        except (TypeError, ValueError):
+            result = rec.get("result")
+        return _j({"status": "accepted by the user and applied", "proposal": rec["id"], "result": result})
+    if st == "dismissed":
+        return _j({"status": "dismissed by the user", "proposal": rec["id"],
+                   "note": "nothing was changed; ask the user what to do differently instead of proposing it again"})
+    if st == "failed":
+        return _j({"status": "accepted but failed", "proposal": rec["id"], "error": rec.get("error")})
+    return _j({"status": "waiting for the user's review", "proposal": rec["id"],
+               "app_open": claudelink.viewer_alive(),
+               "next": "the change is shown in a review window in the STAnnotator app and applies only when the user "
+                       "clicks Accept (Dismiss drops it). Tell the user what you proposed and why; later call "
+                       "pending_changes to see the outcome." + ("" if claudelink.viewer_alive() else
+                       " The app is not open: ask the user to open it to review the change.")})
+
+
+def apply_proposal(rec, get_session=None):
+    """Run a proposal's tool (the app does it when the user clicks Accept). Returns (result, active session id)."""
+    fn = GATED[rec["tool"]]
+    if rec.get("session_id"):
+        _active["session"] = get_session(rec["session_id"]) if get_session else Session(rec["session_id"])
+    out = fn(**rec["args"])
+    return out, (_active["session"].id if _active.get("session") else None)
+
+
+def _words(args, key="text"):
+    return [f"Your words: \u201c{args[key]}\u201d"] if args.get(key) else []
+
+
+def _names(xs, n=6):
+    xs = list(xs or [])
+    return ", ".join(map(str, xs[:n])) + (f" and {len(xs) - n} more" if len(xs) > n else "")
+
+
+def _transitions(rows, n=8):
+    return [{"from": r["from"], "to": r["to"], "region": None if r.get("region") in (None, "unknown", "none") else r["region"],
+             "cells": int(r.get("count", r.get(0, 0)))}
+            for r in rows[:n]]
+
+
+def _d_import_sample(a):
+    return {"title": f"Import a new sample {a['name']}", "session_id": None, "sample_id": a["name"],
+            "details": [f"Expression and cell positions from {_names(a['h5ad'])}",
+                        f"Image: {a['he'] or 'none'}; registration: {a['registration'] or 'none'}",
+                        *([f"Section {a['section']} of column {a['section_column']}"] if a.get("section") else []),
+                        "Adds a sample; nothing that exists now changes."]}
+
+
+def _d_start_session(a):
+    from . import markers
+    from .session import panel_genes, filtered_genes
+    det = []
+    if a.get("annotation_csv"):
+        det.append(f"Loads the cell types of {a['annotation_csv']} (column {a.get('label_column')})")
+    elif a.get("reference_h5ad"):
+        det.append(f"Labels the cells with the single-cell reference {a['reference_h5ad']} (labels: {a.get('label_column')})")
+    else:
+        p = markers.parse(a.get("markers_text") or "", panel_genes(a["sample_id"]), filtered_genes(a["sample_id"]))
+        if not p["ok"]:
+            raise ValueError("marker list has errors: " + "; ".join(p["errors"][:8]))
+        det.append(f"Marker list with {p['n_types']} cell types under {len(p['tree'])} lineages: "
+                   + _names([n["name"] for n in p["tree"]], 8))
+        det += [f"Warning: {w}" for w in p["warnings"][:4]]
+    cur = _active.get("session")
+    if a.get("carry_from_current") and cur:
+        det.append(f"Copies the regions, priors and corrections of the open annotation {cur.id}")
+    det.append("A new annotation (about a minute); earlier annotations stay and can be reopened under Annotation.")
+    return {"title": f"Start a new annotation of {a['sample_id']}", "sample_id": a["sample_id"], "details": det}
+
+
+def _d_constraint(a):
+    s = _s()
+    spec = _spec(a["text"], a["types"], a["mode"], a["weight"], a["kind"], a["regions"], a["max_depth_um"],
+                 a["neighbor_types"], a["min_frac"])
+    pv = s.preview_constraint(spec)
+    return {"title": f"Add a prior: {pv['interpretation']}", "version": pv["based_on_version"],
+            "details": [*_words(a), f"Types: {_names(pv['types_resolved'], 10)}",
+                        f"{pv['n_cells_currently_of_these_types']:,} cells are of these types now; "
+                        f"{pv['n_cells_of_these_types_penalized']:,} of them are where the prior speaks against them",
+                        "Creates a new version (Undo takes it back)."],
+            "preview": {"n_label_changes": pv["n_label_changes"], "top_transitions": _transitions(pv["top_transitions"])}}
+
+
+def _constraint(s, cid):
+    c = next((c for c in s.state()["constraints"] if c["id"] == cid), None)
+    if c is None:
+        raise ValueError(f"no constraint {cid}; constraints: {[x['id'] for x in s.state()['constraints']]}")
+    return c
+
+
+def _d_update_constraint(a):
+    from . import constraints as cmod
+    s = _s()
+    c = _constraint(s, a["constraint_id"])
+    ch = {k: a[k] for k in ("weight", "types", "regions", "mode", "max_depth_um", "neighbor_types", "min_frac", "text")
+          if a.get(k) is not None}
+    return {"title": f"Change prior {c['id']}: {cmod.describe(c)}", "version": s.state()["version"],
+            "details": [f"{k}: {c.get(k)!r} \u2192 {v!r}" for k, v in ch.items()] + ["Creates a new version."]}
+
+
+def _d_remove_constraint(a):
+    from . import constraints as cmod
+    s = _s()
+    c = _constraint(s, a["constraint_id"])
+    return {"title": f"Remove prior {c['id']}", "version": s.state()["version"],
+            "details": [cmod.describe(c), *([f"Its words: \u201c{c['text']}\u201d"] if c.get("text") else []),
+                        "The cells are labeled again without it; creates a new version."]}
+
+
+def _label_breakdown(s, rows_or_cells, by_cell=True):
+    import numpy as np, pandas as pd
+    pred = s.result()["pred"]
+    rows = [s.row_of(c) for c in rows_or_cells] if by_cell else rows_or_cells
+    t = pd.Series(np.array(s.types)[pred[rows]]).value_counts()
+    return _names([f"{k} {v:,}" for k, v in t.items()], 6)
+
+
+def _d_label_cells(a):
+    s = _s()
+    cells = s._cells_for(a["region"], None, a.get("only_types"))
+    return {"title": f"Label {len(cells):,} cells of region {a['region']} as {a['cell_type']}",
+            "version": s.state()["version"],
+            "details": [*_words(a), *([f"Only the cells now labeled {_names(a['only_types'])}"] if a.get("only_types") else []),
+                        f"Labeled now: {_label_breakdown(s, cells)}",
+                        "These cells are locked to the new type and the expression model learns from them, so similar "
+                        "cells elsewhere may change too. Creates a new version (Undo takes it back)."]}
+
+
+def _d_label_cluster(a):
+    s = _s()
+    mres = s.marker_result(s.state())
+    if a["cluster_id"] not in mres["members"]:
+        raise ValueError(f"no cluster {a['cluster_id']}; see list_clusters")
+    rows = list(mres["members"][a["cluster_id"]])
+    return {"title": f"Label cluster {a['cluster_id']} ({len(rows):,} cells) as {a['cell_type']}",
+            "version": s.state()["version"],
+            "details": [*_words(a), f"Labeled now: {_label_breakdown(s, rows, by_cell=False)}",
+                        "These cells are locked to the new type and the expression model learns from them, so similar "
+                        "cells elsewhere may change too. Creates a new version."]}
+
+
+def _d_remove_correction(a):
+    s = _s()
+    c = next((c for c in s.state().get("corrections", []) if c["id"] == a["correction_id"]), None)
+    if c is None:
+        raise ValueError(f"no correction {a['correction_id']}")
+    return {"title": f"Undo hand correction {c['id']}", "version": s.state()["version"],
+            "details": [f"{len(c['cells']):,} cells labeled {c['label']}" + (f" in region {c['region']}" if c.get("region") else ""),
+                        *([f"Its words: \u201c{c['text']}\u201d"] if c.get("text") else []),
+                        "The expression model is computed again without it; creates a new version."]}
+
+
+def _d_recluster(a):
+    s = _s()
+    det = [*_words(a), f"Resolution: {a['resolution']}"]
+    if a.get("marker_edits"):
+        det.append("Marker changes: " + "; ".join(f"{k}: {v}" for k, v in a["marker_edits"].items()))
+    det.append("Regions, priors and corrections stay; the expression model learns from the new marker labels, so "
+               "cells elsewhere may change too. Creates a new version.")
+    return {"title": f"Re-cluster {a['target']} in the marker step", "version": s.state()["version"], "details": det}
+
+
+def _d_revert(a):
+    s = _s()
+    cur = s.state()["version"]
+    if a["version"] not in s.versions():
+        raise ValueError(f"no version {a['version']}")
+    d = s.diff(cur, a["version"])
+    return {"title": f"Go back to version {a['version']} (now v{cur})", "version": cur,
+            "details": [f"v{a['version']}: {s.state(a['version'])['message']}",
+                        "Its regions, priors and corrections come back as a new version; the history stays."],
+            "preview": {"n_label_changes": d["n_label_changes"], "top_transitions": _transitions(d["top_transitions"])}}
+
+
+def _d_apply_alignment(a):
+    sid = _sample_id(a.get("sample_id"))
+    return {"title": f"Put the cells of {sid} on the image with alignment {a['candidate']}", "sample_id": sid,
+            "args": a | {"sample_id": sid},
+            "details": ["The cells move to where this alignment places them on the image; regions and outlines drawn "
+                        "before move with them.", "Undo last alignment (Import dialog) takes it back."]}
+
+
+def _d_run_niches(a):
+    s = _s()
+    det = [f"Identity: {a['identity']}" + (f" ({a['n_programs']} NMF programs)" if a["identity"] == "nmf" else ""),
+           f"Neighborhood: within {a['radius_um']} um" if a.get("radius_um") else f"Neighborhood: {a['k']} nearest cells",
+           f"{a['n_niches']} niches"]
+    if a.get("k_by_region"):
+        det.append("Per region: " + ", ".join(f"{k}: {v} cells" for k, v in a["k_by_region"].items()))
+    det.append("Replaces the current niches of this annotation (their names too).")
+    return {"title": "Find niches", "version": s.state()["version"], "details": det}
+
+
+def _d_name_niches(a):
+    _s()
+    return {"title": f"Name {len(a['names'])} niches", "details": [f"{k} \u2192 {v}" for k, v in a["names"].items()]}
+
+
+def _d_record_verdicts(a):
+    _s()
+    if a["verdict"] not in vocab.VERDICTS:
+        raise ValueError(f"verdict must be one of {list(vocab.VERDICTS)}")
+    return {"title": f"Record the verdict {a['verdict']} for {len(a['cells']):,} conflict cells",
+            "details": [vocab.VERDICTS[a["verdict"]], f"Reviewer: {a['reviewer']}", *_words(a, "note")]}
+
+
+def _d_resolve_rule_suggestion(a):
+    s = _s()
+    sg = next((x for x in s.suggestions() if x["id"] == a["suggestion_id"]), None)
+    if sg is None:
+        raise ValueError(f"no rule suggestion {a['suggestion_id']}")
+    return {"title": f"Mark the reviewer's rule {a['suggestion_id']} as {a['status']}",
+            "details": [f"The rule: \u201c{sg.get('text', '')}\u201d", *_words(a, "note")]}
+
+
 # ---------------- data and viewer ----------------
 @mcp.tool()
+@_reviewed(_d_import_sample)
 def import_sample(name: str, h5ad: list[str], he: str, registration: str, section_column: Optional[str] = None,
                   section: Optional[str] = None, region_column: Optional[str] = None, counts_layer: Optional[str] = None,
                   description: str = "") -> str:
@@ -275,6 +546,7 @@ def list_sessions() -> str:
 
 
 @mcp.tool()
+@_reviewed(_d_start_session)
 def start_session(sample_id: str, markers_text: Optional[str] = None,
                   carry_from_current: bool = False, reference_h5ad: Optional[str] = None,
                   label_column: Optional[str] = None, group_column: Optional[str] = None,
@@ -333,7 +605,7 @@ def preview_constraint(text: str, types: list[str], mode: str, weight: Union[str
                        max_depth_um: Optional[float] = None, neighbor_types: Optional[list[str]] = None,
                        min_frac: Optional[float] = None) -> str:
     """Validate a constraint and show its effect WITHOUT committing it. Show the interpretation and the
-    predicted label changes to the user and get explicit confirmation before calling add_constraint.
+    predicted label changes to the user, then call add_constraint (the user accepts it in the app's review window).
 
     text: the user's own words, verbatim. types: cell type or group names from get_vocabulary.
     kind: 'region' (needs regions), 'depth' (needs max_depth_um: distance to the epithelium / crypt core),
@@ -346,6 +618,7 @@ def preview_constraint(text: str, types: list[str], mode: str, weight: Union[str
 
 
 @mcp.tool()
+@_reviewed(_d_constraint)
 def add_constraint(text: str, types: list[str], mode: str, weight: Union[str, float] = "strong",
                    kind: str = "region", regions: Optional[list[str]] = None,
                    max_depth_um: Optional[float] = None, neighbor_types: Optional[list[str]] = None,
@@ -360,6 +633,7 @@ def add_constraint(text: str, types: list[str], mode: str, weight: Union[str, fl
 
 
 @mcp.tool()
+@_reviewed(_d_update_constraint)
 def update_constraint(constraint_id: str, weight: Union[str, float, None] = None, types: Optional[list[str]] = None,
                       regions: Optional[list[str]] = None, mode: Optional[str] = None,
                       max_depth_um: Optional[float] = None, neighbor_types: Optional[list[str]] = None,
@@ -374,6 +648,7 @@ def update_constraint(constraint_id: str, weight: Union[str, float, None] = None
 
 
 @mcp.tool()
+@_reviewed(_d_remove_constraint)
 def remove_constraint(constraint_id: str, message: Optional[str] = None) -> str:
     """Remove a constraint. Creates a new version."""
     s = _s()
@@ -393,6 +668,7 @@ def list_regions(version: Optional[int] = None) -> str:
 
 
 @mcp.tool()
+@_reviewed(_d_label_cells)
 def label_cells(region: str, cell_type: str, only_types: Optional[list[str]] = None, text: str = "",
                 author: Optional[str] = None) -> str:
     """Hand-label the cells of a user-drawn region as cell_type. only_types restricts it to cells currently labeled
@@ -625,6 +901,7 @@ def refine_alignment(candidate: str, sample_id: Optional[str] = None) -> str:
 
 
 @mcp.tool()
+@_reviewed(_d_apply_alignment)
 def apply_alignment(candidate: str, sample_id: Optional[str] = None) -> str:
     """Put the cells on the image with this candidate (refined if it was): the app shows them there at once and
     outlines drawn before move along. The user can undo it in the app (Import, bottom part: Undo last alignment)."""
@@ -766,6 +1043,7 @@ def niche_context() -> str:
 
 
 @mcp.tool()
+@_reviewed(_d_run_niches)
 def run_niches(k: int = 15, n_niches: int = 8, identity: str = "nmf", n_programs: int = 20,
                k_by_region: Optional[dict] = None, radius_um: Optional[float] = None) -> str:
     """Niche analysis: every cell's identity (identity="nmf": its weights on n_programs NMF gene programs, scaled to
@@ -803,6 +1081,7 @@ def show_niches() -> list:
 
 
 @mcp.tool()
+@_reviewed(_d_name_niches)
 def name_niches(names: dict) -> str:
     """Give niches names the user sees in the legend, e.g. {"N1": "lamina propria", "N3": "crypt base"}; base them
     on niche_summary and the H&E."""
@@ -997,6 +1276,7 @@ def list_area_suggestions() -> str:
 
 
 @mcp.tool()
+@_reviewed(_d_record_verdicts)
 def record_verdicts(cells: list[int], verdict: str, note: str = "", reviewer: str = "user") -> str:
     """Record the reviewer's verdict for conflict cells. Only record what the user (or pathologist) decided.
     verdict: constraint_right | reference_right | region_wrong | artifact | new_state | unclear."""
@@ -1018,6 +1298,7 @@ def review_progress() -> str:
 
 
 @mcp.tool()
+@_reviewed(_d_remove_correction)
 def remove_correction(correction_id: str) -> str:
     """Undo one hand correction (e.g. 'L2'); the expression model is recomputed without it. Creates a new version."""
     s = _s()
@@ -1116,6 +1397,7 @@ def list_clusters(parent: Optional[str] = None, only_unassigned: bool = False, t
 
 
 @mcp.tool()
+@_reviewed(_d_label_cluster)
 def label_cluster(cluster_id: str, cell_type: str, text: str = "") -> str:
     """Label all cells of a marker-step cluster (e.g. 'root/c27') as cell_type; works like label_cells (cells locked,
     expression model updated). Creates a new version."""
@@ -1136,11 +1418,13 @@ def preview_recluster(target: str, resolution: Union[str, float] = "auto", marke
     split again into its subtypes) or a cluster id from list_clusters (only that cluster is re-clustered).
     resolution: 'auto' (tries 0.5/1/2/4 and keeps the one the markers resolve best) or a number (higher = finer).
     marker_edits: optional {type: "GENE+ GENE- A|B+"} replacing the markers of existing subtypes for this re-run.
-    Show the user the number of cells whose marker label changes and the new clusters, then ask for a go-ahead."""
+    Show the user the number of cells whose marker label changes and the new clusters; recluster then proposes it
+    (the user accepts it in the app's review window)."""
     return _j(_s().preview_recluster(target, resolution, marker_edits))
 
 
 @mcp.tool()
+@_reviewed(_d_recluster)
 def recluster(target: str, resolution: Union[str, float] = "auto", marker_edits: Optional[dict] = None,
               text: str = "", author: Optional[str] = None) -> str:
     """Commit a re-clustering the user agreed to (same arguments as preview_recluster; text = the user's words).
@@ -1169,10 +1453,22 @@ def list_rule_suggestions(status: Optional[str] = "open") -> str:
 
 
 @mcp.tool()
+@_reviewed(_d_resolve_rule_suggestion)
 def resolve_rule_suggestion(suggestion_id: str, status: str, note: str = "") -> str:
     """Mark a reviewer's rule suggestion as accepted or rejected (or reopen it), with a short note on what was done."""
     _s().resolve_suggestion(suggestion_id, status, note)
     return _j({"id": suggestion_id, "status": status})
+
+
+@mcp.tool()
+def pending_changes(proposal_id: Optional[str] = None) -> str:
+    """The data changes you proposed and what the user did with them: open (waiting in the app's review window),
+    applying, done (accepted and applied, with the result), failed, or dismissed. proposal_id: one of them; without
+    it the last 10."""
+    from . import proposals
+    if proposal_id:
+        return _proposal_outcome(proposals.get(proposal_id))
+    return _j([{k: r.get(k) for k in ("id", "tool", "title", "status", "error")} for r in proposals.all(limit=10)])
 
 
 # ---------------- history ----------------
@@ -1189,6 +1485,7 @@ def diff(from_version: int, to_version: int) -> str:
 
 
 @mcp.tool()
+@_reviewed(_d_revert)
 def revert(version: int, message: Optional[str] = None) -> str:
     """Restore the regions and constraints of an earlier version as a new version (history is never deleted)."""
     s = _s()

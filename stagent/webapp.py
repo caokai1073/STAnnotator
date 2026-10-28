@@ -19,6 +19,7 @@ from starlette.responses import FileResponse, Response, StreamingResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from . import config, vocab, mcp_server, review_app, render
+mcp_server.SAME_PROCESS = True  # its tools served at /mcp run on this event loop: they cannot wait for a review
 from . import markers, markerqc, plausibility, claudelink, claudereview, importer, advice, niches, embedding
 from . import communication, projects
 from .session import Session, list_samples, list_sessions, panel_genes, filtered_genes
@@ -1580,6 +1581,48 @@ async def api_sample_rename(req: Request):
     return _json(r)
 
 
+# ---------------- the agent's proposed changes (proposals.py): the user accepts or dismisses them ----------------
+_apply_lock = threading.Lock()
+
+
+def api_proposals(req):
+    """Proposals waiting for the user or being applied, and those finished in the last minute (their outcome)."""
+    from . import proposals
+    now = time.time()
+    rows = [r for r in proposals.all() if r["status"] in ("open", "applying") or now - r.get("decided", 0) < 60]
+    return _json([{k: v for k, v in r.items() if k not in ("args", "result")} for r in rows])
+
+
+async def api_proposal_decide(req: Request):
+    """{accept: true}: run the proposal's tool in the background (status applying -> done | failed); else dismiss."""
+    from . import proposals
+    pid, b = req.path_params["pid"], await req.json()
+    try:
+        rec = proposals.get(pid)
+    except ValueError as e:
+        return _json({"error": str(e)}, 404)
+    if rec["status"] != "open":
+        return _json({"error": f"this change is already {rec['status']}"}, 409)
+    if not b.get("accept"):
+        return _json(proposals.update(pid, status="dismissed", decided=time.time()))
+    rec = proposals.update(pid, status="applying", decided=time.time())
+
+    def work():
+        with _apply_lock:
+            try:
+                out, sess = mcp_server.apply_proposal(rec, review_app._session)
+                if rec["tool"] == "apply_alignment":
+                    _reload_sample(rec["args"]["sample_id"])
+                _cell_tables.clear()
+                proposals.update(pid, status="done", result=out, session_after=sess, decided=time.time())
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                proposals.update(pid, status="failed", error=f"{type(e).__name__}: {e}", decided=time.time())
+    threading.Thread(target=work, daemon=True).start()
+    return _json(rec)
+
+
 def _filter_ids(sample):
     """The samples a filter acts on: all slices of the sample's project (one gene panel), else the sample."""
     pid = projects.project_of(sample)
@@ -2174,6 +2217,8 @@ def build_app(port):
         Route("/api/sample/{sample}/registration", api_sample_registration, methods=["POST"]),
         Route("/api/sample/{sample}/rename", api_sample_rename, methods=["POST"]),
         Route("/api/sample/{sample}/qc", api_sample_qc),
+        Route("/api/proposals", api_proposals),
+        Route("/api/proposal/{pid}/decide", api_proposal_decide, methods=["POST"]),
         Route("/api/sample/{sample}/filter", api_sample_filter, methods=["POST"]),
         Route("/api/sample/{sample}/placement/undo", api_sample_placement_undo, methods=["POST"]),
         Route("/api/claude/align", api_claude_align, methods=["POST"]),

@@ -140,6 +140,13 @@ the bottom **Reset** and **Remove all**. On the map, next to the **Color by** ba
 The app's window (or the web viewer: `.venv/bin/stagent viewer`, then http://localhost:8765). Changes made
 by Claude show up within a few seconds.
 
+Claude never changes the data on its own: every change it makes from the conversation (a prior, labeling cells or a
+cluster, re-clustering, going back to a version, aligning the cells to the image, niches and their names, verdicts, a
+new annotation or sample) first opens a **Review Claude's change** window in the app with what it does (the cells it
+touches, their current labels, the predicted label changes where they can be computed, your words). Nothing changes
+until you click **Accept**; **Dismiss** drops it and tells Claude. Several waiting changes come one after the other.
+Claude learns the outcome by itself when you decide within about 45 seconds, otherwise when it next checks.
+
 1. Pick a sample; earlier annotations are under **Annotation** (Data tab). **Rename** next to it changes the name
    the app shows (a slice: its name in the project, and the project's name); the id, files and annotations stay.
    **Filter cells and genes…** (Data tab) deletes cells with fewer or more transcripts than you set, fewer genes,
