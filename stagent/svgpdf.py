@@ -12,6 +12,8 @@ from matplotlib.patches import Circle, PathPatch, Rectangle
 from matplotlib.lines import Line2D
 from matplotlib.path import Path
 from matplotlib import font_manager, rc_context
+# imported by name (not through savefig(format="pdf"), which loads the backend at run time): PyInstaller then packs it
+from matplotlib.backends.backend_pdf import FigureCanvasPdf
 
 NS = "{http://www.w3.org/2000/svg}"
 TEXT = "#222222"  # currentColor: the page's text color in light mode
@@ -118,5 +120,5 @@ def to_pdf(svg):
     walk(root, {"fill": root.get("fill", "#000")})
     buf = io.BytesIO()
     with rc_context({"pdf.fonttype": 42}):
-        fig.savefig(buf, format="pdf")
+        FigureCanvasPdf(fig).print_pdf(buf)
     return buf.getvalue()

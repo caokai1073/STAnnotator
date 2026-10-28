@@ -12,7 +12,8 @@ datas = [(str(ROOT / "stagent" / "static"), "stagent/static"),
 import ast, re
 CARRIED = ast.literal_eval(re.search(r"^CARRIED = (\[.*?\])", (ROOT / "stagent" / "notebook.py").read_text(), re.M).group(1))
 datas += [(str(ROOT / "stagent" / f"{m}.py"), "stagent/algorithm_src") for m in CARRIED]
-binaries, hidden = [], ["stagent.mcp_server", "stagent.webapp", "stagent.desktop"]
+# backend_pdf: Save figure writes PDF; PyInstaller's matplotlib hook packs only the backends named in matplotlib.use()
+binaries, hidden = [], ["stagent.mcp_server", "stagent.webapp", "stagent.desktop", "matplotlib.backends.backend_pdf"]
 
 # Left out to keep the app small; none of it is ever imported by the app, so nothing it does changes:
 # - imagecodecs: the codecs of other file formats (CZI, FITS, AVIF, ...). Images are read with tifffile, which can call

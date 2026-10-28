@@ -1139,7 +1139,9 @@ async def api_figure_pdf(req: Request):
     try:
         pdf = svgpdf.to_pdf(b["svg"])
     except Exception as e:
-        return _json({"error": f"could not make the PDF: {e}"}, 400)
+        import traceback
+        traceback.print_exc()  # into the viewer's log
+        return _json({"error": f"could not make the PDF: {type(e).__name__}: {e}"}, 400)
     if b.get("path"):
         if not desktop_mode():
             return _json({"error": "only in the desktop app"}, 403)
