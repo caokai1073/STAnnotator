@@ -57,7 +57,7 @@ def list_samples():
     for d in sorted(config.SAMPLES.iterdir()) if config.SAMPLES.exists() else []:
         if (d / "meta.json").exists():
             m = json.load(open(d / "meta.json"))
-            rows.append({k: _clean(m.get(k)) for k in ["sample_id", "description", "disease", "location", "inflammation",
+            rows.append({k: _clean(m.get(k)) for k in ["sample_id", "name", "description", "disease", "location", "inflammation",
                                                          "ulceration", "n_cells", "has_pathologist_regions"]}
                         | {"has_he": m.get("he_path") is not None})
     return pd.DataFrame(rows)

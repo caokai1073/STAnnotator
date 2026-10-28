@@ -60,3 +60,45 @@ def save(pid, name, slices):
 def slice_name(project, value):
     """Sample id of a section of a project: <project>_<section>, letters, digits, dot, dash, underscore only."""
     return f"{project}_{re.sub(r'[^A-Za-z0-9_.-]+', '_', str(value)).strip('_')}"[:80]
+
+
+def rename(sample_id, name, project_name=None):
+    """Rename a sample as the app shows it; its id (folder, annotations) stays. A slice of a project gets a new section
+    name (its name in the project, on the map and in the analyses); a sample on its own a display name ("" for its
+    id). project_name renames the slice's project."""
+    mf = config.SAMPLES / sample_id / "meta.json"
+    if not mf.exists():
+        raise ValueError(f"no sample {sample_id!r}")
+    m = json.load(open(mf))
+    name = str(name or "").strip()
+    if len(name) > 80:
+        raise ValueError("the name is longer than 80 characters")
+    pid = m.get("project")
+    p = load(pid) if pid and _file(pid).exists() else None
+    if p:
+        if not name:
+            raise ValueError("a slice needs a name")
+        if any(v["section"] == name for k, v in p["slices"].items() if k != sample_id):
+            raise ValueError(f"another slice of project {p['name']} is called {name!r}")
+        p["slices"].setdefault(sample_id, {"metadata": {}})["section"] = name
+        m["project_section"] = name
+        if project_name is not None:
+            if not str(project_name).strip():
+                raise ValueError("the project needs a name")
+            p["name"] = str(project_name).strip()[:80]
+        json.dump(p, open(_file(pid), "w"), indent=1)
+    else:
+        taken = set()
+        for d in config.SAMPLES.iterdir():
+            if d.name != sample_id and (d / "meta.json").exists():
+                o = json.load(open(d / "meta.json"))
+                taken |= {d.name, o.get("name") or d.name}
+        if name and name in taken:
+            raise ValueError(f"another sample is called {name!r}")
+        if name and name != sample_id:
+            m["name"] = name
+        else:
+            m.pop("name", None)
+    json.dump(m, open(mf, "w"), indent=1)
+    return {"sample_id": sample_id, "name": m.get("name") or m.get("project_section") or sample_id,
+            "project_name": p["name"] if p else None}

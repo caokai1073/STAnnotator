@@ -20,7 +20,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from . import config, vocab, mcp_server, review_app, render
 from . import markers, markerqc, plausibility, claudelink, claudereview, importer, advice, niches, embedding
-from . import communication
+from . import communication, projects
 from .session import Session, list_samples, list_sessions, panel_genes
 
 STATIC = Path(__file__).parent / "static"
@@ -911,7 +911,7 @@ def api_samples(req):
                          "image_pending": meta.get("image_pending"), "registration_by": meta.get("registration_by"),
                          "has_registration": bool(meta.get("registration_affine")),
                          "can_undo_placement": bool(meta.get("placement_previous")),
-                         "project": meta.get("project"), "metadata": meta.get("metadata") or {},
+                         "project": meta.get("project"), "name": meta.get("name"), "metadata": meta.get("metadata") or {},
                          "sessions": mine.sort_values("created_at", ascending=False)[["session_id", "created_at", "n_versions", "method"]]
                          .to_dict("records") if len(mine) else []})
     return _json(rows)
@@ -1523,6 +1523,16 @@ async def api_sample_registration(req: Request):
     return _json(r)
 
 
+async def api_sample_rename(req: Request):
+    b = await req.json()
+    try:
+        r = projects.rename(req.path_params["sample"], b.get("name"), b.get("project_name"))
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+    _cell_tables.clear()  # slice names are labels of the analyses
+    return _json(r)
+
+
 async def api_sample_placement_undo(req: Request):
     sample = req.path_params["sample"]
     try:
@@ -2057,6 +2067,7 @@ def build_app(port):
         Route("/api/samples/clear", api_samples_clear, methods=["POST"]),
         Route("/api/sample/{sample}/image", api_sample_image, methods=["POST"]),
         Route("/api/sample/{sample}/registration", api_sample_registration, methods=["POST"]),
+        Route("/api/sample/{sample}/rename", api_sample_rename, methods=["POST"]),
         Route("/api/sample/{sample}/placement/undo", api_sample_placement_undo, methods=["POST"]),
         Route("/api/claude/align", api_claude_align, methods=["POST"]),
         Route("/api/s/{sid}/export", api_export, methods=["POST"]),

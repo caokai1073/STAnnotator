@@ -115,6 +115,7 @@ header .progress:not(.show) { display: none; }
 .fld { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .fld > span:first-child { font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .fld select, .fld input { width: 100%; min-width: 0; height: 32px; }
+.fld .inrow { display: flex; gap: 6px; } .fld .inrow > select { flex: 1; } .fld .inrow > button { flex: none; height: 32px; }
 header #sample, header #session { min-width: 0; }
 .fgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .stat { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; background: var(--bg);
@@ -357,7 +358,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <button class="tab" data-tab="embed" role="tab" title="PCA, UMAP and Leiden clusters">Embed</button><button class="tab" data-tab="niches" role="tab">Niches</button>
     <button class="tab" data-tab="compare" role="tab" title="DE genes, top genes per group, composition">Compare</button><button class="tab" data-tab="signal" role="tab" title="Cell-cell communication: ligand-receptor signaling between neighboring cells">Signaling</button></div>
   <div class="pane" data-pane="data">
-    <label class="fld" id="sampleWrap"><span>Sample</span><select id="sample"></select></label>
+    <div class="fld" id="sampleWrap"><span>Sample</span><div class="inrow"><select id="sample" aria-label="Sample"></select>
+      <button id="sampleRename" disabled title="Rename the sample as the app shows it (a slice: its name in the project)">Rename</button></div></div>
     <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-layers"/></svg><div id="sampleInfo">No sample yet</div></div>
     <div id="slNav" class="slnav" hidden>
       <div class="stepper"><button id="slPrev" title="Previous slice of the project ([)">◀</button><span id="slPos"></span><button id="slNext" title="Next slice of the project (])">▶</button></div>
@@ -622,6 +624,16 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <datalist id="regnames"></datalist>
     <div class="row"><span class="err" id="nameErr"></span><span class="spacer"></span>
       <button id="nameCancel">Cancel</button><button id="nameSave" class="primary">Save</button></div>
+  </div>
+</dialog>
+<dialog id="rnDlg" style="width:min(420px,92vw)">
+  <div class="dh"><b id="rnTitle">Rename sample</b><span class="spacer"></span><span class="hint" id="rnId"></span></div>
+  <div style="padding:12px 14px;display:flex;flex-direction:column;gap:10px">
+    <label class="f"><span id="rnLabel">Sample name</span><input type="text" id="rnName" maxlength="80" autocomplete="off"></label>
+    <label class="f" id="rnProjWrap" hidden>Project name<input type="text" id="rnProject" maxlength="80" autocomplete="off"></label>
+    <div class="hint" id="rnHint"></div>
+    <div class="row"><span class="err" id="rnErr"></span><span class="spacer"></span>
+      <button id="rnCancel">Cancel</button><button id="rnSave" class="primary">Save</button></div>
   </div>
 </dialog>
 <dialog id="imDlg" style="width:min(800px,95vw)">
@@ -1014,12 +1026,22 @@ async function loadSamples(select, project) {
   const sel = $("sample"); sel.textContent = "";
   if (!st.samples.length) {  // a fresh install: nothing imported yet
     $("empty").firstElementChild.textContent = "No samples yet. Click Import… to add Xenium files (cells.parquet and cell_feature_matrix.h5), h5ad or RDS files (with or without an image).";
-    $("empty").style.display = "flex"; $("annotate").disabled = true;
+    $("empty").style.display = "flex"; $("annotate").disabled = true; $("sampleRename").disabled = true;
     return;
   }
   $("annotate").disabled = false;
   $("empty").firstElementChild.innerHTML = "No cell types yet. Check the marker list (<b>Markers…</b>) and click <b>Annotate</b>.";
-  const label = (s) => [s.sample_id, s.description || [s.disease, s.location].filter(Boolean).join(" · "), `${s.n_cells.toLocaleString()} cells`].filter(Boolean).join(" · ");
+  fillSampleSelect();
+  if (project) { const p = st.projects.find((x) => x.project_id === project); if (p) select = p.samples[0]; }
+  const url = new URLSearchParams(location.search);  // links from the agent: ?sample=...&session=...
+  const want = select || url.get("sample") || load("sample");
+  if (st.samples.some((s) => s.sample_id === want)) sel.value = want;
+  if (url.get("session") && url.get("sample") === sel.value) st.openedThisVisit[sel.value] = url.get("session");
+  await selectSample(sel.value);
+}
+function fillSampleSelect() {  // the slices of each project, then the samples on their own
+  const sel = $("sample"), keep = sel.value; sel.textContent = "";
+  const label = (s) => [s.name || s.sample_id, s.description || [s.disease, s.location].filter(Boolean).join(" · "), `${s.n_cells.toLocaleString()} cells`].filter(Boolean).join(" · ");
   const inProject = new Set();
   st.projects.forEach((p) => {  // the slices of a project together, with what distinguishes them
     const g = document.createElement("optgroup"); g.label = `project ${p.name} (${p.samples.length} slices)`;
@@ -1036,12 +1058,7 @@ async function loadSamples(select, project) {
   st.samples.filter((s) => !inProject.has(s.sample_id)).forEach((s) => {
     const o = document.createElement("option"); o.value = s.sample_id; o.textContent = label(s); sel.append(o);
   });
-  if (project) { const p = st.projects.find((x) => x.project_id === project); if (p) select = p.samples[0]; }
-  const url = new URLSearchParams(location.search);  // links from the agent: ?sample=...&session=...
-  const want = select || url.get("sample") || load("sample");
-  if (st.samples.some((s) => s.sample_id === want)) sel.value = want;
-  if (url.get("session") && url.get("sample") === sel.value) st.openedThisVisit[sel.value] = url.get("session");
-  await selectSample(sel.value);
+  if (keep) sel.value = keep;
 }
 
 // Color-by options appear only when they have something to show: the data starts with no cell types, and
@@ -1096,6 +1113,7 @@ async function selectSample(id) {
   // only annotations made in the app (marker genes or a single-cell reference); the lab's benchmark ones are not shown
   st.sample.allSessions = st.sample.sessions;
   st.sample.sessions = st.sample.sessions.filter((x) => USER_METHODS.includes(x.method));
+  $("sampleRename").disabled = false;
   $("reset").disabled = !st.sample.allSessions.length && !projectOf(id);  // in a project: also to reset the other slices
   store("sample", id);
   $("path").textContent = st.sample.bundle_dir;
@@ -3018,6 +3036,35 @@ $("dotsize").oninput = (e) => {  // redraw once the slider rests, not on every s
   if (GL.ok) drawGL(); else { clearTimeout(dotTimer); dotTimer = setTimeout(refreshOverlay, 250); }
 };
 const projectOf = (id) => (st.projects || []).find((p) => p.samples.includes(id));
+function sampleName(s) {  // as the app shows it: a slice by its name in the project, a sample by its own name or id
+  const p = projectOf(s.sample_id);
+  return p && p.slices[s.sample_id] ? p.slices[s.sample_id].section : s.name || s.sample_id;
+}
+$("sampleRename").onclick = () => {
+  const s = st.sample; if (!s) return;
+  const p = projectOf(s.sample_id);
+  $("rnTitle").textContent = p ? "Rename slice" : "Rename sample";
+  $("rnLabel").textContent = p ? "Slice name" : "Sample name";
+  $("rnName").value = sampleName(s); $("rnName").placeholder = p ? "" : s.sample_id;
+  $("rnProjWrap").hidden = !p; if (p) $("rnProject").value = p.name;
+  $("rnId").textContent = `id ${s.sample_id}`;
+  $("rnHint").textContent = "Only the name shown changes: the id, the files and the annotations stay." + (p ? "" : " Leave it empty for the id.");
+  $("rnErr").textContent = "";
+  $("rnDlg").showModal(); $("rnName").focus(); $("rnName").select();
+};
+$("rnSave").onclick = async () => {
+  const s = st.sample, p = projectOf(s.sample_id);
+  const body = { name: $("rnName").value.trim() };
+  if (p) body.project_name = $("rnProject").value.trim();
+  try { await post(`/api/sample/${s.sample_id}/rename`, body); } catch (e) { $("rnErr").textContent = e.message; return; }
+  $("rnDlg").close();
+  st.samples = await api("/api/samples"); st.projects = await api("/api/projects").catch(() => []);
+  s.name = (st.samples.find((x) => x.sample_id === s.sample_id) || {}).name;
+  fillSampleSelect(); miniInfo(); sliceNav();
+  toast("Renamed");
+};
+$("rnCancel").onclick = () => $("rnDlg").close();
+["rnName", "rnProject"].forEach((id) => $(id).addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("rnSave").click(); } }));
 const CONDITION = /type|condition|group|disease|stage|day|treat|time|state|genotype/i;
 function metaText(md, n = 3) {  // a slice's metadata, condition-like columns first
   return Object.entries(md || {}).sort((a, b) => CONDITION.test(b[0]) - CONDITION.test(a[0])).slice(0, n).map(([, v]) => v).join(" · ");
@@ -3574,7 +3621,7 @@ $("anN").onchange = () => {  // also fires when the box loses focus: redraw only
 $("glClose").onclick = () => $("glDlg").close();
 function miniInfo() {
   const s = st.sample;
-  $("miniInfo").textContent = [st.remote ? `on ${st.remote.host}` : null, s && s.sample_id, s && (st.sid ? `v${st.version}` : "no annotation open")]
+  $("miniInfo").textContent = [st.remote ? `on ${st.remote.host}` : null, s && sampleName(s), s && (st.sid ? `v${st.version}` : "no annotation open")]
     .filter(Boolean).join(" · ");
 }
 function setHeader(collapsed) {  // the toolbar folds into one thin line; the map takes the room
@@ -3741,7 +3788,7 @@ $("xpCsv").onclick = () => exportAs("csv");
 $("xpNb").onclick = () => exportAs("notebook");
 $("xpReg").onclick = () => exportAs("registration");
 document.addEventListener("keydown", (e) => {
-  if ($("mkDlg").open || $("rpDlg").open || $("hpDlg").open || $("xpDlg").open || $("glDlg").open || $("anDlg").open || $("rvDlg").open || $("nameDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
+  if ($("mkDlg").open || $("rpDlg").open || $("hpDlg").open || $("xpDlg").open || $("glDlg").open || $("anDlg").open || $("rvDlg").open || $("nameDlg").open || $("rnDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
   if (e.key === "h") $("hide").click();
   if (e.key === "e") $("hideHE").click();
   if (e.key === "[") stepSlice(-1);

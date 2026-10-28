@@ -108,7 +108,8 @@ def cells(session=None, version=None, pid=None, selection=None, get_session=None
                 if k != "selection":
                     missing.setdefault(k, []).append(s.sample_id)
                 lab[k] = np.full(n, None, dtype=object)
-        lab["slice"] = np.full(n, s.meta.get("project_section", s.sample_id) if pid else s.sample_id, dtype=object)
+        section = p["slices"].get(s.sample_id, {}).get("section") if pid else None  # as renamed in the project
+        lab["slice"] = np.full(n, section or s.meta.get("project_section", s.sample_id) if pid else s.sample_id, dtype=object)
         for mk, mv in meta.get(s.sample_id, {}).items():
             lab[mk if mk not in BUILTIN else f"meta:{mk}"] = np.full(n, str(mv), dtype=object)
         parts.append(pd.DataFrame(lab))
