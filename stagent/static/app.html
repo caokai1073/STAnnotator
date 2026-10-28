@@ -2986,7 +2986,7 @@ async function showAbout() {
   const esc = (s) => String(s ?? "–").replace(/&/g, "&amp;").replace(/</g, "&lt;");
   const cc = d.claude_connection || {};
   const rows = [
-    ["Build", esc(d.build)], ["Running as", esc(d.app) + (d.standalone ? " (standalone)" : " (from source)")],
+    ["Version", esc(d.version)], ["Build", esc(d.build)], ["Running as", esc(d.app) + (d.standalone ? " (standalone)" : " (from source)")],
     ["System", esc(d.system) + " · Python " + esc(d.python)],
     ["Data folder", esc(d.data_folder)], ["Samples / annotations", `${d.n_samples} / ${d.n_annotations} · ${d.data_size_mb} MB`],
     ["Claude Code", d.claude_code ? `<span class="ok">found</span> · ${esc(d.claude_code)}` : `<span class="bad">not found</span>: install Claude Code, then click Ask Agent`],
@@ -4455,7 +4455,7 @@ async function initConnection(serverRemote) {  // in the app: is this page the s
 api("/api/config").then((c) => {  // the desktop app (or no Claude Code CLI): the conversation happens in Claude's apps
   st.chatAvailable = c.chat; st.desktop = c.desktop; st.platform = c.platform;
   syncKMode();
-  $("build").textContent = c.build ? `build ${c.build}` : "";
+  $("build").textContent = [c.version ? `v${c.version}` : "", c.build ? `build ${c.build}` : ""].filter(Boolean).join(" · ");
   $("claudeBtn").hidden = !c.desktop;
   $("clearAll").hidden = !c.desktop;
   st.home = c.home;

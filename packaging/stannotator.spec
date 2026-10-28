@@ -6,6 +6,7 @@ from pathlib import Path
 from PyInstaller.utils.hooks import collect_all, copy_metadata
 
 ROOT = Path(SPECPATH).parent
+VERSION = __import__("re").search(r'__version__ = "([^"]+)"', (ROOT / "stagent" / "__init__.py").read_text()).group(1)
 datas = [(str(ROOT / "stagent" / "static"), "stagent/static"),
          (str(ROOT / "stagent" / "data"), "stagent/data")]
 # source of the modules an exported notebook carries (the bundle otherwise holds only compiled code)
@@ -74,5 +75,5 @@ if sys.platform == "darwin":
     app = BUNDLE(coll, name="STAnnotator.app", icon=str(icon) if icon.exists() else None,
                  bundle_identifier="io.github.caokai1073.stannotator",
                  info_plist={"CFBundleName": "STAnnotator", "CFBundleDisplayName": "STAnnotator",
-                             "CFBundleShortVersionString": "0.2.0", "LSMinimumSystemVersion": "11.0",
+                             "CFBundleShortVersionString": VERSION, "LSMinimumSystemVersion": "11.0",
                              "NSHighResolutionCapable": True})

@@ -24,7 +24,6 @@ def make_app(dest=None):
     """Build a small macOS app bundle that starts this installation's desktop app (no copy of Python inside: it
     runs the environment it was made from, so keep that folder where it is)."""
     import subprocess, tempfile
-    from importlib.metadata import version
     if platform.system() != "Darwin":
         raise SystemExit("make-app builds a macOS app; on this system run: stagent app")
     dest = Path(dest or Path.home() / "Applications").expanduser()
@@ -33,7 +32,7 @@ def make_app(dest=None):
         shutil.rmtree(app)
     (app / "Contents" / "MacOS").mkdir(parents=True)
     (app / "Contents" / "Resources").mkdir()
-    (app / "Contents" / "Info.plist").write_text(APP_PLIST.format(version=version("stagent")))
+    (app / "Contents" / "Info.plist").write_text(APP_PLIST.format(version=__import__("stagent").__version__))
     exe = app / "Contents" / "MacOS" / "STAnnotator"
     exe.write_text("#!/bin/sh\n"
                    f'export STAGENT_HOME="{config.HOME}"\n'

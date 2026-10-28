@@ -1,6 +1,6 @@
 [project]
 name = "stagent"
-version = "0.2.0"
+dynamic = ["version"]
 description = "Spatial transcriptomics cell type annotation driven by natural-language spatial priors"
 requires-python = ">=3.11"
 dependencies = [
@@ -19,6 +19,9 @@ celltypeagent = "stagent.cli:main"  # the old name, for installations and app se
 stagent-mcp = "stagent.mcp_server:main"
 stagent-review = "stagent.review_app:main"
 stagent-web = "stagent.webapp:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "stagent.__version__"}
 
 [build-system]
 requires = ["setuptools>=68"]

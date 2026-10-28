@@ -497,6 +497,7 @@ def api_config(req):
     own Claude Code instead."""
     return _json({"chat": not desktop_mode() and shutil.which("claude") is not None, "desktop": desktop_mode(),
                   "home": str(config.HOME), "platform": sys.platform, "build": config.build(),
+                  "version": __import__("stagent").__version__,
                   "remote": os.environ.get("STAGENT_REMOTE") == "1", "host": platform.node()})
 
 
@@ -1506,7 +1507,8 @@ def api_diagnostics(req):
     n_samples = sum(1 for d in config.SAMPLES.iterdir() if (d / "meta.json").exists()) if config.SAMPLES.exists() else 0
     n_sessions = sum(1 for d in config.SESSIONS.iterdir() if (d / "session.json").exists()) if config.SESSIONS.exists() else 0
     size = sum(f.stat().st_size for f in config.HOME.rglob("*") if f.is_file()) if config.HOME.exists() else 0
-    return _json({"build": config.build(), "app": "desktop app" if desktop_mode() else "web viewer",
+    from . import __version__
+    return _json({"version": __version__, "build": config.build(), "app": "desktop app" if desktop_mode() else "web viewer",
                   "standalone": bool(config.FROZEN), "system": f"{platform.system()} {platform.release()} ({platform.machine()})",
                   "python": platform.python_version(), "data_folder": str(config.HOME),
                   "n_samples": n_samples, "n_annotations": n_sessions, "data_size_mb": round(size / 2 ** 20),
