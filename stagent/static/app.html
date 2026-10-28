@@ -390,6 +390,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-layers"/></svg><div id="sampleInfo">No sample yet</div></div>
     <div class="act2"><button id="allSamples" disabled title="Every sample at a glance, colored the same way (cell type, lineage, Leiden, niche, region)">Overview of all samples</button>
       <button id="pjBtn" disabled title="Choose which samples form which project (slices analyzed together)">Projects</button></div>
+    <div class="act2" id="heStateWrap" hidden><button id="heState" title="Unload the H&amp;E to free memory; its registration is kept, so Load H&amp;E puts it back as it was">Unload H&amp;E</button></div>
     <div class="act2"><button id="qfBtn" class="primary main" disabled title="Delete cells with few transcripts or genes or a high mitochondrial share, and genes detected in few cells">Filter cells and genes</button></div>
     <div id="slNav" class="slnav" hidden>
       <div class="stepper"><button id="slPrev" title="Previous slice of the project ([)">◀</button><span id="slPos"></span><button id="slNext" title="Next slice of the project (])">▶</button></div>
@@ -986,7 +987,7 @@ function openHE(sample) {
     $("hideHE").hidden = kind === "none";
     setLabel($("hideHE"), `Hide the ${kind === "H&E" ? "H&E" : "image"}: the cells only (e)`);
     viewer.addOnceHandler("open", applyHE);
-    viewer.open(tileSource((l, x, y) => `/api/sample/${sample}/he/${l}/${x}_${y}.jpg?r=${he.rev}`));  // rev: new cell positions, new tiles
+    viewer.open(tileSource((l, x, y) => `/api/sample/${sample}/he/${l}/${x}_${y}.jpg?r=${he.rev}${he.image_unloaded ? "&u=1" : ""}`));  // rev: new cell positions, new tiles
   });
 }
 function filt() {  // legend filter of the current color mode (empty = show all)
@@ -4410,9 +4411,25 @@ function segmented(id) {  // a select shown as a row of buttons (the select keep
 }
 function syncSeg(id) { document.querySelectorAll(`.seg[data-for="${id}"] button`).forEach((b) => b.classList.toggle("on", b.dataset.v === $(id).value)); }
 segmented("method"); segmented("nIdentity"); segmented("nKMode"); segmented("aScope"); segmented("aKind"); segmented("sScope"); segmented("sKind");
+function heStateBtn() {  // Unload H&E (free its memory) / Load H&E (back, with its registration)
+  const s = st.sample, has = s && (s.image_unloaded || (s.image_kind && s.image_kind !== "none"));
+  $("heStateWrap").hidden = !has;
+  if (has) setLabel($("heState"), s.image_unloaded ? `Load ${s.image_kind === "H&E" ? "H&E" : "image"}` : `Unload ${s.image_kind === "H&E" ? "H&E" : "image"}`);
+}
+$("heState").onclick = async () => {
+  const s = st.sample; if (!s) return;
+  try {
+    await post(`/api/sample/${s.sample_id}/image_state`, { loaded: !!s.image_unloaded });
+    const unloaded = !s.image_unloaded;
+    await afterPlacement(unloaded ? "Unloaded: its memory is free; the cells and the registration stay" : "Loaded again with its registration");
+    heStateBtn(); sampleInfo();
+  } catch (e) { toast(e.message, 7000); }
+};
 function sampleInfo() {  // the Data tab's card: what the open sample is
   const s = st.sample; if (!s) { $("sampleInfo").textContent = "No sample yet"; return; }
-  const img = s.image_pending ? "image waiting for its alignment" : !s.image_kind || s.image_kind === "none" ? "no image" : s.image_kind;
+  const img = s.image_pending ? "image waiting for its alignment" : !s.image_kind || s.image_kind === "none" ? "no image"
+    : s.image_unloaded ? `${s.image_kind} unloaded` : s.image_kind;
+  heStateBtn();
   const filt = s.filter ? `filtered (${s.filter.n_cells_removed.toLocaleString()} cells, ${s.filter.n_genes_removed} genes removed)` : "";
   $("sampleInfo").textContent = [`${s.n_cells.toLocaleString()} cells`, img, filt, s.description].filter(Boolean).join(" · ");
 }

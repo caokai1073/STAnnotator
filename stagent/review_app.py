@@ -73,7 +73,8 @@ def crop_jpeg(s: Session, cell: int, view: str, overlay: bool) -> bytes:
     half_px = half_um / upp
     row = s.row_of(cell)
     px, py = s.cells.px.to_numpy(), s.cells.py.to_numpy()
-    im, x0, y0 = render.he_crop(s.meta["he_path"], px[row], py[row], half_px)
+    from .importer import image_of
+    im, x0, y0 = render.he_crop(image_of(s.sample_id), px[row], py[row], half_px)
     img = Image.fromarray(im).convert("RGB")
     scale = DISPLAY_PX / max(img.size)
     img = img.resize((round(img.width * scale), round(img.height * scale)), Image.LANCZOS)

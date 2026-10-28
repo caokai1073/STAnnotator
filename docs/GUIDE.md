@@ -169,6 +169,9 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
    cells turn light gray on every sample), **Show all** clears the ticks; click a sample to open it. **Remove sample** (bottom of the toolbar) removes only the open sample: its cells,
    annotations with their chats, regions, niches and PCA / UMAP go to the data folder's `trash/`, a project keeps its
    other slices, and the image and source files stay where they are.
+   **Unload H&E** (Data tab) frees the memory of the sample's image: the cells stay where they are on a blank
+   background of the image's size, and the image path and registration are kept, so **Load H&E** puts it back as it
+   was (no new registration or alignment). While unloaded, Claude's figures show the cells without the image.
    **Save…** under Annotation (Data tab) writes the open annotation into one file (`.stannot`): every version with its
    regions, priors and corrections, the marker step and model, niches and their names, review verdicts and advice,
    the PCA / UMAP / Leiden clusters, and the last result of each Compare and Signaling analysis (these are kept with

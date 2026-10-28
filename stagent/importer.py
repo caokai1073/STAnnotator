@@ -849,6 +849,43 @@ def undo_registration_fix(sample_id):
 
 
 # ---------------- adding the image and the registration later ----------------
+def shown_image(meta):
+    """The image the sample shows, or None (none, or unloaded by the user to free memory)."""
+    return None if meta.get("image_unloaded") else meta.get("he_path")
+
+
+def image_of(sample_id):
+    """The image a sample shows now, read from its meta.json (None while unloaded)."""
+    return shown_image(_meta(sample_id))
+
+
+def unload_image(sample_id):
+    """Stop showing (and reading) the sample's image to free memory; its path, kind and registration stay, so
+    load_image puts it back as it was."""
+    m = _meta(sample_id)
+    if not m.get("he_path") or m.get("image_kind") in (None, "none"):
+        raise ValueError("this sample shows no image")
+    if not m.get("image_unloaded"):
+        from .render import slide, unload
+        s = slide(m["he_path"])
+        m["image_unloaded"] = {"size": [s.W0, s.H0]}
+        unload(m["he_path"])
+        json.dump(m, open(config.SAMPLES / sample_id / "meta.json", "w"), indent=1)
+    return {"unloaded": m["he_path"]}
+
+
+def load_image(sample_id):
+    """Show the unloaded image again, with the registration it had."""
+    m = _meta(sample_id)
+    if not m.get("image_unloaded"):
+        return {"loaded": m.get("he_path")}
+    if not Path(m["he_path"]).exists():
+        raise ValueError(f"the image is no longer at {m['he_path']}: add it again under Import (its registration is kept)")
+    m.pop("image_unloaded")
+    json.dump(m, open(config.SAMPLES / sample_id / "meta.json", "w"), indent=1)
+    return {"loaded": m["he_path"]}
+
+
 def _meta(sample_id):
     return json.load(open(config.SAMPLES / sample_id / "meta.json"))
 

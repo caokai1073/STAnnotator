@@ -64,12 +64,14 @@ class SampleView:
         meta = json.load(open(config.SAMPLES / sample_id / "meta.json"))
         self.sample_id = sample_id
         self.um_per_px = float(meta.get("he_um_per_px", config.HE_UM_PER_PX))
-        self.slide = render.slide(meta.get("he_path"))  # H&E, fluorescence, or a blank background
-        self.image_kind = meta.get("image_kind", "H&E")
+        off = meta.get("image_unloaded")  # unloaded to free memory: a blank background of the image's size
+        self.slide = render.UnloadedSlide(*off["size"]) if off else render.slide(meta.get("he_path"))
+        self.image_kind = "none" if off else meta.get("image_kind", "H&E")
+        self.unloaded = meta.get("image_kind", "H&E") if off else None
         cells = pd.read_parquet(config.SAMPLES / sample_id / "cells.parquet", columns=["px", "py"])
         px, py = cells.px.to_numpy(), cells.py.to_numpy()
         self.px, self.py = px, py
-        lo = -math.inf if isinstance(self.slide, render.BlankSlide) else 0  # a blank background has no edge at 0
+        lo = -math.inf if type(self.slide) is render.BlankSlide else 0  # a blank background has no edge at 0
         self.ox, self.oy = int(max(lo, math.floor(px.min()) - MARGIN_PX)), int(max(lo, math.floor(py.min()) - MARGIN_PX))
         x1, y1 = min(self.slide.W0, int(px.max()) + MARGIN_PX), min(self.slide.H0, int(py.max()) + MARGIN_PX)
         self.W, self.H = x1 - self.ox, y1 - self.oy
@@ -930,7 +932,7 @@ def api_samples(req):
                          "has_registration": bool(meta.get("registration_affine")),
                          "can_undo_placement": bool(meta.get("placement_previous")),
                          "project": meta.get("project"), "name": meta.get("name"), "metadata": meta.get("metadata") or {},
-                         "n_genes": meta.get("n_genes"),
+                         "n_genes": meta.get("n_genes"), "image_unloaded": bool(meta.get("image_unloaded")),
                          "filter": {"params": f["params"], "n_cells_removed": f["n_cells_removed"],
                                     "n_genes_removed": len(f["genes_removed"])} if (f := meta.get("filter")) else None,
                          "sessions": mine.sort_values("created_at", ascending=False)[["session_id", "created_at", "n_versions", "method"]]
@@ -1262,7 +1264,7 @@ def api_projects(req):
 def api_he_info(req):
     v = view(req.path_params["sample"])
     return _json({"width": v.W, "height": v.H, "tile_size": TILE, "origin": [v.ox, v.oy], "um_per_px": v.um_per_px,
-                  "image_kind": v.image_kind, "rev": int(v.rev)})
+                  "image_kind": v.image_kind, "image_unloaded": v.unloaded, "rev": int(v.rev)})
 
 
 async def api_annotate(req: Request):
@@ -1593,6 +1595,20 @@ async def api_sample_reset(req: Request):
         shutil.move(str(emb), str(trash / "embedding"))
     return _json({"deleted_sessions": len(sess), "deleted_conversations": n_chats,
                   "deleted_embedding": with_embedding and (trash / "embedding").exists(), "trash": str(trash)})
+
+
+async def api_sample_image_state(req: Request):
+    """{loaded: false}: unload the sample's image to free memory (registration kept); {loaded: true}: show it again."""
+    sample, b = req.path_params["sample"], await req.json()
+    try:
+        r = importer.load_image(sample) if b.get("loaded") else importer.unload_image(sample)
+    except (ValueError, OSError) as e:
+        return _json({"error": str(e)}, 400)
+    _views.pop(sample, None)  # its tiles go with the view
+    for cache in (_tiles, _overlays):
+        for k in [k for k in cache if k[0] == sample or (len(k) > 8 and k[8] == sample)]:
+            cache.pop(k)
+    return _json(r)
 
 
 async def api_projects_assign(req: Request):
@@ -2403,6 +2419,7 @@ def build_app(port):
         Route("/api/sample/{sample}/reset", api_sample_reset, methods=["POST"]),
         Route("/api/sample/{sample}/remove", api_sample_remove, methods=["POST"]),
         Route("/api/projects/assign", api_projects_assign, methods=["POST"]),
+        Route("/api/sample/{sample}/image_state", api_sample_image_state, methods=["POST"]),
         Route("/api/samples/clear", api_samples_clear, methods=["POST"]),
         Route("/api/sample/{sample}/image", api_sample_image, methods=["POST"]),
         Route("/api/sample/{sample}/registration", api_sample_registration, methods=["POST"]),

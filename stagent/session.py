@@ -1132,7 +1132,8 @@ class Session:
             raise ValueError(f"no conflicts in group {gid!r}")
         labels = self.labels(version)
         out = self.dir / "figures" / f"conflicts_{_tag(gid)}.jpg"
-        return render.conflict_sheet(self.cells, q, self.meta["he_path"], labels, out, title=gid,
+        from .importer import image_of
+        return render.conflict_sheet(self.cells, q, image_of(self.sample_id), labels, out, title=gid,
                                      lineage=self.lineage_labels(version), palette=self.lineage_colors(),
                                      um_per_px=self.he_um_per_px), q
 

@@ -101,7 +101,8 @@ def fig_compartment(s, comp, name, version=None):
     areas = [{"id": f"{name} {i + 1}" if len(comp["polygons_px"]) > 1 else name, "outline_px": p}
              for i, p in enumerate(comp["polygons_px"])]
     out = s.dir / "figures" / f"compartment_{re.sub(r'[^A-Za-z0-9]+', '_', name)}_v{sc['version']}.jpg"
-    return render.tissue_overview(s.meta["he_path"], s.cells.px.to_numpy(), s.cells.py.to_numpy(), lin,
+    from .importer import image_of
+    return render.tissue_overview(image_of(s.sample_id), s.cells.px.to_numpy(), s.cells.py.to_numpy(), lin,
                                   s.lineage_colors(), sc["grid"], areas, out, title=f"proposed {name}",
                                   image_kind=s.meta.get("image_kind", "H&E"), area_label="proposed outline")
 
@@ -319,9 +320,10 @@ def registration(s, n_windows=40, window_um=400.0, max_shift_um=25.0):
     crypts repeat), and an affine fit of the per-window offsets against position, which shows a scale or rotation
     error (offsets that grow across the section) that a single shift misses."""
     kind = s.meta.get("image_kind", "H&E")
-    if not s.meta.get("he_path") or kind == "none":
-        return {"error": "no image"}
-    sl = render.slide(s.meta["he_path"])
+    from .importer import image_of
+    if not image_of(s.sample_id) or kind == "none":
+        return {"error": "no image (or the image is unloaded: Load H&E in the app's Data tab)"}
+    sl = render.slide(image_of(s.sample_id))
     px, py = s.cells.px.to_numpy(), s.cells.py.to_numpy()
     g = plausibility.grid(s)
     ti, tj = plausibility.tile_index(s, g)

@@ -377,7 +377,8 @@ def fig_overview(s, version=None, highlight=None):
             keep |= set(s.type_groups.get(h, [h]))
         keep = {s.lineage_of_type.get(t, t) for t in keep} | set(highlight)
     out = s.dir / "figures" / f"overview_v{res['version']}_{'-'.join(sorted(keep or [])) or 'all'}.jpg".replace(" ", "_")
-    return render.tissue_overview(s.meta["he_path"], s.cells.px.to_numpy(), s.cells.py.to_numpy(), lin,
+    from .importer import image_of
+    return render.tissue_overview(image_of(s.sample_id), s.cells.px.to_numpy(), s.cells.py.to_numpy(), lin,
                                   s.lineage_colors(), sc["grid"], sc["areas"], out, highlight=keep,
                                   title=f"sample {s.sample_id} v{res['version']}",
                                   image_kind=s.meta.get("image_kind", "H&E"))
@@ -398,7 +399,8 @@ def fig_area(s, spec, version=None, highlight=None):
     if highlight:
         keep = {s.lineage_of_type.get(t, t) for h in highlight for t in s.type_groups.get(h, [h])} | set(highlight)
     out = s.dir / "figures" / f"area_v{res['version']}_{a['id'] or a['tiles'].replace(':', '-').replace(', ', '_')}.jpg"
-    path = render.area_view(s.meta["he_path"], s.cells.px.to_numpy(), s.cells.py.to_numpy(), res["lineage"],
+    from .importer import image_of
+    path = render.area_view(image_of(s.sample_id), s.cells.px.to_numpy(), s.cells.py.to_numpy(), res["lineage"],
                             s.lineage_colors(), res["status"] != "", box, a["outline_px"], out, g, highlight=keep,
                             um_per_px=s.he_um_per_px, image_kind=s.meta.get("image_kind", "H&E"),
                             title=f"sample {s.sample_id} v{res['version']} " + (a["id"] or "") + f" tiles {a['tiles']}")

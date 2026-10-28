@@ -111,7 +111,19 @@ class BlankSlide:
         return Image.new("RGB", (out_w, out_h), self.fill)
 
 
+class UnloadedSlide(BlankSlide):
+    """An image the user unloaded to free memory: a plain background of the image's size, so the cells, regions and
+    registration stay where they are on it."""
+    def __init__(self, W0, H0):
+        self.W0, self.H0 = int(W0), int(H0)
+
+
 _slides = {}
+
+
+def unload(path):
+    """Forget an open image (its file handles and stores)."""
+    _slides.pop(path, None)
 
 
 def slide(path):
