@@ -76,6 +76,83 @@ def drop_sample(sample_id, trash):
     return {"project": pid, "left": 0}
 
 
+def assign(groups):
+    """Put samples into projects: groups = {sample_id: project name, or "" for none}; samples not named keep their
+    project. A project is matched by its name (or id), a new name makes a new project; the slices of a project must
+    share one gene panel. A slice that leaves a project keeps its name as the sample's name; a project left without
+    slices goes away (its joint results to trash/). Returns the projects."""
+    import shutil
+    metas = {}
+    for sid in groups:
+        mf = config.SAMPLES / sid / "meta.json"
+        if not mf.exists():
+            raise ValueError(f"no sample {sid!r}")
+        metas[sid] = json.load(open(mf))
+    projs = {p["project_id"]: p for p in (json.load(open(f)) for f in sorted(PROJECTS.glob("*.json")))} if PROJECTS.exists() else {}
+    by_name = {p["name"]: pid for pid, p in projs.items()} | {pid: pid for pid in projs}
+    target = {}  # sample -> project id (None: on its own)
+    for sid, name in groups.items():
+        name = str(name or "").strip()[:80]
+        if not name:
+            target[sid] = None
+            continue
+        pid = by_name.get(name)
+        if pid is None:
+            pid = re.sub(r"[^A-Za-z0-9_.-]+", "_", name).strip("_") or "project"
+            while pid in projs or (config.SAMPLES / pid).exists():
+                pid += "_p"
+            projs[pid] = {"project_id": pid, "name": name, "samples": [], "slices": {},
+                          "created_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+            by_name[name] = by_name[pid] = pid
+        target[sid] = pid
+    for sid, pid in target.items():  # leave the old project
+        old = metas[sid].get("project")
+        if old and old != pid and old in projs:
+            sec = projs[old]["slices"].get(sid, {}).get("section")
+            projs[old]["samples"] = [x for x in projs[old]["samples"] if x != sid]
+            projs[old]["slices"].pop(sid, None)
+            if pid is None and sec and sec != sid and not metas[sid].get("name"):
+                metas[sid]["name"] = sec  # keeps the name it had in the project
+    for sid, pid in target.items():  # join the new one
+        if pid and sid not in projs[pid]["samples"]:
+            sec = metas[sid].get("project_section") if metas[sid].get("project") == pid else None
+            sec = sec or metas[sid].get("name") or metas[sid].get("project_section") or sid
+            taken = {v["section"] for v in projs[pid]["slices"].values()}
+            base, i = sec, 2
+            while sec in taken:
+                sec, i = f"{base}_{i}", i + 1
+            projs[pid]["samples"].append(sid)
+            projs[pid]["slices"][sid] = {"section": sec, "metadata": metas[sid].get("metadata") or {}}
+    for pid in set(x for x in target.values() if x):  # one gene panel per project
+        panels = {}
+        for sid in projs[pid]["samples"]:
+            g = config.SAMPLES / sid / "genes.txt"
+            if g.exists():
+                panels.setdefault(g.read_text(), []).append(sid)
+        if len(panels) > 1:
+            sizes = "; ".join(f"{', '.join(v)}: {len(k.split())} genes" for k, v in panels.items())
+            raise ValueError(f"the slices of project {projs[pid]['name']} must share one gene panel; their gene lists "
+                             f"differ ({sizes})")
+    PROJECTS.mkdir(parents=True, exist_ok=True)
+    for pid, p in projs.items():
+        if p["samples"]:
+            json.dump(p, open(_file(pid), "w"), indent=1)
+        elif _file(pid).exists():  # empty now: gone, its joint results kept in the trash
+            trash = config.TRASH / f"{time.strftime('%Y%m%d-%H%M%S')}_project_{pid}"
+            trash.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(_file(pid)), str(trash / f"{pid}.json"))
+            if (PROJECTS / pid).exists():
+                shutil.move(str(PROJECTS / pid), str(trash / pid))
+    for sid, pid in target.items():
+        m = metas[sid]
+        if pid:
+            m.update(project=pid, project_section=projs[pid]["slices"][sid]["section"])
+        else:
+            m.pop("project", None); m.pop("project_section", None)
+        json.dump(m, open(config.SAMPLES / sid / "meta.json", "w"), indent=1)
+    return list_projects()
+
+
 def slice_name(project, value):
     """Sample id of a section of a project: <project>_<section>, letters, digits, dot, dash, underscore only."""
     return f"{project}_{re.sub(r'[^A-Za-z0-9_.-]+', '_', str(value)).strip('_')}"[:80]

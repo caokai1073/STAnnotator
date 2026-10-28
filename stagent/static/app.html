@@ -151,6 +151,10 @@ header #carryWrap[style*="hidden"] { display: none; }
 .act2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .act2 > button, .cfgslot > button { width: 100%; }
 .act2 > button:only-child { grid-column: 1 / -1; }
+.pjtab { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+.pjtab th, .pjtab td { text-align: left; padding: 4px 8px 4px 0; border-bottom: 1px solid var(--line); }
+.pjtab td.n { color: var(--muted); white-space: nowrap; } .pjtab select { width: 100%; min-width: 160px; }
+.pjtab tr.moved td:first-child { font-weight: 600; }
 .pclist { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.5; }
 .pctab { border-collapse: collapse; font-size: 12.5px; width: 100%; }
 .pctab td, .pctab th { text-align: left; padding: 2px 8px 2px 0; border-bottom: 1px solid var(--line); }
@@ -384,7 +388,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <div class="fld" id="sampleWrap"><span>Sample</span><div class="inrow"><select id="sample" aria-label="Sample"></select>
       <button id="sampleRename" disabled title="Rename the sample as the app shows it (a slice: its name in the project)">Rename</button></div></div>
     <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-layers"/></svg><div id="sampleInfo">No sample yet</div></div>
-    <div class="act2"><button id="allSamples" disabled title="Every sample at a glance, colored the same way (cell type, lineage, Leiden, niche, region)">Overview of all samples</button></div>
+    <div class="act2"><button id="allSamples" disabled title="Every sample at a glance, colored the same way (cell type, lineage, Leiden, niche, region)">Overview of all samples</button>
+      <button id="pjBtn" disabled title="Choose which samples form which project (slices analyzed together)">Projects</button></div>
     <div class="act2"><button id="qfBtn" class="primary main" disabled title="Delete cells with few transcripts or genes or a high mitochondrial share, and genes detected in few cells">Filter cells and genes</button></div>
     <div id="slNav" class="slnav" hidden>
       <div class="stepper"><button id="slPrev" title="Previous slice of the project ([)">◀</button><span id="slPos"></span><button id="slNext" title="Next slice of the project (])">▶</button></div>
@@ -666,6 +671,17 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <button id="pcDismiss">Dismiss</button><button id="pcAccept" class="primary">Accept</button></div>
   </div>
 </dialog>
+<dialog id="pjDlg" style="width:min(760px,95vw)">
+  <div class="dh"><b>Projects</b><span class="spacer"></span><button id="pjClose">Close</button></div>
+  <div class="imbody" style="gap:8px">
+    <div class="hint">The slices of a project are stepped through together and can be annotated, embedded and analyzed
+      together (All slices together); they need one gene panel. Choose the project of each sample; "no project" takes
+      it out. A project without slices goes away.</div>
+    <div class="row"><input type="text" id="pjNewName" placeholder="name of a new project" style="flex:1"><button id="pjNew">Add project</button></div>
+    <div style="max-height:52vh;overflow:auto"><table class="pjtab" id="pjTab"></table></div>
+    <div class="row"><span class="err" id="pjErr"></span><span class="spacer"></span><button id="pjCancel">Cancel</button><button id="pjSave" class="primary">Save</button></div>
+  </div>
+</dialog>
 <dialog id="rnDlg" style="width:min(420px,92vw)">
   <div class="dh"><b id="rnTitle">Rename sample</b><span class="spacer"></span><span class="hint" id="rnId"></span></div>
   <div style="padding:12px 14px;display:flex;flex-direction:column;gap:10px">
@@ -743,10 +759,11 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <label><input type="radio" name="imRegMode" value="file"> Registration file</label>
       <label><input type="radio" name="imRegMode" value="none" checked> No registration</label>
       <button id="imNewAlign" disabled title="Choose an image first">Align with Agent</button></span><span></span></div>
-    <div class="frow" id="imRegRow" hidden><span></span><input type="text" id="imNewReg" placeholder="affine CSV (a11,a12,a21,a22,tx,ty) or Xenium Explorer alignment (3x3)"><button data-pick="csv" data-target="imNewReg">Choose…</button></div>
+    <div class="frow" id="imRegRow" hidden><span></span><textarea id="imNewReg" rows="1" placeholder="affine CSV (a11,a12,a21,a22,tx,ty) or Xenium Explorer alignment (3x3); several slices: one file for all (a row per slice) or one per slice, in their order"></textarea><button data-pick="csv" data-multi="1" data-target="imNewReg">Choose…</button></div>
     <div class="frow" id="imRegSecRow" hidden><span>Registration row</span><input type="text" id="imNewRegSec" placeholder="only if the file has one row per section; default: the section chosen above"><span></span></div>
     <div class="frow"><span><span id="imNameLabel">Sample name</span><small class="opt">optional</small></span><input type="text" id="imName" placeholder="short id without spaces; by default from the file names"><span></span></div>
     <div class="hint" id="imProjectHint" hidden></div>
+    <div class="hint" id="imPairs" hidden style="margin-left:138px;white-space:pre-line"></div>
     <div class="frow"><span>Description<small class="opt">optional</small></span><input type="text" id="imDesc" placeholder="e.g. tissue and condition"><span></span></div>
     <div class="row" style="margin-top:6px"><span class="hint" id="imStatus"></span><span class="spacer"></span><button id="imGo" class="primary">Import</button></div>
     <details id="imExisting" class="clcard" style="margin-top:12px">
@@ -1156,7 +1173,7 @@ async function loadSamples(select, project) {
   const sel = $("sample"); sel.textContent = "";
   if (!st.samples.length) {  // a fresh install: nothing imported yet
     $("empty").firstElementChild.textContent = "No samples yet. Click Import… to add Xenium files (cells.parquet and cell_feature_matrix.h5), h5ad or RDS files (with or without an image).";
-    $("empty").style.display = "flex"; $("annotate").disabled = true; $("sampleRename").disabled = true; $("qfBtn").disabled = true; $("rmSample").disabled = true; $("allSamples").disabled = true;
+    $("empty").style.display = "flex"; $("annotate").disabled = true; $("sampleRename").disabled = true; $("qfBtn").disabled = true; $("rmSample").disabled = true; $("allSamples").disabled = true; $("pjBtn").disabled = true;
     return;
   }
   $("annotate").disabled = false;
@@ -1244,7 +1261,7 @@ async function selectSample(id) {
   st.sample.allSessions = st.sample.sessions;
   st.sample.sessions = st.sample.sessions.filter((x) => USER_METHODS.includes(x.method));
   $("sampleRename").disabled = false;
-  $("qfBtn").disabled = false; $("anLoad").disabled = false; $("rmSample").disabled = false; $("allSamples").disabled = false;
+  $("qfBtn").disabled = false; $("anLoad").disabled = false; $("rmSample").disabled = false; $("allSamples").disabled = false; $("pjBtn").disabled = false;
   $("reset").disabled = !st.sample.allSessions.length && !projectOf(id);  // in a project: also to reset the other slices
   store("sample", id);
   $("path").textContent = st.sample.bundle_dir;
@@ -2782,17 +2799,31 @@ function imSections() {  // one section: a sample; several sections or folders: 
   const many = secs.length > 1;
   $("imNameLabel").textContent = many ? "Project name" : "Sample name";
   $("imProjectHint").hidden = !many;
-  $("imProjectHint").textContent = many ? `${secs.length} slices, one sample each (named <project>_<section>). Images: one for all slices, or one per slice whose file name holds the section (e.g. …_147328_HE.ome.tif), or a table (CSV/TSV: section, image path). A registration file has one row per section.` : "";
+  $("imProjectHint").textContent = many ? `${secs.length} slices, one sample each (named <project>_<section>). Images and registration files: one for all slices, or one per slice in the order of the slices (one per line); a single registration file may instead hold one row per slice.` : "";
+  imPairs(secs);
   if (!many && secs.length === 1 && imKind() === "h5ad") imDefaultName(secs[0].replace(/[^A-Za-z0-9_.-]+/g, "_"));
   $("imRegSecRow").hidden = $("imRegSecRow").hidden || many;
 }
 $("imClose").onclick = () => $("imDlg").close();
+function imPairs(secs) {  // several slices: which image and registration file each one gets (by order)
+  secs = secs || (imKind() === "h5ad" ? chosenSections() : ((isFlat() ? st.imFSlices : st.imXSlices) || []).map((x) => x.key));
+  const L = (id) => $(id).value.split("\n").map((x) => x.trim()).filter(Boolean);
+  const imgs = imgMode() === "file" ? L("imNewImg") : [], regs = regMode() === "file" ? L("imNewReg") : [];
+  const box = $("imPairs"); box.hidden = secs.length < 2 || (!imgs.length && !regs.length);
+  if (box.hidden) return;
+  const base = (f) => f.split(/[\\/]/).pop();
+  const pick = (list, i, what) => !list.length ? "" : list.length === 1 ? `${what} ${base(list[0])}${what === "registration" ? " (its row)" : ""}`
+    : list.length === secs.length ? `${what} ${base(list[i])}` : `${what}: ${list.length} files for ${secs.length} slices`;
+  box.textContent = "In order:\n" + secs.map((k, i) => `${i + 1}. ${k} ← ${[pick(imgs, i, "image"), pick(regs, i, "registration")].filter(Boolean).join(" · ")}`).join("\n");
+}
+["imNewImg", "imNewReg"].forEach((id) => ["input", "change"].forEach((ev) => $(id).addEventListener(ev, () => imPairs())));
 function imDefaultName(n) {  // the name used when the field is left empty, shown in it
   st.imDefault = n; $("imName").placeholder = n ? `${n} (from the file names)` : "short id without spaces; by default from the file names";
 }
 const imgMode = () => document.querySelector("input[name=imImgMode]:checked").value;
 const regMode = () => document.querySelector("input[name=imRegMode]:checked").value;
 function imForm() {  // show the fields of the chosen options; Align with Claude needs an image and no registration file
+  imPairs();
   $("imImgRow").hidden = imgMode() !== "file";
   $("imImgKindRow").hidden = imgMode() !== "file" || imKind() === "xenium";  // Xenium has its own DAPI field
   if (imKind() === "xenium") $("imNewImgKind").value = "H&E";
@@ -2875,7 +2906,8 @@ async function importSample() {  // returns true when the sample was imported
   const kind = imKind(), name = $("imName").value.trim() || st.imDefault || "";
   const images = imgMode() === "file" ? $("imNewImg").value.split("\n").map((s) => s.trim()).filter(Boolean) : [];
   const image = images.length > 1 ? images : (images[0] || "");
-  const registration = regMode() === "file" ? $("imNewReg").value.trim() : "";
+  const regs = regMode() === "file" ? $("imNewReg").value.split("\n").map((x) => x.trim()).filter(Boolean) : [];
+  const registration = regs.length > 1 ? regs : (regs[0] || "");
   const body = kind === "xenium"
     ? { kind, name, folders: xeniumEntries(), description: $("imDesc").value }
     : isFlat() ? { kind, name, folders: flatEntries() || [], description: $("imDesc").value }
@@ -2891,6 +2923,9 @@ async function importSample() {  // returns true when the sample was imported
   const nSlices = kind === "h5ad" ? body.sections.length : (isFlat() ? st.imFSlices : st.imXSlices).length;
   if (images.length > 1 && nSlices < 2) { $("imStatus").textContent = "One image per sample (several images are for several slices)"; return false; }
   if (regMode() === "file" && !registration) { $("imStatus").textContent = "Choose the registration file, or No registration"; return false; }
+  if (regs.length > 1 && nSlices < 2) { $("imStatus").textContent = "One registration file per sample (several are for several slices)"; return false; }
+  for (const [what, list] of [["images", images], ["registration files", regs]])
+    if (nSlices > 1 && list.length > 1 && list.length !== nSlices) { $("imStatus").textContent = `${list.length} ${what} for ${nSlices} slices: give one for all, or one per slice in their order`; return false; }
   $("imGo").disabled = $("imNewAlign").disabled = true; $("imStatus").textContent = "importing…";
   try {
     const { job } = await post("/api/import", body);
@@ -3405,6 +3440,50 @@ $("anLoadFile").onchange = async () => {
     if (!r.ok) throw new Error(j.error || r.statusText);
     await anLoaded(j);
   } catch (e) { toast(e.message, 9000); }
+};
+
+// ---------------- projects: which samples are analyzed together ----------------
+const PJ = { names: [], was: {} };
+function pjTable() {
+  const tab = $("pjTab"); tab.innerHTML = "<tr><th>Sample</th><th>Cells</th><th>Genes</th><th>Project</th></tr>";
+  const opts = ["", ...PJ.names];
+  st.samples.forEach((s) => {
+    const tr = document.createElement("tr"); tr.dataset.id = s.sample_id;
+    const p = projectOf(s.sample_id), name = p && p.slices[s.sample_id] ? `${p.slices[s.sample_id].section}` : sampleName(s);
+    const sel = document.createElement("select");
+    opts.forEach((o) => { const x = document.createElement("option"); x.value = o; x.textContent = o || "no project"; sel.append(x); });
+    sel.value = PJ.cur[s.sample_id] || "";
+    sel.onchange = () => { PJ.cur[s.sample_id] = sel.value; tr.classList.toggle("moved", sel.value !== PJ.was[s.sample_id]); $("pjErr").textContent = ""; };
+    const td = (t, c) => { const e = document.createElement("td"); e.textContent = t; if (c) e.className = c; return e; };
+    const last = document.createElement("td"); last.append(sel);
+    tr.append(td(name), td(s.n_cells.toLocaleString(), "n"), td(s.n_genes ? s.n_genes.toLocaleString() : "–", "n"), last);
+    tr.classList.toggle("moved", (PJ.cur[s.sample_id] || "") !== PJ.was[s.sample_id]);
+    tab.append(tr);
+  });
+}
+$("pjBtn").onclick = () => {
+  PJ.names = st.projects.map((p) => p.name); PJ.was = {}; PJ.cur = {};
+  st.samples.forEach((s) => { const p = projectOf(s.sample_id); PJ.was[s.sample_id] = PJ.cur[s.sample_id] = p ? p.name : ""; });
+  $("pjErr").textContent = ""; $("pjNewName").value = "";
+  pjTable(); $("pjDlg").showModal();
+};
+$("pjNew").onclick = () => {
+  const n = $("pjNewName").value.trim();
+  if (!n) { $("pjErr").textContent = "Give the new project a name"; return; }
+  if (PJ.names.includes(n)) { $("pjErr").textContent = `There is a project ${n} already`; return; }
+  PJ.names.push(n); $("pjNewName").value = ""; pjTable();
+  toast(`Project ${n} added: choose its samples in the list`, 3500);
+};
+$("pjNewName").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("pjNew").click(); } });
+$("pjCancel").onclick = $("pjClose").onclick = () => $("pjDlg").close();
+$("pjSave").onclick = async () => {
+  const groups = {};
+  Object.entries(PJ.cur).forEach(([id, n]) => { if ((n || "") !== PJ.was[id]) groups[id] = n || ""; });
+  if (!Object.keys(groups).length) { $("pjDlg").close(); return; }
+  try { await post("/api/projects/assign", { groups }); } catch (e) { $("pjErr").textContent = e.message; return; }
+  $("pjDlg").close();
+  await loadSamples(st.sample && st.sample.sample_id);
+  toast(`${Object.keys(groups).length} sample(s) moved`, 4000);
 };
 
 // ---------------- filtering cells and genes ----------------

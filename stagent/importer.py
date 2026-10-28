@@ -1022,9 +1022,8 @@ def _image_table(path):
 
 
 def _slice_images(he, keys):
-    """{slice key: image path or None}: one image for all slices, a table (section, image), or several image files
-    matched to the slices by name (the file name holds the section value or Xenium folder name, e.g.
-    scp2927_147328_HE.ome.tif for section 147328)."""
+    """{slice key: image path}: one image for all slices, one image per slice in the order of the slices, or a table
+    (CSV / TSV: section, image)."""
     if not he:
         return {}
     files = [he] if isinstance(he, (str, Path)) else [str(p) for p in he if str(p).strip()]
@@ -1033,19 +1032,24 @@ def _slice_images(he, keys):
         return {k: table.get(k) for k in keys}
     if len(files) == 1:
         return {k: str(files[0]) for k in keys}
-    out, problems = {}, []
-    for k in keys:  # the key as a whole word of the file name (section 1 does not match slice_12)
-        hit = [f for f in files if re.search(rf"(?<![A-Za-z0-9]){re.escape(k)}(?![A-Za-z0-9])", Path(f).name)]
-        if len(hit) == 1:
-            out[k] = hit[0]
-        else:
-            problems.append(f"{k}: {'no image file name holds it' if not hit else 'several images: ' + ', '.join(Path(f).name for f in hit)}")
-    unused = [Path(f).name for f in files if f not in out.values()]
-    if problems:
-        raise ValueError("cannot match the images to the slices by name (" + "; ".join(problems) + ")"
-                         + (f"; unused: {', '.join(unused)}" if unused else "")
-                         + ". Give one image per slice whose file name holds the section, or a table (section, image).")
-    return out
+    if len(files) != len(keys):
+        raise ValueError(f"{len(files)} images for {len(keys)} slices: give one image for all slices, or one per slice "
+                         "in the order of the slices")
+    return dict(zip(keys, files))
+
+
+def _slice_registrations(registration, keys):
+    """{slice key: (registration file, row)}: one file for all slices (its row of the slice: the row naming it, or its
+    only row), or one file per slice in the order of the slices."""
+    if not registration:
+        return {}
+    files = [registration] if isinstance(registration, (str, Path)) else [str(p) for p in registration if str(p).strip()]
+    if len(files) == 1:
+        return {k: (str(files[0]), k) for k in keys}
+    if len(files) != len(keys):
+        raise ValueError(f"{len(files)} registration files for {len(keys)} slices: give one file for all slices (one row "
+                         "per slice), or one per slice in the order of the slices")
+    return {k: (f, None) for k, f in zip(keys, files)}
 
 
 def import_project(project, kind, sources, sections=None, section_column=None, he=None, registration=None,
@@ -1053,33 +1057,35 @@ def import_project(project, kind, sources, sections=None, section_column=None, h
     """Several slices as one project, one sample per slice. kind "h5ad": sources = h5ad file(s) holding the slices,
     sections = the values of section_column to import. kind "xenium", "cosmx" or "merfish": sources = output folders
     or files, one slice per folder / name prefix.
-    he: one image for all, several images (each slice gets the one whose file name holds its section or folder
-    name), or a table (CSV/TSV: section or folder name, image path). registration (h5ad): a file with
-    one row per section, matched by the section value. Images without a registration wait for an alignment."""
+    he: one image for all, one image per slice in the order of the slices, or a table (CSV/TSV: section or folder
+    name, image path). registration: one file for all slices (one row per slice, matched by its name) or one file per
+    slice in the order of the slices. Images without a registration wait for an alignment."""
     from . import projects
     project = _check_name(project, True)
     items = ([str(s) for s in sections] if kind == "h5ad" else flat_sources(kind, sources) if kind in FLAT_FILES
              else xenium_sources(sources))
     keys = [item if kind == "h5ad" else item["key"] for item in items]
-    images = _slice_images(he, keys)  # before importing anything, so a missing image stops the import early
+    images = _slice_images(he, keys)  # before importing anything, so a wrong number of files stops the import early
+    regs = _slice_registrations(registration, keys)
     done = []
     for i, (item, key) in enumerate(zip(items, keys)):
         name = projects.slice_name(project, key)
         image = images.get(key)
+        reg, reg_row = regs.get(key, (None, None))
         progress(f"slice {i + 1} of {len(items)}: {key}")
         say = lambda m: progress(f"  {m}")
         if kind == "h5ad":
-            import_sample(name, sources, image, registration, section_column, item, region_column=region_column,
+            import_sample(name, sources, image, reg, section_column, item, region_column=region_column,
                           description=description, overwrite=overwrite, progress=say, he_kind=he_kind,
-                          registration_section=item)
+                          registration_section=reg_row)
             meta = section_metadata(sources, section_column, item) if section_column else {}
-        elif kind in FLAT_FILES:  # a registration file with one row per slice, matched by its name
-            import_flat(kind, name, item, he=image, registration=registration, description=description,
-                        overwrite=overwrite, progress=say, he_kind=he_kind, registration_section=key)
+        elif kind in FLAT_FILES:
+            import_flat(kind, name, item, he=image, registration=reg, description=description,
+                        overwrite=overwrite, progress=say, he_kind=he_kind, registration_section=reg_row)
             meta = {}
         else:
-            import_xenium(name, item, he=image, registration=None, description=description, overwrite=overwrite,
-                          progress=say, he_kind=he_kind)
+            import_xenium(name, item, he=image, registration=reg, description=description, overwrite=overwrite,
+                          progress=say, he_kind=he_kind, registration_section=reg_row)
             meta = {}
         done.append((name, key, meta))
     p = projects.save(project, project, done)

@@ -930,6 +930,7 @@ def api_samples(req):
                          "has_registration": bool(meta.get("registration_affine")),
                          "can_undo_placement": bool(meta.get("placement_previous")),
                          "project": meta.get("project"), "name": meta.get("name"), "metadata": meta.get("metadata") or {},
+                         "n_genes": meta.get("n_genes"),
                          "filter": {"params": f["params"], "n_cells_removed": f["n_cells_removed"],
                                     "n_genes_removed": len(f["genes_removed"])} if (f := meta.get("filter")) else None,
                          "sessions": mine.sort_values("created_at", ascending=False)[["session_id", "created_at", "n_versions", "method"]]
@@ -1592,6 +1593,17 @@ async def api_sample_reset(req: Request):
         shutil.move(str(emb), str(trash / "embedding"))
     return _json({"deleted_sessions": len(sess), "deleted_conversations": n_chats,
                   "deleted_embedding": with_embedding and (trash / "embedding").exists(), "trash": str(trash)})
+
+
+async def api_projects_assign(req: Request):
+    """{groups: {sample_id: project name, or "" for none}}: move samples between projects (projects.assign)."""
+    b = await req.json()
+    try:
+        r = projects.assign(b.get("groups") or {})
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+    _cell_tables.clear()  # slices are labels of the analyses
+    return _json(r)
 
 
 async def api_sample_remove(req: Request):
@@ -2390,6 +2402,7 @@ def build_app(port):
         Route("/api/s/{sid}/undo", api_undo, methods=["POST"]),
         Route("/api/sample/{sample}/reset", api_sample_reset, methods=["POST"]),
         Route("/api/sample/{sample}/remove", api_sample_remove, methods=["POST"]),
+        Route("/api/projects/assign", api_projects_assign, methods=["POST"]),
         Route("/api/samples/clear", api_samples_clear, methods=["POST"]),
         Route("/api/sample/{sample}/image", api_sample_image, methods=["POST"]),
         Route("/api/sample/{sample}/registration", api_sample_registration, methods=["POST"]),
