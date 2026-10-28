@@ -896,6 +896,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <option value="type">cell type</option><option value="lineage">lineage</option><option value="leiden">Leiden clusters</option>
       <option value="niche">niche</option><option value="region">region</option><option value="cells">nothing (cells in gray)</option></select></label>
     <label class="hint" style="display:inline-flex;align-items:center;gap:4px;margin-left:8px"><input type="checkbox" id="glImg" checked> image</label>
+    <button id="glSave" title="Save the overview as a figure (PDF): every sample as shown, with the legend">Save figure</button>
     <button id="glClose">Close</button></div>
   <div id="glLegend" class="gllegend"></div>
   <div class="gallery" id="glGrid"></div>
@@ -3722,6 +3723,34 @@ async function glRecolor() {
 }
 $("glMode").onchange = drawGallery;
 $("glImg").onchange = drawGallery;
+$("glSave").onclick = () => {  // the tiles as shown, their names and the legend, as one figure
+  const tiles = (GL_SCOPE.tiles || []).filter((t) => t.pos);
+  if (!tiles.length) { toast("Wait until the samples are drawn", 3000); return; }
+  const x = (v) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+  const n = tiles.length, cols = Math.min(4, n), tw = 260, th = Math.round(tw * tiles[0].c.height / tiles[0].c.width), gap = 16, cap = 30;
+  const W = cols * tw + (cols - 1) * gap + 40;
+  const mode = $("glMode").selectedOptions[0].textContent, sel = GL_SCOPE.sel;
+  let entries = [...$("glLegend").querySelectorAll("label")].map((l) => ({ name: l.textContent, color: l.querySelector("i").style.background, on: l.querySelector("input").checked }));
+  if (sel.size) entries = entries.filter((e) => e.on).concat([{ name: "other cells", color: "rgb(205,205,205)" }]);
+  const out = [], lg = []; let lx = 20, ly = 44;
+  entries.forEach((e) => {  // the legend, wrapped to the figure's width
+    const w = 18 + e.name.length * 5.6 + 12;
+    if (lx + w > W - 20) { lx = 20; ly += 15; }
+    lg.push(`<circle cx="${lx + 5}" cy="${ly - 3.5}" r="4" fill="${e.color}"/><text x="${lx + 13}" y="${ly}" font-size="10">${x(e.name)}</text>`);
+    lx += w;
+  });
+  const top = (entries.length ? ly + 16 : 34), rows = Math.ceil(n / cols), H = top + rows * (th + cap + gap) + 4;
+  out.push(`<text x="20" y="22" font-size="14" font-weight="600">${x($("glTitle").textContent)} · colored by ${x(mode)}${sel.size ? ` (only ${x([...sel].join(", "))})` : ""}</text>`, ...lg);
+  tiles.forEach((t, i) => {
+    const cx = 20 + (i % cols) * (tw + gap), cy = top + Math.floor(i / cols) * (th + cap + gap);
+    const [name, sub] = [...t.c.parentElement.querySelectorAll(".tt, .ts")].map((e) => e.textContent);
+    out.push(`<image x="${cx}" y="${cy}" width="${tw}" height="${th}" href="${t.c.toDataURL("image/png")}"/>`,
+             `<text x="${cx}" y="${cy + th + 13}" font-size="10.5" font-weight="600">${x(name)}</text>`,
+             `<text x="${cx}" y="${cy + th + 25}" font-size="9" fill="#666666">${x(sub.length > 60 ? sub.slice(0, 58) + "…" : sub)}</text>`);
+  });
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" fill="currentColor">${out.join("")}</svg>`;
+  saveFigure(`${GL_SCOPE.all ? "all_samples" : "slices"}_${$("glMode").value}.pdf`, svg);
+};
 async function loadTile(t, mode, withImage) {  // the sample's cells, its open or latest annotation and its image, once
   const s = t.s;
   t.he = await api(`/api/sample/${s.sample_id}/he_info`);

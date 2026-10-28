@@ -166,7 +166,8 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
    **Overview of all samples** (Data tab) shows every sample side by side, each over its image (the **image** box)
    and colored the same way: cell type, lineage, Leiden clusters, niche or region (from the annotation open, else
    each sample's latest one), with one legend for all: tick entries to show only them (e.g. only ILCs; the other
-   cells turn light gray on every sample), **Show all** clears the ticks; click a sample to open it. **Remove sample** (bottom of the toolbar) removes only the open sample: its cells,
+   cells turn light gray on every sample), **Show all** clears the ticks; click a sample to open it. **Save figure**
+   writes the overview as shown (every sample, its name, the legend) as a PDF. **Remove sample** (bottom of the toolbar) removes only the open sample: its cells,
    annotations with their chats, regions, niches and PCA / UMAP go to the data folder's `trash/`, a project keeps its
    other slices, and the image and source files stay where they are.
    **Unload H&E** (Data tab) frees the memory of the sample's image: the cells stay where they are on a blank

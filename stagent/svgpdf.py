@@ -1,11 +1,12 @@
 """The page's figures (dot plots, bubble plots, circle plots: SVG it draws itself) as PDF, drawn again with matplotlib.
 
 Only what those figures use: svg, g, text (text-anchor, font-size, font-weight, rotate(a x y)), circle, rect, line
-(stroke-dasharray), path (M L H V Q C Z), fill / stroke / their opacities, inherited from the parents; <title>
+(stroke-dasharray), path (M L H V Q C Z), image (an embedded PNG / JPEG data URL, e.g. the overview's thumbnails),
+fill / stroke / their opacities, inherited from the parents; <title>
 (tooltips) is left out. Text is real text in the PDF (TrueType, editable), in Arial or Liberation Sans where
 installed, DejaVu Sans for the glyphs they lack (→, ≤, …).
 """
-import io, re
+import base64, io, re
 import xml.etree.ElementTree as ET
 from matplotlib.figure import Figure
 from matplotlib.patches import Circle, PathPatch, Rectangle
@@ -106,6 +107,16 @@ def to_pdf(svg):
             if el.get("stroke-dasharray"):
                 ln.set_dashes([float(v) for v in re.split(r"[ ,]+", el.get("stroke-dasharray").strip())])
             ax.add_line(ln)
+        elif tag == "image":
+            href = el.get("href") or el.get("{http://www.w3.org/1999/xlink}href") or ""
+            m = re.match(r"data:image/[a-z]+;base64,(.*)", href, re.S)
+            if m:
+                import numpy as np
+                from PIL import Image
+                im = np.asarray(Image.open(io.BytesIO(base64.b64decode(m.group(1)))).convert("RGBA"))
+                x, y = f("x"), f("y")
+                ax.imshow(im, extent=(x, x + f("width"), y + f("height"), y), aspect="auto", zorder=z[0],
+                          interpolation="none")
         elif tag == "text":
             text = (el.text or "") + "".join(c.tail or "" for c in el)
             m = re.search(r"rotate\(\s*(-?[\d.]+)", el.get("transform", ""))
@@ -118,6 +129,7 @@ def to_pdf(svg):
             walk(c, s)
 
     walk(root, {"fill": root.get("fill", "#000")})
+    ax.set_xlim(0, W); ax.set_ylim(H, 0)  # imshow may have moved them
     buf = io.BytesIO()
     with rc_context({"pdf.fonttype": 42}):
         FigureCanvasPdf(fig).print_pdf(buf)
