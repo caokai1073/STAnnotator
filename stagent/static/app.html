@@ -807,7 +807,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
   <div class="dh"><b id="anTitle">Compare</b><span id="anSeg" class="seg"></span>
     <label id="anNWrap" class="hint" hidden style="margin-left:12px;display:inline-flex;align-items:center;gap:5px"><span id="anNLabel">genes</span>
       <input type="number" id="anN" style="width:58px;height:28px"></label><span class="spacer"></span>
-    <button id="anAsk" hidden title="Ask the agent what this result may mean">Ask Agent</button><button id="anFig" hidden title="Save the figure as an SVG file">Save figure…</button><button id="anCsv">Save CSV…</button><button id="anClose">Close</button></div>
+    <button id="anAsk" hidden title="Ask the agent what this result may mean">Ask Agent</button><button id="anFig" hidden title="Save the figure as a PDF file">Save figure…</button><button id="anCsv">Save CSV…</button><button id="anClose">Close</button></div>
   <div class="imbody"><div class="hint" id="anSub"></div><div id="anBody"></div><div id="anLegend" class="cmplegend"></div><div class="hint" id="anNote"></div></div>
 </dialog>
 <dialog id="hpDlg" style="width:min(760px,95vw)">
@@ -2793,14 +2793,14 @@ with several slices it checks the change in every slice); <b>Top genes</b> of ev
 one grouping splits over another (cell types per niche, niches per slice or per condition), as shares or as
 enrichment. DE genes and Top genes also show a <b>Dot plot</b> (share of cells detecting each gene and its mean
 expression, per group); the number next to it sets how many genes the table and the plot show (DE: 5–60; Top genes:
-1–15 per group), <b>Save figure…</b> writes it as SVG. Click a gene to color the map by it; <b>Ask Agent</b> asks the
+1–15 per group), <b>Save figure…</b> writes it as PDF. Click a gene to color the map by it; <b>Ask Agent</b> asks the
 agent what the result may mean; <b>Save CSV…</b> keeps every gene. <b>Last result</b> reopens the last result of the
 analysis chosen in the tab.</li>
 <li><b>Signaling</b> (cell-cell communication), for this slice or all slices pooled: ligand-receptor pairs (CellChatDB v2,
 CellPhoneDB v5 and the OmniPath consensus, merged; a pair counts when all its genes are in the panel) scored on
 neighboring cells between groups (cell types by default): contact signals within 15 µm, secreted and ECM signals
 within 50 µm, weighted by distance; tested against random groups. <b>Interactions</b>, a <b>Bubble plot</b>, a sender × receiver
-<b>Network</b>, a <b>Circle plot</b> and <b>Pathways</b> (plots: <b>Save figure…</b> as SVG); <b>show on map</b> colors the cells that send one signal (blue), receive it (red) or
+<b>Network</b>, a <b>Circle plot</b> and <b>Pathways</b> (plots: <b>Save figure…</b> as PDF); <b>show on map</b> colors the cells that send one signal (blue), receive it (red) or
 both (purple); click a legend entry to show one role. <b>Compare groups</b> runs it per condition, slice, region or niche and lists the largest differences (table or bubble plot).</li>
 <li><b>Undo</b> takes back your last action: one region you drew, an outline of the agent added as a region (all its pieces), one prior, or everything the agent changed for one request (its changes less than 90 s apart); click again to go further back. <b>Export…</b>: the cell table (CSV, with niche, Leiden and UMAP when
 computed), the registration in use (CSV), or the whole analysis as a Jupyter notebook that runs without this app
@@ -3284,6 +3284,7 @@ async function groupColors(by, keys) {  // the map's colors of a grouping's grou
 async function showAnalysis() {
   const r = AN.last, q = AN.req; if (!r) return;
   $("anNWrap").hidden = $("anFig").hidden = true; AN.svg = null;
+  $("anTitle").hidden = q.kind === "run" || q.kind === "compare";  // signaling: the views' bar comes first
   if (q.kind === "run" || q.kind === "compare") {
     $("anBody").textContent = ""; $("anLegend").textContent = ""; $("anNote").textContent = "";
     $("anAsk").hidden = !(st.desktop || st.chatAvailable);
@@ -3499,7 +3500,7 @@ function showSignal(r, q) {  // the dialog's views of a communication result
     s.append(a); return s; };
   if (q.kind === "compare") {
     $("anTitle").textContent = `Communication across ${anLabel(r.split)}`;
-    $("anSub").textContent = `${anLabel(r.by)} · ${where} · significant: ` + Object.entries(r.n_significant).map(([k, v]) => `${k} ${v}`).join(", ");
+    $("anSub").textContent = `${anLabel(r.by)} · across ${anLabel(r.split)} · ${where} · significant: ` + Object.entries(r.n_significant).map(([k, v]) => `${k} ${v}`).join(", ");
     const view = AN.view || "table";
     anSeg([["table", "Table"], ["bubbles", "Bubble plot"]], view, (v) => { AN.view = v; showAnalysis(); });
     if (view === "bubbles") {
@@ -3524,7 +3525,7 @@ function showSignal(r, q) {  // the dialog's views of a communication result
     return;
   }
   $("anTitle").textContent = `Communication between ${anLabel(r.by)}s`;
-  $("anSub").textContent = `${where} · ${r.n_pairs_panel} of ${r.n_pairs_resource} ligand-receptor pairs in the panel · ` +
+  $("anSub").textContent = `${anLabel(r.by)} · ${where} · ${r.n_pairs_panel} of ${r.n_pairs_resource} ligand-receptor pairs in the panel · ` +
     `${r.n_significant} significant of ${r.n_tested} tested · contact ${r.contact_um} µm, secreted ${r.secreted_um} µm`;
   const view = AN.view || "interactions";
   anSeg([["interactions", "Interactions"], ["bubbles", "Bubble plot"], ["network", "Network"], ["circle", "Circle plot"], ["pathways", "Pathways"]],
@@ -3741,8 +3742,19 @@ $("anFig").onclick = () => {
   const r = AN.last, k = AN.req.kind;
   const part = k === "de" ? `de_${r.group}_vs_${r.reference}_dotplot` : k === "markers" ? `top_genes_by_${r.by}_dotplot`
     : k === "run" ? `communication_${r.by}_${AN.view}` : `communication_by_${r.split}_${AN.view}`;
-  saveClientText(`${st.sample.sample_id}_${part}.svg`.replace(/[^A-Za-z0-9_.-]+/g, "_"), AN.svg, "image/svg+xml");
+  saveFigure(`${st.sample.sample_id}_${part}.pdf`.replace(/[^A-Za-z0-9_.-]+/g, "_"), AN.svg);
 };
+async function saveFigure(name, svg) {  // an SVG of the page as PDF (made on the server): Save dialog in the app, a download in a browser
+  try {
+    if (native() && !st.remote) {
+      const path = await native().save_path(name); if (!path) return;
+      await post("/api/figure/pdf", { svg, path }); toast(`Saved ${path}`, 4000); return;
+    }
+    const { key } = await post("/api/figure/pdf", { svg }), url = `/api/figure/${key}.pdf?name=${encodeURIComponent(name)}`;
+    if (st.remote) { await saveDownload(name, url); return; }
+    const a = document.createElement("a"); a.href = url; a.download = name; document.body.append(a); a.click(); a.remove();
+  } catch (e) { toast(e.message, 6000); }
+}
 $("anN").onchange = () => {  // also fires when the box loses focus: redraw only when the number changed
   const kind = AN.req && (AN.req.kind === "run" && AN.view === "circle" ? "circle" : AN.req.kind), lim = AN_N[kind] || [1, 15];
   const n = Math.max(lim[0], Math.min(lim[1], Math.round(+$("anN").value) || lim[0]));

@@ -256,7 +256,7 @@ by Claude show up within a few seconds.
    DE genes and Top genes also show a **Dot plot** (one row per group, dot size = share of cells detecting the gene,
    color = its mean expression scaled per gene; the DE group first): the number in the window sets how many genes the
    table and the plot show (DE: 5–60, the plot the top N up and down; Top genes: 1–15 per group), **Save figure…**
-   writes the plot as SVG, and a click on a gene colors the map by it. **Last result** reopens the last result of
+   writes the plot as PDF, and a click on a gene colors the map by it. **Last result** reopens the last result of
    the analysis chosen in the tab (DE genes, Top genes or Composition; in Signaling, Interactions or Compare groups).
    **Ask Agent** asks the agent to interpret the result (it calls the same analysis through `de_genes`,
    `group_markers` or `composition`); **Save CSV…** keeps the full table. On SCP2927 (559,539 cells, 480 genes) a DE
@@ -280,7 +280,7 @@ by Claude show up within a few seconds.
    - Results: **Interactions** (score, specificity, colocalization, detection, neighbor pairs, FDR), a **Bubble plot**
      (the strongest interactions over the sender → receiver pairs; color: score, size: FDR, hollow: not significant), a
      sender × receiver **Network**, a **Circle plot** (arrows from sender to receiver groups as wide as their number of
-     significant interactions; the number sets how many links), **Pathways**; **Save figure…** writes a plot as SVG; **show on map** colors the cells by their part in one signal: sending it (its
+     significant interactions; the number sets how many links), **Pathways**; **Save figure…** writes a plot as PDF; **show on map** colors the cells by their part in one signal: sending it (its
      ligand × the receptor around it; blue), receiving it (its receptor × the ligand around it; red), both (purple), or
      only weakly (above / below the median of the cells with that signal); a legend entry shows one role alone. On
      SCP2927 section 147328, CCL19 → CCR7 is received in the lymphoid follicles. **Compare groups** runs it per condition, slice, region or niche (largest differences

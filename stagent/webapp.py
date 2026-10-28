@@ -1126,6 +1126,41 @@ def api_communication_bubble(req):
     return _json(communication.bubble(t, n))
 
 
+FIGURES = LRU(8)  # recent figures as PDF, for their download
+
+
+async def api_figure_pdf(req: Request):
+    """A figure of the page (its SVG) as PDF: written to path (desktop app, the Save dialog's choice), else kept for
+    a download from /api/figure/<key>.pdf."""
+    from . import svgpdf
+    b = await req.json()
+    try:
+        pdf = svgpdf.to_pdf(b["svg"])
+    except Exception as e:
+        return _json({"error": f"could not make the PDF: {e}"}, 400)
+    if b.get("path"):
+        if not desktop_mode():
+            return _json({"error": "only in the desktop app"}, 403)
+        try:
+            Path(b["path"]).expanduser().write_bytes(pdf)
+        except OSError as e:
+            return _json({"error": str(e)}, 400)
+        return _json({"saved": b["path"]})
+    key = uuid.uuid4().hex[:12]
+    FIGURES[key] = pdf
+    while len(FIGURES) > FIGURES.n:
+        FIGURES.popitem(last=False)
+    return _json({"key": key})
+
+
+def api_figure_get(req):
+    pdf = FIGURES.get(req.path_params["key"])
+    if pdf is None:
+        return _json({"error": "this figure is gone: save it again"}, 404)
+    return Response(pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{req.query_params.get("name", "figure.pdf")}"'})
+
+
 async def api_save_text(req: Request):
     """Desktop app: write a text file the page made to the path chosen in the Save dialog."""
     if not desktop_mode():
@@ -2021,6 +2056,8 @@ def build_app(port):
         Route("/api/analysis/dots", api_analysis_dots, methods=["POST"]),
         Route("/api/analysis/{key}.csv", api_analysis_csv),
         Route("/api/communication/{key}/bubble", api_communication_bubble),
+        Route("/api/figure/pdf", api_figure_pdf, methods=["POST"]),
+        Route("/api/figure/{key}.pdf", api_figure_get),
         Route("/api/claude/analysis", api_claude_analysis, methods=["POST"]),
         Route("/api/communication/run", api_communication_run, methods=["POST"]),
         Route("/api/config", api_config),
