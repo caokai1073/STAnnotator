@@ -217,8 +217,9 @@ class Session:
         if carry_from:
             s._carry_over(carry_from)
         else:  # regions that came with the sample (e.g. QuPath annotations given at import) start every annotation
+            from .importer import on_image
             f = config.SAMPLES / str(sample_id) / "regions.geojson"
-            if f.exists():
+            if f.exists() and on_image(s.meta):  # outlines drawn on the H&E need the cells on it
                 try:
                     pieces, _ = regmod.parse_geojson(f.read_text())
                     s.import_regions(pieces, source="the sample's GeoJSON", author="import")

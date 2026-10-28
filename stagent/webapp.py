@@ -920,7 +920,8 @@ async def api_import(req: Request):
                     raise ValueError(f"{len(geo)} GeoJSON files for {len(ids)} slices: give one per slice, in their order")
                 for sid, g in zip(ids, geo):
                     per = importer.attach_regions(sid, g)
-                    say(f"regions of {sid}: " + ", ".join(f"{k} ({v} cells)" for k, v in per.items()))
+                    say(f"regions of {sid}: " + (", ".join(f"{k} ({v} cells)" for k, v in per.items()) if per is not None
+                        else "kept until the H&E is aligned (new annotations start with them from then on)"))
             JOBS[job].update(progress=1.0, stage="done", done=True)
         except Exception as e:  # shown in the dialog
             JOBS[job].update(error=f"{type(e).__name__}: {e}", done=True)
@@ -1496,6 +1497,9 @@ async def api_regions_import(req: Request):
     from . import regions as regmod
     s = review_app._session(req.path_params["sid"])
     b = await req.json()
+    if not importer.on_image(json.load(open(config.SAMPLES / s.sample_id / "meta.json"))):
+        return _json({"error": "the cells are not on the H&E yet: align it first (registration file, or Align with "
+                               "Agent); outlines drawn on the H&E then fall on the right cells"}, 400)
     try:
         text = Path(b["path"]).expanduser().read_text() if b.get("path") else b.get("text") or ""
         pieces, skipped = regmod.parse_geojson(text)

@@ -849,12 +849,25 @@ def undo_registration_fix(sample_id):
 
 
 # ---------------- adding the image and the registration later ----------------
+def on_image(meta):
+    """True when the cells sit on the sample's H&E (or other image) in its pixels: outlines drawn on that image
+    (QuPath) then fall on the right cells."""
+    return bool(meta.get("he_path")) and meta.get("image_kind") not in (None, "none") and not meta.get("image_pending")
+
+
 def attach_regions(sample_id, path):
     """Keep a GeoJSON of outlines drawn on the sample's H&E (e.g. QuPath annotations) with the sample: every new
-    annotation of it starts with these regions. Returns the cells each region holds."""
+    annotation of it starts with these regions. Returns the cells each region holds, or None when the H&E still waits
+    for its alignment (the file is kept and used once the cells are on the image)."""
     from . import regions
     text = Path(path).expanduser().read_text()
     pieces, skipped = regions.parse_geojson(text)
+    m = _meta(sample_id)
+    if not on_image(m):
+        (config.SAMPLES / sample_id / "regions.geojson").write_text(text)
+        m["regions_geojson"] = {"source": str(Path(path).expanduser().resolve()), "regions": None, "skipped": skipped}
+        json.dump(m, open(config.SAMPLES / sample_id / "meta.json", "w"), indent=1)
+        return None
     c = pd.read_parquet(config.SAMPLES / sample_id / "cells.parquet", columns=["px", "py"])
     px, py = c.px.to_numpy(), c.py.to_numpy()
     per = {}

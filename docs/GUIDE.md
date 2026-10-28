@@ -30,7 +30,9 @@ pixels): give the file under **Regions** in **Import…** (several slices: one p
 new annotation of the sample starts with them, or click **Import** in the map's Regions panel to add them to the open
 annotation. A region's name is the object's classification (else its name), its color QuPath's; several outlines of
 one class form one region, holes stay out of it (drawn dashed), and points, lines and cell detections are skipped.
-The H&E must be the image the outlines were drawn on.
+The H&E must be the image the outlines were drawn on (drawing before the registration is fine: the outlines are in
+the image's own pixels). They apply once the cells sit on it: an H&E still waiting for its alignment keeps the file,
+and new annotations start with the regions after the alignment (an annotation made before: Regions panel, Import).
 
 **CosMx** and **MERFISH** (Vizgen MERSCOPE) output: choose the kind in **Import…** and give its two files, each in its
 field (Counts, Cell metadata); one slide or region per import (import several one after the other).
