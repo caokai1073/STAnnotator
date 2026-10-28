@@ -181,7 +181,11 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
    other slices, and the image and source files stay where they are.
    **Unload H&E** (Data tab) frees the memory of the sample's image: the cells stay where they are on a blank
    background of the image's size, and the image path and registration are kept, so **Load H&E** puts it back as it
-   was (no new registration or alignment). While unloaded, Claude's figures show the cells without the image.
+   was (no new registration or alignment). While unloaded, Claude's figures show the cells without the image. The
+   image itself takes little memory (tens of MB of tiles); an open annotation takes much more (its counts, model and
+   results: a few hundred MB for 350k cells), so the app keeps only the last 3 annotations and 4 samples' cell
+   positions in memory and reads older ones again from disk when they are opened (`STAGENT_OPEN_ANNOTATIONS` sets
+   the number of annotations).
    **Save…** under Annotation (Data tab) writes the open annotation into one file (`.stannot`): every version with its
    regions, priors and corrections, the marker step and model, niches and their names, review verdicts and advice,
    the PCA / UMAP / Leiden clusters, and the last result of each Compare and Signaling analysis (these are kept with

@@ -41,6 +41,20 @@ def self_command(*args):
     return [sys.executable, *args] if FROZEN else [sys.executable, "-m", "stagent.cli", *args]
 
 
+def release_memory():
+    """Hand memory Python has freed back to the system (the allocator keeps it otherwise, so the app looks as large
+    as at its peak): malloc_zone_pressure_relief on macOS, malloc_trim on Linux."""
+    import ctypes, gc
+    gc.collect()
+    try:
+        if sys.platform == "darwin":
+            ctypes.CDLL("libc.dylib").malloc_zone_pressure_relief(None, 0)
+        elif sys.platform.startswith("linux"):
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except (OSError, AttributeError):
+        pass
+
+
 def ensure_dirs():
     for d in (SAMPLES, SESSIONS, USER_MARKERS):
         d.mkdir(parents=True, exist_ok=True)

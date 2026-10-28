@@ -20,7 +20,10 @@ from .session import Session, list_sessions
 STATIC = Path(__file__).parent / "static"
 VIEWS_UM = {"close": 60.0, "context": 150.0, "wide": 400.0}
 DISPLAY_PX = 640
-_sessions: dict = {}
+_sessions: OrderedDict = OrderedDict()  # the annotations in memory, most recently used last
+# an annotation in memory holds its counts, expression model and results (a few hundred MB for 350k cells): keep only
+# the last few; the others are read again from disk when they are opened
+MAX_OPEN = int(__import__("os").environ.get("STAGENT_OPEN_ANNOTATIONS", 3))
 _crops: OrderedDict = OrderedDict()
 CROP_CACHE = 400
 
@@ -54,7 +57,25 @@ def _default(o):
 def _session(sid) -> Session:
     if sid not in _sessions or _sessions[sid].stale():
         _sessions[sid] = Session(sid)
+    _sessions.move_to_end(sid)
+    if len(_sessions) > MAX_OPEN:
+        _forget_old()
     return _sessions[sid]
+
+
+def _forget_old():
+    """Drop the least recently used annotations beyond MAX_OPEN, except one that is computing right now."""
+    dropped = False
+    for old in list(_sessions)[:-1]:
+        if len(_sessions) <= MAX_OPEN:
+            break
+        s = _sessions[old]
+        if s._lock.acquire(blocking=False):  # not in the middle of a computation
+            s._lock.release()
+            del _sessions[old]
+            dropped = True
+    if dropped:
+        config.release_memory()
 
 
 def _version(req):

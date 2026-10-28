@@ -95,16 +95,28 @@ class SampleView:
         return idx[(self.py[idx] >= y0 - pad) & (self.py[idx] <= y1 + pad)]
 
 
+MAX_VIEWS = 4  # samples whose geometry (cell positions, search tree) stays in memory
+
+
+def _drop_view(sample_id):
+    _views.pop(sample_id, None)
+    for cache in (_tiles, _overlays):
+        for k in [k for k in cache if k[0] == sample_id or (len(k) > 8 and k[8] == sample_id)]:
+            cache.pop(k)
+
+
 def view(sample_id) -> SampleView:
-    """The sample's viewer geometry, rebuilt (with its image and dot tiles) when the cell positions change on disk."""
+    """The sample's viewer geometry, rebuilt (with its image and dot tiles) when the cell positions change on disk;
+    only the last MAX_VIEWS samples are kept."""
     rev = (config.SAMPLES / sample_id / "cells.parquet").stat().st_mtime
     if sample_id not in _views or _views[sample_id].rev != rev:
         if sample_id in _views:
-            for cache in (_tiles, _overlays):
-                for k in [k for k in cache if k[0] == sample_id or (len(k) > 8 and k[8] == sample_id)]:
-                    cache.pop(k)
+            _drop_view(sample_id)
         _views[sample_id] = SampleView(sample_id)
         _views[sample_id].rev = rev
+        for old in [k for k in _views if k != sample_id][:max(0, len(_views) - MAX_VIEWS)]:
+            _drop_view(old)
+    _views[sample_id] = _views.pop(sample_id)  # most recently used last
     return _views[sample_id]
 
 
@@ -1633,10 +1645,8 @@ async def api_sample_image_state(req: Request):
         r = importer.load_image(sample) if b.get("loaded") else importer.unload_image(sample)
     except (ValueError, OSError) as e:
         return _json({"error": str(e)}, 400)
-    _views.pop(sample, None)  # its tiles go with the view
-    for cache in (_tiles, _overlays):
-        for k in [k for k in cache if k[0] == sample or (len(k) > 8 and k[8] == sample)]:
-            cache.pop(k)
+    _drop_view(sample)  # its tiles go with the view
+    config.release_memory()
     return _json(r)
 
 
