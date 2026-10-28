@@ -192,6 +192,68 @@ def open_claude_code(sample=None, session=None, request=None, send_if_open=False
     return {"opened": True, "reused": out[0] == "existing", "command": cmd, "claude_code": exe}
 
 
+# Close the window of the Terminal tab on theTTY once nothing runs in it any more (Claude Code was ended first);
+# a tab that runs something else, or shares its window with other tabs, is left alone. Prints what it did.
+CLOSE_SCRIPT = """on run argv
+  set theTTY to item 1 of argv
+  tell application "Terminal"
+    repeat with w in windows
+      repeat with t in tabs of w
+        try
+          if (tty of t) is theTTY then
+            if (busy of t) then return "busy"
+            if (count of tabs of w) is not 1 then return "shared"
+            close w
+            return "closed"
+          end if
+        end try
+      end repeat
+    end repeat
+  end tell
+  return "gone"
+end run
+"""
+
+
+def close_claude_code(wait=3.0):
+    """When the app quits: end the Claude Code it opened in Terminal (each workspace records its tab's tty) and close
+    that window. Only processes named claude / node on that tty are ended, so a tab reused for something else stays."""
+    import signal
+    if platform.system() != "Darwin":
+        return []
+    done = []
+    for tab in sorted(config.HOME.glob("claude_workspace*/claude_tab.txt")):
+        tty = tab.read_text().strip()
+        tab.unlink(missing_ok=True)
+        if not tty.startswith("/dev/tty"):
+            continue
+        ps = subprocess.run(["ps", "-t", tty[len("/dev/"):], "-o", "pid=,comm="], capture_output=True, text=True).stdout
+        pids = [int(l.split(None, 1)[0]) for l in ps.splitlines()
+                if len(l.split(None, 1)) == 2 and Path(l.split(None, 1)[1].strip()).name in ("claude", "node")]
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except OSError:
+                pass
+        end = time.time() + wait
+        while pids and time.time() < end:
+            pids = [p for p in pids if _alive(p)]
+            time.sleep(0.1)
+        script = tab.parent / "close_claude.applescript"
+        script.write_text(CLOSE_SCRIPT)
+        r = subprocess.run(["osascript", str(script), tty], capture_output=True, text=True, check=False, timeout=10)
+        done.append((tty, r.stdout.strip() or r.stderr.strip()))
+    return done
+
+
+def _alive(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
 # ---------------- viewer <-> agent ----------------
 def _vfile(name):
     return config.HOME / name

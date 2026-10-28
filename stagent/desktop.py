@@ -202,6 +202,11 @@ def main(argv=None):
         _mac_identity()
         webview.start()
         api._close()  # the SSH tunnel; the server's viewer keeps running for the next connection
+        try:  # the Claude Code the app opened in Terminal quits with it
+            from . import claudelink
+            claudelink.close_claude_code()
+        except Exception as e:
+            print(f"could not close Claude Code: {e}")
     server.should_exit = True
 
 

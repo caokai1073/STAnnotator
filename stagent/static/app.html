@@ -4455,7 +4455,8 @@ async function initConnection(serverRemote) {  // in the app: is this page the s
 api("/api/config").then((c) => {  // the desktop app (or no Claude Code CLI): the conversation happens in Claude's apps
   st.chatAvailable = c.chat; st.desktop = c.desktop; st.platform = c.platform;
   syncKMode();
-  $("build").textContent = [c.version ? `v${c.version}` : "", c.build ? `build ${c.build}` : ""].filter(Boolean).join(" · ");
+  $("build").textContent = c.version ? `v${c.version}` : c.build ? `build ${c.build}` : "";  // the build is in About
+  $("build").title = c.build ? `build ${c.build}` : "";
   $("claudeBtn").hidden = !c.desktop;
   $("clearAll").hidden = !c.desktop;
   st.home = c.home;
