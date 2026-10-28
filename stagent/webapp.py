@@ -1586,6 +1586,32 @@ async def api_sample_reset(req: Request):
                   "deleted_embedding": with_embedding and (trash / "embedding").exists(), "trash": str(trash)})
 
 
+async def api_sample_remove(req: Request):
+    """Remove one sample: its folder (cells, counts, image placement, PCA / UMAP), its annotations and their chats are
+    moved to trash/<time>_<sample>_removed/ (recoverable by hand); a project keeps its other slices."""
+    sample = req.path_params["sample"]
+    d = config.SAMPLES / sample
+    if not (d / "meta.json").exists():
+        return _json({"error": f"no sample {sample!r}"}, 404)
+    sess = _sample_sessions(sample)
+    pid = projects.project_of(sample)
+    mine = {x.name for x in sess} | {f"embed:{sample}", f"import:{sample}", f"project:{pid}"}
+    if any(not j["done"] and (k in mine or k.split(":", 1)[-1] in mine) for k, j in JOBS.items()):
+        return _json({"error": "an import, annotation or analysis of this sample is still running; wait until it finishes"}, 409)
+    trash = config.TRASH / f"{time.strftime('%Y%m%d-%H%M%S')}_{sample}_removed"
+    trash.mkdir(parents=True)
+    n_chats = _trash_sessions(sess, trash)
+    proj = projects.drop_sample(sample, trash)
+    shutil.move(str(d), str(trash / "sample"))
+    _views.pop(sample, None)
+    for cache in (_tiles, _overlays):
+        for k in [k for k in cache if k[0] == sample or (len(k) > 8 and k[8] == sample)]:
+            cache.pop(k)
+    _cell_tables.clear()
+    return _json({"removed": sample, "deleted_sessions": len(sess), "deleted_conversations": n_chats,
+                  "project": proj, "trash": str(trash)})
+
+
 def _trash_sessions(sess, trash):
     """Move sessions and their Claude Code transcripts into trash (None: delete them for good); forget them in
     memory. Returns the number of transcripts moved or deleted."""
@@ -2333,6 +2359,7 @@ def build_app(port):
         Route("/api/s/{sid}/regions/{rid}/edit", api_region_edit, methods=["POST"]),
         Route("/api/s/{sid}/undo", api_undo, methods=["POST"]),
         Route("/api/sample/{sample}/reset", api_sample_reset, methods=["POST"]),
+        Route("/api/sample/{sample}/remove", api_sample_remove, methods=["POST"]),
         Route("/api/samples/clear", api_samples_clear, methods=["POST"]),
         Route("/api/sample/{sample}/image", api_sample_image, methods=["POST"]),
         Route("/api/sample/{sample}/registration", api_sample_registration, methods=["POST"]),

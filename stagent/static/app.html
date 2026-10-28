@@ -73,6 +73,10 @@ table.an td.heat { min-width: 44px; }
 .gallery .tile:hover { border-color: var(--accent); }
 .gallery .tile.cur { box-shadow: 0 0 0 2px var(--accent); }
 .gallery canvas { width: 100%; height: 170px; display: block; background: #fafafa; border-radius: 4px; }
+.gllegend { display: flex; flex-wrap: wrap; gap: 3px 12px; padding: 8px 18px 0; max-height: 96px; overflow: auto; font-size: 11.5px; }
+.gllegend:empty { display: none; }
+.gllegend span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.gllegend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 .gallery .tt { font-size: 12px; font-weight: 600; margin-top: 4px; } .gallery .ts { font-size: 11px; color: var(--muted); }
 .num { width: 62px; }
 .folder { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); min-width: 0;
@@ -376,6 +380,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <div class="fld" id="sampleWrap"><span>Sample</span><div class="inrow"><select id="sample" aria-label="Sample"></select>
       <button id="sampleRename" disabled title="Rename the sample as the app shows it (a slice: its name in the project)">Rename</button></div></div>
     <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-layers"/></svg><div id="sampleInfo">No sample yet</div></div>
+    <div class="act2"><button id="allSamples" disabled title="Every sample at a glance, colored the same way (cell type, lineage, Leiden, niche, region)">Overview of all samples…</button></div>
     <div class="act2"><button id="qfBtn" disabled title="Delete cells with few transcripts or genes or a high mitochondrial share, and genes detected in few cells">Filter cells and genes…</button></div>
     <div id="slNav" class="slnav" hidden>
       <div class="stepper"><button id="slPrev" title="Previous slice of the project ([)">◀</button><span id="slPos"></span><button id="slNext" title="Next slice of the project (])">▶</button></div>
@@ -504,6 +509,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
   </div>
   <div class="hrow bottom">
     <button id="reset" class="danger" disabled title="Remove every annotation and chat of this sample">Reset…</button>
+    <button id="rmSample" class="danger" disabled title="Remove this sample only: its cells, annotations and chats go to the data folder's trash">Remove sample…</button>
     <button id="clearAll" class="danger" hidden title="Delete every sample with all its annotations and chats for good, to import from scratch">Remove all…</button>
   </div>
 </header>
@@ -863,8 +869,14 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <div class="hint" id="xpStatus"></div>
   </div>
 </dialog>
-<dialog id="glDlg" style="width:min(1100px,96vw)">
-  <div class="dh"><b id="glTitle">Slices</b><span class="hint" id="glInfo" style="margin-left:8px"></span><span class="spacer"></span><button id="glClose">Close</button></div>
+<dialog id="glDlg" style="width:min(1200px,96vw)">
+  <div class="dh"><b id="glTitle">Slices</b><span class="hint" id="glInfo" style="margin-left:8px"></span><span class="spacer"></span>
+    <label class="hint" style="display:inline-flex;align-items:center;gap:6px">Color by <select id="glMode">
+      <option value="type">cell type</option><option value="lineage">lineage</option><option value="leiden">Leiden clusters</option>
+      <option value="niche">niche</option><option value="region">region</option><option value="cells">nothing (cells in gray)</option></select></label>
+    <label class="hint" style="display:inline-flex;align-items:center;gap:4px;margin-left:8px"><input type="checkbox" id="glImg" checked> image</label>
+    <button id="glClose">Close</button></div>
+  <div id="glLegend" class="gllegend"></div>
   <div class="gallery" id="glGrid"></div>
 </dialog>
 <dialog id="anDlg" style="width:min(1000px,96vw)">
@@ -901,7 +913,7 @@ const ICON_ONLY = { hdrShow: "chev-left", hdrHide: "chev-right", helpBtn: "help"
   lgtoggle: "chev-up", rgtoggle: "chev-up", plclose: "x", emClose: "x", imClose: "x", rcClose: "x", clClose: "x", rpClose: "x",
   xpClose: "x", glClose: "x", anClose: "x", rvClose: "x", hpClose: "x", anCsv: "download", rpSave: "download", mkExport: "download",
   fbUp: "arrow-up", fbHome: "home", rsClose: "x", hide: "eye", hideHE: "image" };
-const ICON_TEXT = { importBtn: "import", clearAll: "trash", connBtn: "monitor", slGallery: "grid", slCompare: "chart",
+const ICON_TEXT = { importBtn: "import", clearAll: "trash", rmSample: "trash", allSamples: "grid", connBtn: "monitor", slGallery: "grid", slCompare: "chart",
   openMarkers: "list", openRef: "file", openEx: "file", annotate: "play", eRun: "play", eShow: "scatter", nRun: "play",
   undo: "undo", claudeBtn: "sparkle", plaus: "shield", report: "file", export: "share", reset: "trash",
   draw: "pen", emLasso: "lasso", emClear: "x", emZoom: "target", send: "send",
@@ -1141,7 +1153,7 @@ async function loadSamples(select, project) {
   const sel = $("sample"); sel.textContent = "";
   if (!st.samples.length) {  // a fresh install: nothing imported yet
     $("empty").firstElementChild.textContent = "No samples yet. Click Import… to add Xenium files (cells.parquet and cell_feature_matrix.h5), h5ad or RDS files (with or without an image).";
-    $("empty").style.display = "flex"; $("annotate").disabled = true; $("sampleRename").disabled = true; $("qfBtn").disabled = true;
+    $("empty").style.display = "flex"; $("annotate").disabled = true; $("sampleRename").disabled = true; $("qfBtn").disabled = true; $("rmSample").disabled = true; $("allSamples").disabled = true;
     return;
   }
   $("annotate").disabled = false;
@@ -1229,7 +1241,7 @@ async function selectSample(id) {
   st.sample.allSessions = st.sample.sessions;
   st.sample.sessions = st.sample.sessions.filter((x) => USER_METHODS.includes(x.method));
   $("sampleRename").disabled = false;
-  $("qfBtn").disabled = false; $("anLoad").disabled = false;
+  $("qfBtn").disabled = false; $("anLoad").disabled = false; $("rmSample").disabled = false; $("allSamples").disabled = false;
   $("reset").disabled = !st.sample.allSessions.length && !projectOf(id);  // in a project: also to reset the other slices
   store("sample", id);
   $("path").textContent = st.sample.bundle_dir;
@@ -3006,6 +3018,22 @@ $("helpBtn").onclick = () => showHelp("how");
 $("hpHow").onclick = () => showHelp("how");
 $("hpAbout").onclick = () => showHelp("about");
 $("hpClose").onclick = () => $("hpDlg").close();
+$("rmSample").onclick = async () => {
+  if (st.busy) { toast("Wait until the assistant has answered"); return; }
+  const s = st.sample; if (!s) return;
+  const p = projectOf(s.sample_id), n = s.allSessions ? s.allSessions.length : 0;
+  if (!confirm(`Remove sample ${sampleName(s)}${p ? ` (a slice of project ${p.name})` : ""}?\n\nOnly this sample goes: its cells, ` +
+               `${n ? `${n} annotation(s) with their chats, ` : ""}regions, niches and PCA / UMAP are moved to the data folder's trash/ ` +
+               `(not shown in the app).${p ? " The project keeps its other slices." : ""} The image and source files stay where they are.`)) return;
+  try {
+    const r = await post(`/api/sample/${s.sample_id}/remove`, {});
+    delete st.openedThisVisit[s.sample_id]; store("sample", "");
+    const rest = st.samples.filter((x) => x.sample_id !== s.sample_id);
+    const next = p ? (p.samples.find((id) => id !== s.sample_id && rest.some((x) => x.sample_id === id)) || null) : null;
+    await loadSamples(next || (rest[0] && rest[0].sample_id) || null);
+    toast(`Removed ${s.sample_id}` + (r.deleted_sessions ? ` and its ${r.deleted_sessions} annotation(s)` : ""), 5000);
+  } catch (e) { toast(e.message, 7000); }
+};
 $("clearAll").onclick = async () => {
   const n = st.samples.length;
   if (!n) { toast("There are no samples"); return; }
@@ -3520,45 +3548,101 @@ async function annotateProject() {  // one marker annotation of all slices; then
 }
 $("slPrev").onclick = () => stepSlice(-1);
 $("slNext").onclick = () => stepSlice(1);
-async function openGallery() {  // every slice of the project, drawn the same way
-  const p = st.sample && projectOf(st.sample.sample_id); if (!p) return;
-  const mode = st.mode || "type";
-  $("glTitle").textContent = `Project ${p.name}`;
-  $("glInfo").textContent = `${p.samples.length} slices · colored by ${mode === "cells" ? "nothing (no annotation)" : mode.replace("gene:", "")} · click a slice to open it`;
-  const grid = $("glGrid"); grid.textContent = "";
+const GL_SCOPE = { all: false };
+function galleryIds() {  // the project's slices, or every sample (the slices of each project, then the samples alone)
+  if (!GL_SCOPE.all) return projectOf(st.sample.sample_id).samples;
+  const seen = new Set(), out = [];
+  st.projects.forEach((p) => p.samples.forEach((id) => { if (!seen.has(id)) { seen.add(id); out.push(id); } }));
+  st.samples.forEach((x) => { if (!seen.has(x.sample_id)) out.push(x.sample_id); });
+  return out.filter((id) => st.samples.some((x) => x.sample_id === id));
+}
+async function openGallery(all) {  // every slice of the project (or every sample), drawn the same way
+  GL_SCOPE.all = !!all;
+  const p = st.sample && projectOf(st.sample.sample_id);
+  if (!all && !p) return;
+  const want = st.mode && st.mode !== "cells" && !st.mode.includes(":") ? st.mode : "type";
+  $("glMode").value = [...$("glMode").options].some((o) => o.value === want) ? want : "type";
+  $("glTitle").textContent = all ? "All samples" : `Project ${p.name}`;
   $("glDlg").showModal();
-  for (const id of p.samples) {
-    const s = st.samples.find((x) => x.sample_id === id); if (!s) continue;
-    const tile = document.createElement("div"); tile.className = "tile" + (id === st.sample.sample_id ? " cur" : "");
+  drawGallery();
+}
+async function drawGallery() {
+  const mode = $("glMode").value, img = $("glImg").checked, ids = galleryIds(), token = (GL_SCOPE.token = (GL_SCOPE.token || 0) + 1);
+  $("glInfo").textContent = `${ids.length} ${GL_SCOPE.all ? "samples" : "slices"} · click one to open it`;
+  const grid = $("glGrid"); grid.textContent = ""; $("glLegend").textContent = "";
+  const legend = new Map();
+  const tiles = ids.map((id) => {
+    const s = st.samples.find((x) => x.sample_id === id), pj = projectOf(id);
+    const tile = document.createElement("div"); tile.className = "tile" + (st.sample && id === st.sample.sample_id ? " cur" : "");
     const c = document.createElement("canvas"); c.width = 460; c.height = 340;
-    const tt = document.createElement("div"); tt.className = "tt"; tt.textContent = p.slices[id] ? p.slices[id].section : id;
+    const tt = document.createElement("div"); tt.className = "tt";
+    tt.textContent = pj && pj.slices[id] ? (GL_SCOPE.all ? `${pj.name} · ${pj.slices[id].section}` : pj.slices[id].section) : sampleName(s);
     const ts = document.createElement("div"); ts.className = "ts";
     ts.textContent = [metaText(s.metadata), `${s.n_cells.toLocaleString()} cells`].filter(Boolean).join(" · ");
-    tile.append(c, tt, ts); tile.onclick = () => { $("glDlg").close(); gotoSlice(id); };
+    tile.append(c, tt, ts);
+    tile.onclick = () => { $("glDlg").close(); if (projectOf(st.sample.sample_id) && pj && pj === projectOf(st.sample.sample_id)) gotoSlice(id); else { $("sample").value = id; selectSample(id); } };
     grid.append(tile);
-    drawThumb(c, s, mode).catch(() => {});
+    return { s, c, ts };
+  });
+  for (const t of tiles) {  // one after the other: each fetches the cells of a whole sample
+    if (token !== GL_SCOPE.token) return;
+    try {
+      const r = await drawThumb(t.c, t.s, mode, img);
+      if (r.note) t.ts.textContent += ` · ${r.note}`;
+      r.items.forEach((it) => { const k = it.label; const o = legend.get(k); legend.set(k, { color: o ? o.color : it.color, count: (o ? o.count : 0) + (it.count || 0) }); });
+      if (token !== GL_SCOPE.token) return;
+      $("glLegend").innerHTML = [...legend.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 60)
+        .map(([k, v]) => `<span><i style="background:${rgb(v.color)}"></i>${k.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</span>`).join("");
+    } catch (e) { t.ts.textContent += " · could not draw"; }
   }
 }
-async function drawThumb(c, s, mode) {
-  const pos = new Float32Array(await (await fetch(`/api/sample/${s.sample_id}/cells.bin`)).arrayBuffer());
+$("glMode").onchange = drawGallery;
+$("glImg").onchange = drawGallery;
+async function drawThumb(c, s, mode, withImage) {  // the sample's cells in the colors of its open or latest annotation, over its image
+  const he = await api(`/api/sample/${s.sample_id}/he_info`);
+  const pos = new Float32Array(await (await fetch(`/api/sample/${s.sample_id}/cells.bin?r=${he.rev}`)).arrayBuffer());
   const sess = (s.sessions || []).filter((x) => USER_METHODS.includes(x.method));
-  let col = null;
-  if (sess.length && mode !== "cells") {
-    const r = await fetch(`/api/s/${sess[0].session_id}/colors.bin?${new URLSearchParams({ version: sess[0].n_versions, mode, only: "" })}`);
-    if (r.ok) col = new Uint8Array(await r.arrayBuffer());
+  const open = st.sample && s.sample_id === st.sample.sample_id && st.sid;
+  const sid = open ? st.sid : sess.length ? sess[0].session_id : null, ver = open ? st.version : sess.length ? sess[0].n_versions : null;
+  let col = null, items = [], note = "";
+  if (mode !== "cells") {
+    if (!sid) note = "no annotation";
+    else {
+      const q = new URLSearchParams({ version: ver, mode, only: "" });
+      const r = await fetch(`/api/s/${sid}/colors.bin?${q}`);
+      if (r.ok) {
+        col = new Uint8Array(await r.arrayBuffer());
+        items = ((await api(`/api/s/${sid}/legend?${q}`).catch(() => ({}))).items || []).filter((it) => it.count);
+      } else note = { leiden: "no Leiden clusters (PCA + UMAP)", niche: "no niches", region: "no regions" }[mode] || "not available";
+      if (col && mode === "region" && !items.some((it) => it.key !== "unknown")) { note = "no regions drawn"; items = []; }
+    }
   }
-  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-  for (let i = 0; i < pos.length; i += 2) { x0 = Math.min(x0, pos[i]); x1 = Math.max(x1, pos[i]); y0 = Math.min(y0, pos[i + 1]); y1 = Math.max(y1, pos[i + 1]); }
-  const k = Math.min((c.width - 10) / (x1 - x0 || 1), (c.height - 10) / (y1 - y0 || 1));
-  const ox = (c.width - k * (x1 - x0)) / 2, oy = (c.height - k * (y1 - y0)) / 2;
+  const W = he.width, H = he.height, k = Math.min((c.width - 8) / W, (c.height - 8) / H);
+  const ox = (c.width - k * W) / 2, oy = (c.height - k * H) / 2;
   const ctx = c.getContext("2d"); ctx.clearRect(0, 0, c.width, c.height);
+  if (withImage && he.image_kind && he.image_kind !== "none") {  // the lowest level that holds the whole image in one tile
+    const top = Math.ceil(Math.log2(Math.max(W, H))), L = Math.max(0, top - Math.ceil(Math.log2(Math.max(W, H) / he.tile_size)));
+    const im = new Image(); im.src = `/api/sample/${s.sample_id}/he/${L}/0_0.jpg?r=${he.rev}`;
+    await im.decode().catch(() => {});
+    const sc = 2 ** (L - top);
+    if (im.naturalWidth) ctx.drawImage(im, ox, oy, im.naturalWidth / sc * k, im.naturalHeight / sc * k);
+  }
+  const lay = document.createElement("canvas"); lay.width = c.width; lay.height = c.height;  // cells on their own layer, blended over the image
+  const lc = lay.getContext("2d"), id = lc.createImageData(c.width, c.height), d = id.data;
   for (let i = 0; i < pos.length / 2; i++) {
     const a = col ? col[4 * i + 3] : 200; if (!a) continue;
-    ctx.fillStyle = col ? `rgb(${col[4 * i]},${col[4 * i + 1]},${col[4 * i + 2]})` : "#888";
-    ctx.fillRect(ox + k * (pos[2 * i] - x0), oy + k * (pos[2 * i + 1] - y0), 1.4, 1.4);
+    const x = (ox + k * pos[2 * i]) | 0, y = (oy + k * pos[2 * i + 1]) | 0;
+    if (x < 0 || y < 0 || x >= c.width - 1 || y >= c.height - 1) continue;
+    const r = col ? col[4 * i] : 120, g = col ? col[4 * i + 1] : 120, b = col ? col[4 * i + 2] : 120;
+    for (const j of [4 * (y * c.width + x), 4 * (y * c.width + x + 1), 4 * ((y + 1) * c.width + x), 4 * ((y + 1) * c.width + x + 1)]) {
+      d[j] = r; d[j + 1] = g; d[j + 2] = b; d[j + 3] = Math.max(d[j + 3], a);
+    }
   }
+  lc.putImageData(id, 0, 0); ctx.drawImage(lay, 0, 0);
+  return { items, note };
 }
-$("slGallery").onclick = () => openGallery();
+$("slGallery").onclick = () => openGallery(false);
+$("allSamples").onclick = () => openGallery(true);
 // ---------------- Compare: DE genes, top genes per group, composition (one slice or all slices pooled) ----------------
 const AN = { opts: null, key: "", last: null, req: null, view: "", by: {}, n: { de: 20, markers: 5, run: 20, compare: 20, circle: 40 } };
 const AN_N = { de: [5, 60], markers: [1, 15], run: [5, 60], compare: [5, 80], circle: [5, 300] };  // the dialog's number: least, most

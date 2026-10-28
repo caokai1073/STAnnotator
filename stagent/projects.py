@@ -57,6 +57,25 @@ def save(pid, name, slices):
     return p
 
 
+def drop_sample(sample_id, trash):
+    """Take a removed sample out of its project; a project left without slices goes to trash with its folder."""
+    pid = project_of(sample_id)
+    if not pid or not _file(pid).exists():
+        return None
+    import shutil
+    p = load(pid)
+    p["samples"] = [s for s in p["samples"] if s != sample_id]
+    p["slices"].pop(sample_id, None)
+    if p["samples"]:
+        json.dump(p, open(_file(pid), "w"), indent=1)
+        return {"project": pid, "left": len(p["samples"])}
+    trash.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(_file(pid)), str(trash / f"project_{pid}.json"))
+    if (PROJECTS / pid).exists():
+        shutil.move(str(PROJECTS / pid), str(trash / f"project_{pid}"))
+    return {"project": pid, "left": 0}
+
+
 def slice_name(project, value):
     """Sample id of a section of a project: <project>_<section>, letters, digits, dot, dash, underscore only."""
     return f"{project}_{re.sub(r'[^A-Za-z0-9_.-]+', '_', str(value)).strip('_')}"[:80]

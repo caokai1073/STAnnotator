@@ -160,6 +160,12 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
 
 1. Pick a sample; earlier annotations are under **Annotation** (Data tab). **Rename** next to it changes the name
    the app shows (a slice: its name in the project, and the project's name); the id, files and annotations stay.
+   **Overview of all samples…** (Data tab) shows every sample side by side, each over its image (the **image** box)
+   and colored the same way: cell type, lineage, Leiden clusters, niche or region (from the annotation open, else
+   each sample's latest one), with one legend for all; click a sample to open it. **Slices…** does the same for the
+   slices of a project. **Remove sample…** (bottom of the toolbar) removes only the open sample: its cells,
+   annotations with their chats, regions, niches and PCA / UMAP go to the data folder's `trash/`, a project keeps its
+   other slices, and the image and source files stay where they are.
    **Save…** under Annotation (Data tab) writes the open annotation into one file (`.stannot`): every version with its
    regions, priors and corrections, the marker step and model, niches and their names, review verdicts and advice,
    the PCA / UMAP / Leiden clusters, and the last result of each Compare and Signaling analysis (these are kept with
