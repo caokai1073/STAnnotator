@@ -2054,16 +2054,37 @@ async function deleteRegion(rid) {
 // ---------------- editing a drawn polygon: drag points, drag a midpoint to add one, double-click to remove ----------------
 st.editing = null;
 const MAX_HANDLES = 900;  // more points than this on screen: zoom in to edit them
+const EDIT_TOL_UM = 1.5;  // an outline imported from QuPath (a point every pixel or two) is edited simplified to this
+function simplifyRing(pts, tol) {  // Douglas-Peucker on a closed outline: the points that keep it within tol
+  const n = pts.length;
+  if (n <= 8) return pts.map((q) => [q[0], q[1]]);
+  const far = pts.reduce((b, q, i) => (Math.hypot(q[0] - pts[0][0], q[1] - pts[0][1]) > b.d ? { i, d: Math.hypot(q[0] - pts[0][0], q[1] - pts[0][1]) } : b), { i: 0, d: -1 }).i;
+  const keep = new Uint8Array(n); keep[0] = keep[far] = 1;
+  const stack = [[0, far], [far, n]];  // the second half closes back on point 0
+  while (stack.length) {
+    const [a, b] = stack.pop(), A = pts[a], B = pts[b % n];
+    const dx = B[0] - A[0], dy = B[1] - A[1], L = Math.hypot(dx, dy) || 1e-9;
+    let best = -1, bd = tol;
+    for (let i = a + 1; i < b; i++) {
+      const d = Math.abs(dy * (pts[i][0] - A[0]) - dx * (pts[i][1] - A[1])) / L;
+      if (d > bd) { bd = d; best = i; }
+    }
+    if (best >= 0) { keep[best] = 1; stack.push([a, best], [best, b]); }
+  }
+  return pts.filter((_, i) => keep[i]).map((q) => [q[0], q[1]]);
+}
 function startEdit(p) {
   if (st.drawing) cancelDraw();
-  st.editing = { id: p.id, name: p.name, pts: p.polygon.map((q) => [q[0], q[1]]), dirty: false };
+  const pts = simplifyRing(p.polygon, EDIT_TOL_UM / st.he.um_per_px);  // unchanged unless a point is moved and saved
+  st.editing = { id: p.id, name: p.name, pts, dirty: false, from: p.polygon.length };
   $("edithint").hidden = false; $("draw").disabled = true;
   editInfo();
   zoomTo(p); drawRegions();
 }
 function editInfo() {
   const e = st.editing;
-  $("editinfo").textContent = `Editing ${e.id} (${e.name}) · ${e.pts.length} points` + (e.dirty ? " · changed" : "");
+  $("editinfo").textContent = `Editing ${e.id} (${e.name}) · ${e.pts.length} points` +
+    (e.from > e.pts.length ? ` (simplified from ${e.from.toLocaleString()}, within ${EDIT_TOL_UM} µm)` : "") + (e.dirty ? " · changed" : "");
 }
 function stopEdit() {
   st.editing = null; st.drag = null;
@@ -2106,8 +2127,11 @@ function drawEditing(svg) {
     });
     svg.append(m);
   });
+  let last = null;
   pts.forEach((q, i) => {
     if (!on(q)) return;
+    if (last && Math.hypot(q.x - last.x, q.y - last.y) < 8) return;  // too close to the last handle to grab: zoom in for it
+    last = q;
     const c = svgEl("circle", { cx: q.x, cy: q.y, r: 5, fill: "#fff", stroke: "#00a0d0", "stroke-width": 2, class: "hdl" });
     c.addEventListener("pointerdown", (ev) => {  // the layer is redrawn on every press, so double-clicks are timed here
       ev.preventDefault(); ev.stopPropagation();

@@ -799,7 +799,8 @@ class Session:
 
     def edit_region(self, rid, polygon_px, author=None, message=None):
         """Replace the outline of drawn polygon rid (points moved, added or removed by the user); its cells are
-        recomputed, its id and name stay, so priors on the region keep applying."""
+        recomputed (outside its holes, if imported with any), its id and name stay, so priors on the region keep
+        applying."""
         cur = self.state()
         ops = cur["regions"].get("ops", [])
         op = next((o for o in ops if o.get("id") == rid and o.get("op") == "polygon"), None)
@@ -807,7 +808,10 @@ class Session:
             raise ValueError(f"no region polygon {rid}")
         if len(polygon_px) < 3:
             raise vocab.VocabError("a region needs at least 3 points")
-        rows = regmod.cells_in_polygon(self.cells.px.to_numpy(), self.cells.py.to_numpy(), polygon_px)
+        px, py = self.cells.px.to_numpy(), self.cells.py.to_numpy()
+        rows = regmod.cells_in_polygon(px, py, polygon_px)
+        for h in op.get("holes", []):  # an imported outline's holes stay out of the region
+            rows = np.setdiff1d(rows, regmod.cells_in_polygon(px, py, h))
         if not len(rows):
             raise vocab.VocabError("the polygon contains no cells")
         new = dict(op, polygon=[[float(x), float(y)] for x, y in polygon_px], cells=self.cells.cell.to_numpy()[rows].tolist(),
