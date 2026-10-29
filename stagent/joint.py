@@ -41,7 +41,7 @@ def _slice_mres(res, o, n):
         if len(r):
             members[k] = r
     return {"labels": res["labels"][o:o + n], "cluster_of": res["cluster_of"][o:o + n], "members": members,
-            "records": res["records"], "nodes": res["nodes"]}
+            "records": res["records"], "nodes": res["nodes"], "knn": res.get("knn")}
 
 
 def latest_sessions(pid, chosen=None):
@@ -58,11 +58,20 @@ def latest_sessions(pid, chosen=None):
     return out
 
 
-def annotate(pid, markers_text, resolution=None, carry=False, progress=None):
-    """One marker annotation of all the project's slices together; returns {sample_id: new session id}."""
-    from .session import Session
+def annotate(pid, markers_text, resolution=None, carry=False, progress=None, knn=None):
+    """One marker annotation of all the project's slices together; returns {sample_id: new session id}.
+    knn: the neighbor search, "exact" (default) or "approx"."""
+    from .session import Session, knn_mode
+    from . import timing
+    knn = knn_mode(knn)
     say = progress or (lambda f, m: None)
     ids, off, counts, panel = _pooled(pid)
+    with timing.run(counts.shape[0]):
+        return _annotate(pid, markers_text, resolution, carry, say, knn, ids, off, counts, panel)
+
+
+def _annotate(pid, markers_text, resolution, carry, say, knn, ids, off, counts, panel):
+    from .session import Session
     previous = latest_sessions(pid) if carry else {}
     from .session import filtered_genes
     parsed = markers.parse(markers_text, panel, filtered_genes(ids[0]))
@@ -70,7 +79,8 @@ def annotate(pid, markers_text, resolution=None, carry=False, progress=None):
         raise ValueError("marker list has errors: " + "; ".join(parsed["errors"][:8]))
     say(0.02, f"marker step on {counts.shape[0]:,} cells of {len(ids)} slices")
     res = markers.annotate(counts, panel, parsed["tree"], lambda f, m: say(0.02 + 0.5 * f, m),
-                           resolution=markers.AUTO if resolution in (None, "", markers.AUTO) else float(resolution))
+                           resolution=markers.AUTO if resolution in (None, "", markers.AUTO) else float(resolution),
+                           knn=knn)
     types = parsed["leaves"]
     index = {t: i for i, t in enumerate(types)}
     lab = np.array([index.get(x, -1) for x in res["labels"]], np.int64)
@@ -81,7 +91,7 @@ def annotate(pid, markers_text, resolution=None, carry=False, progress=None):
     for i, sid in enumerate(ids):
         say(0.8 + 0.18 * i / len(ids), f"slice {i + 1} of {len(ids)}: {sid}")
         s = Session.create(sid, "none", method="markers", markers_text=markers_text, resolution=resolution,
-                           carry_from=previous.get(sid))
+                           carry_from=previous.get(sid), knn=knn)
         s._save_mres("init", _slice_mres(res, off[i], off[i + 1] - off[i]))
         model.save(m, s.dir / "base" / "init_model.npz")
         info = json.load(open(s.dir / "session.json"))

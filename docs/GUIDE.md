@@ -201,8 +201,15 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
    cells); marker genes the filter removed are left out of marker lists with a warning. Choose the **Method** (Annotate tab): *Marker genes* (a marker
    list, **Markers…**), *Single-cell reference* (a labeled reference h5ad, **Reference…**) or *Load existing* (a
    CSV with one cell type per cell, **Annotation file…**), then click
-   **Annotate** (about 1 min for 350k cells with markers, seconds with a reference). Regions start empty: you
-   draw them.
+   **Annotate**. With marker genes, **Neighbors** chooses the neighbor search of the marker step: *Exact* gives the
+   same neighbors, hence the same clusters and labels, on every computer, GPU or not (the default); *Approximate*
+   (pynndescent) is much faster on a computer without a GPU, and gives the same result only with the same
+   pynndescent and numba versions. Under it the app estimates how long the whole annotation will take here, for
+   both choices (hover for the steps), and the progress bar shows the time so far against that estimate. For 357k
+   cells: under a minute with a GPU either way; without one, about 5 min exact and about 1 min approximate on a
+   12-core CPU with PyTorch (numpy alone makes the exact search about 4 times slower). The estimate starts from a
+   short speed test of the computer and learns from every annotation run on it. Regions start empty: you draw
+   them.
 2. The result is drawn on the H&E: pan and zoom down to single cells (the overview at the bottom right shows the
    whole sample as the map does: the image, the cells in their colors and the region outlines, with the box of the
    current view); color by cell type, lineage, region,
@@ -237,9 +244,9 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
    Leiden / UMAP, NMF niches, figures, the table); the app's annotation algorithm (marker clustering, expression
    model, priors) is carried as source code in a folded cell and replayed with this annotation's marker list,
    regions, priors, corrections and re-clusterings. The results at export time are filled in, and a rerun checks
-   that labels, Leiden clusters and niches come out the same: identical when run on the same kind of machine (with
-   a GPU and PyTorch, neighbors are exact as in the app; without, large samples use approximate neighbors);
-   annotations made with an earlier app version can differ. UMAP coordinates differ slightly (all cores).
+   that labels, Leiden clusters and niches come out the same: identical on any computer for annotations made with
+   exact neighbors; with approximate neighbors, identical with the pynndescent and numba versions named in the
+   notebook; annotations made before v0.2.22 (no choice of neighbors) only on the same kind of machine. UMAP coordinates differ slightly (all cores).
 6. **Reset** removes every annotation and chat of the selected sample (moved to `<data folder>/trash/`); in a project,
    of this slice or of all slices, and optionally the PCA / UMAP and Leiden clusters too (they are computed from the
    expression alone and stay otherwise).
@@ -423,9 +430,11 @@ were labeled neutrophils (15% before), and lineage agreement rose from 91.4% to 
 
 ## Performance
 
-Everything runs on the CPU; with PyTorch installed (`gpu` extra) the marker step's neighbor search uses an NVIDIA
-or Apple GPU. On an idle CPU a 356k-cell section takes about a minute to annotate (3.3 GB of RAM); a correction or
-a local re-clustering takes a few seconds. The viewer draws the cells with WebGL, so panning, zooming and changing
+Everything runs on the CPU; with PyTorch installed (`gpu` extra) the marker step's exact neighbor search uses an
+NVIDIA or Apple GPU (same neighbors, only faster), and without a GPU PyTorch still makes it about 4 times faster
+than numpy. A 357k-cell section takes under a minute to annotate with a GPU, about 5 min with exact neighbors on a
+12-core CPU and about 1 min with approximate ones (3.3 GB of RAM); the Annotate tab shows the estimate for the
+sample and computer at hand. A correction or a local re-clustering takes a few seconds. The viewer draws the cells with WebGL, so panning, zooming and changing
 colors are immediate.
 
 ## Troubleshooting

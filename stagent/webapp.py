@@ -983,12 +983,13 @@ def api_samples(req):
     return _json(rows)
 
 
-def _project_job(pid, fn):
+def _project_job(pid, fn, estimate_s=None):
     """Run a project-wide analysis in the background; progress under /api/job/project:<id>."""
     job = f"project:{pid}"
     if job in JOBS and not JOBS[job]["done"]:
         return _json({"error": "an analysis of this project is still running"}, 409)
-    JOBS[job] = {"stage": "starting", "progress": 0.0, "done": False, "error": None}
+    JOBS[job] = {"stage": "starting", "progress": 0.0, "done": False, "error": None, "started": time.time(),
+                 "estimate_s": estimate_s}
 
     def work():
         try:
@@ -1004,7 +1005,8 @@ async def api_project_annotate(req: Request):
     from . import joint
     pid, b = req.path_params["pid"], await req.json()
     return _project_job(pid, lambda say: joint.annotate(pid, b.get("markers_text", ""), b.get("resolution"),
-                                                        bool(b.get("carry")), say))
+                                                        bool(b.get("carry")), say, b.get("knn")),
+                        estimate_s=b.get("estimate_s"))
 
 
 async def api_project_embed(req: Request):
@@ -1322,19 +1324,24 @@ async def api_annotate(req: Request):
             sid = Session.create(sample, b.get("region_source", "none"), method=b.get("method", "markers"),
                                  markers_text=b.get("markers_text"), resolution=b.get("resolution"),
                                  carry_from=b.get("carry_from"), reference=b.get("reference"),
-                                 existing=b.get("existing")).id
+                                 existing=b.get("existing"), knn=b.get("knn")).id
         except (ValueError, OSError, KeyError) as e:
             return _json({"error": str(e)}, 400)
     s = review_app._session(sid)
-    JOBS[sid] = {"stage": "starting", "progress": 0.0, "done": False, "error": None}
+    JOBS[sid] = {"stage": "starting", "progress": 0.0, "done": False, "error": None, "started": time.time(),
+                 "estimate_s": b.get("estimate_s") if mode == "new" else None}
 
     def work():
+        from . import timing
+
         def cb(f, msg):
             JOBS[sid].update(progress=round(0.9 * f, 3), stage=msg)
         try:
-            s.base(progress=cb)
-            JOBS[sid].update(progress=0.93, stage="assigning regions, applying priors, finding conflicts")
-            s.result()
+            with timing.run(len(s.cells)) if s.scheme["kind"] == "markers" and mode == "new" else \
+                    contextlib.nullcontext():
+                s.base(progress=cb)
+                JOBS[sid].update(progress=0.93, stage="assigning regions, applying priors, finding conflicts")
+                s.result()
             view(s.sample_id)
             JOBS[sid].update(progress=1.0, stage="done", done=True)
         except Exception as e:  # report to the page instead of dying silently
@@ -1344,7 +1351,40 @@ async def api_annotate(req: Request):
 
 
 def api_job(req):
-    return _json(JOBS.get(req.path_params["sid"], {"stage": "idle", "progress": 1.0, "done": True, "error": None}))
+    j = JOBS.get(req.path_params["sid"], {"stage": "idle", "progress": 1.0, "done": True, "error": None})
+    if j.get("started"):
+        j = dict(j, elapsed_s=round(time.time() - j["started"], 1))
+    return _json(j)
+
+
+async def api_estimate(req: Request):
+    """How long a marker annotation should take on this computer, with exact and with approximate neighbors:
+    {sample_id, markers_text, resolution, project} -> {"n_cells", "n_genes", "slices", "exact", "approx", "device"}.
+    project: all slices of the sample's project together (the Annotate button with "all slices" ticked)."""
+    from . import timing
+    b = await req.json()
+    sample = str(b.get("sample_id", ""))
+    ids = [sample]
+    if b.get("project"):
+        p = projects.project_of(sample)
+        if p:
+            ids = [x for x in projects.load(p)["samples"] if (config.SAMPLES / x / "meta.json").exists()]
+    metas = [json.load(open(config.SAMPLES / x / "meta.json")) for x in ids if (config.SAMPLES / x / "meta.json").exists()]
+    if not metas:
+        return _json({"error": f"unknown sample {sample}"}, 404)
+    n = int(sum(m.get("n_cells") or 0 for m in metas))
+    g = len(panel_genes(ids[0]))
+    tree, n_types = None, None
+    if (b.get("markers_text") or "").strip():
+        parsed = markers.parse(b["markers_text"], panel_genes(ids[0]), filtered_genes(ids[0]))
+        if parsed["ok"]:
+            tree, n_types = parsed["tree"], len(parsed["leaves"])
+
+    def work():
+        return {k: timing.estimate(n, g, tree, b.get("resolution") or "auto", k, n_types) for k in ("exact", "approx")}
+    est = await asyncio.to_thread(work)
+    return _json(dict(est, n_cells=n, n_genes=g, slices=len(ids), device=config.device(),
+                      marker_list=tree is not None))
 
 
 def api_legend(req):
@@ -2518,6 +2558,7 @@ def build_app(port):
         Route("/api/sample/{sample}/he_info", api_he_info),
         Route("/api/sample/{sample}/he/{level:int}/{xy}", he_tile),
         Route("/api/annotate", api_annotate, methods=["POST"]),
+        Route("/api/estimate", api_estimate, methods=["POST"]),
         Route("/api/job/{sid}", api_job),
         Route("/api/s/{sid}/legend", api_legend),
         Route("/api/s/{sid}/overlay/{version:int}/{mode}/{level:int}/{xy}", overlay_tile),

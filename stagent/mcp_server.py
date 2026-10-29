@@ -26,8 +26,9 @@ Getting started
   with a labeled single-cell reference h5ad of the tissue, start_session(sample_id, reference_h5ad=..., label_column=...)
   (inspect_reference first: shared genes, label columns). Or load an existing annotation (CSV, one row per cell):
   start_session(sample_id, annotation_csv=..., id_column=..., label_column=...) after inspect_annotation. Or
-  resume_session from list_sessions. The first
-  annotation takes about a minute on a laptop.
+  resume_session from list_sessions. The review window of start_session shows how long the annotation should take
+  on this computer (under a minute with a GPU; without one, minutes for large samples with the default exact
+  neighbor search, about a minute with knn="approx").
 - The user usually has the STAnnotator app (or the web viewer) open: call use_viewer_session to load what they
   are looking at. After starting a new annotation call open_viewer: a running app switches to it by itself;
   otherwise give the user the link. The viewer shows the cell types on the H&E (or DAPI); the user draws and names
@@ -337,10 +338,18 @@ def _d_start_session(a):
         det.append(f"Marker list with {p['n_types']} cell types under {len(p['tree'])} lineages: "
                    + _names([n["name"] for n in p["tree"]], 8))
         det += [f"Warning: {w}" for w in p["warnings"][:4]]
+        from . import config, timing
+        from .session import knn_mode
+        knn = knn_mode(a.get("knn"))
+        n = json.load(open(config.SAMPLES / a["sample_id"] / "meta.json")).get("n_cells") or 0
+        est = timing.estimate(n, len(panel_genes(a["sample_id"])), p["tree"], "auto", knn, len(p["leaves"]))
+        det.append(f"Neighbor search: {est['backend']}"
+                   + (" (the same result on every computer)" if knn == "exact" else "")
+                   + f". Estimated time for {n:,} cells: {timing.words(est['seconds'])} ({est['basis']}).")
     cur = _active.get("session")
     if a.get("carry_from_current") and cur:
         det.append(f"Copies the regions, priors and corrections of the open annotation {cur.id}")
-    det.append("A new annotation (about a minute); earlier annotations stay and can be reopened under Annotation.")
+    det.append("A new annotation; earlier annotations stay and can be reopened under Annotation.")
     return {"title": f"Start a new annotation of {a['sample_id']}", "sample_id": a["sample_id"], "details": det}
 
 
@@ -594,7 +603,7 @@ def start_session(sample_id: str, markers_text: Optional[str] = None,
                   carry_from_current: bool = False, reference_h5ad: Optional[str] = None,
                   label_column: Optional[str] = None, group_column: Optional[str] = None,
                   majority_voting: bool = False, annotation_csv: Optional[str] = None, id_column: Optional[str] = None,
-                  lineage_column: Optional[str] = None) -> str:
+                  lineage_column: Optional[str] = None, knn: Optional[str] = None) -> str:
     """Start a new annotation session on a sample. The data is treated as unlabeled: cell types come from a
     hierarchical marker gene list (markers_text: indented text as in check_marker_list, or CSV with columns
     cell_type, parent, positive_markers, negative_markers; required).
@@ -605,7 +614,10 @@ def start_session(sample_id: str, markers_text: Optional[str] = None,
     lineage_column (check it with inspect_annotation); its labels stay the labels.
     carry_from_current: copy the regions, priors and corrections of the active session of the same sample (use it
     when re-annotating with a revised marker list). The first call to any tool that needs labels runs the annotation
-    (about a minute). Give the user a new viewer link afterwards (open_viewer).
+    (the review window shows how long it should take here). Give the user a new viewer link afterwards (open_viewer).
+    knn (marker list only): the neighbor search of the marker step, "exact" (default: the same result on every
+    computer, GPU or not) or "approx" (pynndescent: much faster on a computer without a GPU for large samples, the
+    same result only with the same pynndescent / numba versions). Use "approx" only when the user asks for it.
     """
     carry = _active["session"].id if carry_from_current and _active.get("session") else None
     ref = ex = None
@@ -617,7 +629,7 @@ def start_session(sample_id: str, markers_text: Optional[str] = None,
                "majority_voting": majority_voting}
     method = "existing" if ex else "scref" if ref else "markers"
     _active["session"] = Session.create(sample_id, "none", method=method, markers_text=markers_text,
-                                        carry_from=carry, reference=ref, existing=ex)
+                                        carry_from=carry, reference=ref, existing=ex, knn=knn)
     return _j(_active["session"].summary())
 
 

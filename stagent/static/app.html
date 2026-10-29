@@ -420,6 +420,10 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <button id="openRef" hidden title="The labeled single-cell reference (h5ad) used for annotation">Reference…</button>
       <button id="openEx" hidden title="A CSV with an existing cell type annotation (one row per cell)">Annotation file…</button>
     </div>
+    <div class="fld" id="knnWrap"><span>Neighbors</span><select id="knn" class="segsel" title="Neighbor search of the marker step">
+      <option value="exact" data-short="Exact">Exact: the same result on every computer, with or without a GPU; slow without a GPU for large samples</option>
+      <option value="approx" data-short="Approximate">Approximate (pynndescent): fast on any computer; the same result only with the same pynndescent and numba versions</option></select>
+      <div class="seg" data-for="knn"></div><div class="hint" id="annEst"></div></div>
     <label class="switch" id="carryWrap" style="visibility:hidden" title="Start the new annotation with the regions (and their colors), priors and hand corrections of the one that is open; priors and corrections naming cell types the new annotation does not have are dropped"><input type="checkbox" id="carry" checked>
       <span>Keep my regions, priors &amp; corrections<small>carried into the new annotation</small></span></label>
     <button id="annotate" class="primary main">Annotate</button>
@@ -1297,6 +1301,7 @@ async function selectSample(id) {
   st.sliceSwitch = false;
   fillSessions(sid);
   setMarkers("", "");  // no default list: import or load one for this sample
+  estimateAnnotation();
   if (sid) await startAnnotation("continue", sid, token); else st.wantMode = st.keepView = null;
 }
 
@@ -1328,6 +1333,7 @@ async function startAnnotation(mode, sid, token = st.switchToken) {
   const method = $("method").value;
   const body = { sample_id: st.sample.sample_id, region_source: "none", mode, method,
                  markers_text: $("mkText").value, resolution: $("mkAuto").checked ? "auto" : +$("mkRes").value,
+                 knn: $("knn").value, estimate_s: EST.last ? EST.last[$("knn").value].seconds : null,
                  carry_from: mode === "new" && st.sid && $("carry").checked ? st.sid : null };
   if (mode === "new" && method === "existing") {
     body.existing = { path: $("exPath").value.trim(), id_column: $("exId").value, label_column: $("exLabel").value, lineage_column: $("exLin").value };
@@ -1352,7 +1358,7 @@ async function startAnnotation(mode, sid, token = st.switchToken) {
     for (;;) {
       const j = await api(`/api/job/${session_id}`);
       $("pfill").style.width = `${Math.round(100 * j.progress)}%`;
-      $("pstage").textContent = j.error ? `error: ${j.error}` : j.stage;
+      $("pstage").textContent = j.error ? `error: ${j.error}` : j.stage + jobTime(j);
       if (j.done) { if (j.error) throw new Error(j.error); break; }
       await new Promise((r) => setTimeout(r, 600));
     }
@@ -1386,6 +1392,7 @@ async function openSession(sid) {
   if (st.vocab.marker_list) setMarkers(st.vocab.marker_list, "");  // re-annotating starts from this annotation's list
   if (st.vocab.method === "scref" && st.vocab.reference) setReference(st.vocab.reference);
   if (st.vocab.method === "existing" && st.vocab.existing) inspectEx({ path: st.vocab.existing.path }, st.vocab.existing);
+  if (["exact", "approx"].includes(st.vocab.knn)) { $("knn").value = st.vocab.knn; syncSeg("knn"); }
   if (["markers", "scref", "existing"].includes(st.vocab.method)) { $("method").value = st.vocab.method; showMethod(); }
   if (st.wantMode && st.wantMode.startsWith("gene:")) {  // a gene kept from the last slice must be in this panel
     await loadGenes(st.sample.sample_id).catch(() => {});
@@ -2738,7 +2745,50 @@ $("input").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shif
 function showMethod() {
   const m = $("method").value; syncSeg("method");
   $("openMarkers").hidden = m !== "markers"; $("openRef").hidden = m !== "scref"; $("openEx").hidden = m !== "existing";
+  $("knnWrap").hidden = m !== "markers";
+  estimateAnnotation();
 }
+function duration(s) {  // as timing.words on the server
+  if (s < 50) return "under a minute";
+  const m = Math.max(1, Math.round(s / 60));
+  return m < 60 ? `about ${m} min` : `about ${Math.floor(m / 60)} h` + (m % 60 ? ` ${m % 60} min` : "");
+}
+const clock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+function jobTime(j) {  // " · 1:20 of about 4 min" after a running job's stage
+  if (j.elapsed_s == null || j.done) return "";
+  return ` · ${clock(j.elapsed_s)}` + (j.estimate_s ? ` of ${duration(j.estimate_s)}` : "");
+}
+const EST = { last: null, timer: null };  // the estimate shown under Neighbors, for the annotation about to run
+function estimateAnnotation() {  // how long Annotate should take here, for both neighbor searches
+  clearTimeout(EST.timer);
+  EST.timer = setTimeout(async () => {
+    const box = $("annEst");
+    if (!st.sample || $("method").value !== "markers") { box.textContent = ""; EST.last = null; return; }
+    const body = () => JSON.stringify({ sample_id: st.sample && st.sample.sample_id, markers_text: $("mkText").value,
+                                        resolution: $("mkAuto").checked ? "auto" : +$("mkRes").value, project: projectMode() });
+    const key = body();
+    try {
+      const e = await post("/api/estimate", JSON.parse(key));
+      if (key !== body()) return;  // the sample or the settings changed meanwhile: a newer estimate follows
+      EST.last = e; showEstimate();
+    } catch (err) { box.textContent = ""; EST.last = null; }
+  }, 300);
+}
+function showEstimate() {
+  const e = EST.last, box = $("annEst");
+  if (!e) { box.textContent = ""; return; }
+  const k = $("knn").value, other = k === "exact" ? "approx" : "exact", me = e[k];
+  const cells = `${e.n_cells.toLocaleString()} cells` + (e.slices > 1 ? ` of ${e.slices} slices` : "");
+  const cap = (t) => t[0].toUpperCase() + t.slice(1);
+  box.textContent = `${cap(duration(me.seconds))} for ${cells}: ${me.backend}. ${other === "exact" ? "Exact" : "Approximate"}: ${duration(e[other].seconds)}.`
+    + (e.marker_list ? "" : " Load the marker list for a closer estimate.");
+  box.title = `Estimated ${me.basis}; every run here makes it more precise.\n`
+    + me.steps.map(([s, t]) => `${s}: ${t < 1 ? "<1" : Math.round(t)} s`).join("\n");
+}
+if (["exact", "approx"].includes(load("knn"))) $("knn").value = load("knn");
+$("knn").onchange = () => { syncSeg("knn"); store("knn", $("knn").value); showEstimate(); };
+$("mkDlg").addEventListener("close", estimateAnnotation);
+$("projAll").addEventListener("change", estimateAnnotation);
 function openRef() { $("refPick").hidden = !native(); $("refDlg").showModal(); }
 function fillRefColumns(cols, label, group) {
   const names = Object.keys(cols || {});
@@ -3155,7 +3205,10 @@ it previews the change and asks before adding a prior.</li>
 <li>The <b>Priors</b> list under Regions shows them; <b>×</b> removes one.</li></ul>
 <h3>Annotate</h3><ul>
 <li><b>Method</b>: marker genes (<b>Markers…</b>), a single-cell reference (<b>Reference…</b>) or an existing annotation
-(<b>Annotation file…</b>). <b>Annotate</b> makes a new annotation; <b>keep my regions, priors &amp; corrections</b> carries them over.</li></ul>
+(<b>Annotation file…</b>). <b>Annotate</b> makes a new annotation; <b>keep my regions, priors &amp; corrections</b> carries them over.</li>
+<li><b>Neighbors</b> (marker genes): <i>Exact</i> gives the same result on every computer, with or without a GPU; <i>Approximate</i>
+is much faster without a GPU and gives the same result only with the same package versions. The line under it estimates how long the
+whole annotation takes on this computer for both (hover for the steps); it learns from every run here.</li></ul>
 <h3>Embedding</h3><ul>
 <li><b>Run PCA + UMAP</b> computes PCA, UMAP and Leiden clusters from the expression (about a minute; shared by all
 annotations of the sample). <b>Show UMAP</b> opens the window on the right: UMAP or PCA, colored as the map, by cell
@@ -3458,7 +3511,8 @@ function showCheck(r) {
 }
 async function checkMarkers() { const r = await post("/api/markers/check", { text: $("mkText").value, sample: st.sample && st.sample.sample_id }); showCheck(r); return r; }
 $("openMarkers").onclick = openMarkers;
-$("mkAuto").onchange = (e) => { $("mkRes").disabled = e.target.checked; };
+$("mkAuto").onchange = (e) => { $("mkRes").disabled = e.target.checked; estimateAnnotation(); };
+$("mkRes").addEventListener("change", estimateAnnotation);
 $("mkClose").onclick = () => $("mkDlg").close();
 // marker lists: there is no default; each annotation starts from a list the user imports, loads or Claude drafts
 function setMarkers(text, name) { $("mkText").value = text || ""; $("mkName").value = name || ""; $("mkMsgs").textContent = text ? "" : "Not checked yet."; }
@@ -3843,7 +3897,7 @@ async function projectJob(path, body, fill, stage) {  // a project-wide analysis
   const { job } = await post(`/api/project/${pid}/${path}`, body);
   for (;;) {
     const j = await api(`/api/job/${encodeURIComponent(job)}`);
-    fill.style.width = `${Math.round(100 * j.progress)}%`; stage.textContent = j.error ? `error: ${j.error}` : j.stage;
+    fill.style.width = `${Math.round(100 * j.progress)}%`; stage.textContent = j.error ? `error: ${j.error}` : j.stage + jobTime(j);
     if (j.done) { if (j.error) throw new Error(j.error); return; }
     await new Promise((r) => setTimeout(r, 800));
   }
@@ -3856,6 +3910,7 @@ async function annotateProject() {  // one marker annotation of all slices; then
   $("annotate").disabled = true; $("progress").classList.add("show");
   try {
     await projectJob("annotate", { markers_text: text, resolution: $("mkAuto").checked ? "auto" : +$("mkRes").value,
+                                   knn: $("knn").value, estimate_s: EST.last ? EST.last[$("knn").value].seconds : null,
                                    carry: !!st.sid && $("carry").checked }, $("pfill"), $("pstage"));
     st.wantMode = st.mode !== "cells" ? st.mode : null; st.sliceSwitch = true; st.keepView = viewState();
     projectOf(st.sample.sample_id).samples.forEach((id) => delete st.openedThisVisit[id]);  // open the new joint annotations
@@ -4663,7 +4718,7 @@ function segmented(id) {  // a select shown as a row of buttons (the select keep
   syncSeg(id);
 }
 function syncSeg(id) { document.querySelectorAll(`.seg[data-for="${id}"] button`).forEach((b) => b.classList.toggle("on", b.dataset.v === $(id).value)); }
-segmented("method"); segmented("nIdentity"); segmented("nKMode"); segmented("aScope"); segmented("aKind"); segmented("sScope"); segmented("sKind");
+segmented("method"); segmented("knn"); segmented("nIdentity"); segmented("nKMode"); segmented("aScope"); segmented("aKind"); segmented("sScope"); segmented("sKind");
 function heStateBtn() {  // Unload H&E (free its memory) / Load H&E (back, with its registration)
   const s = st.sample, has = s && (s.image_unloaded || (s.image_kind && s.image_kind !== "none"));
   $("heStateWrap").hidden = !has;

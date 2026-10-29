@@ -28,6 +28,14 @@ def _now():
     return datetime.now().isoformat(timespec="seconds")
 
 
+def knn_mode(knn):
+    if knn in (None, ""):
+        return markers.KNN
+    if knn not in ("exact", "approx"):
+        raise vocab.VocabError("knn must be 'exact' or 'approx'")
+    return knn
+
+
 def _clean(v):
     return None if v in ("nan", "", None) else v
 
@@ -146,9 +154,11 @@ class Session:
     # ---------- creation / persistence ----------
     @classmethod
     def create(cls, sample_id, region_source="none", method="markers", markers_text=None, resolution=None,
-               carry_from=None, reference=None, existing=None):
+               carry_from=None, reference=None, existing=None, knn=None):
         """method 'markers' (default): hierarchical marker annotation (Leiden + marker scores) of this sample; the data
         is treated as having no cell type labels. markers_text: the marker list (indented text or CSV); required.
+        knn: the marker step's neighbor search, "exact" (default; the same result on every computer) or "approx"
+        (pynndescent: faster without a GPU).
         method 'scref': a single-cell reference h5ad (reference = {"path", "label_column", optional "group_column",
         "majority_voting"}) trains a CellTypist-like classifier on the genes it shares with the panel.
         method 'existing': an annotation loaded from a CSV (existing = {"path", "id_column", "label_column",
@@ -172,7 +182,8 @@ class Session:
             scheme = {"kind": "markers", "text": parsed["canonical"], "tree": parsed["tree"], "types": parsed["leaves"],
                       "nodes": parsed["types"], "leaf_types": True,
                       "parent": parsed["parent"], "top": parsed["top"],
-                      "resolution": markers.AUTO if resolution in (None, "", markers.AUTO) else float(resolution)}
+                      "resolution": markers.AUTO if resolution in (None, "", markers.AUTO) else float(resolution),
+                      "knn": knn_mode(knn)}
         elif method == "scref":
             from . import scref
             ref = dict(reference or {})
@@ -427,7 +438,8 @@ class Session:
                  cluster=np.array([code[c] for c in res["cluster_of"]], np.int32),
                  member_rows=np.concatenate(rows).astype(np.int32) if rows else np.zeros(0, np.int32),
                  member_offsets=np.cumsum([0] + [len(r) for r in rows]))
-        json.dump({"cluster_names": names, "member_ids": ids, "records": res["records"], "nodes": res["nodes"]},
+        json.dump({"cluster_names": names, "member_ids": ids, "records": res["records"], "nodes": res["nodes"],
+                   "knn": res.get("knn")},
                   open(self.dir / "base" / f"markers_{mkey}.json", "w"))
 
     def _load_mres(self, mkey):
@@ -439,7 +451,7 @@ class Session:
         return {"labels": np.array(self.node_names, dtype=object)[z["labels"]],
                 "cluster_of": np.array(j["cluster_names"], dtype=object)[z["cluster"]],
                 "members": {i: z["member_rows"][off[k]:off[k + 1]] for k, i in enumerate(j["member_ids"])},
-                "records": j["records"], "nodes": j["nodes"]}
+                "records": j["records"], "nodes": j["nodes"], "knn": j.get("knn")}
 
     def marker_result(self, st=None, progress=None):
         """Marker-step result of a version: the full annotation, then each re-clustering op applied in order.
@@ -458,7 +470,8 @@ class Session:
                     break
             if res is None:
                 res = markers.annotate(self.counts, self.panel, self.scheme["tree"], progress,
-                                       resolution=self.scheme.get("resolution", markers.RESOLUTION))
+                                       resolution=self.scheme.get("resolution", markers.RESOLUTION),
+                                       knn=self.knn_mode())
                 self._save_mres("init", res)
                 self._mres["init"] = res
                 i = 0
@@ -471,7 +484,12 @@ class Session:
 
     def _apply_recluster(self, res, op, ops_so_far, progress=None):
         return markers.rerun(res, self.counts, self.panel, self._marker_tree(ops_so_far), op["target"],
-                             op["resolution"], prefix=f"{op['id']}:", progress=progress)
+                             op["resolution"], prefix=f"{op['id']}:", progress=progress, knn=self.knn_mode())
+
+    def knn_mode(self):
+        """The marker step's neighbor search; annotations made before the choice existed keep the old automatic one
+        (exact on a GPU, pynndescent on a CPU above 20,000 cells)."""
+        return self.scheme.get("knn", "auto")
 
     def marker_labels(self, st=None, progress=None):
         """Marker-step label index per cell for a version."""
@@ -607,6 +625,7 @@ class Session:
                 "type_groups": {k: v for k, v in self.type_groups.items()},
                 "lineages": self.lineages, "lineage_of_type": self.lineage_of_type,
                 "marker_list": self.scheme.get("text"), "reference": self.scheme.get("reference"),
+                "knn": self.knn_mode() if self.scheme["kind"] == "markers" else None,
                 "existing": self.scheme.get("existing"),
                 "regions": self.region_names(), "free_regions": vocab.FREE_REGIONS, "kinds": cmod.KINDS,
                 "modes": cmod.MODES, "strengths": cmod.STRENGTH, "verdicts": vocab.VERDICTS,

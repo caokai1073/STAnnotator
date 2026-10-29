@@ -172,8 +172,10 @@ def pseudo_pool(counts, labels, T, seed=0):
 
 def train_pseudo(counts, labels, T, progress=None, seed=0):
     """Marker mode: learn p(type | expression) from marker-annotation pseudo-labels of this sample."""
+    from . import timing
     X, y, natural = pseudo_pool(counts, labels, T, seed)
-    return _fit(X, y, T, natural, progress=progress, seed=seed)
+    with timing.step("model", len(y) * X.shape[1] * T / 1e12):
+        return _fit(X, y, T, natural, progress=progress, seed=seed)
 
 
 def finetune(init, extra_X, extra_y, replay_X, replay_y, progress=None, seed=0):

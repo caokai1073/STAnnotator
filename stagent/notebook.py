@@ -13,13 +13,14 @@ import numpy as np, pandas as pd
 from . import config, embedding, niches, render
 
 # app modules carried into the notebook, in import order (relative imports resolve inside the notebook)
-CARRIED = ["vocab", "markers", "model", "constraints", "regions", "existing", "importer", "scref"]
+CARRIED = ["timing", "vocab", "markers", "model", "constraints", "regions", "existing", "importer", "scref"]
 CONFIG_STUB = '''"""Stand-in for the app's settings: only what the carried modules use."""
 from pathlib import Path
 HOME = WORK = SAMPLES = SESSIONS = Path(".")
+RECORD_TIMINGS = False  # the app keeps how long its steps take; the notebook does not
 def device():
-    """As in the app: exact neighbors on a GPU when torch is installed, else pynndescent on the CPU. Run on the same
-    kind of machine as the app (GPU or not) to get the same neighbors, hence the same clusters and labels."""
+    """As in the app: the GPU that exact neighbor searches run on when torch is installed (it gives the same
+    neighbors as the CPU, only faster)."""
     try:
         import torch
     except ImportError:
@@ -134,9 +135,22 @@ def build(s, version=None):
     count = iter(range(1, 20))
     sec = lambda: next(count)  # section numbers in order
 
+    from . import markers
     dev = config.device()
-    dev_text = {"cuda": "an NVIDIA GPU (exact neighbors)", "mps": "an Apple GPU (exact neighbors)"}.get(
-        dev, "the CPU (approximate neighbors for large samples, pynndescent)")
+    knn = s.knn_mode()
+    if knn == "auto":  # annotations made before the choice of neighbor search
+        dev_text = {"cuda": "an NVIDIA GPU (exact neighbors)", "mps": "an Apple GPU (exact neighbors)"}.get(
+            dev, "the CPU (approximate neighbors for large samples, pynndescent)")
+        knn_text = f"""The neighbor graphs were computed with **{dev_text}**. Run the notebook on the same kind of machine to get
+identical results: with a GPU, install PyTorch (`torch`) so that neighbors are exact as in the app; without one,
+large samples use approximate neighbors (pynndescent), which change a share of the clusters and labels."""
+    elif knn == "exact":
+        knn_text = """The marker step used **exact neighbors**, which are the same on every computer, with or without a GPU: the
+notebook gives the same clusters and labels anywhere. Installing PyTorch (`torch`) only makes the search faster."""
+    else:
+        used = s.marker_result(st).get("knn") or markers.knn_backend("approx")[1]
+        knn_text = f"""The marker step used **approximate neighbors** ({used.split("(", 1)[-1].rstrip(")")}). With those
+versions the notebook gives the same clusters and labels; other versions can change a share of them."""
     nb.append(_md(f"""
 # STAnnotator analysis: sample `{s.sample_id}`, annotation `{s.id}`, version {v}
 
@@ -146,9 +160,7 @@ matplotlib`. The outputs below are the results at export time, so it can be read
 from the top repeats the analysis and checks that the labels, Leiden clusters and niches come out the same.
 The annotation algorithm of the app is carried as source code in the folded cell of section 1.
 
-The neighbor graphs were computed with **{dev_text}**. Run the notebook on the same kind of machine to get
-identical results: with a GPU, install PyTorch (`torch`) so that neighbors are exact as in the app; without one,
-large samples use approximate neighbors (pynndescent), which change a share of the clusters and labels.
+{knn_text}
 """))
     # ---- 1. code carried from the app
     srcs = _sources()
@@ -230,6 +242,7 @@ print(f"{{1 / np.sqrt(abs(np.linalg.det(A[:, :2]))):.4f}} um per image pixel")''
             "marker_ops": st.get("marker_step", {}).get("ops", [])}
     scheme = {k: sch.get(k) for k in ("kind", "text", "tree", "types", "resolution", "top", "lineage_of_type",
                                       "reference", "reference_counts", "existing", "leaf_types")}
+    scheme["knn"] = s.knn_mode()
     types = list(s.types)
     lineage = {t: s.lineage_of_type.get(t, t) for t in types}
     how = {"markers": "marker genes (a hierarchical marker list: Leiden clusters per level scored by their markers, "
@@ -263,9 +276,9 @@ def marker_tree(ops):        # the marker list with the edits of re-clusterings 
         for t, mk in (op.get("markers") or {}).items():
             sa.markers._find(tree, t)["markers"] = sa.markers.parse(f"{t}: {mk}", genes)["tree"][0]["markers"]
     return tree
-res = sa.markers.annotate(counts, genes, SCHEME["tree"], resolution=SCHEME["resolution"])   # marker step
+res = sa.markers.annotate(counts, genes, SCHEME["tree"], resolution=SCHEME["resolution"], knn=SCHEME["knn"])   # marker step
 for j, op in enumerate(STATE["marker_ops"]):
-    res = sa.markers.rerun(res, counts, genes, marker_tree(STATE["marker_ops"][:j + 1]), op["target"], op["resolution"], prefix=f"{op['id']}:")
+    res = sa.markers.rerun(res, counts, genes, marker_tree(STATE["marker_ops"][:j + 1]), op["target"], op["resolution"], prefix=f"{op['id']}:", knn=SCHEME["knn"])
 index = {t: i for i, t in enumerate(TYPES)}
 marker_labels = np.array([index.get(x, -1) for x in res["labels"]])   # -1: left at a lineage / parent level
 model = sa.model.train_pseudo(counts, marker_labels, T)                   # expression model

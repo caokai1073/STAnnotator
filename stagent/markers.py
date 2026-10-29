@@ -212,18 +212,26 @@ RESOLUTIONS = (0.5, 1.0, 2.0, 4.0)  # candidates tried per level when resolution
 AUTO = "auto"
 
 
-def _knn_gpu(Z, k, dev):
-    """Exact neighbors on a GPU, blockwise."""
+def _topk_torch(Z, k, dev):
+    """Indices of the k nearest rows (the row itself included) with torch on `dev`, blockwise."""
     import torch
     Zt = torch.tensor(Z, device=dev)
     n = len(Z)
     chunk = int(np.clip(1.2e9 / n, 256, 8192))  # rows per distance block, about 5 GB at most
-    dist, nbr = [], []
-    for i in range(0, n, chunk):
-        d, j = torch.topk(torch.cdist(Zt[i:i + chunk], Zt), k + 1, largest=False)
-        dist.append(d[:, 1:].cpu()); nbr.append(j[:, 1:].cpu())
+    nbr = [torch.topk(torch.cdist(Zt[i:i + chunk], Zt), k, largest=False)[1].cpu() for i in range(0, n, chunk)]
     del Zt
-    return torch.cat(dist).numpy(), torch.cat(nbr).numpy()
+    return torch.cat(nbr).numpy().astype(np.int64)
+
+
+def _topk_numpy(Z, k):
+    """Indices of the k nearest rows (the row itself included), blockwise through BLAS (a KD-tree is slow in 30
+    dimensions)."""
+    sq = (Z * Z).sum(1)
+    nbr = np.empty((len(Z), k), np.int64)
+    for i in range(0, len(Z), 4096):
+        D = sq[i:i + 4096, None] + sq[None, :] - 2 * Z[i:i + 4096] @ Z.T
+        nbr[i:i + 4096] = np.argpartition(D, k - 1, axis=1)[:, :k]
+    return nbr
 
 
 def pca(Xn, n_pcs=None):
@@ -238,34 +246,82 @@ def pca(Xn, n_pcs=None):
     return np.asarray(X @ V - mu @ V, dtype=np.float32)  # = standardized X times the top components
 
 
-def knn(Z, k):
-    """k nearest neighbors of every row (itself excluded): (distances, indices). Exact on a GPU (CUDA or Apple MPS,
-    when torch is installed) and for small sets; otherwise from pynndescent."""
+KNN = "exact"  # neighbor search of the marker step: "exact" or "approx" (see knn)
+KNN_EXTRA = 8  # candidates beyond k that the exact search re-ranks in float64
+
+
+def has_torch():
+    try:
+        import torch  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def knn_backend(mode):
+    """What knn(mode=...) computes with on this computer: (key, description). The key names the step in timing."""
     from .config import device
+    import importlib.metadata as md
+    if mode == "approx":
+        return "knn_approx", f"approximate (pynndescent {md.version('pynndescent')}, numba {md.version('numba')})"
+    dev = device()
+    if dev != "cpu":
+        return "knn_exact_gpu", f"exact, on the {'CUDA' if dev == 'cuda' else 'Apple'} GPU"
+    if has_torch():
+        return "knn_exact_torch", "exact, on the CPU (torch)"
+    return "knn_exact_numpy", "exact, on the CPU (numpy)"
+
+
+def _exact(Z, k):
+    """Exact neighbors, the same on every computer: candidates from a GPU (CUDA or Apple MPS) when torch has one,
+    else from the CPU (torch, or numpy without it), re-ranked by their float64 distance with ties going to the lower
+    row number, so rounding differences between the backends do not change the result."""
+    from .config import device
+    from . import timing
+    n = len(Z)
+    kk = min(k + 1 + KNN_EXTRA, n)
+    key, _ = knn_backend("exact")
+    cand = None
+    if key == "knn_exact_gpu":
+        try:
+            with timing.step(key, n * n / 1e9):
+                cand = _topk_torch(Z, kk, device())
+        except RuntimeError:  # e.g. GPU memory taken by other jobs: the CPU gives the same neighbors
+            key = "knn_exact_torch"
+    if cand is None:
+        with timing.step(key, n * n / 1e9):
+            cand = _topk_torch(Z, kk, "cpu") if key == "knn_exact_torch" else _topk_numpy(Z, kk)
+    Z64 = Z.astype(np.float64)
+    dist, nbr = np.empty((n, k), np.float32), np.empty((n, k), np.int64)
+    with timing.step("knn_rerank", n / 1e6):
+        for i in range(0, n, 32768):
+            c = cand[i:i + 32768]
+            rows = np.arange(i, i + len(c))
+            d = ((Z64[c] - Z64[rows, None]) ** 2).sum(-1)
+            d[c == rows[:, None]] = np.inf  # not its own neighbor
+            o = np.lexsort((c, d), axis=1)[:, :k]
+            nbr[i:i + len(c)] = np.take_along_axis(c, o, 1)
+            dist[i:i + len(c)] = np.sqrt(np.take_along_axis(d, o, 1))
+    return dist, nbr
+
+
+def knn(Z, k, mode="auto"):
+    """k nearest neighbors of every row (itself excluded): (distances, indices).
+    mode "exact": the true neighbors, the same on every computer whatever it computes with (see _exact).
+    "approx": pynndescent, fast on a CPU; the same result for the same pynndescent and numba versions.
+    "auto" (embeddings): exact on a GPU and for small sets, else pynndescent."""
+    from .config import device
+    from . import timing
     n = len(Z)
     k = min(k, n - 1)
-    dist = nbr = None
-    if device() != "cpu":
-        try:
-            dist, nbr = _knn_gpu(Z, k, device())
-        except RuntimeError:  # e.g. GPU memory taken by other jobs: fall back to the CPU
-            dist = nbr = None
-    if nbr is None and n > 20000:
-        from pynndescent import NNDescent
+    if mode == "exact":
+        return _exact(Z, k)
+    if mode == "auto" and (device() != "cpu" or n <= 20000):
+        return _exact(Z, k)
+    from pynndescent import NNDescent
+    with timing.step("knn_approx", n / 1e6, warmup="approx_compile"):
         nbr, dist = NNDescent(Z, n_neighbors=k + 1, random_state=0).neighbor_graph
-        nbr, dist = nbr[:, 1:], dist[:, 1:]
-    elif nbr is None:  # exact, blockwise through BLAS (a KD-tree is slow in 30 dimensions)
-        sq = (Z * Z).sum(1)
-        nbr, dist = np.empty((n, k), np.int64), np.empty((n, k), np.float32)
-        for i in range(0, n, 4096):
-            D = sq[i:i + 4096, None] + sq[None, :] - 2 * Z[i:i + 4096] @ Z.T
-            D[np.arange(len(D)), np.arange(i, i + len(D))] = np.inf  # not its own neighbor
-            j = np.argpartition(D, k - 1, axis=1)[:, :k]
-            dj = np.take_along_axis(D, j, 1)
-            o = np.argsort(dj, 1)
-            nbr[i:i + 4096] = np.take_along_axis(j, o, 1)
-            dist[i:i + 4096] = np.sqrt(np.maximum(np.take_along_axis(dj, o, 1), 0))
-    return dist, nbr
+    return dist[:, 1:], nbr[:, 1:]
 
 
 def knn_graph(dist, nbr):
@@ -281,10 +337,16 @@ def knn_graph(dist, nbr):
     return g
 
 
-def _graph(Xn):
+def _graph(Xn, knn_mode="auto"):
     """PCA on standardized genes and a kNN graph with adaptive Gaussian weights; built once per level."""
-    dist, nbr = knn(pca(Xn), N_NEIGHBORS)
-    return knn_graph(dist, nbr), nbr
+    from . import timing
+    m = Xn.shape[0]
+    with timing.step("pca", m * Xn.shape[1] / 1e9):
+        Z = pca(Xn)
+    dist, nbr = knn(Z, N_NEIGHBORS, knn_mode)
+    with timing.step("graph", m / 1e6):
+        g = knn_graph(dist, nbr)
+    return g, nbr
 
 
 def _leiden(g, nbr, resolution, seed):
@@ -312,10 +374,13 @@ def _marker_z(det_frac, gene_idx):
 class _Annotator:
     """Top-down marker annotation over one sample; also re-runs single levels or clusters in place."""
 
-    def __init__(self, counts, panel, progress=None, seed=0):
+    def __init__(self, counts, panel, progress=None, seed=0, knn_mode=KNN):
         from .model import lognorm
-        counts = sp.csr_matrix(counts)
-        self.Xn, self.det = lognorm(counts), (counts > 0).astype(np.float32).tocsr()
+        from . import timing
+        with timing.step("prepare", counts.shape[0] / 1e6):
+            counts = sp.csr_matrix(counts)
+            self.Xn, self.det = lognorm(counts), (counts > 0).astype(np.float32).tocsr()
+        self.knn_mode = knn_mode
         self.gi = {g: i for i, g in enumerate(panel)}
         self.say = progress or (lambda f, m: None)
         self.seed, self.n = seed, counts.shape[0]
@@ -349,13 +414,15 @@ class _Annotator:
         the one assigning the largest share of cells to a child type wins (ties within 1% go to the lower one)."""
         label = parent or "all cells"
         self.say(self.done / self.total, f"building the neighbor graph of {label} ({len(idx):,} cells)")
-        g, nbr = _graph(self.Xn[idx])
+        from . import timing
+        g, nbr = _graph(self.Xn[idx], self.knn_mode)
         cands = RESOLUTIONS if resolution == AUTO else (float(resolution),)
         best, tried = None, {}
         for r in cands:
             self.say(self.done / self.total, f"Leiden on {label}, resolution {r:g}")
-            lab = _leiden(g, nbr, r, self.seed)
-            ev = self._evaluate(idx, lab, children)
+            with timing.step("leiden", len(idx) / 1e6):
+                lab = _leiden(g, nbr, r, self.seed)
+                ev = self._evaluate(idx, lab, children)
             tried[f"{r:g}"] = round(ev["assigned_frac"], 3)
             if best is None or ev["assigned_frac"] > best[1]["assigned_frac"] + 0.01:
                 best = (r, ev, lab)
@@ -390,23 +457,25 @@ def _n_levels(tree):
     return 1 + sum(1 for nd in descendants(tree) if _find(tree, nd)["children"])
 
 
-def annotate(counts, panel, tree, progress=None, seed=0, resolution=AUTO):
+def annotate(counts, panel, tree, progress=None, seed=0, resolution=AUTO, knn=KNN):
     """Full top-down annotation. Returns {"labels" (type name per cell), "cluster_of" (deepest cluster id per cell),
-    "members" (cluster id -> cell rows), "records" (one per cluster), "nodes" (resolution chosen per level)}."""
-    A = _Annotator(counts, panel, progress, seed)
+    "members" (cluster id -> cell rows), "records" (one per cluster), "nodes" (resolution chosen per level)}.
+    knn: the neighbor search, "exact" or "approx" (see knn)."""
+    A = _Annotator(counts, panel, progress, seed, knn)
     A.total = _n_levels(tree)
     res = {"labels": np.full(A.n, UNASSIGNED, dtype=object), "cluster_of": np.full(A.n, "", dtype=object),
            "members": {}, "records": [], "nodes": []}
     A.run(res, None, np.arange(A.n), tree, resolution)
+    res["knn"] = knn_backend(knn)[1] if knn != "auto" else "automatic"
     A.say(1.0, "marker annotation done")
     return res
 
 
-def rerun(res, counts, panel, tree, target, resolution=AUTO, prefix="", progress=None, seed=0):
+def rerun(res, counts, panel, tree, target, resolution=AUTO, prefix="", progress=None, seed=0, knn=KNN):
     """Re-annotate part of a result: target "root", a type name (its cells are split again into its subtypes) or a
     cluster id (only that cluster's cells are re-clustered at its level). Returns a new result; res is not modified."""
     out = {"labels": res["labels"].copy(), "cluster_of": res["cluster_of"].copy(), "members": dict(res["members"]),
-           "records": list(res["records"]), "nodes": list(res["nodes"])}
+           "records": list(res["records"]), "nodes": list(res["nodes"]), "knn": res.get("knn")}
     rec = {r["id"]: r for r in res["records"]}
     if target == "root":
         parent, children = None, tree
@@ -427,7 +496,7 @@ def rerun(res, counts, panel, tree, target, resolution=AUTO, prefix="", progress
     if not len(idx):
         raise ValueError(f"no cells under {target}")
     out["labels"][idx] = parent or UNASSIGNED
-    A = _Annotator(counts, panel, progress, seed)
+    A = _Annotator(counts, panel, progress, seed, knn)
     A.total = _n_levels(children) if children else 1
     A.run(out, parent, idx, children, resolution, prefix)
     A.say(1.0, "re-clustering done")
