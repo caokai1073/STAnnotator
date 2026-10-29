@@ -143,6 +143,11 @@ section.band { padding-block: clamp(64px, 9vw, 112px) 0; }
 .turn.you .say { font-size: var(--s-2); }
 .turn.agent .say { background: var(--accent-soft); border-color: transparent; }
 .turn.agent .say p + p { margin-top: 6px; }
+.say.review { display: grid; gap: 4px; font-size: var(--s-1); box-shadow: var(--shadow); }
+.say.review > span:not(.acts) { color: var(--muted); }
+.acts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }
+.fake { font-size: var(--s-0); padding: 5px 12px; border-radius: 6px; border: 1px solid var(--line); color: var(--ink); }
+.fake.on { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
 .pill { display: inline-block; font: 500 var(--s-0)/1 var(--f-mono); padding: 4px 8px; border-radius: 99px; background: var(--panel); color: var(--accent); border: 1px solid var(--line); margin-right: 6px; }
 .kinds { margin-top: 28px; overflow-x: auto; }
 .kinds table { width: 100%; border-collapse: collapse; font-size: var(--s-1); min-width: 520px; }
@@ -191,6 +196,7 @@ section.band { padding-block: clamp(64px, 9vw, 112px) 0; }
 @media (max-width: 900px) { .dl { grid-template-columns: minmax(0, 1fr); } }
 .mac { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 28px; display: grid; gap: 18px; box-shadow: var(--shadow); }
 .mac h3 { font-size: var(--s-4); line-height: 1.1; }
+.mac .ver { font: 500 var(--s-0)/1 var(--f-mono); color: var(--accent); margin-top: -10px; }
 .mac .req { display: flex; flex-wrap: wrap; gap: 8px; }
 .mac .req span { font: 400 var(--s-0)/1 var(--f-mono); padding: 6px 10px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
 .mac ol { margin: 0; padding-left: 1.3em; display: grid; gap: 8px; }
@@ -242,9 +248,9 @@ footer a { color: var(--muted); }
       <div class="hero-grid">
         <h1>Cell types on the H&amp;E, with an <em>agent</em> at your side.</h1>
         <div class="lede-wrap">
-          <p class="lede">STAnnotator annotates and analyzes imaging spatial transcriptomics (Xenium, MERFISH and other
-            platforms) directly on the tissue image. Tell it what you know in plain sentences. It previews every change,
-            and nothing is applied until you agree.</p>
+          <p class="lede">STAnnotator annotates and analyzes imaging spatial transcriptomics (Xenium, CosMx, MERSCOPE
+            and other platforms) directly on the tissue image. Tell it what you know in plain sentences. Every change
+            the agent proposes waits in the app until you click Accept.</p>
           <div class="cta">
             <a class="btn btn-primary" href="#download" data-dmg>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"></path></svg>
@@ -252,7 +258,7 @@ footer a { color: var(--muted); }
             </a>
             <a class="btn btn-ghost" href="#source">Install from source</a>
           </div>
-          <p class="hero-meta">Free · runs on your computer or your server · the agent is your own Claude Code</p>
+          <p class="hero-meta">Version 0.2.14 · free · runs on your computer or your server · the agent is your own Claude Code</p>
         </div>
       </div>
 
@@ -278,17 +284,17 @@ footer a { color: var(--muted); }
         <p class="intro">Every step happens in one window, on the image. Each change becomes a version you can go back to.</p>
         <ol class="steps">
           <li><span class="n">1</span><h3>Import</h3>
-            <p>Xenium files (<code>cells.parquet</code> and <code>cell_feature_matrix.h5</code>), h5ad, or Seurat and SpatialExperiment <code>.rds</code> files, read without R. Add the H&amp;E and its registration, or let the agent align it.</p></li>
+            <p>Xenium, CosMx (AtoMx flat files) and MERSCOPE output, h5ad, or Seurat and SpatialExperiment <code>.rds</code> files, read without R. Add the H&amp;E and its registration, or let the agent align it; bring regions drawn in QuPath; filter cells and genes.</p></li>
           <li><span class="n">2</span><h3>Annotate</h3>
             <p>From a marker gene list, a labeled single-cell reference, or an annotation you already have. No marker list? Start from a built-in list for 12 organs, pruned to your gene panel.</p></li>
           <li><span class="n">3</span><h3>Refine in words</h3>
-            <p>Draw regions on the tissue and say what you know: priors, corrections, a cluster to split. The agent shows the predicted changes first.</p></li>
+            <p>Draw regions on the tissue and say what you know: priors, corrections, a cluster to split. Each change opens in a review window with the cells it affects; you accept or dismiss it.</p></li>
           <li><span class="n">4</span><h3>Analyze</h3>
             <p>PCA, UMAP and Leiden, niches, composition, DE genes and cell–cell communication, for one slice or several together.</p></li>
           <li><span class="n">5</span><h3>Review</h3>
             <p>Agent Review checks one part of the analysis, tests its own advice against the data and the H&amp;E, and shows only what holds up.</p></li>
           <li><span class="n">6</span><h3>Export</h3>
-            <p>The cell table, the registration, figures as PDF, or a Jupyter notebook that reproduces the analysis without the app.</p></li>
+            <p>The cell table, the registration, figures as PDF, a Jupyter notebook that reproduces the analysis without the app, or the whole annotation as one <code>.stannot</code> file.</p></li>
         </ol>
       </div>
     </div>
@@ -299,8 +305,8 @@ footer a { color: var(--muted); }
       <div class="side"><p class="eyebrow">Plain-language priors</p></div>
       <div>
         <h2>Say what a pathologist would say</h2>
-        <p class="intro">Knowledge about where cells belong becomes a rule the model can use. The agent reads your sentence,
-          previews what it would change, and waits for your go-ahead.</p>
+        <p class="intro">Knowledge about where cells belong becomes a rule the model can use. The agent reads your sentence
+          and proposes the change; the app shows it to you, and nothing happens until you accept it.</p>
         <div class="priors">
           <div>
             <div class="talk" aria-label="Example exchange">
@@ -309,10 +315,11 @@ footer a { color: var(--muted); }
               <div class="turn agent"><span class="who">Agent</span>
                 <div class="say">
                   <p><span class="pill">region</span><span class="pill">only</span> Epithelial lineage, inside the region you drew and named <code>mucosa</code>.</p>
-                  <p>Here is the preview of the cells that would change. Shall I apply it?</p>
+                  <p>The change is waiting in the app with the cells it would relabel.</p>
                 </div></div>
-              <div class="turn you"><span class="who">You</span>
-                <div class="say">“Go ahead.”</div></div>
+              <div class="turn you"><span class="who">App</span>
+                <div class="say review"><b>Review Claude's change</b><span>Nothing changes until you click Accept.</span>
+                  <span class="acts"><span class="fake">Dismiss</span><span class="fake on">Accept</span></span></div></div>
             </div>
             <div class="kinds">
               <table>
@@ -352,7 +359,11 @@ footer a { color: var(--muted); }
           <div class="tool"><span class="tab">Signaling</span><h3>Cell–cell communication</h3>
             <p>Ligand–receptor interactions as bubble and circle plots. Senders and receivers shown together on the map.</p></div>
           <div class="tool"><span class="tab">Projects</span><h3>Several slices at once</h3>
-            <p>Healthy and disease, time courses, replicates: one annotation model and one embedding for all slices, each slice one click away.</p></div>
+            <p>Healthy and disease, time courses, replicates: one annotation model and one embedding for all slices. Put any samples into a project, or move slices between projects.</p></div>
+          <div class="tool"><span class="tab">Overview of all samples</span><h3>Every sample side by side</h3>
+            <p>Each sample over its image, colored the same way. Tick legend entries to show only those cells on all samples, and save the panel as one PDF.</p></div>
+          <div class="tool"><span class="tab">Save / Load</span><h3>Share an annotation</h3>
+            <p>One <code>.stannot</code> file holds every version with its regions, priors and corrections, niches, embeddings and the last Compare and Signaling results.</p></div>
           <div class="tool"><span class="tab">Align with Agent</span><h3>No registration file needed</h3>
             <p>The agent finds the section on the slide, its rotation and mirroring, then moves every cell onto its nucleus.</p></div>
         </div>
@@ -437,6 +448,7 @@ footer a { color: var(--muted); }
         <div class="dl">
           <div class="mac">
             <h3>STAnnotator for Mac</h3>
+            <p class="ver">Version 0.2.14</p>
             <div class="req"><span>Apple silicon</span><span>macOS 11 or later</span><span>8 GB RAM</span></div>
             <a class="btn btn-primary" href="#" data-dmg>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"></path></svg>
