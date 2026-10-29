@@ -39,7 +39,7 @@ header .pane:not(.on) { display: none; }
 header .hrow.bottom { margin-top: auto; padding-bottom: 0; }
 header .hrow.bottom { flex-wrap: nowrap; gap: 6px; }  /* Reset, Remove sample, Remove all on one row */
 /* one analysis at a time: while one runs, the buttons that start another or change the data are grayed out */
-body.running :is(#annotate, #eRun, #nRun, #aRun, #sRun, #qfBtn, #qfGo, #qfRestore, #reset, #rmSample, #clearAll, #heState, #anLoad, #importBtn, #refresh) {
+body.running :is(#annotate, #eRun, #nRun, #aRun, #sRun, #qfBtn, #qfGo, #qfRestore, #reset, #rmSample, #clearAll, #heState, #anLoad, #importBtn, #refresh, #sessDel) {
   opacity: .4; filter: grayscale(1); cursor: not-allowed; }
 header .hrow.bottom button { padding: 5px 8px; font-size: 12px; gap: 4px; white-space: nowrap; flex: 0 1 auto; min-width: 0; }
 header.collapsed .hmini { display: flex; }
@@ -401,7 +401,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <label class="switch" title="Annotate, embed and find niches for all slices of the project together, so labels, clusters and niches mean the same everywhere"><input type="checkbox" id="projAll" checked>
         <span>All slices together<small>one annotation, embedding and set of niches for the project</small></span></label>
     </div>
-    <label class="fld" id="sessWrap"><span>Annotation</span><select id="session" title="Earlier annotations of this sample"></select></label>
+    <div class="fld" id="sessWrap"><span>Annotation</span><div class="inrow"><select id="session" title="Earlier annotations of this sample"></select>
+      <button id="sessDel" disabled title="Delete this annotation (it goes to the data folder's trash with its chat)">Delete</button></div></div>
     <div class="act2"><button id="anSave" disabled title="Save the open annotation as one file: cell types with every version, regions, priors, corrections, niches, the PCA / UMAP, the last results of Compare and Signaling">Save…</button>
       <button id="anLoad" disabled title="Load a saved annotation (.stannot) for the sample with the same cells">Load…</button></div>
     <input type="file" id="anLoadFile" accept=".stannot,.zip" hidden>
@@ -939,7 +940,7 @@ function decorate(b, name, only) {  // icon + label, or the icon only (the label
   else { const t = document.createElement("span"); t.className = "bt"; t.textContent = text; b.append(t); }
   return b;
 }
-const ICON_ONLY = { hdrShow: "chev-left", hdrHide: "chev-right", helpBtn: "help", slPrev: "chev-left", slNext: "chev-right",
+const ICON_ONLY = { sessDel: "x", hdrShow: "chev-left", hdrHide: "chev-right", helpBtn: "help", slPrev: "chev-left", slNext: "chev-right",
   lgtoggle: "chev-up", rgtoggle: "chev-up", plclose: "x", emClose: "x", imClose: "x", rcClose: "x", clClose: "x", rpClose: "x",
   xpClose: "x", glClose: "x", anClose: "x", rvClose: "x", hpClose: "x", anCsv: "download", rpSave: "download", mkExport: "download",
   fbUp: "arrow-up", fbHome: "home", rsClose: "x", hide: "eye", hideHE: "image" };
@@ -1262,6 +1263,7 @@ function fillSessions(selected) {
   sel.disabled = !st.sample.sessions.length;  // always shown, so the header does not move
   if (!st.sample.sessions.length) ph.textContent = "no annotation yet";
   sel.value = selected || "";
+  $("sessDel").disabled = !sel.value;
 }
 
 async function selectSample(id) {
@@ -2810,7 +2812,7 @@ async function inspectFlat() {  // what the two files hold
 });
 // one analysis at a time (Annotate, Embed, Niches, Compare, Signaling, the cell filter, an import): the others'
 // buttons and Reset / Remove are grayed out (CSS body.running) and ignored until it is done
-const LOCKED = "#annotate, #eRun, #nRun, #aRun, #sRun, #qfBtn, #qfGo, #qfRestore, #reset, #rmSample, #clearAll, #heState, #anLoad, #importBtn, #refresh";
+const LOCKED = "#annotate, #eRun, #nRun, #aRun, #sRun, #qfBtn, #qfGo, #qfRestore, #reset, #rmSample, #clearAll, #heState, #anLoad, #importBtn, #refresh, #sessDel";
 async function exclusive(what, fn) {
   if (st.running) { toast(`${st.running} is running: wait until it is done`, 4000); return; }
   st.running = what; document.body.classList.add("running");
@@ -3436,7 +3438,20 @@ $("sample").onchange = (e) => {  // another slice of the same project: like ◀ 
   return p && p.samples.includes(e.target.value) ? gotoSlice(e.target.value) : selectSample(e.target.value);
 };
 $("annotate").onclick = () => (projectMode() && $("method").value === "markers" ? annotateProject() : startAnnotation("new"));
-$("session").onchange = (e) => { closeSession(); if (e.target.value) startAnnotation("continue", e.target.value); };
+$("session").onchange = (e) => { closeSession(); $("sessDel").disabled = !e.target.value; if (e.target.value) startAnnotation("continue", e.target.value); };
+$("sessDel").onclick = async () => {  // delete the annotation chosen in the box; the next most recent one opens
+  const sel = $("session"), sid = sel.value; if (!sid) return;
+  if (st.busy) { toast("Wait until the assistant has answered"); return; }
+  const label = sel.selectedOptions[0].textContent, id = st.sample.sample_id;
+  if (!confirm(`Delete the annotation “${label}”?\n\nIts versions, regions, priors, corrections, niches, review and chat go to the data folder's trash (trash/); the cells, the image and the other annotations stay.`)) return;
+  try {
+    await post(`/api/session/${encodeURIComponent(sid)}/delete`);
+    const rest = st.sample.sessions.map((x) => x.session_id).filter((x) => x !== sid);
+    if (rest.length) st.openedThisVisit[id] = rest[0]; else delete st.openedThisVisit[id];
+    await selectSample(id);
+    toast(`Annotation deleted${rest.length ? "; the next most recent one is open" : ""}`, 5000);
+  } catch (e) { toast(e.message, 6000); }
+};
 $("mode").onchange = (e) => {
   if (e.target.value === "__more" || e.target.value === "__less") {  // reveal / hide confidence and clusters
     st.showMore = e.target.value === "__more"; fillModes(st.lastSummary); return;

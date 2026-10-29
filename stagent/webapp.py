@@ -1661,6 +1661,23 @@ async def api_sample_reset(req: Request):
                   "deleted_embedding": with_embedding and (trash / "embedding").exists(), "trash": str(trash)})
 
 
+async def api_session_delete(req: Request):
+    """Delete one annotation (the x next to the Annotation box): its folder and its Claude Code transcripts go to
+    the data folder's trash (<time>_<annotation>_deleted), as Reset does for all of them."""
+    sid = req.path_params["sid"]
+    d = config.SESSIONS / sid
+    if "/" in sid or ".." in sid or not (d / "session.json").exists():
+        return _json({"error": f"no annotation {sid}"}, 404)
+    if sid in JOBS and not JOBS[sid]["done"]:
+        return _json({"error": "this annotation is still being computed; wait until it finishes"}, 409)
+    trash = config.TRASH / f"{time.strftime('%Y%m%d-%H%M%S')}_{sid}_deleted"
+    trash.mkdir(parents=True)
+    n_chats = _trash_sessions([d], trash)
+    for cache in (_colors, _cell_tables):
+        cache.clear()
+    return _json({"deleted": sid, "deleted_conversations": n_chats, "trash": str(trash)})
+
+
 async def api_sample_image_state(req: Request):
     """{loaded: false}: unload the sample's image to free memory (registration kept); {loaded: true}: show it again."""
     sample, b = req.path_params["sample"], await req.json()
@@ -2503,6 +2520,7 @@ def build_app(port):
         Route("/api/sample/{sample}/reset", api_sample_reset, methods=["POST"]),
         Route("/api/sample/{sample}/remove", api_sample_remove, methods=["POST"]),
         Route("/api/refresh", api_refresh, methods=["POST"]),
+        Route("/api/session/{sid}/delete", api_session_delete, methods=["POST"]),
         Route("/api/projects/assign", api_projects_assign, methods=["POST"]),
         Route("/api/sample/{sample}/image_state", api_sample_image_state, methods=["POST"]),
         Route("/api/samples/clear", api_samples_clear, methods=["POST"]),
