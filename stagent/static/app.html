@@ -1894,10 +1894,11 @@ function drawRegions() {
     const shownAdv = ((st.advice || {}).items || []).find((x) => x.id === st.adviceShown && x.action && x.action.outlines);
     if (shownAdv) {  // the compartment the user chose to see, labelled once on its largest piece
       const big = shownAdv.action.outlines.reduce((a, p) => (p.length > a.length ? p : a), []);
-      shownAdv.action.outlines.forEach((poly) => {  // dark halo under the dashed line, like region outlines
+      const labels = shownAdv.action.labels;  // the areas of a local registration correction: each labelled
+      shownAdv.action.outlines.forEach((poly, i) => {  // dark halo under the dashed line, like region outlines
         svg.append(svgEl("polygon", { points: poly.map(([x, y]) => toScreen(x, y)).map((q) => `${q.x},${q.y}`).join(" "),
                                       fill: "none", stroke: "#000", "stroke-opacity": 0.55, "stroke-width": 5.5 }));
-        outline(poly, "#b98cff", 2.8, poly === big ? shownAdv.action.name : "");
+        outline(poly, "#b98cff", 2.8, labels ? labels[i] : poly === big ? shownAdv.action.name : "");
       });
     }
   }
@@ -2350,7 +2351,17 @@ function adviceRow(x, btn, adv, prop) {
   } else if (act.kind === "marker_list") {
     if (open && prop) c.append(btn("open in Markers…", "Load the agent's revised marker list", () => openProposal(prop)));
   } else if (act.kind === "registration") {
-    if (open && !adv.registration_fixed) c.append(btn("correct registration…", "Move every cell onto its nucleus on the image", () => adviceRegistration(x, act)));
+    if (act.outlines && act.outlines.length) {
+      const on = st.adviceShown === x.id;
+      c.append(btn(on ? "hide areas" : "show areas", "Show the areas whose cells sit off their nuclei", () => {
+        st.adviceShown = on ? null : x.id;
+        if (!on) zoomToPoly(act.outlines.flat(), false); else drawRegions();
+        renderPlaus();
+      }));
+    }
+    if (open && !adv.registration_fixed) c.append(btn(act.mode === "local" ? "correct locally…" : "correct registration…",
+      act.mode === "local" ? "Move the cells onto their nuclei where the tissue shifted" : "Move every cell onto its nucleus on the image",
+      () => adviceRegistration(x, act)));
     if (adv.registration_fixed) c.append(btn("undo correction", "Put the cells back where the import placed them", () => adviceAct(x, "undo_registration")));
   } else if (act.kind === "claude") {
     if (open) c.append(btn("ask the agent", act.request, () => adviceAct(x, "claude")));
@@ -2445,7 +2456,9 @@ async function adviceAct(x, step, extra) {
     let name;
     if (step === "region") { name = prompt("Save the outline as region (name):", x.action.name); if (!name) return; }
     const r = await post(`/api/s/${st.sid}/advice/act`, { id: x.id, step, name, ...(extra || {}) });
-    if (r.reload) { await reloadGeometry(); toast(step === "undo_registration" ? "Registration correction undone" : `Cells moved onto their nuclei (median ${r.moved_um_median} µm, up to ${r.moved_um_max} µm)`, 6000); return; }
+    if (r.reload) { await reloadGeometry(); toast(step === "undo_registration" ? "Registration correction undone"
+      : (x.action || {}).mode === "local" ? `Cells moved onto their nuclei where the tissue shifted (up to ${r.moved_um_max} µm)`
+      : `Cells moved onto their nuclei (median ${r.moved_um_median} µm, up to ${r.moved_um_max} µm)`, 6000); return; }
     if (r.claude_code) toast(r.claude_code.reused ? "Sent to the agent" : "The agent is opening", 4000);
     else if (r.message && step === "claude" && st.chatAvailable) { $("input").value = r.message; send(); }
     else if (r.message) toast(r.message + (r.prior ? " · now add its prior" : ""), 5000);
@@ -2461,7 +2474,10 @@ async function advicePrior(x) {
   } catch (e) { toast(e.message, 6000); }
 }
 async function adviceRegistration(x, act) {
-  if (!confirm(`The cells sit up to ${act.max_offset_um} µm off their nuclei on the image. Move every cell onto its nucleus? Regions keep their cells; you can undo this.`)) return;
+  const ask = act.mode === "local"
+    ? `In ${act.n_areas} area${act.n_areas === 1 ? "" : "s"} the cells sit up to ${act.max_offset_um} µm off their nuclei on the image. Move the cells there onto their nuclei (up to ${act.moved_um_max} µm; elsewhere they stay)? Regions keep their cells; you can undo this.`
+    : `The cells sit up to ${act.max_offset_um} µm off their nuclei on the image. Move every cell onto its nucleus? Regions keep their cells; you can undo this.`;
+  if (!confirm(ask)) return;
   await adviceAct(x, "registration");
 }
 async function adviceStatus(id, status) {

@@ -21,7 +21,7 @@ from starlette.staticfiles import StaticFiles
 from . import config, vocab, mcp_server, review_app, render
 mcp_server.SAME_PROCESS = True  # its tools served at /mcp run on this event loop: they cannot wait for a review
 from . import markers, markerqc, plausibility, claudelink, claudereview, importer, advice, niches, embedding
-from . import communication, projects
+from . import communication, projects, regcheck
 from .session import Session, list_samples, list_sessions, panel_genes, filtered_genes
 
 STATIC = Path(__file__).parent / "static"
@@ -585,8 +585,10 @@ SCOPE_REQUEST = {
     "annotation": ("review the cell types of version {v}: gather sample_context, type_confusion, type_structure, "
                    "review_markers, qc_overview and check_registration; advice in the categories taxonomy, context, qc"),
     "organization": ("review the spatial organization of version {v}: gather show_tissue_overview, preview_compartment, "
-                     "spatial_profile, list_regions and composition(rows='region'); advice in the categories "
-                     "compartments (outlines checked on the H&E) and organization"),
+                     "spatial_profile, list_regions and composition(rows='region'), and check_registration_map (the cells "
+                     "on their nuclei over all the tissue, crypts, vessels and similar structures first: look at its "
+                     "close-ups); advice in the categories compartments (outlines checked on the H&E), organization, and "
+                     "registration (only when areas really sit off their nuclei: the local correction)"),
     "embedding": ("review the PCA + UMAP and its Leiden clusters: gather embedding_facts and show_embedding (by cell "
                   "type, leiden and, with several slices, slice); advice in the categories clusters, integration, "
                   "parameters"),
@@ -629,7 +631,8 @@ def review_scopes(s):
              "signaling": None if n_sig else "run the cell-cell communication first (Signaling tab)"}
     what = {"annotation": "cell types and markers: the computed review candidates, types to merge, split or add, "
                           "sample context, technical problems",
-            "organization": "compartments on the H&E (proposed as regions), gradients and neighbors",
+            "organization": "compartments on the H&E (proposed as regions), gradients and neighbors, the cells on "
+                            "their nuclei in all areas (crypts, vessels)",
             "embedding": "Leiden clusters against the cell types" + (", slices mixing (joint embedding)" if pid else "")
                          + ", parameters",
             "niches": "what each niche is, names, k and number of niches",
@@ -665,6 +668,13 @@ async def api_claude_review(req: Request):
     else:
         advice.request(s, scope)
         parts.append(SCOPE_LEAD.format(label=label, what=SCOPE_REQUEST[scope].format(v=v)) + SCOPE_CHECK.format(scope=scope))
+        if scope == "organization" and importer.image_of(s.sample_id):  # the registration map, ready when the agent asks
+            def scan(sample_id=s.sample_id):
+                try:
+                    regcheck.windows(sample_id)
+                except Exception as e:
+                    print(f"registration map of {sample_id}: {e}")
+            threading.Thread(target=scan, daemon=True).start()
     text = " ".join(parts) + REVIEW_END
     return _json({"needed": True, **_ask_claude(s, text), **claudereview.status(s), "advice": advice.status(s, scope)})
 
@@ -761,6 +771,9 @@ def api_advice(req):
         a = dict(x["action"] or {})
         if "polygons_px" in a:
             a["outlines"] = [_viewer_poly(v, p) for p in a.pop("polygons_px")]
+        if a.get("areas"):  # local registration: the areas off their nuclei
+            a["outlines"] = [_viewer_poly(v, r["polygon_px"]) for r in a["areas"]]
+            a["labels"] = [r["id"] for r in a.pop("areas")]
         a.pop("correction_px", None)
         out.append(x | {"action": a or None})
     rep = advice.report(s)
@@ -803,7 +816,15 @@ async def api_advice_act(req: Request):
             advice.set_status(s, x["id"], "done", "prior added")
             return _json({"new_version": ver, "message": s.state(ver)["message"]})
         if step == "registration":
-            r = importer.apply_registration_fix(s.sample_id, a["correction_px"])
+            fix = a["correction_px"]
+            if a.get("mode") == "local" and a.get("key") != regcheck._key(s.sample_id, importer.image_of(s.sample_id)):
+                def fresh():  # the cells moved since the agent's check (e.g. a correction undone): measure again
+                    if regcheck.summary(review_app._session(s.id))["verdict"] == "fine":
+                        raise ValueError("the cells sit on their nuclei everywhere now: nothing to correct")
+                    f = regcheck.correction(s.sample_id)
+                    return {k: f[k] for k in ("origin", "A", "b", "local")}
+                fix = await asyncio.to_thread(fresh)
+            r = importer.apply_registration_fix(s.sample_id, fix)
             advice.set_status(s, x["id"], "done", "registration corrected")
             _reload_sample(s.sample_id)
             return _json(r | {"reload": True})

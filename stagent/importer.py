@@ -807,8 +807,10 @@ def import_flat(kind, name, src, he=None, registration=None, description="", ove
 
 def apply_registration_fix(sample_id, correction):
     """Move every cell onto its nucleus on the image: p + A (p - origin) + b in H&E level-0 pixels, the correction
-    that insights.registration fitted. The positions as imported are kept (px_import, py_import) for
+    that insights.registration fitted, plus its "local" field if it has one (regcheck.correction: the local shifts of
+    tissue stretched or torn). The positions as imported are kept (px_import, py_import) for
     undo_registration_fix. Regions keep their cells (they store cell ids); only the cells' place on the image moves."""
+    from .regcheck import displacement
     d = config.SAMPLES / sample_id
     cells = pd.read_parquet(d / "cells.parquet")
     if "px_import" not in cells:
@@ -816,14 +818,16 @@ def apply_registration_fix(sample_id, correction):
     A, b, o = np.asarray(correction["A"], float), np.asarray(correction["b"], float), np.asarray(correction["origin"], float)
     old = placement(sample_id)
     p = cells[["px", "py"]].to_numpy()
-    q = p + (p - o) @ A.T + b
+    q = p + displacement(p, correction)
     cells["px"], cells["py"] = q[:, 0], q[:, 1]
     cells.to_parquet(d / "cells.parquet")
     meta = json.load(open(d / "meta.json"))
-    M = np.eye(2) + A  # the corrected placement is again an affine of the cell um (exported as the registration)
+    M = np.eye(2) + A  # the corrected placement is again an affine of the cell um (exported as the registration; a local field is not part of it)
     meta.setdefault("placement_affine_import", old.tolist())
     meta["placement_affine"] = np.c_[M @ old[:, :2], M @ old[:, 2] - A @ o + b].tolist()
-    meta["registration_by"] = (meta.get("registration_by") or "file") + " + nuclei correction"
+    by = " + local correction" if correction.get("local") else " + nuclei correction"
+    if by not in (meta.get("registration_by") or ""):
+        meta["registration_by"] = (meta.get("registration_by") or "file") + by
     meta.setdefault("registration_fixes", []).append({"correction_px": correction,
                                                       "time": time.strftime("%Y-%m-%dT%H:%M:%S")})
     json.dump(meta, open(d / "meta.json", "w"), indent=1)
@@ -843,7 +847,7 @@ def undo_registration_fix(sample_id):
     meta.pop("registration_fixes", None)
     if meta.get("placement_affine_import"):
         meta["placement_affine"] = meta.pop("placement_affine_import")
-        meta["registration_by"] = (meta.get("registration_by") or "file").replace(" + nuclei correction", "")
+        meta["registration_by"] = (meta.get("registration_by") or "file").replace(" + nuclei correction", "").replace(" + local correction", "")
     json.dump(meta, open(d / "meta.json", "w"), indent=1)
     return {"ok": True}
 

@@ -112,10 +112,12 @@ Reviewing (Agent Review: the user picks one part of the analysis; or when asked 
     qc_overview, check_registration; categories taxonomy (types to merge, split or add, citing sub-cluster sizes),
     context (site and disease and what they imply: inflamed IBD neutrophils, CXCL1+ colonocytes, plasma cell shifts;
     ileum vs colon Paneth cells), qc (registration, low-quality tiles, spillover, segmentation; only real issues);
-  organization: show_tissue_overview, preview_compartment, spatial_profile, list_regions, composition(rows="region");
+  organization: show_tissue_overview, preview_compartment, spatial_profile, list_regions, composition(rows="region"),
+    check_registration_map (crypts, vessels and similar structures first; judge each area on its close-up);
     compartments (outlines that fit the H&E, proposed as regions with the prior that would use them; check every
     outline on the H&E), organization (expected gradients and neighbors: stem cells at the crypt base, B cells in
-    follicles, ICC between muscle layers, found or contradicted);
+    follicles, ICC between muscle layers, found or contradicted), registration (areas whose cells really sit off
+    their nuclei: the local correction, action {"kind": "registration", "mode": "local"});
   embedding: embedding_facts, show_embedding (by cell type, leiden, slice); clusters (mixed clusters, types split
     over clusters, clusters that are another type), integration (clusters of one slice, batch), parameters
     (resolution, neighbors);
@@ -1175,10 +1177,35 @@ def check_registration() -> str:
 
 
 @mcp.tool()
+def check_registration_map(focus: Optional[dict] = None) -> list:
+    """The cells on their nuclei over all the tissue (Agent Review: Spatial organization): the nuclei on the H&E (or
+    DAPI) against the cell centroids in 200 um windows everywhere, the part one registration fixes (affine: scale,
+    rotation, shift) and areas off their nuclei (L1, L2, ...: tissue stretched, folded or torn between the run and
+    the staining), with the structures and regions in them; offsets by structure and by region; what the local
+    correction would do. Figure: windows off their nuclei on the section, close-ups of the largest areas (cells now
+    cyan, corrected yellow: yellow should sit on the nuclei).
+    focus: structures to check first, as {name: [types or lineages from get_vocabulary]}, e.g. {"crypts":
+    ["Epithelial"], "vessels": ["Endothelial", "Pericytes"]}; by default epithelium, vessels and smooth muscle by
+    their names. Crypts and vessels show a shift first (their nuclei form a clear pattern).
+    Judge every area on its close-up: real when the cyan cells sit beside the nuclei (off the tissue edge, across a
+    lumen) and the yellow ones on them; a false alarm when cyan already sits on nuclei. If real areas remain, propose
+    the local correction (draft_advice scope "organization", category "registration", action {"kind":
+    "registration", "mode": "local"}, naming the areas and structures); a verdict "global" alone is check_registration's
+    correction ({"kind": "registration"}). The first call on a placement takes up to a minute or two."""
+    from . import regcheck
+    s = _s()
+    info = regcheck.summary(s, focus)
+    if info.get("error"):
+        return [_j(info)]
+    png = regcheck.figure(s, info)
+    return [_j(info | {"path": png}), Image(path=png)]
+
+
+@mcp.tool()
 def draft_advice(scope: str, items: list[dict]) -> str:
     """Your draft advice on one part of the analysis (replaces your earlier drafts on it; at most 12). Drafts are not
     shown to the user: check each with check_advice first. scope and its categories:
-      annotation: taxonomy | context | qc;   organization: compartments | organization;
+      annotation: taxonomy | context | qc;   organization: compartments | organization | registration;
       embedding: clusters | integration | parameters;   niches: niches | parameters;
       compare: findings | design | next;   signaling: interactions | design | next.
     Each item: {"category", "title": short, "text": the finding with its evidence and what to do (2-4 sentences),
@@ -1188,6 +1215,7 @@ def draft_advice(scope: str, items: list[dict]) -> str:
                                   "neighbor_types" + "min_frac"}}   (as for preview_constraint)
       {"kind": "marker_list"}   (after propose_marker_list)
       {"kind": "registration"}  (after check_registration)
+      {"kind": "registration", "mode": "local"}  (after check_registration_map: also the local shifts)
       {"kind": "niche_names", "names": {"N1": "...", ...}}
       {"kind": "show", "mode": "gene:<gene>" | "lr:<ligand>~<receptor>~receiver" | "niche" | "leiden" | "type"}
       {"kind": "rerun", "tab": "embed" | "niches" | "compare" | "signal", "params": the tab's settings, e.g.

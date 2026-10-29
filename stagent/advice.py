@@ -5,7 +5,8 @@ The user picks what to review (Agent Review): one scope of SCOPES, each with its
                  technical problems such as registration, spillover, segmentation (qc); besides the computed review
                  candidates the agent checks (claudereview.py)
   organization   compartments seen on the image and in the cells, proposed as regions (compartments); gradients and
-                 neighbors that are expected or contradict the labels (organization)
+                 neighbors that are expected or contradict the labels (organization); the cells on their nuclei over
+                 all the tissue, crypts and vessels first (registration; regcheck.py)
   embedding      Leiden clusters against the labels, slices mixing in a joint embedding, its parameters
   niches         what the niches are, their names, k and their number
   compare        the DE genes and compositions the user looked at: findings, design and caveats, next analyses
@@ -18,7 +19,8 @@ Each item can carry one action the user takes in the viewer with one click:
                  as a region; an optional "prior" (constraint spec) is offered once the region exists
   prior          {"kind": "prior", "prior": spec}: preview, then add the prior
   marker_list    {"kind": "marker_list"}: open the marker list Claude proposed (propose_marker_list)
-  registration   {"kind": "registration"}: correct the cells' place on the image (insights.registration)
+  registration   {"kind": "registration"}: correct the cells' place on the image (insights.registration); with
+                 "mode": "local", also where the tissue shifted locally (regcheck.correction)
   claude         {"kind": "claude", "request": "..."}: ask Claude Code to do it (e.g. a re-clustering), as a request
   niche_names    {"kind": "niche_names", "names": {"N1": "...", ...}}: name the niches
   show           {"kind": "show", "mode": "gene:<gene>" | "lr:<ligand>~<receptor>~receiver|sender" | "niche" | ...}:
@@ -36,7 +38,8 @@ SCOPES = {
     "annotation": {"label": "Annotation", "categories": {"taxonomy": "Cell types", "context": "Sample context",
                                                          "qc": "Technical"}},
     "organization": {"label": "Spatial organization", "categories": {"compartments": "Compartments",
-                                                                     "organization": "Gradients and neighbors"}},
+                                                                     "organization": "Gradients and neighbors",
+                                                                     "registration": "Registration"}},
     "embedding": {"label": "Embedding", "categories": {"clusters": "Clusters and labels", "integration": "Slices",
                                                        "parameters": "Parameters"}},
     "niches": {"label": "Niches", "categories": {"niches": "Niches", "parameters": "Parameters"}},
@@ -146,6 +149,23 @@ def _action(s, st, act):
         if not act.get("prior"):
             raise ValueError("a prior action needs 'prior' (a constraint spec, as for preview_constraint)")
         out["prior"], out["prior_text"] = _check_prior(s, act["prior"])
+    elif kind == "registration" and act.get("mode") == "local":
+        from . import regcheck
+        info = regcheck.summary(s)
+        if info.get("error"):
+            raise ValueError(info["error"])
+        if info["verdict"] == "fine":
+            raise ValueError("the cells sit on their nuclei everywhere: nothing to correct")
+        fix = regcheck.correction(s.sample_id)
+        fix.pop("at_windows_um")
+        out |= {"mode": "local", "correction_px": {k: fix[k] for k in ("origin", "A", "b", "local")},
+                "key": regcheck.windows(s.sample_id)["key"], "n_areas": info["n_areas"],
+                "max_offset_um": max([x["max_offset_um"] for x in info["areas"]] or [info["affine_part"]["max_offset_um"]]),
+                "moved_um_max": fix["moved_um_max"], "areas": []}
+        h = regcheck.windows(s.sample_id)["tile_px"] / 2  # box_px spans the window centers
+        for x in info["areas"]:
+            x0, y0, x1, y1 = x["box_px"]
+            out["areas"].append({"id": x["id"], "polygon_px": [[x0 - h, y0 - h], [x1 + h, y0 - h], [x1 + h, y1 + h], [x0 - h, y1 + h]]})
     elif kind == "registration":
         from . import insights
         fit = insights.registration(s).get("affine_fit")
