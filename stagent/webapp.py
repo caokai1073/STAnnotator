@@ -1019,7 +1019,8 @@ async def api_project_niches(req: Request):
     from . import joint
     pid, b = req.path_params["pid"], await req.json()
     return _project_job(pid, lambda say: joint.niches(pid, int(b.get("k", 15)), int(b.get("n_niches", 8)),
-                                                      b.get("identity", "nmf"), int(b.get("n_programs", 20)), say))
+                                                      b.get("identity", "nmf"), int(b.get("n_programs", 20)), say,
+                                                      sessions=b.get("sessions")))
 
 
 # ---------------- differential expression and composition ----------------
@@ -1092,6 +1093,7 @@ def _analysis_cells(b):
     sel = b.get("selection") or None
     claudelink.write_viewer_selection(sel)
     key = (s.id, b.get("version"), b.get("scope"), json.dumps(sel, sort_keys=True) if sel else "",
+           json.dumps(b.get("sessions") or {}, sort_keys=True),
            (niches.current(s)[0] or {}).get("run_id"), (embedding.current(s.sample_id) or {}).get("run_id"), s.versions()[-1])
     return _cell_tables.get_or(key, lambda: _make_cells(s, b, sel))
 
@@ -1103,7 +1105,7 @@ def _make_cells(s, b, sel):
         pid = projects.project_of(s.sample_id)
         if not pid:
             raise ValueError("this sample is not part of a project")
-        return analysis.cells(pid=pid, selection=sel, get_session=review_app._session)
+        return analysis.cells(pid=pid, selection=sel, get_session=review_app._session, sessions=b.get("sessions"))
     v = b.get("version")
     return analysis.cells(s, None if v is None else int(v), selection=(sel or {}).get(s.sample_id) if sel else None)
 

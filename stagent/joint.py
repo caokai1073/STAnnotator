@@ -44,15 +44,17 @@ def _slice_mres(res, o, n):
             "records": res["records"], "nodes": res["nodes"]}
 
 
-def latest_sessions(pid):
-    """{sample_id: the slice's most recent annotation made in the app} for the project's slices."""
+def latest_sessions(pid, chosen=None):
+    """{sample_id: annotation} for the project's slices: the one chosen ({sample_id: session id}, the annotations
+    open in the app) when it is an annotation of that slice, else the slice's most recent annotation made in the app."""
     from .session import list_sessions
     ss = list_sessions()
     out = {}
     for s in projects.load(pid)["samples"]:
         mine = ss[(ss.sample_id == s) & ss.method.isin(["markers", "scref", "existing"])] if len(ss) else ss
         if len(mine):
-            out[s] = mine.sort_values("created_at").session_id.iloc[-1]
+            want = (chosen or {}).get(s)
+            out[s] = want if want in set(mine.session_id) else mine.sort_values("created_at").session_id.iloc[-1]
     return out
 
 
@@ -139,13 +141,14 @@ def embed(pid, n_pcs=30, n_neighbors=15, min_dist=0.3, resolution=1.0, harmony=T
     return meta
 
 
-def niches(pid, k=15, n_niches=8, identity="nmf", n_programs=20, progress=None):
-    """Niches over all slices: identities averaged over each cell's neighbors in its own slice, one k-means."""
+def niches(pid, k=15, n_niches=8, identity="nmf", n_programs=20, progress=None, sessions=None):
+    """Niches over all slices: identities averaged over each cell's neighbors in its own slice, one k-means. They
+    go to the annotations in sessions ({sample_id: session id}, those open in the app), else the latest ones."""
     from scipy.spatial import cKDTree
     from sklearn.cluster import KMeans
     from .session import Session
     say = progress or (lambda f, m: None)
-    sess = latest_sessions(pid)
+    sess = latest_sessions(pid, sessions)
     ids, off, counts, panel = _pooled(pid)
     missing = [s for s in ids if s not in sess]
     if missing:

@@ -76,9 +76,10 @@ def _labels(s, version=None, selection=None):
     return out
 
 
-def cells(session=None, version=None, pid=None, selection=None, get_session=None):
-    """The cell table: one annotation (session, version) or every annotated slice of project pid (latest
-    annotations). selection: rows (one annotation) or {sample_id: rows} (project)."""
+def cells(session=None, version=None, pid=None, selection=None, get_session=None, sessions=None):
+    """The cell table: one annotation (session, version) or every annotated slice of project pid (the annotations
+    in sessions, {sample_id: session id}, else the latest ones). selection: rows (one annotation) or {sample_id: rows}
+    (project)."""
     from .session import Session
     from . import joint
     get = get_session or Session
@@ -87,7 +88,7 @@ def cells(session=None, version=None, pid=None, selection=None, get_session=None
         meta = {}
     else:
         p = projects.load(pid)
-        latest = joint.latest_sessions(pid)
+        latest = joint.latest_sessions(pid, sessions)
         ids = [x for x in p["samples"] if x in latest]
         if not ids:
             raise ValueError("no slice of this project has an annotation yet")

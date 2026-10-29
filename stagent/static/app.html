@@ -1719,7 +1719,7 @@ $("nRun").onclick = async () => {
   $("nRun").disabled = true; $("nprogress").classList.add("show");
   try {
     if (projectMode()) {  // one set of niches over all slices
-      await projectJob("niches", body, $("nfill"), $("nstage"));
+      await projectJob("niches", { ...body, sessions: projectSessions() }, $("nfill"), $("nstage"));
       await loadNiches(true); setTimeout(() => $("nprogress").classList.remove("show"), 800); return;
     }
     const { job } = await post(`/api/s/${st.sid}/niches/run`, body);
@@ -3731,6 +3731,13 @@ function stepSlice(d) {
   gotoSlice(p.samples[p.samples.indexOf(st.sample.sample_id) + d]);
 }
 const projectMode = () => !!(st.sample && projectOf(st.sample.sample_id) && $("projAll").checked);
+function projectSessions() {  // the annotation of each slice a project-wide analysis uses: the one open here (this
+  // slice) or opened on that slice during this visit; the server takes the latest one for the others
+  const p = st.sample && projectOf(st.sample.sample_id), out = {};
+  if (!p) return out;
+  p.samples.forEach((id) => { const sid = id === st.sample.sample_id ? st.sid : st.openedThisVisit[id]; if (sid) out[id] = sid; });
+  return out;
+}
 async function projectJob(path, body, fill, stage) {  // a project-wide analysis, with its progress in fill / stage
   const pid = projectOf(st.sample.sample_id).project_id;
   const { job } = await post(`/api/project/${pid}/${path}`, body);
@@ -3940,7 +3947,7 @@ function anRefresh() {  // the Compare and Signaling tabs follow the open annota
   if (document.querySelector('header .pane[data-pane="compare"]').classList.contains("on")) setTimeout(() => loadAnOptions(), 0);
   if (document.querySelector('header .pane[data-pane="signal"]').classList.contains("on")) setTimeout(() => loadSigOptions(), 0);
 }
-const anBody = () => ({ session: st.sid, version: st.version, scope: anScope(), selection: anSelection() });
+const anBody = () => ({ session: st.sid, version: st.version, scope: anScope(), selection: anSelection(), sessions: projectSessions() });
 function fillSelect(id, items, keep, first) {  // items: [value, label]; keeps the chosen value when it is still there
   const sel = $(id), cur = keep !== undefined ? keep : sel.value; sel.textContent = "";
   (first ? [first, ...items] : items).forEach(([v, l]) => { const o = document.createElement("option"); o.value = v; o.textContent = l; sel.append(o); });
@@ -4188,7 +4195,7 @@ const lrTitle = (m) => { const [l, r, side] = m.slice(3).split("~");
   return `${l.replace(/_/g, "+")} → ${r.replace(/_/g, "+")}` + (side === "both" ? "" : `: ${side === "sender" ? "sending" : "receiving"} cells`); };
 function sgScope() { return $("sScope").value === "project" && st.sample && projectOf(st.sample.sample_id) ? "project" : "slice"; }
 const sgSelection = () => anSelection(sgScope());
-const sgBody = () => ({ session: st.sid, version: st.version, scope: sgScope(), selection: sgSelection() });
+const sgBody = () => ({ session: st.sid, version: st.version, scope: sgScope(), selection: sgSelection(), sessions: projectSessions() });
 async function loadSigOptions(force) {
   const p = st.sample && projectOf(st.sample.sample_id);
   $("sScopeWrap").hidden = !p;
@@ -4487,7 +4494,7 @@ async function showDots(genes, opts, first) {  // fetch the dot plot data of the
   const q = AN.req, box = $("anBody");
   box.textContent = "Drawing…";
   try {
-    const d = await post("/api/analysis/dots", { session: q.session, version: q.version, scope: q.scope, selection: AN.sel,
+    const d = await post("/api/analysis/dots", { session: q.session, version: q.version, scope: q.scope, selection: AN.sel, sessions: q.sessions,
       by: q.by, genes, within: q.within, first });
     if (AN.req !== q || !$("anDlg").open) return;  // another result was opened, or the window closed, meanwhile
     box.innerHTML = dotPlotSVG(d, opts);
