@@ -1876,6 +1876,32 @@ def api_proposals(req):
     return _json([{k: v for k, v in r.items() if k not in ("args", "result")} for r in rows])
 
 
+def api_proposal_cells(req):
+    """Rows (in the sample's cell order) of the cells a proposal would move, for Show on map in the review window."""
+    from . import proposals
+    try:
+        rec = proposals.get(req.path_params["pid"])
+    except ValueError as e:
+        return _json({"error": str(e)}, 404)
+    moves = (rec.get("args") or {}).get("resolved") or []
+    if not moves or not rec.get("session_id"):
+        return _json({"error": "this change has no cells to show"}, 400)
+    s = review_app._session(rec["session_id"])
+    ids = s.cells.cell.to_numpy()
+    out = {m["to"]: np.where(np.isin(ids, m["cells"]))[0].tolist() for m in moves}
+    return _json({"sample_id": s.sample_id, "session_id": s.id, "rows": out})
+
+
+def api_region_assigned_cells(req):
+    """Rows of the cells an assigned-cells operation (O1, ...) put into its region, to show them on the map."""
+    s = review_app._session(req.path_params["sid"])
+    op = next((o for o in s.state()["regions"].get("ops", []) if o.get("id") == req.path_params["oid"]
+               and o["op"] == "cells_override"), None)
+    if op is None:
+        return _json({"error": f"no assigned cells {req.path_params['oid']}"}, 404)
+    return _json({"rows": np.where(np.isin(s.cells.cell.to_numpy(), op["cells"]))[0].tolist(), "name": op["name"]})
+
+
 async def api_proposal_decide(req: Request):
     """{accept: true}: run the proposal's tool in the background (status applying -> done | failed); else dismiss."""
     from . import proposals
@@ -2535,6 +2561,8 @@ def build_app(port):
         Route("/api/bundle/{key}", api_bundle_get),
         Route("/api/bundle-load", api_bundle_load, methods=["POST"]),
         Route("/api/proposal/{pid}/decide", api_proposal_decide, methods=["POST"]),
+        Route("/api/proposal/{pid}/cells", api_proposal_cells),
+        Route("/api/s/{sid}/regions/assigned/{oid}/cells", api_region_assigned_cells),
         Route("/api/sample/{sample}/filter", api_sample_filter, methods=["POST"]),
         Route("/api/sample/{sample}/placement/undo", api_sample_placement_undo, methods=["POST"]),
         Route("/api/claude/align", api_claude_align, methods=["POST"]),

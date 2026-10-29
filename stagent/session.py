@@ -797,6 +797,33 @@ class Session:
         v = self._commit("import_regions", msg, regions=dict(cur["regions"], ops=ops), expected_parent=cur["version"])
         return {"new_version": v, "regions": per, "n_outlines": len(ids), "n_empty": empty, "message": msg}
 
+    def assign_region_cells(self, moves, author=None, text="", message=None):
+        """Put cells into regions without changing any outline: moves [{"to": region, "cells": [cell ids]}], each
+        one "cells_override" operation (O1, O2, ...; later operations win over earlier ones, so a polygon drawn after
+        it takes its cells back). The agent proposes these (regionfill.py); the user's Accept applies them."""
+        cur = self.state()
+        ops = list(cur["regions"].get("ops", []))
+        names = self.region_names()
+        known = set(self.cells.cell.to_numpy())
+        used, done = {o.get("id") for o in ops}, []
+        for m in moves:
+            if m["to"] not in names:
+                raise vocab.VocabError(f"no region {m['to']!r}; regions: {names}")
+            cells = [c for c in dict.fromkeys(m["cells"]) if c in known]
+            if not cells:
+                continue
+            i = 1
+            while f"O{i}" in used:
+                i += 1
+            used.add(f"O{i}")
+            ops.append({"op": "cells_override", "id": f"O{i}", "name": m["to"], "cells": cells, "author": author,
+                        "text": text, "created_at": _now()})
+            done.append(f"O{i}: {len(cells):,} cells to {m['to']}")
+        if not done:
+            raise vocab.VocabError("none of these cells exist in this sample")
+        return self._commit("assign_region_cells", message or "cells into regions: " + "; ".join(done),
+                            regions=dict(cur["regions"], ops=ops), expected_parent=cur["version"])
+
     def edit_region(self, rid, polygon_px, author=None, message=None):
         """Replace the outline of drawn polygon rid (points moved, added or removed by the user); its cells are
         recomputed (outside its holes, if imported with any), its id and name stay, so priors on the region keep
@@ -892,12 +919,14 @@ class Session:
                             constraints=cons, expected_parent=cur["version"])
 
     def regions_info(self, version=None):
-        """Drawn polygons and per-region cell counts of a version."""
+        """Drawn polygons, cells put into regions without an outline (assigned), and per-region cell counts."""
         r = self.result(version)
         counts = pd.Series(r["region"]).value_counts().to_dict()
         polys = [{k: o[k] for k in ("id", "name", "polygon", "holes", "author", "created_at") if k in o} | {"n_cells_drawn": len(o["cells"])}
                  for o in r["state"]["regions"].get("ops", []) if o["op"] == "polygon"]
-        return {"source": r["state"]["regions"].get("source", "none"), "polygons": polys,
+        assigned = [{k: o[k] for k in ("id", "name", "author", "text", "created_at") if k in o} | {"n_cells": len(o["cells"])}
+                    for o in r["state"]["regions"].get("ops", []) if o["op"] == "cells_override"]
+        return {"source": r["state"]["regions"].get("source", "none"), "polygons": polys, "assigned": assigned,
                 "regions": [{"name": n, "n_cells": int(counts.get(n, 0))} for n in self.region_names(version)],
                 "n_unknown": int(counts.get("unknown", 0))}
 

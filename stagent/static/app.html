@@ -38,6 +38,8 @@ header.collapsed .hrow, header.collapsed .tabs, header.collapsed .pane { display
 header .pane:not(.on) { display: none; }
 header .hrow.bottom { margin-top: auto; padding-bottom: 0; }
 header .hrow.bottom { flex-wrap: nowrap; gap: 6px; }  /* Reset, Remove sample, Remove all on one row */
+#pcBack { left: 50%; transform: translateX(-50%); top: calc(var(--maptop, 44px) + 12px); display: flex; gap: 10px; align-items: center;
+  padding: 8px 12px; font-size: 13px; z-index: 30; }
 /* one analysis at a time: while one runs, the buttons that start another or change the data are grayed out */
 body.running :is(#annotate, #eRun, #nRun, #aRun, #sRun, #qfBtn, #qfGo, #qfRestore, #reset, #rmSample, #clearAll, #heState, #anLoad, #importBtn, #refresh, #sessDel) {
   opacity: .4; filter: grayscale(1); cursor: not-allowed; }
@@ -677,9 +679,11 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <div id="pcPreview"></div>
     <div class="hint">Nothing changes until you click Accept; Dismiss drops the change and tells Claude.</div>
     <div class="row" style="margin-top:4px"><span class="err" id="pcErr"></span><span class="hint" id="pcStatus"></span><span class="spacer"></span>
+      <button id="pcShow" hidden title="Close this window for a moment and highlight these cells on the map">Show on map</button>
       <button id="pcDismiss">Dismiss</button><button id="pcAccept" class="primary">Accept</button></div>
   </div>
 </dialog>
+<div id="pcBack" class="float" hidden><span id="pcBackMsg"></span><button id="pcBackBtn" class="primary">Back to the review</button></div>
 <dialog id="pjDlg" style="width:min(760px,95vw)">
   <div class="dh"><b>Projects</b><span class="spacer"></span><button id="pjClose">Close</button></div>
   <div class="imbody" style="gap:8px">
@@ -1425,7 +1429,14 @@ async function restoreView() {
 // ---------------- embedding (PCA, UMAP, Leiden) and selecting cells on it ----------------
 const EMW = 520, EMH = 380;  // the embedding canvas, CSS pixels (as #emcanvas)
 const EM = { gl: null, n: 0, xy: null, colors: {}, colKey: null, view: { z: 1, x: 0, y: 0 }, lasso: false, path: null };
-function withSelection(arr) { return withSel(arr, st.sel); }
+function withSelection(arr) {  // plus st.paint: cells drawn in a color of their own (e.g. the region they would join)
+  let out = withSel(arr, st.sel);
+  if (st.paint) {
+    if (out === arr) out = new Uint8Array(arr);
+    for (const [rows, c] of st.paint) for (const i of rows) { out[4 * i] = c[0]; out[4 * i + 1] = c[1]; out[4 * i + 2] = c[2]; out[4 * i + 3] = 255; }
+  }
+  return out;
+}
 function withSel(arr, sel) {  // cells outside the selection are grayed out (map and embedding)
   if (!sel) return arr;
   const out = new Uint8Array(arr);
@@ -1975,6 +1986,20 @@ async function loadRegions() {
       const del = mk("trash", "Delete this polygon"); del.onclick = () => deleteRegion(p.id);
       pr.append(lab, go, ed, del); box.append(pr);
     });
+    (st.regions.assigned || []).filter((o) => o.name === r.name).forEach((o) => {  // cells put into it without an outline
+      const pr = document.createElement("div"); pr.className = "pg";
+      const lab = document.createElement("span"); lab.textContent = `${o.id} · ${o.n_cells.toLocaleString()} cells assigned` + (o.author ? ` (${String(o.author).split(" ")[0]})` : "");
+      lab.title = o.text ? `“${o.text}”` : "Cells put into this region without changing its outline";
+      const mk = (n, title) => decorate(Object.assign(document.createElement("button"), { title }), n, true);
+      const go = mk("target", "Show these cells on the map (click again to clear)");
+      go.onclick = async () => {
+        if (st.shownAssigned === o.id) { st.shownAssigned = null; setSelection(null); return; }
+        try { const d = await api(`/api/s/${st.sid}/regions/assigned/${o.id}/cells`); st.shownAssigned = o.id; showRegionColors(); highlightRows(d.rows); }
+        catch (e) { toast(e.message, 5000); }
+      };
+      const del = mk("trash", "Take these cells out of the region again"); del.onclick = () => deleteRegion(o.id);
+      pr.append(lab, go, del); box.append(pr);
+    });
   });
   const u = document.createElement("div"); u.className = "hint"; u.style.padding = "4px";
   u.textContent = `${st.regions.n_unknown.toLocaleString()} cells in no region (region priors do not apply to them)`;
@@ -2046,7 +2071,8 @@ async function renameRegion(old) {
   try { await afterRegionChange(await post(`/api/s/${st.sid}/regions/rename`, { old, new: name })); } catch (e) { toast(e.message, 5000); }
 }
 async function deleteRegion(rid) {
-  if (!confirm(`Delete polygon ${rid}? Priors that use its region keep applying to its cells. (Undo brings it back.)`)) return;
+  if (!confirm(rid.startsWith("O") ? `Take the cells of ${rid} out of the region again? (Undo brings them back.)`
+    : `Delete polygon ${rid}? Priors that use its region keep applying to its cells. (Undo brings it back.)`)) return;
   try { const r = await post(`/api/s/${st.sid}/regions/${rid}/delete`); toast(r.message, 5000); await refreshVersion(true); }
   catch (e) { toast(e.message, 6000); }
 }
@@ -3282,7 +3308,8 @@ function showProposal(r, n) {
   $("pcWhere").textContent = `Proposed by Claude${r.via && r.via !== "app" ? ` in ${r.via}` : ""}` + (where ? ` · ${where}${other}` : "");
   $("pcDetails").innerHTML = (r.details || []).map((d) => `<li>${pcEsc(d)}</li>`).join("");
   const pv = r.preview;
-  $("pcPreview").innerHTML = !pv ? "" :
+  $("pcShow").hidden = !(pv && pv.kind === "cells");
+  $("pcPreview").innerHTML = !pv ? "" : pv.kind === "cells" ? "" :
     `<div style="font-size:13px;margin-bottom:4px"><b>Predicted: ${pv.n_label_changes.toLocaleString()} cells change their label</b></div>` +
     (pv.top_transitions && pv.top_transitions.length ? (() => {
       const reg = pv.top_transitions.some((t) => t.region);  // the region column only when cells sit in drawn regions
@@ -3316,7 +3343,7 @@ async function pollProposals() {
     if (r && r.status !== "applying") await proposalApplied(r);
     return;
   }
-  if (PC.failed) return;  // the error stays until the user closes it
+  if (PC.failed || PC.peek) return;  // the error stays until the user closes it; the user is looking at the map
   const open = rows.filter((x) => x.status === "open");
   if (PC.cur && !open.some((x) => x.id === PC.cur.id)) { PC.cur = null; $("pcDlg").close(); }  // decided in another window
   if (!PC.cur && open.length) showProposal(open[0], open.length);
@@ -3324,6 +3351,40 @@ async function pollProposals() {
 }
 setInterval(() => pollProposals().catch(() => {}), 2000);
 $("pcDlg").addEventListener("cancel", (e) => e.preventDefault());  // Esc does not decide
+function highlightRows(rows) {  // these cells stand out on the map (the others grayed), and the map zooms to them
+  const sel = new Uint8Array(GL.n || (st.sample ? st.sample.n_cells : 0));
+  rows.forEach((i) => (sel[i] = 1));
+  setSelection(sel);
+  if (GL.posArr && rows.length) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    rows.forEach((i) => { const x = GL.posArr[2 * i], y = GL.posArr[2 * i + 1]; x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); });
+    zoomToPoly([[x0, y0], [x1, y1]], false);
+  }
+}
+function showRegionColors() {  // color the map by region (to see where the cells go)
+  if (st.mode === "region" || ![...$("mode").options].some((o) => o.value === "region")) return;
+  st.mode = "region"; $("mode").value = "region"; refreshOverlay(); loadLegend();
+}
+$("pcShow").onclick = async () => {
+  const r = PC.cur; if (!r) return;
+  try {
+    const d = await api(`/api/proposal/${r.id}/cells`);
+    if (d.session_id !== st.sid) { $("pcErr").textContent = "Open that annotation first (Annotation box in the Data tab), then Show on map."; return; }
+    const rows = Object.values(d.rows).flat();
+    PC.peek = true; $("pcDlg").close();
+    const color = (name) => ((st.regions ? st.regions.regions : []).find((g) => g.name === name) || {}).color || [255, 0, 255];
+    st.paint = Object.entries(d.rows).map(([name, rs]) => [rs, color(name)]);  // each cell in the color of its new region
+    showRegionColors(); highlightRows(rows);
+    $("pcBackMsg").textContent = `${rows.length.toLocaleString()} cells of the proposed change, in the color of the region they would join (` +
+      Object.entries(d.rows).map(([k, v]) => `${v.length.toLocaleString()} into ${k}`).join(", ") + ")";
+    $("pcBack").hidden = false;
+  } catch (e) { $("pcErr").textContent = e.message; }
+};
+$("pcBackBtn").onclick = () => {
+  $("pcBack").hidden = true; PC.peek = false; st.paint = null; setSelection(null);
+  if (PC.cur) showProposal(PC.cur, 1);
+  pollProposals().catch(() => {});
+};
 $("pcAccept").onclick = async () => {
   const r = PC.cur; if (!r) return;
   $("pcAccept").disabled = $("pcDismiss").disabled = true; $("pcErr").textContent = "";

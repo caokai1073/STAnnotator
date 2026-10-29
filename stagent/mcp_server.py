@@ -40,7 +40,7 @@ Getting started
 Changes to the data are reviewed by the user
 - Every tool that changes data (import_sample, import_cosmx_merfish, start_session, add / update / remove_constraint, label_cells,
   label_cluster, remove_correction, recluster, revert, apply_alignment, run_niches, name_niches, record_verdicts,
-  resolve_rule_suggestion) only proposes the change: the app shows it in a review window with what it does, and it
+  resolve_rule_suggestion, assign_region_cells) only proposes the change: the app shows it in a review window with what it does, and it
   is applied only when the user clicks Accept there (Dismiss drops it). The tool waits a little for the decision and
   returns the outcome (status "accepted by the user and applied" with the result, "dismissed by the user", or
   "waiting for the user's review"). While waiting, tell the user in one or two sentences what you proposed and why;
@@ -71,6 +71,10 @@ Priors and corrections
   (other advice stays) and becomes a region when the user clicks "add region"; the user can then edit its points.
   Never add regions the user did not ask for, and never offer region or cell type columns stored with the data
   (they are kept only for offline evaluation).
+- When the user asks to put the cells between their regions (gaps, ragged boundaries) into the region they belong
+  to: preview_region_fill (by position only), look at the patches that matter with show_region_fill on the H&E,
+  then assign_region_cells with the patches that hold up (only on request; the user reviews it, outlines stay).
+  Do not move cells because of their cell type: a region prior would then confirm itself.
 - Conflicts (conflict_summary, show_conflicts) are cells whose expression contradicts a prior; describe H&E crops
   cautiously and record verdicts only when the user states them.
 
@@ -722,6 +726,67 @@ def label_cells(region: str, cell_type: str, only_types: Optional[list[str]] = N
                "n_label_changes_total": d["n_label_changes"],
                "n_other_cells_changed": max(0, d["n_label_changes"] - len(corr["cells"])),
                "top_transitions": d["top_transitions"][:8]})
+
+
+def _d_assign_region_cells(a):
+    from . import regionfill
+    s = _s()
+    moves = a.get("resolved") or regionfill.pick(s, a["patches"], a.get("to_region"))
+    n = sum(len(m["cells"]) for m in moves)
+    return {"title": f"Put {n:,} cells between regions into " + ", ".join(m["to"] for m in moves),
+            "version": s.state()["version"],
+            "args": dict(a, resolved=moves),  # applied exactly as reviewed, even if the candidates are computed again
+            "details": [*_words(a), *[f"{len(m['cells']):,} cells into {m['to']} (patches {_names(m['patches'])}; now in "
+                                      + ", ".join(f"{k if k != 'unknown' else 'no region'}: {v:,}" for k, v in m["from"].items()) + ")"
+                                      for m in moves],
+                        "Found by position (distance to the regions and the regions of each cell's neighbors), not by "
+                        "cell type. The outlines stay as drawn; the cells are listed under their new region in the "
+                        "Regions panel. Creates a new version (Undo takes it back).",
+                        "Show on map highlights these cells before you decide."],
+            "preview": {"kind": "cells", "n_cells": n}}
+
+
+@mcp.tool()
+def preview_region_fill(max_gap_um: float = 30.0, min_share: float = 0.7, regions: Optional[list[str]] = None,
+                        include_boundary: bool = True, between_only: bool = True) -> list:
+    """Cells between the user's regions that belong to one of them, by position only (nothing changes): gaps (cells
+    in no region within max_gap_um of two regions or more; between_only=False: of any region, which also grows the
+    regions into tissue the user did not outline, only when asked: to the nearest region, or the one most of their
+    in-region neighbors are in) and boundary cells (in one region but with >= min_share of their 15 nearest neighbors in another: an
+    outline drawn a little off). Grouped into patches G1, G2, ... (connected areas: a gap's cells go to either
+    side) with how many cells go into each region, the regions nearby and the cell types in them (for your judgment only: moving cells because of their type would let a
+    region prior confirm itself). regions: only these targets. Figure: the patches on the sample and four of them on
+    the H&E. Look at the patches that matter with show_region_fill, then propose the ones that hold up with
+    assign_region_cells; the user reviews it in the app."""
+    from . import regionfill
+    s = _s()
+    info = regionfill.candidates(s, max_gap_um, min_share, regions, include_boundary, between_only)
+    png = regionfill.figure(s) if info["n_patches"] else None
+    return [_j(info | {"path": png})] + ([Image(path=png)] if png else [])
+
+
+@mcp.tool()
+def show_region_fill(patches: list[str]) -> list:
+    """Up to four patches of preview_region_fill on the H&E (their cells ringed in the target region's color, the
+    other cells as dots in their region's color): check that each patch belongs to its target on the tissue."""
+    from . import regionfill
+    png = regionfill.figure(_s(), patches)
+    return [_j({"path": png}), Image(path=png)]
+
+
+@mcp.tool()
+@_reviewed(_d_assign_region_cells)
+def assign_region_cells(patches: list[str], to_region: Optional[str] = None, text: str = "",
+                        resolved: Optional[list[dict]] = None) -> str:
+    """Propose putting the cells of patches (ids from preview_region_fill, checked on the H&E) into their target
+    region (to_region: one region for all of them instead). The user sees it in the app's review window, can show
+    the cells on the map, and accepts or dismisses it; the outlines are not changed. text: the user's words.
+    resolved: filled in by the app (leave it out)."""
+    from . import regionfill
+    s = _s()
+    moves = resolved or regionfill.pick(s, patches, to_region)
+    v = s.assign_region_cells(moves, author="agent (accepted by the user)", text=text)
+    return _j({"new_version": v, "message": s.state(v)["message"], "regions": s.regions_info(v)["regions"]})
 
 
 @mcp.tool()
