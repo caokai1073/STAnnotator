@@ -39,7 +39,7 @@ header .pane:not(.on) { display: none; }
 header .hrow.bottom { margin-top: auto; padding-bottom: 0; }
 header .hrow.bottom { flex-wrap: nowrap; gap: 6px; }  /* Reset, Remove sample, Remove all on one row */
 /* one analysis at a time: while one runs, the buttons that start another or change the data are grayed out */
-body.running :is(#annotate, #eRun, #nRun, #aRun, #sRun, #qfBtn, #qfGo, #qfRestore, #reset, #rmSample, #clearAll, #heState, #anLoad, #importBtn) {
+body.running :is(#annotate, #eRun, #nRun, #aRun, #sRun, #qfBtn, #qfGo, #qfRestore, #reset, #rmSample, #clearAll, #heState, #anLoad, #importBtn, #refresh) {
   opacity: .4; filter: grayscale(1); cursor: not-allowed; }
 header .hrow.bottom button { padding: 5px 8px; font-size: 12px; gap: 4px; white-space: nowrap; flex: 0 1 auto; min-width: 0; }
 header.collapsed .hmini { display: flex; }
@@ -369,7 +369,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 </style>
 </head>
 <body>
-<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="ic-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol><symbol id="ic-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></symbol><symbol id="ic-upload" viewBox="0 0 24 24"><path d="M12 16V5M7 9l5-5 5 5M5 20h14"/></symbol><symbol id="ic-import" viewBox="0 0 24 24"><path d="M12 3v11M7.5 9.5L12 14l4.5-4.5M4 14v6h16v-6"/></symbol><symbol id="ic-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5zM8 4v5h7V4M8 20v-6h8v6"/></symbol><symbol id="ic-help" viewBox="0 0 24 24"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.6 9.4a2.5 2.5 0 1 1 3.6 2.3c-.7.3-1.2 1-1.2 1.8v.4M12 17.2v.1"/></symbol><symbol id="ic-chev-left" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol><symbol id="ic-chev-right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol><symbol id="ic-chev-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol><symbol id="ic-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol><symbol id="ic-grid" viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></symbol><symbol id="ic-chart" viewBox="0 0 24 24"><path d="M4 20h16M7 16v-5M12 16V6M17 16V9"/></symbol><symbol id="ic-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></symbol><symbol id="ic-play" viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></symbol><symbol id="ic-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 15.5l.8 1.7 1.7.8-1.7.8-.8 1.7-.8-1.7-1.7-.8 1.7-.8z"/></symbol><symbol id="ic-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3"/></symbol><symbol id="ic-terminal" viewBox="0 0 24 24"><path d="M3 5h18v14H3zM7 10l3 2-3 2M12.5 15h4.5"/></symbol><symbol id="ic-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM8.6 12.2l2.4 2.4 4.4-4.8"/></symbol><symbol id="ic-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h6"/></symbol><symbol id="ic-share" viewBox="0 0 24 24"><path d="M12 15V4M8 8l4-4 4 4M5 12v8h14v-8"/></symbol><symbol id="ic-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol><symbol id="ic-server" viewBox="0 0 24 24"><path d="M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01"/></symbol><symbol id="ic-monitor" viewBox="0 0 24 24"><path d="M3 4h18v12H3zM8 20h8M12 16v4"/></symbol><symbol id="ic-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></symbol><symbol id="ic-image" viewBox="0 0 24 24"><path d="M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15.5 8.5h.01"/></symbol><symbol id="ic-pen" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"/></symbol><symbol id="ic-lasso" viewBox="0 0 24 24"><path d="M7 15.5C4.6 14.4 3 12.6 3 10.5 3 6.9 7 4 12 4s9 2.9 9 6.5S17 17 12 17c-1 0-2-.1-2.9-.3M7 15.5c-1 .8-1.5 1.7-1.5 2.6C5.5 19.7 7 21 9 21M7 15.5a1.6 1.6 0 1 0 2.3 1"/></symbol><symbol id="ic-target" viewBox="0 0 24 24"><path d="M12 19a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM12 2v4M12 18v4M2 12h4M18 12h4"/></symbol><symbol id="ic-scatter" viewBox="0 0 24 24"><path d="M4 4v16h16M8 15h.01M10 10h.01M14 13h.01M16 8h.01M18 15h.01"/></symbol><symbol id="ic-folder" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v11H3z"/></symbol><symbol id="ic-send" viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-3-7z"/></symbol><symbol id="ic-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></symbol><symbol id="ic-home" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9H4zM10 20v-6h4v6"/></symbol><symbol id="ic-move" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3L9.5 5.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5M3 12l2.5-2.5M3 12l2.5 2.5M21 12l-2.5-2.5M21 12l-2.5 2.5"/></symbol><symbol id="ic-copy" viewBox="0 0 24 24"><path d="M8 8h12v12H8zM4 16V4h12"/></symbol><symbol id="ic-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5zM3 13l9 5 9-5"/></symbol></svg>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="ic-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol><symbol id="ic-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></symbol><symbol id="ic-upload" viewBox="0 0 24 24"><path d="M12 16V5M7 9l5-5 5 5M5 20h14"/></symbol><symbol id="ic-import" viewBox="0 0 24 24"><path d="M12 3v11M7.5 9.5L12 14l4.5-4.5M4 14v6h16v-6"/></symbol><symbol id="ic-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5zM8 4v5h7V4M8 20v-6h8v6"/></symbol><symbol id="ic-help" viewBox="0 0 24 24"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.6 9.4a2.5 2.5 0 1 1 3.6 2.3c-.7.3-1.2 1-1.2 1.8v.4M12 17.2v.1"/></symbol><symbol id="ic-chev-left" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol><symbol id="ic-chev-right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol><symbol id="ic-chev-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol><symbol id="ic-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol><symbol id="ic-grid" viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></symbol><symbol id="ic-chart" viewBox="0 0 24 24"><path d="M4 20h16M7 16v-5M12 16V6M17 16V9"/></symbol><symbol id="ic-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></symbol><symbol id="ic-play" viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></symbol><symbol id="ic-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 15.5l.8 1.7 1.7.8-1.7.8-.8 1.7-.8-1.7-1.7-.8 1.7-.8z"/></symbol><symbol id="ic-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3"/></symbol><symbol id="ic-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7M20 4v5h-5"/></symbol><symbol id="ic-terminal" viewBox="0 0 24 24"><path d="M3 5h18v14H3zM7 10l3 2-3 2M12.5 15h4.5"/></symbol><symbol id="ic-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM8.6 12.2l2.4 2.4 4.4-4.8"/></symbol><symbol id="ic-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h6"/></symbol><symbol id="ic-share" viewBox="0 0 24 24"><path d="M12 15V4M8 8l4-4 4 4M5 12v8h14v-8"/></symbol><symbol id="ic-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol><symbol id="ic-server" viewBox="0 0 24 24"><path d="M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01"/></symbol><symbol id="ic-monitor" viewBox="0 0 24 24"><path d="M3 4h18v12H3zM8 20h8M12 16v4"/></symbol><symbol id="ic-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></symbol><symbol id="ic-image" viewBox="0 0 24 24"><path d="M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15.5 8.5h.01"/></symbol><symbol id="ic-pen" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"/></symbol><symbol id="ic-lasso" viewBox="0 0 24 24"><path d="M7 15.5C4.6 14.4 3 12.6 3 10.5 3 6.9 7 4 12 4s9 2.9 9 6.5S17 17 12 17c-1 0-2-.1-2.9-.3M7 15.5c-1 .8-1.5 1.7-1.5 2.6C5.5 19.7 7 21 9 21M7 15.5a1.6 1.6 0 1 0 2.3 1"/></symbol><symbol id="ic-target" viewBox="0 0 24 24"><path d="M12 19a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM12 2v4M12 18v4M2 12h4M18 12h4"/></symbol><symbol id="ic-scatter" viewBox="0 0 24 24"><path d="M4 4v16h16M8 15h.01M10 10h.01M14 13h.01M16 8h.01M18 15h.01"/></symbol><symbol id="ic-folder" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v11H3z"/></symbol><symbol id="ic-send" viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-3-7z"/></symbol><symbol id="ic-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></symbol><symbol id="ic-home" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9H4zM10 20v-6h4v6"/></symbol><symbol id="ic-move" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3L9.5 5.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5M3 12l2.5-2.5M3 12l2.5 2.5M21 12l-2.5-2.5M21 12l-2.5 2.5"/></symbol><symbol id="ic-copy" viewBox="0 0 24 24"><path d="M8 8h12v12H8zM4 16V4h12"/></symbol><symbol id="ic-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5zM3 13l9 5 9-5"/></symbol></svg>
 <header>
   <div class="hmini"><button id="hdrShow" title="Show the toolbar (t)">‹</button><b>STAnnotator</b><span id="miniInfo"></span></div>
   <!-- the toolbar: a panel on the right of the map: the app, then the steps data / annotate / embedding / niches as tabs,
@@ -543,6 +543,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     </div>
     <div id="acts" class="float">
       <button id="undo" disabled title="Undo your last action (everything the agent changed for one request goes back at once)">Undo</button>
+      <button id="refresh" title="Show the latest of everything: the server reads the sample, its image and annotations from disk again and the page reloads what it shows (the view, color mode and legend choice stay)">Refresh</button>
       <button id="claudeBtn" hidden title="Ask your own agent (Claude Code, in Terminal), connected to the sample open here">Ask Agent</button>
       <button id="plaus" disabled title="Agent review of one part of the analysis (annotation, spatial organization, embedding, niches, compare, signaling): its advice, checked by the agent itself">Agent Review</button>
       <button id="report" disabled title="The annotation report the agent writes: method, composition, compartments, quality, open questions">Report</button>
@@ -944,7 +945,7 @@ const ICON_ONLY = { hdrShow: "chev-left", hdrHide: "chev-right", helpBtn: "help"
   fbUp: "arrow-up", fbHome: "home", rsClose: "x", hide: "eye", hideHE: "image" };
 const ICON_TEXT = { qfBtn: "play", importBtn: "import", clearAll: "trash", rmSample: "trash", allSamples: "grid", connBtn: "monitor", 
   openMarkers: "list", openRef: "file", openEx: "file", annotate: "play", eRun: "play", eShow: "scatter", nRun: "play",
-  undo: "undo", claudeBtn: "sparkle", plaus: "shield", report: "file", export: "share", reset: "trash",
+  undo: "undo", refresh: "refresh", claudeBtn: "sparkle", plaus: "shield", report: "file", export: "share", reset: "trash",
   draw: "pen", emLasso: "lasso", emClear: "x", emZoom: "target", send: "send",
   mkImport: "import", mkCheck: "check", mkSave: "save", mkDraft: "sparkle", mkOrganUse: "list", mkOrganAgent: "sparkle", mkClose: "check", imGo: "import",
   imNewAlign: "sparkle", imAlign: "sparkle", alignNow: "sparkle", alignReg: "file", imImgGo: "image", imRegGo: "check",
@@ -995,7 +996,7 @@ function openHE(sample) {
     $("hideHE").hidden = kind === "none";
     setLabel($("hideHE"), `Hide the ${kind === "H&E" ? "H&E" : "image"}: the cells only (e)`);
     viewer.addOnceHandler("open", applyHE);
-    viewer.open(tileSource((l, x, y) => `/api/sample/${sample}/he/${l}/${x}_${y}.jpg?r=${he.rev}${he.image_unloaded ? "&u=1" : ""}`));  // rev: new cell positions, new tiles
+    viewer.open(tileSource((l, x, y) => `/api/sample/${sample}/he/${l}/${x}_${y}.jpg?r=${he.rev}${he.image_unloaded ? "&u=1" : ""}${st.epoch ? `&f=${st.epoch}` : ""}`));  // rev: new cell positions, new tiles
   });
 }
 function filt() {  // legend filter of the current color mode (empty = show all)
@@ -1010,6 +1011,7 @@ function applyHE() {
 }
 function overlayUrl() {
   const q = new URLSearchParams({ size: st.dotSize.toFixed(1), r: st.he ? st.he.rev : 0 });
+  if (st.epoch) q.set("f", st.epoch);  // after Refresh: fresh tiles, not the browser's
   if (st.mode === "region" && st.colorEpoch) q.set("c", st.colorEpoch);  // region colors changed: fresh tiles
   if (st.mode === "niche" && st.niche) q.set("n", st.niche.params.run_id);
   const only = [...filt()].join("|");
@@ -2457,6 +2459,25 @@ async function reloadGeometry(keepView = true) {  // the cells moved on the imag
   await loadNiches(false);
   refreshOverlay(); drawRegions();
 }
+async function refreshAll() {  // Refresh: everything shown read again, in place (view, color mode, legend choice kept)
+  if (!st.sample) return;
+  const id = st.sample.sample_id, b = $("refresh");
+  b.disabled = true;
+  try {
+    const r = await post("/api/refresh", { sample: id, session: st.sid });
+    st.epoch = r.epoch;  // new tile addresses: the browser's cached tiles are not used
+    GL.sample = null; GL.colorKey = null; GL.colors = {};
+    EM.xyKey = null; EM.colKey = null; EM.colors = {};
+    if (st.sid) st.openedThisVisit[id] = st.sid;  // the same annotation opens again, at its latest version
+    st.wantMode = st.mode !== "cells" ? st.mode : null; st.keepView = viewState();
+    const vp = viewer.viewport, center = vp.getCenter(), zoom = vp.getZoom();
+    viewer.addOnceHandler("open", () => { vp.zoomTo(zoom, null, true); vp.panTo(center, true); });
+    await loadSamples(id);
+    toast("Refreshed: everything shown is the latest", 3000);
+  } catch (e) { toast(`Refresh failed: ${e.message}`, 6000); }
+  finally { b.disabled = false; }
+}
+$("refresh").onclick = refreshAll;
 async function adviceAct(x, step, extra) {
   try {
     let name;
@@ -2789,7 +2810,7 @@ async function inspectFlat() {  // what the two files hold
 });
 // one analysis at a time (Annotate, Embed, Niches, Compare, Signaling, the cell filter, an import): the others'
 // buttons and Reset / Remove are grayed out (CSS body.running) and ignored until it is done
-const LOCKED = "#annotate, #eRun, #nRun, #aRun, #sRun, #qfBtn, #qfGo, #qfRestore, #reset, #rmSample, #clearAll, #heState, #anLoad, #importBtn";
+const LOCKED = "#annotate, #eRun, #nRun, #aRun, #sRun, #qfBtn, #qfGo, #qfRestore, #reset, #rmSample, #clearAll, #heState, #anLoad, #importBtn, #refresh";
 async function exclusive(what, fn) {
   if (st.running) { toast(`${st.running} is running: wait until it is done`, 4000); return; }
   st.running = what; document.body.classList.add("running");

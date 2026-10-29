@@ -1671,6 +1671,27 @@ async def api_sample_image_state(req: Request):
     return _json(r)
 
 
+async def api_refresh(req: Request):
+    """Refresh (the button after Undo): forget what the server keeps in memory of a sample (its geometry, image and
+    dot tiles, the opened image file, its open annotations, colors and cell tables), so all of it is read again from
+    disk. The page also asks the browser for fresh tiles (the epoch returned goes into their addresses)."""
+    b = await req.json()
+    sample = b.get("sample")
+    if sample and (config.SAMPLES / sample / "meta.json").exists():
+        img = importer.image_of(sample)
+        if img:
+            render.unload(img)
+        _drop_view(sample)
+        for sid in [k for k, x in review_app._sessions.items() if x.sample_id == sample]:
+            review_app._sessions.pop(sid, None)
+        if mcp_server._active.get("session") is not None and mcp_server._active["session"].sample_id == sample:
+            mcp_server._active["session"] = Session(mcp_server._active["session"].id)
+    for cache in (_colors, _lr_cache, _cell_tables):
+        cache.clear()
+    config.release_memory()
+    return _json({"epoch": int(time.time() * 1000)})
+
+
 async def api_projects_assign(req: Request):
     """{groups: {sample_id: project name, or "" for none}}: move samples between projects (projects.assign)."""
     b = await req.json()
@@ -2479,6 +2500,7 @@ def build_app(port):
         Route("/api/s/{sid}/undo", api_undo, methods=["POST"]),
         Route("/api/sample/{sample}/reset", api_sample_reset, methods=["POST"]),
         Route("/api/sample/{sample}/remove", api_sample_remove, methods=["POST"]),
+        Route("/api/refresh", api_refresh, methods=["POST"]),
         Route("/api/projects/assign", api_projects_assign, methods=["POST"]),
         Route("/api/sample/{sample}/image_state", api_sample_image_state, methods=["POST"]),
         Route("/api/samples/clear", api_samples_clear, methods=["POST"]),
