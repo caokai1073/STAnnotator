@@ -38,6 +38,9 @@ header.collapsed .hrow, header.collapsed .tabs, header.collapsed .pane { display
 header .pane:not(.on) { display: none; }
 header .hrow.bottom { margin-top: auto; padding-bottom: 0; }
 header .hrow.bottom { flex-wrap: nowrap; gap: 6px; }  /* Reset, Remove sample, Remove all on one row */
+/* one analysis at a time: while one runs, the buttons that start another or change the data are grayed out */
+body.running :is(#annotate, #eRun, #nRun, #aRun, #sRun, #qfBtn, #qfGo, #qfRestore, #reset, #rmSample, #clearAll, #heState, #anLoad, #importBtn) {
+  opacity: .4; filter: grayscale(1); cursor: not-allowed; }
 header .hrow.bottom button { padding: 5px 8px; font-size: 12px; gap: 4px; white-space: nowrap; flex: 0 1 auto; min-width: 0; }
 header.collapsed .hmini { display: flex; }
 .buildtag { display: block; font-size: 10px; font-weight: 400; color: var(--muted); }
@@ -236,8 +239,9 @@ header .br { flex: 1 1 100%; height: 0; }
 #regsvg .hdl { pointer-events: all; cursor: grab; }
 #regsvg .hdl.mid { cursor: copy; }
 #regsvg text { font: 600 12px system-ui, sans-serif; paint-order: stroke; stroke: rgba(255,255,255,.85); stroke-width: 3px; }
-#regpanel { top: calc(var(--maptop, 44px) + 18px); left: 10px; width: 310px; max-height: 38%; display: flex; flex-direction: column; }
-#regpanel .lh { display: flex; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 12px; gap: 6px; }
+#regpanel { top: calc(var(--maptop, 44px) + 18px); left: 10px; width: 340px; max-height: 38%; display: flex; flex-direction: column; }
+#regpanel .lh { display: flex; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 12px; gap: 5px; }
+#regpanel .lh button { flex: none; }  /* the header's buttons keep their size; nothing pushes the last one out */
 #regpanel .lh label { white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
 #regpanel .items { overflow: auto; padding: 4px 6px; font-size: 12px; }
 #regpanel.collapsed .items { display: none; }
@@ -578,7 +582,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <div id="regpanel" class="float" hidden>
       <div class="lh"><b>Regions</b><span class="spacer"></span>
         <label class="hint" title="Show region outlines"><input type="checkbox" id="outlines" checked> outlines</label>
-        <button id="draw" class="primary" style="padding:2px 9px;font-size:12px" title="Click points on the map; double-click, Enter or click the first point to close">Draw region</button>
+        <button id="draw" class="primary" style="padding:2px 9px;font-size:12px" title="Draw a region: click points on the map; double-click, Enter or click the first point to close">Draw</button>
         <button id="rgImport" style="padding:2px 8px;font-size:12px" title="Regions from a GeoJSON of outlines drawn on this H&amp;E (e.g. QuPath annotations, exported in full-resolution pixels)">Import</button>
         <input type="file" id="rgImportFile" accept=".geojson,.json" hidden>
         <button id="rgtoggle" style="padding:1px 7px;font-size:11px">−</button></div>
@@ -1509,7 +1513,8 @@ async function loadEMAll() {  // every slice of the project in one picture (a jo
     const gl = EM.gl; gl.bindBuffer(gl.ARRAY_BUFFER, EM.pos); gl.bufferData(gl.ARRAY_BUFFER, buf, gl.STATIC_DRAW);
   }
   const cm = $("emColor").value === "map" ? st.mode : $("emColor").value;
-  const ckey = `all|${cm}|${st.version}|${st.emb.run_id}`;
+  const only = cm === "slice" ? "" : [...(st.filters[cm] || [])].join("|");  // the legend's choice, on every slice
+  const ckey = `all|${cm}|${st.version}|${st.emb.run_id}|${only}`;
   if (!EM.colors[ckey]) {
     const col = new Uint8Array(EM.n * 4);
     for (const [i, id] of p.samples.entries()) {
@@ -1518,7 +1523,7 @@ async function loadEMAll() {  // every slice of the project in one picture (a jo
       const sess = s && (s.sessions || []).filter((x) => USER_METHODS.includes(x.method))[0];
       let part = null;
       if (cm !== "slice" && sess) {
-        const r = await fetch(`/api/s/${sess.session_id}/colors.bin?${new URLSearchParams({ version: sess.n_versions, mode: cm, only: "" })}`);
+        const r = await fetch(`/api/s/${sess.session_id}/colors.bin?${new URLSearchParams({ version: sess.n_versions, mode: cm, only })}`);
         if (r.ok) part = new Uint8Array(await r.arrayBuffer());
       }
       if (!part) {  // by slice (or no annotation)
@@ -1562,9 +1567,10 @@ async function loadEMData() {
     const gl = EM.gl; gl.bindBuffer(gl.ARRAY_BUFFER, EM.pos); gl.bufferData(gl.ARRAY_BUFFER, buf, gl.STATIC_DRAW);
   }
   const cm = $("emColor").value === "map" ? st.mode : $("emColor").value;
-  const ckey = `${st.sid}|${st.version}|${cm}|${cm === "niche" && st.niche ? st.niche.params.run_id : ""}|${cm === "region" ? st.colorEpoch || 0 : ""}`;
+  const only = [...(st.filters[cm] || [])].join("|");  // the legend's choice: only those cells, as on the map
+  const ckey = `${st.sid}|${st.version}|${cm}|${cm === "niche" && st.niche ? st.niche.params.run_id : ""}|${cm === "region" ? st.colorEpoch || 0 : ""}|${only}`;
   if (!EM.colors[ckey]) {
-    const r = await fetch(`/api/s/${st.sid}/colors.bin?${new URLSearchParams({ version: st.version, mode: cm, only: "" })}`);
+    const r = await fetch(`/api/s/${st.sid}/colors.bin?${new URLSearchParams({ version: st.version, mode: cm, only })}`);
     if (!r.ok) { toast((await r.json().catch(() => ({}))).error || "no colors for this choice", 5000); return; }
     EM.colors = { [ckey]: new Uint8Array(await r.arrayBuffer()) };
   }
@@ -1785,7 +1791,7 @@ async function loadLegend() {
   const toggle = (keys) => {
     const allOn = keys.every((k) => f.has(k));
     keys.forEach((k) => (allOn ? f.delete(k) : f.add(k)));
-    refreshOverlay(); loadLegend();
+    refreshOverlay(); loadLegend(); emFollow();
   };
   let grp = null;
   r.items.forEach((it) => {
@@ -1808,7 +1814,7 @@ async function loadLegend() {
     box.append(el);
   });
 }
-$("lgall").onclick = () => { filt().clear(); refreshOverlay(); loadLegend(); };
+$("lgall").onclick = () => { filt().clear(); refreshOverlay(); loadLegend(); emFollow(); };
 // the legend sits at the bottom: folding moves its header down, so the arrow points down while it is open
 $("lgtoggle").onclick = () => { $("legend").classList.toggle("collapsed"); $("lgtoggle").classList.toggle("flip", !$("legend").classList.contains("collapsed")); };
 $("lgtoggle").classList.add("flip");
@@ -1943,7 +1949,7 @@ async function loadRegions() {
   const box = $("rgitems"); box.textContent = "";
   if (!st.regions.regions.length) {
     const d = document.createElement("div"); d.className = "hint"; d.style.padding = "6px 4px";
-    d.textContent = "No regions yet. Click “Draw region”, outline an area on the map, then name it.";
+    d.textContent = "No regions yet. Click “Draw”, outline an area on the map, then name it.";
     box.append(d);
   }
   st.regions.regions.forEach((r) => {
@@ -2127,14 +2133,14 @@ function startDraw() {
   if (!st.sid) return;
   st.drawing = [];
   viewer.gestureSettingsMouse.dblClickToZoom = false;
-  $("draw").classList.add("on"); setLabel($("draw"), "Drawing…"); $("drawhint").hidden = false;
+  $("draw").classList.add("on"); setLabel($("draw"), "Cancel"); $("drawhint").hidden = false;
   $("osd").style.cursor = "crosshair";
   drawRegions();
 }
 function cancelDraw() {
   st.drawing = null;
   viewer.gestureSettingsMouse.dblClickToZoom = true;
-  $("draw").classList.remove("on"); setLabel($("draw"), "Draw region"); $("drawhint").hidden = true;
+  $("draw").classList.remove("on"); setLabel($("draw"), "Draw"); $("drawhint").hidden = true;
   $("osd").style.cursor = "";
   drawRegions();
 }
@@ -2759,14 +2765,17 @@ function flatEntries() {  // the two fields as one slice
   return [{ fields: { counts: counts[0], cells: cells[0] } }];
 }
 async function inspectFlat() {  // what the two files hold
-  st.imFSlices = null;
   let entries;
-  try { entries = flatEntries(); } catch (e) { $("imFinfo").textContent = e.message; imSections(); return; }
+  try { entries = flatEntries(); } catch (e) { st.imFSlices = st.imFKey = null; $("imFinfo").textContent = e.message; imSections(); return; }
+  const key = imKind() + JSON.stringify(entries);
+  if (key === st.imFKey && st.imFSlices) return;  // checked already
+  st.imFSlices = null; st.imFKey = null;
   if (!entries) { $("imFinfo").textContent = ""; imSections(); return; }
-  $("imFinfo").textContent = "checking…";
+  if (!$("imFinfo").textContent) $("imFinfo").textContent = "checking…";
   try {
     const r = await post("/api/import/inspect", { kind: imKind(), entries });
-    st.imFSlices = r.slices;
+    if (imKind() + JSON.stringify(flatEntries()) !== key) return;  // edited meanwhile
+    st.imFSlices = r.slices; st.imFKey = key;
     const line = (x) => `${x.key}: ${x.n_cells.toLocaleString()} cells · ${x.n_genes.toLocaleString()} genes` +
       (x.n_controls ? ` (${x.n_controls} control probes left out)` : "") + ` · positions in ${x.positions}`;
     $("imFinfo").textContent = r.slices.map(line).join("\n");
@@ -2774,7 +2783,27 @@ async function inspectFlat() {  // what the two files hold
   } catch (e) { $("imFinfo").textContent = e.message; }
   imSections();
 }
-["imFCounts", "imFCells"].forEach((id) => ($(id).onchange = () => (st.imFPending = inspectFlat())));
+["imFCounts", "imFCells"].forEach((id) => {
+  $(id).onchange = () => (st.imFPending = inspectFlat());
+  $(id).oninput = soon(() => (st.imFPending = inspectFlat()));
+});
+// one analysis at a time (Annotate, Embed, Niches, Compare, Signaling, the cell filter, an import): the others'
+// buttons and Reset / Remove are grayed out (CSS body.running) and ignored until it is done
+const LOCKED = "#annotate, #eRun, #nRun, #aRun, #sRun, #qfBtn, #qfGo, #qfRestore, #reset, #rmSample, #clearAll, #heState, #anLoad, #importBtn";
+async function exclusive(what, fn) {
+  if (st.running) { toast(`${st.running} is running: wait until it is done`, 4000); return; }
+  st.running = what; document.body.classList.add("running");
+  try { return await fn(); } finally { st.running = null; document.body.classList.remove("running"); }
+}
+document.addEventListener("click", (e) => {
+  if (st.running && e.target.closest && e.target.closest(LOCKED)) {
+    e.stopImmediatePropagation(); e.preventDefault(); toast(`${st.running} is running: wait until it is done`, 4000);
+  }
+}, true);
+function soon(fn, ms = 600) {  // fn once the typing pauses
+  let t = null;
+  return () => { clearTimeout(t); t = setTimeout(fn, ms); };
+}
 // the file fields grow with what they hold (paths wrap), so nothing scrolls inside them
 function autoGrow(t) { if (!t.offsetParent) return; t.style.height = "auto"; t.style.height = `${t.scrollHeight + 2}px`; }
 function autoGrowAll() { document.querySelectorAll("#imDlg textarea").forEach(autoGrow); }
@@ -2796,11 +2825,14 @@ function xeniumEntries() {  // the fields as import entries: one slice field by 
   return out;
 }
 async function inspectXenium() {  // the slices found in the files and folders given
-  const entries = xeniumEntries(); st.imXSlices = null; if (!entries.length) { $("imXinfo").textContent = ""; imSections(); return; }
-  $("imXinfo").textContent = "checking…";
+  const entries = xeniumEntries(), key = JSON.stringify(entries);
+  if (key === st.imXKey && st.imXSlices) return;  // checked already: nothing changes (the dialog does not jump)
+  st.imXSlices = null; st.imXKey = null; if (!entries.length) { $("imXinfo").textContent = ""; imSections(); return; }
+  if (!$("imXinfo").textContent) $("imXinfo").textContent = "checking…";
   try {
     const r = await post("/api/import/inspect", { kind: "xenium", entries });
-    st.imXSlices = r.slices;
+    if (JSON.stringify(xeniumEntries()) !== key) return;  // edited meanwhile: its own check follows
+    st.imXSlices = r.slices; st.imXKey = key;
     const line = (x) => `${x.key}: ${x.n_cells.toLocaleString()} cells` + (x.panel_name ? ` · ${x.panel_name}` : "") +
       (x.files.experiment ? ` · pixel ${x.pixel_size_um} µm` : " · no experiment.xenium (pixel 0.2125 µm assumed)") +
       (x.morphology ? " · DAPI image" : " · no DAPI image");
@@ -2810,7 +2842,10 @@ async function inspectXenium() {  // the slices found in the files and folders g
   } catch (e) { $("imXinfo").textContent = e.message; }
   imSections();
 }
-document.querySelectorAll("#imX textarea.xin").forEach((x) => (x.onchange = () => (st.imXPending = inspectXenium())));
+document.querySelectorAll("#imX textarea.xin").forEach((x) => {
+  x.onchange = () => (st.imXPending = inspectXenium());
+  x.oninput = soon(() => (st.imXPending = inspectXenium()));  // checked while typing or pasting, before Import is clicked
+});
 $("imH5").onchange = async () => {
   const h5ad = $("imH5").value.split("\n").map((s) => s.trim()).filter(Boolean); if (!h5ad.length) return;
   $("imHinfo").textContent = "checking…";
@@ -2990,8 +3025,16 @@ async function importSample() {  // returns true when the sample was imported
   } catch (e) { $("imStatus").textContent = e.message; return false; }
   finally { $("imGo").disabled = false; imForm(); }
 }
-$("imGo").onclick = importSample;
-$("imNewAlign").onclick = async () => { if (await importSample()) await askAlign(); };  // import, then Claude aligns
+// Import acts on the press: leaving a file field starts its check, whose message can move the button before the
+// mouse is released, and the click would be lost
+function onPress(b, fn) {
+  let down = false;
+  b.addEventListener("pointerdown", (e) => { if (e.button === 0) down = true; });
+  window.addEventListener("pointerup", () => { if (down) { down = false; if (!b.disabled) fn(); } });
+  b.onclick = (e) => { if (e.detail === 0) fn(); };  // keyboard (Enter, Space)
+}
+onPress($("imGo"), () => exclusive("An import", importSample));
+onPress($("imNewAlign"), async () => { if (await exclusive("An import", importSample)) await askAlign(); });  // import, then Claude aligns
 $("importBtn").onclick = openImport;
 // ---------------- help and about ----------------
 const HELP = `
@@ -3026,7 +3069,7 @@ entries to show only those (click again to drop one; <b>show all</b> resets).</l
 <li>The toolbar on the right: Data, Annotate, Embedding and Niches are tabs (a dot marks a running analysis). <b>›</b> at its top folds it to the right edge for a bigger map; <b>‹</b> or <kbd>t</kbd> brings it back.</li>
 <li><b>Reset</b> (bottom): the annotations of this sample, or in a project of all its slices; optionally the PCA / UMAP too.</li></ul>
 <h3>Regions</h3><ul>
-<li><b>Draw region</b>: click points on the map; close with a double-click, <kbd>Enter</kbd> or by clicking the first
+<li><b>Draw</b> (Regions panel): click points on the map; close with a double-click, <kbd>Enter</kbd> or by clicking the first
 point; <kbd>Backspace</kbd> removes the last point, <kbd>Esc</kbd> cancels; then name it. A name can have several polygons.</li>
 <li><b>edit</b> (next to a polygon): drag a white point to move it; drag a small circle between two points to add a
 point there; click a point twice quickly to remove it; <b>Save</b> <kbd>Enter</kbd> or <b>Cancel</b> <kbd>Esc</kbd>.
@@ -4179,6 +4222,12 @@ $("sRun").onclick = async () => {
   } catch (e) { toast(e.message, 8000); $("sprogress").classList.remove("show"); }
   finally { $("sRun").disabled = false; }
 };
+// the analyses run one at a time (exclusive)
+[["annotate", "Annotate"], ["eRun", "PCA + UMAP"], ["nRun", "Niches"], ["aRun", "Compare"], ["sRun", "Signaling"],
+ ["qfGo", "The cell filter"], ["qfRestore", "The cell filter"]].forEach(([id, what]) => {
+  const run = $(id).onclick;
+  $(id).onclick = (e) => exclusive(what, () => run(e));
+});
 $("sLast").onclick = () => openLast($("sKind").value);
 function colorBySignal(lig, rec, side) {
   $("anDlg").close();
