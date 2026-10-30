@@ -220,6 +220,9 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
    with a double-click, Enter or the first point (Backspace removes a point, Esc cancels), and name it. A
    name can have several polygons; regions can be renamed, deleted, zoomed to and outlined. Cells in no
    region are "unknown" and region priors never apply to them. Refer to regions by name when talking to Claude.
+   A sample not annotated yet opens with its cells gray ("Not annotated"): regions can already be drawn, edited and
+   imported there, and **Agent Review** offers the registration (Spatial organization: the cells on their nuclei,
+   the local correction, torn pieces). The first annotation of the sample starts with these regions.
    **edit** next to a polygon shows its points: drag a point to move it, drag a small circle between two points to
    add one, double-click a point to remove it, then **Save** (Enter) or **Cancel** (Esc). The region keeps its name
    and priors; its cells are recomputed, and Undo brings the old outline back. Click a region's color square to

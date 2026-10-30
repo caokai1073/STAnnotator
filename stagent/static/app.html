@@ -1302,7 +1302,24 @@ async function selectSample(id) {
   fillSessions(sid);
   setMarkers("", "");  // no default list: import or load one for this sample
   estimateAnnotation();
-  if (sid) await startAnnotation("continue", sid, token); else st.wantMode = st.keepView = null;
+  if (sid) await startAnnotation("continue", sid, token);
+  else if (!ids.length) await openPlaceholder(token);  // not annotated yet: regions and the registration still work
+  else st.wantMode = st.keepView = null;
+}
+async function openPlaceholder(token) {  // the sample's "not annotated yet" session (method none), made on first use
+  const ph = st.sample.allSessions.filter((x) => x.method === "none").sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0];
+  if (ph) { await startAnnotation("continue", ph.session_id, token); return; }
+  try {
+    const { session_id } = await post("/api/annotate", { sample_id: st.sample.sample_id, method: "none", mode: "new" });
+    for (let i = 0; i < 100; i++) {
+      const j = await api(`/api/job/${session_id}`);
+      if (j.done) { if (j.error) throw new Error(j.error); break; }
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    if (token !== st.switchToken) return;
+    st.sample.allSessions = [...st.sample.allSessions, { session_id, method: "none", created_at: new Date().toISOString() }];
+    await openSession(session_id);
+  } catch (e) { toast(`Could not open the sample's regions: ${e.message}`, 6000); }
 }
 
 function reportState() {  // so Claude (use_viewer_session) knows what the user is looking at
@@ -1310,7 +1327,7 @@ function reportState() {  // so Claude (use_viewer_session) knows what the user 
   miniInfo(); anRefresh();
 }
 function closeSession() {
-  st.sid = null; st.version = null; st.filters = {}; st.regions = null; st.advice = null; st.adviceSig = undefined;
+  st.sid = null; st.placeholder = false; st.version = null; st.filters = {}; st.regions = null; st.advice = null; st.adviceSig = undefined;
   cancelDraw(); if (st.editing) stopEdit(); closePlaus();
   $("legend").hidden = true; $("cellcard").classList.remove("show");
   $("empty").style.display = "flex";
@@ -1334,7 +1351,7 @@ async function startAnnotation(mode, sid, token = st.switchToken) {
   const body = { sample_id: st.sample.sample_id, region_source: "none", mode, method,
                  markers_text: $("mkText").value, resolution: $("mkAuto").checked ? "auto" : +$("mkRes").value,
                  knn: $("knn").value, estimate_s: EST.last ? EST.last[$("knn").value].seconds : null,
-                 carry_from: mode === "new" && st.sid && $("carry").checked ? st.sid : null };
+                 carry_from: mode === "new" && st.sid && ($("carry").checked || st.placeholder) ? st.sid : null };
   if (mode === "new" && method === "existing") {
     body.existing = { path: $("exPath").value.trim(), id_column: $("exId").value, label_column: $("exLabel").value, lineage_column: $("exLin").value };
     if (!body.existing.path || !body.existing.label_column) { openEx(); toast("Choose the annotation CSV and its columns", 5000); return; }
@@ -1389,6 +1406,8 @@ async function openSession(sid) {
   $("carryWrap").style.visibility = "visible";
   $("input").disabled = false; $("composerhint").textContent = "Tip: refer to regions you drew by their name.";
   st.vocab = await api(`/api/s/${sid}/vocab`);
+  st.placeholder = st.vocab.method === "none";  // the sample is not annotated yet
+  if (st.placeholder) $("carryWrap").style.visibility = "hidden";  // its regions always come along
   if (st.vocab.marker_list) setMarkers(st.vocab.marker_list, "");  // re-annotating starts from this annotation's list
   if (st.vocab.method === "scref" && st.vocab.reference) setReference(st.vocab.reference);
   if (st.vocab.method === "existing" && st.vocab.existing) inspectEx({ path: st.vocab.existing.path }, st.vocab.existing);
@@ -1406,6 +1425,11 @@ async function openSession(sid) {
   await refreshVersion(true);
   await restoreView();
   await loadChat();
+  if (st.placeholder) {  // not annotated yet: regions, the registration and the agent; the analyses need cell types
+    ["export", "report", "nRun", "eRun", "eShow"].forEach((b) => ($(b).disabled = true));
+    $("einfo").textContent = $("nicheinfo").textContent = "Annotate the sample first";
+    $("anSave").disabled = true;
+  }
 }
 // Stepping to another slice keeps what is shown: the color mode (st.wantMode, in fillModes), the legend filters, the
 // embedding window with its settings, and, on an embedding of all slices together, its zoom and the lasso selection.
@@ -1782,7 +1806,8 @@ async function refreshVersion(force) {
   const sm = info.summary;
   st.lastSummary = sm;
   const how = { markers: "Marker genes", scref: "Single-cell reference", existing: "Loaded annotation" }[st.vocab && st.vocab.method] || "Annotation";
-  $("ainfo").textContent = [`${how} · version ${v}`, sm.constraints.length ? `${sm.constraints.length} priors` : "",
+  if (st.placeholder) $("ainfo").textContent = "Not annotated yet: draw regions and check the registration (Agent Review); they stay when you Annotate";
+  else $("ainfo").textContent = [`${how} · version ${v}`, sm.constraints.length ? `${sm.constraints.length} priors` : "",
     sm.corrections.length ? `${sm.corrections.length} corrections` : "", sm.n_conflicts ? `${sm.n_conflicts} conflicts` : ""].filter(Boolean).join(" · ");
   fillModes(sm);
   const counts = [[sm.constraints.length, "prior"], [sm.corrections.length, "correction"], [sm.n_conflicts, "conflict"]];
@@ -2939,7 +2964,7 @@ document.querySelectorAll("#imDlg [data-pick]").forEach((b) => (b.onclick = asyn
   const target = $(b.dataset.target), had = b.dataset.append ? target.value.split("\n").map((s) => s.trim()).filter(Boolean) : [];
   target.value = [...had, ...paths.filter((p) => !had.includes(p))].join("\n"); target.dispatchEvent(new Event("change"));
 }));
-const baseName = (p) => p.replace(/[\\/]+$/, "").split(/[\\/]/).pop().replace(/\.(h5ad|rds|rda|rdata|ome\.tif|tif)$/i, "").replace(/[^A-Za-z0-9_.-]+/g, "_").slice(0, 40);
+const baseName = (p) => p.replace(/[\\/]+$/, "").split(/[\\/]/).pop().replace(/\.(h5ad|rds|rda|rdata|ome\.tif|tif)$/i, "").replace(/[^A-Za-z0-9_.-]+/g, "_");  // the whole name: shortened names clashed
 function xeniumEntries() {  // the fields as import entries: one slice field by field, or files matched by name
   const L = (id) => $(id).value.split("\n").map((s) => s.trim()).filter(Boolean);
   const cells = L("imXCells"), counts = L("imXCounts"), exp = L("imXExp"), dapi = L("imXDapi"), out = [];

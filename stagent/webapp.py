@@ -22,7 +22,7 @@ from . import config, vocab, mcp_server, review_app, render
 mcp_server.SAME_PROCESS = True  # its tools served at /mcp run on this event loop: they cannot wait for a review
 from . import markers, markerqc, plausibility, claudelink, claudereview, importer, advice, niches, embedding
 from . import communication, projects, regcheck
-from .session import Session, list_samples, list_sessions, panel_genes, filtered_genes
+from .session import Session, list_samples, list_sessions, panel_genes, filtered_genes, NOT_ANNOTATED
 
 STATIC = Path(__file__).parent / "static"
 TILE, MARGIN_PX, CELL_RADIUS_UM = 512, 400, 3.45  # dot radius: about a cell's radius
@@ -132,7 +132,7 @@ def lineage_hues(s: Session):
     """Hue range per lineage: fixed for the reference taxonomy, evenly spread for a user's marker tree."""
     if s.scheme["kind"] == "reference":
         return dict(LINEAGE_HUES)
-    lins = [l for l in s.lineages if l != markers.UNASSIGNED]
+    lins = [l for l in s.lineages if l not in (markers.UNASSIGNED, NOT_ANNOTATED)]  # these stay gray
     step = 1.0 / max(len(lins), 1)
     return {l: (i * step + 0.1 * step, i * step + 0.8 * step) for i, l in enumerate(lins)}
 
@@ -601,6 +601,12 @@ SCOPE_REQUEST = {
                   "then cell_communication / compare_communication and show_communication for the striking pairs; "
                   "advice in the categories interactions, design, next"),
 }
+REGISTRATION_ONLY = ("the cells on the H&E before annotation (version {v} of the sample's placeholder: no cell types "
+                     "yet, so no compartments or neighbors): check_registration_map (the cells on their nuclei over "
+                     "all the tissue: look at its close-ups) and list_regions; advice only in the category "
+                     "registration: the local correction where areas really sit off their nuclei, and for a torn or "
+                     "folded piece of tissue the user outlined as a region, fit_piece (propose move_piece only when it "
+                     "fits)")
 SCOPE_LEAD = "I clicked Agent Review: {label}. Review only this part: {what}. "
 SCOPE_CHECK = ("Draft your advice with draft_advice(scope='{scope}'), then check every draft as a skeptical reviewer "
                "(rerun the tool that would confirm or refute it, look at the figure, weigh other explanations) and "
@@ -629,9 +635,13 @@ def review_scopes(s):
              "niches": None if niches.current(s)[0] else "run the niches first (Niches tab)",
              "compare": None if n_comp else "run a comparison first (Compare tab)",
              "signaling": None if n_sig else "run the cell-cell communication first (Signaling tab)"}
+    if s.scheme["kind"] == "none":  # not annotated yet: only the cells on the H&E can be reviewed
+        avail = {k: "annotate the sample first" for k in avail} | {"organization": None}
     what = {"annotation": "cell types and markers: the computed review candidates, types to merge, split or add, "
                           "sample context, technical problems",
-            "organization": "compartments on the H&E (proposed as regions), gradients and neighbors, the cells on "
+            "organization": "the cells on their nuclei on the H&E (the registration), and torn pieces of tissue you "
+                            "outlined (not annotated yet: no cell types)" if s.scheme["kind"] == "none" else
+                            "compartments on the H&E (proposed as regions), gradients and neighbors, the cells on "
                             "their nuclei in all areas (crypts, vessels)",
             "embedding": "Leiden clusters against the cell types" + (", slices mixing (joint embedding)" if pid else "")
                          + ", parameters",
@@ -666,8 +676,11 @@ async def api_claude_review(req: Request):
             parts.append(f"Then {SCOPE_REQUEST[scope].format(v=v)}. {SCOPE_CHECK.format(scope=scope)}" if parts else
                          SCOPE_LEAD.format(label=label, what=SCOPE_REQUEST[scope].format(v=v)) + SCOPE_CHECK.format(scope=scope))
     else:
+        if s.scheme["kind"] == "none" and scope != "organization":
+            return _json({"error": "annotate the sample first"}, 400)
         advice.request(s, scope)
-        parts.append(SCOPE_LEAD.format(label=label, what=SCOPE_REQUEST[scope].format(v=v)) + SCOPE_CHECK.format(scope=scope))
+        what = (REGISTRATION_ONLY if s.scheme["kind"] == "none" else SCOPE_REQUEST[scope]).format(v=v)
+        parts.append(SCOPE_LEAD.format(label=label, what=what) + SCOPE_CHECK.format(scope=scope))
         if scope == "organization" and importer.image_of(s.sample_id):  # the registration map, ready when the agent asks
             def scan(sample_id=s.sample_id):
                 try:
@@ -905,6 +918,21 @@ async def api_import_inspect(req: Request):
         return _json({"error": str(e)}, 400)
 
 
+def _import_names(name, b, sections, folders):
+    """The samples an import from the dialog writes: the sample, or a project's slices (only these are removed when
+    it fails: another import or the agent may be writing other samples meanwhile)."""
+    names = [name]
+    try:
+        kind = b.get("kind", "h5ad")
+        keys = (sections if kind == "h5ad" else [x["key"] for x in importer.flat_sources(kind, folders)]
+                if kind in importer.FLAT_FILES else [x["key"] for x in importer.xenium_sources(folders)] if folders else [])
+        if len(keys) > 1:
+            names += [projects.slice_name(name, k) for k in keys]
+    except Exception:  # the sources themselves were the problem: nothing past the sample's own name was written
+        pass
+    return names
+
+
 async def api_import(req: Request):
     """Import a sample in the background; progress under /api/job/import:<name>."""
     b = await req.json()
@@ -920,6 +948,8 @@ async def api_import(req: Request):
     folders = [f for f in (b.get("folders") or []) if f]  # Xenium: folders and / or files
 
     def work():
+        had = {d.name for d in config.SAMPLES.iterdir()} if config.SAMPLES.exists() else set()
+        had_project = (projects.PROJECTS / f"{name}.json").exists()
         try:
             kind = b.get("kind", "h5ad")
             flat = importer.flat_sources(kind, folders) if kind in importer.FLAT_FILES else None
@@ -956,7 +986,10 @@ async def api_import(req: Request):
                     say(f"regions of {sid}: " + (", ".join(f"{k} ({v} cells)" for k, v in per.items()) if per is not None
                         else "kept until the H&E is aligned (new annotations start with them from then on)"))
             JOBS[job].update(progress=1.0, stage="done", done=True)
-        except Exception as e:  # shown in the dialog
+        except Exception as e:  # shown in the dialog; what this import wrote is removed, so it can be run again as it was
+            importer.remove_samples([n for n in _import_names(name, b, sections, folders) if n not in had])
+            if not had_project and (projects.PROJECTS / f"{name}.json").exists():
+                (projects.PROJECTS / f"{name}.json").unlink()
             JOBS[job].update(error=f"{type(e).__name__}: {e}", done=True)
     threading.Thread(target=work, daemon=True).start()
     return _json({"job": job})

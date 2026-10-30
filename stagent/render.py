@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from . import config
 
 FIXED_LINEAGE_RGB = {"epi": (235, 130, 20), "fib": (60, 165, 60), "stroma": (40, 160, 170), "lymph": (50, 100, 220),
-                     "myeloid": (210, 60, 170), "Unassigned": (150, 150, 150)}
+                     "myeloid": (210, 60, 170), "Unassigned": (150, 150, 150), "Not annotated": (150, 150, 150)}
 
 
 # distinct colors that stay visible on H&E (no pale tints); assigned in marker-tree order

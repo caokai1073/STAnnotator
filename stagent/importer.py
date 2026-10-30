@@ -306,10 +306,15 @@ def epithelial_depth(X, genes, xy):
 
 
 # ---------------- import ----------------
+MAX_NAME = 200  # characters; a session id adds 21 and file systems allow 255 per path component
+
+
 def _check_name(name, overwrite):
     name = str(name).strip()
     if not name or any(ch in name for ch in "/\\ "):
         raise ValueError("the sample name must be a short id without spaces or slashes")
+    if len(name) > MAX_NAME:
+        raise ValueError(f"the sample name {name[:40]}... is {len(name)} characters long: at most {MAX_NAME}")
     if (config.SAMPLES / name).exists() and not overwrite:
         raise ValueError(f"a sample named {name!r} already exists: choose another name, or remove all samples "
                          "(Remove all… next to Import) to start over")
@@ -340,13 +345,33 @@ def _write_bundle(name, ids, xy, X, genes, image, A, regions, description, sourc
     if regions is not None:
         cells["pathologist_region"] = np.asarray(regions).astype(str)
         has_regions = bool((~cells.pathologist_region.isin(["", "nan", "None", "Unlabelled", "unknown"])).any())
-    out.mkdir(parents=True, exist_ok=True)
-    if (out / "original").exists():  # the data a filter kept from an earlier import of this name
-        shutil.rmtree(out / "original")
-    cells.to_parquet(out / "cells.parquet")
-    sp.save_npz(out / "counts.npz", X)
-    (out / "genes.txt").write_text("\n".join(genes) + "\n")
-    meta = {"sample_id": name, "description": description, "n_cells": int(len(ids)), "n_genes": len(genes),
+    # written into importing/<name> and moved into place once complete: a failed import leaves nothing behind, and an
+    # overwrite replaces the earlier sample (its data, and the caches computed from it) as a whole
+    tmp = config.HOME / "importing" / name
+    if tmp.exists():
+        shutil.rmtree(tmp)
+    tmp.mkdir(parents=True)
+    try:
+        _write_files(tmp, out, name, cells, X, genes, image, A, description, source, image_kind, um_per_px, has_regions,
+                     registration, image_pending, pending_kind)
+        if out.exists():
+            shutil.rmtree(out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(tmp), str(out))
+    finally:
+        if tmp.exists():
+            shutil.rmtree(tmp, ignore_errors=True)
+    progress(f"imported sample {name} into {out}")
+    return json.load(open(out / "meta.json"))
+
+
+def _write_files(d, out, name, cells, X, genes, image, A, description, source, image_kind, um_per_px, has_regions,
+                 registration, image_pending, pending_kind):
+    """The files of a sample bundle, in d (meta.json names out, where the bundle goes)."""
+    cells.to_parquet(d / "cells.parquet")
+    sp.save_npz(d / "counts.npz", X)
+    (d / "genes.txt").write_text("\n".join(genes) + "\n")
+    meta = {"sample_id": name, "description": description, "n_cells": int(len(cells)), "n_genes": len(genes),
             "he_path": str(Path(image).resolve()) if image else None, "he_um_per_px": um_per_px,
             "image_kind": image_kind, "bundle_dir": str(out), "has_pathologist_regions": has_regions,
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "source": source, "placement_affine": A.tolist(),
@@ -354,9 +379,7 @@ def _write_bundle(name, ids, xy, X, genes, image, A, regions, description, sourc
             "registration_by": "file" if registration is not None else None,
             "image_pending": str(Path(image_pending).resolve()) if image_pending else None,
             "image_pending_kind": pending_kind}
-    json.dump(meta, open(out / "meta.json", "w"), indent=1)
-    progress(f"imported sample {name} into {out}")
-    return meta
+    json.dump(meta, open(d / "meta.json", "w"), indent=1)
 
 
 def import_sample(name, h5ad, he=None, registration=None, section_column=None, section=None, x_column=None, y_column=None,
@@ -401,6 +424,14 @@ def import_sample(name, h5ad, he=None, registration=None, section_column=None, s
                           "section": section, "registration": str(Path(registration).resolve()) if registration else None,
                           "region_column": region_column, "candidates": [str(c) for c in candidates]}, progress, kind,
                          registration=R, image_pending=he if he and R is None else None, pending_kind=he_kind)
+
+
+def remove_samples(names):
+    """Delete the sample folders of names (an import that failed half way)."""
+    for n in names:
+        d = config.SAMPLES / n
+        if n and d.exists():
+            shutil.rmtree(d, ignore_errors=True)
 
 
 # ---------------- Xenium output (the folder, or only the files an import reads) ----------------
@@ -1196,29 +1227,39 @@ def import_project(project, kind, sources, sections=None, section_column=None, h
     items = ([str(s) for s in sections] if kind == "h5ad" else flat_sources(kind, sources) if kind in FLAT_FILES
              else xenium_sources(sources))
     keys = [item if kind == "h5ad" else item["key"] for item in items]
-    images = _slice_images(he, keys)  # before importing anything, so a wrong number of files stops the import early
+    # checked before importing anything, so a wrong number of files or a clash of names stops the import early
+    images = _slice_images(he, keys)
     regs = _slice_registrations(registration, keys)
+    names = [projects.slice_name(project, key) for key in keys]
+    for key, name in zip(keys, names):
+        if names.count(name) > 1:
+            raise ValueError(f"two slices would get the sample name {name!r} ({key!r} and another): rename the "
+                             "sections or folders so that they differ")
+        _check_name(name, overwrite)
     done = []
-    for i, (item, key) in enumerate(zip(items, keys)):
-        name = projects.slice_name(project, key)
-        image = images.get(key)
-        reg, reg_row = regs.get(key, (None, None))
-        progress(f"slice {i + 1} of {len(items)}: {key}")
-        say = lambda m: progress(f"  {m}")
-        if kind == "h5ad":
-            import_sample(name, sources, image, reg, section_column, item, region_column=region_column,
-                          description=description, overwrite=overwrite, progress=say, he_kind=he_kind,
-                          registration_section=reg_row)
-            meta = section_metadata(sources, section_column, item) if section_column else {}
-        elif kind in FLAT_FILES:
-            import_flat(kind, name, item, he=image, registration=reg, description=description,
-                        overwrite=overwrite, progress=say, he_kind=he_kind, registration_section=reg_row)
-            meta = {}
-        else:
-            import_xenium(name, item, he=image, registration=reg, description=description, overwrite=overwrite,
-                          progress=say, he_kind=he_kind, registration_section=reg_row)
-            meta = {}
-        done.append((name, key, meta))
+    try:
+        for i, (item, key, name) in enumerate(zip(items, keys, names)):
+            image = images.get(key)
+            reg, reg_row = regs.get(key, (None, None))
+            progress(f"slice {i + 1} of {len(items)}: {key}")
+            say = lambda m: progress(f"  {m}")
+            if kind == "h5ad":
+                import_sample(name, sources, image, reg, section_column, item, region_column=region_column,
+                              description=description, overwrite=overwrite, progress=say, he_kind=he_kind,
+                              registration_section=reg_row)
+                meta = section_metadata(sources, section_column, item) if section_column else {}
+            elif kind in FLAT_FILES:
+                import_flat(kind, name, item, he=image, registration=reg, description=description,
+                            overwrite=overwrite, progress=say, he_kind=he_kind, registration_section=reg_row)
+                meta = {}
+            else:
+                import_xenium(name, item, he=image, registration=reg, description=description, overwrite=overwrite,
+                              progress=say, he_kind=he_kind, registration_section=reg_row)
+                meta = {}
+            done.append((name, key, meta))
+    except BaseException:  # the slices imported so far go too: the import can be run again as it was
+        remove_samples([n for n, _, _ in done])
+        raise
     p = projects.save(project, project, done)
     progress(f"project {project}: {len(done)} slices")
     return p

@@ -33,6 +33,9 @@ Getting started
   are looking at. After starting a new annotation call open_viewer: a running app switches to it by itself;
   otherwise give the user the link. The viewer shows the cell types on the H&E (or DAPI); the user draws and names
   regions there and can review conflicts. Changes made through these tools appear in the viewer automatically.
+- A sample not annotated yet opens in the app as its placeholder (method "none": every cell "Not annotated"):
+  regions, check_registration_map, the registration correction and fit_piece / move_piece work on it; tools about
+  cell types do not. A new annotation of the sample (start_session) starts with the placeholder's regions.
 - A new gene panel needs its own marker list: start from organ_marker_draft (built-in lists of common organs pruned
   to the panel; search the literature for types it lacks), or draft one from get_panel_genes; validate it with check_marker_list,
   and save it with save_marker_list; the user loads it in the viewer's "Markers..." dialog and clicks Annotate (or

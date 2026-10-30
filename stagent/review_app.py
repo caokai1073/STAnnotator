@@ -136,6 +136,8 @@ async def api_sessions(req):
     t = list_sessions()
     rows = []
     for r in t.to_dict("records"):
+        if r["method"] == "none":  # a sample's placeholder before annotation: nothing to review
+            continue
         meta = json.load(open(config.SAMPLES / r["sample_id"] / "meta.json"))
         rows.append(r | {"disease": meta.get("disease"), "location": meta.get("location")})
     return _json(rows[::-1])

@@ -18,6 +18,7 @@ from scipy.spatial import cKDTree
 from . import config, vocab, markers, regions as regmod, constraints as cmod, conflicts as confmod, render
 
 AGENT_GAP_S = 90  # the agent's changes this close together belong to one request (one Undo)
+NOT_ANNOTATED = "Not annotated"  # the one label of a sample's placeholder (method "none", see Session.create)
 
 
 def _tag(s):
@@ -89,6 +90,13 @@ def list_sessions():
     return pd.DataFrame(rows)
 
 
+def placeholder(sample_id):
+    """The sample's placeholder session (method "none"), the latest if several, or None."""
+    t = list_sessions()
+    t = t[(t.sample_id == str(sample_id)) & (t.method == "none")] if len(t) else t
+    return t.sort_values("created_at").session_id.iloc[-1] if len(t) else None
+
+
 class Session:
     def __init__(self, session_id):
         self.id = session_id
@@ -110,7 +118,7 @@ class Session:
             self.type_groups = {k: [t for t in v if t in self.types]
                                 for k, v in markers.descendants(self.scheme["tree"]).items()}
             self.lineages = [n["name"] for n in self.scheme["tree"]] + [markers.UNASSIGNED]
-        elif self.scheme["kind"] in ("scref", "existing"):
+        elif self.scheme["kind"] in ("scref", "existing", "none"):
             # cell types are the labels of a single-cell reference or of a loaded annotation; an optional group
             # (lineage) column gives their lineages
             self.types = self.scheme["types"]
@@ -163,7 +171,10 @@ class Session:
         "majority_voting"}) trains a CellTypist-like classifier on the genes it shares with the panel.
         method 'existing': an annotation loaded from a CSV (existing = {"path", "id_column", "label_column",
         optional "lineage_column"}); its labels stay the labels, the expression model adds confidences.
-        method 'reference': expression model trained on the dataset's labeled slides (benchmarks only)."""
+        method 'reference': expression model trained on the dataset's labeled slides (benchmarks only).
+        method 'none': the sample's placeholder before it is annotated (the app opens it for a sample without an
+        annotation): every cell is "Not annotated", nothing is computed; regions can be drawn and the registration
+        checked and corrected on it. A later annotation of the sample without carry_from starts from its regions."""
         sd = config.SAMPLES / str(sample_id)
         if not (sd / "meta.json").exists():
             raise ValueError(f"unknown sample {sample_id!r}; see list_samples()")
@@ -208,8 +219,14 @@ class Session:
             scheme = {"kind": "existing", "types": loaded["types"], "lineage_of_type": loaded["lineage_of_type"],
                       "existing": {"path": str(e["path"]), "id_column": e["id_column"], "label_column": e["label_column"],
                                    "lineage_column": e.get("lineage_column") or None, "n_matched": loaded["n_matched"]}}
+        elif method == "none":
+            scheme = {"kind": "none", "types": [NOT_ANNOTATED], "lineage_of_type": {NOT_ANNOTATED: NOT_ANNOTATED}}
         elif method != "reference":
-            raise ValueError("method must be 'markers', 'scref', 'existing' or 'reference'")
+            raise ValueError("method must be 'markers', 'scref', 'existing', 'none' or 'reference'")
+        if method != "none" and not carry_from:  # regions drawn before the sample was annotated come along
+            ph = placeholder(sample_id)
+            last = sorted((config.SESSIONS / ph / "versions").glob("v*.json"))[-1:] if ph else []
+            carry_from = ph if last and json.load(open(last[0]))["regions"].get("ops") else None
         sid = f"{sample_id}_{time.strftime('%Y%m%d-%H%M%S')}_{uuid.uuid4().hex[:4]}"
         d = config.SESSIONS / sid
         (d / "versions").mkdir(parents=True)
@@ -220,7 +237,8 @@ class Session:
             np.save(d / "loaded_labels.npy", loaded["labels"])
         s = cls(sid)
         state = {"version": 1, "parent": None, "created_at": _now(), "action": "create",
-                 "message": f"session created ({method} annotation); "
+                 "message": "not annotated yet: regions and the registration can be worked on" if method == "none" else
+                            f"session created ({method} annotation); "
                             + ("no regions yet" if region_source == "none" else "regions from the pathologist annotation"),
                  "regions": regmod.default_state(region_source), "constraints": [],
                  "corrections": [], "marker_step": {"ops": []}}
@@ -530,6 +548,8 @@ class Session:
     def _train_base(self, st, progress=None):
         """Model before corrections (see _init_model); hand corrections then fine-tune it."""
         say = progress or (lambda f, m: None)
+        if self.scheme["kind"] == "none":  # the placeholder: one label, nothing to compute
+            return np.zeros((len(self.cells), 1), np.float32)
         from . import model
         rows, labs = self._locks(st.get("corrections", []))
         m = self._init_model(st, say if not len(rows) else (lambda f, msg: say(0.3 * f, msg)))

@@ -3,6 +3,7 @@
 All data lives under one home directory: $STAGENT_HOME, default ~/stagent (the older names still work:
 $CELLTYPEAGENT_HOME, and an existing ~/celltypeagent folder when there is no ~/stagent)
   samples/<sample_id>/   imported samples (stagent import ...)
+  importing/<sample_id>/ a sample while it is being imported (moved to samples/ once complete)
   sessions/<session_id>/ annotations, versions, chats
   marker_lists/          marker lists saved from the viewer
   trash/                 samples reset in the viewer

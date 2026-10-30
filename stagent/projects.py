@@ -155,7 +155,7 @@ def assign(groups):
 
 def slice_name(project, value):
     """Sample id of a section of a project: <project>_<section>, letters, digits, dot, dash, underscore only."""
-    return f"{project}_{re.sub(r'[^A-Za-z0-9_.-]+', '_', str(value)).strip('_')}"[:80]
+    return f"{project}_{re.sub(r'[^A-Za-z0-9_.-]+', '_', str(value)).strip('_')}"  # never shortened: that made slices with a common prefix clash
 
 
 def rename(sample_id, name, project_name=None):
