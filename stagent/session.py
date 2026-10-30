@@ -165,8 +165,8 @@ class Session:
                carry_from=None, reference=None, existing=None, knn=None):
         """method 'markers' (default): hierarchical marker annotation (Leiden + marker scores) of this sample; the data
         is treated as having no cell type labels. markers_text: the marker list (indented text or CSV); required.
-        knn: the marker step's neighbor search, "exact" (default; the same result on every computer) or "approx"
-        (pynndescent: faster without a GPU).
+        knn: the marker step's neighbor search, "approx" (default; pynndescent: fast on any computer) or "exact"
+        (the same result on every computer; slow without a GPU for large samples).
         method 'scref': a single-cell reference h5ad (reference = {"path", "label_column", optional "group_column",
         "majority_voting"}) trains a CellTypist-like classifier on the genes it shares with the panel.
         method 'existing': an annotation loaded from a CSV (existing = {"path", "id_column", "label_column",

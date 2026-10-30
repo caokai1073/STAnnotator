@@ -184,6 +184,8 @@ details.adv > summary:hover { color: var(--ink); }
 details.adv[open] > summary { margin-bottom: 10px; }
 .progress { display: flex; visibility: hidden; align-items: center; gap: 8px; min-width: 180px; flex: 1; max-width: 640px; }
 .progress.show { visibility: visible; }
+.pstop { color: #b42318; border-color: #e5a29b; }
+.pstop.main { margin-top: 6px; width: 100%; }
 .pbar { flex: 1; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; min-width: 120px; }
 .pbar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
 #pstage { font-size: 12px; color: var(--muted); white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
@@ -421,8 +423,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <button id="openEx" hidden title="A CSV with an existing cell type annotation (one row per cell)">Annotation file…</button>
     </div>
     <div class="fld" id="knnWrap"><span>Neighbors</span><select id="knn" class="segsel" title="Neighbor search of the marker step">
-      <option value="exact" data-short="Exact">Exact: the same result on every computer, with or without a GPU; slow without a GPU for large samples</option>
-      <option value="approx" data-short="Approximate">Approximate (pynndescent): fast on any computer; the same result only with the same pynndescent and numba versions</option></select>
+      <option value="approx" data-short="Approximate" selected>Approximate (pynndescent, the default): fast on any computer; the same result only with the same pynndescent and numba versions</option>
+      <option value="exact" data-short="Exact">Exact: the same result on every computer, with or without a GPU; slow without a GPU for large samples</option></select>
       <div class="seg" data-for="knn"></div><div class="hint" id="annEst"></div></div>
     <label class="switch" id="carryWrap" style="visibility:hidden" title="Start the new annotation with the regions (and their colors), priors and hand corrections of the one that is open; priors and corrections naming cell types the new annotation does not have are dropped"><input type="checkbox" id="carry" checked>
       <span>Keep my regions, priors &amp; corrections<small>carried into the new annotation</small></span></label>
@@ -1372,13 +1374,7 @@ async function startAnnotation(mode, sid, token = st.switchToken) {
   try {
     const { session_id } = await post("/api/annotate", body);
     $("pstage").textContent = mode === "continue" ? "opening…" : "starting…";
-    for (;;) {
-      const j = await api(`/api/job/${session_id}`);
-      $("pfill").style.width = `${Math.round(100 * j.progress)}%`;
-      $("pstage").textContent = j.error ? `error: ${j.error}` : j.stage + jobTime(j);
-      if (j.done) { if (j.error) throw new Error(j.error); break; }
-      await new Promise((r) => setTimeout(r, 600));
-    }
+    await pollJob(session_id, $("progress"), $("pfill"), $("pstage"), $("annotate"), 600, true);
     if (token !== st.switchToken) return;  // the user picked another sample meanwhile
     st.openedThisVisit[st.sample.sample_id] = session_id;
     if (mode === "new") {
@@ -1392,6 +1388,7 @@ async function startAnnotation(mode, sid, token = st.switchToken) {
     await openSession(session_id);
     setTimeout(() => $("progress").classList.remove("show"), 800);
   } catch (e) {
+    if (isStop(e)) { stopped($("progress"), mode === "continue" ? "Opening the annotation" : "Annotation"); return; }
     $("pstage").textContent = (mode === "continue" ? "Could not open this annotation: " : "Annotation failed: ") + e.message;
     toast($("pstage").textContent, 8000);
   }
@@ -1411,7 +1408,6 @@ async function openSession(sid) {
   if (st.vocab.marker_list) setMarkers(st.vocab.marker_list, "");  // re-annotating starts from this annotation's list
   if (st.vocab.method === "scref" && st.vocab.reference) setReference(st.vocab.reference);
   if (st.vocab.method === "existing" && st.vocab.existing) inspectEx({ path: st.vocab.existing.path }, st.vocab.existing);
-  if (["exact", "approx"].includes(st.vocab.knn)) { $("knn").value = st.vocab.knn; syncSeg("knn"); }
   if (["markers", "scref", "existing"].includes(st.vocab.method)) { $("method").value = st.vocab.method; showMethod(); }
   if (st.wantMode && st.wantMode.startsWith("gene:")) {  // a gene kept from the last slice must be in this panel
     await loadGenes(st.sample.sample_id).catch(() => {});
@@ -1491,26 +1487,54 @@ async function loadEmbedding(show) {
   fillModes(st.lastSummary);
   if (show && e) await openEmbedding();
 }
+// ---------------- Stop: a long run can be stopped; what it made is taken back (jobs.py) ----------------
+const STOPPED = new Set();
+class StoppedError extends Error {}
+const isStop = (e) => e instanceof StoppedError;
+async function pollJob(job, prog, fill, stage, btn, every = 700, withTime = false) {  // follow a run to its end; Stop under its button
+  let b = btn.nextElementSibling && btn.nextElementSibling.classList.contains("pstop") ? btn.nextElementSibling : null;
+  if (!b) {
+    b = document.createElement("button"); b.className = "pstop" + (btn.classList.contains("main") ? " main" : ""); b.textContent = "Stop";
+    b.title = "Stop this run now: what it made so far is removed, and everything stays as before you started it";
+    btn.after(b);
+  }
+  b.hidden = false; b.disabled = false;
+  b.onclick = async () => {
+    b.disabled = true; STOPPED.add(job); if (stage) stage.textContent = "stopping…";
+    try { if (!(await post(`/api/job/${encodeURIComponent(job)}/stop`, {})).stopped) STOPPED.delete(job); }  // it had just ended
+    catch (e) { STOPPED.delete(job); toast(e.message, 5000); }
+  };
+  try {
+    for (;;) {
+      if (STOPPED.has(job)) throw new StoppedError();
+      const j = await api(`/api/job/${encodeURIComponent(job)}`);
+      if (STOPPED.has(job) || j.stopped) throw new StoppedError();
+      if (fill) fill.style.width = `${Math.round(100 * j.progress)}%`;
+      if (stage) stage.textContent = j.error ? `error: ${j.error}` : j.stage + (withTime ? jobTime(j) : "");
+      if (j.done) { if (j.error) throw new Error(j.error); return j; }
+      await new Promise((r) => setTimeout(r, every));
+    }
+  } finally { STOPPED.delete(job); b.hidden = true; }
+}
+function stopped(prog, what) {  // after Stop: the bar goes, nothing of the run is kept
+  prog.classList.remove("show");
+  toast(`${what} stopped: nothing from this run was kept`, 5000);
+}
 $("eRun").onclick = async () => {
   const body = { n_pcs: +$("eP").value, n_neighbors: +$("eK").value, min_dist: +$("eD").value, resolution: +$("eR").value };
   $("eRun").disabled = true; $("eprogress").classList.add("show");
   try {
     if (projectMode()) {  // all slices at once (Harmony when ticked)
-      await projectJob("embed", { ...body, harmony: $("eHarmony").checked }, $("efill"), $("estage"));
+      await projectJob("embed", { ...body, harmony: $("eHarmony").checked }, $("efill"), $("estage"), $("eRun"));
       setSelection(null); await loadEmbedding(true);
       setTimeout(() => $("eprogress").classList.remove("show"), 800); return;
     }
     const { job } = await post(`/api/s/${st.sid}/embedding/run`, body);
-    for (;;) {
-      const j = await api(`/api/job/${job}`);
-      $("efill").style.width = `${Math.round(100 * j.progress)}%`; $("estage").textContent = j.error ? `error: ${j.error}` : j.stage;
-      if (j.done) { if (j.error) throw new Error(j.error); break; }
-      await new Promise((r) => setTimeout(r, 800));
-    }
+    await pollJob(job, $("eprogress"), $("efill"), $("estage"), $("eRun"), 800);
     setSelection(null);
     await loadEmbedding(true);
     setTimeout(() => $("eprogress").classList.remove("show"), 800);
-  } catch (e) { toast(`Embedding failed: ${e.message}`, 8000); }
+  } catch (e) { if (isStop(e)) stopped($("eprogress"), "PCA + UMAP"); else toast(`Embedding failed: ${e.message}`, 8000); }
   finally { $("eRun").disabled = false; }
 };
 $("eShow").onclick = () => ($("empanel").hidden ? openEmbedding() : closeEmbedding());
@@ -1763,19 +1787,14 @@ $("nRun").onclick = async () => {
   $("nRun").disabled = true; $("nprogress").classList.add("show");
   try {
     if (projectMode()) {  // one set of niches over all slices
-      await projectJob("niches", { ...body, sessions: projectSessions() }, $("nfill"), $("nstage"));
+      await projectJob("niches", { ...body, sessions: projectSessions() }, $("nfill"), $("nstage"), $("nRun"));
       await loadNiches(true); setTimeout(() => $("nprogress").classList.remove("show"), 800); return;
     }
     const { job } = await post(`/api/s/${st.sid}/niches/run`, body);
-    for (;;) {
-      const j = await api(`/api/job/${job}`);
-      $("nfill").style.width = `${Math.round(100 * j.progress)}%`; $("nstage").textContent = j.error ? `error: ${j.error}` : j.stage;
-      if (j.done) { if (j.error) throw new Error(j.error); break; }
-      await new Promise((r) => setTimeout(r, 600));
-    }
+    await pollJob(job, $("nprogress"), $("nfill"), $("nstage"), $("nRun"), 600);
     await loadNiches(true);
     setTimeout(() => $("nprogress").classList.remove("show"), 800);
-  } catch (e) { toast(`Niches failed: ${e.message}`, 8000); }
+  } catch (e) { if (isStop(e)) stopped($("nprogress"), "Niches"); else toast(`Niches failed: ${e.message}`, 8000); }
   finally { $("nRun").disabled = false; }
 };
 async function agentNiches() {  // the agent chooses k per region, runs the niches and names them
@@ -3160,18 +3179,13 @@ async function importSample() {  // returns true when the sample was imported
   $("imGo").disabled = $("imNewAlign").disabled = true; $("imStatus").textContent = "importing…";
   try {
     const { job } = await post("/api/import", body);
-    for (;;) {
-      await new Promise((r) => setTimeout(r, 700));
-      const j = await api(`/api/job/${encodeURIComponent(job)}`);
-      $("imStatus").textContent = j.error || j.stage;
-      if (j.done) { if (j.error) throw new Error(j.error); break; }
-    }
+    await pollJob(job, $("imStatus").parentElement, null, $("imStatus"), $("imGo"), 700);
     $("imDlg").close();
     const many = nSlices > 1;
     toast(many ? `Imported project ${name}` : `Imported ${name}`, 4000);
     await loadSamples(many ? null : name, many ? name : null);
     return true;
-  } catch (e) { $("imStatus").textContent = e.message; return false; }
+  } catch (e) { $("imStatus").textContent = isStop(e) ? "Import stopped: nothing of it was kept" : e.message; return false; }
   finally { $("imGo").disabled = false; imForm(); }
 }
 // Import acts on the press: leaving a file field starts its check, whose message can move the button before the
@@ -3923,15 +3937,10 @@ function projectSessions() {  // the annotation of each slice a project-wide ana
   p.samples.forEach((id) => { const sid = id === st.sample.sample_id ? st.sid : st.openedThisVisit[id]; if (sid) out[id] = sid; });
   return out;
 }
-async function projectJob(path, body, fill, stage) {  // a project-wide analysis, with its progress in fill / stage
+async function projectJob(path, body, fill, stage, btn) {  // a project-wide analysis, with its progress in fill / stage
   const pid = projectOf(st.sample.sample_id).project_id;
   const { job } = await post(`/api/project/${pid}/${path}`, body);
-  for (;;) {
-    const j = await api(`/api/job/${encodeURIComponent(job)}`);
-    fill.style.width = `${Math.round(100 * j.progress)}%`; stage.textContent = j.error ? `error: ${j.error}` : j.stage + jobTime(j);
-    if (j.done) { if (j.error) throw new Error(j.error); return; }
-    await new Promise((r) => setTimeout(r, 800));
-  }
+  await pollJob(job, fill.closest(".progress"), fill, stage, btn, 800, true);
 }
 async function annotateProject() {  // one marker annotation of all slices; then the current slice's new annotation opens
   const text = $("mkText").value;
@@ -3942,13 +3951,16 @@ async function annotateProject() {  // one marker annotation of all slices; then
   try {
     await projectJob("annotate", { markers_text: text, resolution: $("mkAuto").checked ? "auto" : +$("mkRes").value,
                                    knn: $("knn").value, estimate_s: EST.last ? EST.last[$("knn").value].seconds : null,
-                                   carry: !!st.sid && $("carry").checked }, $("pfill"), $("pstage"));
+                                   carry: !!st.sid && $("carry").checked }, $("pfill"), $("pstage"), $("annotate"));
     st.wantMode = st.mode !== "cells" ? st.mode : null; st.sliceSwitch = true; st.keepView = viewState();
     projectOf(st.sample.sample_id).samples.forEach((id) => delete st.openedThisVisit[id]);  // open the new joint annotations
     await loadSamples(st.sample.sample_id);
     setTimeout(() => $("progress").classList.remove("show"), 800);
     toast("All slices of the project annotated together", 5000);
-  } catch (e) { $("pstage").textContent = `Annotation failed: ${e.message}`; toast($("pstage").textContent, 8000); }
+  } catch (e) {
+    if (isStop(e)) stopped($("progress"), "Annotation");
+    else { $("pstage").textContent = `Annotation failed: ${e.message}`; toast($("pstage").textContent, 8000); }
+  }
   finally { $("annotate").disabled = false; }
 }
 $("slPrev").onclick = () => stepSlice(-1);
@@ -4422,18 +4434,12 @@ $("sRun").onclick = async () => {
   $("sRun").disabled = true; $("sprogress").classList.add("show");
   try {
     const { job } = await post("/api/communication/run", b);
-    let j;
-    for (;;) {
-      j = await api(`/api/job/${encodeURIComponent(job)}`);
-      $("sfill").style.width = `${Math.round(100 * j.progress)}%`; $("sstage").textContent = j.error ? `error: ${j.error}` : j.stage;
-      if (j.done) { if (j.error) throw new Error(j.error); break; }
-      await new Promise((r) => setTimeout(r, 600));
-    }
+    const j = await pollJob(job, $("sprogress"), $("sfill"), $("sstage"), $("sRun"), 600);
     AN.last = j.result; AN.req = { ...b, selection: undefined }; AN.sel = b.selection; AN.view = "";
     AN.by[kind] = { last: AN.last, req: AN.req, sel: AN.sel }; syncLast();
     setTimeout(() => $("sprogress").classList.remove("show"), 800);
     await showAnalysis();
-  } catch (e) { toast(e.message, 8000); $("sprogress").classList.remove("show"); }
+  } catch (e) { if (isStop(e)) stopped($("sprogress"), "Signaling"); else { toast(e.message, 8000); $("sprogress").classList.remove("show"); } }
   finally { $("sRun").disabled = false; }
 };
 // the analyses run one at a time (exclusive)

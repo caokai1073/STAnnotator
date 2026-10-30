@@ -246,7 +246,7 @@ def pca(Xn, n_pcs=None):
     return np.asarray(X @ V - mu @ V, dtype=np.float32)  # = standardized X times the top components
 
 
-KNN = "exact"  # neighbor search of the marker step: "exact" or "approx" (see knn)
+KNN = "approx"  # neighbor search of the marker step: "approx" (default) or "exact" (see knn)
 KNN_EXTRA = 8  # candidates beyond k that the exact search re-ranks in float64
 
 

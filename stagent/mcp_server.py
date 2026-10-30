@@ -27,8 +27,8 @@ Getting started
   (inspect_reference first: shared genes, label columns). Or load an existing annotation (CSV, one row per cell):
   start_session(sample_id, annotation_csv=..., id_column=..., label_column=...) after inspect_annotation. Or
   resume_session from list_sessions. The review window of start_session shows how long the annotation should take
-  on this computer (under a minute with a GPU; without one, minutes for large samples with the default exact
-  neighbor search, about a minute with knn="approx").
+  on this computer (about a minute with the default approximate neighbor search; with knn="exact", under a minute
+  with a GPU, minutes for large samples without one).
 - The user usually has the STAnnotator app (or the web viewer) open: call use_viewer_session to load what they
   are looking at. After starting a new annotation call open_viewer: a running app switches to it by itself;
   otherwise give the user the link. The viewer shows the cell types on the H&E (or DAPI); the user draws and names
@@ -640,9 +640,9 @@ def start_session(sample_id: str, markers_text: Optional[str] = None,
     carry_from_current: copy the regions, priors and corrections of the active session of the same sample (use it
     when re-annotating with a revised marker list). The first call to any tool that needs labels runs the annotation
     (the review window shows how long it should take here). Give the user a new viewer link afterwards (open_viewer).
-    knn (marker list only): the neighbor search of the marker step, "exact" (default: the same result on every
-    computer, GPU or not) or "approx" (pynndescent: much faster on a computer without a GPU for large samples, the
-    same result only with the same pynndescent / numba versions). Use "approx" only when the user asks for it.
+    knn (marker list only): the neighbor search of the marker step, "approx" (default; pynndescent: fast on any
+    computer, the same result only with the same pynndescent / numba versions) or "exact" (the same result on every
+    computer, GPU or not; slow without a GPU for large samples). Use "exact" only when the user asks for it.
     """
     carry = _active["session"].id if carry_from_current and _active.get("session") else None
     ref = ex = None

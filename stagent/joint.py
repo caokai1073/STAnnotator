@@ -9,9 +9,9 @@ niches(): every cell's identity (NMF programs fitted on the pooled cells, or its
   neighbors within its own slice, then one k-means over all slices; each slice's annotation keeps its part.
 Comparing the slices (composition, DE genes) is in analysis.py.
 """
-import json, time
+import json, shutil, time
 import numpy as np, pandas as pd, scipy.sparse as sp
-from . import config, markers, model, projects
+from . import config, jobs, markers, model, projects
 
 
 def _dir(pid):
@@ -92,6 +92,7 @@ def _annotate(pid, markers_text, resolution, carry, say, knn, ids, off, counts, 
         say(0.8 + 0.18 * i / len(ids), f"slice {i + 1} of {len(ids)}: {sid}")
         s = Session.create(sid, "none", method="markers", markers_text=markers_text, resolution=resolution,
                            carry_from=previous.get(sid), knn=knn)
+        jobs.on_stop(lambda d=s.dir: shutil.rmtree(d, ignore_errors=True))  # stopped: the new annotations go
         s._save_mres("init", _slice_mres(res, off[i], off[i + 1] - off[i]))
         model.save(m, s.dir / "base" / "init_model.npz")
         info = json.load(open(s.dir / "session.json"))
@@ -100,8 +101,9 @@ def _annotate(pid, markers_text, resolution, carry, say, knn, ids, off, counts, 
         s = Session(s.id)
         s.result()
         out[sid] = s.id
-    json.dump({"run": run, "sessions": out, "n_cells": int(counts.shape[0]), "time": time.strftime("%Y-%m-%dT%H:%M:%S")},
-              open(_dir(pid) / "annotation.json", "w"), indent=1)
+    with jobs.replacing(_dir(pid) / "annotation.json"):
+        json.dump({"run": run, "sessions": out, "n_cells": int(counts.shape[0]), "time": time.strftime("%Y-%m-%dT%H:%M:%S")},
+                  open(_dir(pid) / "annotation.json", "w"), indent=1)
     say(1.0, "done")
     return out
 
@@ -139,14 +141,17 @@ def embed(pid, n_pcs=30, n_neighbors=15, min_dist=0.3, resolution=1.0, harmony=T
     meta = {"run_id": run, "n_pcs": int(n_pcs), "n_neighbors": int(n_neighbors), "min_dist": float(min_dist),
             "resolution": float(resolution), "n_clusters": int(lab.max()) + 1, "seconds": round(time.time() - t0, 1),
             "project": pid, "slices": ids, "harmony": bool(harmony and len(ids) > 1)}
-    for i, sid in enumerate(ids):
-        d = config.SAMPLES / sid / "embedding"
+    from .embedding import FILES
+    dirs = [config.SAMPLES / sid / "embedding" for sid in ids]
+    for d in dirs:
         d.mkdir(exist_ok=True)
-        np.save(d / "umap.npy", Y[off[i]:off[i + 1]].astype(np.float32))
-        np.save(d / "pca.npy", Z[off[i]:off[i + 1], :2].astype(np.float32))
-        np.save(d / "leiden.npy", lab[off[i]:off[i + 1]].astype(np.int32))
-        json.dump(meta, open(d / "meta.json", "w"), indent=1)
-    json.dump(meta, open(_dir(pid) / "embedding.json", "w"), indent=1)
+    with jobs.replacing(*(d / f for d in dirs for f in FILES), _dir(pid) / "embedding.json"):  # stopped: the last back
+        for i, d in enumerate(dirs):
+            np.save(d / "umap.npy", Y[off[i]:off[i + 1]].astype(np.float32))
+            np.save(d / "pca.npy", Z[off[i]:off[i + 1], :2].astype(np.float32))
+            np.save(d / "leiden.npy", lab[off[i]:off[i + 1]].astype(np.int32))
+            json.dump(meta, open(d / "meta.json", "w"), indent=1)
+        json.dump(meta, open(_dir(pid) / "embedding.json", "w"), indent=1)
     say(1.0, "done")
     return meta
 
@@ -195,16 +200,20 @@ def niches(pid, k=15, n_niches=8, identity="nmf", n_programs=20, progress=None, 
     order = np.argsort(-np.bincount(km.labels_, minlength=n_niches))
     lab = np.argsort(order)[km.labels_].astype(np.int16)
     run = time.strftime("%Y%m%d-%H%M%S")
-    for i, s in enumerate(S):
-        d = s.dir / "niches"
+    dirs = [s.dir / "niches" for s in S]
+    for d in dirs:
         d.mkdir(exist_ok=True)
-        np.save(d / "labels.npy", lab[off[i]:off[i + 1]])
-        np.save(d / "profile.npy", km.cluster_centers_[order].astype(np.float32))
-        if H is not None:
-            np.savez(d / f"nmf_{n_programs}.npz", W=W[off[i]:off[i + 1]], H=H)
-        json.dump({"run_id": run, "k": int(k), "k_by_region": {}, "radius_um": None, "identity": identity,
-                   "n_programs": int(n_programs) if identity == "nmf" else None, "n_niches": int(n_niches),
-                   "identity_names": names, "version": s.state()["version"], "k_range": [int(k), int(k)],
-                   "seconds": 0, "names": {}, "project": pid}, open(d / "run.json", "w"), indent=1)
+    files = ("labels.npy", "profile.npy", "run.json") + ((f"nmf_{n_programs}.npz",) if H is not None else ())
+    with jobs.replacing(*(d / f for d in dirs for f in files)):  # stopped: each slice's last niches back
+        for i, s in enumerate(S):
+            d = dirs[i]
+            np.save(d / "labels.npy", lab[off[i]:off[i + 1]])
+            np.save(d / "profile.npy", km.cluster_centers_[order].astype(np.float32))
+            if H is not None:
+                np.savez(d / f"nmf_{n_programs}.npz", W=W[off[i]:off[i + 1]], H=H)
+            json.dump({"run_id": run, "k": int(k), "k_by_region": {}, "radius_um": None, "identity": identity,
+                       "n_programs": int(n_programs) if identity == "nmf" else None, "n_niches": int(n_niches),
+                       "identity_names": names, "version": s.state()["version"], "k_range": [int(k), int(k)],
+                       "seconds": 0, "names": {}, "project": pid}, open(d / "run.json", "w"), indent=1)
     say(1.0, "done")
     return {"run": run, "sessions": sess}

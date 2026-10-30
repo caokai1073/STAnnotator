@@ -21,7 +21,7 @@ from starlette.staticfiles import StaticFiles
 from . import config, vocab, mcp_server, review_app, render
 mcp_server.SAME_PROCESS = True  # its tools served at /mcp run on this event loop: they cannot wait for a review
 from . import markers, markerqc, plausibility, claudelink, claudereview, importer, advice, niches, embedding
-from . import communication, projects, regcheck
+from . import communication, jobs, projects, regcheck
 from .session import Session, list_samples, list_sessions, panel_genes, filtered_genes, NOT_ANNOTATED
 
 STATIC = Path(__file__).parent / "static"
@@ -723,8 +723,7 @@ async def api_niches_run(req: Request):
             JOBS[job].update(progress=1.0, stage="done", done=True)
         except Exception as e:
             JOBS[job].update(error=f"{type(e).__name__}: {e}", done=True)
-    threading.Thread(target=work, daemon=True).start()
-    return _json({"job": job})
+    return await _spawn(job, work) or _json({"job": job})
 
 
 async def api_embedding_run(req: Request):
@@ -744,8 +743,7 @@ async def api_embedding_run(req: Request):
             JOBS[job].update(progress=1.0, stage="done", done=True)
         except Exception as e:
             JOBS[job].update(error=f"{type(e).__name__}: {e}", done=True)
-    threading.Thread(target=work, daemon=True).start()
-    return _json({"job": job})
+    return await _spawn(job, work) or _json({"job": job})
 
 
 def api_embedding(req):
@@ -950,6 +948,12 @@ async def api_import(req: Request):
     def work():
         had = {d.name for d in config.SAMPLES.iterdir()} if config.SAMPLES.exists() else set()
         had_project = (projects.PROJECTS / f"{name}.json").exists()
+
+        def undo():  # what this import wrote is removed, so it can be run again as it was
+            importer.remove_samples([n for n in _import_names(name, b, sections, folders) if n not in had])
+            if not had_project and (projects.PROJECTS / f"{name}.json").exists():
+                (projects.PROJECTS / f"{name}.json").unlink()
+        jobs.on_stop(undo)
         try:
             kind = b.get("kind", "h5ad")
             flat = importer.flat_sources(kind, folders) if kind in importer.FLAT_FILES else None
@@ -986,13 +990,10 @@ async def api_import(req: Request):
                     say(f"regions of {sid}: " + (", ".join(f"{k} ({v} cells)" for k, v in per.items()) if per is not None
                         else "kept until the H&E is aligned (new annotations start with them from then on)"))
             JOBS[job].update(progress=1.0, stage="done", done=True)
-        except Exception as e:  # shown in the dialog; what this import wrote is removed, so it can be run again as it was
-            importer.remove_samples([n for n in _import_names(name, b, sections, folders) if n not in had])
-            if not had_project and (projects.PROJECTS / f"{name}.json").exists():
-                (projects.PROJECTS / f"{name}.json").unlink()
+        except Exception as e:  # shown in the dialog
+            undo()
             JOBS[job].update(error=f"{type(e).__name__}: {e}", done=True)
-    threading.Thread(target=work, daemon=True).start()
-    return _json({"job": job})
+    return await _spawn(job, work) or _json({"job": job})
 
 
 def api_samples(req):
@@ -1016,7 +1017,7 @@ def api_samples(req):
     return _json(rows)
 
 
-def _project_job(pid, fn, estimate_s=None):
+async def _project_job(pid, fn, estimate_s=None):
     """Run a project-wide analysis in the background; progress under /api/job/project:<id>."""
     job = f"project:{pid}"
     if job in JOBS and not JOBS[job]["done"]:
@@ -1030,14 +1031,13 @@ def _project_job(pid, fn, estimate_s=None):
             JOBS[job].update(progress=1.0, stage="done", done=True)
         except Exception as e:
             JOBS[job].update(error=f"{type(e).__name__}: {e}", done=True)
-    threading.Thread(target=work, daemon=True).start()
-    return _json({"job": job})
+    return await _spawn(job, work) or _json({"job": job})
 
 
 async def api_project_annotate(req: Request):
     from . import joint
     pid, b = req.path_params["pid"], await req.json()
-    return _project_job(pid, lambda say: joint.annotate(pid, b.get("markers_text", ""), b.get("resolution"),
+    return await _project_job(pid, lambda say: joint.annotate(pid, b.get("markers_text", ""), b.get("resolution"),
                                                         bool(b.get("carry")), say, b.get("knn")),
                         estimate_s=b.get("estimate_s"))
 
@@ -1045,7 +1045,7 @@ async def api_project_annotate(req: Request):
 async def api_project_embed(req: Request):
     from . import joint
     pid, b = req.path_params["pid"], await req.json()
-    return _project_job(pid, lambda say: joint.embed(pid, int(b.get("n_pcs", 30)), int(b.get("n_neighbors", 15)),
+    return await _project_job(pid, lambda say: joint.embed(pid, int(b.get("n_pcs", 30)), int(b.get("n_neighbors", 15)),
                                                      float(b.get("min_dist", 0.3)), float(b.get("resolution", 1.0)),
                                                      bool(b.get("harmony", True)), say))
 
@@ -1053,7 +1053,7 @@ async def api_project_embed(req: Request):
 async def api_project_niches(req: Request):
     from . import joint
     pid, b = req.path_params["pid"], await req.json()
-    return _project_job(pid, lambda say: joint.niches(pid, int(b.get("k", 15)), int(b.get("n_niches", 8)),
+    return await _project_job(pid, lambda say: joint.niches(pid, int(b.get("k", 15)), int(b.get("n_niches", 8)),
                                                       b.get("identity", "nmf"), int(b.get("n_programs", 20)), say,
                                                       sessions=b.get("sessions")))
 
@@ -1220,8 +1220,7 @@ async def api_communication_run(req: Request):
         except Exception as e:
             JOBS[job].update(error=f"{type(e).__name__}: {e}" if not isinstance(e, (ValueError, KeyError)) else str(e).strip("'"),
                              done=True)
-    threading.Thread(target=work, daemon=True).start()
-    return _json({"job": job})
+    return await _spawn(job, work) or _json({"job": job})
 
 
 ANALYSIS_ASK = {
@@ -1360,12 +1359,17 @@ async def api_annotate(req: Request):
                                  existing=b.get("existing"), knn=b.get("knn")).id
         except (ValueError, OSError, KeyError) as e:
             return _json({"error": str(e)}, 400)
+    run = jobs.RUNS.get(sid)
+    if mode == "continue" and run and run.thread.is_alive() and not run.stop_asked:  # already opening: follow it
+        return _json({"session_id": sid})
     s = review_app._session(sid)
     JOBS[sid] = {"stage": "starting", "progress": 0.0, "done": False, "error": None, "started": time.time(),
                  "estimate_s": b.get("estimate_s") if mode == "new" else None}
 
     def work():
         from . import timing
+        if mode != "continue":  # stopped: the new annotation goes, the one open before stays
+            jobs.on_stop(lambda: _drop_session(sid))
 
         def cb(f, msg):
             JOBS[sid].update(progress=round(0.9 * f, 3), stage=msg)
@@ -1379,8 +1383,31 @@ async def api_annotate(req: Request):
             JOBS[sid].update(progress=1.0, stage="done", done=True)
         except Exception as e:  # report to the page instead of dying silently
             JOBS[sid].update(error=f"{type(e).__name__}: {e}", done=True)
-    threading.Thread(target=work, daemon=True).start()
-    return _json({"session_id": sid})
+    return await _spawn(sid, work) or _json({"session_id": sid})
+
+
+def _drop_session(sid):
+    """An annotation whose run was stopped: removed, as if Annotate had not been clicked."""
+    review_app._sessions.pop(sid, None)
+    shutil.rmtree(config.SESSIONS / sid, ignore_errors=True)
+
+
+async def _spawn(job, work):
+    """Start a run the user can stop (jobs.spawn; a stopped run of the same job is waited for); None, or a 409."""
+    try:
+        await asyncio.to_thread(jobs.spawn, job, work)
+    except RuntimeError as e:
+        JOBS[job].update(error=str(e), done=True)
+        return _json({"error": str(e)}, 409)
+
+
+async def api_job_stop(req: Request):
+    """Stop a run (the app's Stop button): what it made is taken back. {"stopped": false} when it had already ended."""
+    job = req.path_params["sid"]
+    ok = jobs.stop(job)
+    if ok and job in JOBS:
+        JOBS[job].update(done=True, error="stopped", stopped=True)
+    return _json({"stopped": ok})
 
 
 def api_job(req):
@@ -2608,6 +2635,7 @@ def build_app(port):
         Route("/api/annotate", api_annotate, methods=["POST"]),
         Route("/api/estimate", api_estimate, methods=["POST"]),
         Route("/api/job/{sid}", api_job),
+        Route("/api/job/{sid}/stop", api_job_stop, methods=["POST"]),
         Route("/api/s/{sid}/legend", api_legend),
         Route("/api/s/{sid}/overlay/{version:int}/{mode}/{level:int}/{xy}", overlay_tile),
         Route("/api/sample/{sample}/cells.bin", api_cells_bin),

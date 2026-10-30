@@ -8,7 +8,10 @@ Leiden runs on the same kNN graph.
 """
 import json, time
 import numpy as np
-from . import config, markers, model
+from . import config, jobs, markers, model
+
+
+FILES = ("umap.npy", "pca.npy", "leiden.npy", "meta.json")  # an embedding's files
 
 
 def _dir(sample_id):
@@ -39,13 +42,14 @@ def run(s, n_pcs=30, n_neighbors=15, min_dist=0.3, resolution=1.0, progress=None
     Y = umap.UMAP(n_neighbors=idx.shape[1], min_dist=float(min_dist), precomputed_knn=(idx, dd, None), init=init,
                   n_jobs=-1, low_memory=True, verbose=False).fit_transform(Z)
     d = _dir(s.sample_id)
-    np.save(d / "umap.npy", Y.astype(np.float32))
-    np.save(d / "pca.npy", Z[:, :2].astype(np.float32))
-    np.save(d / "leiden.npy", lab.astype(np.int32))
     meta = {"run_id": time.strftime("%Y%m%d-%H%M%S"), "n_pcs": int(n_pcs), "n_neighbors": int(n_neighbors),
             "min_dist": float(min_dist), "resolution": float(resolution), "n_clusters": int(lab.max()) + 1,
             "seconds": round(time.time() - t0, 1)}
-    json.dump(meta, open(d / "meta.json", "w"), indent=1)
+    with jobs.replacing(*(d / f for f in FILES)):  # a stopped run puts the last embedding back
+        np.save(d / "umap.npy", Y.astype(np.float32))
+        np.save(d / "pca.npy", Z[:, :2].astype(np.float32))
+        np.save(d / "leiden.npy", lab.astype(np.int32))
+        json.dump(meta, open(d / "meta.json", "w"), indent=1)
     say(1.0, "done")
     return meta
 

@@ -201,14 +201,17 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
    cells); marker genes the filter removed are left out of marker lists with a warning. Choose the **Method** (Annotate tab): *Marker genes* (a marker
    list, **Markers…**), *Single-cell reference* (a labeled reference h5ad, **Reference…**) or *Load existing* (a
    CSV with one cell type per cell, **Annotation file…**), then click
-   **Annotate**. With marker genes, **Neighbors** chooses the neighbor search of the marker step: *Exact* gives the
-   same neighbors, hence the same clusters and labels, on every computer, GPU or not (the default); *Approximate*
-   (pynndescent) is much faster on a computer without a GPU, and gives the same result only with the same
-   pynndescent and numba versions. Under it the app estimates how long the whole annotation will take here, for
+   **Annotate**. With marker genes, **Neighbors** chooses the neighbor search of the marker step: *Approximate*
+   (pynndescent, the default) is fast on any computer and gives the same result only with the same pynndescent and
+   numba versions; *Exact* gives the same neighbors, hence the same clusters and labels, on every computer, GPU or
+   not, but is slow without a GPU for large samples. Under it the app estimates how long the whole annotation will take here, for
    both choices (hover for the steps), and the progress bar shows the time so far against that estimate. For 357k
    cells: under a minute with a GPU either way; without one, about 5 min exact and about 1 min approximate on a
    12-core CPU with PyTorch (numpy alone makes the exact search about 4 times slower). The estimate starts from a
-   short speed test of the computer and learns from every annotation run on it. Regions start empty: you draw
+   short speed test of the computer and learns from every annotation run on it. While it runs, **Stop** under
+   Annotate ends it at once and removes what it made: the annotation open before stays as it was. The same Stop
+   button appears under Run PCA + UMAP, Run niches, the Signaling run and Import (a stopped run puts back the
+   embedding or niches it would have replaced; a stopped import removes the samples it wrote). Regions start empty: you draw
    them.
 2. The result is drawn on the H&E: pan and zoom down to single cells (the overview at the bottom right shows the
    whole sample as the map does: the image, the cells in their colors and the region outlines, with the box of the

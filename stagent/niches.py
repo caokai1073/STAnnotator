@@ -12,7 +12,7 @@ The latest run of a session is stored in niches/ (labels, parameters, compositio
 import json, time
 import numpy as np, pandas as pd
 from scipy.spatial import cKDTree
-from . import model
+from . import jobs, model
 
 K_MIN, K_MAX = 5, 80
 NMF_FIT_CELLS = 60000   # NMF is fitted on a random subset, then every cell is projected onto the programs
@@ -97,13 +97,15 @@ def run(s, k=15, n_niches=8, identity="nmf", n_programs=20, k_by_region=None, ra
     lab = km.labels_.astype(np.int16)
     order = np.argsort(-np.bincount(lab, minlength=n_niches))  # N1 = the largest niche
     lab = np.argsort(order)[lab].astype(np.int16)
-    np.save(_dir(s) / "labels.npy", lab)
-    np.save(_dir(s) / "profile.npy", km.cluster_centers_[order].astype(np.float32))
+    d = _dir(s)
     meta = {"run_id": time.strftime("%Y%m%d-%H%M%S"), "k": int(k), "k_by_region": k_by_region or {},
             "radius_um": radius_um, "identity": identity, "n_programs": int(n_programs) if identity == "nmf" else None,
             "n_niches": int(n_niches), "identity_names": names, "version": s.state()["version"],
             "k_range": [int(kk.min()), int(kk.max())], "seconds": round(time.time() - t0, 1), "names": {}}
-    json.dump(meta, open(_dir(s) / "run.json", "w"), indent=1)
+    with jobs.replacing(d / "labels.npy", d / "profile.npy", d / "run.json"):  # a stopped run puts the last back
+        np.save(d / "labels.npy", lab)
+        np.save(d / "profile.npy", km.cluster_centers_[order].astype(np.float32))
+        json.dump(meta, open(d / "run.json", "w"), indent=1)
     say(1.0, "done")
     return summary(s)
 
