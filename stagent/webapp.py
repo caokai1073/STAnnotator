@@ -2447,7 +2447,7 @@ Two kinds of input:
    in region X are goblet cells"): apply it directly with label_cells(region=..., cell_type=..., only_types=...
    when only some cells of the region are meant); the instruction itself is the go-ahead. Regions are drawn and
    named by the user with "Draw region" on the map. If the user asks you to draw one, compute the outline
-   (preview_compartment, or tiles) and offer it with propose_region: the user adds it from the Review panel. After label_cells, report how many cells you
+   (preview_compartment, or tiles) and offer it with propose_region: the user accepts it in the review window. After label_cells, report how many cells you
    labeled and how many other cells changed because the model was updated. If the cells differ mainly by location
    (e.g. muscularis mucosae vs muscularis propria smooth muscle), suggest a region or depth prior as well.
 Region priors only act on cells inside drawn regions; cells in no region are never penalized. When the user adds

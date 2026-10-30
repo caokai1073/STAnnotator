@@ -230,8 +230,9 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
    region when it is renamed.
    You can also ask Claude in Claude Code to draw one ("draw the mucosa", "outline the lymphoid follicles", "make
    a region of tiles F3:H6"): Claude computes the outline from where that tissue's cells lie, checks it on the H&E
-   and offers it in the Review panel, which opens by itself and shows the outline on the map (other advice stays).
-   Click **add region** to keep it, then **edit** to adjust it.
+   and proposes it: the review window opens with the outline on the H&E, **Accept** adds the region (Undo takes it
+   back), then **edit** adjusts it. This needs the sample annotated (the outline follows where a lineage's cells
+   form tissue); before that, Claude can offer tiles of the grid.
 4. Hand-labeled cells are locked and fine-tune the expression model (only the involved cell types can move),
    so similar cells elsewhere update too. Every step is a version; **Undo** takes back your last action (clicking it again goes further
    back; it never undoes the undo). One action is one version made in the app (an outline of the agent added as a region is one

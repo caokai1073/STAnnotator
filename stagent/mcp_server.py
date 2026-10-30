@@ -4,7 +4,7 @@ Run: python -m stagent.mcp_server
 The server keeps one active session; every tool that changes state creates a new version.
 Tool results are compact JSON; figure tools also return the PNG so the client can display it.
 """
-import json, os
+import json, os, re
 from typing import Optional, Union
 import numpy as np
 from mcp.server.fastmcp import FastMCP, Image
@@ -44,7 +44,7 @@ Getting started
 Changes to the data are reviewed by the user
 - Every tool that changes data (import_sample, import_cosmx_merfish, start_session, add / update / remove_constraint, label_cells,
   label_cluster, remove_correction, recluster, revert, apply_alignment, run_niches, name_niches, record_verdicts,
-  resolve_rule_suggestion, assign_region_cells, move_piece, undo_piece_move) only proposes the change: the app shows it in a review window with what it does, and it
+  resolve_rule_suggestion, assign_region_cells, propose_region, move_piece, undo_piece_move) only proposes the change: the app shows it in a review window with what it does, and it
   is applied only when the user clicks Accept there (Dismiss drops it). The tool waits a little for the decision and
   returns the outcome (status "accepted by the user and applied" with the result, "dismissed by the user", or
   "waiting for the user's review"). While waiting, tell the user in one or two sentences what you proposed and why;
@@ -71,8 +71,8 @@ Priors and corrections
   when the types differ mainly by position.
 - Regions are the user's. When the user asks you to draw or outline one ("draw the mucosa", "outline the follicles",
   "make a region of tiles F3:H6"): compute it with preview_compartment (tissue a lineage forms) or take tiles / a
-  candidate area, check the figure against the H&E, then propose_region. It appears in the viewer's Review panel
-  (other advice stays) and becomes a region when the user clicks "add region"; the user can then edit its points.
+  candidate area, check the figure against the H&E, then propose_region: the user sees the outline on the H&E in the
+  app's review window and Accept adds the region; the user can then edit its points.
   Never add regions the user did not ask for, and never offer region or cell type columns stored with the data
   (they are kept only for offline evaluation).
 - When the user asks to put the cells between their regions (gaps, ragged boundaries) into the region they belong
@@ -201,10 +201,27 @@ def _heartbeat():
         pass
 
 
+def _leave_placeholder():
+    """The sample's placeholder (not annotated yet) gives way once the sample is annotated: to the annotation open in
+    the viewer when it is of this sample, else the sample's latest annotation."""
+    from . import claudelink
+    from .session import list_sessions
+    cur = _active["session"]
+    t = list_sessions()
+    real = t[(t.sample_id == cur.sample_id) & t.method.isin(["markers", "scref", "existing"])] if len(t) else t
+    if not len(real):
+        return
+    shown = claudelink.viewer_state().get("session")
+    _active["session"] = Session(shown if shown in set(real.session_id) else
+                                 real.sort_values("created_at").session_id.iloc[-1])
+
+
 def _s() -> Session:
     _heartbeat()
     if "session" not in _active:
         raise ValueError("no active session; call start_session or resume_session first")
+    if _active["session"].scheme["kind"] == "none":
+        _leave_placeholder()
     if _active["session"].stale():  # the cells moved (registration corrected in the app): reload
         _active["session"] = Session(_active["session"].id)
     _active["session"].actor = "agent"  # its changes for one request are undone together in the viewer
@@ -723,7 +740,7 @@ def remove_constraint(constraint_id: str, message: Optional[str] = None) -> str:
 @mcp.tool()
 def list_regions(version: Optional[int] = None) -> str:
     """Regions of the session. Regions are drawn by the user on the map, or added from an outline you proposed
-    (propose_region) when the user clicks it;
+    (propose_region) when the user accepts it;
     cells outside every region are 'unknown' and no region prior applies to them."""
     info = _s().regions_info(version)
     return _j({"source": info["source"], "regions": info["regions"], "n_unknown": info["n_unknown"],
@@ -943,30 +960,48 @@ def preview_compartment(name: str, lineages: list[str], max_dist_um: float = 30.
             Image(path=png)]
 
 
-@mcp.tool()
-def propose_region(name: str, compartment: Optional[str] = None, area: Optional[str] = None, text: str = "",
-                   prior: Optional[dict] = None) -> str:
-    """Offer a region the user asked for: the outline of a compartment computed with preview_compartment
-    (compartment=<its name>) or of tiles / a candidate area (area="F3:H6" or "A3"). It is added to the Review panel
-    next to the other advice (nothing is replaced) and becomes region `name` when the user clicks "add region".
-    text: one or two sentences on what the outline holds; prior: optional constraint spec on the new region, offered
-    after the region exists. Only when the user asked for the region."""
+def _region_outline(s, compartment, area):
     from . import advice, plausibility
-    s = _s()
     if bool(compartment) == bool(area):
         raise ValueError("give either compartment (from preview_compartment) or area (tiles or a candidate id)")
     if compartment:
         comp = advice.load(s)["compartments"].get(compartment)
         if comp is None:
             raise ValueError(f"no previewed compartment {compartment!r}: call preview_compartment first")
-        polys, n = comp["polygons_px"], comp["n_cells"]
-    else:
-        info = plausibility.area_info(s, area)
-        polys, n = [info["outline_px"]], info.get("n_cells", 0)
-    item = advice.propose_region(s, name, polys, n, text, prior, source=compartment or area)
-    return _j({"id": item["id"], "region_name": item["action"]["name"], "n_pieces": len(polys), "n_cells": n,
-               "prior": item["action"].get("prior_text"),
-               "next": "the user clicks 'add region' on it in the Review panel (it opens by itself in the app)"})
+        return comp["polygons_px"], comp["n_cells"]
+    info = plausibility.area_info(s, area)
+    return [info["outline_px"]], info.get("n_cells", 0)
+
+
+def _d_propose_region(a):
+    from . import insights, regions as regmod
+    s = _s()
+    name = regmod.validate_name(re.sub(r"\s+", "_", str(a["name"]).strip()))
+    polys, n = (a["resolved"], a.get("n_cells", 0)) if a.get("resolved") else _region_outline(s, a.get("compartment"), a.get("area"))
+    exists = name in s.region_names()
+    return {"title": f"Add region {name}" + (f" ({len(polys)} pieces)" if len(polys) > 1 else "") + f": {n:,} cells",
+            "version": s.state()["version"],
+            "args": dict(a, name=name, resolved=polys, n_cells=n),  # applied exactly as reviewed
+            "details": [*_words(a), "Outlined by the agent from " + (f"the {a['compartment']} compartment (where its "
+                        "lineages form tissue)" if a.get("compartment") else f"tiles {a['area']}") + "; the figure "
+                        "shows the outline on the H&E.",
+                        f"Adds {len(polys)} polygon(s) " + (f"to the existing region {name}" if exists else
+                        f"as region {name}") + "; you can edit its points afterwards, and Undo takes it back."],
+            "preview": {"kind": "image", "path": insights.fig_compartment(s, {"polygons_px": polys}, name)}}
+
+
+@mcp.tool()
+@_reviewed(_d_propose_region)
+def propose_region(name: str, compartment: Optional[str] = None, area: Optional[str] = None, text: str = "",
+                   resolved: Optional[list] = None, n_cells: int = 0) -> str:
+    """Propose a region the user asked for: the outline of a compartment computed with preview_compartment
+    (compartment=<its name>) or of tiles / a candidate area (area="F3:H6" or "A3"). The user sees the outline on the
+    H&E in the app's review window and Accept adds it as region `name`. text: the user's words. A prior on the new
+    region: propose it with add_constraint once the region exists. resolved, n_cells: filled in by the app (leave
+    them out). Only when the user asked for the region."""
+    s = _s()
+    v = s.add_region_pieces(name, resolved, author="agent (accepted by the user)")
+    return _j({"new_version": v, "message": s.state(v)["message"], "regions": s.regions_info(v)["regions"]})
 
 
 # ---------------- aligning cells to an image without a registration file ----------------
