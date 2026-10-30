@@ -7,10 +7,15 @@ part one registration fixes (scale, rotation, shift); what is left are local shi
 between the run and the staining). Neighboring windows off their nuclei form areas (L1, L2, ...). Not trusted: a
 window whose best offset lies on the edge of the search (densely packed nuclei repeat, so a far shift can fit as
 well), and a weak one that disagrees with its neighbors; an offset that fits barely better than none counts as none.
+A coarse pass (COARSE_WINDOW_UM windows, image read at COARSE_STEP_UM, search COARSE_SEARCH_UM) finds the areas
+shifted further than the fine search reaches (there the fine windows find no peak, so they are not trusted); its shift
+counts only where its peak is unique (crypts repeat, so a shift by one crypt can fit almost as well) and most fine
+windows in it found no offset they trust.
 summary(): the areas, and the offsets by structure (focus groups of types: crypts are where the epithelium is,
 vessels where the endothelium is; their nuclei have a clear pattern, so a shift shows first there) and by region.
-correction(): affine + a smooth field of the local shifts (Gaussian-weighted, fading out away from the windows), as
-importer.apply_registration_fix applies it. Nothing here moves a cell.
+correction(): first the large shifts of the coarse pass, as a smooth field ("pre"); then, with the cells moved by
+it (the fine windows they moved in measured again), affine + a smooth field of the local shifts (Gaussian-weighted,
+fading out away from the windows), as importer.apply_registration_fix applies it. Nothing here moves a cell.
 
 The offsets of a placement are kept in the sample's folder (regcheck.json) until the cells move or the image changes.
 """
@@ -19,7 +24,7 @@ import numpy as np, pandas as pd
 from scipy import ndimage
 from . import config, render
 
-FORMAT = 2
+FORMAT = 3
 WINDOW_UM = 200.0   # side of a window
 SEARCH_UM = 25      # largest offset looked for
 MIN_CELLS = 40      # windows with fewer cells are not measured
@@ -28,15 +33,21 @@ GAIN = 0.85         # an offset counts when the correlation at zero is at most t
 OFF_UM = 5.0        # a window's cells are off their nuclei above this (a window's mean offset is ~1 um when fine)
 FIELD_FLOOR_UM = 2.0  # local shifts below this are left alone by the correction
 FIELD_SIGMA = 0.5     # the local field's Gaussian, in windows
+COARSE_WINDOW_UM = 600.0  # the coarse pass: side of a window,
+COARSE_STEP_UM = 2        # the image read at this many um per pixel,
+COARSE_SEARCH_UM = 100    # largest offset looked for,
+COARSE_MIN_UM = 20.0      # shorter shifts are left to the fine pass,
+UNIQUE = 0.9              # and a peak counts when the best other peak (10 um away or more) reaches at most this share of it
 DEFAULT_FOCUS = {"crypts / epithelium": r"epith|crypt|colonocyte|enterocyte|goblet|stem|transit|paneth",
                  "vessels": r"endoth|vascul|vessel|pericyte",
                  "smooth muscle": r"smooth|muscle|myocyte"}
 
 
 def xcorr(sl, kind, cx, cy, half, W, R, qx, qy):
-    """Cross-correlation (2R+1 square, 1 um steps) of the nuclei in the image window around (cx, cy) (half: its half
-    side in image pixels, read at W x W pixels) with the cell centroids qx, qy (image pixels) in it; the peak at
-    (R + dy, R + dx) means the nuclei sit dx, dy um from the cells."""
+    """Cross-correlation (2R+1 square, in steps of the window side / W) of the nuclei in the image window around
+    (cx, cy) (half: its half side in image pixels, read at W x W pixels) with the cell centroids qx, qy (image pixels)
+    in it; the peak at (R + dy, R + dx) means the nuclei sit dx, dy steps from the cells (1 um when W is the side in
+    um)."""
     from .insights import _nuclei
     img = np.asarray(sl.read(cx - half, cy - half, cx + half, cy + half, W, W)).astype(np.float32)
     nuc = ndimage.gaussian_filter(_nuclei(img, kind), 2)
@@ -86,32 +97,57 @@ def windows(sample_id, progress=None, wait_s=300):
         cells = pd.read_parquet(config.SAMPLES / sample_id / "cells.parquet", columns=["px", "py"])
         upp = float(m.get("he_um_per_px") or config.HE_UM_PER_PX)
         sl = render.slide(image)
-        tile = WINDOW_UM / upp
         px, py = cells.px.to_numpy(), cells.py.to_numpy()
         x0, y0 = float(px.min()), float(py.min())
-        tj, ti = ((px - x0) // tile).astype(int), ((py - y0) // tile).astype(int)
-        nx = int(tj.max()) + 1
-        groups = pd.Series(np.arange(len(px))).groupby(ti * nx + tj).indices
-        W, R, half = int(WINDOW_UM), SEARCH_UM, tile / 2
-        out, todo = [], [(k, rows) for k, rows in groups.items() if len(rows) >= MIN_CELLS]
-        for n, (k, rows) in enumerate(todo):
-            i, j = divmod(int(k), nx)
-            cx, cy = x0 + (j + 0.5) * tile, y0 + (i + 0.5) * tile
-            if cx - half < 0 or cy - half < 0 or cx + half > sl.W0 or cy + half > sl.H0:
-                continue
-            win = xcorr(sl, kind, cx, cy, half, W, R, px[rows], py[rows])
-            dy, dx = np.unravel_index(np.argmax(win), win.shape)
-            out.append([i, j, round(cx, 1), round(cy, 1), int(dx - R), int(dy - R), round(float(win.max()), 3), len(rows),
-                        round(float(win[R, R]), 3)])
-            if n % 50 == 0:
-                say(n / len(todo), f"registration: window {n} of {len(todo)}")
-        res = {"key": key, "image": image, "kind": kind, "um_per_px": upp, "window_um": WINDOW_UM, "search_um": R,
+        tile = WINDOW_UM / upp
+        nx = int((px.max() - x0) // tile) + 1
+        res = {"key": key, "image": image, "kind": kind, "um_per_px": upp, "window_um": WINDOW_UM, "search_um": SEARCH_UM,
                "origin_px": [x0, y0], "tile_px": tile, "nx": nx, "time": time.strftime("%Y-%m-%dT%H:%M:%S"),
-               "columns": ["i", "j", "cx", "cy", "dx_um", "dy_um", "corr", "n_cells", "corr_at_zero"], "windows": out}
+               "columns": ["i", "j", "cx", "cy", "dx_um", "dy_um", "corr", "n_cells", "corr_at_zero"]}
+        res["windows"] = _scan(sl, kind, px, py, res, lambda f: say(0.8 * f, "registration: fine windows"))
+        ct = COARSE_WINDOW_UM / upp
+        res["coarse"] = {"window_um": COARSE_WINDOW_UM, "search_um": COARSE_SEARCH_UM, "tile_px": ct,
+                         "origin_px": [x0, y0], "nx": int((px.max() - x0) // ct) + 1,
+                         "columns": res["columns"] + ["second"]}
+        res["coarse"]["windows"] = _scan(sl, kind, px, py, res["coarse"] | {"um_per_px": upp},
+                                         lambda f: say(0.8 + 0.2 * f, "registration: large shifts"), coarse=True)
         json.dump(res, open(f, "w"))
         return res
     finally:
         busy.unlink(missing_ok=True)
+
+
+def _scan(sl, kind, px, py, grid, say=None, keys=None, coarse=False):
+    """The offset rows of the windows of grid ({"origin_px", "tile_px", "nx", "um_per_px"}) holding the cells at px,
+    py (only the window ids in keys, when given); coarse: the coarse pass, its rows ending with the share of the
+    best peak that the best other peak (at least 10 um away) reaches."""
+    (x0, y0), tile, nx = grid["origin_px"], grid["tile_px"], grid["nx"]
+    tj, ti = ((px - x0) // tile).astype(int), ((py - y0) // tile).astype(int)
+    inside = (tj >= 0) & (tj < nx) & (ti >= 0)
+    groups = pd.Series(np.where(inside)[0]).groupby((ti * nx + tj)[inside]).indices
+    step = COARSE_STEP_UM if coarse else 1
+    W, R = int((COARSE_WINDOW_UM if coarse else WINDOW_UM) / step), int((COARSE_SEARCH_UM if coarse else SEARCH_UM) / step)
+    least = MIN_CELLS * (COARSE_WINDOW_UM / WINDOW_UM) ** 2 / 4 if coarse else MIN_CELLS
+    half = tile / 2
+    out, todo = [], [(k, rows) for k, rows in groups.items() if len(rows) >= least and (keys is None or k in keys)]
+    for n, (k, rows) in enumerate(todo):
+        i, j = divmod(int(k), nx)
+        cx, cy = x0 + (j + 0.5) * tile, y0 + (i + 0.5) * tile
+        if cx - half < 0 or cy - half < 0 or cx + half > sl.W0 or cy + half > sl.H0:
+            continue
+        win = xcorr(sl, kind, cx, cy, half, W, R, px[rows], py[rows])
+        dy, dx = np.unravel_index(np.argmax(win), win.shape)
+        row = [i, j, round(cx, 1), round(cy, 1), int(dx - R) * step, int(dy - R) * step, round(float(win.max()), 3),
+               len(rows), round(float(win[R, R]), 3)]
+        if coarse:
+            yy, xx = np.mgrid[-R:R + 1, -R:R + 1]
+            far = np.hypot(xx - (dx - R), yy - (dy - R)) * step >= 10
+            peaks = far & (win == ndimage.maximum_filter(win, size=5))   # other peaks, not the slope of the best one
+            row.append(round(float(win[peaks].max() / max(win.max(), 1e-9)) if peaks.any() else 0.0, 3))
+        out.append(row)
+        if say and n % 50 == 0:
+            say(n / len(todo))
+    return out
 
 
 def _robust_affine(P, D, w=None):
@@ -235,8 +271,15 @@ def summary(s, focus=None, version=None, progress=None):
         return {"windows": int(sel.sum()), "median_offset_um": round(float(np.median(raw[sel])), 1),
                 "max_offset_um": round(float(tot[sel].max()), 1),
                 "share_off": round(float((tot[sel] >= OFF_UM).mean()), 3)}
+    b, big, _ = _large(w)
+    fix = correction(s.sample_id, w)
+    in_big = np.zeros(len(a), bool)   # fine windows inside a large shift: reported with it
+    if big.any():
+        c = w["coarse"]
+        cid = ((a[:, 3] - c["origin_px"][1]) // c["tile_px"]).astype(int) * c["nx"] + ((a[:, 2] - c["origin_px"][0]) // c["tile_px"]).astype(int)
+        in_big = np.isin(cid, (b[big, 0] * c["nx"] + b[big, 1]).astype(int))
     areas = []
-    for k, comp in enumerate(_areas(a, D, noise)):
+    for k, comp in enumerate(_areas(a, D, noise | in_big)):
         c = np.array(comp)
         tags = pd.Series([t for t in tag[c] if t]).value_counts()
         regs = pd.Series(top_region[c]).value_counts()
@@ -247,14 +290,32 @@ def summary(s, focus=None, version=None, progress=None):
                       "structures": {k2: int(v) for k2, v in tags.items()}, "regions": {str(k2): int(v) for k2, v in regs.items()},
                       "correlation": round(float(np.median(a[c, 6])), 2),
                       "center_px": [round(float(a[c, 2].mean())), round(float(a[c, 3].mean()))]})
+    if big.any():  # the large shifts: groups of neighboring coarse windows
+        Db = np.where(big[:, None], b[:, 4:6], 0.0)
+        for comp in _areas(b, Db, ~big):
+            c = np.array(comp)
+            off = np.hypot(*Db[c].T)
+            mine = np.isin(cid, (b[c, 0] * w["coarse"]["nx"] + b[c, 1]).astype(int))
+            tags = pd.Series([t for t in tag[mine] if t]).value_counts()
+            regs = pd.Series(top_region[mine]).value_counts()
+            areas.append({"id": "", "windows": len(c), "window_um": w["coarse"]["window_um"], "half_px": w["coarse"]["tile_px"] / 2,
+                          "box_px": [round(float(f(b[c, k2]))) for f, k2 in ((np.min, 2), (np.min, 3), (np.max, 2), (np.max, 3))],
+                          "median_offset_um": round(float(np.median(off)), 1), "max_offset_um": round(float(off.max()), 1),
+                          "direction_um": [round(float(x), 1) for x in np.median(Db[c], 0)],
+                          "local_after_affine_um": round(float(np.median(off)), 1),
+                          "structures": {k2: int(v) for k2, v in tags.items()}, "regions": {str(k2): int(v) for k2, v in regs.items()},
+                          "correlation": round(float(np.median(b[c, 6])), 2), "large_shift": True,
+                          "center_px": [round(float(b[c, 2].mean())), round(float(b[c, 3].mean()))]})
+    areas.sort(key=lambda x: -x["windows"] * (x.get("window_um", w["window_um"]) / w["window_um"]) ** 2)
+    for k, x in enumerate(areas):
+        x["id"] = f"L{k + 1}"
     A = coef[:2].T / 1000
     affine = {"scale_x": round(1 + float(A[0, 0]), 5), "scale_y": round(1 + float(A[1, 1]), 5),
               "rotation_deg": round(float(np.degrees((A[1, 0] - A[0, 1]) / 2)), 3),
               "max_offset_um": round(float(np.hypot(*aff.T).max()), 1)}
-    fix = correction(s.sample_id, w)
-    after = np.hypot(*(D - fix["at_windows_um"]).T)
+    after, ta = np.hypot(*fix["after_um"].T), fix["trusted_after"]
     trusted = ~noise
-    n_off = int(((tot >= OFF_UM) & trusted).sum())
+    n_off = int(((tot >= OFF_UM) & trusted).sum()) + int(big.sum())
     loc = [x for x in areas if x["local_after_affine_um"] >= OFF_UM]
     verdict = ("fine" if not n_off else
                "global" if affine["max_offset_um"] >= OFF_UM and not loc else
@@ -267,48 +328,123 @@ def summary(s, focus=None, version=None, progress=None):
             "by_structure": {k: stats(tag == k) for k in masks},
             "by_region": {str(r): stats(top_region == r) for r in pd.unique(top_region)},
             "correction": {"moves_cells_um_median": fix["moved_um_median"], "moves_cells_um_max": fix["moved_um_max"],
-                           "windows_off_after": int(((after >= OFF_UM) & trusted).sum()),
-                           "median_offset_after_um": round(float(np.median(np.hypot(*(a[trusted, 4:6] - fix["at_windows_um"][trusted]).T))), 1)
-                           if trusted.any() else None},
+                           "windows_off_after": int(((after >= OFF_UM) & ta).sum()),
+                           "median_offset_after_um": round(float(np.median(np.hypot(*fix["after_raw_um"][ta].T))), 1)
+                           if ta.any() else None},
             "note": "offset = where the nuclei sit relative to the cell centroids (+dx right, +dy down, um); a window's mean "
                     f"offset is about 1 um when the cells sit on their nuclei; areas: neighboring windows off by >= {OFF_UM:g} um; "
+                    f"large_shift areas: {COARSE_WINDOW_UM:g} um windows off by {COARSE_MIN_UM:g}-{COARSE_SEARCH_UM} um, beyond the "
+                    f"{SEARCH_UM} um the fine windows look; "
                     "beyond_search_share above ~0.3: the cells are far off everywhere, redo the registration instead"}
 
 
+def _spread(C, r, sig):
+    """Shifts at the points C whose Gaussian field (_field) comes close to r there (a Gaussian average alone smooths
+    them away)."""
+    S = np.zeros_like(r, dtype=float)
+    for _ in range(4):
+        S += r - _field(C, C, S, sig)
+    return S
+
+
+def _large(w):
+    """The coarse windows (rows), and which of them are shifted further than the fine pass reaches (a unique peak,
+    clearly better than none, where most fine windows found no offset they trust) or are anchors (their cells stay
+    for the fine pass: its windows there trusted, or a trusted short shift)."""
+    c = w.get("coarse") or {}
+    b = np.asarray(c.get("windows") or [], float).reshape(-1, 10)
+    if not len(b):
+        return b, np.zeros(0, bool), np.zeros(0, bool)
+    a, *_, noise, D = _analyse(w)
+    (x0, y0), ct = c["origin_px"], c["tile_px"]
+    cid = ((a[:, 3] - y0) // ct).astype(int) * c["nx"] + ((a[:, 2] - x0) // ct).astype(int)
+    share = pd.Series((~noise).astype(float)).groupby(cid).mean()
+    fine_ok = share.reindex((b[:, 0] * c["nx"] + b[:, 1]).astype(int)).fillna(0).to_numpy() >= 0.5
+    ok = (b[:, 6] >= MIN_CORR) & (np.abs(b[:, 4:6]).max(1) < c["search_um"]) & (b[:, 9] <= UNIQUE)
+    big = ok & (np.hypot(b[:, 4], b[:, 5]) >= COARSE_MIN_UM) & (b[:, 8] <= GAIN * b[:, 6]) & ~fine_ok
+    anchor = ~big & (ok | fine_ok)
+    return b, big, anchor
+
+
+def _pre(w):
+    """The field of the large shifts (image pixels), or None when there are none."""
+    b, big, anchor = _large(w)
+    if not big.any():
+        return None
+    use = big | anchor
+    C, sig = b[use, 2:4], FIELD_SIGMA * w["coarse"]["tile_px"]
+    r = np.where(big[use, None], b[use, 4:6], 0.0) / w["um_per_px"]
+    return {"points_px": C.round(1).tolist(), "shift_px": _spread(C, r, sig).round(3).tolist(), "sigma_px": sig}
+
+
+_moved = {}  # (placement key, pre) -> the fine windows with the cells moved by pre, measured again
+
+
+def _remeasure(sample_id, w, pre):
+    """w with its fine windows measured again where the large shifts move the cells (by more than 1 um)."""
+    k = (w["key"], json.dumps(pre))
+    if k not in _moved:
+        cells = pd.read_parquet(config.SAMPLES / sample_id / "cells.parquet", columns=["px", "py"])
+        p = cells[["px", "py"]].to_numpy()
+        q = p + _field(p, np.asarray(pre["points_px"]), np.asarray(pre["shift_px"]), pre["sigma_px"])
+        (x0, y0), tile, nx = w["origin_px"], w["tile_px"], w["nx"]
+        wid = lambda z: ((z[:, 1] - y0) // tile).astype(int) * nx + ((z[:, 0] - x0) // tile).astype(int)
+        hit = np.hypot(*(q - p).T) * w["um_per_px"] > 1
+        keys = set(wid(p[hit]).tolist()) | set(wid(q[hit]).tolist())
+        new = _scan(render.slide(w["image"]), w["kind"], q[:, 0], q[:, 1], w, keys=keys)
+        rows = {(r[0], r[1]): r for r in w["windows"] if r[0] * nx + r[1] not in keys}
+        rows.update({(r[0], r[1]): r for r in new})
+        _moved.clear()
+        _moved[k] = dict(w, windows=list(rows.values()))
+    return _moved[k]
+
+
 def correction(sample_id, w=None):
-    """The correction of the current placement: {"origin", "A", "b"} (affine part, image pixels, as
-    importer.apply_registration_fix takes it) and "local": the local shifts at the trusted windows (image pixels),
-    spread with a Gaussian of one window and fading out away from them."""
+    """The correction of the current placement: "pre": the large shifts (or none), then {"origin", "A", "b"} (affine
+    part, image pixels, as importer.apply_registration_fix takes it) and "local": the local shifts at the trusted
+    windows (image pixels), spread with a Gaussian of one window and fading out away from them. Also how far it moves
+    the cells, and "after_um" / "trusted_after": the offsets it leaves at the fine windows (measured again where the
+    large shifts moved the cells); "after_raw_um": the same of the offsets as measured."""
     w = w or windows(sample_id)
-    a, mu, coef, aff, res, noise, _ = _analyse(w)
+    pre = _pre(w)
+    w2 = _remeasure(sample_id, w, pre) if pre else w
+    a, mu, coef, aff, res, noise, D = _analyse(w2)
     upp = w["um_per_px"]
     r = res.copy()
     n = np.hypot(*r.T)
     r *= (np.maximum(n - FIELD_FLOOR_UM, 0) / np.maximum(n, 1e-9))[:, None]   # leave small shifts alone
     use = ~noise
     C, sig = a[use, 2:4], FIELD_SIGMA * w["tile_px"]
-    S = np.zeros((use.sum(), 2))
-    for _ in range(4):  # the field at the windows comes close to their shifts (a Gaussian average alone smooths them away)
-        S += r[use] / upp - _field(C, C, S, sig)
+    S = _spread(C, r[use] / upp, sig)
     origin = (mu * 1000 / upp).tolist()                      # px
     A = coef[:2].T / 1000                                    # um offset per um position
     fix = {"origin": origin, "A": A.tolist(), "b": (coef[2] / upp).tolist(),
            "local": {"points_px": C.round(1).tolist(), "shift_px": S.round(3).tolist(), "sigma_px": sig}}
+    at = displacement(a[:, 2:4], fix) * upp                  # at the windows as measured (after the large shifts)
+    if pre:
+        fix = {"pre": pre} | fix
     cells = pd.read_parquet(config.SAMPLES / sample_id / "cells.parquet", columns=["px", "py"])
-    p = cells[["px", "py"]].to_numpy()
-    mv = displacement(p, fix)
-    at = displacement(a[:, 2:4], fix) * upp
+    mv = displacement(cells[["px", "py"]].to_numpy(), fix)
     return fix | {"moved_um_median": round(float(np.median(np.hypot(*mv.T)) * upp), 1),
-                  "moved_um_max": round(float(np.hypot(*mv.T).max() * upp), 1), "at_windows_um": at}
+                  "moved_um_max": round(float(np.hypot(*mv.T).max() * upp), 1),
+                  "after_um": D - at, "after_raw_um": a[:, 4:6] - at, "trusted_after": ~noise}
+
+
+FIX_KEYS = ("pre", "origin", "A", "b", "local")  # what a correction keeps (and importer.apply_registration_fix takes)
 
 
 def displacement(p, fix, chunk=20000):
-    """How far the correction moves points p (image pixels): A (p - origin) + b + the local field."""
+    """How far the correction moves points p (image pixels): the large shifts (pre), then, where they put the
+    points, A (p - origin) + b + the local field."""
     p = np.asarray(p, float)
-    out = (p - np.asarray(fix["origin"])) @ np.asarray(fix["A"]).T + np.asarray(fix["b"])
+    pre = fix.get("pre")
+    d0 = _field(p, np.asarray(pre["points_px"]), np.asarray(pre["shift_px"]), float(pre["sigma_px"]), chunk) if pre \
+        else np.zeros_like(p)
+    q = p + d0
+    out = d0 + (q - np.asarray(fix["origin"])) @ np.asarray(fix["A"]).T + np.asarray(fix["b"])
     loc = fix.get("local")
     if loc and loc["points_px"]:
-        out += _field(p, np.asarray(loc["points_px"]), np.asarray(loc["shift_px"]), float(loc["sigma_px"]), chunk)
+        out += _field(q, np.asarray(loc["points_px"]), np.asarray(loc["shift_px"]), float(loc["sigma_px"]), chunk)
     return out
 
 
@@ -322,7 +458,9 @@ def _field(p, C, S, sig, chunk=20000):
 
 
 def figure(s, info, version=None):
-    """The section with the offset per window (colored where >= 3 um) and the areas off their nuclei (left); close-ups of up to four areas with the cells now (cyan) and after the correction (yellow) on the nuclei."""
+    """The section with the offset per window (colored where >= 3 um) and the areas off their nuclei (left; large
+    shifts dashed); close-ups of up to four areas with the cells now (cyan) and after the correction (yellow) on the
+    nuclei."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -352,8 +490,10 @@ def figure(s, info, version=None):
     cb.set_label("offset (um), windows >= 3 um", fontsize=8)
     for x in info.get("areas", []):
         x0, y0, x1, y1 = x["box_px"]  # window centers
-        ax.add_patch(Rectangle((x0 - tile / 2, y0 - tile / 2), x1 - x0 + tile, y1 - y0 + tile, fill=False, ec="red", lw=1.2))
-        ax.text(x0 - tile / 2, y0 - tile / 2, x["id"], color="red", fontsize=8, va="bottom")
+        h = x.get("half_px", tile / 2)
+        ax.add_patch(Rectangle((x0 - h, y0 - h), x1 - x0 + 2 * h, y1 - y0 + 2 * h, fill=False, ec="red", lw=1.2,
+                               ls="--" if x.get("large_shift") else "-"))
+        ax.text(x0 - h, y0 - h, x["id"], color="red", fontsize=8, va="bottom")
     ax.set_xlim(bx0, bx1); ax.set_ylim(by1, by0); ax.set_xticks([]); ax.set_yticks([])
     ax.set_title(f"offset of the nuclei from the cells per {w['window_um']:g} um window; "
                  f"{info['windows_off']} of {info['trusted_windows']} windows off; verdict: {info['verdict']}", fontsize=9)
@@ -361,11 +501,13 @@ def figure(s, info, version=None):
         fix = correction(s.sample_id, w)
         for k, x in enumerate(areas):
             cx, cy = x["center_px"]
-            d2 = (a[:, 2] - cx) ** 2 + (a[:, 3] - cy) ** 2
-            cx, cy = a[np.argmin(d2 + 1e12 * (off < OFF_UM)), 2:4]  # the area's window nearest its center
+            if not x.get("large_shift"):
+                d2 = (a[:, 2] - cx) ** 2 + (a[:, 3] - cy) ** 2
+                cx, cy = a[np.argmin(d2 + 1e12 * (off < OFF_UM)), 2:4]  # the area's window nearest its center
             inw = (np.abs(px - cx) < tile / 2) & (np.abs(py - cy) < tile / 2)
-            cx, cy = np.median(px[inw]), np.median(py[inw])         # on its cells
-            half = 50 / upp
+            if inw.any():
+                cx, cy = np.median(px[inw]), np.median(py[inw])     # on its cells
+            half = max(50.0, 1.5 * x["median_offset_um"]) / upp
             m = (np.abs(px - cx) < half) & (np.abs(py - cy) < half)
             moved = np.c_[px[m], py[m]] + displacement(np.c_[px[m], py[m]], fix)
             a2 = fig.add_axes([0.53 + 0.235 * (k % 2), 0.5 - 0.47 * (k // 2), 0.22, 0.42])
@@ -375,7 +517,7 @@ def figure(s, info, version=None):
             a2.scatter(moved[:, 0], moved[:, 1], s=5, c="#ffd400", linewidths=0)
             a2.set_xlim(cx - half, cx + half); a2.set_ylim(cy + half, cy - half); a2.set_xticks([]); a2.set_yticks([])
             st = ", ".join(x["structures"]) or "no focus structure"
-            a2.set_title(f"{x['id']} ({st}): {x['median_offset_um']} um off; 100 um\ncyan now, yellow corrected", fontsize=7)
+            a2.set_title(f"{x['id']} ({st}): {x['median_offset_um']} um off; {2 * half * upp:.0f} um\ncyan now, yellow corrected", fontsize=7)
     out = s.dir / "figures" / f"registration_map_v{s.state(version)['version']}.jpg"
     out.parent.mkdir(exist_ok=True)
     plt.savefig(out, dpi=90, pil_kwargs={"quality": 85}); plt.close(fig)

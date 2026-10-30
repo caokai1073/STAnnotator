@@ -157,14 +157,14 @@ def _action(s, st, act):
         if info["verdict"] == "fine":
             raise ValueError("the cells sit on their nuclei everywhere: nothing to correct")
         fix = regcheck.correction(s.sample_id)
-        fix.pop("at_windows_um")
-        out |= {"mode": "local", "correction_px": {k: fix[k] for k in ("origin", "A", "b", "local")},
+        out |= {"mode": "local", "correction_px": {k: fix[k] for k in regcheck.FIX_KEYS if k in fix},
                 "key": regcheck.windows(s.sample_id)["key"], "n_areas": info["n_areas"],
                 "max_offset_um": max([x["max_offset_um"] for x in info["areas"]] or [info["affine_part"]["max_offset_um"]]),
                 "moved_um_max": fix["moved_um_max"], "areas": []}
-        h = regcheck.windows(s.sample_id)["tile_px"] / 2  # box_px spans the window centers
+        tile = regcheck.windows(s.sample_id)["tile_px"]
         for x in info["areas"]:
-            x0, y0, x1, y1 = x["box_px"]
+            x0, y0, x1, y1 = x["box_px"]  # it spans the window centers
+            h = x.get("half_px", tile / 2)
             out["areas"].append({"id": x["id"], "polygon_px": [[x0 - h, y0 - h], [x1 + h, y0 - h], [x1 + h, y1 + h], [x0 - h, y1 + h]]})
     elif kind == "registration":
         from . import insights

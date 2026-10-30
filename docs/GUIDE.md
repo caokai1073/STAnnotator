@@ -281,7 +281,13 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
      H&E (hematoxylin) or DAPI with the cell centroids in windows across the section and fits an affine;
      **correct registration…** moves every cell onto its nucleus (regions keep their cells; **undo correction**
      puts them back). On SCP2927 section 147328 it found a 0.28% scale mismatch (cells up to 30 um off their nuclei
-     at the corners); after the correction the windows agree within 0.5 um.
+     at the corners); after the correction the windows agree within 0.5 um. Where the H&E is warped, a local
+     correction adds a smooth shift field on top of the affine; the 200 um windows look up to 25 um away, so a
+     second pass of 600 um windows (up to 100 um) finds larger shifts: those areas are moved first and measured
+     again (they show as dashed *large shift* areas in the agent's figure). In a test, a 70 um bump (Gaussian,
+     sigma 250 um) was corrected to 2 um; a narrower one (sigma 150 um) only to 31 um (correcting twice does not
+     help there), and a torn or folded piece of tissue cannot be followed by a smooth field. Every correction is
+     measured anew on the cells as they are, so correcting again refines the last one.
    - *Spatial organization*: compartments (outlines of the mucosa, muscularis or lymphoid follicles, computed from
      where a lineage forms tissue and checked on the H&E; **add region**, then **add prior…** for the prior that
      uses it), and gradients and neighbors, found or contradicted (**add prior…**).

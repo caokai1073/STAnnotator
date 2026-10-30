@@ -822,7 +822,7 @@ async def api_advice_act(req: Request):
                     if regcheck.summary(review_app._session(s.id))["verdict"] == "fine":
                         raise ValueError("the cells sit on their nuclei everywhere now: nothing to correct")
                     f = regcheck.correction(s.sample_id)
-                    return {k: f[k] for k in ("origin", "A", "b", "local")}
+                    return {k: f[k] for k in regcheck.FIX_KEYS if k in f}
                 fix = await asyncio.to_thread(fresh)
             r = importer.apply_registration_fix(s.sample_id, fix)
             advice.set_status(s, x["id"], "done", "registration corrected")

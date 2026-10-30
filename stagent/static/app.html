@@ -2426,7 +2426,8 @@ function adviceRow(x, btn, adv, prop) {
         renderPlaus();
       }));
     }
-    if (open && !adv.registration_fixed) c.append(btn(act.mode === "local" ? "correct locally…" : "correct registration…",
+    // a local correction is measured again on the cells as they are now, so it can follow an earlier one
+    if (open && (act.mode === "local" || !adv.registration_fixed)) c.append(btn(act.mode === "local" ? "correct locally…" : "correct registration…",
       act.mode === "local" ? "Move the cells onto their nuclei where the tissue shifted" : "Move every cell onto its nucleus on the image",
       () => adviceRegistration(x, act)));
     if (adv.registration_fixed) c.append(btn("undo correction", "Put the cells back where the import placed them", () => adviceAct(x, "undo_registration")));
