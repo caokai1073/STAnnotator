@@ -835,8 +835,60 @@ def apply_registration_fix(sample_id, correction):
             "moved_um_max": round(float(np.hypot(*(q - p).T).max() * meta.get("he_um_per_px", 1)), 1)}
 
 
+def move_piece(sample_id, piece):
+    """Move the cells of one torn piece of tissue as piecefit.fit fitted it: q = M (p - center) + center + t (H&E
+    level-0 pixels). Kept in registration_fixes (undo_piece_move takes the last one back; undo_registration_fix all)."""
+    d = config.SAMPLES / sample_id
+    cells = pd.read_parquet(d / "cells.parquet")
+    if "px_import" not in cells:
+        cells["px_import"], cells["py_import"] = cells.px.to_numpy(), cells.py.to_numpy()
+    sel = np.isin(cells.cell.to_numpy(), piece["cells"])
+    M, c, t = np.asarray(piece["M"], float), np.asarray(piece["center_px"], float), np.asarray(piece["t_px"], float)
+    p = cells.loc[sel, ["px", "py"]].to_numpy()
+    q = (p - c) @ M.T + c + t
+    cells.loc[sel, "px"], cells.loc[sel, "py"] = q[:, 0], q[:, 1]
+    cells.to_parquet(d / "cells.parquet")
+    meta = json.load(open(d / "meta.json"))
+    if " + piece moves" not in (meta.get("registration_by") or ""):
+        meta["registration_by"] = (meta.get("registration_by") or "file") + " + piece moves"
+    keep = {k: piece[k] for k in ("id", "region", "n_cells", "angle_deg", "mirrored", "shift_um", "M", "center_px", "t_px", "cells")}
+    meta.setdefault("registration_fixes", []).append({"piece": keep, "time": time.strftime("%Y-%m-%dT%H:%M:%S")})
+    json.dump(meta, open(d / "meta.json", "w"), indent=1)
+    mv = np.hypot(*(q - p).T) * meta.get("he_um_per_px", 1)
+    return {"moved_cells": int(sel.sum()), "moved_um_median": round(float(np.median(mv)), 1),
+            "moved_um_max": round(float(mv.max()), 1)}
+
+
+def last_piece_move(sample_id):
+    fixes = _meta(sample_id).get("registration_fixes") or []
+    if not fixes or "piece" not in fixes[-1]:
+        raise ValueError("the last registration change of this sample is not a piece move: nothing to undo here "
+                         "(undo correction in Review > Registration goes back to the registration as imported)")
+    return fixes[-1]["piece"]
+
+
+def undo_piece_move(sample_id):
+    """Put the cells of the last piece moved back (the inverse of its move)."""
+    p = last_piece_move(sample_id)
+    d = config.SAMPLES / sample_id
+    cells = pd.read_parquet(d / "cells.parquet")
+    sel = np.isin(cells.cell.to_numpy(), p["cells"])
+    M, c, t = np.asarray(p["M"], float), np.asarray(p["center_px"], float), np.asarray(p["t_px"], float)
+    q = (cells.loc[sel, ["px", "py"]].to_numpy() - c - t) @ np.linalg.inv(M).T + c
+    cells.loc[sel, "px"], cells.loc[sel, "py"] = q[:, 0], q[:, 1]
+    cells.to_parquet(d / "cells.parquet")
+    meta = json.load(open(d / "meta.json"))
+    meta["registration_fixes"].pop()
+    if not any("piece" in f for f in meta["registration_fixes"]):
+        meta["registration_by"] = (meta.get("registration_by") or "file").replace(" + piece moves", "")
+    if not meta["registration_fixes"]:
+        meta.pop("registration_fixes")
+    json.dump(meta, open(d / "meta.json", "w"), indent=1)
+    return {"moved_back": int(sel.sum()), "region": p["region"]}
+
+
 def undo_registration_fix(sample_id):
-    """Put the cells back where the import placed them."""
+    """Put the cells back where the import placed them (undoing corrections and piece moves)."""
     d = config.SAMPLES / sample_id
     cells = pd.read_parquet(d / "cells.parquet")
     if "px_import" not in cells:
@@ -847,7 +899,8 @@ def undo_registration_fix(sample_id):
     meta.pop("registration_fixes", None)
     if meta.get("placement_affine_import"):
         meta["placement_affine"] = meta.pop("placement_affine_import")
-        meta["registration_by"] = (meta.get("registration_by") or "file").replace(" + nuclei correction", "").replace(" + local correction", "")
+    meta["registration_by"] = (meta.get("registration_by") or "file").replace(" + nuclei correction", "").replace(
+        " + local correction", "").replace(" + piece moves", "")
     json.dump(meta, open(d / "meta.json", "w"), indent=1)
     return {"ok": True}
 

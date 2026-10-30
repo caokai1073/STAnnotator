@@ -41,7 +41,7 @@ Getting started
 Changes to the data are reviewed by the user
 - Every tool that changes data (import_sample, import_cosmx_merfish, start_session, add / update / remove_constraint, label_cells,
   label_cluster, remove_correction, recluster, revert, apply_alignment, run_niches, name_niches, record_verdicts,
-  resolve_rule_suggestion, assign_region_cells) only proposes the change: the app shows it in a review window with what it does, and it
+  resolve_rule_suggestion, assign_region_cells, move_piece, undo_piece_move) only proposes the change: the app shows it in a review window with what it does, and it
   is applied only when the user clicks Accept there (Dismiss drops it). The tool waits a little for the decision and
   returns the outcome (status "accepted by the user and applied" with the result, "dismissed by the user", or
   "waiting for the user's review"). While waiting, tell the user in one or two sentences what you proposed and why;
@@ -76,6 +76,11 @@ Priors and corrections
   to: preview_region_fill (by position only), look at the patches that matter with show_region_fill on the H&E,
   then assign_region_cells with the patches that hold up (only on request; the user reviews it, outlines stay).
   Do not move cells because of their cell type: a region prior would then confirm itself.
+- A torn or folded piece of tissue on the H&E (cells beside a piece of tissue that holds no cells, which the local
+  registration correction cannot follow): the user outlines the piece's cells as a region; fit_piece(region) searches
+  its rotation, shift and mirroring (folded over) and shows it; when the verdict is "fits" and the yellow cells sit
+  on the piece's nuclei in the figure, propose it with move_piece (the user reviews it with the figure); otherwise
+  say why it does not fit (a folded piece out of focus has no nuclei to match: the cells can stay where they are).
 - Conflicts (conflict_summary, show_conflicts) are cells whose expression contradicts a prior; describe H&E crops
   cautiously and record verdicts only when the user states them.
 
@@ -1278,6 +1283,75 @@ def check_registration_map(focus: Optional[dict] = None) -> list:
         return [_j(info)]
     png = regcheck.figure(s, info)
     return [_j(info | {"path": png}), Image(path=png)]
+
+
+def _d_move_piece(a):
+    from . import piecefit
+    s = _s()
+    p = piecefit.get(s.sample_id, a["piece"])
+    if not p["verdict"].startswith("fits"):
+        raise ValueError(f"piece {p['id']} does not fit ({p['verdict']}): tell the user instead of proposing it")
+    how = f"rotated {p['angle_deg']:.0f} degrees" + (", mirrored (folded over)" if p["mirrored"] else "") + \
+        f", shifted {float(np.hypot(*p['shift_um'])):.0f} um"
+    return {"title": f"Move the {p['n_cells']:,} cells of region {p['region']} onto their torn piece of tissue ({how})",
+            "sample_id": s.sample_id,
+            "details": [*_words(a), f"Fit {p['id']}: correlation with the image {p['corr_now']:.2f} where the cells are, "
+                        f"{p['corr']:.2f} after the move" + ("" if "another placement" in p["verdict"] else
+                        f"; the best other placement scores {p['second']:.0%} of it") + f" ({p['verdict']}).",
+                        f"The cells move {p['moved_um_median']:.0f} um (median, up to {p['moved_um_max']:.0f} um) on "
+                        "the image; their expression, cell types and regions stay (the outline stays where it was "
+                        "drawn). The figure: yellow should sit on the nuclei of the piece.",
+                        "Undo: ask the agent (undo_piece_move), or undo correction in Review > Registration (back "
+                        "to the registration as imported)."],
+            "preview": {"kind": "image", "path": piecefit.figure(s, p)}}
+
+
+def _d_undo_piece_move(a):
+    from . import importer
+    s = _s()
+    last = importer.last_piece_move(s.sample_id)
+    return {"title": f"Put the {last['n_cells']:,} cells of region {last['region']} back where they were before their "
+                     "piece was moved", "sample_id": s.sample_id,
+            "details": [*_words(a), "Undoes the last move of a torn piece (the cells only move on the image)."]}
+
+
+@mcp.tool()
+def fit_piece(region: str, max_shift_um: float = 300.0, mirror: bool = True) -> list:
+    """A torn or folded piece of tissue: the rigid move (rotation, shift; mirrored too when mirror: a piece folded over
+    shows its back) that puts the cells of `region` (the user's outline around the piece's cells) onto the image within
+    max_shift_um, scored by the nuclei and the tissue no other cell covers (nothing changes). Returns the fit (id P1,
+    P2, ...): angle, shift, correlation now vs after, the best other placement as a share of it (crypts repeat), and
+    a verdict ("fits", "no better than where the cells are", "weak", "not unique"; "at the edge of the search": try a
+    larger max_shift_um). Figure: the piece now (cyan) and moved (yellow); right, the moved cells on the H&E: they
+    should sit on the nuclei of the torn piece. Then propose it with move_piece, or explain why it does not fit."""
+    from . import piecefit
+    s = _s()
+    p = piecefit.fit(s, region, max_shift_um, mirror)
+    png = piecefit.figure(s, p)
+    return [_j(piecefit.public(p) | {"path": png}), Image(path=png)]
+
+
+@mcp.tool()
+@_reviewed(_d_move_piece)
+def move_piece(piece: str, text: str = "") -> str:
+    """Propose moving the cells of a fitted piece (fit_piece id, e.g. "P1") as fitted. The user sees the fit and its
+    figure in the app's review window and accepts or dismisses it. text: the user's words."""
+    from . import importer, piecefit
+    s = _s()
+    r = importer.move_piece(s.sample_id, piecefit.get(s.sample_id, piece))
+    _active["session"] = Session(s.id)
+    return _j(r)
+
+
+@mcp.tool()
+@_reviewed(_d_undo_piece_move)
+def undo_piece_move(text: str = "") -> str:
+    """Propose putting back the cells of the last piece moved (move_piece); the user accepts it in the app."""
+    from . import importer
+    s = _s()
+    r = importer.undo_piece_move(s.sample_id)
+    _active["session"] = Session(s.id)
+    return _j(r)
 
 
 @mcp.tool()

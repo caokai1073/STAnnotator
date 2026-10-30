@@ -287,7 +287,15 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
      again (they show as dashed *large shift* areas in the agent's figure). In a test, a 70 um bump (Gaussian,
      sigma 250 um) was corrected to 2 um; a narrower one (sigma 150 um) only to 31 um (correcting twice does not
      help there), and a torn or folded piece of tissue cannot be followed by a smooth field. Every correction is
-     measured anew on the cells as they are, so correcting again refines the last one.
+     measured anew on the cells as they are, so correcting again refines the last one. For a piece of tissue that
+     tore off, turned or folded over on the H&E (cells beside a piece of tissue that holds no cells), outline the
+     piece's cells as a region and ask the agent to move it: it searches the rotation, shift (up to 300 um) and
+     mirroring (a folded piece shows its back) that put the cells on the nuclei and on the tissue no other cell
+     covers, and proposes the move with its figure in the review window (cyan: the cells now, yellow: moved). In
+     tests, pieces 160-600 um across torn off by up to 300 um and turned by up to 180 degrees, mirrored or not, were
+     put back within 1-6 um. A fit that is no better than where the cells are, or as good elsewhere, is not
+     proposed: a folded piece out of focus shows no nuclei to match. The cells keep their region (the outline
+     stays where it was drawn); the agent can undo the last piece move, and **undo correction** undoes all.
    - *Spatial organization*: compartments (outlines of the mucosa, muscularis or lymphoid follicles, computed from
      where a lineage forms tissue and checked on the H&E; **add region**, then **add prior…** for the prior that
      uses it), and gradients and neighbors, found or contradicted (**add prior…**).

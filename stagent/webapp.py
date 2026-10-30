@@ -1932,6 +1932,19 @@ def api_proposal_cells(req):
     return _json({"sample_id": s.sample_id, "session_id": s.id, "rows": out})
 
 
+def api_proposal_image(req):
+    """The figure of a proposal (e.g. a torn piece's fit), shown in the review window."""
+    from . import proposals
+    try:
+        rec = proposals.get(req.path_params["pid"])
+    except ValueError as e:
+        return _json({"error": str(e)}, 404)
+    path = (rec.get("preview") or {}).get("path")
+    if not path or not Path(path).is_file() or not Path(path).resolve().is_relative_to(config.HOME.resolve()):
+        return _json({"error": "this change has no figure"}, 404)
+    return FileResponse(path, headers=NO_CACHE)
+
+
 def api_region_assigned_cells(req):
     """Rows of the cells an assigned-cells operation (O1, ...) put into its region, to show them on the map."""
     s = review_app._session(req.path_params["sid"])
@@ -1962,6 +1975,8 @@ async def api_proposal_decide(req: Request):
                 out, sess = mcp_server.apply_proposal(rec, review_app._session)
                 if rec["tool"] == "apply_alignment":
                     _reload_sample(rec["args"]["sample_id"])
+                if rec["tool"] in ("move_piece", "undo_piece_move"):
+                    _reload_sample(rec["sample_id"])
                 _cell_tables.clear()
                 proposals.update(pid, status="done", result=out, session_after=sess, decided=time.time())
             except Exception as e:
@@ -2603,6 +2618,7 @@ def build_app(port):
         Route("/api/bundle-load", api_bundle_load, methods=["POST"]),
         Route("/api/proposal/{pid}/decide", api_proposal_decide, methods=["POST"]),
         Route("/api/proposal/{pid}/cells", api_proposal_cells),
+        Route("/api/proposal/{pid}/image", api_proposal_image),
         Route("/api/s/{sid}/regions/assigned/{oid}/cells", api_region_assigned_cells),
         Route("/api/sample/{sample}/filter", api_sample_filter, methods=["POST"]),
         Route("/api/sample/{sample}/placement/undo", api_sample_placement_undo, methods=["POST"]),

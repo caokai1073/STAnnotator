@@ -3363,7 +3363,9 @@ function showProposal(r, n) {
   $("pcDetails").innerHTML = (r.details || []).map((d) => `<li>${pcEsc(d)}</li>`).join("");
   const pv = r.preview;
   $("pcShow").hidden = !(pv && pv.kind === "cells");
+  $("pcDlg").style.width = pv && pv.kind === "image" ? "min(1100px,95vw)" : "min(620px,95vw)";  // room for a figure
   $("pcPreview").innerHTML = !pv ? "" : pv.kind === "cells" ? "" :
+    pv.kind === "image" ? `<img src="/api/proposal/${encodeURIComponent(r.id)}/image" alt="The agent's figure" style="width:100%;border:1px solid var(--line, #ccc)">` :
     `<div style="font-size:13px;margin-bottom:4px"><b>Predicted: ${pv.n_label_changes.toLocaleString()} cells change their label</b></div>` +
     (pv.top_transitions && pv.top_transitions.length ? (() => {
       const reg = pv.top_transitions.some((t) => t.region);  // the region column only when cells sit in drawn regions
@@ -3385,6 +3387,9 @@ async function proposalApplied(r) {
   toast(`Applied: ${r.title}`, 5000);
   if (r.tool === "start_session" && r.session_after) { st.openedThisVisit[r.sample_id] = r.session_after; await loadSamples(r.sample_id); return; }
   if (r.tool === "import_sample") { await loadSamples(st.sample ? st.sample.sample_id : r.sample_id); return; }
+  if ((r.tool === "move_piece" || r.tool === "undo_piece_move") && st.sample && st.sample.sample_id === r.sample_id) {
+    await afterPlacement(); return;  // the piece's cells moved on the image
+  }
   if (r.session_id && r.session_id === st.sid) {
     await refreshVersion(true);
     if (r.tool === "run_niches" || r.tool === "name_niches") await loadNiches(false);

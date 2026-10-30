@@ -21,6 +21,9 @@ Users are biologists and pathologists; keep the conversation in their language a
    Without a registration file the user can ask you to align the image ("Align with Claude"): `alignment_status`,
    `search_alignment`, compare candidates with `show_alignment`, `refine_alignment` the right one, check the
    close-ups (centroids on nuclei), then `apply_alignment`.
+   A torn or folded piece of tissue (cells beside a piece of tissue that holds no cells): the user outlines the
+   piece's cells as a region; `fit_piece(region)` finds its rotation, shift and mirroring; propose it with
+   `move_piece` only when the verdict is "fits" and the yellow cells sit on the piece's nuclei (`undo_piece_move`).
 3. Call `get_vocabulary` once per session and use only those exact cell type, group and region names.
 4. Call `list_rule_suggestions` when resuming a session: reviewers may have left rules in plain words on the
    review page. Go through open ones with the user, turn each into a constraint (or not), then
