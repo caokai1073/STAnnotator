@@ -1,4 +1,4 @@
-"""Command line: stagent {app, make-app, import, import-xenium, samples, viewer, mcp}."""
+"""Command line: stagent {app, make-app, import, import-xenium, import-visium, samples, viewer, mcp}."""
 import argparse, os, platform, shutil, sys
 from pathlib import Path
 from . import config
@@ -80,6 +80,13 @@ def main(argv=None):
     ix.add_argument("--registration", help="the H&E's alignment file (Xenium Explorer) or an affine CSV")
     ix.add_argument("--description", default="")
     ix.add_argument("--overwrite", action="store_true")
+    iv = sub.add_parser("import-visium", help="import a Visium HD (or Visium) Space Ranger output: bins analysed at 8 um")
+    iv.add_argument("--name", required=True, help="sample id used in the viewer and in Claude")
+    iv.add_argument("--path", required=True, help="outs/, binned_outputs/ or one square_XXXum folder (2 um bins are "
+                    "pooled into 8 um; 8 um or more are used as they are; the whole output: its 8 um bins)")
+    iv.add_argument("--he", help="optional full-resolution image Space Ranger was given (else tissue_hires_image.png)")
+    iv.add_argument("--description", default="")
+    iv.add_argument("--overwrite", action="store_true")
     sub.add_parser("samples", help="list imported samples")
     ap_ = sub.add_parser("app", help="start the desktop app (native window)")
     ap_.add_argument("--browser", action="store_true", help="use the default browser instead of a window")
@@ -100,6 +107,9 @@ def main(argv=None):
     elif a.cmd == "import-xenium":
         from .importer import import_xenium
         import_xenium(a.name, a.xenium, a.he, a.registration, a.description, a.overwrite)
+    elif a.cmd == "import-visium":
+        from .importer import import_visium
+        import_visium(a.name, a.path, a.he, a.description, a.overwrite)
     elif a.cmd == "app":
         from .desktop import main as app
         app(["--browser"] if a.browser else [])

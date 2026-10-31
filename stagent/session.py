@@ -370,7 +370,8 @@ class Session:
         if self.scheme["kind"] == "markers":
             lab = self.marker_labels(st, lambda fr, msg: say(0.02 + 0.6 * fr, msg))
             say(0.65, "training expression model on the marker annotation")
-            m = model.train_pseudo(self.counts, lab, len(self.types), progress=lambda fr, msg: say(0.65 + 0.25 * fr, msg))
+            m = model.train_pseudo(self.counts, lab, len(self.types), progress=lambda fr, msg: say(0.65 + 0.25 * fr, msg),
+                                   keep=markers.gene_columns(self.scheme["tree"], self.panel))
         elif self.scheme["kind"] == "existing":
             say(0.3, "training the expression model on the loaded labels")
             m = model.train_pseudo(self.counts, self._existing_training_labels(), len(self.types),

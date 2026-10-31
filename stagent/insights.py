@@ -321,6 +321,9 @@ def registration(s, n_windows=40, window_um=400.0, max_shift_um=25.0):
     error (offsets that grow across the section) that a single shift misses."""
     kind = s.meta.get("image_kind", "H&E")
     from .importer import image_of
+    from . import visium
+    if visium.is_bins(s.meta):
+        return {"error": visium.NO_REGISTRATION_CHECK}
     if not image_of(s.sample_id) or kind == "none":
         return {"error": "no image (or the image is unloaded: Load H&E in the app's Data tab)"}
     sl = render.slide(image_of(s.sample_id))

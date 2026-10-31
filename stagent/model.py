@@ -105,10 +105,26 @@ def _ce(Z, y, w=None):
     return loss, P
 
 
-def _fit(X, y, T, pi_target, extra_X=None, extra_y=None, progress=None, seed=0):
+def _genes(X, keep=None):
+    """The genes the model learns from: all of a panel; for whole-transcriptome data (more than
+    markers.MAX_PCA_GENES genes, e.g. Visium HD) the markers.N_HVG most variable of the training cells
+    (log-normalized) and the genes `keep` (the marker list's), which keeps the training matrix small."""
+    from . import markers
+    if X.shape[1] <= markers.MAX_PCA_GENES:
+        return None
+    mu = np.asarray(X.mean(0)).ravel()
+    var = np.asarray(X.multiply(X).mean(0)).ravel() - mu ** 2
+    return np.array(sorted(set(np.argsort(-var)[:markers.N_HVG].tolist()) | set(keep or [])), np.int64)
+
+
+def _fit(X, y, T, pi_target, extra_X=None, extra_y=None, progress=None, seed=0, genes=None):
     """Core trainer. X: log-normalized CSR, y: class indices; 10% of (X, y) is held out for temperature scaling.
-    pi_target: class distribution to correct the prior back to (training data may be class-capped)."""
+    pi_target: class distribution to correct the prior back to (training data may be class-capped). genes: the
+    columns to learn from (default: _genes); the model keeps them ("genes") and predict() uses only them."""
     from scipy.optimize import minimize_scalar
+    genes = _genes(X) if genes is None else genes
+    if genes is not None:
+        X = X[:, genes]
     rng = np.random.default_rng(seed)
     perm = rng.permutation(len(y))
     n_val = max(min(1000, len(y) // 5), len(y) // 10)
@@ -116,7 +132,8 @@ def _fit(X, y, T, pi_target, extra_X=None, extra_y=None, progress=None, seed=0):
     Xtr, ytr = X[tr], y[tr]
     wtr = np.ones(len(ytr), np.float32)
     if extra_X is not None and len(extra_y):
-        Xtr = sp.vstack([Xtr, lognorm(extra_X)]).tocsr()
+        ex = lognorm(extra_X)
+        Xtr = sp.vstack([Xtr, ex if genes is None else ex[:, genes]]).tocsr()
         ytr = np.concatenate([ytr, np.asarray(extra_y, np.int64)])
         wtr = np.concatenate([wtr, np.full(len(extra_y), CORRECTION_WEIGHT, np.float32)])
     pi_train = np.bincount(ytr, weights=wtr, minlength=T) + 1.0
@@ -149,6 +166,8 @@ def _fit(X, y, T, pi_target, extra_X=None, extra_y=None, progress=None, seed=0):
     lv, yv = _logits(model, X[va]), y[va]
     res = minimize_scalar(lambda lt: _ce(lv / np.exp(lt), yv)[0], bounds=(-4.0, 4.0), method="bounded")
     model["temp"] = float(np.exp(res.x))
+    if genes is not None:
+        model["genes"] = genes
     return model
 
 
@@ -170,12 +189,14 @@ def pseudo_pool(counts, labels, T, seed=0):
     return lognorm(counts[keep]), np.asarray(labels[keep], np.int64), np.bincount(labels[labels >= 0], minlength=T)
 
 
-def train_pseudo(counts, labels, T, progress=None, seed=0):
-    """Marker mode: learn p(type | expression) from marker-annotation pseudo-labels of this sample."""
+def train_pseudo(counts, labels, T, progress=None, seed=0, keep=None):
+    """Marker mode: learn p(type | expression) from marker-annotation pseudo-labels of this sample. keep: columns
+    of genes always used (the marker list's), when the data has more genes than a panel (_genes)."""
     from . import timing
     X, y, natural = pseudo_pool(counts, labels, T, seed)
-    with timing.step("model", len(y) * X.shape[1] * T / 1e12):
-        return _fit(X, y, T, natural, progress=progress, seed=seed)
+    genes = _genes(X, keep)
+    with timing.step("model", len(y) * (X.shape[1] if genes is None else len(genes)) * T / 1e12):
+        return _fit(X, y, T, natural, progress=progress, seed=seed, genes=genes)
 
 
 def finetune(init, extra_X, extra_y, replay_X, replay_y, progress=None, seed=0):
@@ -185,10 +206,12 @@ def finetune(init, extra_X, extra_y, replay_X, replay_y, progress=None, seed=0):
     rng = np.random.default_rng(seed)
     T = len(init["b"])
     mu, sd = init["mu"], init["sd"]
+    g = init.get("genes")
+    sub = (lambda m: m) if g is None else (lambda m: m[:, g])
     W, b = init["W"].astype(np.float32).copy(), init["b"].astype(np.float32).copy()
     W0, b0 = W.copy(), b.copy()
     opt = _Adam([W, b], FT_LR)
-    Xc = (lognorm(extra_X).toarray() - mu) / sd
+    Xc = (sub(lognorm(extra_X)).toarray() - mu) / sd
     yc = np.asarray(extra_y, np.int64)
     before = (Xc @ W.T + b + init["prior_shift"]).argmax(1)  # the classes init actually predicted
     involved = np.zeros(T, bool)
@@ -198,7 +221,7 @@ def finetune(init, extra_X, extra_y, replay_X, replay_y, progress=None, seed=0):
     n_c = len(yc) * CORRECTION_WEIGHT
     for k in range(FT_STEPS):
         rep = rng.choice(len(replay_y), n_rep, replace=False)
-        Xr = (replay_X[rep].toarray() - mu) / sd
+        Xr = (sub(replay_X[rep]).toarray() - mu) / sd
         yr = np.asarray(replay_y[rep], np.int64)
         _, dr = _ce(Xr @ W.T + b, yr)
         _, dc = _ce(Xc @ W.T + b, yc)
@@ -229,9 +252,10 @@ def load(path):
 
 
 def _logits(model, Xn, chunk=65536):
-    out = []
+    out, g = [], model.get("genes")
     for i in range(0, Xn.shape[0], chunk):
-        a = (Xn[i:i + chunk].toarray() - model["mu"]) / model["sd"]
+        part = Xn[i:i + chunk]
+        a = ((part if g is None else part[:, g]).toarray() - model["mu"]) / model["sd"]
         out.append(a @ model["W"].T + model["b"] + model["prior_shift"])
     return np.concatenate(out).astype(np.float32)
 

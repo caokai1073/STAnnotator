@@ -234,12 +234,32 @@ def _topk_numpy(Z, k):
     return nbr
 
 
+MAX_PCA_GENES, N_HVG = 6000, 3000  # above MAX_PCA_GENES genes (whole-transcriptome data such as Visium HD) the PCA
+                                    # uses the N_HVG most variable ones; a panel (Xenium 5K too) uses all its genes
+
+
+def gene_columns(tree, panel):
+    """Columns (in panel order) of the genes a marker tree names, positive or negative."""
+    names = set()
+
+    def walk(nodes):
+        for n in nodes:
+            for m in n.get("markers", []):
+                names.update(g.upper() for g in m["genes"])
+            walk(n.get("children", []))
+    walk(tree or [])
+    return [i for i, g in enumerate(panel) if g.upper() in names]
+
+
 def pca(Xn, n_pcs=None):
     """PCA of standardized genes on the sparse matrix (no dense copy): cell scores (cells x n_pcs, float32)."""
     X = sp.csr_matrix(Xn, dtype=np.float32)
     n = X.shape[0]
     mu = np.asarray(X.mean(0)).ravel()
     ex2 = np.asarray(X.multiply(X).mean(0)).ravel()
+    if X.shape[1] > MAX_PCA_GENES:  # the most variable genes (of the log-normalized values)
+        keep = np.sort(np.argsort(-(ex2 - mu ** 2))[:N_HVG])
+        X, mu, ex2 = X[:, keep], mu[keep], ex2[keep]
     sd = np.sqrt(np.maximum(ex2 - mu ** 2, 0) * n / max(n - 1, 1)) + 1e-3
     cov = ((X.T @ X).toarray() / n - np.outer(mu, mu)) / np.outer(sd, sd)  # covariance of standardized genes
     V = np.linalg.eigh(cov)[1][:, -(n_pcs or N_PCS):] / sd[:, None]  # ascending variance: the last column is PC1

@@ -78,6 +78,9 @@ def windows(sample_id, progress=None, wait_s=300):
     say = progress or (lambda f, m: None)
     m = _meta(sample_id)
     image, kind = image_of(sample_id), m.get("image_kind", "H&E")
+    from . import visium
+    if visium.is_bins(m):
+        raise ValueError(visium.NO_REGISTRATION_CHECK)
     if not image or kind == "none":
         raise ValueError("no image to check against (none, or unloaded: Load H&E in the Data tab)")
     key, f = _key(sample_id, image), _file(sample_id)
@@ -242,7 +245,10 @@ def _window_of_cells(s, w):
 def summary(s, focus=None, version=None, progress=None):
     """What windows() found, for the agent and the review: the affine part, the areas off their nuclei (with the
     structures and regions in them), offsets by structure and by region, and what the correction would do."""
-    w = windows(s.sample_id, progress)
+    try:
+        w = windows(s.sample_id, progress)
+    except ValueError as e:  # no image, or Visium bins
+        return {"error": str(e)}
     if not w["windows"]:
         return {"error": "no window with enough cells on the image"}
     a, mu, coef, aff, res, noise, D = _analyse(w)

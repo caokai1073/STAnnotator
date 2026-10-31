@@ -32,7 +32,7 @@ import hashlib, json, re, shutil, time
 from pathlib import Path
 import h5py, numpy as np, pandas as pd, scipy.sparse as sp
 from scipy.spatial import cKDTree
-from . import config
+from . import config, visium
 
 COORD_COLUMNS = [("x_centroid", "y_centroid"), ("x", "y"), ("center_x", "center_y"), ("x_location", "y_location")]
 DEPTH_MARKERS, DEPTH_MIN_COUNTS, DEPTH_MIN_FRAC, DEPTH_K, DEPTH_CORE = ("EPCAM", "KRT8"), 3, 0.05, 30, 0.3
@@ -322,9 +322,10 @@ def _check_name(name, overwrite):
 
 
 def _write_bundle(name, ids, xy, X, genes, image, A, regions, description, source, progress, image_kind,
-                  registration=None, image_pending=None, pending_kind="H&E"):
+                  registration=None, image_pending=None, pending_kind="H&E", by=None, own_image=False):
     """Map cells onto the background image, check the registration, estimate depth and write the bundle.
-    registration: the affine of a registration file (kept even before there is an image to use it on)."""
+    registration: the affine of a registration file (kept even before there is an image to use it on). by: what
+    placed the cells (registration_by). own_image: the image is a copy made for this sample (moved into its folder)."""
     out = config.SAMPLES / name
     pxy = xy @ A[:, :2].T + A[:, 2]
     if image:
@@ -352,8 +353,12 @@ def _write_bundle(name, ids, xy, X, genes, image, A, regions, description, sourc
         shutil.rmtree(tmp)
     tmp.mkdir(parents=True)
     try:
+        if own_image:  # a unique name: the viewer keeps images open by path
+            dst = f"image_{time.strftime('%Y%m%d-%H%M%S')}.ome.tif"
+            shutil.move(str(image), str(tmp / dst))
+            image = out / dst
         _write_files(tmp, out, name, cells, X, genes, image, A, description, source, image_kind, um_per_px, has_regions,
-                     registration, image_pending, pending_kind)
+                     registration, image_pending, pending_kind, by)
         if out.exists():
             shutil.rmtree(out)
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -366,7 +371,7 @@ def _write_bundle(name, ids, xy, X, genes, image, A, regions, description, sourc
 
 
 def _write_files(d, out, name, cells, X, genes, image, A, description, source, image_kind, um_per_px, has_regions,
-                 registration, image_pending, pending_kind):
+                 registration, image_pending, pending_kind, by=None):
     """The files of a sample bundle, in d (meta.json names out, where the bundle goes)."""
     cells.to_parquet(d / "cells.parquet")
     sp.save_npz(d / "counts.npz", X)
@@ -376,7 +381,7 @@ def _write_files(d, out, name, cells, X, genes, image, A, description, source, i
             "image_kind": image_kind, "bundle_dir": str(out), "has_pathologist_regions": has_regions,
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "source": source, "placement_affine": A.tolist(),
             "registration_affine": None if registration is None else np.asarray(registration).tolist(),
-            "registration_by": "file" if registration is not None else None,
+            "registration_by": by or ("file" if registration is not None else None),
             "image_pending": str(Path(image_pending).resolve()) if image_pending else None,
             "image_pending_kind": pending_kind}
     json.dump(meta, open(d / "meta.json", "w"), indent=1)
@@ -643,6 +648,51 @@ def import_xenium(name, xenium_dir, he=None, registration=None, description="", 
                          {"kind": "xenium", "folder": src["folder"], "registration": str(Path(registration).resolve())
                           if registration else None, **{k: v for k, v in info.items() if k != "folder"}},
                          progress, kind, registration=R, image_pending=he if he and R is None else None)
+
+
+# ---------------- Visium HD / Visium (Space Ranger output): bins instead of cells (visium.py) ----------------
+def inspect_visium(path):
+    return visium.inspect(path)
+
+
+def import_visium(name, path, he=None, description="", overwrite=False, progress=print):
+    """A Space Ranger output (outs/, binned_outputs/ or one square_XXum folder) as a sample whose "cells" are bins:
+    2 um bins pooled into 8 um, 8 um or larger bins (and Visium spots) as they are (visium.py). he: the
+    full-resolution image Space Ranger was given (no registration needed: the bins are in its pixels); without it
+    the output's tissue_hires_image.png. A non-pyramidal image is copied into the sample folder as a pyramid."""
+    name = _check_name(name, overwrite)
+    found = visium.folders(path)
+    d, s = visium.choose(found)
+    progress(f"reading {d}")
+    ids, pxy, genes, X, bin_um, mpp = visium.read(d, s, progress)
+    xy = pxy * mpp  # um
+    sf = visium._scalefactors(d)
+    if he:
+        img_src, A = str(Path(he).expanduser().resolve()), np.array([[1 / mpp, 0, 0], [0, 1 / mpp, 0]])
+        img_upp = mpp
+    else:
+        img_src = str((Path(d) / "spatial" / "tissue_hires_image.png").resolve())
+        if not Path(img_src).exists():
+            raise ValueError(f"no tissue_hires_image.png in {Path(d) / 'spatial'}: give the full-resolution H&E")
+        f = float(sf["tissue_hires_scalef"])
+        A, img_upp = np.array([[f / mpp, 0, 0], [0, f / mpp, 0]]), mpp / f
+        progress("H&E: the output's tissue_hires_image.png (give the full-resolution image for more detail)")
+    stage = config.HOME / "importing" / f".{name}.image.ome.tif"
+    stage.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        image = visium.pyramid(img_src, stage, img_upp, progress)
+        own = image == str(stage)
+        what = "spots" if s is None else f"bins of {bin_um:g} um" + (f" (pooled from {s:g} um)" if s and bin_um != s else "")
+        progress(f"{len(ids):,} {what}, {len(genes):,} genes")
+        return _write_bundle(name, ids, xy, X, genes, image, A, None, description,
+                             {"kind": "visium_hd" if s is not None else "visium", "folder": str(Path(d).resolve()), "bin_um": bin_um,
+                              "source_bin_um": s if s is not None else visium.SPOT_UM, "um_per_fullres_px": mpp,
+                              "image_source": img_src},
+                             progress, "H&E", by="Space Ranger", own_image=own)
+    finally:
+        stage.unlink(missing_ok=True)
+        from .render import _slides
+        _slides.pop(str(stage), None)  # read for its size under this name, which a later import reuses
 
 
 # ---------------- CosMx and MERSCOPE (MERFISH) output: the cells and their counts, without the instrument's images ----

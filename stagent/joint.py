@@ -85,7 +85,8 @@ def _annotate(pid, markers_text, resolution, carry, say, knn, ids, off, counts, 
     index = {t: i for i, t in enumerate(types)}
     lab = np.array([index.get(x, -1) for x in res["labels"]], np.int64)
     say(0.55, "training one expression model on all slices")
-    m = model.train_pseudo(counts, lab, len(types), progress=lambda f, msg: say(0.55 + 0.25 * f, msg))
+    m = model.train_pseudo(counts, lab, len(types), progress=lambda f, msg: say(0.55 + 0.25 * f, msg),
+                           keep=markers.gene_columns(parsed["tree"], panel))
     run = time.strftime("%Y%m%d-%H%M%S")
     out = {}
     for i, sid in enumerate(ids):

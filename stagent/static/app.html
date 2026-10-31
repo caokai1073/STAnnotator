@@ -743,7 +743,13 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <label title="The files of a Xenium output (or its folder)"><input type="radio" name="imKind" value="xenium" checked> Xenium</label>
       <label title="CosMx (AtoMx export): the expression matrix and cell metadata files of a slide, or their folder"><input type="radio" name="imKind" value="cosmx"> CosMx</label>
       <label title="MERFISH (Vizgen MERSCOPE output): cell_by_gene.csv and cell_metadata.csv of a region, or its folder"><input type="radio" name="imKind" value="merfish"> MERFISH</label>
+      <label title="Visium HD or Visium (Space Ranger output): bins instead of cells; 2 µm bins are pooled into 8 µm"><input type="radio" name="imKind" value="visium"> Visium HD</label>
       <label title="AnnData (.h5ad), or an R file (.rds / .rda) with a Seurat or SpatialExperiment object"><input type="radio" name="imKind" value="h5ad"> h5ad / RDS</label>
+    </div>
+    <div id="imV" hidden>
+      <div class="frow"><span>Space Ranger output <b class="req" title="required">*</b></span><textarea id="imVDir" class="fin" rows="1" placeholder="the outs/ folder, binned_outputs/, or one square_002um / square_008um / square_016um folder"></textarea><button data-pick="folder" data-target="imVDir">Choose…</button></div>
+      <div class="hint" style="margin-left:138px">The analyses run on bins as on cells, at 8 µm: 2 µm bins are pooled into 8 µm bins; bins of 8 µm or more (16 µm, Visium spots) are used as they are. Given the whole output, its 8 µm bins are used. Space Ranger's alignment places the bins on the image: no registration needed.</div>
+      <div class="hint" id="imVinfo" style="margin-left:138px;white-space:pre-line"></div>
     </div>
     <div id="imF" hidden>
       <div class="frow"><span>Counts <b class="req" title="required">*</b></span><textarea id="imFCounts" class="fin" rows="1"></textarea><button data-pick="flat" data-target="imFCounts">Choose…</button></div>
@@ -774,7 +780,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <span class="hint" id="imNoImgHint"></span></span><span></span></div>
     <div class="frow" id="imImgRow" hidden><span></span><textarea id="imNewImg" rows="1" placeholder="the registered H&amp;E: pyramidal TIFF / OME-TIFF; for several slices one per line, each file name holding its section"></textarea><button data-pick="image" data-multi="1" data-target="imNewImg">Choose…</button></div>
     <div class="frow" id="imImgKindRow" hidden><span>Image kind</span><select id="imNewImgKind" title="h5ad / RDS: a DAPI or fluorescence image can stand in for the H&amp;E"><option value="H&amp;E">H&amp;E</option><option value="DAPI">DAPI / fluorescence instead</option></select><span></span></div>
-    <div class="frow"><span>Registration<small class="opt">optional</small></span><span class="choice">
+    <div class="frow" id="imRegModeRow"><span>Registration<small class="opt">optional</small></span><span class="choice">
       <label><input type="radio" name="imRegMode" value="file"> Registration file</label>
       <label><input type="radio" name="imRegMode" value="none" checked> No registration</label>
       <button id="imNewAlign" disabled title="Choose an image first">Align with Agent</button></span><span></span></div>
@@ -1210,7 +1216,7 @@ async function loadSamples(select, project) {
 }
 function fillSampleSelect() {  // the slices of each project, then the samples on their own
   const sel = $("sample"), keep = sel.value; sel.textContent = "";
-  const label = (s) => [s.name || s.sample_id, s.description || [s.disease, s.location].filter(Boolean).join(" · "), `${s.n_cells.toLocaleString()} cells`].filter(Boolean).join(" · ");
+  const label = (s) => [s.name || s.sample_id, s.description || [s.disease, s.location].filter(Boolean).join(" · "), `${s.n_cells.toLocaleString()} ${s.unit || "cells"}`].filter(Boolean).join(" · ");
   const inProject = new Set();
   st.projects.forEach((p) => {  // the slices of a project together, with what distinguishes them
     const g = document.createElement("optgroup"); g.label = `project ${p.name} (${p.samples.length} slices)`;
@@ -1219,7 +1225,7 @@ function fillSampleSelect() {  // the slices of each project, then the samples o
       inProject.add(id);
       const o = document.createElement("option"); o.value = id;
       const md = metaText(s.metadata);
-      o.textContent = [p.slices[id] ? p.slices[id].section : id, md, `${s.n_cells.toLocaleString()} cells`].filter(Boolean).join(" · ");
+      o.textContent = [p.slices[id] ? p.slices[id].section : id, md, `${s.n_cells.toLocaleString()} ${s.unit || "cells"}`].filter(Boolean).join(" · ");
       g.append(o);
     });
     sel.append(g);
@@ -1825,7 +1831,8 @@ async function refreshVersion(force) {
   const sm = info.summary;
   st.lastSummary = sm;
   const how = { markers: "Marker genes", scref: "Single-cell reference", existing: "Loaded annotation" }[st.vocab && st.vocab.method] || "Annotation";
-  if (st.placeholder) $("ainfo").textContent = "Not annotated yet: draw regions and check the registration (Agent Review); they stay when you Annotate";
+  if (st.placeholder) $("ainfo").textContent = st.sample && st.sample.unit === "bins" ? "Not annotated yet: draw regions; they stay when you Annotate"
+    : "Not annotated yet: draw regions and check the registration (Agent Review); they stay when you Annotate";
   else $("ainfo").textContent = [`${how} · version ${v}`, sm.constraints.length ? `${sm.constraints.length} priors` : "",
     sm.corrections.length ? `${sm.corrections.length} corrections` : "", sm.n_conflicts ? `${sm.n_conflicts} conflicts` : ""].filter(Boolean).join(" · ");
   fillModes(sm);
@@ -2918,6 +2925,7 @@ const flatField = (id) => $(id).value.split("\n").map((x) => x.trim()).filter(Bo
 const isFlat = () => ["cosmx", "merfish"].includes(imKind());
 document.querySelectorAll("input[name=imKind]").forEach((r) => (r.onchange = () => {
   $("imX").hidden = imKind() !== "xenium"; $("imH").hidden = imKind() !== "h5ad"; $("imF").hidden = !isFlat();
+  $("imV").hidden = imKind() !== "visium";
   imDefaultName("");  // the default name comes from this kind's files
   if (isFlat()) {
     $("imFhelp").textContent = FLAT_HELP[imKind()] + " Several slides or regions: import them one after the other.";
@@ -2951,6 +2959,25 @@ async function inspectFlat() {  // what the two files hold
   } catch (e) { $("imFinfo").textContent = e.message; }
   imSections();
 }
+async function inspectVisium() {  // which bins the Space Ranger output holds and how they will be analysed
+  const dir = $("imVDir").value.trim(), key = dir;
+  st.imVSlices = null;
+  if (!dir) { $("imVinfo").textContent = ""; return; }
+  $("imVinfo").textContent = "checking…";
+  try {
+    const x = (await post("/api/import/inspect", { kind: "visium", entries: [dir] })).slices[0];
+    if ($("imVDir").value.trim() !== key) return;  // edited meanwhile
+    st.imVSlices = [x];
+    const what = x.visium_spots ? "Visium spots (55 µm)" : `bins of ${x.bin_um} µm`;
+    $("imVinfo").textContent = `${x.folder}\n${(x.n_bins || 0).toLocaleString()} ${what} under the tissue · ${(x.n_genes || 0).toLocaleString()} genes` +
+      (x.found_um && x.found_um.length > 1 ? ` (the output also has ${x.found_um.filter((u) => u !== x.bin_um).map((u) => `${u} µm`).join(", ")})` : "") +
+      `\nAnalysed as ${x.analysis_um !== x.bin_um ? `${x.analysis_um} µm bins (pooled, about ${(x.n_analysis_bins_about || 0).toLocaleString()})` : x.visium_spots ? "spots" : `${x.bin_um} µm bins`}` +
+      ` · background without an H&E file: the output's tissue_hires_image.png`;
+    imDefaultName(baseName(x.key));
+  } catch (e) { $("imVinfo").textContent = e.message; }
+}
+$("imVDir").onchange = () => (st.imVPending = inspectVisium());
+$("imVDir").oninput = soon(() => (st.imVPending = inspectVisium()));
 ["imFCounts", "imFCells"].forEach((id) => {
   $(id).onchange = () => (st.imFPending = inspectFlat());
   $(id).oninput = soon(() => (st.imFPending = inspectFlat()));
@@ -3072,14 +3099,19 @@ const regMode = () => document.querySelector("input[name=imRegMode]:checked").va
 function imForm() {  // show the fields of the chosen options; Align with Claude needs an image and no registration file
   imPairs();
   $("imImgRow").hidden = imgMode() !== "file";
-  $("imImgKindRow").hidden = imgMode() !== "file" || imKind() === "xenium";  // Xenium has its own DAPI field
+  $("imImgKindRow").hidden = imgMode() !== "file" || ["xenium", "visium"].includes(imKind());  // Xenium has its own DAPI field
+  const vis = imKind() === "visium";
+  $("imRegModeRow").hidden = vis;  // Space Ranger's alignment places the bins on its image
   if (imKind() === "xenium") $("imNewImgKind").value = "H&E";
-  $("imRegRow").hidden = $("imRegSecRow").hidden = regMode() !== "file";
+  $("imRegRow").hidden = $("imRegSecRow").hidden = vis || regMode() !== "file";
+  $("imNewImg").placeholder = vis ? "the full-resolution image Space Ranger was given (.btf / .tif): no registration needed; a copy with zoom levels is made when it has none"
+    : "the registered H&E: pyramidal TIFF / OME-TIFF; for several slices one per line, each file name holding its section";
   setTimeout(autoGrowAll);  // rows just shown
-  $("imNoImgHint").textContent = imgMode() === "none" ? (imKind() === "xenium" ? "the DAPI image is shown when given, else a blank background" : "cells on a blank background") : "";
+  $("imNoImgHint").textContent = imgMode() === "none" ? (imKind() === "xenium" ? "the DAPI image is shown when given, else a blank background"
+    : vis ? "the output's tissue_hires_image.png (about 1 µm per pixel)" : "cells on a blank background") : "";
   $("imNewReg").placeholder = isFlat() ? "affine CSV (a11,a12,a21,a22,tx,ty): cell µm to H&E pixels"
     : "affine CSV (a11,a12,a21,a22,tx,ty) or Xenium Explorer alignment (3x3)";
-  const can = imgMode() === "file" && $("imNewImg").value.trim() && regMode() === "none";
+  const can = !vis && imgMode() === "file" && $("imNewImg").value.trim() && regMode() === "none";
   $("imNewAlign").disabled = !can;
   $("imNewAlign").title = can ? "Import, then let the agent align the image with the cells"
     : imgMode() !== "file" || !$("imNewImg").value.trim() ? "Choose an image first" : "Choose No registration to align with the agent";
@@ -3150,6 +3182,7 @@ function alignBar() {  // an image waits for its alignment
 async function importSample() {  // returns true when the sample was imported
   if (imKind() === "xenium" && st.imXPending) await st.imXPending;  // the fields were just edited: their check first
   if (isFlat() && st.imFPending) await st.imFPending;
+  if (imKind() === "visium" && st.imVPending) await st.imVPending;
   const kind = imKind(), name = $("imName").value.trim() || st.imDefault || "";
   const images = imgMode() === "file" ? $("imNewImg").value.split("\n").map((s) => s.trim()).filter(Boolean) : [];
   const image = images.length > 1 ? images : (images[0] || "");
@@ -3157,6 +3190,7 @@ async function importSample() {  // returns true when the sample was imported
   const registration = regs.length > 1 ? regs : (regs[0] || "");
   const body = kind === "xenium"
     ? { kind, name, folders: xeniumEntries(), description: $("imDesc").value }
+    : kind === "visium" ? { kind, name, folders: [$("imVDir").value.trim()], description: $("imDesc").value }
     : isFlat() ? { kind, name, folders: flatEntries() || [], description: $("imDesc").value }
     : { kind, name, h5ad: $("imH5").value.split("\n").map((s) => s.trim()).filter(Boolean),
         section_column: $("imSecCol").value, sections: $("imSecCol").value ? chosenSections() : [],
@@ -3169,7 +3203,9 @@ async function importSample() {  // returns true when the sample was imported
   if (imgMode() === "file" && !images.length) { $("imStatus").textContent = "Choose the H&E file, or No H&E"; return false; }
   if (kind === "xenium" && !(st.imXSlices || []).length) { $("imStatus").textContent = "Give the cells and counts files; check the message under the fields"; return false; }
   if (isFlat() && !(st.imFSlices || []).length) { $("imStatus").textContent = "Give the counts and the cell metadata file; check the message under the fields"; return false; }
-  const nSlices = kind === "h5ad" ? body.sections.length : (isFlat() ? st.imFSlices : st.imXSlices).length;
+  if (kind === "visium" && !(st.imVSlices || []).length) { $("imStatus").textContent = "Choose the Space Ranger output folder; check the message under the field"; return false; }
+  if (kind === "visium") body.registration = "";  // Space Ranger placed the bins
+  const nSlices = kind === "h5ad" ? body.sections.length : kind === "visium" ? 1 : (isFlat() ? st.imFSlices : st.imXSlices).length;
   if (images.length > 1 && nSlices < 2) { $("imStatus").textContent = "One image per sample (several images are for several slices)"; return false; }
   if (regMode() === "file" && !registration) { $("imStatus").textContent = "Choose the registration file, or No registration"; return false; }
   if (regs.length > 1 && nSlices < 2) { $("imStatus").textContent = "One registration file per sample (several are for several slices)"; return false; }
@@ -3425,7 +3461,7 @@ async function proposalApplied(r) {
   $("pcDlg").close();
   toast(`Applied: ${r.title}`, 5000);
   if (r.tool === "start_session" && r.session_after) { st.openedThisVisit[r.sample_id] = r.session_after; await loadSamples(r.sample_id); return; }
-  if (r.tool === "import_sample") { await loadSamples(st.sample ? st.sample.sample_id : r.sample_id); return; }
+  if (["import_sample", "import_visium", "import_cosmx_merfish"].includes(r.tool)) { await loadSamples(st.sample ? st.sample.sample_id : r.sample_id); return; }
   if ((r.tool === "move_piece" || r.tool === "undo_piece_move") && st.sample && st.sample.sample_id === r.sample_id) {
     await afterPlacement(); return;  // the piece's cells moved on the image
   }
@@ -4776,7 +4812,7 @@ function sampleInfo() {  // the Data tab's card: what the open sample is
     : s.image_unloaded ? `${s.image_kind} unloaded` : s.image_kind;
   heStateBtn();
   const filt = s.filter ? `filtered (${s.filter.n_cells_removed.toLocaleString()} cells, ${s.filter.n_genes_removed} genes removed)` : "";
-  $("sampleInfo").textContent = [`${s.n_cells.toLocaleString()} cells`, img, filt, s.description].filter(Boolean).join(" · ");
+  $("sampleInfo").textContent = [`${s.n_cells.toLocaleString()} ${s.unit === "bins" ? "bins (Visium HD)" : "cells"}`, img, filt, s.description].filter(Boolean).join(" · ");
 }
 function showTab(name) {
   document.querySelectorAll("#tabs .tab").forEach((t) => { t.classList.toggle("on", t.dataset.tab === name); t.setAttribute("aria-selected", t.dataset.tab === name); });

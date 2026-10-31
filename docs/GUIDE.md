@@ -13,6 +13,19 @@ Click **Import…** in the app (or use the commands below): the cells, then **No
 | H&E image | the H&E as a pyramidal TIFF / OME-TIFF, or **No H&E** (Xenium: the DAPI image of its own field is shown then; h5ad / RDS: a DAPI or fluorescence image can stand in for the H&E, **Image kind**). |
 | registration | an affine CSV with columns `a11,a12,a21,a22,tx,ty` (`px = a11*x + a12*y + tx`, `py = a21*x + a22*y + ty`; cell um to image full-resolution pixels; with one row per section, the row of the chosen section) or a Xenium Explorer alignment matrix (3x3 CSV, image pixels to morphology pixels); or **No registration**. |
 
+**Visium HD** (and Visium) take the Space Ranger output instead: choose `outs/`, `binned_outputs/` or one
+`square_XXXum` folder. Its bins (or spots) take the place of cells, and every analysis runs on them as on cells, at
+8 um: 2 um bins are pooled into 8 um bins (counts summed by grid position; on the mouse small intestine example the
+pooled bins match Space Ranger's own 8 um bins, the same counts for 95% of them), 8 um bins and larger ones (16 um,
+Visium's 55 um spots) are used as they are; given the whole output, its 8 um bins are used. Space Ranger's alignment
+places the bins on its image, so no registration is needed: **H&E file** is the full-resolution image Space Ranger
+was given (a copy with zoom levels is made in the sample's folder when it has none), and without it the output's
+`tissue_hires_image.png` (about 1 um per pixel) is shown. With the whole transcriptome (some 19,000 genes) the PCA uses
+the 3,000 most variable genes and the expression model those and the marker list's genes (a panel keeps all its
+genes, Xenium 5K included). On the mouse small intestine (351,786 bins of 8 um) the import took 31 s (50 s from
+2 um bins), the marker annotation 131 s (5.5 GB of memory), PCA + UMAP 74 s. The nuclei-based registration check of
+Agent Review does not apply to bins. From the command line: `stagent import-visium --name si --path outs/ [--he image.btf]`.
+
 The folded part at the bottom of the dialog, **Already imported: change the image or registration**, is for the sample
 already open: add or replace its image, give it a registration file, align it with the agent, or undo an alignment.
 Until the image is registered the cells are shown on a blank background (or the DAPI) with a yellow bar over the
