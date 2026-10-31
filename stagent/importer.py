@@ -651,20 +651,40 @@ def import_xenium(name, xenium_dir, he=None, registration=None, description="", 
 
 
 # ---------------- Visium HD / Visium (Space Ranger output): bins instead of cells (visium.py) ----------------
-def inspect_visium(path):
-    return visium.inspect(path)
+def inspect_visium(path, segmentation=None):
+    return visium.inspect(path, segmentation)
 
 
-def import_visium(name, path, he=None, description="", overwrite=False, progress=print):
-    """A Space Ranger output (outs/, binned_outputs/ or one square_XXum folder) as a sample whose "cells" are bins:
-    2 um bins pooled into 8 um, 8 um or larger bins (and Visium spots) as they are (visium.py). he: the
-    full-resolution image Space Ranger was given (no registration needed: the bins are in its pixels); without it
+def import_visium(name, path, he=None, description="", overwrite=False, progress=print, segmentation=None, unit="auto"):
+    """A Space Ranger output (outs/, binned_outputs/ or one square_XXum folder) as a sample (visium.py). unit
+    "cells" (the default when there are cell outlines: Space Ranger 4's segmented_outputs/cell_segmentations.geojson,
+    found by itself, or `segmentation`, a GeoJSON of outlines in full-resolution pixels): the 2 um bins split between
+    the cells by area; "bins": 2 um bins pooled into 8 um, 8 um or larger bins (and Visium spots) as they are. he:
+    the full-resolution image Space Ranger was given (no registration needed: the bins are in its pixels); without it
     the output's tissue_hires_image.png. A non-pyramidal image is copied into the sample folder as a pyramid."""
     name = _check_name(name, overwrite)
     found = visium.folders(path)
-    d, s = visium.choose(found)
-    progress(f"reading {d}")
-    ids, pxy, genes, X, bin_um, mpp = visium.read(d, s, progress)
+    seg = str(Path(segmentation).expanduser().resolve()) if segmentation else visium.find_segmentation(path)
+    if unit == "cells" and not seg:
+        raise ValueError("no cell outlines: give a segmentation (GeoJSON), or import bins")
+    has_fine = any(fs and fs <= 4 for _, fs in found)
+    if unit == "cells" and not has_fine:
+        raise ValueError("cells from outlines need the 2 um bins (binned_outputs/square_002um)")
+    cells = unit != "bins" and seg is not None and has_fine
+    if seg and not has_fine and unit == "auto":
+        progress("cell outlines found, but not the 2 um bins they are built from: bins are the unit")
+    if cells:
+        d, s = visium.fine_bins(found)
+        progress(f"cells from the outlines {seg}, built from {d}")
+        ids, pxy, genes, X, cinfo = visium.read_cells(d, s, seg, progress)
+        bin_um, mpp = visium.scale(d, s)
+    else:
+        d, s = visium.choose(found)
+        if unit == "auto":
+            progress("no cell outlines found (segmented_outputs/cell_segmentations.geojson): bins are the unit")
+        progress(f"reading {d}")
+        ids, pxy, genes, X, bin_um, mpp = visium.read(d, s, progress)
+        cinfo = None
     xy = pxy * mpp  # um
     sf = visium._scalefactors(d)
     if he:
@@ -682,12 +702,15 @@ def import_visium(name, path, he=None, description="", overwrite=False, progress
     try:
         image = visium.pyramid(img_src, stage, img_upp, progress)
         own = image == str(stage)
-        what = "spots" if s is None else f"bins of {bin_um:g} um" + (f" (pooled from {s:g} um)" if s and bin_um != s else "")
+        what = ("cells" if cells else "spots" if s is None else
+                f"bins of {bin_um:g} um" + (f" (pooled from {s:g} um)" if s and bin_um != s else ""))
         progress(f"{len(ids):,} {what}, {len(genes):,} genes")
-        return _write_bundle(name, ids, xy, X, genes, image, A, None, description,
-                             {"kind": "visium_hd" if s is not None else "visium", "folder": str(Path(d).resolve()), "bin_um": bin_um,
-                              "source_bin_um": s if s is not None else visium.SPOT_UM, "um_per_fullres_px": mpp,
-                              "image_source": img_src},
+        src = {"kind": "visium_hd" if s is not None else "visium", "folder": str(Path(d).resolve()),
+               "unit": "cells" if cells else "bins", "bin_um": None if cells else bin_um,
+               "source_bin_um": s if s is not None else visium.SPOT_UM, "um_per_fullres_px": mpp, "image_source": img_src}
+        if cells:
+            src |= {"segmentation": seg, "cells_from_bins": cinfo}
+        return _write_bundle(name, ids, xy, X, genes, image, A, None, description, src,
                              progress, "H&E", by="Space Ranger", own_image=own)
     finally:
         stage.unlink(missing_ok=True)

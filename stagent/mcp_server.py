@@ -17,7 +17,8 @@ computer. The tools compute every result; never invent cell types, regions, numb
 Getting started
 - list_samples. If the sample is not there: CosMx or MERFISH (MERSCOPE) output goes in with import_cosmx_merfish (its
   flat files or folders, optionally the user's H&E and registration); a Visium HD / Visium Space Ranger output with
-  import_visium (bins instead of cells, analysed at 8 um; no registration needed). Otherwise ask for: the h5ad file(s) or an R file (.rds / .rda with a Seurat or
+  import_visium (cells from cell outlines when there are, the 2 um bins split by area; else bins at 8 um; no
+  registration needed). Otherwise ask for: the h5ad file(s) or an R file (.rds / .rda with a Seurat or
   SpatialExperiment object; read without R) (raw counts, cell coordinates in um), the
   registered H&E image, and the registration file (affine CSV or Xenium Explorer matrix); for an h5ad holding several
   sections also the obs column and value of the section. Then call import_sample with those paths.
@@ -526,9 +527,12 @@ def _d_resolve_rule_suggestion(a):
 
 def _d_import_visium(a):
     from . import importer
-    x = importer.inspect_visium(a["path"])
+    x = importer.inspect_visium(a["path"], a.get("segmentation"))
+    cells = a.get("unit", "auto") != "bins" and x.get("segmentation") and x.get("fine_bins")
     what = "Visium spots" if x["visium_spots"] else f"{x['bin_um']:g} um bins"
-    how = (f"pooled into {x['analysis_um']:g} um bins (about {x.get('n_analysis_bins_about') or 0:,})"
+    how = (f"cells from the outlines {x['segmentation']} (about {x.get('n_outlines_about') or 0:,}), the 2 um bins split "
+           "between them by area" if cells else
+           f"pooled into {x['analysis_um']:g} um bins (about {x.get('n_analysis_bins_about') or 0:,})"
            if x["analysis_um"] != x["bin_um"] else "used as they are")
     return {"title": f"Import a new sample {a['name']} (Visium HD)", "session_id": None, "sample_id": a["name"],
             "details": [f"{x['folder']}: {x.get('n_bins', 0):,} {what} under the tissue, {x.get('n_genes', 0):,} genes; {how}",
@@ -538,18 +542,22 @@ def _d_import_visium(a):
 
 @mcp.tool()
 @_reviewed(_d_import_visium)
-def import_visium(name: str, path: str, he: Optional[str] = None, description: str = "") -> str:
-    """Import a Visium HD (or Visium) Space Ranger output as a sample whose 'cells' are bins: path = outs/,
-    binned_outputs/ or one square_XXXum folder (the whole output: its 8 um bins). The analyses run at 8 um: 2 um
-    bins are pooled into 8 um, bins of 8 um or more (16 um, Visium spots) are used as they are. he: the
+def import_visium(name: str, path: str, he: Optional[str] = None, description: str = "",
+                  segmentation: Optional[str] = None, unit: str = "auto") -> str:
+    """Import a Visium HD (or Visium) Space Ranger output: path = outs/, binned_outputs/ or one square_XXXum folder.
+    With cell outlines (Space Ranger 4's segmented_outputs/cell_segmentations.geojson, found by itself, or
+    segmentation = a GeoJSON of outlines in full-resolution pixels) the cells are the unit (unit "auto" or "cells"):
+    the 2 um bins are split between the cells by area. Otherwise (or unit "bins") the bins are the unit at 8 um: 2 um
+    bins pooled into 8 um, bins of 8 um or more (16 um, Visium spots) used as they are. he: the
     full-resolution image Space Ranger was given (no registration needed); without it, the output's
     tissue_hires_image.png. Whole-transcriptome data: the PCA and the expression model use the 3,000 most variable
     genes (plus the marker list's). The nuclei-based registration check does not apply to bins."""
     from . import importer
     log = []
-    meta = importer.import_visium(name, path, he=he, description=description, progress=log.append)
-    return _j({"imported": meta["sample_id"], "n_bins": meta["n_cells"], "n_genes": meta["n_genes"],
-               "bin_um": meta["source"]["bin_um"], "log": log[-12:]})
+    meta = importer.import_visium(name, path, he=he, description=description, progress=log.append,
+                                  segmentation=segmentation, unit=unit)
+    return _j({"imported": meta["sample_id"], "unit": meta["source"]["unit"], "n": meta["n_cells"],
+               "n_genes": meta["n_genes"], "bin_um": meta["source"]["bin_um"], "log": log[-12:]})
 
 
 # ---------------- data and viewer ----------------

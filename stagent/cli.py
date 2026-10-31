@@ -80,11 +80,16 @@ def main(argv=None):
     ix.add_argument("--registration", help="the H&E's alignment file (Xenium Explorer) or an affine CSV")
     ix.add_argument("--description", default="")
     ix.add_argument("--overwrite", action="store_true")
-    iv = sub.add_parser("import-visium", help="import a Visium HD (or Visium) Space Ranger output: bins analysed at 8 um")
+    iv = sub.add_parser("import-visium", help="import a Visium HD (or Visium) Space Ranger output: cells from the cell "
+                        "outlines (2 um bins split by area), or bins at 8 um")
     iv.add_argument("--name", required=True, help="sample id used in the viewer and in Claude")
     iv.add_argument("--path", required=True, help="outs/, binned_outputs/ or one square_XXXum folder (2 um bins are "
                     "pooled into 8 um; 8 um or more are used as they are; the whole output: its 8 um bins)")
     iv.add_argument("--he", help="optional full-resolution image Space Ranger was given (else tissue_hires_image.png)")
+    iv.add_argument("--segmentation", help="GeoJSON of cell outlines in full-resolution pixels (default: Space Ranger 4's "
+                    "segmented_outputs/cell_segmentations.geojson when there is one)")
+    iv.add_argument("--unit", choices=["auto", "cells", "bins"], default="auto",
+                    help="cells from the outlines (the default when there are outlines) or bins")
     iv.add_argument("--description", default="")
     iv.add_argument("--overwrite", action="store_true")
     sub.add_parser("samples", help="list imported samples")
@@ -109,7 +114,7 @@ def main(argv=None):
         import_xenium(a.name, a.xenium, a.he, a.registration, a.description, a.overwrite)
     elif a.cmd == "import-visium":
         from .importer import import_visium
-        import_visium(a.name, a.path, a.he, a.description, a.overwrite)
+        import_visium(a.name, a.path, a.he, a.description, a.overwrite, segmentation=a.segmentation, unit=a.unit)
     elif a.cmd == "app":
         from .desktop import main as app
         app(["--browser"] if a.browser else [])

@@ -748,7 +748,11 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     </div>
     <div id="imV" hidden>
       <div class="frow"><span>Space Ranger output <b class="req" title="required">*</b></span><textarea id="imVDir" class="fin" rows="1" placeholder="the outs/ folder, binned_outputs/, or one square_002um / square_008um / square_016um folder"></textarea><button data-pick="folder" data-target="imVDir">Choose…</button></div>
-      <div class="hint" style="margin-left:138px">The analyses run on bins as on cells, at 8 µm: 2 µm bins are pooled into 8 µm bins; bins of 8 µm or more (16 µm, Visium spots) are used as they are. Given the whole output, its 8 µm bins are used. Space Ranger's alignment places the bins on the image: no registration needed.</div>
+      <div class="frow"><span>Cell outlines<small class="opt">optional</small></span><textarea id="imVSeg" class="fin" rows="1" placeholder="found by itself: Space Ranger 4's segmented_outputs/cell_segmentations.geojson; or a GeoJSON of outlines (QuPath, StarDist, Cellpose) in the full-resolution image's pixels"></textarea><button data-pick="geojson" data-target="imVSeg">Choose…</button></div>
+      <div class="frow"><span>Unit</span><span class="choice">
+        <label title="The 2 µm bins are split between the cells by area: a bin across two cells gives each its share"><input type="radio" name="imVUnit" value="cells" checked> Cells from the outlines</label>
+        <label title="2 µm bins pooled into 8 µm; 8 µm or larger bins used as they are"><input type="radio" name="imVUnit" value="bins"> 8 µm bins</label></span><span></span></div>
+      <div class="hint" style="margin-left:138px">With cell outlines the cells are the unit: every 2 µm bin is split between the cells it overlaps, by area (each count goes to a cell with the probability of its share; the part outside every cell is left out). Without outlines, or with 8 µm bins chosen, the bins are the unit at 8 µm: 2 µm bins pooled, 8 µm or larger (16 µm, Visium spots) as they are. Space Ranger's alignment places everything on the image: no registration needed.</div>
       <div class="hint" id="imVinfo" style="margin-left:138px;white-space:pre-line"></div>
     </div>
     <div id="imF" hidden>
@@ -1831,7 +1835,7 @@ async function refreshVersion(force) {
   const sm = info.summary;
   st.lastSummary = sm;
   const how = { markers: "Marker genes", scref: "Single-cell reference", existing: "Loaded annotation" }[st.vocab && st.vocab.method] || "Annotation";
-  if (st.placeholder) $("ainfo").textContent = st.sample && st.sample.unit === "bins" ? "Not annotated yet: draw regions; they stay when you Annotate"
+  if (st.placeholder) $("ainfo").textContent = st.sample && st.sample.spaceranger ? "Not annotated yet: draw regions; they stay when you Annotate"
     : "Not annotated yet: draw regions and check the registration (Agent Review); they stay when you Annotate";
   else $("ainfo").textContent = [`${how} · version ${v}`, sm.constraints.length ? `${sm.constraints.length} priors` : "",
     sm.corrections.length ? `${sm.corrections.length} corrections` : "", sm.n_conflicts ? `${sm.n_conflicts} conflicts` : ""].filter(Boolean).join(" · ");
@@ -2965,18 +2969,23 @@ async function inspectVisium() {  // which bins the Space Ranger output holds an
   if (!dir) { $("imVinfo").textContent = ""; return; }
   $("imVinfo").textContent = "checking…";
   try {
-    const x = (await post("/api/import/inspect", { kind: "visium", entries: [dir] })).slices[0];
+    const x = (await post("/api/import/inspect", { kind: "visium", entries: [dir], segmentation: $("imVSeg").value.trim() })).slices[0];
     if ($("imVDir").value.trim() !== key) return;  // edited meanwhile
     st.imVSlices = [x];
     const what = x.visium_spots ? "Visium spots (55 µm)" : `bins of ${x.bin_um} µm`;
-    $("imVinfo").textContent = `${x.folder}\n${(x.n_bins || 0).toLocaleString()} ${what} under the tissue · ${(x.n_genes || 0).toLocaleString()} genes` +
-      (x.found_um && x.found_um.length > 1 ? ` (the output also has ${x.found_um.filter((u) => u !== x.bin_um).map((u) => `${u} µm`).join(", ")})` : "") +
-      `\nAnalysed as ${x.analysis_um !== x.bin_um ? `${x.analysis_um} µm bins (pooled, about ${(x.n_analysis_bins_about || 0).toLocaleString()})` : x.visium_spots ? "spots" : `${x.bin_um} µm bins`}` +
-      ` · background without an H&E file: the output's tissue_hires_image.png`;
+    const canCells = !!(x.segmentation && x.fine_bins);
+    const bins = `${x.analysis_um !== x.bin_um ? `${x.analysis_um} µm bins (pooled from ${x.bin_um} µm, about ${(x.n_analysis_bins_about || 0).toLocaleString()})`
+      : `${(x.n_bins || 0).toLocaleString()} ${what}`} under the tissue · ${(x.n_genes || 0).toLocaleString()} genes`;
+    $("imVinfo").textContent = (canCells
+      ? `Cells: about ${(x.n_outlines_about || 0).toLocaleString()} outlines in ${x.segmentation}, built from the 2 µm bins (${x.fine_bins})\nOr bins: ${bins}`
+      : `Bins: ${bins} (${x.folder})\n` + (x.segmentation ? "Cell outlines found, but not the 2 µm bins they are built from" : "No cell outlines found: give a GeoJSON of outlines for cells"))
+      + "\nBackground without an H&E file: the output's tissue_hires_image.png";
+    document.querySelector("input[name=imVUnit][value=cells]").disabled = !canCells;
+    document.querySelector(`input[name=imVUnit][value=${canCells ? "cells" : "bins"}]`).checked = true;
     imDefaultName(baseName(x.key));
   } catch (e) { $("imVinfo").textContent = e.message; }
 }
-$("imVDir").onchange = () => (st.imVPending = inspectVisium());
+$("imVDir").onchange = $("imVSeg").onchange = () => (st.imVPending = inspectVisium());
 $("imVDir").oninput = soon(() => (st.imVPending = inspectVisium()));
 ["imFCounts", "imFCells"].forEach((id) => {
   $(id).onchange = () => (st.imFPending = inspectFlat());
@@ -3190,7 +3199,8 @@ async function importSample() {  // returns true when the sample was imported
   const registration = regs.length > 1 ? regs : (regs[0] || "");
   const body = kind === "xenium"
     ? { kind, name, folders: xeniumEntries(), description: $("imDesc").value }
-    : kind === "visium" ? { kind, name, folders: [$("imVDir").value.trim()], description: $("imDesc").value }
+    : kind === "visium" ? { kind, name, folders: [$("imVDir").value.trim()], description: $("imDesc").value,
+                            segmentation: $("imVSeg").value.trim(), unit: document.querySelector("input[name=imVUnit]:checked").value }
     : isFlat() ? { kind, name, folders: flatEntries() || [], description: $("imDesc").value }
     : { kind, name, h5ad: $("imH5").value.split("\n").map((s) => s.trim()).filter(Boolean),
         section_column: $("imSecCol").value, sections: $("imSecCol").value ? chosenSections() : [],
@@ -4812,7 +4822,7 @@ function sampleInfo() {  // the Data tab's card: what the open sample is
     : s.image_unloaded ? `${s.image_kind} unloaded` : s.image_kind;
   heStateBtn();
   const filt = s.filter ? `filtered (${s.filter.n_cells_removed.toLocaleString()} cells, ${s.filter.n_genes_removed} genes removed)` : "";
-  $("sampleInfo").textContent = [`${s.n_cells.toLocaleString()} ${s.unit === "bins" ? "bins (Visium HD)" : "cells"}`, img, filt, s.description].filter(Boolean).join(" · ");
+  $("sampleInfo").textContent = [`${s.n_cells.toLocaleString()} ${s.unit === "bins" ? "bins (Visium HD)" : s.spaceranger ? "cells (Visium HD)" : "cells"}`, img, filt, s.description].filter(Boolean).join(" · ");
 }
 function showTab(name) {
   document.querySelectorAll("#tabs .tab").forEach((t) => { t.classList.toggle("on", t.dataset.tab === name); t.setAttribute("aria-selected", t.dataset.tab === name); });

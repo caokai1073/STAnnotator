@@ -14,17 +14,28 @@ Click **Import…** in the app (or use the commands below): the cells, then **No
 | registration | an affine CSV with columns `a11,a12,a21,a22,tx,ty` (`px = a11*x + a12*y + tx`, `py = a21*x + a22*y + ty`; cell um to image full-resolution pixels; with one row per section, the row of the chosen section) or a Xenium Explorer alignment matrix (3x3 CSV, image pixels to morphology pixels); or **No registration**. |
 
 **Visium HD** (and Visium) take the Space Ranger output instead: choose `outs/`, `binned_outputs/` or one
-`square_XXXum` folder. Its bins (or spots) take the place of cells, and every analysis runs on them as on cells, at
-8 um: 2 um bins are pooled into 8 um bins (counts summed by grid position; on the mouse small intestine example the
-pooled bins match Space Ranger's own 8 um bins, the same counts for 95% of them), 8 um bins and larger ones (16 um,
-Visium's 55 um spots) are used as they are; given the whole output, its 8 um bins are used. Space Ranger's alignment
-places the bins on its image, so no registration is needed: **H&E file** is the full-resolution image Space Ranger
-was given (a copy with zoom levels is made in the sample's folder when it has none), and without it the output's
-`tissue_hires_image.png` (about 1 um per pixel) is shown. With the whole transcriptome (some 19,000 genes) the PCA uses
-the 3,000 most variable genes and the expression model those and the marker list's genes (a panel keeps all its
-genes, Xenium 5K included). On the mouse small intestine (351,786 bins of 8 um) the import took 31 s (50 s from
-2 um bins), the marker annotation 131 s (5.5 GB of memory), PCA + UMAP 74 s. The nuclei-based registration check of
-Agent Review does not apply to bins. From the command line: `stagent import-visium --name si --path outs/ [--he image.btf]`.
+`square_XXXum` folder. With cell outlines the cells are the unit (the default): Space Ranger 4's
+`segmented_outputs/cell_segmentations.geojson` is found by itself, or **Cell outlines** takes a GeoJSON of outlines in
+the full-resolution image's pixels (QuPath, StarDist, Cellpose). Every 2 um bin is split between the cells it overlaps
+by area (16 points per bin against the outlines drawn at 0.5 um): each of its counts goes to a cell with the
+probability of that cell's share, so counts stay whole and their expectation is area-proportional; the part of a bin
+outside every cell is left out. On the mouse small intestine example (Space Ranger 4's 282,346 outlines over its
+5,479,660 bins of 2 um) this gave 281,984 cells (median 52 um2, 335 counts) in 68 s, 92% of all counts in a cell;
+the cells' totals agree with Space Ranger's own whole-bin assignment (sum 0.999, per-cell correlation 0.95; the
+outlines of its 4.0.1 run sit about 0.6 um off the 3.0 run's bins, which the area split absorbs). The marker
+annotation then finds the cells that 8 um bins blur: macrophages (16,163 against almost none), enteroendocrine
+cells (461 against 62), monocytes, neutrophils, dendritic cells.
+
+Without outlines (or with **Unit: 8 um bins**) the bins are the unit, at 8 um: 2 um bins are pooled into 8 um bins
+(counts summed by grid position; the pooled bins match Space Ranger's own 8 um bins, the same counts for 95% of
+them), 8 um bins and larger ones (16 um, Visium's 55 um spots) are used as they are; given the whole output, its 8
+um bins are used. Space Ranger's alignment places everything on its image, so no registration is needed: **H&E
+file** is the full-resolution image Space Ranger was given (a copy with zoom levels is made in the sample's folder
+when it has none), and without it the output's `tissue_hires_image.png` (about 1 um per pixel) is shown. With the
+whole transcriptome (some 19,000 genes) the PCA uses the 3,000 most variable genes and the expression model those
+and the marker list's genes (a panel keeps all its genes, Xenium 5K included); the marker annotation of the 282k
+cells took 118 s (5.3 GB of memory). The nuclei-based registration check of Agent Review does not apply. From the
+command line: `stagent import-visium --name si --path outs/ [--segmentation cells.geojson] [--unit bins] [--he image.btf]`.
 
 The folded part at the bottom of the dialog, **Already imported: change the image or registration**, is for the sample
 already open: add or replace its image, give it a registration file, align it with the agent, or undo an alignment.

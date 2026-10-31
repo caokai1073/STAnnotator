@@ -908,7 +908,7 @@ async def api_import_inspect(req: Request):
         if b.get("kind") == "xenium":
             return _json(importer.inspect_xenium_many(b.get("entries") or [b["folder"]]))
         if b.get("kind") == "visium":
-            x = importer.inspect_visium((b.get("entries") or [b.get("folder")])[0])
+            x = importer.inspect_visium((b.get("entries") or [b.get("folder")])[0], b.get("segmentation") or None)
             return _json({"slices": [x | {"n_cells": x.get("n_bins", 0)}]})
         if b.get("kind") in importer.FLAT_FILES:
             return _json(importer.inspect_flat_many(b["kind"], b.get("entries") or []))
@@ -965,7 +965,8 @@ async def api_import(req: Request):
             if kind == "visium":  # a Space Ranger output: bins (visium.py); its own alignment places them
                 importer.import_visium(name, folders[0] if folders else b["folder"], he=b.get("he") or None,
                                        description=b.get("description", ""), overwrite=bool(b.get("overwrite")),
-                                       progress=say)
+                                       progress=say, segmentation=b.get("segmentation") or None,
+                                       unit=b.get("unit") or "auto")
             elif len(sections) > 1 or n_xenium > 1:  # several slices: a project, one sample per slice
                 importer.import_project(name, kind, b.get("h5ad") if kind == "h5ad" else folders,
                                         sections=sections, section_column=b.get("section_column") or None,
@@ -1017,7 +1018,8 @@ def api_samples(req):
                          "has_registration": bool(meta.get("registration_affine")),
                          "can_undo_placement": bool(meta.get("placement_previous")),
                          "project": meta.get("project"), "name": meta.get("name"), "metadata": meta.get("metadata") or {},
-                         "unit": "bins" if visium.is_bins(meta) else "cells",  # Visium: its "cells" are bins
+                         "unit": "bins" if visium.is_bins(meta) and (meta.get("source") or {}).get("unit") != "cells" else "cells",
+                         "spaceranger": visium.is_bins(meta),  # placed by Space Ranger: no nuclei registration check
                          "n_genes": meta.get("n_genes"), "image_unloaded": bool(meta.get("image_unloaded")),
                          "filter": {"params": f["params"], "n_cells_removed": f["n_cells_removed"],
                                     "n_genes_removed": len(f["genes_removed"])} if (f := meta.get("filter")) else None,

@@ -22,8 +22,8 @@ CHUNK = 1_000_000   # bins read at a time when pooling
 
 
 KINDS = ("visium_hd", "visium")
-NO_REGISTRATION_CHECK = ("the sample is Visium bins on Space Ranger's grid, placed on the image by Space Ranger's own "
-                         "alignment: there are no cells to check against their nuclei")
+NO_REGISTRATION_CHECK = ("the sample comes from Visium bins on Space Ranger's grid, placed on the image by Space Ranger's "
+                         "own alignment (cells are built from those bins): the nuclei check does not apply")
 
 
 def is_bins(meta):
@@ -117,8 +117,9 @@ def _strings(a):
     return np.array([x.decode() if isinstance(x, bytes) else str(x) for x in a], dtype=object)
 
 
-def inspect(path):
-    """What an import would read: the bin folders found, the one used, its size and the size analysed, bins and genes."""
+def inspect(path, segmentation=None):
+    """What an import would read: the bin folders found, the one used, its size and the size analysed, bins and
+    genes; the cell outlines (Space Ranger 4's, or `segmentation`) that make cells the unit."""
     found = folders(path)
     d, s = choose(found)
     size, mpp = scale(d, s)
@@ -135,6 +136,12 @@ def inspect(path):
     if out["analysis_um"] != size:
         f = int(round(out["analysis_um"] / size))
         out["n_analysis_bins_about"] = int(out.get("n_bins", 0) / (f * f) * 1.1) if out.get("n_bins") else None
+    seg = segmentation or find_segmentation(path)
+    out["segmentation"] = str(seg) if seg else None
+    out["fine_bins"] = next((str(fd) for fd, fs in sorted(found, key=lambda x: x[1] or 99) if fs and fs <= 4), None)
+    if seg and Path(seg).exists():
+        txt = open(seg).read(4_000_000)
+        out["n_outlines_about"] = txt.count('"Feature"') if len(txt) < 4_000_000 else int(Path(seg).stat().st_size / len(txt) * txt.count('"Feature"'))
     return out
 
 
@@ -295,3 +302,175 @@ def pyramid(src, dst, um_per_px=None, progress=print, tile=512):
         import shutil
         shutil.rmtree(tmpd, ignore_errors=True)
     return str(dst)
+
+
+# ---------------- cells from a segmentation: the 2 um bins split between the cells by area ----------------
+SUB = 4             # each fine bin is sampled at SUB x SUB points against the cell outlines (area shares in 1/16)
+SEG_FILES = ("segmented_outputs/cell_segmentations.geojson",)  # Space Ranger 4
+
+
+def find_segmentation(path):
+    """Space Ranger 4's cell outlines next to the binned output (segmented_outputs/cell_segmentations.geojson)."""
+    p = Path(path).expanduser()
+    p = p.parent if p.is_file() else p
+    for base in (p, *p.parents[:3]):
+        for cand in (base, base / "outs"):
+            for f in SEG_FILES:
+                if (cand / f).exists():
+                    return str((cand / f).resolve())
+    return None
+
+
+def fine_bins(found):
+    """The finest bin folder (2 um), which cells are built from."""
+    fine = [(d, s) for d, s in found if s and s <= 4]
+    if not fine:
+        raise ValueError("cells from a segmentation need the 2 um bins (binned_outputs/square_002um)")
+    return min(fine, key=lambda x: x[1])
+
+
+def read_outlines(path):
+    """Cell outlines of a GeoJSON (Polygon / MultiPolygon features in full-resolution pixels, as Space Ranger 4,
+    QuPath, StarDist or Cellpose write them): (ids, [list of rings per cell, each (n, 2) x, y])."""
+    gj = json.load(open(path))
+    feats = gj["features"] if isinstance(gj, dict) and "features" in gj else gj
+    ids, rings = [], []
+    for k, f in enumerate(feats):
+        g = f.get("geometry") or {}
+        polys = [g["coordinates"]] if g.get("type") == "Polygon" else g.get("coordinates", []) if g.get("type") == "MultiPolygon" else []
+        outer = [np.asarray(p[0], float) for p in polys if p and len(p[0]) >= 3]
+        if not outer:
+            continue
+        pr = f.get("properties") or {}
+        ids.append(str(pr.get("cell_id", pr.get("id", pr.get("name", k + 1)))))
+        rings.append(outer)
+    if not ids:
+        raise ValueError(f"{path}: no cell outlines (Polygon features) found")
+    return ids, rings
+
+
+def _area_centroid(ring):
+    x, y = ring[:, 0], ring[:, 1]
+    x1, y1 = np.roll(x, -1), np.roll(y, -1)
+    c = x * y1 - x1 * y
+    a = c.sum() / 2
+    if abs(a) < 1e-9:
+        return 0.0, x.mean(), y.mean()
+    return abs(a), ((x + x1) * c).sum() / (6 * a), ((y + y1) * c).sum() / (6 * a)
+
+
+def _grid(row, col, px, py):
+    """The bin grid in image pixels: (origin, step along array_col, step along array_row) by least squares."""
+    i = np.random.default_rng(0).choice(len(row), min(len(row), 200000), replace=False)
+    M = np.c_[col[i], row[i], np.ones(len(i))]
+    cx, *_ = np.linalg.lstsq(M, px[i], rcond=None)
+    cy, *_ = np.linalg.lstsq(M, py[i], rcond=None)
+    return np.array([cx[2], cy[2]]), np.array([cx[0], cy[0]]), np.array([cx[1], cy[1]])
+
+
+def read_cells(d, s, seg, progress=print, seed=0):
+    """Cells from a segmentation: every fine bin (2 um) is split between the cells its area overlaps, in proportion
+    to the area (SUB x SUB points per bin against the outlines rasterized at a quarter bin); each count of the bin
+    goes to a cell with the probability of its area share (a seeded binomial split: counts stay whole and their
+    expectation is area-proportional), the share outside every cell is left out. Returns (cell ids, centroid xy in
+    full-resolution pixels, genes, cells x genes CSR, info)."""
+    from PIL import Image, ImageDraw
+    size, mpp = scale(d, s)
+    rng = np.random.default_rng(seed)
+    progress(f"reading the cell outlines {Path(seg).name}")
+    ids, rings = read_outlines(seg)
+    n_cells = len(ids)
+    geo = np.array([_area_centroid(max(r, key=len)) for r in rings])
+    area_um2 = np.array([sum(_area_centroid(x)[0] for x in r) for r in rings]) * mpp ** 2
+    pos = _positions(d).set_index("barcode")
+    m = Path(d) / "filtered_feature_bc_matrix.h5"
+    with h5py.File(m, "r") as h:
+        g = h["matrix"]
+        n_feat, n_bc = (int(v) for v in g["shape"][:])
+        ft, names = _strings(g["features/feature_type"][:]), _strings(g["features/name"][:])
+        keep = np.where(ft == "Gene Expression")[0]
+        bc = _strings(g["barcodes"][:])
+        at = pos.index.get_indexer(bc)
+        if (at < 0).any():
+            raise ValueError(f"{int((at < 0).sum()):,} bins of the matrix are not in the tissue positions file")
+        row, col = pos.array_row.to_numpy()[at], pos.array_col.to_numpy()[at]
+        px, py = pos.pxl_col_in_fullres.to_numpy(float)[at], pos.pxl_row_in_fullres.to_numpy(float)[at]
+        del pos
+        o, ec, er = _grid(row, col, px, py)
+        # the outlines rasterized at a quarter bin (labels 1..n_cells; 0 = no cell)
+        r_px = float(np.hypot(*ec)) / SUB
+        x0, y0 = px.min() - 4 * r_px * SUB, py.min() - 4 * r_px * SUB
+        W, H = int((px.max() - x0) / r_px) + 4 * SUB + 2, int((py.max() - y0) / r_px) + 4 * SUB + 2
+        progress(f"{n_cells:,} cell outlines rasterized at {r_px * mpp:.2f} um ({W:,} x {H:,})")
+        img = Image.new("I", (W, H), 0)
+        dr = ImageDraw.Draw(img)
+        for k, r in enumerate(rings):
+            for ring in r:
+                dr.polygon([((x - x0) / r_px, (y - y0) / r_px) for x, y in ring], fill=k + 1)
+        lab = np.asarray(img, dtype=np.int32)
+        del img, dr
+        off = (np.arange(SUB) + 0.5) / SUB - 0.5
+        du, dv = np.meshgrid(off, off)
+        du, dv = du.ravel(), dv.ravel()
+        indptr = g["indptr"][:]
+        gene_of = np.full(n_feat, -1, np.int64)
+        gene_of[keep] = np.arange(len(keep))
+        X, n_split, tot_in, tot_all = None, 0, 0.0, 0.0
+        progress(f"splitting {n_bc:,} bins of {size:g} um between the cells by area")
+        for a in range(0, n_bc, CHUNK // 2):
+            b = min(n_bc, a + CHUNK // 2)
+            # labels at SUB x SUB points of each bin
+            sx = px[a:b, None] + du[None] * ec[0] + dv[None] * er[0]
+            sy = py[a:b, None] + du[None] * ec[1] + dv[None] * er[1]
+            ix = np.clip(((sx - x0) / r_px).astype(np.int64), 0, W - 1)
+            iy = np.clip(((sy - y0) / r_px).astype(np.int64), 0, H - 1)
+            L = lab[iy, ix]                                   # (bins, SUB*SUB): the cell at each point, 0 = none
+            # per bin: the distinct cells and their area shares
+            key, n_pts = np.unique(np.arange(b - a)[:, None] * (n_cells + 1) + L, return_counts=True)
+            r_, cell = key // (n_cells + 1), key % (n_cells + 1)
+            share = n_pts / L.shape[1]
+            ok = cell > 0
+            r_, cell, share = r_[ok], cell[ok] - 1, share[ok]
+            n_split += int((np.bincount(r_, minlength=b - a) > 1).sum())
+            # the bins' counts
+            lo, hi = int(indptr[a]), int(indptr[b])
+            data = g["data"][lo:hi].astype(np.int64)
+            gi = gene_of[g["indices"][lo:hi]]
+            brow = np.repeat(np.arange(b - a), np.diff(indptr[a:b + 1]))
+            m_ = gi >= 0
+            data, gi, brow = data[m_], gi[m_], brow[m_]
+            tot_all += float(data.sum())
+            # each (bin, gene) count split between the bin's cells: sequential binomials over its cells
+            order = np.argsort(r_, kind="stable")
+            r_, cell, share = r_[order], cell[order], share[order]
+            start = np.searchsorted(r_, np.arange(b - a))
+            nlab = np.bincount(r_, minlength=b - a)
+            rem = data.copy()
+            used = np.zeros(len(data))
+            out_c, out_g, out_v = [], [], []
+            for j in range(int(nlab.max()) if len(nlab) else 0):
+                has = nlab[brow] > j
+                if not has.any():
+                    break
+                k = start[brow[has]] + j
+                p = share[k] / np.maximum(1.0 - used[has], 1e-12)
+                take = rng.binomial(rem[has], np.clip(p, 0, 1))
+                rem[has] -= take
+                used[has] += share[k]
+                nz = take > 0
+                out_c.append(cell[k][nz]); out_g.append(gi[has][nz]); out_v.append(take[nz])
+            if out_c:
+                cc, gg, vv = np.concatenate(out_c), np.concatenate(out_g), np.concatenate(out_v)
+                tot_in += float(vv.sum())
+                part = sp.csr_matrix((vv.astype(np.float32), (cc, gg)), shape=(n_cells, len(keep)))
+                X = part if X is None else X + part
+            progress(f"  {b:,} of {n_bc:,} bins")
+    X = sp.csr_matrix(X if X is not None else (n_cells, len(keep)), dtype=np.float32)
+    tot = np.asarray(X.sum(1)).ravel()
+    ok = tot > 0
+    info = {"n_outlines": n_cells, "n_cells": int(ok.sum()), "bins_split": n_split, "bins": n_bc,
+            "counts_in_cells": round(tot_in / max(tot_all, 1), 4), "median_area_um2": round(float(np.median(area_um2[ok])), 1),
+            "median_counts": float(np.median(tot[ok])) if ok.any() else 0.0}
+    progress(f"{info['n_cells']:,} cells with counts (of {n_cells:,} outlines); {n_split:,} bins split between "
+             f"cells; {info['counts_in_cells']:.0%} of the counts fall in a cell")
+    return np.array(ids, dtype=object)[ok], geo[ok, 1:], [str(x) for x in names[keep]], X[ok], info
