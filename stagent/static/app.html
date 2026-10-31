@@ -54,7 +54,7 @@ header.collapsed .hmini { display: flex; }
 .sep { width: 1px; height: 22px; background: var(--line); flex: none; }
 .slnav { display: inline-flex; gap: 4px; }
 .slnav button { padding: 4px 8px; }
-.cmprow { display: grid; grid-template-columns: 230px 1fr 104px; gap: 8px; align-items: center; margin: 3px 0; font-size: 12px; }
+.cmprow { display: grid; grid-template-columns: var(--cmplab, 230px) 1fr 104px; gap: 8px; align-items: center; margin: 3px 0; font-size: 12px; }
 .cmprow .bar { display: flex; height: 18px; border-radius: 3px; overflow: hidden; background: var(--line); }
 .cmprow .bar span { height: 100%; }
 .cmprow .bar.none { align-items: center; padding-left: 8px; font-size: 11px; color: var(--muted); }
@@ -4387,6 +4387,10 @@ async function showAnalysis() {
       box.append(tb);
       $("anNote").textContent = "log2(observed / expected if the two groupings were unrelated): +1 is twice as common, −1 half as common.";
     } else {
+      // the label column as wide as the longest label (short names such as N1 sit next to their bars), at most 230 px
+      const labels = r.table.flatMap((x) => r.by_slice ? ["all (pooled)", ...r.by_slice.filter((sl) => sl[r.rows] === x.row).map((sl) => `slice ${sl.slice}`)] : [String(x.row)]);
+      const ctx = document.createElement("canvas").getContext("2d"); ctx.font = `12px ${getComputedStyle(document.body).fontFamily}`;
+      box.style.setProperty("--cmplab", `${Math.min(230, Math.ceil(Math.max(24, ...labels.map((t) => ctx.measureText(t).width))) + 6)}px`);
       const bar = (name, n, shares, enr, title) => {
         const row = document.createElement("div"); row.className = "cmprow";
         const nm = document.createElement("div"); nm.textContent = name; if (title) nm.title = title;

@@ -170,12 +170,17 @@ def _lineage_dots(ax, px, py, lin, palette, highlight, s=0.4, max_n=250000, seed
                    linewidths=0, rasterized=True)
 
 
-def _legend(fig, palette, highlight):
+def _legend(fig, palette, highlight, fontsize=7):
     keys = [k for k in palette if not highlight or k in highlight]
     hs = [plt.Line2D([], [], marker="o", ls="", color=tuple(v / 255 for v in palette[k]), label=k) for k in keys]
     if highlight:
         hs.append(plt.Line2D([], [], marker="o", ls="", color=(0.78, 0.78, 0.78), label="other cells"))
-    fig.legend(handles=hs, loc="lower center", ncol=min(len(hs), 7), fontsize=7, frameon=False)
+    fig.legend(handles=hs, loc="lower center", ncol=min(len(hs), 7), fontsize=fontsize, frameon=False,
+               markerscale=fontsize / 7)
+    return len(hs)
+
+
+OVERVIEW_FONT = 13  # pt on a figure about 20 in wide: readable when the figure is shown a page wide
 
 
 def tissue_overview(he_path, px, py, lin, palette, g, areas, out, highlight=None, title="", image_kind="H&E",
@@ -187,13 +192,18 @@ def tissue_overview(he_path, px, py, lin, palette, g, areas, out, highlight=None
     W = 1000
     Hh = max(1, round(W * h / w))
     n = 2 if he_path else 1
-    fig, axs = plt.subplots(1, n, figsize=(n * W / 100 + 0.6, Hh / 100 + 1.3), dpi=100, squeeze=False)
+    F = OVERVIEW_FONT
+    n_keys = len([k for k in palette if not highlight or k in highlight]) + bool(highlight)
+    leg_in = -(-n_keys // 7) * F * 1.7 / 72 + 0.25  # legend rows below the panels
+    fig_h = Hh / 100 + 1.6 + leg_in
+    fig, axs = plt.subplots(1, n, figsize=(n * W / 100 + 0.6, fig_h), dpi=100, squeeze=False)
     ax = list(axs[0])
     if he_path:
         im = slide(he_path).read(*box, W, Hh)
         ax[0].imshow(np.asarray(im), extent=(box[0], box[2], box[3], box[1]))
         _grid_axes(ax[0], g, box)
-        ax[0].set_title(f"{image_kind} ({g['tile_um']} um tiles)", fontsize=8, pad=14)
+        ax[0].tick_params(labelsize=F * 0.7)
+        ax[0].set_title(f"{image_kind} ({g['tile_um']} um tiles)", fontsize=F, pad=16)
     ax = [None] * (2 - n) + ax
     ax[1].set_facecolor("white")
     _lineage_dots(ax[1], px, py, lin, palette, highlight)
@@ -202,13 +212,14 @@ def tissue_overview(he_path, px, py, lin, palette, g, areas, out, highlight=None
         poly = np.array(a["outline_px"] + a["outline_px"][:1])
         for k in ([0, 1] if he_path else [1]):
             ax[k].plot(poly[:, 0], poly[:, 1], color="red", lw=1.1, ls="--")
-        ax[1].text(poly[:, 0].min(), poly[:, 1].min(), a["id"], color="red", fontsize=7, fontweight="bold",
+        ax[1].text(poly[:, 0].min(), poly[:, 1].min(), a["id"], color="red", fontsize=F * 0.85, fontweight="bold",
                    va="bottom", ha="left")
+    ax[1].tick_params(labelsize=F * 0.7)
     ax[1].set_title(("" if he_path else f"no image; {g['tile_um']} um tiles; ") + f"cells colored by {colored_by}" + (" (highlighted: " + ", ".join(sorted(highlight)) + ")" if highlight else "")
-                    + (f"; red dashed = {area_label}" if areas else ""), fontsize=8, pad=14)
-    _legend(fig, palette, highlight)
-    fig.suptitle(title, fontsize=9)
-    plt.tight_layout(rect=(0, 0.04, 1, 0.98)); plt.savefig(out, dpi=100, pil_kwargs={"quality": 82}); plt.close()
+                    + (f"; red dashed = {area_label}" if areas else ""), fontsize=F, pad=16)
+    _legend(fig, palette, highlight, fontsize=F)
+    fig.suptitle(title, fontsize=F * 1.25, fontweight="bold")
+    plt.tight_layout(rect=(0, leg_in / fig_h, 1, 0.97)); plt.savefig(out, dpi=100, pil_kwargs={"quality": 82}); plt.close()
     return str(out)
 
 
