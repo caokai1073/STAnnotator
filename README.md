@@ -42,14 +42,6 @@ Two ways to run it:
 Download `STAnnotator.dmg` from the [latest release](https://github.com/caokai1073/STAnnotator/releases/latest), open
 it and drag **STAnnotator** to Applications. It contains everything; no Python needed.
 
-No DMG yet? Build it on the Mac (needs [uv](https://docs.astral.sh/uv/)):
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh && source $HOME/.local/bin/env
-git clone https://github.com/caokai1073/STAnnotator.git && cd STAnnotator
-bash packaging/macos/build_app.sh && open dist/STAnnotator.dmg
-```
-
 **Install the app on Windows**
 
 Download `STAnnotator-Setup.exe` from the [latest release](https://github.com/caokai1073/STAnnotator/releases/latest)
@@ -61,21 +53,12 @@ and run it. It contains everything; no Python needed.
   console window.
 - Uninstalling removes the program only; the data and the settings stay.
 
-No installer yet? Build it on the PC. Download the source (**Code → Download ZIP** on GitHub, or `git clone`), unzip
-it, and in PowerShell in that folder run (nothing to install first; 5–15 minutes the first time):
-
-```powershell
-powershell -ExecutionPolicy Bypass -File packaging\windows\build.ps1
-# -> dist\STAnnotator-Setup-<version>.exe, and dist\STAnnotator-windows-<version>.zip (the app folder, runs without installing)
-```
-
 **Or install from source** (Linux, developers):
 
 ```bash
 git clone https://github.com/caokai1073/STAnnotator.git && cd STAnnotator
 uv venv .venv --python 3.12 && uv pip install --python .venv/bin/python -e ".[app]"
 .venv/bin/stagent app            # the window; --browser for a browser tab
-.venv/bin/stagent make-app       # macOS: an STAnnotator launcher in ~/Applications
 ```
 
 **Settings**: none. Data and annotations go to `~/stagent`, or the folder chosen in the Windows installer or with
@@ -155,14 +138,3 @@ stagent mcp                 # the agent's tools, for Claude Code without the app
 - **Server: Test fails**: `ssh user@server` must log in without a password, and the command path must be right
   (`ssh user@server ~/STAnnotator/.venv/bin/stagent remote-serve --check` prints JSON).
 - **Few cells on the H&E**: check the registration file and that cell coordinates are in micrometers.
-
-## Building a signed DMG (maintainers)
-
-With an Apple Developer account, set up a Developer ID certificate and notary credentials once (see the top of
-`packaging/macos/sign_and_notarize.sh`), then:
-
-```bash
-DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)" bash packaging/macos/build_app.sh
-```
-
-This builds, signs and notarizes `dist/STAnnotator.dmg`, which opens on any Mac without warnings.

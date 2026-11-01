@@ -518,46 +518,17 @@ colors are immediate.
   (`ssh -N -L 8765:localhost:8765 <user>@<server>`), then open http://localhost:8765. The conflict review page for
   pathologists is at http://localhost:8765/review (verdict keys 1-6, rules form, CSV download).
 
-## Building the app (maintainers)
+## On Windows
 
-On a Mac with Apple silicon, from this folder:
-
-```bash
-packaging/macos/build_app.sh            # -> dist/STAnnotator.app and dist/STAnnotator.dmg (ad-hoc signed)
-```
-
-It builds with PyInstaller (`packaging/stannotator.spec`) in its own environment, without PyTorch. The app's
-executable also takes the command-line subcommands (`STAnnotator mcp` is what Claude Code starts). To give it a Developer ID signature and Apple's notarization, so that it opens without warnings on other
-Macs (needs an Apple Developer account):
-
-```bash
-xcrun notarytool store-credentials stannotator --apple-id YOU@EXAMPLE.COM --team-id TEAMID   # once
-DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)" bash packaging/macos/build_app.sh
-```
-
-The hardened-runtime exceptions it uses (`packaging/macos/entitlements.plist`) allow numba's run-time compilation.
-
-On Windows 10 / 11 (x64), from the unzipped source folder, in PowerShell:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File packaging\windows\build.ps1   # -> dist\STAnnotator\ and dist\STAnnotator-windows-<version>.zip
-```
-
-Nothing needs to be installed first: it uses uv when installed, else downloads uv into `.build-tools\` (checked against
-its published SHA-256), and uv fetches Python 3.12; the app it makes contains Python, so its users install nothing.
-It builds with the same spec: `STAnnotator.exe` is the window (Edge
-WebView2, part of Windows 11), `stagent.exe` beside it the console program Claude Code starts for the tools
-(`stagent.exe mcp`; it also takes every other subcommand). The build is not signed, so Windows asks once (More
-info -> Run anyway). On Windows the Ask Agent button opens Claude Code in its own console window; a request sent while
-it is open reopens it with the request (`claude --continue`, the same conversation), since text cannot be typed into
-another console. Sample names are limited to 100 characters there (Windows' 260-character paths). Harmony in a
-project's Run PCA + UMAP uses `stagent/harmony.py` on Windows, a NumPy version of harmonypy 2.1.0 (which has no
-Windows build): on two slices of 559,539 cells, about 20 s, and the same neighbors as harmonypy up to its randomness.
-
-The script also makes the installer `dist\STAnnotator-Setup-<version>.exe` with Inno Setup 6 (installed with winget
-when missing; `packaging\windows\installer.iss`). It asks where to install (any drive; for this user without
-administrator rights, or for all users), and on a first installation where to keep the data (written to the settings
-file above); it adds Start menu and desktop shortcuts and an uninstaller, which leaves the data and the settings.
+- The installer and the app are not signed yet: Windows asks once (**More info → Run anyway**).
+- **Ask Agent** opens Claude Code in its own console window. A request sent while it is open reopens it with the
+  request (`claude --continue`, the same conversation), since text cannot be typed into another console.
+- Sample names are limited to 100 characters (Windows' 260-character paths).
+- Harmony in a project's **Run PCA + UMAP** uses `stagent/harmony.py`, a NumPy version of harmonypy 2.1.0 (which has
+  no Windows build): on two slices of 559,539 cells about 20 s, and the same neighbors as harmonypy up to its
+  randomness.
+- The app writes its start-up log to `%LOCALAPPDATA%\STAnnotator\app.log`; the data folder chosen in the installer
+  is kept in `%APPDATA%\STAnnotator\settings.json`.
 
 ## Layout
 
@@ -580,6 +551,6 @@ stagent/     Python package
   webapp.py        viewer, review page, chat box
   data/            app icon
 examples/scp2927/  registration of the SCP2927 sections
-packaging/         PyInstaller spec, macOS build / signing scripts
+packaging/         packaging of the macOS and Windows apps
 tests/             smoke tests (python tests/smoke_engine.py, tests/smoke_mcp.py expect sample 147328 / 167799; tests/smoke_joint.py runs in a temporary folder)
 ```
