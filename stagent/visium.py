@@ -27,8 +27,10 @@ NO_REGISTRATION_CHECK = ("the sample comes from Visium bins on Space Ranger's gr
 
 
 def is_bins(meta):
-    """True for a sample imported from Space Ranger (its 'cells' are bins or spots)."""
-    return (meta.get("source") or {}).get("kind") in KINDS
+    """True for a sample placed by its pipeline on a grid of spots: Space Ranger (bins, spots, or cells built from
+    its bins) or Stereo-seq bins; the nuclei registration check does not apply to them."""
+    src = meta.get("source") or {}
+    return src.get("kind") in KINDS or (src.get("kind") == "stereoseq" and src.get("unit") == "bins")
 
 
 def _size(d):

@@ -37,6 +37,20 @@ and the marker list's genes (a panel keeps all its genes, Xenium 5K included); t
 cells took 118 s (5.3 GB of memory). The nuclei-based registration check of Agent Review does not apply. From the
 command line: `stagent import-visium --name si --path outs/ [--segmentation cells.geojson] [--unit bins] [--he image.btf]`.
 
+**Stereo-seq** takes the STOmics SAW output: its folder, or its files. Its spots (DNBs) are 0.5 um apart. When SAW
+segmented the cells (`<SN>.cellbin.gef`, the adjusted one when there is one, or a GEM with a cell column, `CellID` or
+MOSTA's `label`) the cells are the unit: a DNB is a point, so it belongs to one cell (DNBs outside every cell are left
+out). Otherwise, or with **Unit: 8 um bins**, the DNBs of the GEM (`<SN>.tissue.gem.gz`, bin1) are pooled into 8 um
+bins (16 DNBs a side). Genes are named by `geneName` when the file has it (Ensembl ids sharing a name are summed).
+The registered image SAW writes (`<SN>_HE_regist.tif`, or the ssDNA one) is in the DNBs' coordinates, so no
+registration is needed; a copy with zoom levels is made in the sample's folder. Another image found (not a
+`_regist.tif`, such as MOSTA's raw ssDNA scan) is not assumed to be aligned: it waits for **Align with Agent** (on MOSTA
+the search finds it mirrored and rotated 270 degrees, x and y swapped, and the refinement ends at 0 um). Tested on the STOmics demo mouse
+brain C04042E3 (cell-bin GEF: 130,588 cells, the same median counts as SAW reports, 35 s; its GEM of 247,751,988
+rows as 816,465 bins of 8 um, 229 s, 6.7 GB; the cells sit on the H&E's nuclei) and the MOSTA adult mouse brain
+(cell-bin GEM: 56,731 cells, 62 s). The bin GEF (`tissue.gef`) is not read: use the GEM SAW writes beside it. From
+the command line: `stagent import-stereoseq --name brain --path saw_outs/ [--unit bins] [--image regist.tif]`.
+
 The folded part at the bottom of the dialog, **Already imported: change the image or registration**, is for the sample
 already open: add or replace its image, give it a registration file, align it with the agent, or undo an alignment.
 Until the image is registered the cells are shown on a blank background (or the DAPI) with a yellow bar over the

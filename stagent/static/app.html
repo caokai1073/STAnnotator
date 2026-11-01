@@ -744,7 +744,16 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <label title="CosMx (AtoMx export): the expression matrix and cell metadata files of a slide, or their folder"><input type="radio" name="imKind" value="cosmx"> CosMx</label>
       <label title="MERFISH (Vizgen MERSCOPE output): cell_by_gene.csv and cell_metadata.csv of a region, or its folder"><input type="radio" name="imKind" value="merfish"> MERFISH</label>
       <label title="Visium HD or Visium (Space Ranger output): bins instead of cells; 2 µm bins are pooled into 8 µm"><input type="radio" name="imKind" value="visium"> Visium HD</label>
+      <label title="Stereo-seq (STOmics SAW output): a cell-bin GEF, or a GEM; cells when there are cell bins, else 8 µm bins"><input type="radio" name="imKind" value="stereoseq"> Stereo-seq</label>
       <label title="AnnData (.h5ad), or an R file (.rds / .rda) with a Seurat or SpatialExperiment object"><input type="radio" name="imKind" value="h5ad"> h5ad / RDS</label>
+    </div>
+    <div id="imS" hidden>
+      <div class="frow"><span>SAW output <b class="req" title="required">*</b></span><textarea id="imSDir" class="fin" rows="1" placeholder="the SAW output folder, or its files: <SN>.cellbin.gef and / or <SN>.tissue.gem.gz, and the registered image <SN>_HE_regist.tif (or ssDNA)"></textarea><button data-pick="folder" data-target="imSDir">Choose…</button></div>
+      <div class="frow"><span>Unit</span><span class="choice">
+        <label title="The cell bins of SAW's segmentation (a .cellbin.gef, or a GEM with a CellID column)"><input type="radio" name="imSUnit" value="cells" checked> Cells (cell bins)</label>
+        <label title="The DNBs (0.5 µm) of the GEM pooled into 8 µm bins"><input type="radio" name="imSUnit" value="bins"> 8 µm bins</label></span><span></span></div>
+      <div class="hint" style="margin-left:138px">Cells when SAW segmented them (cell-bin GEF, or a GEM with CellID), else the DNBs pooled into 8 µm bins. The registered image SAW wrote (_HE_regist.tif or ssDNA) is in the DNBs' coordinates: no registration needed; H&amp;E file below replaces it.</div>
+      <div class="hint" id="imSinfo" style="margin-left:138px;white-space:pre-line"></div>
     </div>
     <div id="imV" hidden>
       <div class="frow"><span>Space Ranger output <b class="req" title="required">*</b></span><textarea id="imVDir" class="fin" rows="1" placeholder="the outs/ folder, binned_outputs/, or one square_002um / square_008um / square_016um folder"></textarea><button data-pick="folder" data-target="imVDir">Choose…</button></div>
@@ -2929,7 +2938,7 @@ const flatField = (id) => $(id).value.split("\n").map((x) => x.trim()).filter(Bo
 const isFlat = () => ["cosmx", "merfish"].includes(imKind());
 document.querySelectorAll("input[name=imKind]").forEach((r) => (r.onchange = () => {
   $("imX").hidden = imKind() !== "xenium"; $("imH").hidden = imKind() !== "h5ad"; $("imF").hidden = !isFlat();
-  $("imV").hidden = imKind() !== "visium";
+  $("imV").hidden = imKind() !== "visium"; $("imS").hidden = imKind() !== "stereoseq";
   imDefaultName("");  // the default name comes from this kind's files
   if (isFlat()) {
     $("imFhelp").textContent = FLAT_HELP[imKind()] + " Several slides or regions: import them one after the other.";
@@ -2986,6 +2995,27 @@ async function inspectVisium() {  // which bins the Space Ranger output holds an
   } catch (e) { $("imVinfo").textContent = e.message; }
 }
 $("imVDir").onchange = $("imVSeg").onchange = () => (st.imVPending = inspectVisium());
+async function inspectStereo() {  // which Stereo-seq files were found and what they give
+  const entries = $("imSDir").value.split("\n").map((x) => x.trim()).filter(Boolean), key = JSON.stringify(entries);
+  st.imSSlices = null;
+  if (!entries.length) { $("imSinfo").textContent = ""; return; }
+  $("imSinfo").textContent = "checking…";
+  try {
+    const x = (await post("/api/import/inspect", { kind: "stereoseq", entries })).slices[0];
+    if (JSON.stringify($("imSDir").value.split("\n").map((v) => v.trim()).filter(Boolean)) !== key) return;
+    st.imSSlices = [x];
+    const cells = x.cellbin_gef || x.cell_gem;
+    $("imSinfo").textContent = (cells ? `Cells: ${x.cellbin_gef || x.cell_gem}` + (x.n_cells ? ` (${x.n_cells.toLocaleString()} cells, ${x.n_genes.toLocaleString()} genes)` : "") : "No cell bins found: 8 µm bins")
+      + (x.gem ? `\nBins: ${x.gem}` : "") + `\nImage: ${x.image ? `${x.image} (${x.image_kind}` + (x.image_registered ? ", registered by SAW)"
+        : "; not SAW's _regist.tif: it waits for Align with Agent after the import)") : "none found: a blank background (or give the H&E below)"}`;
+    document.querySelector("input[name=imSUnit][value=cells]").disabled = !cells;
+    document.querySelector("input[name=imSUnit][value=bins]").disabled = !x.gem && !x.cell_gem;
+    document.querySelector(`input[name=imSUnit][value=${cells ? "cells" : "bins"}]`).checked = true;
+    imDefaultName(baseName(x.key));
+  } catch (e) { $("imSinfo").textContent = e.message; }
+}
+$("imSDir").onchange = () => (st.imSPending = inspectStereo());
+$("imSDir").oninput = soon(() => (st.imSPending = inspectStereo()));
 $("imVDir").oninput = soon(() => (st.imVPending = inspectVisium()));
 ["imFCounts", "imFCells"].forEach((id) => {
   $(id).onchange = () => (st.imFPending = inspectFlat());
@@ -3109,15 +3139,16 @@ function imForm() {  // show the fields of the chosen options; Align with Claude
   imPairs();
   $("imImgRow").hidden = imgMode() !== "file";
   $("imImgKindRow").hidden = imgMode() !== "file" || ["xenium", "visium"].includes(imKind());  // Xenium has its own DAPI field
-  const vis = imKind() === "visium";
+  const vis = ["visium", "stereoseq"].includes(imKind());  // placed by their pipeline: no registration
   $("imRegModeRow").hidden = vis;  // Space Ranger's alignment places the bins on its image
   if (imKind() === "xenium") $("imNewImgKind").value = "H&E";
   $("imRegRow").hidden = $("imRegSecRow").hidden = vis || regMode() !== "file";
-  $("imNewImg").placeholder = vis ? "the full-resolution image Space Ranger was given (.btf / .tif): no registration needed; a copy with zoom levels is made when it has none"
+  $("imNewImg").placeholder = imKind() === "stereoseq" ? "a registered image in the DNBs' coordinates (else the _regist.tif found); a copy with zoom levels is made when it has none"
+    : vis ? "the full-resolution image Space Ranger was given (.btf / .tif): no registration needed; a copy with zoom levels is made when it has none"
     : "the registered H&E: pyramidal TIFF / OME-TIFF; for several slices one per line, each file name holding its section";
   setTimeout(autoGrowAll);  // rows just shown
   $("imNoImgHint").textContent = imgMode() === "none" ? (imKind() === "xenium" ? "the DAPI image is shown when given, else a blank background"
-    : vis ? "the output's tissue_hires_image.png (about 1 µm per pixel)" : "cells on a blank background") : "";
+    : imKind() === "stereoseq" ? "the registered image SAW wrote, when there is one" : vis ? "the output's tissue_hires_image.png (about 1 µm per pixel)" : "cells on a blank background") : "";
   $("imNewReg").placeholder = isFlat() ? "affine CSV (a11,a12,a21,a22,tx,ty): cell µm to H&E pixels"
     : "affine CSV (a11,a12,a21,a22,tx,ty) or Xenium Explorer alignment (3x3)";
   const can = !vis && imgMode() === "file" && $("imNewImg").value.trim() && regMode() === "none";
@@ -3192,6 +3223,7 @@ async function importSample() {  // returns true when the sample was imported
   if (imKind() === "xenium" && st.imXPending) await st.imXPending;  // the fields were just edited: their check first
   if (isFlat() && st.imFPending) await st.imFPending;
   if (imKind() === "visium" && st.imVPending) await st.imVPending;
+  if (imKind() === "stereoseq" && st.imSPending) await st.imSPending;
   const kind = imKind(), name = $("imName").value.trim() || st.imDefault || "";
   const images = imgMode() === "file" ? $("imNewImg").value.split("\n").map((s) => s.trim()).filter(Boolean) : [];
   const image = images.length > 1 ? images : (images[0] || "");
@@ -3199,6 +3231,8 @@ async function importSample() {  // returns true when the sample was imported
   const registration = regs.length > 1 ? regs : (regs[0] || "");
   const body = kind === "xenium"
     ? { kind, name, folders: xeniumEntries(), description: $("imDesc").value }
+    : kind === "stereoseq" ? { kind, name, folders: $("imSDir").value.split("\n").map((x) => x.trim()).filter(Boolean), description: $("imDesc").value,
+                               unit: document.querySelector("input[name=imSUnit]:checked").value }
     : kind === "visium" ? { kind, name, folders: [$("imVDir").value.trim()], description: $("imDesc").value,
                             segmentation: $("imVSeg").value.trim(), unit: document.querySelector("input[name=imVUnit]:checked").value }
     : isFlat() ? { kind, name, folders: flatEntries() || [], description: $("imDesc").value }
@@ -3214,8 +3248,9 @@ async function importSample() {  // returns true when the sample was imported
   if (kind === "xenium" && !(st.imXSlices || []).length) { $("imStatus").textContent = "Give the cells and counts files; check the message under the fields"; return false; }
   if (isFlat() && !(st.imFSlices || []).length) { $("imStatus").textContent = "Give the counts and the cell metadata file; check the message under the fields"; return false; }
   if (kind === "visium" && !(st.imVSlices || []).length) { $("imStatus").textContent = "Choose the Space Ranger output folder; check the message under the field"; return false; }
-  if (kind === "visium") body.registration = "";  // Space Ranger placed the bins
-  const nSlices = kind === "h5ad" ? body.sections.length : kind === "visium" ? 1 : (isFlat() ? st.imFSlices : st.imXSlices).length;
+  if (kind === "stereoseq" && !(st.imSSlices || []).length) { $("imStatus").textContent = "Choose the SAW output (folder or files); check the message under the field"; return false; }
+  if (kind === "visium" || kind === "stereoseq") body.registration = "";  // the pipeline placed them
+  const nSlices = kind === "h5ad" ? body.sections.length : kind === "visium" || kind === "stereoseq" ? 1 : (isFlat() ? st.imFSlices : st.imXSlices).length;
   if (images.length > 1 && nSlices < 2) { $("imStatus").textContent = "One image per sample (several images are for several slices)"; return false; }
   if (regMode() === "file" && !registration) { $("imStatus").textContent = "Choose the registration file, or No registration"; return false; }
   if (regs.length > 1 && nSlices < 2) { $("imStatus").textContent = "One registration file per sample (several are for several slices)"; return false; }
@@ -3471,7 +3506,7 @@ async function proposalApplied(r) {
   $("pcDlg").close();
   toast(`Applied: ${r.title}`, 5000);
   if (r.tool === "start_session" && r.session_after) { st.openedThisVisit[r.sample_id] = r.session_after; await loadSamples(r.sample_id); return; }
-  if (["import_sample", "import_visium", "import_cosmx_merfish"].includes(r.tool)) { await loadSamples(st.sample ? st.sample.sample_id : r.sample_id); return; }
+  if (["import_sample", "import_visium", "import_stereoseq", "import_cosmx_merfish"].includes(r.tool)) { await loadSamples(st.sample ? st.sample.sample_id : r.sample_id); return; }
   if ((r.tool === "move_piece" || r.tool === "undo_piece_move") && st.sample && st.sample.sample_id === r.sample_id) {
     await afterPlacement(); return;  // the piece's cells moved on the image
   }
@@ -4826,7 +4861,7 @@ function sampleInfo() {  // the Data tab's card: what the open sample is
     : s.image_unloaded ? `${s.image_kind} unloaded` : s.image_kind;
   heStateBtn();
   const filt = s.filter ? `filtered (${s.filter.n_cells_removed.toLocaleString()} cells, ${s.filter.n_genes_removed} genes removed)` : "";
-  $("sampleInfo").textContent = [`${s.n_cells.toLocaleString()} ${s.unit === "bins" ? "bins (Visium HD)" : s.spaceranger ? "cells (Visium HD)" : "cells"}`, img, filt, s.description].filter(Boolean).join(" · ");
+  $("sampleInfo").textContent = [`${s.n_cells.toLocaleString()} ${s.unit === "bins" ? "bins" : "cells"}${s.platform ? ` (${s.platform})` : ""}`, img, filt, s.description].filter(Boolean).join(" · ");
 }
 function showTab(name) {
   document.querySelectorAll("#tabs .tab").forEach((t) => { t.classList.toggle("on", t.dataset.tab === name); t.setAttribute("aria-selected", t.dataset.tab === name); });

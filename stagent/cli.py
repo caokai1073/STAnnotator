@@ -1,4 +1,4 @@
-"""Command line: stagent {app, make-app, import, import-xenium, import-visium, samples, viewer, mcp}."""
+"""Command line: stagent {app, make-app, import, import-xenium, import-visium, import-stereoseq, samples, viewer, mcp}."""
 import argparse, os, platform, shutil, sys
 from pathlib import Path
 from . import config
@@ -92,6 +92,14 @@ def main(argv=None):
                     help="cells from the outlines (the default when there are outlines) or bins")
     iv.add_argument("--description", default="")
     iv.add_argument("--overwrite", action="store_true")
+    isq = sub.add_parser("import-stereoseq", help="import a Stereo-seq SAW output: cells from its cell bins, else 8 um bins")
+    isq.add_argument("--name", required=True, help="sample id used in the viewer and in Claude")
+    isq.add_argument("--path", required=True, nargs="+", help="the SAW output folder, or its files (.cellbin.gef, "
+                     ".tissue.gem.gz, _regist.tif)")
+    isq.add_argument("--image", help="a registered image in the DNBs' coordinates (default: the _regist.tif found)")
+    isq.add_argument("--unit", choices=["auto", "cells", "bins"], default="auto")
+    isq.add_argument("--description", default="")
+    isq.add_argument("--overwrite", action="store_true")
     sub.add_parser("samples", help="list imported samples")
     ap_ = sub.add_parser("app", help="start the desktop app (native window)")
     ap_.add_argument("--browser", action="store_true", help="use the default browser instead of a window")
@@ -115,6 +123,9 @@ def main(argv=None):
     elif a.cmd == "import-visium":
         from .importer import import_visium
         import_visium(a.name, a.path, a.he, a.description, a.overwrite, segmentation=a.segmentation, unit=a.unit)
+    elif a.cmd == "import-stereoseq":
+        from .importer import import_stereoseq
+        import_stereoseq(a.name, a.path, a.image, a.description, a.overwrite, unit=a.unit)
     elif a.cmd == "app":
         from .desktop import main as app
         app(["--browser"] if a.browser else [])

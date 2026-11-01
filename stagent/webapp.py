@@ -907,6 +907,9 @@ async def api_import_inspect(req: Request):
     try:
         if b.get("kind") == "xenium":
             return _json(importer.inspect_xenium_many(b.get("entries") or [b["folder"]]))
+        if b.get("kind") == "stereoseq":
+            x = importer.inspect_stereoseq(b.get("entries") or [b.get("folder")])
+            return _json({"slices": [x | {"n_cells": x.get("n_cells", 0), "key": Path(x["cellbin_gef"] or x["cell_gem"] or x["gem"]).name.split(".")[0]}]})
         if b.get("kind") == "visium":
             x = importer.inspect_visium((b.get("entries") or [b.get("folder")])[0], b.get("segmentation") or None)
             return _json({"slices": [x | {"n_cells": x.get("n_bins", 0)}]})
@@ -962,7 +965,11 @@ async def api_import(req: Request):
             kind = b.get("kind", "h5ad")
             flat = importer.flat_sources(kind, folders) if kind in importer.FLAT_FILES else None
             n_xenium = len(importer.xenium_sources(folders)) if kind == "xenium" and folders else len(flat or [])
-            if kind == "visium":  # a Space Ranger output: bins (visium.py); its own alignment places them
+            if kind == "stereoseq":  # a SAW output: cells or 8 um bins (stereoseq.py), on its registered image
+                importer.import_stereoseq(name, folders or b["folder"], image=b.get("he") or None,
+                                          description=b.get("description", ""), overwrite=bool(b.get("overwrite")),
+                                          progress=say, unit=b.get("unit") or "auto")
+            elif kind == "visium":  # a Space Ranger output: bins (visium.py); its own alignment places them
                 importer.import_visium(name, folders[0] if folders else b["folder"], he=b.get("he") or None,
                                        description=b.get("description", ""), overwrite=bool(b.get("overwrite")),
                                        progress=say, segmentation=b.get("segmentation") or None,
@@ -1019,7 +1026,9 @@ def api_samples(req):
                          "can_undo_placement": bool(meta.get("placement_previous")),
                          "project": meta.get("project"), "name": meta.get("name"), "metadata": meta.get("metadata") or {},
                          "unit": "bins" if visium.is_bins(meta) and (meta.get("source") or {}).get("unit") != "cells" else "cells",
-                         "spaceranger": visium.is_bins(meta),  # placed by Space Ranger: no nuclei registration check
+                         "spaceranger": visium.is_bins(meta),  # placed on a grid by its pipeline: no nuclei registration check
+                         "platform": {"visium_hd": "Visium HD", "visium": "Visium", "stereoseq": "Stereo-seq"}.get(
+                             (meta.get("source") or {}).get("kind")),
                          "n_genes": meta.get("n_genes"), "image_unloaded": bool(meta.get("image_unloaded")),
                          "filter": {"params": f["params"], "n_cells_removed": f["n_cells_removed"],
                                     "n_genes_removed": len(f["genes_removed"])} if (f := meta.get("filter")) else None,

@@ -32,7 +32,7 @@ import hashlib, json, re, shutil, time
 from pathlib import Path
 import h5py, numpy as np, pandas as pd, scipy.sparse as sp
 from scipy.spatial import cKDTree
-from . import config, visium
+from . import config, stereoseq, visium
 
 COORD_COLUMNS = [("x_centroid", "y_centroid"), ("x", "y"), ("center_x", "center_y"), ("x_location", "y_location")]
 DEPTH_MARKERS, DEPTH_MIN_COUNTS, DEPTH_MIN_FRAC, DEPTH_K, DEPTH_CORE = ("EPCAM", "KRT8"), 3, 0.05, 30, 0.3
@@ -355,8 +355,11 @@ def _write_bundle(name, ids, xy, X, genes, image, A, regions, description, sourc
     try:
         if own_image:  # a unique name: the viewer keeps images open by path
             dst = f"image_{time.strftime('%Y%m%d-%H%M%S')}.ome.tif"
-            shutil.move(str(image), str(tmp / dst))
-            image = out / dst
+            shutil.move(str(image or image_pending), str(tmp / dst))
+            if image:
+                image = out / dst
+            else:  # an image waiting for its alignment
+                image_pending = out / dst
         _write_files(tmp, out, name, cells, X, genes, image, A, description, source, image_kind, um_per_px, has_regions,
                      registration, image_pending, pending_kind, by)
         if out.exists():
@@ -724,6 +727,66 @@ def import_visium(name, path, he=None, description="", overwrite=False, progress
         stage.unlink(missing_ok=True)
         from .render import _slides
         _slides.pop(str(stage), None)  # read for its size under this name, which a later import reuses
+
+
+# ---------------- Stereo-seq (STOmics SAW output): cells from cell bins, else 8 um bins (stereoseq.py) ----------------
+def inspect_stereoseq(path):
+    return stereoseq.inspect(path)
+
+
+def import_stereoseq(name, path, image=None, description="", overwrite=False, progress=print, unit="auto"):
+    """A Stereo-seq SAW output (its folder, or files) as a sample (stereoseq.py): unit "cells" (the default when there
+    is a cell-bin GEF or a GEM with CellID) or "bins" (the DNBs of a GEM pooled into 8 um bins). image: the registered
+    image (default: the <SN>_HE_regist.tif / ssDNA _regist.tif found; its pixels are the DNBs, so no registration);
+    without one the cells are shown on a blank background. A non-pyramidal image is copied into the sample folder."""
+    name = _check_name(name, overwrite)
+    f = stereoseq.find(path)
+    has_cells = bool(f["cellbin_gef"] or f["cell_gem"])
+    if unit == "cells" and not has_cells:
+        raise ValueError("no cell bins (a .cellbin.gef, or a GEM with a CellID column): import bins")
+    cells = unit != "bins" and has_cells
+    if cells and f["cellbin_gef"]:
+        progress(f"reading {f['cellbin_gef']}")
+        ids, dnb, genes, X = stereoseq.read_cellbin_gef(f["cellbin_gef"], progress)
+        src_file = f["cellbin_gef"]
+    else:
+        g = f["cell_gem"] if cells else f["gem"] or f["cell_gem"]
+        if not g:
+            raise ValueError("bins need a GEM of the DNBs (<SN>.tissue.gem.gz)")
+        progress(f"reading {g}")
+        ids, dnb, genes, X = stereoseq.read_gem(g, cells, progress)
+        src_file = g
+    ok = np.asarray(X.sum(1)).ravel() > 0
+    ids, dnb, X = ids[ok], dnb[ok], X[ok]
+    xy = dnb * stereoseq.DNB_UM
+    img = str(Path(image).expanduser().resolve()) if image else f["image"]
+    registered = bool(image) or f["image_registered"]  # given, or SAW's _regist.tif: in the DNBs' coordinates
+    src = {"kind": "stereoseq", "file": str(Path(src_file).resolve()), "unit": "cells" if cells else "bins",
+           "bin_um": None if cells else stereoseq.BIN_UM, "dnb_um": stereoseq.DNB_UM, "image_source": img,
+           "image_registered": registered}
+    what = "cells" if cells else f"bins of {stereoseq.BIN_UM} um"
+    if not img:
+        progress(f"{len(ids):,} {what}, {len(genes):,} genes; no registered image: a blank background")
+        return _write_bundle(name, ids, xy, X, genes, None, BLANK, None, description, src, progress, "none",
+                             by="Stereo-seq (SAW)")
+    kind = stereoseq._image_kind(img)
+    A = np.array([[1 / stereoseq.DNB_UM, 0, 0], [0, 1 / stereoseq.DNB_UM, 0]])  # um -> DNB = image pixels
+    stage = config.HOME / "importing" / f".{name}.image.ome.tif"
+    stage.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        progress(f"image: {img} ({kind}; " + ("its pixels are the DNBs)" if registered else
+                 "not SAW's registered image: it waits for Align with Claude, the cells on a blank background meanwhile)"))
+        shown = visium.pyramid(img, stage, stereoseq.DNB_UM, progress)
+        progress(f"{len(ids):,} {what}, {len(genes):,} genes")
+        if not registered:
+            return _write_bundle(name, ids, xy, X, genes, None, BLANK, None, description, src, progress, "none",
+                                 image_pending=shown, pending_kind=kind, own_image=shown == str(stage))
+        return _write_bundle(name, ids, xy, X, genes, shown, A, None, description, src, progress, kind,
+                             by="Stereo-seq (SAW)", own_image=shown == str(stage))
+    finally:
+        stage.unlink(missing_ok=True)
+        from .render import _slides
+        _slides.pop(str(stage), None)
 
 
 # ---------------- CosMx and MERSCOPE (MERFISH) output: the cells and their counts, without the instrument's images ----

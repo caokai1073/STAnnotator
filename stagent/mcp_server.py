@@ -18,7 +18,7 @@ Getting started
 - list_samples. If the sample is not there: CosMx or MERFISH (MERSCOPE) output goes in with import_cosmx_merfish (its
   flat files or folders, optionally the user's H&E and registration); a Visium HD / Visium Space Ranger output with
   import_visium (cells from cell outlines when there are, the 2 um bins split by area; else bins at 8 um; no
-  registration needed). Otherwise ask for: the h5ad file(s) or an R file (.rds / .rda with a Seurat or
+  registration needed); a Stereo-seq SAW output with import_stereoseq (cells from its cell bins, else 8 um bins). Otherwise ask for: the h5ad file(s) or an R file (.rds / .rda with a Seurat or
   SpatialExperiment object; read without R) (raw counts, cell coordinates in um), the
   registered H&E image, and the registration file (affine CSV or Xenium Explorer matrix); for an h5ad holding several
   sections also the obs column and value of the section. Then call import_sample with those paths.
@@ -44,7 +44,7 @@ Getting started
   start_session(markers_text=...) when the user asks you to run it).
 
 Changes to the data are reviewed by the user
-- Every tool that changes data (import_sample, import_cosmx_merfish, import_visium, start_session, add / update / remove_constraint, label_cells,
+- Every tool that changes data (import_sample, import_cosmx_merfish, import_visium, import_stereoseq, start_session, add / update / remove_constraint, label_cells,
   label_cluster, remove_correction, recluster, revert, apply_alignment, run_niches, name_niches, record_verdicts,
   resolve_rule_suggestion, assign_region_cells, propose_region, move_piece, undo_piece_move) only proposes the change: the app shows it in a review window with what it does, and it
   is applied only when the user clicks Accept there (Dismiss drops it). The tool waits a little for the decision and
@@ -558,6 +558,33 @@ def import_visium(name: str, path: str, he: Optional[str] = None, description: s
                                   segmentation=segmentation, unit=unit)
     return _j({"imported": meta["sample_id"], "unit": meta["source"]["unit"], "n": meta["n_cells"],
                "n_genes": meta["n_genes"], "bin_um": meta["source"]["bin_um"], "log": log[-12:]})
+
+
+def _d_import_stereoseq(a):
+    from . import importer
+    x = importer.inspect_stereoseq(a["paths"])
+    cells = a.get("unit", "auto") != "bins" and (x["cellbin_gef"] or x["cell_gem"])
+    return {"title": f"Import a new sample {a['name']} (Stereo-seq)", "session_id": None, "sample_id": a["name"],
+            "details": [("Cells from " + (x["cellbin_gef"] or x["cell_gem"]) + (f" ({x['n_cells']:,} cells)" if x.get("n_cells") else ""))
+                        if cells else f"8 um bins pooled from the DNBs of {x['gem']}",
+                        f"Image: {a.get('image') or x['image'] or 'none (a blank background)'}" + (" (in the DNBs' coordinates)"
+                        if a.get("image") or x["image_registered"] else " (not SAW's registered image: it waits for an alignment)"),
+                        "Adds a sample; nothing that exists now changes."]}
+
+
+@mcp.tool()
+@_reviewed(_d_import_stereoseq)
+def import_stereoseq(name: str, paths: list[str], image: Optional[str] = None, description: str = "",
+                     unit: str = "auto") -> str:
+    """Import a Stereo-seq (STOmics SAW) output: paths = its folder, or its files (<SN>.cellbin.gef, <SN>.tissue.gem.gz,
+    <SN>_HE_regist.tif or the ssDNA _regist.tif). The cells are the unit when SAW segmented them (a cell-bin GEF, or a
+    GEM with a CellID column; unit "auto" or "cells"), else (or unit "bins") the DNBs (0.5 um) are pooled into 8 um
+    bins. The registered image is in the DNBs' coordinates (no registration needed); image: another such image."""
+    from . import importer
+    log = []
+    meta = importer.import_stereoseq(name, paths, image=image, description=description, progress=log.append, unit=unit)
+    return _j({"imported": meta["sample_id"], "unit": meta["source"]["unit"], "n": meta["n_cells"],
+               "n_genes": meta["n_genes"], "image": meta["image_kind"], "log": log[-12:]})
 
 
 # ---------------- data and viewer ----------------
