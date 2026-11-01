@@ -190,6 +190,11 @@ section.band { padding-block: clamp(64px, 9vw, 112px) 0; }
   .turn .who { line-height: 1.2; }
   .ex { padding: 18px; }
 }
+.more { margin-top: 28px; display: grid; gap: 10px; }
+.more h3 { font-size: var(--s-3); }
+.more > p { color: var(--muted); }
+.asks { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.asks li { background: var(--panel); border: 1px solid var(--line); border-radius: 99px; padding: 7px 14px; font-size: var(--s-1); min-width: 0; }
 .btnchip { display: inline-block; font: 500 var(--s-0)/1 var(--f-body); padding: 5px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); white-space: nowrap; }
 
 /* analyses */
@@ -387,7 +392,7 @@ footer a { color: var(--muted); }
       <div>
         <h2>Ask it to check the work, not only to do it</h2>
         <p class="intro">The agent works through the app's tools: it reads the numbers and figures they compute, checks
-          them on the H&amp;E, and proposes changes that wait in the app for you. Three things people ask it.</p>
+          them on the H&amp;E, and proposes changes that wait in the app for you. Three examples of many.</p>
         <div class="exs">
 
           <article class="ex">
@@ -490,6 +495,24 @@ footer a { color: var(--muted); }
             </div>
           </article>
 
+        </div>
+        <div class="more">
+          <h3>More to ask</h3>
+          <p>Anything the app can compute, the agent can run, explain and check. For example:</p>
+          <ul class="asks">
+            <li>“Draft a marker list for this panel; it is lung.”</li>
+            <li>“Align this H&amp;E. I have no registration file.”</li>
+            <li>“Outline the mucosa and the lymphoid follicles as regions.”</li>
+            <li>“Cluster 7 of the T cells is mixed. Split it.”</li>
+            <li>“These cells in crypt_1 are goblet cells.”</li>
+            <li>“Show me the biggest group of cells labeled against my priors.”</li>
+            <li>“Name the niches from the H&amp;E.”</li>
+            <li>“Is my UMAP driven by one slice?”</li>
+            <li>“What do these DE genes mean? What are the caveats?”</li>
+            <li>“Import these CosMx files as a new sample.”</li>
+            <li>“Go back to version 3.”</li>
+            <li>“Export a notebook that reproduces this analysis.”</li>
+          </ul>
         </div>
       </div>
     </div>
