@@ -1,7 +1,7 @@
 # STAnnotator
 
-Cell type annotation and analysis of imaging spatial transcriptomics (Xenium, MERFISH, …) on the H&E image, with an
-AI agent at your side.
+Cell type annotation and analysis of spatial transcriptomics (Xenium, CosMx, MERSCOPE, Visium HD, Stereo-seq, …) on
+the H&E image, with an AI agent at your side.
 
 - **Annotate** from a marker gene list, a labeled single-cell reference, or an existing annotation.
 - **Refine in plain language**: priors ("epithelial cells are only in the mucosa"), corrections, re-clustering.
@@ -24,12 +24,14 @@ Two ways to run it:
 ## A. Local computer
 
 **You need**
-- A Mac with Apple silicon (macOS 11+) and 8 GB of RAM or more. Linux and Windows: install from source.
-- Claude Code, installed and logged in once (`claude` works in Terminal).
+- A Mac with Apple silicon (macOS 11+) or a PC with Windows 10 / 11 (x64), and 8 GB of RAM or more. Linux: install
+  from source.
+- Claude Code, installed and logged in once (`claude` works in Terminal, or in PowerShell on Windows).
 
-**Install the app**
+**Install the app on a Mac**
 
-Open `STAnnotator.dmg` and drag **STAnnotator** to Applications. It contains everything; no Python needed.
+Download `STAnnotator.dmg` from the [latest release](https://github.com/caokai1073/STAnnotator/releases/latest), open
+it and drag **STAnnotator** to Applications. It contains everything; no Python needed.
 
 No DMG yet? Build it on the Mac (needs [uv](https://docs.astral.sh/uv/)):
 
@@ -39,7 +41,26 @@ git clone https://github.com/caokai1073/STAnnotator.git && cd STAnnotator
 bash packaging/macos/build_app.sh && open dist/STAnnotator.dmg
 ```
 
-**Or install from source** (Linux, Windows, developers):
+**Install the app on Windows**
+
+Download `STAnnotator-Setup.exe` from the [latest release](https://github.com/caokai1073/STAnnotator/releases/latest)
+and run it. It contains everything; no Python needed.
+- Choose where to install (any drive; for your user without administrator rights, or for all users) and, the first
+  time, where to keep the data (samples and annotations; **Change data folder** in About moves it later).
+- The installer is not signed yet: if Windows SmartScreen stops it, click **More info → Run anyway**.
+- Start **STAnnotator** from the Start menu or the desktop shortcut. **Ask Agent** opens Claude Code in its own
+  console window.
+- Uninstalling removes the program only; the data and the settings stay.
+
+No installer yet? Build it on the PC. Download the source (**Code → Download ZIP** on GitHub, or `git clone`), unzip
+it, and in PowerShell in that folder run (nothing to install first; 5–15 minutes the first time):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\windows\build.ps1
+# -> dist\STAnnotator-Setup-<version>.exe, and dist\STAnnotator-windows-<version>.zip (the app folder, runs without installing)
+```
+
+**Or install from source** (Linux, developers):
 
 ```bash
 git clone https://github.com/caokai1073/STAnnotator.git && cd STAnnotator
@@ -48,7 +69,8 @@ uv venv .venv --python 3.12 && uv pip install --python .venv/bin/python -e ".[ap
 .venv/bin/stagent make-app       # macOS: an STAnnotator launcher in ~/Applications
 ```
 
-**Settings**: none. Data and annotations go to `~/stagent` (set `STAGENT_HOME` for another folder).
+**Settings**: none. Data and annotations go to `~/stagent`, or the folder chosen in the Windows installer or with
+**Change data folder** in About (`STAGENT_HOME` overrides both).
 
 ## B. Remote server over SSH
 
@@ -73,7 +95,12 @@ folder when connecting.
   ssh-keygen -t ed25519            # once, if you have no key
   ssh-copy-id user@server          # then `ssh user@server` must log in directly
   ```
-- Optional: a `Host` entry in `~/.ssh/config` (user, port, jump host); the app uses it.
+  On Windows (PowerShell; the OpenSSH client is part of Windows 10 / 11), instead of `ssh-copy-id`:
+  ```powershell
+  type $env:USERPROFILE\.ssh\id_ed25519.pub | ssh user@server "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
+  ```
+- Optional: a `Host` entry in `~/.ssh/config` (Windows: `%USERPROFILE%\.ssh\config`; user, port, jump host); the app
+  uses it.
 
 **Connect**: in the app click **This computer** (right panel) → **A server over SSH**, and enter
 1. the server (`user@server` or a `Host` of `~/.ssh/config`),
@@ -113,8 +140,9 @@ stagent mcp                 # the agent's tools, for Claude Code without the app
 
 ## Troubleshooting
 
-- **The app does not open**: see `~/stagent/app.log`, or run `stagent app` in Terminal to see the error.
-- **Ask Agent does nothing**: Claude Code must be installed and logged in (`claude` works in Terminal).
+- **The app does not open**: see `~/stagent/app.log` (Windows: `%LOCALAPPDATA%\STAnnotator\app.log`), or run
+  `stagent app` in Terminal to see the error.
+- **Ask Agent does nothing**: Claude Code must be installed and logged in (`claude` works in Terminal or PowerShell).
 - **Server: Test fails**: `ssh user@server` must log in without a password, and the command path must be right
   (`ssh user@server ~/STAnnotator/.venv/bin/stagent remote-serve --check` prints JSON).
 - **Few cells on the H&E**: check the registration file and that cell coordinates are in micrometers.

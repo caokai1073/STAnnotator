@@ -192,22 +192,26 @@ section.band { padding-block: clamp(64px, 9vw, 112px) 0; }
 .privacy { margin-top: 20px; color: var(--muted); max-width: 70ch; }
 
 /* download */
-.dl { margin-top: 32px; display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 24px; align-items: start; }
-@media (max-width: 900px) { .dl { grid-template-columns: minmax(0, 1fr); } }
-.mac { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 28px; display: grid; gap: 18px; box-shadow: var(--shadow); }
-.mac h3 { font-size: var(--s-4); line-height: 1.1; }
-.mac .ver { font: 500 var(--s-0)/1 var(--f-mono); color: var(--accent); margin-top: -10px; }
-.mac .req { display: flex; flex-wrap: wrap; gap: 8px; }
-.mac .req span { font: 400 var(--s-0)/1 var(--f-mono); padding: 6px 10px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
-.mac ol { margin: 0; padding-left: 1.3em; display: grid; gap: 8px; }
-.mac ol li::marker { font-family: var(--f-mono); color: var(--accent); }
-.mac .note { font-size: var(--s-0); color: var(--muted); }
-.other { display: grid; gap: 20px; min-width: 0; }
-.other > * { min-width: 0; }
+.dl { margin-top: 32px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: stretch; }
+@media (max-width: 860px) { .dl { grid-template-columns: minmax(0, 1fr); } }
+.on-win .dl [data-os="win"], .on-win .cta [data-os="win"] { order: -1; }
+.osc { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 28px; display: grid; gap: 18px; align-content: start; box-shadow: var(--shadow); min-width: 0; }
+.osc h3 { font-size: var(--s-4); line-height: 1.1; }
+.osc .req { display: flex; flex-wrap: wrap; gap: 8px; }
+.osc .req span { font: 400 var(--s-0)/1 var(--f-mono); padding: 6px 10px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+.osc .btn { justify-self: start; }
+.osc ol { margin: 0; padding-left: 1.3em; display: grid; gap: 8px; }
+.osc ol li::marker { font-family: var(--f-mono); color: var(--accent); }
+.osc .note { font-size: var(--s-0); color: var(--muted); }
+.other { margin-top: 40px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; }
+@media (max-width: 860px) { .other { grid-template-columns: minmax(0, 1fr); } }
+.other-col { display: grid; gap: 16px; align-content: start; min-width: 0; }
+.other-col > * { min-width: 0; }
 .other h3 { font-size: var(--s-3); }
 .other .sub { color: var(--muted); margin-top: 4px; }
+.guide { margin-top: 24px; color: var(--muted); }
 .code { position: relative; background: var(--code-bg); color: var(--code-ink); border-radius: 10px; }
-.code pre { margin: 0; padding: 16px 18px; padding-right: 76px; overflow-x: auto; font: 400 var(--s-0)/1.7 var(--f-mono); }
+.code pre { margin: 0; padding: 46px 18px 16px; overflow-x: auto; font: 400 var(--s-0)/1.7 var(--f-mono); }
 .code .c { color: #8fa3a6; }
 .copy { position: absolute; top: 10px; right: 10px; font: 500 .75rem/1 var(--f-mono); padding: 7px 10px; border-radius: 6px; border: 1px solid rgb(255 255 255 / .2); background: transparent; color: var(--code-ink); cursor: pointer; }
 .copy:hover { background: rgb(255 255 255 / .08); }
@@ -248,17 +252,21 @@ footer a { color: var(--muted); }
       <div class="hero-grid">
         <h1>Cell types on the H&amp;E, with an <em>agent</em> at your side.</h1>
         <div class="lede-wrap">
-          <p class="lede">STAnnotator annotates and analyzes imaging spatial transcriptomics (Xenium, CosMx, MERSCOPE
-            and other platforms) directly on the tissue image. Tell it what you know in plain sentences. Every change
+          <p class="lede">STAnnotator annotates and analyzes spatial transcriptomics (Xenium, CosMx, MERSCOPE, Visium HD,
+            Stereo-seq and more) directly on the tissue image. Tell it what you know in plain sentences. Every change
             the agent proposes waits in the app until you click Accept.</p>
           <div class="cta">
-            <a class="btn btn-primary" href="#download" data-dmg>
+            <a class="btn btn-primary" href="#download" data-dmg data-os="mac">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"></path></svg>
               <span>Download for Mac<small>Apple silicon · macOS 11+</small></span>
             </a>
+            <a class="btn btn-primary" href="#download" data-exe data-os="win">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"></path></svg>
+              <span>Download for Windows<small>Windows 10 / 11 · x64</small></span>
+            </a>
             <a class="btn btn-ghost" href="#source">Install from source</a>
           </div>
-          <p class="hero-meta">Version 0.2.14 · free · runs on your computer or your server · the agent is your own Claude Code</p>
+          <p class="hero-meta">Version 0.2.39 · free · runs on your computer or your server · the agent is your own Claude Code</p>
         </div>
       </div>
 
@@ -284,7 +292,7 @@ footer a { color: var(--muted); }
         <p class="intro">Every step happens in one window, on the image. Each change becomes a version you can go back to.</p>
         <ol class="steps">
           <li><span class="n">1</span><h3>Import</h3>
-            <p>Xenium, CosMx (AtoMx flat files) and MERSCOPE output, h5ad, or Seurat and SpatialExperiment <code>.rds</code> files, read without R. Add the H&amp;E and its registration, or let the agent align it; bring regions drawn in QuPath; filter cells and genes.</p></li>
+            <p>Xenium, CosMx (AtoMx flat files), MERSCOPE, Visium HD and Stereo-seq output, h5ad, or Seurat and SpatialExperiment <code>.rds</code> files, read without R. Add the H&amp;E and its registration, or let the agent align it; bring regions drawn in QuPath; filter cells and genes.</p></li>
           <li><span class="n">2</span><h3>Annotate</h3>
             <p>From a marker gene list, a labeled single-cell reference, or an annotation you already have. No marker list? Start from a built-in list for 12 organs, pruned to your gene panel.</p></li>
           <li><span class="n">3</span><h3>Refine in words</h3>
@@ -418,11 +426,11 @@ footer a { color: var(--muted); }
         <h2>Your data stays where it is</h2>
         <div class="modes">
           <div class="mode">
-            <h3>On your Mac</h3>
+            <h3>On your computer</h3>
             <dl>
-              <dt>Data</dt><dd>Your computer</dd>
+              <dt>Data</dt><dd>Your computer, in a folder you choose</dd>
               <dt>Window</dt><dd>Your computer</dd>
-              <dt>Needs</dt><dd>Apple silicon, 8 GB of memory or more, Claude Code logged in once</dd>
+              <dt>Needs</dt><dd>A Mac with Apple silicon or a Windows 10 / 11 PC, 8 GB of memory or more, Claude Code logged in once</dd>
             </dl>
           </div>
           <div class="mode">
@@ -430,7 +438,7 @@ footer a { color: var(--muted); }
             <dl>
               <dt>Data</dt><dd>The server; nothing is copied except what you export</dd>
               <dt>Window</dt><dd>Your computer, through an SSH tunnel; no port is opened on the server</dd>
-              <dt>Needs</dt><dd>The app on your Mac, STAnnotator on the server, SSH login without a password</dd>
+              <dt>Needs</dt><dd>The app on your computer, STAnnotator on the server, SSH login without a password</dd>
             </dl>
           </div>
         </div>
@@ -445,43 +453,61 @@ footer a { color: var(--muted); }
       <div class="side"><p class="eyebrow">Download</p></div>
       <div>
         <h2>Get STAnnotator</h2>
+        <p class="intro">Version 0.2.39. Both apps contain everything they need; no Python to install.
+          All releases and their notes are on the <a href="#" data-releases>releases page</a>.</p>
         <div class="dl">
-          <div class="mac">
-            <h3>STAnnotator for Mac</h3>
-            <p class="ver">Version 0.2.14</p>
+          <div class="osc" data-os="mac">
+            <h3>Mac</h3>
             <div class="req"><span>Apple silicon</span><span>macOS 11 or later</span><span>8 GB RAM</span></div>
             <a class="btn btn-primary" href="#" data-dmg>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"></path></svg>
-              <span>Download STAnnotator.dmg<small>Everything included, no Python needed</small></span>
+              <span>Download STAnnotator.dmg<small>Disk image for macOS</small></span>
             </a>
             <ol>
               <li>Open <code>STAnnotator.dmg</code> and drag STAnnotator to Applications.</li>
               <li>Install <a href="https://docs.claude.com/en/docs/claude-code/setup">Claude Code</a> and log in once, so that <code>claude</code> works in Terminal.</li>
               <li>Start STAnnotator and click <b>Import…</b>. Data and annotations go to <code>~/stagent</code>.</li>
             </ol>
-            <p class="note">All releases and their notes are on the <a href="#" data-releases>releases page</a>.
-              Linux and Windows: install from source.</p>
           </div>
-          <div class="other">
+          <div class="osc" data-os="win">
+            <h3>Windows</h3>
+            <div class="req"><span>Windows 10 or 11</span><span>x64</span><span>8 GB RAM</span></div>
+            <a class="btn btn-primary" href="#" data-exe>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"></path></svg>
+              <span>Download STAnnotator-Setup.exe<small>Installer for Windows</small></span>
+            </a>
+            <ol>
+              <li>Run <code>STAnnotator-Setup.exe</code>. Choose where to install (any drive, no administrator rights needed) and where to keep the data.</li>
+              <li>Install <a href="https://docs.claude.com/en/docs/claude-code/setup">Claude Code</a> and log in once, so that <code>claude</code> works in PowerShell.</li>
+              <li>Start STAnnotator from the Start menu and click <b>Import…</b>.</li>
+            </ol>
+            <p class="note">The installer is not signed yet. If Windows SmartScreen stops it, click <b>More info → Run anyway</b>.
+              Uninstalling keeps your data.</p>
+          </div>
+        </div>
+        <div class="other">
+          <div class="other-col">
             <div id="source">
               <h3>From source</h3>
-              <p class="sub">Linux, Windows and developers. Needs <a href="https://docs.astral.sh/uv/">uv</a>.</p>
+              <p class="sub">Linux and developers. Needs <a href="https://docs.astral.sh/uv/">uv</a>.</p>
             </div>
             <div class="code"><button class="copy" type="button">Copy</button><pre><code>git clone https://github.com/caokai1073/STAnnotator.git && cd STAnnotator
 uv venv .venv --python 3.12
 uv pip install --python .venv/bin/python -e ".[app]"
 .venv/bin/stagent app        <span class="c"># the window; --browser for a browser tab</span></code></pre></div>
+          </div>
+          <div class="other-col">
             <div>
               <h3>On a server</h3>
-              <p class="sub">Install the same version as the app on your Mac, then click <b>This computer → A server over SSH</b> in the app.</p>
+              <p class="sub">Install the same version as the app on your computer, then click <b>This computer → A server over SSH</b> in the app.</p>
             </div>
             <div class="code"><button class="copy" type="button">Copy</button><pre><code>git clone https://github.com/caokai1073/STAnnotator.git ~/STAnnotator && cd ~/STAnnotator
 uv venv .venv --python 3.12
 uv pip install --python .venv/bin/python -e .
 <span class="c"># the command to enter in the app: ~/STAnnotator/.venv/bin/stagent</span></code></pre></div>
-            <p class="sub">Every control and method is described in the <a href="https://github.com/caokai1073/STAnnotator/blob/main/docs/GUIDE.md">user guide</a>.</p>
           </div>
         </div>
+        <p class="guide">Every control and method is described in the <a href="https://github.com/caokai1073/STAnnotator/blob/main/docs/GUIDE.md">user guide</a>.</p>
       </div>
     </div>
   </section>
@@ -489,7 +515,7 @@ uv pip install --python .venv/bin/python -e .
 
 <footer>
   <div class="wrap">
-    <span>STAnnotator · cell type annotation for imaging spatial transcriptomics</span>
+    <span>STAnnotator 0.2.39 · cell type annotation for spatial transcriptomics · macOS and Windows</span>
     <nav aria-label="Links">
       <a href="https://github.com/caokai1073/STAnnotator">Source code</a>
       <a href="https://github.com/caokai1073/STAnnotator/blob/main/docs/GUIDE.md">User guide</a>
@@ -499,11 +525,15 @@ uv pip install --python .venv/bin/python -e .
 </footer>
 
 <script>
-// One place for the download links: the newest GitHub release's STAnnotator.dmg.
+// One place for the download links: the newest GitHub release's STAnnotator.dmg and STAnnotator-Setup.exe.
 const REPO = "https://github.com/caokai1073/STAnnotator";
 const DMG_URL = REPO + "/releases/latest/download/STAnnotator.dmg";
+const EXE_URL = REPO + "/releases/latest/download/STAnnotator-Setup.exe";
 document.querySelectorAll("[data-dmg]").forEach((a) => { a.href = DMG_URL; });
+document.querySelectorAll("[data-exe]").forEach((a) => { a.href = EXE_URL; });
 document.querySelectorAll("[data-releases]").forEach((a) => { a.href = REPO + "/releases"; });
+// the visitor's own system first
+if (/Windows/i.test(navigator.userAgent)) document.documentElement.classList.add("on-win");
 
 document.querySelectorAll(".copy").forEach((b) => b.addEventListener("click", () => {
   const code = b.parentElement.querySelector("code");
