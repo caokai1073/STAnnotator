@@ -47,22 +47,32 @@ notary_failed() {  # Apple's reasons, file by file
   echo "(the whole log: dist/notary_rejection.json)"
   exit 1
 }
+sign() {  # Apple's timestamp server sometimes does not answer one of the hundreds of requests ("A timestamp was
+          # expected but was not found"): try each file up to 5 times
+  local i
+  for i in 1 2 3 4 5; do
+    codesign --force --timestamp "$@" && return 0
+    echo "retrying in $((i * 5)) s (attempt $i failed: usually Apple's timestamp server not answering)"
+    sleep $((i * 5))
+  done
+  return 1
+}
 DMG=dist/STAnnotator.dmg
 if [ -z "${NOTARY_ID:-}" ]; then
   echo "signing $APP"
   # sign every bundled library and executable from the inside out, then the app itself
   find "$APP/Contents" -type f -print0 | while IFS= read -r -d '' f; do
     if file -b "$f" | grep -q "Mach-O"; then
-      codesign --force --timestamp --options runtime --entitlements "$ENT" --sign "$DEVELOPER_ID" "$f"
+      sign --options runtime --entitlements "$ENT" --sign "$DEVELOPER_ID" "$f"
     fi
   done
-  codesign --force --timestamp --options runtime --entitlements "$ENT" --sign "$DEVELOPER_ID" "$APP"
+  sign --options runtime --entitlements "$ENT" --sign "$DEVELOPER_ID" "$APP"
   codesign --verify --deep --strict --verbose=2 "$APP"
   # one submission: the signed DMG; Apple notarizes the app inside it too
   rm -f "$DMG"
   hdiutil create -volname "STAnnotator" -srcfolder "$APP" -ov -format ULMO "$DMG" \
     || hdiutil create -volname "STAnnotator" -srcfolder "$APP" -ov -format UDZO "$DMG"
-  codesign --force --timestamp --sign "$DEVELOPER_ID" "$DMG"
+  sign --sign "$DEVELOPER_ID" "$DMG"
   echo "uploading the DMG to Apple's notary service"
   xcrun notarytool submit "$DMG" --keychain-profile "$PROFILE" --output-format plist > dist/notary_submit.plist
   NOTARY_ID=$(/usr/libexec/PlistBuddy -c "Print :id" dist/notary_submit.plist)
