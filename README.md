@@ -138,3 +138,7 @@ stagent mcp                 # the agent's tools, for Claude Code without the app
 - **Server: Test fails**: `ssh user@server` must log in without a password, and the command path must be right
   (`ssh user@server ~/STAnnotator/.venv/bin/stagent remote-serve --check` prints JSON).
 - **Few cells on the H&E**: check the registration file and that cell coordinates are in micrometers.
+
+## License
+
+Apache License 2.0; see [LICENSE](LICENSE).

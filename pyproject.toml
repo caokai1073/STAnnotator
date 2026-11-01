@@ -2,6 +2,8 @@
 name = "stagent"
 dynamic = ["version"]
 description = "Spatial transcriptomics cell type annotation driven by natural-language spatial priors"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
   "numpy", "pandas", "scipy", "pyarrow", "matplotlib",
@@ -27,7 +29,7 @@ stagent-web = "stagent.webapp:main"
 version = {attr = "stagent.__version__"}
 
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]  # 77: license as an SPDX expression (PEP 639)
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
