@@ -550,7 +550,9 @@ WebView2, part of Windows 11), `stagent.exe` beside it the console program Claud
 (`stagent.exe mcp`; it also takes every other subcommand). The build is not signed, so Windows asks once (More
 info -> Run anyway). On Windows the Ask Agent button opens Claude Code in its own console window; a request sent while
 it is open reopens it with the request (`claude --continue`, the same conversation), since text cannot be typed into
-another console. Sample names are limited to 100 characters there (Windows' 260-character paths).
+another console. Sample names are limited to 100 characters there (Windows' 260-character paths). Harmony in a
+project's Run PCA + UMAP uses `stagent/harmony.py` on Windows, a NumPy version of harmonypy 2.1.0 (which has no
+Windows build): on two slices of 559,539 cells, about 20 s, and the same neighbors as harmonypy up to its randomness.
 
 The script also makes the installer `dist\STAnnotator-Setup-<version>.exe` with Inno Setup 6 (installed with winget
 when missing; `packaging\windows\installer.iss`). It asks where to install (any drive; for this user without

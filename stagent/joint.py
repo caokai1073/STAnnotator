@@ -9,7 +9,7 @@ niches(): every cell's identity (NMF programs fitted on the pooled cells, or its
   neighbors within its own slice, then one k-means over all slices; each slice's annotation keeps its part.
 Comparing the slices (composition, DE genes) is in analysis.py.
 """
-import json, shutil, time
+import json, os, shutil, time
 import numpy as np, pandas as pd, scipy.sparse as sp
 from . import config, jobs, markers, model, projects
 
@@ -118,11 +118,16 @@ def embed(pid, n_pcs=30, n_neighbors=15, min_dist=0.3, resolution=1.0, harmony=T
     Z = markers.pca(model.lognorm(counts), n_pcs)[:, ::-1].copy()
     if harmony and len(ids) > 1:
         say(0.15, "Harmony: removing slice-to-slice differences from the PCA")
-        import harmonypy
-        batch = pd.DataFrame({"slice": np.repeat(ids, np.diff(off))})
-        ho = harmonypy.run_harmony(Z, batch, ["slice"], verbose=False, random_state=0)
-        Z = np.ascontiguousarray(np.asarray(ho.Z_corr).T if np.asarray(ho.Z_corr).shape[0] == Z.shape[1] else ho.Z_corr,
-                                 dtype=np.float32)
+        if os.name == "nt":  # harmonypy 2.x has no Windows build; harmony.py is its NumPy version
+            from . import harmony as own
+            Z = own.harmonize(Z, np.repeat(ids, np.diff(off)), random_state=0,
+                              progress=lambda i, n: say(0.15 + 0.15 * i / n, f"Harmony: round {i} of at most {n}"))
+        else:
+            import harmonypy
+            batch = pd.DataFrame({"slice": np.repeat(ids, np.diff(off))})
+            ho = harmonypy.run_harmony(Z, batch, ["slice"], verbose=False, random_state=0)
+            Z = np.ascontiguousarray(np.asarray(ho.Z_corr).T if np.asarray(ho.Z_corr).shape[0] == Z.shape[1]
+                                     else ho.Z_corr, dtype=np.float32)
     say(0.3, f"{n_neighbors} nearest neighbors")
     dist, nbr = markers.knn(Z, n_neighbors)
     say(0.45, "Leiden clusters")
