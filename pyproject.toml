@@ -6,7 +6,10 @@ requires-python = ">=3.11"
 dependencies = [
   "numpy", "pandas", "scipy", "pyarrow", "matplotlib",
   "tifffile", "zarr>=3", "imagecodecs", "h5py", "mcp>=1.9,<2", "igraph", "pynndescent", "uvicorn",
-  "starlette", "pillow", "scikit-learn", "umap-learn", "harmonypy",
+  "starlette", "pillow", "scikit-learn", "umap-learn",
+  # Harmony (joint embedding of several slices): 2.x is compiled and has no Windows build; 0.0.10 is pure Python
+  # (same results: correlation 0.999 with 2.1.0 on a test, slower) and needs no PyTorch, unlike 0.1 / 0.2
+  "harmonypy; sys_platform != 'win32'", "harmonypy==0.0.10; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]
