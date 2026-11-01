@@ -158,6 +158,32 @@ section.band { padding-block: clamp(64px, 9vw, 112px) 0; }
 .detail img { border-radius: 10px; border: 1px solid var(--line); width: 100%; height: auto; aspect-ratio: 640 / 1120; object-fit: cover; max-height: 640px; }
 .detail figcaption { margin-top: 10px; font-size: var(--s-0); color: var(--muted); }
 
+/* agent examples: one conversation per row, the evidence beside it */
+.exs { margin-top: 32px; display: grid; gap: 20px; }
+.ex { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 24px; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr); gap: 24px 32px; }
+@media (max-width: 860px) { .ex { grid-template-columns: minmax(0, 1fr); } }
+.ex-head { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; }
+.ex-head h3 { font-size: var(--s-3); line-height: 1.2; }
+.ex-head .eyebrow { color: var(--accent); }
+.ex .talk { gap: 10px; }
+.ex .turn { grid-template-columns: 56px minmax(0, 1fr); }
+.ex .say { font-size: var(--s-1); }
+.ex .turn.you .say { font-size: var(--s-1); background: var(--paper); }
+.ex .say ul { margin: 6px 0 0; padding-left: 1.1em; display: grid; gap: 4px; }
+.ev { display: grid; gap: 14px; align-content: start; min-width: 0; }
+.ev h4 { margin: 0; font: 500 var(--s-0)/1.3 var(--f-mono); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.ev ul { margin: 6px 0 0; padding-left: 1.1em; display: grid; gap: 6px; color: var(--ink); }
+.ev .result { border-top: 1px dashed var(--line); padding-top: 12px; display: grid; gap: 6px; }
+.ev .result p { color: var(--muted); font-size: var(--s-0); }
+.kv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; font-size: var(--s-1); }
+.kv span:nth-child(even) { font-family: var(--f-mono); font-variant-numeric: tabular-nums; text-align: right; color: var(--accent); }
+@media (max-width: 560px) {
+  .turn, .ex .turn { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .turn .who { line-height: 1.2; }
+  .ex { padding: 18px; }
+}
+.btnchip { display: inline-block; font: 500 var(--s-0)/1 var(--f-body); padding: 5px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); white-space: nowrap; }
+
 /* analyses */
 .tools { margin-top: 32px; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 36px 40px; }
 .tool { display: grid; gap: 6px; align-content: start; min-width: 0; padding-top: 16px; border-top: 2px solid var(--ink); }
@@ -238,6 +264,7 @@ footer a { color: var(--muted); }
     </a>
     <nav aria-label="Sections">
       <a href="#workflow">How it works</a>
+      <a href="#agent">Agent</a>
       <a href="#analyses">Analyses</a>
       <a href="#measured">Measured</a>
       <a class="keep" href="#download">Download</a>
@@ -352,6 +379,120 @@ footer a { color: var(--muted); }
     </div>
   </section>
 
+  <section class="band" id="agent">
+    <div class="wrap sec">
+      <div class="side"><p class="eyebrow">Working with the agent</p></div>
+      <div>
+        <h2>Ask it to check the work, not only to do it</h2>
+        <p class="intro">The agent works through the app's tools: it reads the numbers and figures they compute, checks
+          them on the H&amp;E, and proposes changes that wait in the app for you. Three things people ask it.</p>
+        <div class="exs">
+
+          <article class="ex">
+            <div class="ex-head"><span class="eyebrow">Markers</span><h3>Refine the marker list</h3></div>
+            <div class="talk">
+              <div class="turn you"><span class="who">You</span>
+                <div class="say">“Review my annotation. Is my marker list missing a cell type?”</div></div>
+              <div class="turn agent"><span class="who">Agent</span>
+                <div class="say">
+                  <p>15,514 Unassigned cells express CD177, CSF3R and S100A12. These look like neutrophils, which your list
+                    does not have. Your “dendritic cells” express macrophage genes (C1QC, LYVE1, MS4A7).</p>
+                  <p>I suggest adding Neutrophils and revising the dendritic cell markers. <span class="btnchip">Open in Markers…</span> opens the list to edit.</p>
+                </div></div>
+            </div>
+            <div class="ev">
+              <div><h4>What it checks</h4>
+                <ul>
+                  <li>How often each marker is detected in its type compared with sibling types</li>
+                  <li>Negative markers that are detected anyway</li>
+                  <li>The genes that set Unassigned cells apart</li>
+                </ul></div>
+              <div class="result">
+                <h4>After annotating with the revised list</h4>
+                <div class="kv">
+                  <span>Unassigned cells</span><span>15,514 → 195</span>
+                  <span>Neutrophils labeled as neutrophils</span><span>15% → 97%</span>
+                  <span>Lineage agreement</span><span>91.4% → 98.6%</span>
+                </div>
+                <p>SCP2927 section 146685, ulcerative colitis. Dataset labels used only to score the result.</p>
+              </div>
+            </div>
+          </article>
+
+          <article class="ex">
+            <div class="ex-head"><span class="eyebrow">Registration</span><h3>Fix the H&amp;E registration where it is off</h3></div>
+            <div class="talk">
+              <div class="turn you"><span class="who">You</span>
+                <div class="say">“The cells at the lower left sit next to their nuclei, not on them. Can you check the registration there?”</div></div>
+              <div class="turn agent"><span class="who">Agent</span>
+                <div class="say">
+                  <p>I compared the nuclei on the H&amp;E with the cell centers in windows across the section. The whole
+                    section is slightly off in scale, and one area is shifted further.</p>
+                  <p>I proposed an affine correction plus a local shift for that area. My figure marks the area with the
+                    large shift.</p>
+                </div></div>
+              <div class="turn you"><span class="who">You</span>
+                <div class="say">“This piece of tissue tore off and turned. I outlined its cells as <code>flap_1</code>.”</div></div>
+              <div class="turn agent"><span class="who">Agent</span>
+                <div class="say"><p>I searched rotation, shift and mirroring for the piece. The best fit puts its cells on
+                  nuclei, on tissue that no other cell covers. The move is waiting in the app's review window
+                  (cyan: the cells now, yellow: moved).</p></div></div>
+            </div>
+            <div class="ev">
+              <div><h4>What it checks</h4>
+                <ul>
+                  <li>Nuclei (hematoxylin or DAPI) against cell centers in 200 µm windows, then 600 µm windows for shifts up to 100 µm</li>
+                  <li>For a torn or folded piece: rotation, a shift of up to 300 µm, and mirroring</li>
+                  <li>It proposes no move when the fit is no better than where the cells are now</li>
+                </ul></div>
+              <div class="result">
+                <h4>Measured</h4>
+                <div class="kv">
+                  <span>Section 147328, scale off by 0.28%</span><span>30 → 0.5 µm</span>
+                  <span>Local warp of 70 µm (test)</span><span>→ 2 µm</span>
+                  <span>Torn pieces, up to 300 µm and 180° (tests)</span><span>1–6 µm</span>
+                </div>
+                <p>Each correction can be undone. Regions keep their cells.</p>
+              </div>
+            </div>
+          </article>
+
+          <article class="ex">
+            <div class="ex-head"><span class="eyebrow">Hypotheses</span><h3>Turn a pattern into something you can test</h3></div>
+            <div class="talk">
+              <div class="turn you"><span class="who">You</span>
+                <div class="say">“What could keep the stem cells at the crypt base? Give me something I can test in this data.”</div></div>
+              <div class="turn agent"><span class="who">Agent</span>
+                <div class="say">
+                  <p>A hypothesis to test: R-spondin from fibroblasts around the crypt base acts on LGR5+ stem cells.
+                    RSPO3 and LGR5 are both on your panel.</p>
+                  <ul>
+                    <li><b>If it holds:</b> RSPO3 → LGR5 is stronger from fibroblasts to stem cells than to other epithelial cells.</li>
+                    <li><b>Caveats:</b> one slice, no replicate; RSPO3 transcripts in cells next to fibroblasts can be spillover.</li>
+                  </ul>
+                  <p><span class="btnchip">Put in Signaling</span> sets up this comparison. Run it to see the result.</p>
+                </div></div>
+            </div>
+            <div class="ev">
+              <div><h4>What the app does</h4>
+                <ul>
+                  <li><span class="btnchip">Put in Signaling</span> or <span class="btnchip">Put in Compare</span> fills in the analysis that would settle the question</li>
+                  <li><span class="btnchip">Show on map</span> colors the tissue by the gene or the signal</li>
+                  <li>Agent Review of Compare and Signaling explains the results you ran and names the caveats</li>
+                </ul></div>
+              <div class="result">
+                <h4>Who computes what</h4>
+                <p>The agent proposes the hypothesis and the test. The app's tools compute the result. Nothing in your
+                  data changes until you accept a change.</p>
+              </div>
+            </div>
+          </article>
+
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="band" id="analyses">
     <div class="wrap sec">
       <div class="side"><p class="eyebrow">Analyses</p></div>
@@ -399,14 +540,11 @@ footer a { color: var(--muted); }
             <p class="src">SCP2927, section 147328</p>
           </div>
           <div class="measure">
-            <p class="what">Agent Review on an ulcerative colitis section</p>
-            <p class="how">The review found 15,514 unassigned cells expressing CD177, CSF3R and S100A12: neutrophils missing from the marker list. With the revised list:</p>
-            <div class="bars" role="img" aria-label="Lineage agreement rose from 91.4 percent to 98.6 percent after review.">
-              <div><span>before</span><span class="bar"><i class="before" style="width: 91.4%"></i></span><span class="num">91.4%</span></div>
-              <div><span>after</span><span class="bar"><i style="width: 98.6%"></i></span><span class="num">98.6%</span></div>
-            </div>
-            <p class="how">Lineage agreement with the dataset's labels. Unassigned cells fell from 15,514 to 195.</p>
-            <p class="src">SCP2927, section 146685</p>
+            <p class="big num">97<small>%</small></p>
+            <p class="what">lineage agreement from a single-cell reference</p>
+            <p class="how">A reference built from three other sections labeled section 147328: 97% on the five lineages
+              (98% with majority voting), 80% on 56 fine cell types.</p>
+            <p class="src">SCP2927 IBD Xenium atlas, section 147328</p>
           </div>
           <div class="measure">
             <p class="big num">87–91<small>%</small></p>
