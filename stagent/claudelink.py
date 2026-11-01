@@ -112,7 +112,7 @@ def _open_windows(ws, prompt, exe):
     old = rec.read_text().strip() if rec.exists() else ""
     running = old.isdigit() and osutil.pid_alive(int(old))
     if running and not prompt:
-        return {"opened": True, "reused": True, "claude_code": exe}
+        return {"opened": True, "reused": True, "console": True, "claude_code": exe}
     if running:
         osutil.terminate(int(old), tree=True)
     line = (f'call "{exe}"' if exe else "claude") + (" --continue" if running else "") + \
@@ -128,7 +128,7 @@ def _open_windows(ws, prompt, exe):
     script.write_text("\r\n".join(body) + "\r\n", encoding="utf-8")
     p = subprocess.Popen(["cmd.exe", "/k", str(script)], cwd=str(ws), creationflags=subprocess.CREATE_NEW_CONSOLE)
     rec.write_text(str(p.pid))
-    return {"opened": True, "reused": running, "continued": running, "claude_code": exe}
+    return {"opened": True, "reused": running, "continued": running, "console": True, "claude_code": exe}
 
 
 TAB_TITLE = "STAnnotator - Claude Code"

@@ -3483,7 +3483,8 @@ async function openClaudeCode() {
     }
     const r = await post("/api/claude/code", { sample: st.sample && st.sample.sample_id, session: st.sid });
     if (r.opened) { toast(r.continued ? "The agent (Claude Code) is reopening with your request, continuing the same conversation"
-      : r.reused ? "The agent (Claude Code) is already open in its window" : "The agent (Claude Code) is opening in its own window, connected to this sample", 4000); return; }
+      : r.reused ? (r.console ? "The agent (Claude Code) is already open in its console window" : "The agent (Claude Code) is open in Terminal (brought to the front)")
+      : "The agent (Claude Code) is opening in its own window, connected to this sample", 4000); return; }
     $("clMsg").textContent = "Run this in a terminal to start Claude Code connected to this app:";
     $("clCmd").textContent = r.command; $("clCmd").hidden = false; $("clDlg").showModal();
   } catch (e) { toast(e.message, 6000); }
