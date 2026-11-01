@@ -13,7 +13,8 @@ import numpy as np, pandas as pd
 from . import config, embedding, niches, render
 
 # app modules carried into the notebook, in import order (relative imports resolve inside the notebook)
-CARRIED = ["timing", "vocab", "markers", "model", "constraints", "regions", "existing", "importer", "scref"]
+# visium and stereoseq before importer, which imports them
+CARRIED = ["timing", "vocab", "markers", "model", "constraints", "regions", "existing", "visium", "stereoseq", "importer", "scref"]
 CONFIG_STUB = '''"""Stand-in for the app's settings: only what the carried modules use."""
 from pathlib import Path
 HOME = WORK = SAMPLES = SESSIONS = Path(".")
@@ -156,7 +157,7 @@ versions the notebook gives the same clusters and labels; other versions can cha
 
 Exported {time.strftime('%Y-%m-%d %H:%M')} (STAnnotator build `{config.build()}`). This notebook needs only the
 data files and common Python packages: `numpy pandas scipy scikit-learn python-igraph pynndescent umap-learn h5py
-matplotlib`. The outputs below are the results at export time, so it can be read without running it; running it
+matplotlib{" pillow" if (meta.get("source") or {}).get("segmentation") else ""}`. The outputs below are the results at export time, so it can be read without running it; running it
 from the top repeats the analysis and checks that the labels, Leiden clusters and niches come out the same.
 The annotation algorithm of the app is carried as source code in the folded cell of section 1.
 
@@ -186,7 +187,11 @@ unpack = lambda s, dtype: np.frombuffer(zlib.decompress(base64.b64decode(s)), dt
 
     # ---- 2. data
     src = meta.get("source") or {}
-    nb.append(_md(f"## {sec()}. The cells\nRead from the original files (edit the paths if they moved). The distance of "
+    unit = {"visium_hd": "cells built from the 2 um bins by the cell outlines" if src.get("unit") == "cells" else
+            f"bins of {src.get('bin_um')} um", "visium": "spots", "stereoseq": "cells (cell bins)" if src.get("unit") == "cells"
+            else f"bins of {src.get('bin_um')} um"}.get(src.get("kind"))
+    nb.append(_md(f"## {sec()}. The cells\nRead from the original files (edit the paths if they moved)" +
+                  (f", as at import: {unit}" if unit else "") + ". The distance of "
                   "every cell to the epithelium (`depth_um`, used by depth priors) is computed as at import."))
     if src.get("kind") == "xenium":
         read = f'''
@@ -211,8 +216,57 @@ for q in parts[1:]:   # the same gene order in every file
 counts = sp.vstack([q["X"] for q in parts]).tocsr()
 xy = np.vstack([q["xy"] for q in parts])
 cell_ids = np.concatenate([q["cell_id"] for q in parts])'''
+    elif src.get("kind") in ("cosmx", "merfish"):
+        read = f'''
+KIND, FILES = {_py(src["kind"])}, {_py(src.get("files"))}
+ids, genes, X = sa.importer._flat_counts(KIND, FILES["counts"])
+cell_ids, xy = sa.importer._flat_cells(KIND, FILES["cells"])
+pos = pd.Series(np.arange(len(ids)), index=ids)
+have = pd.Index(cell_ids).isin(pos.index)   # cells of the metadata with counts
+cell_ids, xy = cell_ids[have], xy[have]
+counts = X[pos[cell_ids].to_numpy()].tocsr()'''
+    elif src.get("kind") in ("visium_hd", "visium"):
+        read = f'''
+FOLDER = {_py(src.get("folder"))}            # the square_XXXum folder (Visium HD) or outs/ (Visium)
+BIN_UM = {_py(src.get("source_bin_um") if src.get("kind") == "visium_hd" else None)}   # the bins read (None: Visium spots)
+SEGMENTATION = {_py(src.get("segmentation"))}   # cell outlines (Visium HD): cells from the bins, split by area
+if SEGMENTATION:
+    cell_ids, pxy, genes, counts, _ = sa.visium.read_cells(FOLDER, BIN_UM, SEGMENTATION)
+else:
+    cell_ids, pxy, genes, counts, _, _ = sa.visium.read(FOLDER, BIN_UM)
+counts = counts.tocsr()
+xy = pxy * sa.visium.scale(FOLDER, BIN_UM)[1]   # full-resolution pixels -> um'''
+    elif src.get("kind") == "stereoseq":
+        read = f'''
+FILE, CELLS = {_py(src.get("file"))}, {_py(src.get("unit") == "cells")}   # a cell-bin GEF or a GEM; cells, or 8 um bins
+if FILE.endswith(".gef"):
+    cell_ids, dnb, genes, counts = sa.stereoseq.read_cellbin_gef(FILE)
+else:
+    cell_ids, dnb, genes, counts = sa.stereoseq.read_gem(FILE, CELLS)
+ok = np.asarray(counts.sum(1)).ravel() > 0
+cell_ids, dnb, counts = cell_ids[ok], dnb[ok], counts[ok].tocsr()
+xy = dnb * sa.stereoseq.DNB_UM   # DNBs -> um'''
     else:
         read = "raise RuntimeError('this sample was imported before its source files were recorded')"
+    flt = meta.get("filter")
+    if flt:  # the sample's QC filter (qcfilter.py), applied to the cells as imported
+        nb.append(_md(f"The sample was filtered in the app ({', '.join(f'{k} {x:g}' for k, x in flt['params'].items())}): "
+                      f"{flt['n_cells_removed']:,} cells and {len(flt.get('genes_removed') or [])} genes were removed; "
+                      "the same filter is applied below."))
+        read += f'''
+FILTER, GENES_REMOVED = {_py(flt["params"])}, {_py(flt.get("genes_removed") or [])}   # the app's QC filter
+counts = counts.tocsr(); counts.eliminate_zeros()
+total, n_genes = np.asarray(counts.sum(1)).ravel(), np.diff(counts.indptr)
+keep = np.ones(len(total), bool)
+if "min_counts" in FILTER: keep &= total >= FILTER["min_counts"]
+if "max_counts" in FILTER: keep &= total <= FILTER["max_counts"]
+if "min_genes" in FILTER: keep &= n_genes >= FILTER["min_genes"]
+mito = np.array([str(g).lower().startswith("mt-") for g in genes])
+if "max_mito_pct" in FILTER and mito.any():
+    keep &= 100 * np.asarray(counts[:, mito].sum(1)).ravel() / np.maximum(total, 1) <= FILTER["max_mito_pct"]
+gkeep = ~np.isin(np.asarray(genes, dtype=object), GENES_REMOVED)   # genes detected in too few cells (of all slices)
+counts, genes = counts[keep][:, gkeep].tocsr(), [g for g, k in zip(genes, gkeep) if k]
+xy, cell_ids = xy[keep], np.asarray(cell_ids)[keep]'''
     nb.append(_code(read + '''
 depth_um = sa.importer.epithelial_depth(counts, genes, xy)
 cells = pd.DataFrame({"cell": np.arange(len(cell_ids)), "cell_id": cell_ids, "x": xy[:, 0], "y": xy[:, 1], "depth_um": depth_um})
@@ -281,7 +335,7 @@ for j, op in enumerate(STATE["marker_ops"]):
     res = sa.markers.rerun(res, counts, genes, marker_tree(STATE["marker_ops"][:j + 1]), op["target"], op["resolution"], prefix=f"{op['id']}:", knn=SCHEME["knn"])
 index = {t: i for i, t in enumerate(TYPES)}
 marker_labels = np.array([index.get(x, -1) for x in res["labels"]])   # -1: left at a lineage / parent level
-model = sa.model.train_pseudo(counts, marker_labels, T)                   # expression model
+model = sa.model.train_pseudo(counts, marker_labels, T, keep=sa.markers.gene_columns(SCHEME["tree"], genes))   # expression model
 if len(lock_rows):
     rX, ry, _ = sa.model.pseudo_pool(counts, marker_labels, T)
     model = sa.model.finetune(model, counts[lock_rows], lock_labels, rX, ry)

@@ -285,7 +285,9 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
    a11..ty that places the cells on the image now, whether it came from the file, Claude's alignment or a
    correction; it can be imported again), or the **analysis notebook** (Jupyter). The notebook runs without this
    app: it needs the data files and `numpy pandas scipy scikit-learn python-igraph pynndescent umap-learn h5py
-   matplotlib`. Standard steps are plain code (reading the cells, the registration affine, PCA / neighbors /
+   matplotlib` (and `pillow` for Visium HD cells built from outlines). It reads the cells from the original files
+   of every platform as the import did (Xenium, h5ad, CosMx, MERSCOPE, Visium HD cells or bins, Stereo-seq cells or
+   bins) and applies the sample's filter (**Filter…**) when it has one. Standard steps are plain code (reading the cells, the registration affine, PCA / neighbors /
    Leiden / UMAP, NMF niches, figures, the table); the app's annotation algorithm (marker clustering, expression
    model, priors) is carried as source code in a folded cell and replayed with this annotation's marker list,
    regions, priors, corrections and re-clusterings. The results at export time are filled in, and a rerun checks
