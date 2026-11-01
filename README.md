@@ -1,4 +1,13 @@
-# STAnnotator
+<p align="center">
+  <img src="docs/assets/logo.png" width="128" height="128" alt="STAnnotator app icon">
+</p>
+
+<h1 align="center">STAnnotator</h1>
+
+<p align="center">
+  <a href="https://github.com/caokai1073/STAnnotator/releases/latest">Download for macOS and Windows</a> ·
+  <a href="docs/GUIDE.md">User guide</a>
+</p>
 
 Cell type annotation and analysis of spatial transcriptomics (Xenium, CosMx, MERSCOPE, Visium HD, Stereo-seq, …) on
 the H&E image, with an AI agent at your side.

@@ -5,7 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>STAnnotator</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<meta name="description" content="Cell type annotation and analysis of imaging spatial transcriptomics on the H&E image, with an AI agent at your side. Free download for macOS.">
+<meta name="description" content="Cell type annotation and analysis of spatial transcriptomics on the H&E image, with an AI agent at your side. Free download for macOS and Windows.">
+<link rel="icon" type="image/png" href="assets/favicon.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<meta property="og:title" content="STAnnotator">
+<meta property="og:description" content="Cell types on the H&E, with an agent at your side. Free download for macOS and Windows.">
+<meta property="og:image" content="https://caokai1073.github.io/STAnnotator/assets/social-preview.png">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
@@ -76,7 +82,9 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: color-mix(in srgb, var(--paper) 88%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
 .top .wrap { display: flex; align-items: center; gap: 24px; padding-block: 12px; }
 .brand { display: flex; align-items: center; gap: 10px; font: 700 1.125rem/1 var(--f-display); color: var(--ink); text-decoration: none; }
-.brand svg { flex: none; }
+.brand img { flex: none; width: 32px; height: 32px; }
+.get { display: flex; align-items: center; gap: 18px; }
+.get img { flex: none; width: 64px; height: 64px; }
 .top nav { display: flex; gap: 20px; margin-left: auto; flex-wrap: wrap; }
 .top nav a { color: var(--muted); text-decoration: none; font-size: var(--s-1); }
 .top nav a:hover { color: var(--ink); }
@@ -253,13 +261,7 @@ footer a { color: var(--muted); }
 <header class="top">
   <div class="wrap">
     <a class="brand" href="#top" aria-label="STAnnotator home">
-      <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">
-        <rect x="1" y="1" width="24" height="24" rx="6" fill="var(--accent)"></rect>
-        <circle cx="9" cy="9" r="2.6" fill="var(--panel)"></circle>
-        <circle cx="17" cy="11" r="2.1" fill="var(--panel)" opacity=".75"></circle>
-        <circle cx="11" cy="17.5" r="2.1" fill="var(--panel)" opacity=".75"></circle>
-        <circle cx="18" cy="18" r="1.5" fill="var(--panel)" opacity=".55"></circle>
-      </svg>
+      <img src="assets/logo.png" width="32" height="32" alt="">
       STAnnotator
     </a>
     <nav aria-label="Sections">
@@ -590,7 +592,7 @@ footer a { color: var(--muted); }
     <div class="wrap sec">
       <div class="side"><p class="eyebrow">Download</p></div>
       <div>
-        <h2>Get STAnnotator</h2>
+        <div class="get"><img src="assets/logo.png" width="64" height="64" alt="STAnnotator app icon"><h2>Get STAnnotator</h2></div>
         <p class="intro">Version 0.2.39. Both apps contain everything they need; no Python to install.
           All releases and their notes are on the <a href="#" data-releases>releases page</a>.</p>
         <div class="dl">
