@@ -1,26 +1,58 @@
 """Paths and devices.
 
-All data lives under one home directory: $STAGENT_HOME, default ~/stagent (the older names still work:
-$CELLTYPEAGENT_HOME, and an existing ~/celltypeagent folder when there is no ~/stagent)
+All data lives under one home directory, the data folder: $STAGENT_HOME when it is set, else the folder chosen in the
+app (Change data folder, or the Windows installer), kept in settings_file(), else ~/stagent (the older names still
+work: $CELLTYPEAGENT_HOME, and an existing ~/celltypeagent folder when there is no ~/stagent)
   samples/<sample_id>/   imported samples (stagent import ...)
   importing/<sample_id>/ a sample while it is being imported (moved to samples/ once complete)
   sessions/<session_id>/ annotations, versions, chats
   marker_lists/          marker lists saved from the viewer
   trash/                 samples reset in the viewer
 """
-import os, sys
+import json, os, sys
 from pathlib import Path
 
 PACKAGE = Path(__file__).parent
+
+
+def settings_file():
+    """The app's own settings (the data folder chosen in the app), outside the data folder: %APPDATA%\\STAnnotator on
+    Windows (the installer writes it too), ~/Library/Application Support/STAnnotator on macOS, ~/.config/stagent."""
+    if os.name == "nt":
+        base = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming") / "STAnnotator"
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support" / "STAnnotator"
+    else:
+        base = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "stagent"
+    return base / "settings.json"
+
+
+def read_settings():
+    try:
+        return json.load(open(settings_file(), encoding="utf-8-sig"))  # (the Windows installer writes a BOM)
+    except (OSError, ValueError):
+        return {}
+
+
+def write_settings(**kw):
+    f = settings_file()
+    f.parent.mkdir(parents=True, exist_ok=True)
+    json.dump(read_settings() | kw, open(f, "w", encoding="utf-8"), indent=1)
+
+
 def _home():
+    """(data folder, what chose it: "environment", "settings" or "default")."""
     for var in ("STAGENT_HOME", "CELLTYPEAGENT_HOME"):
         if os.environ.get(var):
-            return Path(os.environ[var]).expanduser()
+            return Path(os.environ[var]).expanduser(), "environment"
+    chosen = read_settings().get("data_folder")
+    if chosen:
+        return Path(chosen).expanduser(), "settings"
     new, old = Path.home() / "stagent", Path.home() / "celltypeagent"
-    return old if old.is_dir() and not new.exists() else new
+    return (old if old.is_dir() and not new.exists() else new), "default"
 
 
-HOME = _home()
+HOME, HOME_SOURCE = _home()
 WORK = HOME  # older name kept for the analysis scripts
 SAMPLES = HOME / "samples"
 SESSIONS = HOME / "sessions"

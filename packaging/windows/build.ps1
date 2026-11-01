@@ -1,5 +1,6 @@
 # Build the standalone STAnnotator app on Windows 10 / 11 (x64): dist\STAnnotator\STAnnotator.exe (the window) and
-# stagent.exe beside it (the console program Claude Code starts), zipped as dist\STAnnotator-windows-<version>.zip.
+# stagent.exe beside it (the console program Claude Code starts), zipped as dist\STAnnotator-windows-<version>.zip, and
+# the installer dist\STAnnotator-Setup-<version>.exe (Inno Setup 6, installed with winget when missing).
 #
 # From the unzipped STAnnotator folder, in PowerShell:
 #     powershell -ExecutionPolicy Bypass -File packaging\windows\build.ps1
@@ -62,8 +63,33 @@ if (Test-Path $zip) { Remove-Item $zip }
 Write-Host "== zip"
 Compress-Archive -Path $app -DestinationPath $zip -CompressionLevel Optimal
 $size = "{0:N0} MB" -f ((Get-ChildItem $app -Recurse | Measure-Object Length -Sum).Sum / 1MB)
+# the installer (Inno Setup 6): dist\STAnnotator-Setup-<version>.exe, which asks where to install and where to keep the data
+function Find-Iscc {
+    @((Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source,
+      "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
+      "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe") | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+}
+$iscc = Find-Iscc
+if (-not $iscc -and (Get-Command winget -ErrorAction SilentlyContinue)) {
+    Write-Host "== installing Inno Setup 6 with winget (it makes the installer)"
+    winget install --id JRSoftware.InnoSetup -e --scope user --silent --accept-package-agreements --accept-source-agreements
+    if (-not (Find-Iscc)) { winget install --id JRSoftware.InnoSetup -e --silent --accept-package-agreements --accept-source-agreements }
+    $iscc = Find-Iscc
+}
+$setup = $null
+if ($iscc) {
+    Write-Host "== installer"
+    & $py -c "from PIL import Image; Image.open('stagent/data/app_icon.png').save('packaging/windows/STAnnotator.ico', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])"
+    & $iscc /Q "/DAppVersion=$version" packaging\windows\installer.iss
+    if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed" }
+    $setup = Join-Path $root "dist\STAnnotator-Setup-$version.exe"
+} else {
+    Write-Warning "Inno Setup 6 was not found (https://jrsoftware.org/isdl.php): no installer made; the zip works without one."
+}
+
 Write-Host ""
 Write-Host "built: $(Get-Content stagent\data\build.txt -ErrorAction SilentlyContinue)  version $version"
 Write-Host "app:   $app\STAnnotator.exe  ($size)"
 Write-Host "zip:   $zip"
+if ($setup) { Write-Host "setup: $setup  (the installer: asks where to install and where to keep the data)" }
 Write-Host "Start it with a double-click on STAnnotator.exe (Windows may first ask: More info -> Run anyway)."

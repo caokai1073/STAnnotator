@@ -23,3 +23,4 @@ share/
 /.build-venv/
 /.build-tools/
 packaging/macos/AppIcon.icns
+packaging/windows/STAnnotator.ico

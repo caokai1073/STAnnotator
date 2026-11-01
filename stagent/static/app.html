@@ -3367,6 +3367,33 @@ both (purple); click a legend entry to show one role. <b>Compare groups</b> runs
 computed), the registration in use (CSV), or the whole analysis as a Jupyter notebook that runs without this app
 (code with this annotation's parameters, and its results).</li>
 <li><b>Ask Agent</b> (bar on the map) opens your own Claude Code, connected to this app. <b>Undo</b> and <b>Report</b> are there too.</li></ul>`;
+const localApp = () => !!native() && !st.remote;  // the desktop app working on this computer
+async function changeDataFolder(current) {  // another data folder from the next start: copy the data there, or use it as it is
+  const msg = $("hpDataMsg");
+  const picked = await pickFiles("folder", false);
+  const path = picked && picked[0];
+  if (!path) return;
+  msg.innerHTML = "";
+  const line = document.createElement("div");
+  line.textContent = `New data folder: ${path}. `;
+  const go = async (copy) => {
+    msg.textContent = copy ? "starting the copy…" : "";
+    try {
+      const r = await post("/api/data_folder", { path, copy });
+      if (copy) await pollJob(r.job, msg, null, msg, $("hpMoveData"), 700);
+      msg.innerHTML = "";
+      const done = document.createElement("div");
+      done.textContent = (copy ? "Copied. " : r.has_data ? "That folder holds STAnnotator data: it will be used. " : "")
+        + `Close STAnnotator and open it again: it then keeps its data in ${path}. `
+        + (copy ? `The old folder (${current}) stays as it was: delete it yourself when you no longer need it.` : "");
+      msg.append(done);
+    } catch (e) { msg.textContent = isStop(e) ? "Copy stopped: nothing changed (what was copied so far is removed)" : e.message; }
+  };
+  const b1 = document.createElement("button"); b1.textContent = "Copy my data there"; b1.title = "Copy the current samples and annotations into it (the current folder stays as it is)"; b1.onclick = () => go(true);
+  const b2 = document.createElement("button"); b2.textContent = "Use it as it is"; b2.title = "Start empty there, or use the data an earlier installation kept there"; b2.onclick = () => go(false);
+  const b3 = document.createElement("button"); b3.textContent = "Cancel"; b3.onclick = () => (msg.innerHTML = "");
+  msg.append(line, b1, " ", b2, " ", b3);
+}
 async function showAbout() {
   $("hpBody").innerHTML = "<p>Checking…</p>";
   const d = await api("/api/diagnostics");
@@ -3375,7 +3402,11 @@ async function showAbout() {
   const rows = [
     ["Version", esc(d.version)], ["Build", esc(d.build)], ["Running as", esc(d.app) + (d.standalone ? " (standalone)" : " (from source)")],
     ["System", esc(d.system) + " · Python " + esc(d.python)],
-    ["Data folder", esc(d.data_folder)], ["Samples / annotations", `${d.n_samples} / ${d.n_annotations} · ${d.data_size_mb} MB`],
+    ["Data folder", `${esc(d.data_folder)}` + (localApp() ? ` <button id="hpOpenData" title="Show the data folder in the file manager">Open</button>` +
+      (d.data_folder_source === "environment" ? "" : ` <button id="hpMoveData" title="Keep the data (samples, annotations) in another folder or on another drive, from the next start">Change…</button>`) : "") +
+      (d.data_folder_source === "environment" ? `<div class="hint">Set by the STAGENT_HOME environment variable.</div>` : "") +
+      (d.data_folder_next && d.data_folder_next !== d.data_folder ? `<div class="hint">From the next start: <code>${esc(d.data_folder_next)}</code> (close and reopen the app).</div>` : "") +
+      `<div class="hint" id="hpDataMsg"></div>`], ["Samples / annotations", `${d.n_samples} / ${d.n_annotations} · ${d.data_size_mb} MB`],
     ["Claude Code", d.claude_code ? `<span class="ok">found</span> · ${esc(d.claude_code)}` : `<span class="bad">not found</span>: install Claude Code, then click Ask Agent`],
     ["Agent connection", cc.seen ? `<span class="${cc.running ? "ok" : ""}">last used the tools ${esc(cc.last)}</span>` + (cc.running ? " (still open)" : " (closed since)") : `<span class="bad">not yet</span>: click Ask Agent and ask something`],
     ["Agent workspace", esc(d.claude_workspace)],
@@ -3390,6 +3421,8 @@ async function showAbout() {
       <div class="hint">What Reset, Remove sample and the cell filter moved away (${cache.trash_entries} removal${cache.trash_entries === 1 ? "" : "s"}), in <code>${esc(cache.trash_path)}</code>; past the limit the oldest are deleted for good.</div>`]);
   $("hpBody").innerHTML = `<dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>
     <button id="hpCopy">Copy for a bug report</button>`;
+  if ($("hpOpenData")) $("hpOpenData").onclick = () => post("/api/open_folder", { which: "data" }).catch((e) => toast(e.message, 6000));
+  if ($("hpMoveData")) $("hpMoveData").onclick = () => changeDataFolder(d.data_folder);
   const cacheDo = async (body, what) => {
     try {
       const r = await post("/api/cache", body); $("hpCacheUse").textContent = gb(r.bytes); $("hpTrashUse").textContent = gb(r.trash_bytes);

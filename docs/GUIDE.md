@@ -356,7 +356,12 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
    The **Priors** list under Regions shows the priors of the annotation (the user's words and how they were read);
    **×** removes one (Undo brings it back). **?** (top of the toolbar on the right) explains every control and, under **About**, shows the
    build, the data folder, whether Claude Code was found and when Claude last used the tools, with a button that
-   copies these details for a bug report.
+   copies these details for a bug report. In the desktop app on this computer, **Open** beside the data folder shows it
+   in Explorer / Finder, and **Change…** picks another folder (another drive) for the data from the next start:
+   **Copy my data there** copies the samples and annotations (in the background, with Stop; the old folder stays as
+   it was) or **Use it as it is** (empty, or the data folder of an earlier installation). The choice is kept in
+   `%APPDATA%\STAnnotator\settings.json` (macOS: `~/Library/Application Support/STAnnotator/`, Linux:
+   `~/.config/stagent/`); the `STAGENT_HOME` environment variable, when set, takes precedence.
 9. **Embedding** (its own block of the toolbar): **Run PCA + UMAP** computes a PCA, a UMAP and Leiden clusters of the sample from
    expression only (shared by all its annotations; about 40–50 s for 356,629 cells: the kNN graph comes from the
    fast GPU / pynndescent search and is handed to UMAP, which starts from PC1/PC2 and runs on all cores).
@@ -546,6 +551,11 @@ WebView2, part of Windows 11), `stagent.exe` beside it the console program Claud
 info -> Run anyway). On Windows the Ask Agent button opens Claude Code in its own console window; a request sent while
 it is open reopens it with the request (`claude --continue`, the same conversation), since text cannot be typed into
 another console. Sample names are limited to 100 characters there (Windows' 260-character paths).
+
+The script also makes the installer `dist\STAnnotator-Setup-<version>.exe` with Inno Setup 6 (installed with winget
+when missing; `packaging\windows\installer.iss`). It asks where to install (any drive; for this user without
+administrator rights, or for all users), and on a first installation where to keep the data (written to the settings
+file above); it adds Start menu and desktop shortcuts and an uninstaller, which leaves the data and the settings.
 
 ## Layout
 

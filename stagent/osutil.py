@@ -83,3 +83,14 @@ def terminate(pid, tree=False):
         os.kill(int(pid), signal.SIGTERM)
     except OSError:
         pass
+
+
+def open_folder(path):
+    """Show a folder in the system's file manager (Explorer, Finder, the desktop's)."""
+    path = str(path)
+    if WINDOWS:
+        os.startfile(path)  # noqa: S606 (a folder, opened by Explorer)
+    elif __import__("sys").platform == "darwin":
+        subprocess.Popen(["open", path])
+    else:
+        subprocess.Popen(["xdg-open", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

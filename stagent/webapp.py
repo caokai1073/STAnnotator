@@ -1691,6 +1691,92 @@ async def api_constraint_delete(req: Request):
     return _json({"new_version": ver, "message": s.state(ver)["message"]})
 
 
+DATA_JOB = "datafolder"
+# not copied: made again when needed (cache, the agent's workspaces, which name the old folder), unfinished imports,
+# and the running app's own state (which viewer, which port, which agent)
+SKIP_COPY = ("cache", "importing", "viewer.json", "viewer_request.json", "viewer_selection.json", "mcp_seen.json",
+             "remote_viewer.json", "chat_mcp.json")
+
+
+def _folder_items(home):
+    return [p for p in sorted(Path(home).iterdir()) if p.name not in SKIP_COPY and not p.name.startswith("claude_workspace")
+            and not p.name.endswith(".log")] if Path(home).exists() else []
+
+
+async def api_data_folder(req: Request):
+    """Change the data folder (used from the next start of the app): {path, copy}. copy: the current data are copied
+    there first, in the background (job "datafolder", stoppable; the current folder is left as it is); else the folder
+    is used as it is (empty, or the data folder of an earlier installation)."""
+    b = await req.json()
+    if config.HOME_SOURCE == "environment":
+        return _json({"error": "the data folder is set by the STAGENT_HOME environment variable: change it there"}, 400)
+    try:
+        new = Path(str(b.get("path") or "")).expanduser()
+        if not str(b.get("path") or "").strip() or not new.is_absolute():
+            raise ValueError("choose a folder (a full path)")
+        new = new.resolve()
+        cur = config.HOME.resolve()
+        if new == cur:
+            raise ValueError("this is already the data folder")
+        if new.is_relative_to(cur) or cur.is_relative_to(new):
+            raise ValueError("the new folder cannot be inside the current data folder, or contain it")
+        new.mkdir(parents=True, exist_ok=True)
+        probe = new / ".stannotator_write_test"
+        probe.write_text("ok")
+        probe.unlink()
+        has_data = (new / "samples").exists() or (new / "sessions").exists()
+        if b.get("copy") and has_data:
+            raise ValueError("that folder already holds STAnnotator data: use it as it is, or choose an empty folder")
+    except (ValueError, OSError) as e:
+        return _json({"error": str(e)}, 400)
+    if not b.get("copy"):
+        config.write_settings(data_folder=str(new))
+        return _json({"data_folder_next": str(new), "has_data": has_data, "restart": True})
+    items = _folder_items(cur)
+    total = sum(f.stat().st_size for p in items for f in ([p] if p.is_file() else p.rglob("*")) if f.is_file()) or 1
+    JOBS[DATA_JOB] = {"stage": "copying", "progress": 0.0, "done": False, "error": None}
+
+    def work():
+        done = 0
+        copied = []
+        jobs.on_stop(lambda: [shutil.rmtree(new / p.name, ignore_errors=True) if (new / p.name).is_dir()
+                              else (new / p.name).unlink(missing_ok=True) for p in copied])
+
+        def cp(src, dst):
+            nonlocal done
+            shutil.copy2(src, dst)
+            done += Path(src).stat().st_size
+            JOBS[DATA_JOB].update(progress=round(min(done / total, 0.99), 3),
+                                  stage=f"copying: {done / 1e9:.2f} of {total / 1e9:.2f} GB")
+        try:
+            for p in items:
+                copied.append(p)
+                if p.is_dir():
+                    shutil.copytree(p, new / p.name, copy_function=cp, dirs_exist_ok=True)
+                else:
+                    cp(p, new / p.name)
+            config.write_settings(data_folder=str(new))
+            JOBS[DATA_JOB].update(progress=1.0, stage="done", done=True, data_folder_next=str(new))
+        except Exception as e:
+            JOBS[DATA_JOB].update(error=f"{type(e).__name__}: {e}", done=True)
+    return await _spawn(DATA_JOB, work) or _json({"job": DATA_JOB, "bytes": total})
+
+
+async def api_open_folder(req: Request):
+    """Show the data folder ({"which": "data"}) or the open sample's folder ({"which": "sample", "sample": id}) in the
+    file manager of the computer this server runs on (the app's own computer; not offered on a remote server)."""
+    b = await req.json()
+    target = config.HOME if b.get("which", "data") == "data" else config.SAMPLES / str(b.get("sample", ""))
+    if not target.exists():
+        return _json({"error": f"{target} does not exist"}, 404)
+    try:
+        from . import osutil
+        osutil.open_folder(target)
+    except OSError as e:
+        return _json({"error": str(e)}, 400)
+    return _json({"opened": str(target)})
+
+
 def api_diagnostics(req):
     """About / diagnostics: what runs where, whether Claude Code is found and connected, the data folder."""
     import importlib.metadata as md, platform
@@ -1706,6 +1792,7 @@ def api_diagnostics(req):
     return _json({"version": __version__, "build": config.build(), "app": "desktop app" if desktop_mode() else "web viewer",
                   "standalone": bool(config.FROZEN), "system": f"{platform.system()} {platform.release()} ({platform.machine()})",
                   "python": platform.python_version(), "data_folder": str(config.HOME),
+                  "data_folder_source": config.HOME_SOURCE, "data_folder_next": config.read_settings().get("data_folder"),
                   "n_samples": n_samples, "n_annotations": n_sessions, "data_size_mb": round(size / 2 ** 20),
                   "claude_code": claudelink.claude_code_path(), "claude_workspace": str(claudelink.workspace()),
                   "claude_connection": claudelink.mcp_seen(),
@@ -2658,6 +2745,8 @@ def build_app(port):
         Route("/api/estimate", api_estimate, methods=["POST"]),
         Route("/api/job/{sid}", api_job),
         Route("/api/job/{sid}/stop", api_job_stop, methods=["POST"]),
+        Route("/api/data_folder", api_data_folder, methods=["POST"]),
+        Route("/api/open_folder", api_open_folder, methods=["POST"]),
         Route("/api/s/{sid}/legend", api_legend),
         Route("/api/s/{sid}/overlay/{version:int}/{mode}/{level:int}/{xy}", overlay_tile),
         Route("/api/sample/{sample}/cells.bin", api_cells_bin),
