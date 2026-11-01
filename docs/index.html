@@ -624,10 +624,10 @@ footer a { color: var(--muted); }
             <div class="req"><span>Apple silicon</span><span>macOS 11 or later</span><span>8 GB RAM</span></div>
             <a class="btn btn-primary" href="#" data-dmg>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"></path></svg>
-              <span>Download for Mac<small>.dmg from the latest release</small></span>
+              <span>Download for Mac<small>STAnnotator.dmg</small></span>
             </a>
             <ol>
-              <li>On the release page, download the <code>.dmg</code>, open it and drag STAnnotator to Applications.</li>
+              <li>Open the downloaded <code>.dmg</code> and drag STAnnotator to Applications.</li>
               <li>Install <a href="https://docs.claude.com/en/docs/claude-code/setup">Claude Code</a> and log in once, so that <code>claude</code> works in Terminal.</li>
               <li>Start STAnnotator and click <b>Import…</b>. Data and annotations go to <code>~/stagent</code>.</li>
             </ol>
@@ -637,10 +637,10 @@ footer a { color: var(--muted); }
             <div class="req"><span>Windows 10 or 11</span><span>x64</span><span>8 GB RAM</span></div>
             <a class="btn btn-primary" href="#" data-exe>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"></path></svg>
-              <span>Download for Windows<small>Installer (.exe) from the latest release</small></span>
+              <span>Download for Windows<small>STAnnotator-Setup.exe</small></span>
             </a>
             <ol>
-              <li>On the release page, download the installer (<code>.exe</code>) and run it. Choose where to install (any drive, no administrator rights needed) and where to keep the data.</li>
+              <li>Run the downloaded installer (<code>.exe</code>). Choose where to install (any drive, no administrator rights needed) and where to keep the data.</li>
               <li>Install <a href="https://docs.claude.com/en/docs/claude-code/setup">Claude Code</a> and log in once, so that <code>claude</code> works in PowerShell.</li>
               <li>Start STAnnotator from the Start menu and click <b>Import…</b>.</li>
             </ol>
@@ -688,12 +688,22 @@ uv pip install --python .venv/bin/python -e .
 </footer>
 
 <script>
-// One place for the download links: the newest GitHub release (the latest tag), where the .dmg and the .exe are.
+// Download buttons fetch the files of the newest GitHub release (the latest tag) directly: by default
+// STAnnotator.dmg and STAnnotator-Setup.exe; when GitHub's API answers (public repository), whatever .dmg and .exe
+// that release holds, so versioned file names work too.
 const REPO = "https://github.com/caokai1073/STAnnotator";
-const DMG_URL = REPO + "/releases/latest";
-const EXE_URL = REPO + "/releases/latest";
-document.querySelectorAll("[data-dmg]").forEach((a) => { a.href = DMG_URL; });
-document.querySelectorAll("[data-exe]").forEach((a) => { a.href = EXE_URL; });
+const setLinks = (sel, url) => document.querySelectorAll(sel).forEach((a) => { a.href = url; });
+setLinks("[data-dmg]", REPO + "/releases/latest/download/STAnnotator.dmg");
+setLinks("[data-exe]", REPO + "/releases/latest/download/STAnnotator-Setup.exe");
+fetch("https://api.github.com/repos/caokai1073/STAnnotator/releases/latest")
+  .then((r) => (r.ok ? r.json() : null))
+  .then((rel) => {
+    const assets = (rel && rel.assets) || [];
+    const dmg = assets.find((x) => /\.dmg$/i.test(x.name)), exe = assets.find((x) => /\.exe$/i.test(x.name));
+    if (dmg) setLinks("[data-dmg]", dmg.browser_download_url);
+    if (exe) setLinks("[data-exe]", exe.browser_download_url);
+  })
+  .catch(() => {});
 document.querySelectorAll("[data-releases]").forEach((a) => { a.href = REPO + "/releases"; });
 // the visitor's own system first
 if (/Windows/i.test(navigator.userAgent)) document.documentElement.classList.add("on-win");
