@@ -440,7 +440,8 @@ def remove_samples(names):
 
 
 # ---------------- Xenium output (the folder, or only the files an import reads) ----------------
-MORPHOLOGY = ["morphology_focus/ch0000_dapi.ome.tif", "morphology_focus.ome.tif", "morphology_mip.ome.tif"]
+MORPHOLOGY = ["morphology_focus/ch0000_dapi.ome.tif", "morphology_focus/morphology_focus_0000.ome.tif",
+              "morphology_focus.ome.tif", "morphology_mip.ome.tif"]  # the DAPI image (first in experiment.xenium)
 # what an import reads, by the end of the file name (a prefix such as GSM1234_ is allowed): the cells and the counts
 # are needed; experiment.xenium (the pixel size) and the DAPI image (the background when there is no H&E) are optional
 XENIUM_FILES = {"cells": ("cells.parquet", "cells.csv.gz"), "matrix": ("cell_feature_matrix.h5",),
@@ -483,7 +484,14 @@ def xenium_sources(entries):
                     files[role] = str(hit)
             if (p / "cell_feature_matrix").is_dir() and "matrix" not in files:
                 files["mtx_dir"] = str(p / "cell_feature_matrix")
-            m = next((p / x for x in MORPHOLOGY if (p / x).exists()), None)
+            named = []  # the image experiment.xenium names (Xenium Ranger 2+: morphology_focus/morphology_focus_0000.ome.tif)
+            if "experiment" in files:
+                try:
+                    f = (json.load(open(files["experiment"])).get("images") or {}).get("morphology_focus_filepath")
+                    named = [f] if f else []
+                except (OSError, ValueError):
+                    pass
+            m = next((p / x for x in named + MORPHOLOGY if (p / x).exists()), None)
             if m:
                 files["morphology"] = str(m)
             if "cells" in files:
