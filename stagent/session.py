@@ -11,11 +11,11 @@ Session directory (work/sessions/<session_id>/):
   verdicts.jsonl      reviewer verdicts on conflict cells; suggestions.jsonl rule suggestions
   figures/, exports/
 """
-import fcntl, hashlib, json, re, threading, time, uuid
+import hashlib, json, re, threading, time, uuid
 from datetime import datetime
 import numpy as np, pandas as pd, scipy.sparse as sp
 from scipy.spatial import cKDTree
-from . import config, vocab, markers, regions as regmod, constraints as cmod, conflicts as confmod, render
+from . import config, osutil, vocab, markers, regions as regmod, constraints as cmod, conflicts as confmod, render
 
 AGENT_GAP_S = 90  # the agent's changes this close together belong to one request (one Undo)
 NOT_ANNOTATED = "Not annotated"  # the one label of a sample's placeholder (method "none", see Session.create)
@@ -296,8 +296,7 @@ class Session:
                 marker_step=None, extra=None):
         """Append a version. The lock keeps version numbers unique when the agent and the review page
         (or two reviewers) commit at the same time; expected_parent rejects edits made on a stale version."""
-        with open(self.dir / "versions" / ".lock", "w") as lk:
-            fcntl.flock(lk, fcntl.LOCK_EX)
+        with open(self.dir / "versions" / ".lock", "w") as lk, osutil.locked(lk):
             cur = self.state()
             if expected_parent is not None and cur["version"] != expected_parent:
                 raise ValueError(f"session moved on to v{cur['version']} (you were on v{expected_parent}); reload and retry")
@@ -1192,10 +1191,8 @@ class Session:
         return [r for r in rows if status is None or r["status"] == status]
 
     def _append(self, name, rec):
-        with open(self.dir / name, "a") as f:
-            fcntl.flock(f, fcntl.LOCK_EX)
+        with open(self.dir / name, "a") as f, osutil.locked(f):
             f.write(json.dumps(rec) + "\n")
-            fcntl.flock(f, fcntl.LOCK_UN)
 
     # ---------- review ----------
     def review_list(self, gid, version=None):
@@ -1218,12 +1215,10 @@ class Session:
         if verdict not in vocab.VERDICTS:
             raise vocab.VocabError(f"verdict must be one of {list(vocab.VERDICTS)}")
         v = version or self.versions()[-1]
-        with open(self.dir / "verdicts.jsonl", "a") as f:
-            fcntl.flock(f, fcntl.LOCK_EX)  # several reviewers may write at once
+        with open(self.dir / "verdicts.jsonl", "a") as f, osutil.locked(f):  # several reviewers may write at once
             for c in cells:
                 f.write(json.dumps({"cell": int(c), "verdict": verdict, "note": note, "reviewer": reviewer,
                                     "version": v, "group": group, "time": _now()}) + "\n")
-            fcntl.flock(f, fcntl.LOCK_UN)
         return len(cells)
 
     def verdicts(self, latest=False):

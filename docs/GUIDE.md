@@ -532,6 +532,19 @@ DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)" bash packaging/macos
 
 The hardened-runtime exceptions it uses (`packaging/macos/entitlements.plist`) allow numba's run-time compilation.
 
+On Windows 10 / 11 (x64), from the unzipped source folder, in PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\windows\build.ps1   # -> dist\STAnnotator\ and dist\STAnnotator-windows-<version>.zip
+```
+
+It needs uv or Python 3.12 (python.org) and builds with the same spec: `STAnnotator.exe` is the window (Edge
+WebView2, part of Windows 11), `stagent.exe` beside it the console program Claude Code starts for the tools
+(`stagent.exe mcp`; it also takes every other subcommand). The build is not signed, so Windows asks once (More
+info -> Run anyway). On Windows the Ask Agent button opens Claude Code in its own console window; a request sent while
+it is open reopens it with the request (`claude --continue`, the same conversation), since text cannot be typed into
+another console. Sample names are limited to 100 characters there (Windows' 260-character paths).
+
 ## Layout
 
 ```

@@ -660,8 +660,10 @@ def open_viewer(port: int = 8765) -> str:
     url = f"http://localhost:{port}"
     if not claudelink.viewer_alive({"port": port}):
         log = open(config.HOME / "viewer.log", "a")
+        from . import osutil
         subprocess.Popen(config.self_command("viewer", "--port", str(port)), stdout=log, stderr=log,
-                         stdin=subprocess.DEVNULL, start_new_session=True, env=dict(os.environ))
+                         stdin=subprocess.DEVNULL, start_new_session=not osutil.WINDOWS, env=dict(os.environ),
+                         creationflags=osutil.NO_WINDOW)
         for _ in range(60):
             time.sleep(0.5)
             if claudelink.viewer_alive({"port": port}):

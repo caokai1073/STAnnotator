@@ -13,7 +13,7 @@ a password prompt (a key or ssh-agent), since there is no terminal to type it in
 """
 import json, os, platform, re, shlex, signal, subprocess, sys, threading, time, urllib.request
 from pathlib import Path
-from . import config
+from . import config, osutil
 
 STATE = "remote_viewer.json"
 
@@ -42,7 +42,7 @@ def serve(check=False):
     else:
         if alive:  # the viewer of an older version of the code: replace it
             try:
-                os.kill(int(st["pid"]), signal.SIGTERM)
+                osutil.terminate(st["pid"])
                 time.sleep(1)
             except (OSError, ValueError, KeyError):
                 pass
@@ -119,7 +119,7 @@ def _explain(err, conn):
 def run_remote(conn, *args, timeout=180):
     """Run a subcommand on the server; returns the JSON it printed last."""
     r = subprocess.run(_ssh(conn["host"], remote_command(conn, *args)), capture_output=True, text=True,
-                       timeout=timeout, stdin=subprocess.DEVNULL)
+                       timeout=timeout, stdin=subprocess.DEVNULL, creationflags=osutil.NO_WINDOW)
     lines = [l for l in r.stdout.splitlines() if l.strip().startswith("{")]
     if r.returncode != 0 or not lines:
         raise RuntimeError(_explain(r.stderr or r.stdout, conn))
@@ -165,7 +165,8 @@ class Connection:
     def _open_tunnel(self):
         self.tunnel = subprocess.Popen(
             _ssh("-N", "-o", "ExitOnForwardFailure=yes", "-L", f"127.0.0.1:{self.port}:127.0.0.1:{self.remote_port}",
-                 self.conn["host"]), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                 self.conn["host"]), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+            creationflags=osutil.NO_WINDOW)
         for _ in range(150):
             if _answers(self.port, 1):
                 return

@@ -553,7 +553,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <div id="acts" class="float">
       <button id="undo" disabled title="Undo your last action (everything the agent changed for one request goes back at once)">Undo</button>
       <button id="refresh" title="Show the latest of everything: the server reads the sample, its image and annotations from disk again and the page reloads what it shows (the view, color mode and legend choice stay)">Refresh</button>
-      <button id="claudeBtn" hidden title="Ask your own agent (Claude Code, in Terminal), connected to the sample open here">Ask Agent</button>
+      <button id="claudeBtn" hidden title="Ask your own agent (Claude Code, in its own terminal window), connected to the sample open here">Ask Agent</button>
       <button id="plaus" disabled title="Agent review of one part of the analysis (annotation, spatial organization, embedding, niches, compare, signaling): its advice, checked by the agent itself">Agent Review</button>
       <button id="report" disabled title="The annotation report the agent writes: method, composition, compartments, quality, open questions">Report</button>
       <span id="vinfo"></span>
@@ -3440,16 +3440,17 @@ $("clearAll").onclick = async () => {
   } catch (e) { toast(e.message, 7000); }
 };
 
-// ---------------- Claude Code (the user's own, in Terminal) ----------------
+// ---------------- Claude Code (the user's own, in a terminal window: Terminal on macOS, a console on Windows) ----------------
 async function openClaudeCode() {
   try {
     const s = st.remote ? await native().claude_status() : await api("/api/claude/status");
     if (s.platform === "Darwin" && !s.claude_code) {
-      $("clMsg").textContent = "Claude Code was not found on this Mac. Install it (docs.claude.com → Claude Code → Setup), log in once with your own Claude account in Terminal, then click Ask Agent again.";
+      $("clMsg").textContent = "Claude Code was not found on this computer. Install it (docs.claude.com → Claude Code → Setup), log in once with your own Claude account in a terminal, then click Ask Agent again.";
       $("clCmd").hidden = true; $("clDlg").showModal(); return;
     }
     const r = await post("/api/claude/code", { sample: st.sample && st.sample.sample_id, session: st.sid });
-    if (r.opened) { toast(r.reused ? "The agent (Claude Code) is open in Terminal (brought to the front)" : "The agent (Claude Code) is opening in Terminal, connected to this sample", 4000); return; }
+    if (r.opened) { toast(r.continued ? "The agent (Claude Code) is reopening with your request, continuing the same conversation"
+      : r.reused ? "The agent (Claude Code) is already open in its window" : "The agent (Claude Code) is opening in its own window, connected to this sample", 4000); return; }
     $("clMsg").textContent = "Run this in a terminal to start Claude Code connected to this app:";
     $("clCmd").textContent = r.command; $("clCmd").hidden = false; $("clDlg").showModal();
   } catch (e) { toast(e.message, 6000); }

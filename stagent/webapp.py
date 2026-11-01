@@ -1858,6 +1858,7 @@ async def api_sample_remove(req: Request):
     trash.mkdir(parents=True)
     n_chats = _trash_sessions(sess, trash)
     proj = projects.drop_sample(sample, trash)
+    render.forget(d)  # its image is open in the viewer (Windows cannot move an open file)
     shutil.move(str(d), str(trash / "sample"))
     _views.pop(sample, None)
     for cache in (_tiles, _overlays):
@@ -2181,6 +2182,7 @@ def api_samples_clear(req):
         return _json({"deleted_samples": 0, "deleted_sessions": 0})
     n_chats = _trash_sessions(sess, None)
     for d in samples + old:
+        render.forget(d)  # images open in the viewer (Windows cannot delete an open file)
         shutil.rmtree(d)
     for cache in (_views, _tiles, _overlays, _colors):
         cache.clear()

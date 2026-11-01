@@ -7,7 +7,7 @@ asks the viewer to show).
 """
 import glob, json, os, platform, re, shutil, subprocess, time
 from pathlib import Path
-from . import config
+from . import config, osutil
 
 # where Claude Code usually lives; a Dock-launched app has a minimal PATH
 CLAUDE_PATHS = ["~/.local/bin", "~/.claude/local", "/opt/homebrew/bin", "/usr/local/bin", "~/.npm-global/bin",
@@ -23,9 +23,13 @@ _shell_claude = None
 
 
 def claude_code_path():
-    """Claude Code's executable: the app's PATH, the usual install folders (nvm included), and on macOS the user's
-    interactive login shell, where nvm, conda or Homebrew set PATH up (~/.zshrc)."""
+    """Claude Code's executable: the app's PATH, the usual install folders (nvm included; Windows: the native
+    installer's %USERPROFILE%\\.local\\bin and npm's %APPDATA%\\npm), and on macOS the user's interactive login shell,
+    where nvm, conda or Homebrew set PATH up (~/.zshrc)."""
     extra = [str(Path(p).expanduser()) for p in CLAUDE_PATHS]
+    if osutil.WINDOWS:
+        extra += [str(Path(os.environ.get(v, "")) / sub) for v, sub in (("APPDATA", "npm"), ("LOCALAPPDATA", "Programs\\claude"))
+                  if os.environ.get(v)]
     extra += sorted(glob.glob(str(Path.home() / ".nvm" / "versions" / "node" / "*" / "bin")), reverse=True)
     hit = shutil.which("claude", path=os.pathsep.join([os.environ.get("PATH", "")] + extra))
     if hit or platform.system() != "Darwin":
@@ -49,11 +53,7 @@ def mcp_seen():
     if not p.exists():
         return {"seen": False}
     d = json.load(open(p))
-    try:
-        os.kill(int(d["pid"]), 0)
-        alive = True
-    except (OSError, ValueError, KeyError):
-        alive = False
+    alive = osutil.pid_alive(d.get("pid"))  # (os.kill(pid, 0) would end the process on Windows)
     return {"seen": True, "last": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(d["time"])), "via": d.get("via"),
             "running": alive}
 
@@ -92,8 +92,43 @@ def workspace(remote=None):
 def claude_code_command(prompt=None, remote=None):
     ws = workspace(remote)
     # the prompt goes first: --mcp-config takes several values and would swallow it
-    cmd = f'cd "{ws}" && claude ' + (f"'{prompt}' " if prompt else "") + f'--mcp-config "{ws / "stagent_mcp.json"}"'
+    if osutil.WINDOWS:
+        cmd = f'cd /d "{ws}" && claude ' + (f"{_cmd_quote(prompt)} " if prompt else "") + f'--mcp-config "{ws / "stagent_mcp.json"}"'
+    else:
+        cmd = f'cd "{ws}" && claude ' + (f"'{prompt}' " if prompt else "") + f'--mcp-config "{ws / "stagent_mcp.json"}"'
     return cmd, ws
+
+
+def _cmd_quote(text):
+    """A prompt as one argument of a Windows .cmd line (cmd.exe expands %, and " would end it)."""
+    return '"' + " ".join(str(text).split()).replace('"', "'").replace("%", "%%") + '"'
+
+
+def _open_windows(ws, prompt, exe):
+    """Windows: Claude Code in its own console window (cmd.exe), its process recorded in the workspace. A window that
+    is still open is left as it is when there is nothing to send; with a request it is replaced by a new one that
+    continues the same conversation (claude --continue): text cannot be typed into another console."""
+    rec = ws / "claude_console.txt"
+    old = rec.read_text().strip() if rec.exists() else ""
+    running = old.isdigit() and osutil.pid_alive(int(old))
+    if running and not prompt:
+        return {"opened": True, "reused": True, "claude_code": exe}
+    if running:
+        osutil.terminate(int(old), tree=True)
+    line = (f'call "{exe}"' if exe else "claude") + (" --continue" if running else "") + \
+        (f" {_cmd_quote(prompt)}" if prompt else "") + f' --mcp-config "{ws / "stagent_mcp.json"}"'
+    body = ["@echo off", "chcp 65001 >nul", f"title {TAB_TITLE}", f'cd /d "{ws}"']
+    if not exe:
+        body += ["where claude >nul 2>nul || (",
+                 "  echo Claude Code was not found. Install it ^(https://docs.claude.com/en/docs/claude-code/setup^),",
+                 "  echo log in once with your own Claude account, then press the button in the app again.",
+                 "  pause", "  exit /b 1", ")"]
+    body.append(line)
+    script = ws / "start_claude.cmd"
+    script.write_text("\r\n".join(body) + "\r\n", encoding="utf-8")
+    p = subprocess.Popen(["cmd.exe", "/k", str(script)], cwd=str(ws), creationflags=subprocess.CREATE_NEW_CONSOLE)
+    rec.write_text(str(p.pid))
+    return {"opened": True, "reused": running, "continued": running, "claude_code": exe}
 
 
 TAB_TITLE = "STAnnotator - Claude Code"
@@ -161,6 +196,8 @@ def open_claude_code(sample=None, session=None, request=None, send_if_open=False
         prompt = prompt.replace("'", "\u2019")  # it is passed in single quotes to the shell
     send = prompt if (send_if_open and request) else None
     cmd, ws = claude_code_command(prompt, remote)
+    if osutil.WINDOWS:
+        return _open_windows(ws, prompt, claude_code_path()) | {"command": cmd}
     if platform.system() != "Darwin":
         return {"opened": False, "command": cmd}
     script = ws / "start_claude.command"
@@ -219,6 +256,15 @@ def close_claude_code(wait=3.0):
     """When the app quits: end the Claude Code it opened in Terminal (each workspace records its tab's tty) and close
     that window. Only processes named claude / node on that tty are ended, so a tab reused for something else stays."""
     import signal
+    if osutil.WINDOWS:  # the console windows the app opened (their whole process tree: cmd, claude, node)
+        done = []
+        for rec in sorted(config.HOME.glob("claude_workspace*/claude_console.txt")):
+            pid = rec.read_text().strip()
+            rec.unlink(missing_ok=True)
+            if pid.isdigit() and osutil.pid_alive(int(pid)):
+                osutil.terminate(int(pid), tree=True)
+                done.append(pid)
+        return done
     if platform.system() != "Darwin":
         return []
     done = []
@@ -247,11 +293,7 @@ def close_claude_code(wait=3.0):
 
 
 def _alive(pid):
-    try:
-        os.kill(pid, 0)
-        return True
-    except OSError:
-        return False
+    return osutil.pid_alive(pid)
 
 
 # ---------------- viewer <-> agent ----------------

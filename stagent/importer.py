@@ -28,7 +28,7 @@ found otherwise (e.g. by align.py). Until an image is registered the cells are s
 Xenium DAPI image) and the image waits in meta["image_pending"]. Moving the cells to a new placement moves the
 outlines drawn on the old one with them (regions, proposed areas).
 """
-import hashlib, json, re, shutil, time
+import hashlib, json, os, re, shutil, time
 from pathlib import Path
 import h5py, numpy as np, pandas as pd, scipy.sparse as sp
 from scipy.spatial import cKDTree
@@ -306,7 +306,9 @@ def epithelial_depth(X, genes, xy):
 
 
 # ---------------- import ----------------
-MAX_NAME = 200  # characters; a session id adds 21 and file systems allow 255 per path component
+# characters; a session id adds 21 and file systems allow 255 per path component; Windows also limits a whole path to
+# 260 characters unless long paths are switched on, and a sample's files sit a few folders below the data folder
+MAX_NAME = 100 if os.name == "nt" else 200
 
 
 def _check_name(name, overwrite):
@@ -363,6 +365,8 @@ def _write_bundle(name, ids, xy, X, genes, image, A, regions, description, sourc
         _write_files(tmp, out, name, cells, X, genes, image, A, description, source, image_kind, um_per_px, has_regions,
                      registration, image_pending, pending_kind, by)
         if out.exists():
+            from .render import forget
+            forget(out)  # the viewer may have the old sample's image open (Windows cannot delete an open file)
             shutil.rmtree(out)
         out.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(tmp), str(out))

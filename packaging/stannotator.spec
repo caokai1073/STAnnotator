@@ -1,5 +1,7 @@
 # PyInstaller spec of the standalone STAnnotator app.
 #   macOS (Apple silicon): packaging/macos/build_app.sh  ->  dist/STAnnotator.app
+#   Windows 10 / 11 (x64): packaging\windows\build.ps1  ->  dist\STAnnotator\STAnnotator.exe (the window) and
+#                          stagent.exe (console: Claude Code runs "stagent.exe mcp"), zipped as dist\STAnnotator-windows.zip
 #   Linux (to test the bundle): pyinstaller packaging/stannotator.spec  ->  dist/STAnnotator/
 import sys
 from pathlib import Path
@@ -45,8 +47,9 @@ def dropped_file(dest):
 
 
 # packages that load parts of themselves dynamically (codecs, event loops, numba-compiled modules, plugins)
+# (Windows: pywebview drives Edge WebView2 through pythonnet / clr_loader, which load .NET assemblies and DLLs)
 for pkg in ["zarr", "numcodecs", "imagecodecs", "tifffile", "pynndescent", "numba", "llvmlite", "igraph", "umap", "sklearn", "harmonypy",
-            "uvicorn", "mcp", "webview"]:
+            "uvicorn", "mcp", "webview"] + (["clr_loader", "pythonnet"] if sys.platform == "win32" else []):
     try:
         d, b, h = collect_all(pkg)
     except Exception:
@@ -67,9 +70,17 @@ a = Analysis([str(ROOT / "packaging" / "entry.py")], pathex=[str(ROOT)], datas=d
 a.datas = [x for x in a.datas if not dropped_file(x[0])]
 a.binaries = [x for x in a.binaries if not dropped_file(x[0])]
 pyz = PYZ(a.pure)
-exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="STAnnotator", console=sys.platform != "darwin",
-          argv_emulation=False, target_arch="arm64" if sys.platform == "darwin" else None)
-coll = COLLECT(exe, a.binaries, a.datas, name="STAnnotator")
+if sys.platform == "win32":
+    # two programs over one bundle: the window has no console; Claude Code needs a console program for the MCP server
+    # (stdin / stdout), which config.self_command finds beside the window's
+    icon = str(ROOT / "stagent" / "data" / "app_icon.png")  # converted to .ico by PyInstaller (Pillow)
+    exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="STAnnotator", console=False, icon=icon)
+    cli = EXE(pyz, a.scripts, [], exclude_binaries=True, name="stagent", console=True, icon=icon)
+    coll = COLLECT(exe, cli, a.binaries, a.datas, name="STAnnotator")
+else:
+    exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="STAnnotator", console=sys.platform != "darwin",
+              argv_emulation=False, target_arch="arm64" if sys.platform == "darwin" else None)
+    coll = COLLECT(exe, a.binaries, a.datas, name="STAnnotator")
 if sys.platform == "darwin":
     icon = ROOT / "packaging" / "macos" / "AppIcon.icns"
     app = BUNDLE(coll, name="STAnnotator.app", icon=str(icon) if icon.exists() else None,

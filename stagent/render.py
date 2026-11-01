@@ -1,6 +1,7 @@
 """Figures: region maps (PNG), H&E conflict crops and tissue overviews (JPEG, smaller for MCP clients). Each returns
 its path. Slide reads any box of a pyramidal H&E at a given output size (also used by the viewer's tiles)."""
 import math, threading
+from pathlib import Path
 import numpy as np, tifffile, zarr
 from PIL import Image
 import matplotlib
@@ -49,14 +50,26 @@ class Slide:
             rgb = rgb or ("C" in s.axes and s.shape[s.axes.index("C")] == 3 and s.dtype == np.uint8)
             self.rgb, self.dtype = rgb, s.dtype
         self.W0, self.H0 = self.levels[0][:2]
-        self._z, self._lock = {}, threading.Lock()
+        self._z, self._stores, self._lock = {}, [], threading.Lock()
         self.fill = (245, 245, 245) if self.rgb else (0, 0, 0)
         self._range = None
 
     def _zarr(self, k):
         if k not in self._z:
-            self._z[k] = zarr.open(tifffile.imread(self.path, aszarr=True, level=k), mode="r")
+            store = tifffile.imread(self.path, aszarr=True, level=k)
+            self._stores.append(store)
+            self._z[k] = zarr.open(store, mode="r")
         return self._z[k]
+
+    def close(self):
+        """Close the file (it opens again when read): Windows cannot move or delete a file that is open."""
+        with self._lock:
+            for st in self._stores:
+                try:
+                    st.close()
+                except Exception:
+                    pass
+            self._stores, self._z = [], {}
 
     def _box(self, k, a0, b0, a1, b1):
         """Pixels of level k in a box as (h, w, 3) uint8."""
@@ -124,6 +137,15 @@ _slides = {}
 def unload(path):
     """Forget an open image (its file handles and stores)."""
     _slides.pop(path, None)
+
+
+def forget(folder):
+    """Close and drop the images open from inside folder (before it is moved or deleted)."""
+    folder = str(Path(folder).resolve())
+    for p in [p for p in _slides if p and str(Path(p).resolve()).startswith(folder)]:
+        s = _slides.pop(p)
+        if hasattr(s, "close"):
+            s.close()
 
 
 def slide(path):

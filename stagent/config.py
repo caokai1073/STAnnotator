@@ -38,8 +38,15 @@ if FROZEN:  # numba (pynndescent) caches compiled code; the app bundle is read-o
 
 
 def self_command(*args):
-    """Command line that runs one of this installation's subcommands (mcp, viewer, ...)."""
-    return [sys.executable, *args] if FROZEN else [sys.executable, "-m", "stagent.cli", *args]
+    """Command line that runs one of this installation's subcommands (mcp, viewer, ...). The Windows app is two
+    programs: STAnnotator.exe (the window, no console) and stagent.exe beside it (a console program: Claude Code talks
+    to its MCP server over stdin / stdout)."""
+    if not FROZEN:
+        return [sys.executable, "-m", "stagent.cli", *args]
+    exe = Path(sys.executable)
+    if os.name == "nt" and (exe.parent / "stagent.exe").exists():
+        exe = exe.parent / "stagent.exe"
+    return [str(exe), *args]
 
 
 def release_memory():
@@ -83,6 +90,7 @@ def build():
     try:
         import subprocess
         return subprocess.run(["git", "-C", str(PACKAGE), "log", "-1", "--format=%h %cs"], capture_output=True,
-                              text=True, timeout=5).stdout.strip() or "dev"
+                              text=True, timeout=5, creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+                              ).stdout.strip() or "dev"
     except Exception:
         return "dev"
