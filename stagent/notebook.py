@@ -106,7 +106,7 @@ def _sources():
             f = config.PACKAGE / "algorithm_src" / f"{name}.py"
             if not f.exists():
                 raise RuntimeError(f"the source of {name}.py is missing from this app build")
-            out[name] = f.read_text()
+            out[name] = f.read_text(encoding="utf-8")  # not the Windows code page (GBK on Chinese Windows)
     return out
 
 
@@ -503,7 +503,8 @@ table.head()''', [_table(table[cols].head())]))
     d = s.dir / "exports" / f"v{v:04d}"
     d.mkdir(parents=True, exist_ok=True)
     out = d / f"{s.sample_id}_v{v}_analysis.ipynb"
-    json.dump(doc, open(out, "w"), indent=1)
+    with open(out, "w", encoding="utf-8") as fh:
+        json.dump(doc, fh, indent=1)
     return str(out)
 
 

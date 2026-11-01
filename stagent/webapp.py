@@ -2498,12 +2498,16 @@ async def api_export_to(req: Request):
     try:
         from . import notebook
         if b.get("kind") == "registration":
-            Path(b["path"]).expanduser().write_text(notebook.registration_csv(s.sample_id))
+            Path(b["path"]).expanduser().write_text(notebook.registration_csv(s.sample_id), encoding="utf-8")
         else:
             src = notebook.build(s, v) if b.get("kind") == "notebook" else Path(s.export(v)) / "cells.csv"
             shutil.copy(src, Path(b["path"]).expanduser())
     except (OSError, KeyError) as e:
         return _json({"error": str(e)}, 400)
+    except Exception as e:  # shown in the export dialog instead of "Internal Server Error"
+        import traceback
+        traceback.print_exc()  # into the viewer's log
+        return _json({"error": f"{type(e).__name__}: {e}"}, 500)
     return _json({"saved": b["path"]})
 
 
