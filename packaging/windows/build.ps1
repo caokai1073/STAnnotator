@@ -4,30 +4,45 @@
 # From the unzipped STAnnotator folder, in PowerShell:
 #     powershell -ExecutionPolicy Bypass -File packaging\windows\build.ps1
 #
-# It needs Python 3.12: uv (https://docs.astral.sh/uv/) when it is installed, else the Python launcher (py -3.12)
-# of a python.org installation. The build goes into its own environment (.build-venv), without PyTorch, and takes
-# 5 - 15 minutes the first time (downloads about 1 GB of packages).
+# Nothing needs to be installed first: it uses uv (https://docs.astral.sh/uv/) when it is installed, else downloads uv
+# into .build-tools\ of this folder (checked against its published SHA-256; nothing is installed on the system), and
+# uv downloads Python 3.12 for the build. The build goes into its own environment (.build-venv), without PyTorch, and
+# takes 5 - 15 minutes the first time (downloads about 1 GB). The app it makes contains Python: whoever runs
+# STAnnotator.exe needs nothing installed.
 $ErrorActionPreference = "Stop"
 Set-Location (Join-Path $PSScriptRoot "..\..")
 $root = Get-Location
 $venv = Join-Path $root ".build-venv"
 $py = Join-Path $venv "Scripts\python.exe"
 
-if (Get-Command uv -ErrorAction SilentlyContinue) {
-    Write-Host "== Python 3.12 environment (uv)"
-    uv venv --allow-existing $venv --python 3.12
-    uv pip install --python $py --reinstall-package stagent ".[app]" pyinstaller
-} elseif (Get-Command py -ErrorAction SilentlyContinue) {
-    Write-Host "== Python 3.12 environment (py -3.12)"
-    if (-not (Test-Path $py)) { py -3.12 -m venv $venv }
-    & $py -m pip install --upgrade pip
-    & $py -m pip install --force-reinstall --no-deps .
-    & $py -m pip install ".[app]" pyinstaller
-} else {
-    Write-Error ("Python 3.12 was not found. Install uv (https://docs.astral.sh/uv/getting-started/installation/) " +
-                 "or Python 3.12 from https://www.python.org/downloads/windows/ (tick 'Add python.exe to PATH'), " +
-                 "then run this script again.")
+$uv = (Get-Command uv -ErrorAction SilentlyContinue).Source
+if (-not $uv) {
+    # uv for this build only, in .build-tools\ (no installation, no change to PATH)
+    $tools = Join-Path $root ".build-tools"
+    $uv = Join-Path $tools "uv.exe"
+    if (-not (Test-Path $uv)) {
+        Write-Host "== downloading uv (Python and packages for the build come through it)"
+        New-Item -ItemType Directory -Force $tools | Out-Null
+        $url = "https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip"
+        $zipUv = Join-Path $tools "uv.zip"
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        Invoke-WebRequest -Uri $url -OutFile $zipUv -UseBasicParsing
+        $shaFile = Join-Path $tools "uv.zip.sha256"
+        Invoke-WebRequest -Uri "$url.sha256" -OutFile $shaFile -UseBasicParsing   # (as a file: it may arrive as bytes)
+        $want = ((Get-Content $shaFile -Raw).Trim() -split "\s+")[0].ToLower()
+        Remove-Item $shaFile
+        $have = (Get-FileHash $zipUv -Algorithm SHA256).Hash.ToLower()
+        if ($want -ne $have) { Remove-Item $zipUv; throw "uv download: checksum mismatch ($have, expected $want)" }
+        Expand-Archive -Path $zipUv -DestinationPath $tools -Force
+        Remove-Item $zipUv
+        if (-not (Test-Path $uv)) { $uv = (Get-ChildItem $tools -Recurse -Filter uv.exe | Select-Object -First 1).FullName }
+    }
 }
+Write-Host "== Python 3.12 environment (uv: $uv)"
+& $uv venv --allow-existing $venv --python 3.12      # uv downloads Python 3.12 when the computer has none
+if ($LASTEXITCODE -ne 0) { throw "uv could not create the Python 3.12 environment" }
+& $uv pip install --python $py --reinstall-package stagent ".[app]" pyinstaller
+if ($LASTEXITCODE -ne 0) { throw "installing the packages failed" }
 
 Write-Host "== PyInstaller"
 & $py -m PyInstaller --noconfirm --clean packaging\stannotator.spec

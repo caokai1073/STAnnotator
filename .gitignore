@@ -21,4 +21,5 @@ share/
 /dist/
 /build/
 /.build-venv/
+/.build-tools/
 packaging/macos/AppIcon.icns

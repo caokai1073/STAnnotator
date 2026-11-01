@@ -538,7 +538,9 @@ On Windows 10 / 11 (x64), from the unzipped source folder, in PowerShell:
 powershell -ExecutionPolicy Bypass -File packaging\windows\build.ps1   # -> dist\STAnnotator\ and dist\STAnnotator-windows-<version>.zip
 ```
 
-It needs uv or Python 3.12 (python.org) and builds with the same spec: `STAnnotator.exe` is the window (Edge
+Nothing needs to be installed first: it uses uv when installed, else downloads uv into `.build-tools\` (checked against
+its published SHA-256), and uv fetches Python 3.12; the app it makes contains Python, so its users install nothing.
+It builds with the same spec: `STAnnotator.exe` is the window (Edge
 WebView2, part of Windows 11), `stagent.exe` beside it the console program Claude Code starts for the tools
 (`stagent.exe mcp`; it also takes every other subcommand). The build is not signed, so Windows asks once (More
 info -> Run anyway). On Windows the Ask Agent button opens Claude Code in its own console window; a request sent while
