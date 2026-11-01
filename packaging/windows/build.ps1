@@ -50,8 +50,11 @@ if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
 
 $app = Join-Path $root "dist\STAnnotator"
 Write-Host "== check: stagent.exe answers"
-& (Join-Path $app "stagent.exe") --help | Select-Object -First 3
-if ($LASTEXITCODE -ne 0) { throw "the built stagent.exe does not start" }
+# the whole output first: Select-Object -First in the pipe would stop the program early and spoil its exit code
+$out = & (Join-Path $app "stagent.exe") --help 2>&1
+$code = $LASTEXITCODE
+$out | Select-Object -First 3
+if ($code -ne 0) { throw "the built stagent.exe does not start (exit code $code)" }
 
 $version = (Select-String -Path stagent\__init__.py -Pattern '__version__ = "([^"]+)"').Matches[0].Groups[1].Value
 $zip = Join-Path $root "dist\STAnnotator-windows-$version.zip"
