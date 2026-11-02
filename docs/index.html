@@ -104,7 +104,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .hero h1 { font-size: var(--s-5); line-height: 1.04; }
 .hero h1 em { font-style: normal; color: var(--eosin); }
 .hero h1 .nw { white-space: nowrap; }
-.hero .lede { font-size: var(--s-2); color: var(--muted); max-width: 52ch; }
+.hero .lede { font-size: clamp(var(--s-2), 1rem + .35vw, 1.25rem); line-height: 1.6; color: var(--muted); margin-top: clamp(28px, 4vw, 44px); }
 .hero .lede-wrap { display: grid; gap: 24px; }
 .cta { display: flex; flex-wrap: wrap; gap: 12px; }
 .hero-meta { font: 400 var(--s-0)/1.5 var(--f-mono); color: var(--muted); }
@@ -285,12 +285,8 @@ footer a { color: var(--muted); }
   <section class="hero">
     <div class="wrap">
       <div class="hero-grid">
-        <h1><span class="nw">Spatial transcriptomics</span> on the tissue, with an <em>agent</em> at your side.</h1>
+        <h1><span class="nw">Spatial transcriptomics</span><br><span class="nw">on the tissue, with an</span><br><em>agent</em> at your side.</h1>
         <div class="lede-wrap">
-          <p class="lede">STAnnotator takes spatial transcriptomics (Xenium, CosMx, MERSCOPE, Visium HD, Stereo-seq and
-            more) from import to results on the tissue image: registration, cell types, regions, niches, cell–cell
-            communication and comparisons across slices. Tell it what you know in plain sentences. Every change the
-            agent proposes waits in the app until you click Accept.</p>
           <div class="cta">
             <a class="btn btn-primary" href="#download" data-dmg data-os="mac">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"></path></svg>
@@ -305,6 +301,10 @@ footer a { color: var(--muted); }
           <p class="hero-meta">Version <span data-version>0.2.41</span> · free · runs on your computer or your server · the agent is your own Claude Code</p>
         </div>
       </div>
+      <p class="lede">STAnnotator takes spatial transcriptomics (Xenium, CosMx, MERSCOPE, Visium HD, Stereo-seq and more)
+        from import to results on the tissue image: registration, cell types, regions, niches, cell–cell communication
+        and comparisons across slices. Tell it what you know in plain sentences. Every change the agent proposes waits in
+        the app until you click Accept.</p>
 
       <div class="slide">
         <figure>
