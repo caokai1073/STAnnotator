@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <meta property="og:title" content="STAnnotator">
 <meta property="og:description" content="Cell types on the H&E, with an agent at your side. Free download for macOS and Windows.">
-<meta property="og:image" content="https://caokai1073.github.io/STAnnotator/assets/social-preview.png">
+<meta property="og:image" content="https://www.caokai.site/STAnnotator/assets/social-preview.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -300,7 +300,7 @@ footer a { color: var(--muted); }
             </a>
             <a class="btn btn-ghost" href="#source">Install from source</a>
           </div>
-          <p class="hero-meta">Version 0.2.40 · free · runs on your computer or your server · the agent is your own Claude Code</p>
+          <p class="hero-meta">Version <span data-version>0.2.41</span> · free · runs on your computer or your server · the agent is your own Claude Code</p>
         </div>
       </div>
 
@@ -616,7 +616,7 @@ footer a { color: var(--muted); }
       <div class="side"><p class="eyebrow">Download</p></div>
       <div>
         <div class="get"><img src="assets/logo.png" width="64" height="64" alt="STAnnotator app icon"><h2>Get STAnnotator</h2></div>
-        <p class="intro">Version 0.2.40. Both apps contain everything they need; no Python to install.
+        <p class="intro">Version <span data-version>0.2.41</span>. Both apps contain everything they need; no Python to install.
           All releases and their notes are on the <a href="#" data-releases>releases page</a>.</p>
         <div class="dl">
           <div class="osc" data-os="mac">
@@ -678,7 +678,7 @@ uv pip install --python .venv/bin/python -e .
 
 <footer>
   <div class="wrap">
-    <span>STAnnotator 0.2.40 · cell type annotation for spatial transcriptomics · macOS and Windows</span>
+    <span>STAnnotator <span data-version>0.2.41</span> · cell type annotation for spatial transcriptomics · macOS and Windows</span>
     <nav aria-label="Links">
       <a href="https://github.com/caokai1073/STAnnotator">Source code</a>
       <a href="https://github.com/caokai1073/STAnnotator/blob/main/docs/GUIDE.md">User guide</a>
@@ -700,6 +700,7 @@ fetch("https://api.github.com/repos/caokai1073/STAnnotator/releases/latest")
   .then((rel) => {
     const assets = (rel && rel.assets) || [];
     const dmg = assets.find((x) => /\.dmg$/i.test(x.name)), exe = assets.find((x) => /\.exe$/i.test(x.name));
+    if (rel && rel.tag_name) document.querySelectorAll("[data-version]").forEach((e) => { e.textContent = rel.tag_name.replace(/^v/, ""); });
     if (dmg) setLinks("[data-dmg]", dmg.browser_download_url);
     if (exe) setLinks("[data-exe]", exe.browser_download_url);
   })

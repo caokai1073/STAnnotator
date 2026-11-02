@@ -6,7 +6,8 @@
 
 <p align="center">
   <a href="https://github.com/caokai1073/STAnnotator/releases/latest">Download for macOS and Windows</a> ·
-  <a href="docs/GUIDE.md">User guide</a>
+  <a href="docs/GUIDE.md">User guide</a> ·
+  <a href="https://www.caokai.site/STAnnotator/">Website</a>
 </p>
 
 Cell type annotation and analysis of spatial transcriptomics (Xenium, CosMx, MERSCOPE, Visium HD, Stereo-seq, …) on
