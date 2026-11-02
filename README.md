@@ -10,8 +10,9 @@
   <a href="https://www.caokai.site/STAnnotator/">Website</a>
 </p>
 
-Cell type annotation and analysis of spatial transcriptomics (Xenium, CosMx, MERSCOPE, Visium HD, Stereo-seq, …) on
-the H&E image, with an AI agent at your side.
+Spatial transcriptomics (Xenium, CosMx, MERSCOPE, Visium HD, Stereo-seq, …) on the tissue image, from registration
+and cell types to regions, niches, cell-cell communication and comparisons across slices, with an AI agent at your
+side.
 
 - **Annotate** from a marker gene list, a labeled single-cell reference, or an existing annotation.
 - **Refine in plain language**: priors ("epithelial cells are only in the mucosa"), corrections, re-clustering.
