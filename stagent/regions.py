@@ -58,6 +58,18 @@ def validate_name(name):
     return name
 
 
+def read_geojson(path):
+    """The text of a GeoJSON file: UTF-8 (the GeoJSON standard; not the Windows code page, e.g. GBK on Chinese
+    Windows, which fails on any non-ASCII name), else the system's encoding."""
+    from pathlib import Path
+    b = Path(path).expanduser().read_bytes()
+    try:
+        return b.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        import locale
+        return b.decode(locale.getpreferredencoding(False), errors="replace")
+
+
 def parse_geojson(text):
     """Polygons of a GeoJSON file (e.g. QuPath annotations exported in the image's full-resolution pixels):
     [{"name", "color" ("#rrggbb" or None), "outer": [[x, y], ...], "holes": [ring, ...]}] and the number of objects

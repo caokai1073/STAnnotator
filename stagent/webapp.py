@@ -1656,7 +1656,7 @@ async def api_regions_import(req: Request):
         return _json({"error": "the cells are not on the H&E yet: align it first (registration file, or Align with "
                                "Agent); outlines drawn on the H&E then fall on the right cells"}, 400)
     try:
-        text = Path(b["path"]).expanduser().read_text() if b.get("path") else b.get("text") or ""
+        text = regmod.read_geojson(b["path"]) if b.get("path") else b.get("text") or ""
         pieces, skipped = regmod.parse_geojson(text)
         r = await asyncio.to_thread(s.import_regions, pieces, Path(b.get("path") or b.get("name") or "GeoJSON").name, "viewer")
     except (ValueError, OSError, KeyError) as e:

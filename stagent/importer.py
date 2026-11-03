@@ -1096,11 +1096,11 @@ def attach_regions(sample_id, path):
     annotation of it starts with these regions. Returns the cells each region holds, or None when the H&E still waits
     for its alignment (the file is kept and used once the cells are on the image)."""
     from . import regions
-    text = Path(path).expanduser().read_text()
+    text = regions.read_geojson(path)
     pieces, skipped = regions.parse_geojson(text)
     m = _meta(sample_id)
     if not on_image(m):
-        (config.SAMPLES / sample_id / "regions.geojson").write_text(text)
+        (config.SAMPLES / sample_id / "regions.geojson").write_text(text, encoding="utf-8")
         m["regions_geojson"] = {"source": str(Path(path).expanduser().resolve()), "regions": None, "skipped": skipped}
         json.dump(m, open(config.SAMPLES / sample_id / "meta.json", "w"), indent=1)
         return None
@@ -1115,7 +1115,7 @@ def attach_regions(sample_id, path):
     if not any(per.values()):
         raise ValueError(f"{Path(path).name}: no outline holds any cell of {sample_id}: was it drawn on this sample's "
                          "H&E (full-resolution pixels), and is the H&E registered?")
-    (config.SAMPLES / sample_id / "regions.geojson").write_text(text)
+    (config.SAMPLES / sample_id / "regions.geojson").write_text(text, encoding="utf-8")
     m = _meta(sample_id)
     m["regions_geojson"] = {"source": str(Path(path).expanduser().resolve()), "regions": per, "skipped": skipped}
     json.dump(m, open(config.SAMPLES / sample_id / "meta.json", "w"), indent=1)

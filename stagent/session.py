@@ -250,7 +250,7 @@ class Session:
             f = config.SAMPLES / str(sample_id) / "regions.geojson"
             if f.exists() and on_image(s.meta):  # outlines drawn on the H&E need the cells on it
                 try:
-                    pieces, _ = regmod.parse_geojson(f.read_text())
+                    pieces, _ = regmod.parse_geojson(regmod.read_geojson(f))
                     s.import_regions(pieces, source="the sample's GeoJSON", author="import")
                 except ValueError as e:
                     print(f"regions of {sample_id} not applied: {e}")

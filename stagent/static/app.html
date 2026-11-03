@@ -296,7 +296,9 @@ header .br { flex: 1 1 100%; height: 0; }
 .plh.cat { text-transform: none; letter-spacing: 0; font-weight: 600; color: #7b5cd6; margin-top: 6px; }
 #rpBody { overflow: auto; max-height: 70vh; padding: 4px 18px 14px; font-size: 13px; line-height: 1.5; }
 .hpbody { overflow: auto; max-height: 72vh; padding: 6px 18px 16px; font-size: 13px; line-height: 1.5; }
-.hpbody h3 { font-size: 13.5px; margin: 12px 0 3px; } .hpbody ul { margin: 0; padding-left: 18px; }
+.hpbody h3 { font-size: 13.5px; margin: 14px 0 4px; } .hpbody ul { margin: 0; padding-left: 18px; }
+.hpbody li { margin: 3px 0; } .hpbody li li { margin: 1px 0; }
+.hpbody ul ul { margin: 2px 0 5px; list-style: circle; } .hpbody ul ul ul { list-style: square; }
 .hpbody kbd { font: 11px ui-monospace, Menlo, monospace; border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; }
 .hpbody dl { display: grid; grid-template-columns: 170px 1fr; gap: 4px 12px; margin: 8px 0; }
 .hpbody dt { color: var(--muted); } .hpbody dd { margin: 0; overflow-wrap: anywhere; }
@@ -1201,7 +1203,7 @@ function drawNav() {
   ctx.lineWidth = 1.2 * dpr; ctx.lineJoin = "round";
   outlines.forEach((p) => {
     ctx.beginPath();
-    p.polygon.forEach(([x, y], i) => (i ? ctx.lineTo : ctx.moveTo).call(ctx, ox + x * kx, oy + y * ky));
+    regionShape(p, 3).outer.forEach(([x, y], i) => (i ? ctx.lineTo : ctx.moveTo).call(ctx, ox + x * kx, oy + y * ky));
     ctx.closePath(); ctx.strokeStyle = rgb(p.color); ctx.stroke();
   });
 }
@@ -1951,27 +1953,73 @@ st.drawing = null;
 const SVGNS = "http://www.w3.org/2000/svg";
 function toScreen(x, y) { return heItem().imageToViewerElementCoordinates(new OpenSeadragon.Point(x, y)); }
 function svgEl(tag, attrs) { const e = document.createElementNS(SVGNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; }
-function drawRegions() {
-  const svg = $("regsvg"); svg.textContent = "";
-  if (!heItem() || !st.he) return;
-  if (st.regions && $("outlines").checked) {
-    st.regions.polygons.filter((p) => !st.editing || p.id !== st.editing.id).forEach((p) => {
-      const pts = p.polygon.map(([x, y]) => toScreen(x, y));
-      const col = rgb(p.color), points = pts.map((q) => `${q.x},${q.y}`).join(" ");
-      // a dark halo under the colored line keeps the outline visible over cells of a similar color
-      svg.append(svgEl("polygon", { points, fill: col, "fill-opacity": 0.08, stroke: "#000", "stroke-opacity": 0.6,
-                                     "stroke-width": 5, "stroke-linejoin": "round" }));
-      svg.append(svgEl("polygon", { points, fill: "none", stroke: col, "stroke-width": 2.6, "stroke-linejoin": "round" }));
-      (p.holes || []).forEach((h) => {  // holes of an imported outline: their cells are not in the region
-        const hp = h.map(([x, y]) => toScreen(x, y)).map((q) => `${q.x},${q.y}`).join(" ");
-        svg.append(svgEl("polygon", { points: hp, fill: "none", stroke: col, "stroke-width": 1.8, "stroke-dasharray": "6 4" }));
-      });
-      const cx = pts.reduce((a, q) => a + q.x, 0) / pts.length, cy = pts.reduce((a, q) => a + q.y, 0) / pts.length;
-      const t = svgEl("text", { x: cx, y: cy, fill: col, "text-anchor": "middle", stroke: "#000", "stroke-width": 3,
-                                "stroke-opacity": 0.7, "paint-order": "stroke", "font-weight": 700 });
-      t.textContent = p.name; svg.append(t);
-    });
+// The region outlines are built once, in image pixels, in a group whose transform follows the view: moving the map
+// changes one attribute instead of rebuilding every outline (an outline imported from QuPath can have tens of
+// thousands of points). Each is drawn simplified to half a screen pixel, from a few levels of detail (level k: within
+// SHOW_TOL_PX * 4^k image pixels, computed when first needed); the points change only when the zoom passes a level.
+// Editing uses the full outline.
+const SHOW_TOL_PX = 0.75, SHOW_LEVELS = 6;
+const REG = { regions: null, editing: null, on: null, level: -1, g: null, dyn: null, items: [] };
+function regionShape(p, k = 0) {  // the outline and holes of a polygon at level of detail k, and its label point
+  if (!p.lod) {
+    p.lod = [];
+    let cx = 0, cy = 0;
+    p.polygon.forEach(([x, y]) => { cx += x; cy += y; });
+    p.label = [cx / p.polygon.length, cy / p.polygon.length];
   }
+  for (let i = 0; i <= k; i++) {
+    if (p.lod[i]) continue;
+    const tol = SHOW_TOL_PX * 4 ** i, from = i ? p.lod[i - 1] : { outer: p.polygon, holes: p.holes || [] };
+    p.lod[i] = { outer: simplifyRing(from.outer, tol), holes: from.holes.map((h) => simplifyRing(h, tol)) };
+  }
+  return p.lod[k];
+}
+function buildRegionLayer(svg) {
+  const editing = st.editing ? st.editing.id : null, on = $("outlines").checked;
+  if (REG.g && REG.g.parentNode === svg && REG.regions === st.regions && REG.editing === editing && REG.on === on) return;
+  svg.textContent = "";
+  Object.assign(REG, { regions: st.regions, editing, on, level: -1, items: [] });
+  REG.g = svgEl("g", {}); REG.dyn = svgEl("g", {}); svg.append(REG.g, REG.dyn);
+  if (!st.regions || !on) return;
+  const ns = { "vector-effect": "non-scaling-stroke", "stroke-linejoin": "round" };  // line widths in screen pixels
+  st.regions.polygons.filter((p) => p.id !== editing).forEach((p) => {
+    const col = rgb(p.color);
+    // a dark halo under the colored line keeps the outline visible over cells of a similar color
+    const halo = svgEl("polygon", { fill: col, "fill-opacity": 0.08, stroke: "#000", "stroke-opacity": 0.6, "stroke-width": 5, ...ns });
+    const line = svgEl("polygon", { fill: "none", stroke: col, "stroke-width": 2.6, ...ns });
+    const holes = (p.holes || []).map(() => svgEl("polygon", { fill: "none", stroke: col, "stroke-width": 1.8, "stroke-dasharray": "6 4", ...ns }));
+    REG.g.append(halo, line, ...holes);  // holes of an imported outline: their cells are not in the region
+    regionShape(p);
+    REG.items.push({ p, halo, line, holes, col });
+  });
+}
+function setRegionLevel(k) {  // the points of every outline at level of detail k
+  if (k === REG.level) return;
+  REG.level = k;
+  const pts = (ring) => ring.map(([x, y]) => `${x},${y}`).join(" ");
+  REG.items.forEach((it) => {
+    const sh = regionShape(it.p, k), points = pts(sh.outer);
+    it.halo.setAttribute("points", points); it.line.setAttribute("points", points);
+    it.holes.forEach((e, i) => e.setAttribute("points", pts(sh.holes[i])));
+  });
+}
+function drawRegions() {
+  const root = $("regsvg");
+  if (!heItem() || !st.he) { root.textContent = ""; REG.g = null; return; }
+  buildRegionLayer(root);
+  const a = toScreen(0, 0), bx = toScreen(1e4, 0), by = toScreen(0, 1e4);  // image pixels to screen pixels
+  const scale = Math.hypot(bx.x - a.x, bx.y - a.y) / 1e4;  // half a screen pixel = 0.5 / scale image pixels
+  setRegionLevel(Math.max(0, Math.min(SHOW_LEVELS - 1, Math.floor(Math.log(0.5 / scale / SHOW_TOL_PX) / Math.log(4)))));
+  REG.g.setAttribute("transform", `matrix(${(bx.x - a.x) / 1e4},${(bx.y - a.y) / 1e4},${(by.x - a.x) / 1e4},${(by.y - a.y) / 1e4},${a.x},${a.y})`);
+  const svg = REG.dyn; svg.textContent = "";  // the rest has few points and is redrawn in screen pixels
+  const W = root.clientWidth || 4000, H = root.clientHeight || 4000;
+  REG.items.forEach(({ p, col }) => {
+    const q = toScreen(p.label[0], p.label[1]);
+    if (q.x < -200 || q.y < -50 || q.x > W + 200 || q.y > H + 50) return;
+    const t = svgEl("text", { x: q.x, y: q.y, fill: col, "text-anchor": "middle", stroke: "#000", "stroke-width": 3,
+                              "stroke-opacity": 0.7, "paint-order": "stroke", "font-weight": 700 });
+    t.textContent = p.name; svg.append(t);
+  });
   if (st.plaus) {  // candidate areas (red) and Claude's open suggestions (orange)
     const outline = (poly, color, width, label) => {
       const pts = poly.map(([x, y]) => toScreen(x, y));
@@ -2008,7 +2056,10 @@ function drawRegions() {
                                                        stroke: "#00a0d0", "stroke-width": 2 })));
   }
 }
-["animation", "update-viewport", "open", "resize"].forEach((ev) => viewer.addHandler(ev, drawRegions));
+// "animation" and "update-viewport" both come on every frame of a move: one redraw for both, before the frame is painted
+let regionsQueued = false;
+function drawRegionsOnce() { if (!regionsQueued) { regionsQueued = true; queueMicrotask(() => { regionsQueued = false; drawRegions(); }); } }
+["animation", "update-viewport", "open", "resize"].forEach((ev) => viewer.addHandler(ev, drawRegionsOnce));
 
 async function regionsImported(r) {
   await refreshVersion(true);
@@ -2103,11 +2154,14 @@ function renderPriors(box) {  // the priors of this version, each removable (a n
     row.append(txt, del); box.append(row);
   });
 }
+function polyBounds(poly) {  // [x0, y0, x1, y1] (a loop: Math.min(...xs) fails on outlines of many points in Safari)
+  const b = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const [x, y] of poly) { if (x < b[0]) b[0] = x; if (y < b[1]) b[1] = y; if (x > b[2]) b[2] = x; if (y > b[3]) b[3] = y; }
+  return b;
+}
 function zoomTo(p) {
-  const xs = p.polygon.map((q) => q[0]), ys = p.polygon.map((q) => q[1]);
-  const pad = 0.15 * Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
-  viewer.viewport.fitBounds(heItem().imageToViewportRectangle(Math.min(...xs) - pad, Math.min(...ys) - pad,
-    Math.max(...xs) - Math.min(...xs) + 2 * pad, Math.max(...ys) - Math.min(...ys) + 2 * pad));
+  const b = polyBounds(p.polygon), pad = 0.15 * Math.max(b[2] - b[0], b[3] - b[1]);
+  viewer.viewport.fitBounds(heItem().imageToViewportRectangle(b[0] - pad, b[1] - pad, b[2] - b[0] + 2 * pad, b[3] - b[1] + 2 * pad));
 }
 const hex = (c) => "#" + c.map((v) => v.toString(16).padStart(2, "0")).join("");
 const REGION_PALETTE = ["#e6194b", "#f58231", "#ffe119", "#bfef45", "#3cb44b", "#469990", "#42d4f4", "#4363d8",
@@ -2205,7 +2259,7 @@ function drawEditing(svg) {
   svg.append(svgEl("polygon", { points: pts.map((q) => `${q.x},${q.y}`).join(" "), fill: "rgba(0,230,255,.07)",
                                 stroke: "#000", "stroke-opacity": 0.6, "stroke-width": 5 }));
   svg.append(svgEl("polygon", { points: pts.map((q) => `${q.x},${q.y}`).join(" "), fill: "none", stroke: "#00e6ff", "stroke-width": 2.4 }));
-  const W = svg.clientWidth || 4000, H = svg.clientHeight || 4000;
+  const W = $("regsvg").clientWidth || 4000, H = $("regsvg").clientHeight || 4000;
   const on = (q) => q.x > -20 && q.y > -20 && q.x < W + 20 && q.y < H + 20;
   const visible = pts.filter(on).length;
   if (visible > MAX_HANDLES) { $("editinfo").textContent = `Editing ${e.id} · ${e.pts.length} points: zoom in to move them`; return; }
@@ -2645,8 +2699,7 @@ function closePlaus() {
   if (st.mode === "plausibility") st.mode = "type";
 }
 function zoomToPoly(poly, focus = true) {  // focus = false: zoom only (e.g. to several pieces drawn elsewhere)
-  const xs = poly.map((q) => q[0]), ys = poly.map((q) => q[1]);
-  const b = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+  const b = polyBounds(poly);
   const pad = Math.max(60 / st.he.um_per_px, 0.15 * Math.max(b[2] - b[0], b[3] - b[1]));
   st.focus = focus ? poly : null;
   viewer.viewport.fitBounds(heItem().imageToViewportRectangle(b[0] - pad, b[1] - pad, b[2] - b[0] + 2 * pad, b[3] - b[1] + 2 * pad));
@@ -3283,90 +3336,179 @@ $("importBtn").onclick = openImport;
 // ---------------- help and about ----------------
 const HELP = `
 <h3>Import</h3><ul>
-<li><b>Import…</b>: the cells (Xenium: cells.parquet and cell_feature_matrix.h5, optionally experiment.xenium and the DAPI image, each in its field;
-CosMx: a slide's exprMat and metadata files; MERFISH (MERSCOPE): a region's cell_by_gene.csv and cell_metadata.csv, without their instrument images; h5ad files; or an R file .rds / .rda with a Seurat or SpatialExperiment object, read without R), then the <b>H&amp;E image</b> (<b>No H&amp;E</b> or an <b>H&amp;E file</b>; for an h5ad a DAPI /
-fluorescence image can stand in for it, under Image kind) and the registration (<b>Registration file</b>, or <b>No registration</b>).</li>
-<li>An image without a registration file: <b>Align with Agent</b> (next to No registration, or the yellow bar over the
-map) imports and lets the agent find the section and orientation on the image and refine it until the cells sit on
-their nuclei. The folded part at the bottom of Import changes the image or registration of the selected sample, or
-undoes an alignment. Regions drawn before the cells move are moved along with them.</li></ul>
+<li><b>Import…</b>: choose the kind of data, then give its files.<ul>
+  <li><b>Xenium</b>: cells.parquet and cell_feature_matrix.h5; optionally experiment.xenium and the DAPI image.</li>
+  <li><b>CosMx</b>: a slide's exprMat and metadata files.</li>
+  <li><b>MERFISH</b> (MERSCOPE): a region's cell_by_gene.csv and cell_metadata.csv, without their instrument images.</li>
+  <li><b>Visium HD</b> (Space Ranger output): cells from the cell outlines when there are, else 8 µm bins.
+    Space Ranger's alignment places the cells on the image: no registration needed.</li>
+  <li><b>Stereo-seq</b> (SAW output): cells from the cell bins when there are, else 8 µm bins. The registered image
+    SAW wrote is used: no registration needed.</li>
+  <li><b>h5ad / RDS</b>: h5ad files, or an R file (.rds / .rda) with a Seurat or SpatialExperiment object, read without R.</li></ul></li>
+<li>Then the image and its registration:<ul>
+  <li><b>H&amp;E image</b>: <b>No H&amp;E</b> or an <b>H&amp;E file</b>. For an h5ad, a DAPI / fluorescence image can
+    stand in for it (Image kind).</li>
+  <li><b>Registration</b>: a <b>Registration file</b>, or <b>No registration</b>.</li>
+  <li><b>Regions</b> (optional): a GeoJSON of outlines drawn on this H&amp;E (e.g. QuPath annotations); they become
+    regions of every new annotation.</li></ul></li>
+<li>An image without a registration file: <b>Align with Agent</b>.<ul>
+  <li>It is next to No registration, or in the yellow bar over the map.</li>
+  <li>It imports, then the agent finds the section and its orientation on the image and refines it until the cells
+    sit on their nuclei.</li></ul></li>
+<li>The folded part at the bottom of Import:<ul>
+  <li>changes the image or the registration of the selected sample, or undoes an alignment;</li>
+  <li>regions drawn before the cells move are moved along with them.</li></ul></li></ul>
+
 <h3>Several slices</h3><ul>
-<li>Import an h5ad and tick several sections (or give the Xenium files of several slices, one per line in each field): each slice becomes a sample of one
-project, with its metadata (condition, day, …); several image files go to the slices whose section their file
-names hold. <b>◀ ▶</b> or <kbd>[</kbd> <kbd>]</kbd> step through the slices and keep what is shown (Color by, legend
-filters, hidden H&amp;E, the UMAP window and, on a UMAP of all slices, its zoom and selection);
-<b>Overview of all samples</b> shows them side by side; the Compare tab compares them (scope: all slices, rows by slice).</li>
-<li><b>all slices together</b>: <b>Annotate</b> annotates all slices of the project at once (one marker step and one
-model, so a name means the same cells in every slice), <b>Run PCA + UMAP</b> makes one embedding of all slices
-(<b>Harmony</b> removes the differences between slices), and <b>Run niches</b> finds niches shared by all slices. The
-UMAP window shows this slice or all slices, colored by slice too.</li></ul>
+<li>Import several slices at once; each becomes a sample of one project, with its metadata (condition, day, …).<ul>
+  <li>h5ad: tick several sections.</li>
+  <li>Xenium: the files of several slices, one per line in each field.</li>
+  <li>Several image files go to the slices whose section their file names hold.</li></ul></li>
+<li>Moving between slices:<ul>
+  <li><b>◀ ▶</b> or <kbd>[</kbd> <kbd>]</kbd> step through them and keep what is shown: Color by, legend filters,
+    hidden H&amp;E, the UMAP window and, on a UMAP of all slices, its zoom and selection.</li>
+  <li><b>Overview of all samples</b> shows them side by side.</li>
+  <li>The Compare tab compares them (scope: all slices, rows by slice).</li></ul></li>
+<li><b>All slices together</b> treats the project as one:<ul>
+  <li><b>Annotate</b> annotates all slices at once (one marker step and one model, so a name means the same cells in
+    every slice).</li>
+  <li><b>Run PCA + UMAP</b> makes one embedding of all slices; <b>Harmony</b> removes the differences between slices.</li>
+  <li><b>Run niches</b> finds niches shared by all slices.</li>
+  <li>The UMAP window shows this slice or all slices, and can be colored by slice.</li></ul></li></ul>
+
 <h3>Working on a server</h3><ul>
-<li><b>This computer</b> (top right): work on a server over SSH instead; the data and the computation stay on the
-server. Choose… then browses the server's files, Save and Export download to this computer, and the agent (Claude Code) opens here
-with its tools on the server. The server needs STAnnotator installed and an SSH login without a password prompt.</li></ul>
+<li><b>This computer</b> (top right): work on a server over SSH instead.<ul>
+  <li>The data and the computation stay on the server.</li>
+  <li>Choose… browses the server's files; Save and Export download to this computer.</li>
+  <li>The agent (Claude Code) opens here, with its tools on the server.</li>
+  <li>The server needs STAnnotator installed and an SSH login without a password prompt.</li></ul></li></ul>
+
 <h3>Map</h3><ul>
-<li>Drag to move, scroll or pinch to zoom; the small map at the bottom right shows where you are.</li>
-<li>Click a cell: its type, confidence, alternatives, region (and the gene's transcripts when coloring by a gene).</li>
-<li><b>Color by</b> cell type, lineage, <b>gene expression…</b> (type a gene, Enter), region, niche and more. Click legend
-entries to show only those (click again to drop one; <b>show all</b> resets).</li>
-<li><b>Opacity</b> and <b>Dot size</b> sliders; <b>Hide cells</b> <kbd>h</kbd>, <b>Hide H&amp;E</b> <kbd>e</kbd>.</li>
-<li>The toolbar on the right: Data, Annotate, Embedding and Niches are tabs (a dot marks a running analysis). <b>›</b> at its top folds it to the right edge for a bigger map; <b>‹</b> or <kbd>t</kbd> brings it back.</li>
-<li><b>Reset</b> (bottom): the annotations of this sample, or in a project of all its slices; optionally the PCA / UMAP too.</li></ul>
+<li>Moving around:<ul>
+  <li>Drag to move; scroll or pinch to zoom.</li>
+  <li>The small map at the bottom right shows where you are.</li></ul></li>
+<li>Click a cell: its type, confidence, alternatives and region (and the gene's transcripts when coloring by a gene).</li>
+<li><b>Color by</b> cell type, lineage, <b>gene expression…</b> (type a gene, Enter), region, niche and more.<ul>
+  <li>Click legend entries to show only those; click again to drop one; <b>show all</b> resets.</li></ul></li>
+<li>Display:<ul>
+  <li><b>Opacity</b> and <b>Dot size</b> sliders.</li>
+  <li><b>Hide cells</b> <kbd>h</kbd>, <b>Hide H&amp;E</b> <kbd>e</kbd>.</li></ul></li>
+<li>The toolbar on the right:<ul>
+  <li>Data, Annotate, Embedding and Niches are tabs; a dot marks a running analysis.</li>
+  <li><b>›</b> at its top folds it to the right edge for a bigger map; <b>‹</b> or <kbd>t</kbd> brings it back.</li></ul></li>
+<li><b>Reset</b> (bottom): removes the annotations of this sample (in a project, of all its slices), optionally the
+  PCA / UMAP too.</li></ul>
+
 <h3>Regions</h3><ul>
-<li><b>Draw</b> (Regions panel): click points on the map; close with a double-click, <kbd>Enter</kbd> or by clicking the first
-point; <kbd>Backspace</kbd> removes the last point, <kbd>Esc</kbd> cancels; then name it. A name can have several polygons.</li>
-<li><b>edit</b> (next to a polygon): drag a white point to move it; drag a small circle between two points to add a
-point there; click a point twice quickly to remove it; <b>Save</b> <kbd>Enter</kbd> or <b>Cancel</b> <kbd>Esc</kbd>.
-With many points on screen, zoom in first.</li>
-<li>Click a region's color square to choose another color; <b>✎</b> renames; <b>×</b> deletes a polygon (priors on it keep applying).</li>
+<li><b>Draw</b> (Regions panel): click points on the map.<ul>
+  <li>Close it with a double-click, <kbd>Enter</kbd>, or a click on the first point; then name it.</li>
+  <li><kbd>Backspace</kbd> removes the last point; <kbd>Esc</kbd> cancels.</li>
+  <li>A name can have several polygons.</li></ul></li>
+<li><b>Import</b> (Regions panel): regions from a GeoJSON of outlines drawn on this H&amp;E (e.g. QuPath annotations,
+  exported in full-resolution pixels).</li>
+<li><b>edit</b> (next to a polygon):<ul>
+  <li>Drag a white point to move it.</li>
+  <li>Drag a small circle between two points to add a point there.</li>
+  <li>Click a point twice quickly to remove it.</li>
+  <li><b>Save</b> <kbd>Enter</kbd> or <b>Cancel</b> <kbd>Esc</kbd>. With many points on screen, zoom in first.</li></ul></li>
+<li>In the list:<ul>
+  <li>Click a region's color square to choose another color.</li>
+  <li><b>✎</b> renames; <b>×</b> deletes a polygon (priors on it keep applying).</li></ul></li>
 <li>Ask the agent to draw one (“draw the mucosa”): it appears in the Review panel; click <b>add region</b>.</li></ul>
+
 <h3>Priors and corrections</h3><ul>
-<li>Tell the agent (Ask Agent) (“epithelial cells are only in the mucosa”, “the cells in region X are goblet cells”);
-it previews the change and asks before adding a prior.</li>
+<li>Tell the agent (Ask Agent), e.g. “epithelial cells are only in the mucosa”, “the cells in region X are goblet cells”.<ul>
+  <li>It previews the change and asks before adding a prior.</li></ul></li>
 <li>The <b>Priors</b> list under Regions shows them; <b>×</b> removes one.</li></ul>
+
 <h3>Annotate</h3><ul>
-<li><b>Method</b>: marker genes (<b>Markers…</b>), a single-cell reference (<b>Reference…</b>) or an existing annotation
-(<b>Annotation file…</b>). <b>Annotate</b> makes a new annotation; <b>keep my regions, priors &amp; corrections</b> carries them over.</li>
-<li><b>Neighbors</b> (marker genes): <i>Exact</i> gives the same result on every computer, with or without a GPU; <i>Approximate</i>
-is much faster without a GPU and gives the same result only with the same package versions. The line under it estimates how long the
-whole annotation takes on this computer for both (hover for the steps); it learns from every run here.</li></ul>
+<li><b>Method</b>:<ul>
+  <li>marker genes (<b>Markers…</b>);</li>
+  <li>a single-cell reference (<b>Reference…</b>);</li>
+  <li>or an existing annotation (<b>Annotation file…</b>).</li></ul></li>
+<li><b>Annotate</b> makes a new annotation; <b>keep my regions, priors &amp; corrections</b> carries them over.</li>
+<li><b>Neighbors</b> (marker genes):<ul>
+  <li><i>Exact</i> gives the same result on every computer, with or without a GPU.</li>
+  <li><i>Approximate</i> is much faster without a GPU, and gives the same result only with the same package versions.</li>
+  <li>The line under it estimates how long the whole annotation takes on this computer for both (hover for the
+    steps); it learns from every run here.</li></ul></li></ul>
+
 <h3>Embedding</h3><ul>
-<li><b>Run PCA + UMAP</b> computes PCA, UMAP and Leiden clusters from the expression (about a minute; shared by all
-annotations of the sample). <b>Show UMAP</b> opens the window on the right: UMAP or PCA, colored as the map, by cell
-type, Leiden cluster or niche; scroll to zoom, drag to move, double-click to reset.</li>
-<li><b>Select</b> (or hold <kbd>Shift</kbd> and drag) and draw around cells: they light up on the map and the rest
-turn gray; <b>Show on map</b> zooms the map to them; <b>Clear</b> ends the selection.</li>
+<li><b>Run PCA + UMAP</b> computes PCA, UMAP and Leiden clusters from the expression.<ul>
+  <li>About a minute; shared by all annotations of the sample.</li></ul></li>
+<li><b>Show UMAP</b> opens the window on the right.<ul>
+  <li>UMAP or PCA, colored as the map, by cell type, Leiden cluster or niche.</li>
+  <li>Scroll to zoom, drag to move, double-click to reset.</li></ul></li>
+<li><b>Select</b> (or hold <kbd>Shift</kbd> and drag) and draw around cells:<ul>
+  <li>they light up on the map and the rest turn gray;</li>
+  <li><b>Show on map</b> zooms the map to them; <b>Clear</b> ends the selection.</li></ul></li>
 <li>Color by <b>Leiden clusters</b> shows the clusters on the map.</li></ul>
-<h3>Review and output</h3><ul>
-<li><b>Agent Review</b> (bar on the map): choose what the agent reviews: <b>Annotation</b> (the computed checks of
-markers and out-of-place cells, judged on the H&amp;E, and advice on the cell types), <b>Spatial organization</b>
-(compartments proposed as regions, gradients and neighbors), <b>Embedding</b>, <b>Niches</b>, <b>Compare</b> or
-<b>Signaling</b> (the analyses you ran there). The agent drafts its advice, checks every draft against the data and
-keeps only what holds up (each kept item says what it checked; dropped drafts are folded away with the reason). One
-click acts on an item: add a region or a prior, name the niches, color the map, or put suggested settings in a
-tab. The panel's menu switches between the parts; <b>solve</b> hides a computed check.</li>
-<li><b>Report</b>: the agent writes the annotation report; <b>Save…</b> keeps it as a Markdown file.</li>
-<li><b>Niches</b>: identity, k and number of niches; <b>Run niches</b>; with <b>k: Agent chooses</b> the agent picks k per region, runs and names them.</li>
-<li><b>Compare</b>, for this slice or all slices pooled: <b>DE genes</b> of one group (a cell type, lineage, region,
-niche, Leiden cluster, the cells selected in the UMAP window, a slice or a metadata value such as condition) against
-the other cells or another group, optionally only within e.g. one cell type (Wilcoxon test, genes ranked by AUC;
-with several slices it checks the change in every slice); <b>Top genes</b> of every group; <b>Composition</b>: how
-one grouping splits over another (cell types per niche, niches per slice or per condition), as shares or as
-enrichment. DE genes and Top genes also show a <b>Dot plot</b> (share of cells detecting each gene and its mean
-expression, per group); the number next to it sets how many genes the table and the plot show (DE: 5–60; Top genes:
-1–15 per group), <b>Save figure…</b> writes it as PDF. Click a gene to color the map by it; <b>Ask Agent</b> asks the
-agent what the result may mean; <b>Save CSV…</b> keeps every gene. <b>Last result</b> reopens the last result of the
-analysis chosen in the tab.</li>
-<li><b>Signaling</b> (cell-cell communication), for this slice or all slices pooled: ligand-receptor pairs (CellChatDB v2,
-CellPhoneDB v5 and the OmniPath consensus, merged; a pair counts when all its genes are in the panel) scored on
-neighboring cells between groups (cell types by default): contact signals within 15 µm, secreted and ECM signals
-within 50 µm, weighted by distance; tested against random groups. <b>Interactions</b>, a <b>Bubble plot</b>, a sender × receiver
-<b>Network</b>, a <b>Circle plot</b> and <b>Pathways</b> (plots: <b>Save figure…</b> as PDF); <b>show on map</b> colors the cells that send one signal (blue), receive it (red) or
-both (purple); click a legend entry to show one role. <b>Compare groups</b> runs it per condition, slice, region or niche and lists the largest differences (table or bubble plot).</li>
-<li><b>Undo</b> takes back your last action: one region you drew, an outline of the agent added as a region (all its pieces), one prior, or everything the agent changed for one request (its changes less than 90 s apart); click again to go further back. <b>Export…</b>: the cell table (CSV, with niche, Leiden and UMAP when
-computed), the registration in use (CSV), or the whole analysis as a Jupyter notebook that runs without this app
-(code with this annotation's parameters, and its results).</li>
-<li><b>Ask Agent</b> (bar on the map) opens your own Claude Code, connected to this app. <b>Undo</b> and <b>Report</b> are there too.</li></ul>`;
+
+<h3>Agent Review and Report</h3><ul>
+<li><b>Agent Review</b> (bar on the map): choose what the agent reviews.<ul>
+  <li><b>Annotation</b>: the computed checks of markers and out-of-place cells, judged on the H&amp;E, and advice on
+    the cell types.</li>
+  <li><b>Spatial organization</b>: compartments proposed as regions, gradients and neighbors.</li>
+  <li><b>Embedding</b>, <b>Niches</b>, <b>Compare</b> or <b>Signaling</b>: the analyses you ran there.</li></ul></li>
+<li>How the advice is made:<ul>
+  <li>The agent drafts it, checks every draft against the data and keeps only what holds up.</li>
+  <li>Each kept item says what it checked; dropped drafts are folded away with the reason.</li></ul></li>
+<li>Acting on it:<ul>
+  <li>One click acts on an item: add a region or a prior, name the niches, color the map, or put suggested settings
+    in a tab.</li>
+  <li>The panel's menu switches between the parts; <b>solve</b> hides a computed check.</li></ul></li>
+<li><b>Report</b>: the agent writes the annotation report; <b>Save…</b> keeps it as a Markdown file.</li></ul>
+
+<h3>Niches</h3><ul>
+<li>Set the identity, k and number of niches, then <b>Run niches</b>.</li>
+<li>With <b>k: Agent chooses</b>, the agent picks k per region, runs and names them.</li></ul>
+
+<h3>Compare</h3><ul>
+<li>For this slice or all slices pooled. Three analyses:<ul>
+  <li><b>DE genes</b> of one group against the other cells or another group.<ul>
+    <li>A group: a cell type, lineage, region, niche, Leiden cluster, the cells selected in the UMAP window, a slice,
+      or a metadata value such as condition.</li>
+    <li>Optionally only within e.g. one cell type.</li>
+    <li>Wilcoxon test, genes ranked by AUC; with several slices it checks the change in every slice.</li></ul></li>
+  <li><b>Top genes</b> of every group.</li>
+  <li><b>Composition</b>: how one grouping splits over another (cell types per niche, niches per slice or per
+    condition), as shares or as enrichment.</li></ul></li>
+<li>Plots and output:<ul>
+  <li>DE genes and Top genes also show a <b>Dot plot</b>: the share of cells detecting each gene and its mean
+    expression, per group.</li>
+  <li>The number next to it sets how many genes the table and the plot show (DE: 5–60; Top genes: 1–15 per group).</li>
+  <li><b>Save figure…</b> writes the plot as PDF; <b>Save CSV…</b> keeps every gene.</li>
+  <li>Click a gene to color the map by it; <b>Ask Agent</b> asks the agent what the result may mean.</li>
+  <li><b>Last result</b> reopens the last result of the analysis chosen in the tab.</li></ul></li></ul>
+
+<h3>Signaling</h3><ul>
+<li>Cell-cell communication, for this slice or all slices pooled.<ul>
+  <li>Ligand-receptor pairs from CellChatDB v2, CellPhoneDB v5 and the OmniPath consensus, merged; a pair counts when
+    all its genes are in the panel.</li>
+  <li>Scored on neighboring cells between groups (cell types by default): contact signals within 15 µm, secreted
+    and ECM signals within 50 µm, weighted by distance.</li>
+  <li>Tested against random groups.</li></ul></li>
+<li>Views: <b>Interactions</b>, a <b>Bubble plot</b>, a sender × receiver <b>Network</b>, a <b>Circle plot</b> and
+  <b>Pathways</b>.<ul>
+  <li><b>Save figure…</b> writes a plot as PDF.</li>
+  <li><b>show on map</b> colors the cells that send one signal (blue), receive it (red) or both (purple); click a
+    legend entry to show one role.</li></ul></li>
+<li><b>Compare groups</b> runs it per condition, slice, region or niche and lists the largest differences (table or
+  bubble plot).</li></ul>
+
+<h3>Undo, export and the agent</h3><ul>
+<li><b>Undo</b> takes back your last action; click again to go further back. An action is:<ul>
+  <li>one region you drew;</li>
+  <li>an outline of the agent added as a region (all its pieces);</li>
+  <li>one prior;</li>
+  <li>or everything the agent changed for one request (its changes less than 90 s apart).</li></ul></li>
+<li><b>Export…</b>:<ul>
+  <li>the cell table (CSV, with niche, Leiden and UMAP when computed);</li>
+  <li>the registration in use (CSV);</li>
+  <li>or the whole analysis as a Jupyter notebook that runs without this app (code with this annotation's
+    parameters, and its results).</li></ul></li>
+<li><b>Ask Agent</b> (bar on the map) opens your own Claude Code, connected to this app. <b>Undo</b> and
+  <b>Report</b> are there too.</li></ul>`;
 const localApp = () => !!native() && !st.remote;  // the desktop app working on this computer
 async function changeDataFolder(current) {  // another data folder from the next start: copy the data there, or use it as it is
   const msg = $("hpDataMsg");
