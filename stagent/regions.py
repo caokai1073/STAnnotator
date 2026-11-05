@@ -21,7 +21,8 @@ def default_state(source):
 
 
 def assign(cells, state):
-    """Return an array of region names, one per cell ("unknown" where no region applies)."""
+    """Return an array of region names, one per cell ("unknown" where no region applies). Overlapping outlines: the
+    smaller wins (a region inside another keeps its cells); cells put into a region without an outline come last."""
     n = len(cells)
     if state.get("source") == "pathologist":
         raw = cells.pathologist_region.astype(object)  # SCP2927 names map to the canonical ones, others stay as they are
@@ -30,10 +31,25 @@ def assign(cells, state):
     else:  # "none"; sessions saved with the removed "inferred" source also start empty
         reg = np.full(n, "unknown", dtype=object)
     ids = cells.cell.to_numpy()
-    for op in state.get("ops", []):
-        if op["op"] in ("polygon", "cells_override"):
+    ops = state.get("ops", [])
+    # where outlines overlap, the smaller one wins: a region drawn inside another keeps its cells, whichever was
+    # drawn first (polygons from the largest to the smallest; equal ones in drawing order, the later winning)
+    polys = sorted((op for op in ops if op["op"] == "polygon"), key=lambda op: -_area(op.get("polygon")))
+    for op in polys:
+        reg[np.isin(ids, op["cells"])] = op["name"]
+    for op in ops:  # cells put into a region without an outline: as they were put, after every outline
+        if op["op"] == "cells_override":
             reg[np.isin(ids, op["cells"])] = op["name"]
     return reg
+
+
+def _area(polygon):
+    """Area of an outline (shoelace; 0 for none)."""
+    if not polygon or len(polygon) < 3:
+        return 0.0
+    p = np.asarray(polygon, float)
+    x, y = p[:, 0], p[:, 1]
+    return float(abs(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))) / 2)
 
 
 def names(state, region_array=None):

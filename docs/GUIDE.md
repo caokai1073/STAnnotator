@@ -260,7 +260,9 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
    its label, alternatives and region. Opacity, dot size, hide cells, hide H&E.
 3. **Regions are drawn by you.** In the Regions panel click **Draw region**, click points on the map, close
    with a double-click, Enter or the first point (Backspace removes a point, Esc cancels), and name it. A
-   name can have several polygons; regions can be renamed, deleted, zoomed to and outlined. Cells in no
+   name can have several polygons; regions can be renamed, deleted, zoomed to and outlined. Where outlines
+   overlap the smaller one takes the cells, so a region drawn inside another (e.g. a follicle inside the
+   mucosa) keeps its cells whichever was drawn first. Cells in no
    region are "unknown" and region priors never apply to them. Refer to regions by name when talking to Claude.
    A sample not annotated yet opens with its cells gray ("Not annotated"): regions can already be drawn, edited and
    imported there, and **Agent Review** offers the registration (Spatial organization: the cells on their nuclei,
