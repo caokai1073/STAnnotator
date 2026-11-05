@@ -275,16 +275,64 @@ print(f"{len(cells):,} cells, {len(genes)} genes")''', [_text(f"{n:,} cells, {le
     # ---- 3. registration
     A = importer.placement(s.sample_id)
     by = meta.get("registration_by") or ("file" if src.get("registration") else "none")
-    nb.append(_md(f"## {sec()}. Cells on the image\nThe registration: an affine from cell coordinates (um) to the image's "
-                  f"full-resolution pixels, as used by the app (made by: {by}). The same numbers are in "
-                  "**Export > Registration (CSV)**."))
-    nb.append(_code(f'''
+    fixes = meta.get("registration_fixes") or []
+    if not fixes:
+        nb.append(_md(f"## {sec()}. Cells on the image\nThe registration: an affine from cell coordinates (um) to the "
+                      f"image's full-resolution pixels, as used by the app (made by: {by}). The same numbers are in "
+                      "**Export > Registration (CSV)**."))
+        nb.append(_code(f'''
 IMAGE = {_py(meta.get("he_path"))}
 A = np.array({_py(np.round(A, 10).tolist())})   # px = A[0,0]*x + A[0,1]*y + A[0,2];  py = A[1,0]*x + A[1,1]*y + A[1,2]
 pxy = xy @ A[:, :2].T + A[:, 2]
 cells["px"], cells["py"] = pxy[:, 0], pxy[:, 1]
 print(f"{{1 / np.sqrt(abs(np.linalg.det(A[:, :2]))):.4f}} um per image pixel")''',
-                    [_text(f"{1 / np.sqrt(abs(np.linalg.det(A[:, :2]))):.4f} um per image pixel")]))
+                        [_text(f"{1 / np.sqrt(abs(np.linalg.det(A[:, :2]))):.4f} um per image pixel")]))
+    else:  # the registration as imported, then its corrections in order (local shifts and moved pieces are no affine)
+        A0 = np.asarray(meta.get("placement_affine_import") or A, float)
+        packed = [{"piece": dict({k: x for k, x in f["piece"].items() if k != "cells"},
+                                 cells_packed=_pack(f["piece"]["cells"], np.int32))} if "piece" in f
+                  else {"correction_px": f["correction_px"]} for f in fixes]
+        off = _replay_error(s.cells, A0, fixes)
+        nb.append(_md(f"## {sec()}. Cells on the image\nThe registration as imported: an affine from cell coordinates "
+                      "(um) to the image's full-resolution pixels; then the corrections made in the app, in order "
+                      f"({len(fixes)}: made by {by}). A correction moves the cells by an affine plus local shifts that "
+                      "fade with distance (stretched or torn tissue); a piece move turns and shifts the cells of one torn "
+                      "piece. The resulting positions are in **Export > Registration > Cell positions (CSV)**; the "
+                      "affine alone (**Save registration**) leaves the local parts out." +
+                      ("" if off < 0.01 else f" Replayed here, they differ from the app's positions by up to {off:.1f} "
+                       "image pixels (the sample changed after the corrections, e.g. a QC filter); the exported cell "
+                       "positions are the app's.")))
+        nb.append(_code(f'''
+IMAGE = {_py(meta.get("he_path"))}
+A_IMPORT = np.array({_py(np.round(A0, 10).tolist())})   # px = A[0,0]*x + A[0,1]*y + A[0,2];  py = A[1,0]*x + A[1,1]*y + A[1,2]
+FIXES = {_py(packed)}
+
+def field(p, C, S, sig, chunk=20000):     # Gaussian-weighted average at p of the shifts S at points C, fading out far away
+    out = np.zeros((len(p), 2))
+    for k in range(0, len(p), chunk):
+        wt = np.exp(-((p[k:k + chunk, None, :] - C[None]) ** 2).sum(-1) / (2 * sig ** 2))
+        out[k:k + chunk] = (wt @ S) / (wt.sum(1) + 0.1)[:, None]
+    return out
+
+def displacement(p, fix):                  # large shifts first, then A (p - origin) + b and the local shifts
+    pre, loc = fix.get("pre"), fix.get("local")
+    d0 = field(p, np.asarray(pre["points_px"]), np.asarray(pre["shift_px"]), float(pre["sigma_px"])) if pre else np.zeros_like(p)
+    q = p + d0
+    out = d0 + (q - np.asarray(fix["origin"])) @ np.asarray(fix["A"]).T + np.asarray(fix["b"])
+    if loc and loc["points_px"]:
+        out += field(q, np.asarray(loc["points_px"]), np.asarray(loc["shift_px"]), float(loc["sigma_px"]))
+    return out
+
+pxy = xy @ A_IMPORT[:, :2].T + A_IMPORT[:, 2]
+for f in FIXES:
+    if "correction_px" in f:
+        pxy = pxy + displacement(pxy, f["correction_px"])
+    else:                                   # a torn piece: q = M (p - center) + center + t
+        pc = f["piece"]; sel = np.isin(np.arange(len(pxy)), unpack(pc["cells_packed"], np.int32))
+        M, c, t = (np.asarray(pc[k], float) for k in ("M", "center_px", "t_px"))
+        pxy[sel] = (pxy[sel] - c) @ M.T + c + t
+cells["px"], cells["py"] = pxy[:, 0], pxy[:, 1]
+print(f"{{len(FIXES)}} correction(s) applied")''', [_text(f"{len(fixes)} correction(s) applied")]))
 
     # ---- 4. annotation
     rows = {"regions": dict(st["regions"], ops=[dict({k: x for k, x in o.items() if k != "cells"},
@@ -506,6 +554,30 @@ table.head()''', [_table(table[cols].head())]))
     with open(out, "w", encoding="utf-8") as fh:
         json.dump(doc, fh, indent=1)
     return str(out)
+
+
+def _replay_error(cells, A0, fixes):
+    """How far (image pixels, at most) replaying the corrections from the import affine lands from the stored positions."""
+    from .regcheck import displacement
+    xy = cells[["x", "y"]].to_numpy(float)
+    p = xy @ A0[:, :2].T + A0[:, 2]
+    for f in fixes:
+        if "correction_px" in f:
+            p = p + displacement(p, f["correction_px"])
+        else:
+            pc = f["piece"]
+            sel = np.isin(np.arange(len(p)), pc["cells"])
+            M, c, t = (np.asarray(pc[k], float) for k in ("M", "center_px", "t_px"))
+            p[sel] = (p[sel] - c) @ M.T + c + t
+    return float(np.abs(p - cells[["px", "py"]].to_numpy(float)).max()) if len(p) else 0.0
+
+
+def positions_csv(sample_id):
+    """Every cell's place on the image as the app uses it now, local corrections and moved pieces included: cell_id,
+    x_um, y_um (as imported) and px, py (the image's full-resolution pixels)."""
+    c = pd.read_parquet(config.SAMPLES / sample_id / "cells.parquet", columns=["cell_id", "x", "y", "px", "py"])
+    return pd.DataFrame({"cell_id": c.cell_id, "x_um": c.x.round(3), "y_um": c.y.round(3),
+                         "px": c.px.round(3), "py": c.py.round(3)}).to_csv(index=False)
 
 
 def registration_csv(sample_id):

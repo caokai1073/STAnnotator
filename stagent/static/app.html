@@ -923,10 +923,10 @@ T and NK cells: CD3E|NKG7+ EPCAM-
         clusters and niches come out the same.</div>
       <div class="row"><span class="spacer"></span><button id="xpNb" class="primary">Save notebook…</button></div></div>
     <div class="clcard"><b>Registration (CSV)</b>
-      <div class="hint" id="xpRegInfo">The affine that places the cells on the image, as used now (from the registration file,
-        the agent's alignment or a correction): columns a11, a12, a21, a22, tx, ty (cell um to image pixels). It can be
-        imported again under Import &gt; Registration, or used by other tools.</div>
-      <div class="row"><span class="spacer"></span><button id="xpReg" class="primary">Save registration…</button></div></div>
+      <div class="hint" id="xpRegInfo"></div>
+      <div class="hint" id="xpPosInfo" style="margin-top:4px"></div>
+      <div class="row"><span class="spacer"></span><button id="xpPos" title="Every cell's place on the image, local corrections and moved pieces included">Save cell positions…</button>
+        <button id="xpReg" class="primary">Save registration…</button></div></div>
     <div class="hint" id="xpStatus"></div>
   </div>
 </dialog>
@@ -982,7 +982,7 @@ const ICON_TEXT = { qfBtn: "play", importBtn: "import", clearAll: "trash", rmSam
   mkImport: "import", mkCheck: "check", mkSave: "save", mkDraft: "sparkle", mkOrganUse: "list", mkOrganAgent: "sparkle", mkClose: "check", imGo: "import",
   imNewAlign: "sparkle", imAlign: "sparkle", alignNow: "sparkle", alignReg: "file", imImgGo: "image", imRegGo: "check",
   imUndoPlace: "undo", refPick: "folder", exPick: "folder", refClose: "check", exClose: "check", rcTest: "check",
-  rcGo: "server", fbOk: "check", rpAsk: "sparkle", xpCsv: "download", xpNb: "download", xpReg: "download",
+  rcGo: "server", fbOk: "check", rpAsk: "sparkle", xpCsv: "download", xpNb: "download", xpReg: "download", xpPos: "download",
   hpCopy: "copy", editSave: "check", nameSave: "check", rsGo: "trash", anFig: "download", aRun: "play", aLast: "list", anAsk: "sparkle", sRun: "play", sLast: "list", rvGo: "sparkle", rvShow: "list" };
 const ICON_TITLES = { lgtoggle: "Fold or unfold", rgtoggle: "Fold or unfold", anCsv: "Save as CSV…", rpSave: "Save as Markdown…",
   mkExport: "Save the list as CSV…", fbHome: "Home folder", fbUp: "Parent folder", plclose: "Close", emClose: "Close" };
@@ -3504,7 +3504,8 @@ const HELP = `
   <li>or everything the agent changed for one request (its changes less than 90 s apart).</li></ul></li>
 <li><b>Export…</b>:<ul>
   <li>the cell table (CSV, with niche, Leiden and UMAP when computed);</li>
-  <li>the registration in use (CSV);</li>
+  <li>the registration in use (CSV): the affine, and the cell positions on the image with local corrections and moved
+    pieces included;</li>
   <li>or the whole analysis as a Jupyter notebook that runs without this app (code with this annotation's
     parameters, and its results).</li></ul></li>
 <li><b>Ask Agent</b> (bar on the map) opens your own Claude Code, connected to this app. <b>Undo</b> and
@@ -5145,21 +5146,26 @@ $("rpSave").onclick = async () => {
 $("export").onclick = () => {
   $("xpInfo").textContent = `${st.sample.sample_id} · version ${st.version}`; $("xpStatus").textContent = "";
   const placed = st.sample.image_kind && st.sample.image_kind !== "none";
-  $("xpReg").disabled = !placed;
+  const by = st.sample.registration_by || "file", local = /local correction|piece moves|nuclei correction/.test(by);
+  $("xpReg").disabled = $("xpPos").disabled = !placed;
   $("xpRegInfo").textContent = placed
-    ? `The affine that places the cells on the image, as used now (made by: ${placedBy(st.sample.registration_by || "file")}): columns a11, a12, a21, a22, tx, ty (cell um to image pixels). It can be used again as the registration file of an import, or by other tools.`
+    ? `Registration: the affine that places the cells on the image (made by: ${placedBy(by)}): columns a11, a12, a21, a22, tx, ty (cell um to image pixels). It can be used again as the registration file of an import, or by other tools.`
     : "The cells are not on an image yet: import an image and its registration, or align it with the agent.";
+  $("xpPosInfo").textContent = !placed ? "" : local
+    ? "This sample's registration was corrected in the app: the affine holds the overall part of the correction; local shifts and moved pieces are only in Cell positions, the complete placement: every cell's id, x and y (um) and its px and py on the image (full-resolution pixels), as the app shows them."
+    : "Cell positions: every cell's id, x and y (um) and its px and py on the image (full-resolution pixels), as the app shows them.";
   $("xpDlg").showModal();
 };
 $("xpClose").onclick = () => $("xpDlg").close();
 async function exportAs(kind) {  // the cell table or the notebook of the current version
   const ext = kind === "notebook" ? "ipynb" : "csv";
-  const name = kind === "registration" ? `${st.sample.sample_id}_registration.csv`
+  const sampleFile = { registration: "registration.csv", positions: "cell_positions.csv" }[kind];  // of the sample, not the version
+  const name = sampleFile ? `${st.sample.sample_id}_${sampleFile}`
     : `${st.sample.sample_id}_v${st.version}_${kind === "notebook" ? "analysis" : "cells"}.${ext}`;
+  const url = sampleFile ? `/api/sample/${st.sample.sample_id}/${sampleFile}` : `/api/s/${st.sid}/export.${ext}?version=${st.version}`;
   if (st.remote) {  // on a server: downloaded through the SSH tunnel into a file on this computer
     $("xpStatus").textContent = kind === "notebook" ? "Writing the notebook (figures included) and downloading it…" : "Downloading…";
-    const path = await saveDownload(name, kind === "registration" ? `/api/sample/${st.sample.sample_id}/registration.csv`
-      : `/api/s/${st.sid}/export.${ext}?version=${st.version}`);
+    const path = await saveDownload(name, url);
     $("xpStatus").textContent = path ? `Saved ${path}` : ""; return;
   }
   if (native()) {  // the desktop app saves through a Save dialog
@@ -5170,14 +5176,14 @@ async function exportAs(kind) {  // the cell table or the notebook of the curren
     return;
   }
   const a = document.createElement("a");
-  a.href = kind === "registration" ? `/api/sample/${st.sample.sample_id}/registration.csv` : `/api/s/${st.sid}/export.${ext}?version=${st.version}`;
-  a.download = name;
+  a.href = url; a.download = name;
   document.body.append(a); a.click(); a.remove();
   $("xpStatus").textContent = `Downloading ${name}…`;
 }
 $("xpCsv").onclick = () => exportAs("csv");
 $("xpNb").onclick = () => exportAs("notebook");
 $("xpReg").onclick = () => exportAs("registration");
+$("xpPos").onclick = () => exportAs("positions");
 document.addEventListener("keydown", (e) => {
   if ($("mkDlg").open || $("rpDlg").open || $("hpDlg").open || $("xpDlg").open || $("glDlg").open || $("anDlg").open || $("rvDlg").open || $("nameDlg").open || $("rnDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
   if (e.key === "h") $("hide").click();

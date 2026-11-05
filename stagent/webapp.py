@@ -2308,6 +2308,14 @@ def api_registration_csv(req):
                     headers={"Content-Disposition": f'attachment; filename="{sample}_registration.csv"'})
 
 
+def api_positions_csv(req):
+    """Every cell's place on the image (local corrections and moved pieces included) as a CSV."""
+    from . import notebook
+    sample = req.path_params["sample"]
+    return Response(notebook.positions_csv(sample), media_type="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="{sample}_cell_positions.csv"'})
+
+
 def api_export_notebook(req):
     """Download the analysis notebook of a version (default: latest)."""
     from . import notebook
@@ -2499,6 +2507,8 @@ async def api_export_to(req: Request):
         from . import notebook
         if b.get("kind") == "registration":
             Path(b["path"]).expanduser().write_text(notebook.registration_csv(s.sample_id), encoding="utf-8")
+        elif b.get("kind") == "positions":
+            Path(b["path"]).expanduser().write_text(notebook.positions_csv(s.sample_id), encoding="utf-8")
         else:
             src = notebook.build(s, v) if b.get("kind") == "notebook" else Path(s.export(v)) / "cells.csv"
             shutil.copy(src, Path(b["path"]).expanduser())
@@ -2803,6 +2813,7 @@ def build_app(port):
         Route("/api/s/{sid}/export.csv", api_export_csv),
         Route("/api/s/{sid}/export.ipynb", api_export_notebook),
         Route("/api/sample/{sample}/registration.csv", api_registration_csv),
+        Route("/api/sample/{sample}/cell_positions.csv", api_positions_csv),
         Route("/api/s/{sid}/chat", api_chat, methods=["POST"]),
         Route("/api/s/{sid}/chat_log", api_chat_log),
         Route("/api/panel", api_panel),
