@@ -40,6 +40,25 @@ def start_server(port):
     raise RuntimeError("the app's local server did not start")
 
 
+
+# The file filters of the Open dialogs. pywebview accepts "Description (*.ext;*.ext)" with a description of letters,
+# digits, underscores and spaces only (webview.util.parse_file_type): any other character (e.g. "/") makes it refuse
+# the dialog, so the Choose button does nothing (macOS and Windows alike).
+FILE_TYPES = {"h5ad": ("AnnData or R (*.h5ad;*.rds;*.rda;*.RData)", "All files (*.*)"),
+              "xenium": ("Xenium files (*.parquet;*.csv.gz;*.h5;*.xenium;*.mtx.gz;*.tsv.gz;*.ome.tif)", "All files (*.*)"),
+              "xcells": ("Xenium cells (*.parquet;*.csv.gz)", "All files (*.*)"),
+              "xcounts": ("Xenium counts (*.h5;*.mtx.gz;*.tsv.gz)", "All files (*.*)"),
+              "xexp": ("Xenium experiment (*.xenium)", "All files (*.*)"),
+              "ximage": ("Images (*.ome.tif;*.tif;*.tiff)", "All files (*.*)"),
+              "image": ("Images (*.tif;*.tiff;*.btf)", "All files (*.*)"),
+              "csv": ("CSV (*.csv)", "All files (*.*)"),
+              "markers": ("Marker lists (*.csv;*.txt)", "All files (*.*)"),
+              "bundle": ("Saved annotations (*.stannot;*.zip)", "All files (*.*)"),
+              "flat": ("CosMx and MERSCOPE files (*.csv;*.csv.gz)", "All files (*.*)"),
+              "geojson": ("GeoJSON (*.geojson;*.json)", "All files (*.*)")}
+FILE_FILTER = r'^([\w ]+)\((\*(?:\.(?:\w+|\*))*(?:;\*(?:\.(?:\w+|\*))*)*)\)$'  # pywebview 6's, for the test
+
+
 class Api:
     """Native functions for the page (window.pywebview.api): file dialogs, opening links, and working on a remote
     server (remote.py): the window then shows the server's viewer through an SSH tunnel."""
@@ -58,19 +77,11 @@ class Api:
             res = self._window.create_file_dialog(mode)
         else:
             mode = fd.OPEN if fd else webview.OPEN_DIALOG
-            types = {"h5ad": ("AnnData or R (*.h5ad;*.rds;*.rda;*.RData)", "All files (*.*)"),
-                     "xenium": ("Xenium files (*.parquet;*.csv.gz;*.h5;*.xenium;*.mtx.gz;*.tsv.gz;*.ome.tif)", "All files (*.*)"),
-                     "xcells": ("Xenium cells (*.parquet;*.csv.gz)", "All files (*.*)"),
-                     "xcounts": ("Xenium counts (*.h5;*.mtx.gz;*.tsv.gz)", "All files (*.*)"),
-                     "xexp": ("Xenium experiment (*.xenium)", "All files (*.*)"),
-                     "ximage": ("Images (*.ome.tif;*.tif;*.tiff)", "All files (*.*)"),
-                     "image": ("Images (*.tif;*.tiff;*.btf)", "All files (*.*)"),
-                     "csv": ("CSV (*.csv)", "All files (*.*)"),
-                     "markers": ("Marker lists (*.csv;*.txt)", "All files (*.*)"),
-                     "bundle": ("Saved annotations (*.stannot;*.zip)", "All files (*.*)"),
-                     "flat": ("CosMx / MERSCOPE files (*.csv;*.csv.gz)", "All files (*.*)"),
-                     "geojson": ("GeoJSON (*.geojson;*.json)", "All files (*.*)")}.get(kind, ("All files (*.*)",))
-            res = self._window.create_file_dialog(mode, allow_multiple=bool(multiple), file_types=types)
+            types = FILE_TYPES.get(kind, ("All files (*.*)",))
+            try:
+                res = self._window.create_file_dialog(mode, allow_multiple=bool(multiple), file_types=types)
+            except ValueError:  # a filter pywebview does not accept: the dialog without it rather than none
+                res = self._window.create_file_dialog(mode, allow_multiple=bool(multiple))
         return [str(p) for p in res] if res else []
 
     def save_path(self, filename):
