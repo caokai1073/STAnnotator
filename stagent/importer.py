@@ -992,7 +992,8 @@ def apply_registration_fix(sample_id, correction):
     from .regcheck import displacement
     d = config.SAMPLES / sample_id
     cells = pd.read_parquet(d / "cells.parquet")
-    if "px_import" not in cells:
+    fresh = "px_import" not in cells  # no correction in effect: this one starts from the placement shown now
+    if fresh:
         cells["px_import"], cells["py_import"] = cells.px.to_numpy(), cells.py.to_numpy()
     A, b, o = np.asarray(correction["A"], float), np.asarray(correction["b"], float), np.asarray(correction["origin"], float)
     old = placement(sample_id)
@@ -1002,7 +1003,8 @@ def apply_registration_fix(sample_id, correction):
     cells.to_parquet(d / "cells.parquet")
     meta = json.load(open(d / "meta.json"))
     M = np.eye(2) + A  # the corrected placement is again an affine of the cell um (exported as the registration; a local field is not part of it)
-    meta.setdefault("placement_affine_import", old.tolist())
+    if fresh or not meta.get("placement_affine_import"):  # (a left-over one from before a new registration is stale)
+        meta["placement_affine_import"] = old.tolist()
     meta["placement_affine"] = np.c_[M @ old[:, :2], M @ old[:, 2] - A @ o + b].tolist()
     by = " + local correction" if correction.get("local") else " + nuclei correction"
     if by not in (meta.get("registration_by") or ""):
@@ -1019,7 +1021,8 @@ def move_piece(sample_id, piece):
     level-0 pixels). Kept in registration_fixes (undo_piece_move takes the last one back; undo_registration_fix all)."""
     d = config.SAMPLES / sample_id
     cells = pd.read_parquet(d / "cells.parquet")
-    if "px_import" not in cells:
+    fresh = "px_import" not in cells
+    if fresh:
         cells["px_import"], cells["py_import"] = cells.px.to_numpy(), cells.py.to_numpy()
     sel = np.isin(cells.cell.to_numpy(), piece["cells"])
     M, c, t = np.asarray(piece["M"], float), np.asarray(piece["center_px"], float), np.asarray(piece["t_px"], float)
@@ -1028,9 +1031,12 @@ def move_piece(sample_id, piece):
     cells.loc[sel, "px"], cells.loc[sel, "py"] = q[:, 0], q[:, 1]
     cells.to_parquet(d / "cells.parquet")
     meta = json.load(open(d / "meta.json"))
+    if fresh:  # the placement shown now is where the corrections start (placement_affine)
+        meta.pop("placement_affine_import", None)
     if " + piece moves" not in (meta.get("registration_by") or ""):
         meta["registration_by"] = (meta.get("registration_by") or "file") + " + piece moves"
-    keep = {k: piece[k] for k in ("id", "region", "n_cells", "angle_deg", "mirrored", "shift_um", "M", "center_px", "t_px", "cells")}
+    keep = {k: piece[k] for k in ("id", "region", "n_cells", "angle_deg", "mirrored", "shift_um", "M", "center_px", "t_px")}
+    keep["cell_ids"] = cells.cell_id.to_numpy()[sel].tolist()  # by id: row numbers change when a QC filter is applied
     meta.setdefault("registration_fixes", []).append({"piece": keep, "time": time.strftime("%Y-%m-%dT%H:%M:%S")})
     json.dump(meta, open(d / "meta.json", "w"), indent=1)
     mv = np.hypot(*(q - p).T) * meta.get("he_um_per_px", 1)
@@ -1051,7 +1057,8 @@ def undo_piece_move(sample_id):
     p = last_piece_move(sample_id)
     d = config.SAMPLES / sample_id
     cells = pd.read_parquet(d / "cells.parquet")
-    sel = np.isin(cells.cell.to_numpy(), p["cells"])
+    sel = np.zeros(len(cells), bool)
+    sel[piece_rows(p, cells.cell_id.to_numpy())] = True
     M, c, t = np.asarray(p["M"], float), np.asarray(p["center_px"], float), np.asarray(p["t_px"], float)
     q = (cells.loc[sel, ["px", "py"]].to_numpy() - c - t) @ np.linalg.inv(M).T + c
     cells.loc[sel, "px"], cells.loc[sel, "py"] = q[:, 0], q[:, 1]
@@ -1064,6 +1071,33 @@ def undo_piece_move(sample_id):
         meta.pop("registration_fixes")
     json.dump(meta, open(d / "meta.json", "w"), indent=1)
     return {"moved_back": int(sel.sum()), "region": p["region"]}
+
+
+def piece_rows(piece, cell_ids):
+    """The rows of a moved piece's cells in a cell table: by cell id (moves stored before v0.2.43: by row number)."""
+    if piece.get("cell_ids") is not None:
+        return np.flatnonzero(np.isin(np.asarray(cell_ids).astype(str), np.asarray(piece["cell_ids"]).astype(str)))
+    rows = np.asarray(piece.get("cells", []), int)
+    return rows[(rows >= 0) & (rows < len(cell_ids))]
+
+
+def replay_placement(meta, xy, cell_ids):
+    """The cells' positions on the image (level-0 pixels) as imported (the placement before any correction) and now:
+    the corrections of registration_fixes applied in order to the cells at xy (um), e.g. cells a QC filter brings
+    back. Returns (as imported, now)."""
+    from .regcheck import displacement
+    A0 = np.asarray(meta.get("placement_affine_import") or meta["placement_affine"], float)
+    first = xy @ A0[:, :2].T + A0[:, 2]
+    p = first.copy()
+    for f in meta.get("registration_fixes") or []:
+        if "correction_px" in f:
+            p = p + displacement(p, f["correction_px"])
+        else:
+            pc = f["piece"]
+            rows = piece_rows(pc, cell_ids)
+            M, c, t = np.asarray(pc["M"], float), np.asarray(pc["center_px"], float), np.asarray(pc["t_px"], float)
+            p[rows] = (p[rows] - c) @ M.T + c + t
+    return first, p
 
 
 def undo_registration_fix(sample_id):
@@ -1236,6 +1270,7 @@ def place_cells(sample_id, A, image, image_kind="H&E", by="file", progress=print
     cells["px"], cells["py"] = pxy[:, 0], pxy[:, 1]
     cells.drop(columns=[c for c in ("px_import", "py_import") if c in cells]).to_parquet(d / "cells.parquet")
     m.pop("registration_fixes", None)
+    m.pop("placement_affine_import", None)  # belonged to the corrections of the placement replaced here
     m.update(placement_affine=A.tolist(), he_path=str(Path(image).resolve()) if image else None,
              image_kind=image_kind if image else "none", he_um_per_px=float(1 / np.sqrt(abs(np.linalg.det(A[:, :2])))),
              registration_by=by)

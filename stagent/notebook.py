@@ -289,10 +289,11 @@ print(f"{{1 / np.sqrt(abs(np.linalg.det(A[:, :2]))):.4f}} um per image pixel")''
                         [_text(f"{1 / np.sqrt(abs(np.linalg.det(A[:, :2]))):.4f} um per image pixel")]))
     else:  # the registration as imported, then its corrections in order (local shifts and moved pieces are no affine)
         A0 = np.asarray(meta.get("placement_affine_import") or A, float)
-        packed = [{"piece": dict({k: x for k, x in f["piece"].items() if k != "cells"},
-                                 cells_packed=_pack(f["piece"]["cells"], np.int32))} if "piece" in f
+        ids = s.cells.cell_id.to_numpy()  # a piece's cells as rows of the notebook's table (the same order)
+        packed = [{"piece": dict({k: x for k, x in f["piece"].items() if k not in ("cells", "cell_ids")},
+                                 cells_packed=_pack(importer.piece_rows(f["piece"], ids), np.int32))} if "piece" in f
                   else {"correction_px": f["correction_px"]} for f in fixes]
-        off = _replay_error(s.cells, A0, fixes)
+        off = _replay_error(s.cells, meta)
         nb.append(_md(f"## {sec()}. Cells on the image\nThe registration as imported: an affine from cell coordinates "
                       "(um) to the image's full-resolution pixels; then the corrections made in the app, in order "
                       f"({len(fixes)}: made by {by}). A correction moves the cells by an affine plus local shifts that "
@@ -300,8 +301,7 @@ print(f"{{1 / np.sqrt(abs(np.linalg.det(A[:, :2]))):.4f}} um per image pixel")''
                       "piece. The resulting positions are in **Export > Registration > Cell positions (CSV)**; the "
                       "affine alone (**Save registration**) leaves the local parts out." +
                       ("" if off < 0.01 else f" Replayed here, they differ from the app's positions by up to {off:.1f} "
-                       "image pixels (the sample changed after the corrections, e.g. a QC filter); the exported cell "
-                       "positions are the app's.")))
+                       "image pixels; the exported cell positions are the app's.")))
         nb.append(_code(f'''
 IMAGE = {_py(meta.get("he_path"))}
 A_IMPORT = np.array({_py(np.round(A0, 10).tolist())})   # px = A[0,0]*x + A[0,1]*y + A[0,2];  py = A[1,0]*x + A[1,1]*y + A[1,2]
@@ -556,19 +556,10 @@ table.head()''', [_table(table[cols].head())]))
     return str(out)
 
 
-def _replay_error(cells, A0, fixes):
+def _replay_error(cells, meta):
     """How far (image pixels, at most) replaying the corrections from the import affine lands from the stored positions."""
-    from .regcheck import displacement
-    xy = cells[["x", "y"]].to_numpy(float)
-    p = xy @ A0[:, :2].T + A0[:, 2]
-    for f in fixes:
-        if "correction_px" in f:
-            p = p + displacement(p, f["correction_px"])
-        else:
-            pc = f["piece"]
-            sel = np.isin(np.arange(len(p)), pc["cells"])
-            M, c, t = (np.asarray(pc[k], float) for k in ("M", "center_px", "t_px"))
-            p[sel] = (p[sel] - c) @ M.T + c + t
+    from .importer import replay_placement
+    _, p = replay_placement(meta, cells[["x", "y"]].to_numpy(float), cells.cell_id.to_numpy())
     return float(np.abs(p - cells[["px", "py"]].to_numpy(float)).max()) if len(p) else 0.0
 
 

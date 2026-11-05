@@ -150,6 +150,26 @@ def _placed(cells, meta, columns):
     return cells
 
 
+def _corrected(cells, meta, now):
+    """Positions of a sample whose registration was corrected: the cells shown now keep their place; cells the filter
+    brings back get the corrections replayed (importer.replay_placement). Piece moves stored by row number are
+    first stored by cell id (meta is updated), since the filter numbers the rows anew."""
+    for f in meta["registration_fixes"]:
+        pc = f.get("piece")
+        if pc is not None and pc.get("cell_ids") is None:
+            pc["cell_ids"] = now.cell_id.to_numpy()[importer.piece_rows(pc, now.cell_id.to_numpy())].tolist()
+            pc.pop("cells", None)
+    first, pos = importer.replay_placement(meta, cells[["x", "y"]].to_numpy(float), cells.cell_id.to_numpy())
+    cells["px"], cells["py"] = pos[:, 0], pos[:, 1]
+    cells["px_import"], cells["py_import"] = first[:, 0], first[:, 1]
+    at = pd.Index(now.cell_id.astype(str)).get_indexer(cells.cell_id.astype(str))
+    have = at >= 0
+    for col in ("px", "py", "px_import", "py_import"):
+        if col in now:
+            cells.loc[have, col] = now[col].to_numpy()[at[have]]
+    return cells
+
+
 def apply(ids, p, progress=lambda *a: None):
     """Filter the samples ids with these thresholds (from the data as imported); no thresholds: every cell and gene
     back. Returns the preview of what was done."""
@@ -175,6 +195,8 @@ def apply(ids, p, progress=lambda *a: None):
         X = D["X"][km][:, gkeep].tocsr()
         cells = D["cells"].iloc[np.flatnonzero(km)].reset_index(drop=True)
         cells = _placed(cells, meta, prev)
+        if meta.get("registration_fixes"):  # corrected: local shifts and moved pieces are no affine
+            cells = _corrected(cells, meta, pd.read_parquet(d / "cells.parquet"))
         cells["cell"] = np.arange(len(cells))
         if "total_counts" in cells:
             cells["total_counts"] = np.asarray(X.sum(1)).ravel().astype(np.int64)
