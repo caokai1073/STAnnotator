@@ -14,6 +14,10 @@ Spatial transcriptomics (Xenium, CosMx, MERSCOPE, Visium HD, Stereo-seq, …) on
 and cell types to regions, niches, cell-cell communication and comparisons across slices, with an AI agent at your
 side.
 
+<p align="center">
+  <img src="docs/assets/overview.png" width="900" alt="How STAnnotator works: the researcher gives input and decisions to the app and sees views and advice; the app's engine runs the method modules (registration, cell types, niches, regions, DE genes, signaling) and offers them as MCP tools to the agent (Claude Code), which calls the tools, reads numbers and H&E views, and asks the language model for the next step and advice">
+</p>
+
 - **Annotate** from a marker gene list, a labeled single-cell reference, or an existing annotation.
 - **Refine in plain language**: priors ("epithelial cells are only in the mucosa"), corrections, re-clustering.
   Every change is a version you can undo.
