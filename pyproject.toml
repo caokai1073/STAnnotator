@@ -2,7 +2,7 @@
 name = "stagent"
 dynamic = ["version"]
 description = "Spatial transcriptomics cell type annotation driven by natural-language spatial priors"
-license = "Apache-2.0"
+license = "LicenseRef-Proprietary"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [

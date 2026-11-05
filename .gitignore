@@ -24,3 +24,6 @@ share/
 /.build-tools/
 packaging/macos/AppIcon.icns
 packaging/windows/STAnnotator.ico
+
+# the public repository (website, README, releases), filled by packaging/publish_public.py
+/public/

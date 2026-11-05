@@ -147,4 +147,4 @@ stagent mcp                 # the agent's tools, for Claude Code without the app
 
 ## License
 
-Apache License 2.0; see [LICENSE](LICENSE).
+All rights reserved; the app is free to download and use. See [LICENSE](LICENSE).

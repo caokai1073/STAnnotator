@@ -250,6 +250,9 @@ section.band { padding-block: clamp(64px, 9vw, 112px) 0; }
 .other h3 { font-size: var(--s-3); }
 .other .sub { color: var(--muted); margin-top: 4px; }
 .guide { margin-top: 24px; color: var(--muted); }
+.server-note { margin-top: 40px; display: grid; gap: 8px; max-width: 70ch; }
+.server-note h3 { font-size: var(--s-3); }
+.server-note p { color: var(--muted); }
 .code { position: relative; background: var(--code-bg); color: var(--code-ink); border-radius: 10px; }
 .code pre { margin: 0; padding: 46px 18px 16px; overflow-x: auto; font: 400 var(--s-0)/1.7 var(--f-mono); }
 .code .c { color: #8fa3a6; }
@@ -296,7 +299,6 @@ footer a { color: var(--muted); }
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"></path></svg>
               <span>Download for Windows<small>Windows 10 / 11 · x64</small></span>
             </a>
-            <a class="btn btn-ghost" href="#source">Install from source</a>
           </div>
           <p class="hero-meta">Version <span data-version>0.2.42</span> · free · runs on your computer or your server · the agent is your own Claude Code</p>
         </div>
@@ -650,27 +652,11 @@ footer a { color: var(--muted); }
               Uninstalling keeps your data.</p>
           </div>
         </div>
-        <div class="other">
-          <div class="other-col">
-            <div id="source">
-              <h3>From source</h3>
-              <p class="sub">Linux and developers. Needs <a href="https://docs.astral.sh/uv/">uv</a>.</p>
-            </div>
-            <div class="code"><button class="copy" type="button">Copy</button><pre><code>git clone https://github.com/caokai1073/STAnnotator.git && cd STAnnotator
-uv venv .venv --python 3.12
-uv pip install --python .venv/bin/python -e ".[app]"
-.venv/bin/stagent app        <span class="c"># the window; --browser for a browser tab</span></code></pre></div>
-          </div>
-          <div class="other-col">
-            <div>
-              <h3>On a server</h3>
-              <p class="sub">Install the same version as the app on your computer, then click <b>This computer → A server over SSH</b> in the app.</p>
-            </div>
-            <div class="code"><button class="copy" type="button">Copy</button><pre><code>git clone https://github.com/caokai1073/STAnnotator.git ~/STAnnotator && cd ~/STAnnotator
-uv venv .venv --python 3.12
-uv pip install --python .venv/bin/python -e .
-<span class="c"># the command to enter in the app: ~/STAnnotator/.venv/bin/stagent</span></code></pre></div>
-          </div>
+        <div class="server-note">
+          <h3>On a server</h3>
+          <p>To keep the data and the computation on a Linux server, the app connects to it over SSH
+            (<b>This computer → A server over SSH</b>). The server side is available on request:
+            <a href="https://github.com/caokai1073/STAnnotator/issues">open an issue</a>.</p>
         </div>
         <p class="guide">Every control and method is described in the <a href="https://github.com/caokai1073/STAnnotator/blob/main/docs/GUIDE.md">user guide</a>.</p>
       </div>
