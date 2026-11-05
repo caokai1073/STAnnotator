@@ -2361,11 +2361,13 @@ def api_markers_organs(req):
 
 
 async def api_markers_organ_draft(req: Request):
-    """The built-in list of an organ pruned to the sample's panel: {organ, sample}."""
+    """The built-in list of an organ pruned to the sample's panel: {organ, sample}; "text" is the list in the editor's
+    indented format (Name: GENE+ GENE-), as every other list is shown."""
     from . import organs
     b = await req.json()
     try:
-        return _json(organs.draft(b["organ"], panel_genes(b.get("sample") or None)))
+        d = organs.draft(b["organ"], panel_genes(b.get("sample") or None))
+        return _json(d | {"text": markers.csv_to_text(d["csv"])})
     except (ValueError, KeyError) as e:
         return _json({"error": str(e).strip("'")}, 400)
 
@@ -2422,6 +2424,18 @@ def api_markers_get(req):
     if f is None:
         return _json({"error": "not found"}, 404)
     return _json({"name": name, "text": _as_text(f.read_text())})
+
+
+async def api_markers_delete(req: Request):
+    """Remove a saved marker list from the library (into the trash of the data folder)."""
+    name = req.path_params["name"]
+    files = [f for f in _library_files() if f.stem == name]
+    if not files:
+        return _json({"error": f"no saved list {name!r}"}, 404)
+    config.TRASH.mkdir(parents=True, exist_ok=True)
+    for f in files:
+        shutil.move(str(f), str(config.TRASH / f"{time.strftime('%Y%m%d-%H%M%S')}_marker_list_{f.name}"))
+    return _json({"removed": name})
 
 
 def _safe_name(name):
@@ -2822,6 +2836,7 @@ def build_app(port):
         Route("/api/markers/check", api_markers_check, methods=["POST"]),
         Route("/api/markers/library", api_markers_library),
         Route("/api/markers/library/{name}", api_markers_get),
+        Route("/api/markers/library/{name}/delete", api_markers_delete, methods=["POST"]),
         Route("/api/markers/save", api_markers_save, methods=["POST"]),
         Route("/api/markers/import", api_markers_import, methods=["POST"]),
         Route("/api/markers/save_file", api_markers_save_file, methods=["POST"]),

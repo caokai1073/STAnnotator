@@ -115,12 +115,13 @@ annotated alone) and 46% on the day-21 slice, whose cells have few transcripts (
 Then give the sample a marker list: **Markers…** -> **Import…** a CSV (or text) file, or **Start from an organ**:
 choose the organ (brain, breast, colon, heart, kidney, liver, lung, lymph node / tonsil, pancreas, skin, small
 intestine, stomach) and **Use built-in list** keeps the cell types your panel can resolve (two of their markers in the
-panel, or one decisive marker such as INS) with their first markers, and lists what it left out. **Refine with the
+panel, or one decisive marker such as INS) with their first markers, in the editor's indented format (`Name: GENE+
+GENE-`), and lists what it left out. **Refine with the
 agent** asks the agent to complete it for the tissue and panel (searching the literature for types the built-in list
 lacks) and save it under "load a list…"; for an organ that is not built in (**Other organ…**) the agent starts from
 the immune and stromal cells and adds the organ's own. The built-in lists are in `stagent/data/organs/` (sources in
 its README). You can also ask Claude Code "draft a marker list for this panel" and load it under "load a list…". Imported and saved lists
-stay in that list for the next samples. The CSV has one row per cell type:
+stay in that list for the next samples; **×** after a name removes a saved list (into the trash of the data folder). The CSV has one row per cell type:
 
 | cell_type | parent | positive_markers | negative_markers |
 |---|---|---|---|

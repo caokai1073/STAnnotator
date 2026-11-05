@@ -260,6 +260,15 @@ header .br { flex: 1 1 100%; height: 0; }
 .colorpick button:hover { transform: scale(1.12); }
 .colorpick button.cur { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--ink); }
 .rg .n { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+.mklibmenu { position: fixed; z-index: 50; min-width: 240px; max-width: 420px; max-height: 50vh; overflow: auto; padding: 4px;
+             background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.18); }
+.mklibmenu .mkli { display: flex; align-items: center; gap: 6px; border-radius: 6px; }
+.mklibmenu .mkli:hover { background: var(--accent-soft); }
+.mklibmenu .mkli .nm { flex: 1; min-width: 0; padding: 5px 8px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mklibmenu .mkli .nm small { color: var(--muted); margin-left: 6px; }
+.mklibmenu .mkli button { border: 0; background: none; padding: 2px 8px; color: var(--muted); font-size: 15px; line-height: 1; }
+.mklibmenu .mkli button:hover { color: #c0392b; background: none; }
+.mklibmenu .none { padding: 6px 8px; color: var(--muted); }
 .rg button, .pg button { border: 0; background: none; padding: 2px 3px; color: var(--muted); }
 .rg button .ic, .pg button .ic, .prior button .ic { width: 14px; height: 14px; }
 .rg button:hover, .pg button:hover { color: var(--accent); }
@@ -628,7 +637,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
   <div class="dh"><b>Marker genes</b>
     <button id="mkImport" class="primary" title="Import a marker list file: CSV (cell_type, parent, positive_markers, negative_markers) or text">Import…</button>
     <input type="file" id="mkFile" accept=".csv,.txt" hidden>
-    <select id="mkLib" title="Lists imported or saved before"><option value="">load a list…</option></select>
+    <button id="mkLib" title="Lists imported or saved before">load a list… ▾</button>
+    <div id="mkLibMenu" class="mklibmenu" hidden></div>
     <span class="spacer"></span>
     <label class="hint" title="Try resolutions 0.5 / 1 / 2 / 4 at every level and keep the one the markers resolve best">
       <input type="checkbox" id="mkAuto" checked> automatic Leiden resolution</label>
@@ -3793,7 +3803,7 @@ $("mkOrganUse").onclick = async () => {  // the organ's built-in list pruned to 
   const organ = $("mkOrgan").value, msg = $("mkOrganMsg"); msg.textContent = "…";
   try {
     const d = await post("/api/markers/organ_draft", { organ, sample: st.sample.sample_id });
-    $("mkText").value = d.csv; $("mkName").value = `${organ}_${st.sample.sample_id}`.slice(0, 60); checkMarkers();
+    $("mkText").value = d.text; $("mkName").value = `${organ}_${st.sample.sample_id}`.slice(0, 60); checkMarkers();
     const left = d.dropped.map((x) => x.type), mer = d.merged.map((x) => `${x.type} (into ${x.into})`);
     msg.textContent = `${d.n_types} cell types this panel can resolve.` + (left.length ? ` Left out (markers not in the panel): ${left.join(", ")}.` : "") +
       (mer.length ? ` Only subtype left, so merged: ${mer.join(", ")}.` : "") + " Edit it, or let the agent complete it.";
@@ -3813,12 +3823,40 @@ $("mkOrganAgent").onclick = async () => {  // the agent completes the list for t
     }
   } catch (e) { toast(e.message, 6000); }
 };
-async function loadLibrary() {
-  const rows = await api("/api/markers/library");
-  const sel = $("mkLib"); const keep = sel.value; sel.length = 1;
-  rows.forEach((r) => { const o = document.createElement("option"); o.value = r.name; o.textContent = `${r.name} (${r.where})`; sel.append(o); });
-  sel.value = keep;
+async function loadLibrary() {  // the saved lists: click a name to load it, × removes it (into the trash)
+  const rows = await api("/api/markers/library"), menu = $("mkLibMenu"); menu.textContent = "";
+  if (!rows.length) { menu.append(Object.assign(document.createElement("div"), { className: "none", textContent: "No saved lists yet: import one, or Save the list below." })); return; }
+  rows.forEach((r) => {
+    const row = document.createElement("div"); row.className = "mkli";
+    const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = r.name; nm.title = `Load ${r.name}`;
+    nm.append(Object.assign(document.createElement("small"), { textContent: r.where }));
+    nm.onclick = async () => {
+      closeLibMenu();
+      try { const d = await api(`/api/markers/library/${encodeURIComponent(r.name)}`); $("mkText").value = d.text; $("mkName").value = d.name; checkMarkers(); }
+      catch (e) { toast(e.message, 5000); }
+    };
+    const x = Object.assign(document.createElement("button"), { type: "button", textContent: "×", title: `Remove the saved list ${r.name}` });
+    x.onclick = async (e) => {
+      e.stopPropagation();
+      if (!confirm(`Remove the saved marker list “${r.name}”?\n\nIt goes to the trash of the data folder; the list in the editor stays.`)) return;
+      try { await post(`/api/markers/library/${encodeURIComponent(r.name)}/delete`); toast(`Removed ${r.name}`, 3000); await loadLibrary(); }
+      catch (err) { toast(err.message, 5000); }
+    };
+    row.append(nm, x); menu.append(row);
+  });
 }
+function closeLibMenu() { $("mkLibMenu").hidden = true; }
+$("mkLib").onclick = async (e) => {
+  e.stopPropagation();
+  const menu = $("mkLibMenu");
+  if (!menu.hidden) { closeLibMenu(); return; }
+  await loadLibrary();  // lists the agent saved meanwhile
+  const b = $("mkLib").getBoundingClientRect();
+  menu.style.left = `${b.left}px`; menu.style.top = `${b.bottom + 4}px`; menu.hidden = false;
+};
+$("mkDlg").addEventListener("click", (e) => { if (!$("mkLibMenu").hidden && !$("mkLibMenu").contains(e.target)) closeLibMenu(); });
+$("mkDlg").addEventListener("cancel", (e) => { if (!$("mkLibMenu").hidden) { e.preventDefault(); closeLibMenu(); } });  // Esc: the menu first
+$("mkDlg").addEventListener("close", closeLibMenu);
 function showCheck(r) {
   const box = $("mkMsgs"); box.textContent = "";
   const line = (t, cls) => { const d = document.createElement("div"); d.textContent = t; if (cls) d.className = cls; box.append(d); };
@@ -3866,8 +3904,6 @@ $("mkExport").onclick = async () => {
   document.body.append(a); a.click(); a.remove();
 };
 $("mkCheck").onclick = checkMarkers;
-$("mkLib").addEventListener("focus", loadLibrary);  // lists the agent saved meanwhile
-$("mkLib").onchange = async (e) => { if (!e.target.value) return; const r = await api(`/api/markers/library/${encodeURIComponent(e.target.value)}`); $("mkText").value = r.text; $("mkName").value = r.name; checkMarkers(); };
 $("mkSave").onclick = async () => { try { const r = await post("/api/markers/save", { name: $("mkName").value, text: $("mkText").value }); toast(`Saved as ${r.name}`); loadLibrary(); } catch (e) { toast(e.message); } };
 $("mkDraft").onclick = async () => {
   const msg = $("mkDraftMsg"); msg.textContent = "The agent is drafting… (about 20-60 s)"; $("mkDraft").disabled = true;
