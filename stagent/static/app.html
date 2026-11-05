@@ -1350,7 +1350,7 @@ function reportState() {  // so Claude (use_viewer_session) knows what the user 
   miniInfo(); anRefresh();
 }
 function closeSession() {
-  st.sid = null; st.placeholder = false; st.version = null; st.filters = {}; st.regions = null; st.advice = null; st.adviceSig = undefined;
+  st.sid = null; st.placeholder = false; st.version = null; st.filters = {}; st.regions = null; st.advice = null; st.advicePollSig = undefined; st.adviceSeen = null;
   cancelDraw(); if (st.editing) stopEdit(); closePlaus();
   $("legend").hidden = true; $("cellcard").classList.remove("show");
   $("empty").style.display = "flex";
@@ -1417,6 +1417,7 @@ async function startAnnotation(mode, sid, token = st.switchToken) {
 }
 
 async function openSession(sid) {
+  if (sid !== st.sid) { st.advicePollSig = undefined; st.adviceSeen = null; }  // another annotation: its advice so far is not new
   st.sid = sid;
   $("empty").style.display = "none";
   ["undo", "export", "send", "plaus", "report", "nRun", "eRun"].forEach((b) => ($(b).disabled = false));
@@ -2366,7 +2367,6 @@ async function loadPlaus(switchMode) {
   st.solvedSig = [r_solved_areas(st.plaus), (st.plaus.solved || []).filter((x) => x.kind === "marker").length];
   st.sugKey = JSON.stringify({ areas: st.plaus.suggestions, proposal: st.plaus.proposal, solved: st.solvedSig, review: st.plaus.review_count });
   st.adviceRuns = (st.advice.status.last_run || {}).time || null;
-  st.adviceSig = JSON.stringify(st.advice.signature);
   renderPlaus();
   fillModes(st.lastSummary);
   if (switchMode) { st.mode = "plausibility"; $("mode").value = "plausibility"; refreshOverlay(); await loadLegend(); }
@@ -2745,9 +2745,14 @@ async function pollSuggestions() {  // suggestions made in Claude Code show up w
     await loadNiches(fresh);
     if (fresh) toast("New niches from the agent: colored by niche", 5000);
   }
+  // new advice is told apart by its ids, not by a signature that loading the panel also updates: a click that loads
+  // the panel while the agent works (Review, solve, a new version, the cells moving) must not swallow its arrival
   const advSig = JSON.stringify(sug.advice);
-  if (st.adviceSig === undefined) st.adviceSig = advSig;  // first look: nothing new yet
-  if (advSig !== st.adviceSig) { await adviceArrived(); return; }
+  if (st.advicePollSig === undefined) {  // first look at this annotation: what is there now is not new
+    const adv = await api(`/api/s/${st.sid}/advice`);
+    st.adviceSeen = new Set((adv.items || []).map((x) => x.id)); st.advicePollSig = advSig;
+  }
+  if (advSig !== st.advicePollSig) { st.advicePollSig = advSig; await adviceArrived(); return; }
   if (!st.plaus) { if (fresh) { await loadPlaus(false); toast(`The agent made ${fresh} suggestion(s): see the Review panel`, 4000); } return; }
   if (JSON.stringify(sug.solved) !== JSON.stringify(st.solvedSig) || sug.review !== st.plaus.review_count) { await loadPlaus(false); return; }  // Claude judged candidates
   if (sug.report && sug.report !== st.reportTime && $("rpDlg").open) await openReport();
@@ -2760,9 +2765,10 @@ setInterval(async () => {  // the cells moved (e.g. Claude aligned the image in 
   if (he && he.rev !== st.he.rev) await afterPlacement("The cells were placed on the image (registration changed)");
 }, 4000);
 async function adviceArrived() {  // new advice from Claude Code: open the Review panel; a region the user asked for is shown
-  const before = new Set(((st.advice || {}).items || []).map((x) => x.id));
+  const seen = st.adviceSeen || new Set();
   await loadPlaus(false);
-  const fresh = st.advice.items.filter((x) => !before.has(x.id) && x.status === "open");
+  const fresh = st.advice.items.filter((x) => !seen.has(x.id) && x.status === "open");
+  st.advice.items.forEach((x) => seen.add(x.id)); st.adviceSeen = seen;
   if (fresh.length && fresh[0].scope && fresh[0].scope !== st.rvScope) { st.rvScope = fresh[0].scope; renderPlaus(); }
   const reg = fresh.filter((x) => x.requested && x.action && x.action.outlines).sort((a, b) => (a.time < b.time ? 1 : -1))[0];
   if (reg) {
@@ -3700,10 +3706,15 @@ async function pollProposals() {
     if (r && r.status !== "applying") await proposalApplied(r);
     return;
   }
-  if (PC.failed || PC.peek) return;  // the error stays until the user closes it; the user is looking at the map
+  if (PC.failed) return;  // the error stays until the user closes it
   const open = rows.filter((x) => x.status === "open");
+  if (PC.peek) {  // the user is looking at the cells on the map; it ends there, or when the change was decided elsewhere
+    if (PC.cur && open.some((x) => x.id === PC.cur.id)) return;
+    PC.peek = false; $("pcBack").hidden = true; st.paint = null; setSelection(null);
+  }
   if (PC.cur && !open.some((x) => x.id === PC.cur.id)) { PC.cur = null; $("pcDlg").close(); }  // decided in another window
   if (!PC.cur && open.length) showProposal(open[0], open.length);
+  else if (PC.cur && !$("pcDlg").open) showProposal(PC.cur, open.length);  // closed some other way (e.g. Esc twice): back
   else if (PC.cur) $("pcPos").textContent = open.length > 1 ? `1 of ${open.length} waiting` : "";
 }
 setInterval(() => pollProposals().catch(() => {}), 2000);
