@@ -1,0 +1,710 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>STAnnotator</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Spatial transcriptomics on the tissue image, from registration and cell types to niches and cell-cell communication, with an AI agent at your side. Free download for macOS and Windows.">
+<link rel="icon" type="image/png" href="assets/favicon.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<meta property="og:title" content="STAnnotator">
+<meta property="og:description" content="Spatial transcriptomics on the tissue, with an agent at your side. Free download for macOS and Windows.">
+<meta property="og:image" content="https://www.caokai.site/STAnnotator/assets/social-preview.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a glass slide and its label. The hero is the app on a real section with a specimen label;
+   every section below has a narrow margin column for its label, like a lab notebook. */
+:root {
+  --paper: #f4f4f2;          /* the app's own background */
+  --panel: #ffffff;
+  --ink: #1d1f21;
+  --muted: #5d6266;
+  --line: #deded9;
+  --accent: #0f7c86;         /* the app's teal */
+  --accent-ink: #ffffff;
+  --accent-soft: #e3f2f3;
+  --eosin: #c2185b;          /* H&E pink, for small marks only */
+  --hema: #45428f;           /* hematoxylin */
+  --code-bg: #1d2226;
+  --code-ink: #e6eaea;
+  --shadow: 0 1px 2px rgb(29 31 33 / .06), 0 12px 40px rgb(29 31 33 / .10);
+
+  --f-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", "Helvetica Neue", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --s-0: .8125rem; --s-1: .9375rem; --s-2: 1.0625rem; --s-3: 1.375rem; --s-4: 1.875rem; --s-5: clamp(1.75rem, 1rem + 2.8vw, 3rem);
+  --wrap: 1180px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #17191b; --panel: #212427; --ink: #e8e8e6; --muted: #a2a6aa; --line: #33373b;
+    --accent: #4fb6bf; --accent-ink: #0d1d1f; --accent-soft: #1f3638; --eosin: #ec6f9e; --hema: #a7a4f0;
+    --code-bg: #0f1214; --code-ink: #e6eaea; --shadow: 0 1px 2px rgb(0 0 0 / .4), 0 12px 40px rgb(0 0 0 / .35);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #17191b; --panel: #212427; --ink: #e8e8e6; --muted: #a2a6aa; --line: #33373b;
+  --accent: #4fb6bf; --accent-ink: #0d1d1f; --accent-soft: #1f3638; --eosin: #ec6f9e; --hema: #a7a4f0;
+  --code-bg: #0f1214; --code-ink: #e6eaea; --shadow: 0 1px 2px rgb(0 0 0 / .4), 0 12px 40px rgb(0 0 0 / .35);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body {
+  margin: 0; background: var(--paper); color: var(--ink);
+  font: 400 var(--s-1)/1.6 var(--f-body); -webkit-font-smoothing: antialiased;
+}
+img { max-width: 100%; display: block; }
+a { color: var(--accent); text-underline-offset: 3px; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+h1, h2, h3 { font-family: var(--f-display); font-weight: 700; text-wrap: balance; margin: 0; letter-spacing: -.01em; }
+p { margin: 0; }
+code, kbd { font-family: var(--f-mono); font-size: .92em; }
+.num { font-variant-numeric: tabular-nums; }
+
+.wrap {
+  max-width: var(--wrap); margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.eyebrow { font: 500 var(--s-0)/1.3 var(--f-mono); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+
+/* header */
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--paper); }
+.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: color-mix(in srgb, var(--paper) 88%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+.top .wrap { display: flex; align-items: center; gap: 24px; padding-block: 12px; }
+.brand { display: flex; align-items: center; gap: 10px; font: 700 1.125rem/1 var(--f-display); color: var(--ink); text-decoration: none; }
+.brand img { flex: none; width: 32px; height: 32px; }
+.get { display: flex; align-items: center; gap: 18px; }
+.get img { flex: none; width: 64px; height: 64px; }
+.top nav { display: flex; gap: 20px; margin-left: auto; flex-wrap: wrap; }
+.top nav a { color: var(--muted); text-decoration: none; font-size: var(--s-1); }
+.top nav a:hover { color: var(--ink); }
+@media (max-width: 720px) { .top nav a:not(.keep) { display: none; } }
+
+/* buttons */
+.btn { display: inline-flex; align-items: center; gap: 10px; padding: 12px 20px; border-radius: 8px; font: 600 var(--s-1)/1.2 var(--f-body); text-decoration: none; border: 1px solid transparent; cursor: pointer; }
+.btn-primary { background: var(--accent); color: var(--accent-ink); }
+.btn-primary:hover { filter: brightness(1.08); }
+.btn-ghost { background: transparent; color: var(--ink); border-color: var(--line); }
+.btn-ghost:hover { border-color: var(--muted); }
+.btn small { display: block; font-weight: 400; font-size: var(--s-0); opacity: .85; }
+
+/* hero */
+.hero { padding-block: clamp(40px, 7vw, 88px) 0; }
+.hero-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 32px 56px; align-items: end; }
+.hero h1 { font-size: var(--s-5); line-height: 1.04; }
+.hero h1 em { font-style: normal; color: var(--eosin); }
+.hero h1 .nw { white-space: nowrap; }
+.hero .lede { font-size: clamp(var(--s-2), 1rem + .35vw, 1.25rem); line-height: 1.6; color: var(--muted); margin-top: clamp(28px, 4vw, 44px); }
+.hero .lede-wrap { display: grid; gap: 24px; }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; }
+.hero-meta { font: 400 var(--s-0)/1.5 var(--f-mono); color: var(--muted); }
+@media (max-width: 860px) { .hero-grid { grid-template-columns: minmax(0, 1fr); } }
+
+.slide { margin-top: clamp(32px, 5vw, 56px); display: flex; flex-direction: column; }
+.slide figure { margin: 0; border-radius: 10px; overflow: hidden; background: var(--panel); box-shadow: var(--shadow); border: 1px solid var(--line); }
+.slide img { width: 100%; height: auto; aspect-ratio: 1600 / 1000; }
+/* the slide label sits under the frame's right edge, like the label end of a glass slide */
+.label {
+  align-self: flex-end; margin: -18px clamp(12px, 3vw, 28px) 0 0; position: relative;
+  background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--eosin); border-radius: 6px; box-shadow: var(--shadow);
+  padding: 10px 14px; display: grid; grid-template-columns: auto auto; gap: 2px 16px;
+  font: 400 var(--s-0)/1.45 var(--f-mono); max-width: calc(100% - 24px);
+}
+.label b { font-weight: 500; color: var(--ink); }
+.label span { color: var(--muted); }
+@media (max-width: 560px) { .label { align-self: stretch; margin: 12px 0 0; box-shadow: none; } }
+
+/* sections */
+section.band { padding-block: clamp(64px, 9vw, 112px) 0; }
+.sec { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 24px 48px; }
+.sec > .side { position: relative; }
+.sec > .side .eyebrow { position: sticky; top: 84px; }
+.sec h2 { font-size: var(--s-4); line-height: 1.15; max-width: 26ch; }
+.sec .intro { color: var(--muted); max-width: 64ch; margin-top: 12px; font-size: var(--s-2); }
+@media (max-width: 860px) { .sec { grid-template-columns: minmax(0, 1fr); gap: 12px; } .sec > .side .eyebrow { position: static; } }
+
+/* workflow: a real sequence, so it is numbered */
+.steps { list-style: none; margin: 32px 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.steps li { background: var(--panel); padding: 22px 22px 24px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.steps .n { font: 500 var(--s-0)/1 var(--f-mono); color: var(--accent); }
+.steps h3 { font-size: var(--s-3); line-height: 1.2; }
+.steps p { color: var(--muted); }
+@media (max-width: 900px) { .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .steps { grid-template-columns: minmax(0, 1fr); } }
+
+/* priors */
+.priors { margin-top: 32px; display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, .75fr); gap: 32px; align-items: start; }
+@media (max-width: 860px) { .priors { grid-template-columns: minmax(0, 1fr); } }
+.talk { display: grid; gap: 14px; }
+.turn { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 14px; align-items: start; }
+.turn .who { font: 500 var(--s-0)/1.9 var(--f-mono); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.say { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+.turn.you .say { font-size: var(--s-2); }
+.turn.agent .say { background: var(--accent-soft); border-color: transparent; }
+.turn.agent .say p + p { margin-top: 6px; }
+.say.review { display: grid; gap: 4px; font-size: var(--s-1); box-shadow: var(--shadow); }
+.say.review > span:not(.acts) { color: var(--muted); }
+.acts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }
+.fake { font-size: var(--s-0); padding: 5px 12px; border-radius: 6px; border: 1px solid var(--line); color: var(--ink); }
+.fake.on { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.pill { display: inline-block; font: 500 var(--s-0)/1 var(--f-mono); padding: 4px 8px; border-radius: 99px; background: var(--panel); color: var(--accent); border: 1px solid var(--line); margin-right: 6px; }
+.kinds { margin-top: 28px; overflow-x: auto; }
+.kinds table { width: 100%; border-collapse: collapse; font-size: var(--s-1); min-width: 520px; }
+.kinds th { text-align: left; font: 500 var(--s-0)/1.3 var(--f-mono); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: 0 12px 10px 0; border-bottom: 1px solid var(--line); }
+.kinds td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+.kinds td:first-child { font-family: var(--f-mono); color: var(--accent); white-space: nowrap; }
+.detail figure { margin: 0; }
+.detail img { border-radius: 10px; border: 1px solid var(--line); width: 100%; height: auto; aspect-ratio: 640 / 1120; object-fit: cover; max-height: 640px; }
+.detail figcaption { margin-top: 10px; font-size: var(--s-0); color: var(--muted); }
+
+/* agent examples: one conversation per row, the evidence beside it */
+.exs { margin-top: 32px; display: grid; gap: 20px; }
+.ex { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 24px; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr); gap: 24px 32px; }
+@media (max-width: 860px) { .ex { grid-template-columns: minmax(0, 1fr); } }
+.ex-head { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; }
+.ex-head h3 { font-size: var(--s-3); line-height: 1.2; }
+.ex-head .eyebrow { color: var(--accent); }
+.ex .talk { gap: 10px; }
+.ex .turn { grid-template-columns: 56px minmax(0, 1fr); }
+.ex .say { font-size: var(--s-1); }
+.ex .turn.you .say { font-size: var(--s-1); background: var(--paper); }
+.ex .say ul { margin: 6px 0 0; padding-left: 1.1em; display: grid; gap: 4px; }
+.ev { display: grid; gap: 14px; align-content: start; min-width: 0; }
+.ev h4 { margin: 0; font: 500 var(--s-0)/1.3 var(--f-mono); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.ev ul { margin: 6px 0 0; padding-left: 1.1em; display: grid; gap: 6px; color: var(--ink); }
+.ev .result { border-top: 1px dashed var(--line); padding-top: 12px; display: grid; gap: 6px; }
+.ev .result p { color: var(--muted); font-size: var(--s-0); }
+.kv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; font-size: var(--s-1); }
+.kv span:nth-child(even) { font-family: var(--f-mono); font-variant-numeric: tabular-nums; text-align: right; color: var(--accent); }
+@media (max-width: 560px) {
+  .turn, .ex .turn { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .turn .who { line-height: 1.2; }
+  .ex { padding: 18px; }
+}
+.more { margin-top: 28px; display: grid; gap: 10px; }
+.more h3 { font-size: var(--s-3); }
+.more > p { color: var(--muted); }
+.asks { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.asks li { background: var(--panel); border: 1px solid var(--line); border-radius: 99px; padding: 7px 14px; font-size: var(--s-1); min-width: 0; }
+.btnchip { display: inline-block; font: 500 var(--s-0)/1 var(--f-body); padding: 5px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); white-space: nowrap; }
+
+/* analyses */
+.tools { margin-top: 32px; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 36px 40px; }
+.tool { display: grid; gap: 6px; align-content: start; min-width: 0; padding-top: 16px; border-top: 2px solid var(--ink); }
+.tool h3 { font-size: var(--s-3); line-height: 1.2; }
+.tool .tab { font: 500 var(--s-0)/1 var(--f-mono); color: var(--muted); }
+.tool p { color: var(--muted); }
+
+/* measured */
+.measures { margin-top: 32px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 760px) { .measures { grid-template-columns: minmax(0, 1fr); } }
+.measure { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 22px; display: grid; gap: 10px; align-content: start; }
+.measure .big { font: 700 clamp(2rem, 1.5rem + 1.6vw, 2.75rem)/1 var(--f-display); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.measure .big small { font: 500 var(--s-2)/1 var(--f-body); color: var(--muted); letter-spacing: 0; margin-left: 4px; }
+.measure .what { font-weight: 600; }
+.measure .how { color: var(--muted); font-size: var(--s-1); }
+.measure .src { font: 400 var(--s-0)/1.4 var(--f-mono); color: var(--muted); border-top: 1px dashed var(--line); padding-top: 10px; }
+.bar { height: 8px; border-radius: 99px; background: var(--line); position: relative; overflow: hidden; }
+.bar i { position: absolute; inset: 0 auto 0 0; background: var(--accent); border-radius: 99px; }
+.bar i.before { background: var(--muted); opacity: .5; }
+.bars { display: grid; gap: 6px; }
+.bars div { display: grid; grid-template-columns: 52px minmax(0, 1fr) 52px; gap: 10px; align-items: center; font: 400 var(--s-0)/1 var(--f-mono); color: var(--muted); }
+.bars div span:last-child { text-align: right; color: var(--ink); }
+
+/* modes */
+.modes { margin-top: 32px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 760px) { .modes { grid-template-columns: minmax(0, 1fr); } }
+.mode { border: 1px solid var(--line); border-radius: 10px; padding: 22px; display: grid; gap: 12px; align-content: start; background: var(--panel); }
+.mode h3 { font-size: var(--s-3); }
+.mode dl { margin: 0; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; }
+.mode dt { font: 500 var(--s-0)/1.6 var(--f-mono); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.mode dd { margin: 0; }
+.privacy { margin-top: 20px; color: var(--muted); max-width: 70ch; }
+
+/* download */
+.dl { margin-top: 32px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: stretch; }
+@media (max-width: 860px) { .dl { grid-template-columns: minmax(0, 1fr); } }
+.on-win .dl [data-os="win"], .on-win .cta [data-os="win"] { order: -1; }
+.osc { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 28px; display: grid; gap: 18px; align-content: start; box-shadow: var(--shadow); min-width: 0; }
+.osc h3 { font-size: var(--s-4); line-height: 1.1; }
+.osc .req { display: flex; flex-wrap: wrap; gap: 8px; }
+.osc .req span { font: 400 var(--s-0)/1 var(--f-mono); padding: 6px 10px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+.osc .btn { justify-self: start; }
+.osc ol { margin: 0; padding-left: 1.3em; display: grid; gap: 8px; }
+.osc ol li::marker { font-family: var(--f-mono); color: var(--accent); }
+.osc .note { font-size: var(--s-0); color: var(--muted); }
+.other { margin-top: 40px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; }
+@media (max-width: 860px) { .other { grid-template-columns: minmax(0, 1fr); } }
+.other-col { display: grid; gap: 16px; align-content: start; min-width: 0; }
+.other-col > * { min-width: 0; }
+.other h3 { font-size: var(--s-3); }
+.other .sub { color: var(--muted); margin-top: 4px; }
+.guide { margin-top: 24px; color: var(--muted); }
+.server-note { margin-top: 40px; display: grid; gap: 8px; max-width: 70ch; }
+.server-note h3 { font-size: var(--s-3); }
+.server-note p { color: var(--muted); }
+.code { position: relative; background: var(--code-bg); color: var(--code-ink); border-radius: 10px; }
+.code pre { margin: 0; padding: 46px 18px 16px; overflow-x: auto; font: 400 var(--s-0)/1.7 var(--f-mono); }
+.code .c { color: #8fa3a6; }
+.copy { position: absolute; top: 10px; right: 10px; font: 500 .75rem/1 var(--f-mono); padding: 7px 10px; border-radius: 6px; border: 1px solid rgb(255 255 255 / .2); background: transparent; color: var(--code-ink); cursor: pointer; }
+.copy:hover { background: rgb(255 255 255 / .08); }
+
+footer { margin-top: clamp(72px, 10vw, 120px); border-top: 1px solid var(--line); }
+footer .wrap { padding-block: 28px 40px; display: flex; flex-wrap: wrap; gap: 12px 28px; justify-content: space-between; color: var(--muted); font-size: var(--s-0); }
+footer nav { display: flex; gap: 20px; flex-wrap: wrap; }
+footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="STAnnotator home">
+      <img src="assets/logo.png" width="32" height="32" alt="">
+      STAnnotator
+    </a>
+    <nav aria-label="Sections">
+      <a href="#workflow">How it works</a>
+      <a href="#agent">Agent</a>
+      <a href="#analyses">Analyses</a>
+      <a href="#measured">Measured</a>
+      <a class="keep" href="#download">Download</a>
+      <a class="keep" href="https://github.com/caokai1073/STAnnotator">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero">
+    <div class="wrap">
+      <div class="hero-grid">
+        <h1><span class="nw">Spatial transcriptomics</span><br><span class="nw">on the tissue, with an</span><br><em>agent</em> at your side.</h1>
+        <div class="lede-wrap">
+          <div class="cta">
+            <a class="btn btn-primary" href="#download" data-dmg data-os="mac">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"></path></svg>
+              <span>Download for Mac<small>Apple silicon · macOS 11+</small></span>
+            </a>
+            <a class="btn btn-primary" href="#download" data-exe data-os="win">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"></path></svg>
+              <span>Download for Windows<small>Windows 10 / 11 · x64</small></span>
+            </a>
+          </div>
+          <p class="hero-meta">Version <span data-version>0.2.42</span> · free · runs on your computer or your server · the agent is your own Claude Code</p>
+        </div>
+      </div>
+      <p class="lede">STAnnotator takes spatial transcriptomics (Xenium, CosMx, MERSCOPE, Visium HD, Stereo-seq and more)
+        from import to results on the tissue image: registration, cell types, regions, niches, cell–cell communication
+        and comparisons across slices. Tell it what you know in plain sentences. Every change the agent proposes waits in
+        the app until you click Accept.</p>
+
+      <div class="slide">
+        <figure>
+          <img src="assets/app-overview.jpg?v=0.2.41" width="2000" height="1250"
+               alt="The STAnnotator window: a colon section on its H&amp;E with each cell drawn as a dot colored by cell type, showing the mucosa, lymphoid follicles and muscle, the cell type legend with counts on the left, and the Data panel on the right.">
+        </figure>
+        <div class="label" aria-label="Specimen shown">
+          <b>Human colon</b><span>SCP2927, section 147328</span>
+          <b>Xenium</b><span>480 genes · <span class="num">356,629</span> cells</span>
+          <b>Annotated</b><span>from a marker list, version 1</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="workflow">
+    <div class="wrap sec">
+      <div class="side"><p class="eyebrow">How it works</p></div>
+      <div>
+        <h2>From the instrument's output to a notebook you can rerun</h2>
+        <p class="intro">Every step happens in one window, on the image. Each change becomes a version you can go back to.</p>
+        <ol class="steps">
+          <li><span class="n">1</span><h3>Import</h3>
+            <p>Xenium, CosMx (AtoMx flat files), MERSCOPE, Visium HD and Stereo-seq output, h5ad, or Seurat and SpatialExperiment <code>.rds</code> files, read without R. Add the H&amp;E and its registration, or let the agent align it; bring regions drawn in QuPath; filter cells and genes.</p></li>
+          <li><span class="n">2</span><h3>Annotate</h3>
+            <p>From a marker gene list, a labeled single-cell reference, or an annotation you already have. No marker list? Start from a built-in list for 12 organs, pruned to your gene panel.</p></li>
+          <li><span class="n">3</span><h3>Refine in words</h3>
+            <p>Draw regions on the tissue and say what you know: priors, corrections, a cluster to split. Each change opens in a review window with the cells it affects; you accept or dismiss it.</p></li>
+          <li><span class="n">4</span><h3>Analyze</h3>
+            <p>PCA, UMAP and Leiden, niches, composition, DE genes and cell–cell communication, for one slice or several together.</p></li>
+          <li><span class="n">5</span><h3>Review</h3>
+            <p>Agent Review checks one part of the analysis, tests its own advice against the data and the H&amp;E, and shows only what holds up.</p></li>
+          <li><span class="n">6</span><h3>Export</h3>
+            <p>The cell table, the registration, figures as PDF, a Jupyter notebook that reproduces the analysis without the app, or the whole annotation as one <code>.stannot</code> file.</p></li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="priors">
+    <div class="wrap sec">
+      <div class="side"><p class="eyebrow">Plain-language priors</p></div>
+      <div>
+        <h2>Say what a pathologist would say</h2>
+        <p class="intro">Knowledge about where cells belong becomes a rule the model can use. The agent reads your sentence
+          and proposes the change; the app shows it to you, and nothing happens until you accept it.</p>
+        <div class="priors">
+          <div>
+            <div class="talk" aria-label="Example exchange">
+              <div class="turn you"><span class="who">You</span>
+                <div class="say">“Epithelial cells are only in the mucosa.”</div></div>
+              <div class="turn agent"><span class="who">Agent</span>
+                <div class="say">
+                  <p><span class="pill">region</span><span class="pill">only</span> Epithelial lineage, inside the region you drew and named <code>mucosa</code>.</p>
+                  <p>The change is waiting in the app with the cells it would relabel.</p>
+                </div></div>
+              <div class="turn you"><span class="who">App</span>
+                <div class="say review"><b>Review Claude's change</b><span>Nothing changes until you click Accept.</span>
+                  <span class="acts"><span class="fake">Dismiss</span><span class="fake on">Accept</span></span></div></div>
+            </div>
+            <div class="kinds">
+              <table>
+                <thead><tr><th>Kind</th><th>Condition</th><th>Example</th></tr></thead>
+                <tbody>
+                  <tr><td>region</td><td>The cell lies in one of the regions you drew</td><td>Epithelial cells only in the mucosa</td></tr>
+                  <tr><td>depth</td><td>Within a distance of the epithelium</td><td>Goblet cells within 30 µm of the epithelium</td></tr>
+                  <tr><td>neighborhood</td><td>A share of the 15 nearest cells are given types</td><td>Tfh cells next to B cells</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="detail">
+            <figure>
+              <img src="assets/mucosa-detail.jpg?v=0.2.41" width="640" height="1120" loading="lazy"
+                   alt="Close-up of colon crypts and lymphoid follicles on the H&amp;E, with each cell drawn as a small colored dot on its nucleus.">
+              <figcaption>The mucosa of the same section, closer: crypts in red, lymphoid follicles of B cells in olive. Each dot is one cell, colored by its type and placed on its nucleus.</figcaption>
+            </figure>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="agent">
+    <div class="wrap sec">
+      <div class="side"><p class="eyebrow">Working with the agent</p></div>
+      <div>
+        <h2>Ask it to check the work, not only to do it</h2>
+        <p class="intro">The agent works through the app's tools: it reads the numbers and figures they compute, checks
+          them on the H&amp;E, and proposes changes that wait in the app for you. Three examples of many.</p>
+        <div class="exs">
+
+          <article class="ex">
+            <div class="ex-head"><span class="eyebrow">Markers</span><h3>Refine the marker list</h3></div>
+            <div class="talk">
+              <div class="turn you"><span class="who">You</span>
+                <div class="say">“Review my annotation. Is my marker list missing a cell type?”</div></div>
+              <div class="turn agent"><span class="who">Agent</span>
+                <div class="say">
+                  <p>15,514 Unassigned cells express CD177, CSF3R and S100A12. These look like neutrophils, which your list
+                    does not have. Your “dendritic cells” express macrophage genes (C1QC, LYVE1, MS4A7).</p>
+                  <p>I suggest adding Neutrophils and revising the dendritic cell markers. <span class="btnchip">Open in Markers…</span> opens the list to edit.</p>
+                </div></div>
+            </div>
+            <div class="ev">
+              <div><h4>What it checks</h4>
+                <ul>
+                  <li>How often each marker is detected in its type compared with sibling types</li>
+                  <li>Negative markers that are detected anyway</li>
+                  <li>The genes that set Unassigned cells apart</li>
+                </ul></div>
+              <div class="result">
+                <h4>After annotating with the revised list</h4>
+                <div class="kv">
+                  <span>Unassigned cells</span><span>15,514 → 195</span>
+                  <span>Neutrophils labeled as neutrophils</span><span>15% → 97%</span>
+                  <span>Lineage agreement</span><span>91.4% → 98.6%</span>
+                </div>
+                <p>SCP2927 section 146685, ulcerative colitis. Dataset labels used only to score the result.</p>
+              </div>
+            </div>
+          </article>
+
+          <article class="ex">
+            <div class="ex-head"><span class="eyebrow">Registration</span><h3>Fix the H&amp;E registration where it is off</h3></div>
+            <div class="talk">
+              <div class="turn you"><span class="who">You</span>
+                <div class="say">“The cells at the lower left sit next to their nuclei, not on them. Can you check the registration there?”</div></div>
+              <div class="turn agent"><span class="who">Agent</span>
+                <div class="say">
+                  <p>I compared the nuclei on the H&amp;E with the cell centers in windows across the section. The whole
+                    section is slightly off in scale, and one area is shifted further.</p>
+                  <p>I proposed an affine correction plus a local shift for that area. My figure marks the area with the
+                    large shift.</p>
+                </div></div>
+              <div class="turn you"><span class="who">You</span>
+                <div class="say">“This piece of tissue tore off and turned. I outlined its cells as <code>flap_1</code>.”</div></div>
+              <div class="turn agent"><span class="who">Agent</span>
+                <div class="say"><p>I searched rotation, shift and mirroring for the piece. The best fit puts its cells on
+                  nuclei, on tissue that no other cell covers. The move is waiting in the app's review window
+                  (cyan: the cells now, yellow: moved).</p></div></div>
+            </div>
+            <div class="ev">
+              <div><h4>What it checks</h4>
+                <ul>
+                  <li>Nuclei (hematoxylin or DAPI) against cell centers in 200 µm windows, then 600 µm windows for shifts up to 100 µm</li>
+                  <li>For a torn or folded piece: rotation, a shift of up to 300 µm, and mirroring</li>
+                  <li>It proposes no move when the fit is no better than where the cells are now</li>
+                </ul></div>
+              <div class="result">
+                <h4>Measured</h4>
+                <div class="kv">
+                  <span>Section 147328, scale off by 0.28%</span><span>30 → 0.5 µm</span>
+                  <span>Local warp of 70 µm (test)</span><span>→ 2 µm</span>
+                  <span>Torn pieces, up to 300 µm and 180° (tests)</span><span>1–6 µm</span>
+                </div>
+                <p>Each correction can be undone. Regions keep their cells.</p>
+              </div>
+            </div>
+          </article>
+
+          <article class="ex">
+            <div class="ex-head"><span class="eyebrow">Hypotheses</span><h3>Turn a pattern into something you can test</h3></div>
+            <div class="talk">
+              <div class="turn you"><span class="who">You</span>
+                <div class="say">“What could keep the stem cells at the crypt base? Give me something I can test in this data.”</div></div>
+              <div class="turn agent"><span class="who">Agent</span>
+                <div class="say">
+                  <p>A hypothesis to test: R-spondin from fibroblasts around the crypt base acts on LGR5+ stem cells.
+                    RSPO3 and LGR5 are both on your panel.</p>
+                  <ul>
+                    <li><b>If it holds:</b> RSPO3 → LGR5 is stronger from fibroblasts to stem cells than to other epithelial cells.</li>
+                    <li><b>Caveats:</b> one slice, no replicate; RSPO3 transcripts in cells next to fibroblasts can be spillover.</li>
+                  </ul>
+                  <p><span class="btnchip">Put in Signaling</span> sets up this comparison. Run it to see the result.</p>
+                </div></div>
+            </div>
+            <div class="ev">
+              <div><h4>What the app does</h4>
+                <ul>
+                  <li><span class="btnchip">Put in Signaling</span> or <span class="btnchip">Put in Compare</span> fills in the analysis that would settle the question</li>
+                  <li><span class="btnchip">Show on map</span> colors the tissue by the gene or the signal</li>
+                  <li>Agent Review of Compare and Signaling explains the results you ran and names the caveats</li>
+                </ul></div>
+              <div class="result">
+                <h4>Who computes what</h4>
+                <p>The agent proposes the hypothesis and the test. The app's tools compute the result. Nothing in your
+                  data changes until you accept a change.</p>
+              </div>
+            </div>
+          </article>
+
+        </div>
+        <div class="more">
+          <h3>More to ask</h3>
+          <p>Anything the app can compute, the agent can run, explain and check. For example:</p>
+          <ul class="asks">
+            <li>“Draft a marker list for this panel; it is lung.”</li>
+            <li>“Align this H&amp;E. I have no registration file.”</li>
+            <li>“Outline the mucosa and the lymphoid follicles as regions.”</li>
+            <li>“Cluster 7 of the T cells is mixed. Split it.”</li>
+            <li>“These cells in crypt_1 are goblet cells.”</li>
+            <li>“Show me the biggest group of cells labeled against my priors.”</li>
+            <li>“Name the niches from the H&amp;E.”</li>
+            <li>“Is my UMAP driven by one slice?”</li>
+            <li>“What do these DE genes mean? What are the caveats?”</li>
+            <li>“Import these CosMx files as a new sample.”</li>
+            <li>“Go back to version 3.”</li>
+            <li>“Export a notebook that reproduces this analysis.”</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="analyses">
+    <div class="wrap sec">
+      <div class="side"><p class="eyebrow">Analyses</p></div>
+      <div>
+        <h2>The analyses you would run next, in the same window</h2>
+        <div class="tools">
+          <div class="tool"><span class="tab">Embed</span><h3>PCA, UMAP, Leiden</h3>
+            <p>Select cells on the UMAP and see them light up on the tissue. Harmony integration for several slices.</p></div>
+          <div class="tool"><span class="tab">Niches</span><h3>Cellular neighborhoods</h3>
+            <p>Niches shared across slices, which the agent names from the H&amp;E and their composition.</p></div>
+          <div class="tool"><span class="tab">Compare</span><h3>Composition and DE genes</h3>
+            <p>Compare regions, niches, slices or conditions, with dot plots of the top genes.</p></div>
+          <div class="tool"><span class="tab">Signaling</span><h3>Cell–cell communication</h3>
+            <p>Ligand–receptor interactions as bubble and circle plots. Senders and receivers shown together on the map.</p></div>
+          <div class="tool"><span class="tab">Projects</span><h3>Several slices at once</h3>
+            <p>Healthy and disease, time courses, replicates: one annotation model and one embedding for all slices. Put any samples into a project, or move slices between projects.</p></div>
+          <div class="tool"><span class="tab">Overview of all samples</span><h3>Every sample side by side</h3>
+            <p>Each sample over its image, colored the same way. Tick legend entries to show only those cells on all samples, and save the panel as one PDF.</p></div>
+          <div class="tool"><span class="tab">Save / Load</span><h3>Share an annotation</h3>
+            <p>One <code>.stannot</code> file holds every version with its regions, priors and corrections, niches, embeddings and the last Compare and Signaling results.</p></div>
+          <div class="tool"><span class="tab">Align with Agent</span><h3>No registration file needed</h3>
+            <p>The agent finds the section on the slide, its rotation and mirroring, then moves every cell onto its nucleus.</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="measured">
+    <div class="wrap sec">
+      <div class="side"><p class="eyebrow">Measured</p></div>
+      <div>
+        <h2>Tested on published atlases</h2>
+        <p class="intro">Numbers from the validation runs in the user guide. Dataset labels were used only to score the results afterwards, never as input.</p>
+        <div class="measures">
+          <div class="measure">
+            <p class="big num">~1<small>minute</small></p>
+            <p class="what">to annotate a 356,629-cell section</p>
+            <p class="how">On the CPU of a laptop, with 3.3 GB of memory. A correction or a local re-clustering takes a few seconds.</p>
+            <p class="src">SCP2927 IBD Xenium atlas, section 147328</p>
+          </div>
+          <div class="measure">
+            <p class="big num">0.5<small>µm</small></p>
+            <p class="what">median distance to the reference registration</p>
+            <p class="how">Align with Agent searched the slide in 8 s and refined in 3 s, on a slide with two sections rotated 180°. The registration file shipped with the data was 13 µm off.</p>
+            <p class="src">SCP2927, section 147328</p>
+          </div>
+          <div class="measure">
+            <p class="big num">97<small>%</small></p>
+            <p class="what">lineage agreement from a single-cell reference</p>
+            <p class="how">A reference built from three other sections labeled section 147328: 97% on the five lineages
+              (98% with majority voting), 80% on 56 fine cell types.</p>
+            <p class="src">SCP2927 IBD Xenium atlas, section 147328</p>
+          </div>
+          <div class="measure">
+            <p class="big num">87–91<small>%</small></p>
+            <p class="what">lineage agreement across a mouse colitis time course</p>
+            <p class="how">Four MERFISH slices (healthy, DSS day 3, 9 and 21; 66,818 cells) annotated together in about 15–40 s. The day-21 slice, with few transcripts per cell, agreed less (46%).</p>
+            <p class="src">Cadinu et al., Cell 2024, MERFISH, 990 genes</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="setup">
+    <div class="wrap sec">
+      <div class="side"><p class="eyebrow">Where it runs</p></div>
+      <div>
+        <h2>Your data stays where it is</h2>
+        <div class="modes">
+          <div class="mode">
+            <h3>On your computer</h3>
+            <dl>
+              <dt>Data</dt><dd>Your computer, in a folder you choose</dd>
+              <dt>Window</dt><dd>Your computer</dd>
+              <dt>Needs</dt><dd>A Mac with Apple silicon or a Windows 10 / 11 PC, 8 GB of memory or more, Claude Code logged in once</dd>
+            </dl>
+          </div>
+          <div class="mode">
+            <h3>On a server, over SSH</h3>
+            <dl>
+              <dt>Data</dt><dd>The server; nothing is copied except what you export</dd>
+              <dt>Window</dt><dd>Your computer, through an SSH tunnel; no port is opened on the server</dd>
+              <dt>Needs</dt><dd>The app on your computer, STAnnotator on the server, SSH login without a password</dd>
+            </dl>
+          </div>
+        </div>
+        <p class="privacy">The agent is your own <a href="https://docs.claude.com/en/docs/claude-code/setup">Claude Code</a>, running with your own Claude account.
+          STAnnotator never asks you to sign in. The agent works through the app's tools, which compute every number it reports.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="download">
+    <div class="wrap sec">
+      <div class="side"><p class="eyebrow">Download</p></div>
+      <div>
+        <div class="get"><img src="assets/logo.png" width="64" height="64" alt="STAnnotator app icon"><h2>Get STAnnotator</h2></div>
+        <p class="intro">Version <span data-version>0.2.42</span>. Both apps contain everything they need; no Python to install.
+          All releases and their notes are on the <a href="#" data-releases>releases page</a>.</p>
+        <div class="dl">
+          <div class="osc" data-os="mac">
+            <h3>Mac</h3>
+            <div class="req"><span>Apple silicon</span><span>macOS 11 or later</span><span>8 GB RAM</span></div>
+            <a class="btn btn-primary" href="#" data-dmg>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"></path></svg>
+              <span>Download for Mac<small>STAnnotator.dmg</small></span>
+            </a>
+            <ol>
+              <li>Open the downloaded <code>.dmg</code> and drag STAnnotator to Applications.</li>
+              <li>Install <a href="https://docs.claude.com/en/docs/claude-code/setup">Claude Code</a> and log in once, so that <code>claude</code> works in Terminal.</li>
+              <li>Start STAnnotator and click <b>Import…</b>. Data and annotations go to <code>~/stagent</code>.</li>
+            </ol>
+          </div>
+          <div class="osc" data-os="win">
+            <h3>Windows</h3>
+            <div class="req"><span>Windows 10 or 11</span><span>x64</span><span>8 GB RAM</span></div>
+            <a class="btn btn-primary" href="#" data-exe>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"></path></svg>
+              <span>Download for Windows<small>STAnnotator-Setup.exe</small></span>
+            </a>
+            <ol>
+              <li>Run the downloaded installer (<code>.exe</code>). Choose where to install (any drive, no administrator rights needed) and where to keep the data.</li>
+              <li>Install <a href="https://docs.claude.com/en/docs/claude-code/setup">Claude Code</a> and log in once, so that <code>claude</code> works in PowerShell.</li>
+              <li>Start STAnnotator from the Start menu and click <b>Import…</b>.</li>
+            </ol>
+            <p class="note">The installer is not signed yet. If Windows SmartScreen stops it, click <b>More info → Run anyway</b>.
+              Uninstalling keeps your data.</p>
+          </div>
+        </div>
+        <div class="server-note">
+          <h3>On a server</h3>
+          <p>To keep the data and the computation on a Linux server, the app connects to it over SSH
+            (<b>This computer → A server over SSH</b>). The server side is available on request:
+            <a href="https://github.com/caokai1073/STAnnotator/issues">open an issue</a>.</p>
+        </div>
+        <p class="guide">Every control and method is described in the <a href="https://github.com/caokai1073/STAnnotator/blob/main/docs/GUIDE.md">user guide</a>.</p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>STAnnotator <span data-version>0.2.42</span> · spatial transcriptomics on the tissue image · macOS and Windows</span>
+    <nav aria-label="Links">
+      <a href="https://github.com/caokai1073/STAnnotator">Source code</a>
+      <a href="https://github.com/caokai1073/STAnnotator/blob/main/docs/GUIDE.md">User guide</a>
+      <a href="#" data-releases>Releases</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+// Download buttons fetch the files of the newest GitHub release (the latest tag) directly: by default
+// STAnnotator.dmg and STAnnotator-Setup.exe; when GitHub's API answers (public repository), whatever .dmg and .exe
+// that release holds, so versioned file names work too.
+const REPO = "https://github.com/caokai1073/STAnnotator";
+const setLinks = (sel, url) => document.querySelectorAll(sel).forEach((a) => { a.href = url; });
+setLinks("[data-dmg]", REPO + "/releases/latest/download/STAnnotator.dmg");
+setLinks("[data-exe]", REPO + "/releases/latest/download/STAnnotator-Setup.exe");
+fetch("https://api.github.com/repos/caokai1073/STAnnotator/releases/latest")
+  .then((r) => (r.ok ? r.json() : null))
+  .then((rel) => {
+    const assets = (rel && rel.assets) || [];
+    const dmg = assets.find((x) => /\.dmg$/i.test(x.name)), exe = assets.find((x) => /\.exe$/i.test(x.name));
+    if (rel && rel.tag_name) document.querySelectorAll("[data-version]").forEach((e) => { e.textContent = rel.tag_name.replace(/^v/, ""); });
+    if (dmg) setLinks("[data-dmg]", dmg.browser_download_url);
+    if (exe) setLinks("[data-exe]", exe.browser_download_url);
+  })
+  .catch(() => {});
+document.querySelectorAll("[data-releases]").forEach((a) => { a.href = REPO + "/releases"; });
+// the visitor's own system first
+if (/Windows/i.test(navigator.userAgent)) document.documentElement.classList.add("on-win");
+
+document.querySelectorAll(".copy").forEach((b) => b.addEventListener("click", () => {
+  const code = b.parentElement.querySelector("code");
+  const done = () => { b.textContent = "Copied"; setTimeout(() => { b.textContent = "Copy"; }, 1600); };
+  navigator.clipboard.writeText(code.innerText).then(done, () => {
+    const r = document.createRange(); r.selectNodeContents(code);
+    const s = getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent = "Selected";
+  });
+}));
+</script>
+</body>
+</html>

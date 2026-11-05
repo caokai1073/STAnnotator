@@ -1,0 +1,21 @@
+STAnnotator
+
+Copyright (c) 2026 the STAnnotator authors. All rights reserved.
+
+You may download, install and use the STAnnotator application free of charge.
+
+You may not, without prior written permission from the copyright holders:
+- copy, modify, translate or create derivative works of the software or any part of it;
+- decompile, disassemble or otherwise reverse engineer the software, except where applicable law expressly permits
+  it;
+- redistribute, sublicense, sell, rent or lease the software or any part of it, or offer it as a hosted service.
+
+Results you produce with the software (annotations, figures, tables, notebooks) are yours.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Earlier versions published under the Apache License 2.0 (up to and including 0.2.42) remain available under that
+license to those who obtained them.
