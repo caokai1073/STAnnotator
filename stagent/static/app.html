@@ -3010,12 +3010,18 @@ const isFlat = () => ["cosmx", "merfish"].includes(imKind());
 document.querySelectorAll("input[name=imKind]").forEach((r) => (r.onchange = () => {
   $("imX").hidden = imKind() !== "xenium"; $("imH").hidden = imKind() !== "h5ad"; $("imF").hidden = !isFlat();
   $("imV").hidden = imKind() !== "visium"; $("imS").hidden = imKind() !== "stereoseq";
-  imDefaultName("");  // the default name comes from this kind's files
+  imDefaultName("");  // the default name comes from this kind's files: they are checked again (their check set it)
+  st.imXKey = st.imFKey = st.imHKey = null;
   if (isFlat()) {
     $("imFhelp").textContent = FLAT_HELP[imKind()] + " Several slides or regions: import them one after the other.";
     [$("imFCounts").placeholder, $("imFCells").placeholder] = FLAT_PH[imKind()];
     if ($("imFCounts").value.trim() || $("imFCells").value.trim()) st.imFPending = inspectFlat();
   }
+  const has = (...ids) => ids.some((id) => $(id).value.trim());
+  if (imKind() === "xenium" && has("imXCells", "imXCounts", "imXExp", "imXDapi")) st.imXPending = inspectXenium();
+  if (imKind() === "h5ad" && has("imH5")) st.imHPending = inspectH5();
+  if (imKind() === "visium" && has("imVDir")) st.imVPending = inspectVisium();
+  if (imKind() === "stereoseq" && has("imSDir")) st.imSPending = inspectStereo();
   imForm(); imSections(); autoGrowAll();
 }));
 function flatEntries() {  // the two fields as one slice
@@ -3029,7 +3035,7 @@ async function inspectFlat() {  // what the two files hold
   try { entries = flatEntries(); } catch (e) { st.imFSlices = st.imFKey = null; $("imFinfo").textContent = e.message; imSections(); return; }
   const key = imKind() + JSON.stringify(entries);
   if (key === st.imFKey && st.imFSlices) return;  // checked already
-  st.imFSlices = null; st.imFKey = null;
+  st.imFSlices = null; st.imFKey = null; imDefaultName("");
   if (!entries) { $("imFinfo").textContent = ""; imSections(); return; }
   if (!$("imFinfo").textContent) $("imFinfo").textContent = "checking…";
   try {
@@ -3045,7 +3051,7 @@ async function inspectFlat() {  // what the two files hold
 }
 async function inspectVisium() {  // which bins the Space Ranger output holds and how they will be analysed
   const dir = $("imVDir").value.trim(), key = dir;
-  st.imVSlices = null;
+  st.imVSlices = null; imDefaultName("");
   if (!dir) { $("imVinfo").textContent = ""; return; }
   $("imVinfo").textContent = "checking…";
   try {
@@ -3068,7 +3074,7 @@ async function inspectVisium() {  // which bins the Space Ranger output holds an
 $("imVDir").onchange = $("imVSeg").onchange = () => (st.imVPending = inspectVisium());
 async function inspectStereo() {  // which Stereo-seq files were found and what they give
   const entries = $("imSDir").value.split("\n").map((x) => x.trim()).filter(Boolean), key = JSON.stringify(entries);
-  st.imSSlices = null;
+  st.imSSlices = null; imDefaultName("");
   if (!entries.length) { $("imSinfo").textContent = ""; return; }
   $("imSinfo").textContent = "checking…";
   try {
@@ -3120,6 +3126,19 @@ document.querySelectorAll("#imDlg [data-pick]").forEach((b) => (b.onclick = asyn
   const target = $(b.dataset.target), had = b.dataset.append ? target.value.split("\n").map((s) => s.trim()).filter(Boolean) : [];
   target.value = [...had, ...paths.filter((p) => !had.includes(p))].join("\n"); target.dispatchEvent(new Event("change"));
 }));
+// a path pasted with quotes (Windows "Copy as path") or with escaped spaces (a macOS / Linux terminal) is cleaned as it
+// comes in: the file is found and the sample name is taken from its name
+function cleanPathLine(l) {
+  let t = l.trim();
+  const m = t.match(/^(["'])(.*)\1$/); if (m) t = m[2].trim();
+  if (/^[\/~]/.test(t)) t = t.replace(/\\ /g, " ");  // only a POSIX path: in a Windows path "\" is the separator
+  return t;
+}
+function cleanPathField(el) {
+  const v = el.value, c = v.split("\n").map((l) => (/^\s*["']|\\ /.test(l) ? cleanPathLine(l) : l)).join("\n");
+  if (c !== v) el.value = c;
+}
+document.querySelectorAll("#imDlg [data-pick]").forEach((b) => { const t = $(b.dataset.target); if (t) t.addEventListener("input", () => cleanPathField(t)); });
 const baseName = (p) => p.replace(/[\\/]+$/, "").split(/[\\/]/).pop().replace(/\.(h5ad|rds|rda|rdata|ome\.tif|tif)$/i, "").replace(/[^A-Za-z0-9_.-]+/g, "_");  // the whole name: shortened names clashed
 function xeniumEntries() {  // the fields as import entries: one slice field by field, or files matched by name
   const L = (id) => $(id).value.split("\n").map((s) => s.trim()).filter(Boolean);
@@ -3132,7 +3151,8 @@ function xeniumEntries() {  // the fields as import entries: one slice field by 
 async function inspectXenium() {  // the slices found in the files and folders given
   const entries = xeniumEntries(), key = JSON.stringify(entries);
   if (key === st.imXKey && st.imXSlices) return;  // checked already: nothing changes (the dialog does not jump)
-  st.imXSlices = null; st.imXKey = null; if (!entries.length) { $("imXinfo").textContent = ""; imSections(); return; }
+  st.imXSlices = null; st.imXKey = null; imDefaultName("");  // the name of the files given before goes with them
+  if (!entries.length) { $("imXinfo").textContent = ""; imSections(); return; }
   if (!$("imXinfo").textContent) $("imXinfo").textContent = "checking…";
   try {
     const r = await post("/api/import/inspect", { kind: "xenium", entries });
@@ -3151,11 +3171,15 @@ document.querySelectorAll("#imX textarea.xin").forEach((x) => {
   x.onchange = () => (st.imXPending = inspectXenium());
   x.oninput = soon(() => (st.imXPending = inspectXenium()));  // checked while typing or pasting, before Import is clicked
 });
-$("imH5").onchange = async () => {
-  const h5ad = $("imH5").value.split("\n").map((s) => s.trim()).filter(Boolean); if (!h5ad.length) return;
+async function inspectH5() {  // the h5ad / RDS files given: cells, genes, the columns that can split them
+  const h5ad = flatField("imH5"), key = JSON.stringify(h5ad);
+  if (key === st.imHKey) return;  // checked already: the section choice stays
+  st.imHKey = key; st.imCols = null; imDefaultName("");
+  if (!h5ad.length) { $("imHinfo").textContent = ""; return; }
   $("imHinfo").textContent = "checking…";
   try {
     const r = await post("/api/import/inspect", { kind: "h5ad", h5ad });
+    if (JSON.stringify(flatField("imH5")) !== key) return;  // edited meanwhile: its own check follows
     st.imCols = r.columns;
     $("imHinfo").textContent = `${r.n_cells.toLocaleString()} cells in ${r.files.length} file(s); ` +
       r.files.map((f) => `${f.n_genes} genes, counts from ${f.counts_layer}, coordinates ${f.coordinates ? [].concat(f.coordinates).join("/") : "NOT FOUND"}`).join("; ");
@@ -3164,8 +3188,10 @@ $("imH5").onchange = async () => {
       Object.entries(r.columns).forEach(([c, v]) => { const o = document.createElement("option"); o.value = c; o.textContent = `${c} (${v.length} value${v.length === 1 ? "" : "s"})`; sel.append(o); });
     }
     imDefaultName(baseName(h5ad[0]));
-  } catch (e) { $("imHinfo").textContent = e.message; }
-};
+  } catch (e) { if (JSON.stringify(flatField("imH5")) === key) { $("imHinfo").textContent = e.message; st.imHKey = null; } }  // a retry checks again
+}
+$("imH5").onchange = () => (st.imHPending = inspectH5());
+$("imH5").oninput = soon(() => (st.imHPending = inspectH5()));  // checked while typing or pasting, before Import is clicked
 $("imSecCol").onchange = () => {  // the sections of the chosen column, each with a check box (several: a project)
   const vals = (st.imCols || {})[$("imSecCol").value] || [];
   const box = $("imSecList"); box.textContent = ""; $("imSecRow").hidden = !vals.length; $("imSecAll").checked = false;
@@ -3295,6 +3321,7 @@ async function importSample() {  // returns true when the sample was imported
   if (isFlat() && st.imFPending) await st.imFPending;
   if (imKind() === "visium" && st.imVPending) await st.imVPending;
   if (imKind() === "stereoseq" && st.imSPending) await st.imSPending;
+  if (imKind() === "h5ad" && st.imHPending) await st.imHPending;
   const kind = imKind(), name = $("imName").value.trim() || st.imDefault || "";
   const images = imgMode() === "file" ? $("imNewImg").value.split("\n").map((s) => s.trim()).filter(Boolean) : [];
   const image = images.length > 1 ? images : (images[0] || "");
