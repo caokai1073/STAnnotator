@@ -389,13 +389,17 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
      means and detection on all cells), genes ranked by AUC with log2 fold change and FDR. With pooled slices the
      change is checked in every slice that has both groups, or, when the groups are different slices, every slice
      of the group against every slice of the reference; with one slice per side the app says that a slice effect
-     cannot be told from a group effect. Click a gene to color the map by it.
+     cannot be told from a group effect. Click a gene to color the map by it. Group **All** runs this for every
+     group of the grouping at once, each against the other cells (groups under 30 cells skipped; up to 5,000 cells
+     per side in the test, so that many groups take seconds to a minute or two): the top up and down genes of each
+     group, and every group's genes in Save CSV (column `group`).
    - **Top genes**: every group against the rest (what sets each niche or cluster apart).
    - **Composition**: how one grouping splits over another (cell types per niche, niches per region, niches per
      slice or per condition, with every slice's own bar), as shares or as log2 enrichment over independence.
    DE genes and Top genes also show a **Dot plot** (one row per group, dot size = share of cells detecting the gene,
-   color = its mean expression scaled per gene; the DE group first): the number in the window sets how many genes the
-   table and the plot show (DE: 5–60, the plot the top N up and down; Top genes: 1–15 per group), **Save figure…**
+   color = its mean expression scaled per gene; for one DE comparison only its two sides, the group and the reference
+   or all other cells): the number in the window sets how many genes the table and the plot show (DE: 5–60, the plot
+   the top N up and down; DE of All: 1–30 per group; Top genes: 1–15 per group), **Save figure…**
    writes the plot as PDF, and a click on a gene colors the map by it. **Last result** reopens the last result of
    the analysis chosen in the tab (DE genes, Top genes or Composition; in Signaling, Interactions or Compare groups).
    **Ask Agent** asks the agent to interpret the result (it calls the same analysis through `de_genes`,

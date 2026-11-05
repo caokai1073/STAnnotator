@@ -1270,20 +1270,22 @@ async def api_claude_analysis(req: Request):
     q = b["request"]
     args = {k: json.dumps(q.get(k), ensure_ascii=False) for k in ("by", "group", "reference", "rows", "cols", "scope",
                                                                   "split", "resource")}
+    if q.get("group") == "__all__":  # every group against the other cells
+        args["group"] = '"all"'
     args["within"] = json.dumps(q.get("within") or None, ensure_ascii=False)
     return _json(_ask_claude(s, ANALYSIS_ASK[q["kind"]].format(**args) + ANALYSIS_ASK_END))
 
 
 async def api_analysis_dots(req: Request):
     """Dot plot data of genes over the groups of a grouping: {session, version, scope, selection, by, genes, within,
-    first}."""
+    first, compare ({group, reference}: only the two sides of a DE comparison)}."""
     from . import analysis
     b = await req.json()
 
     def work():
         c = _analysis_cells(b)
         within = {k: v for k, v in (b.get("within") or {}).items() if v not in (None, "", [])}
-        return analysis.dots(c, b["by"], list(b["genes"])[:200], within, tuple(b.get("first") or ()))
+        return analysis.dots(c, b["by"], list(b["genes"])[:200], within, tuple(b.get("first") or ()), compare=b.get("compare"))
     try:
         return _json(await asyncio.to_thread(work))
     except (ValueError, KeyError) as e:

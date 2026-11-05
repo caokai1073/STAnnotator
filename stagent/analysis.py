@@ -11,6 +11,8 @@ de(): genes that differ between a group of cells and the rest (or another group)
   group expresses the gene more than a cell of the reference; 0.5 = no difference) and log2 fold change of the
   normalized counts. Pooled slices: the direction of the change is checked in every slice that has both groups, or,
   when the groups are made of different slices, the slices of the group are compared with those of the reference.
+de_all(): de() of every group of a grouping against the other cells, in one run (group "all"); the test on up to
+  ALL_TEST_CELLS cells per side, so that many groups take seconds to a minute or two.
 markers(): the top genes of every group of a grouping against the rest of the cells.
 crosstab(): how the cells of one grouping split over another (cell types per niche, niches per slice, ...), with the
   enrichment over what independence predicts and, for slice-level rows, every slice's own shares.
@@ -22,6 +24,10 @@ import numpy as np, pandas as pd, scipy.sparse as sp
 from . import config, embedding, model, niches as nmod, projects
 
 MAX_TEST_CELLS = 20000
+ALL_TEST_CELLS = 5000   # per side when every group is compared (de_all): quicker, the AUC hardly moves
+ALL_MIN_CELLS = 30      # smaller groups are skipped by de_all
+ALL_MAX_ROWS = 1000000  # de_all's full table beyond this many rows (genes x groups): significant genes only
+ALL = ("all", "__all__")  # group "all" (unless a group is called so): every group against the other cells
 MIN_CELLS = 10       # smallest group compared, and smallest group per slice for the per-slice check
 PSEUDO = 0.01        # pseudocount (normalized counts per 100) for the fold change
 BUILTIN = ["cell type", "lineage", "region", "niche", "leiden", "selection", "slice"]
@@ -236,9 +242,12 @@ def _rows(t, n):
 
 def de(c, by, group, reference="rest", within=None, top=20, full=False):
     """DE genes of group (a value of grouping by, or a list of values) against reference ("rest" = every other cell
-    with a value of by, or a value / list), among the cells in within ({grouping: value(s)})."""
-    w = _within(c, within)
+    with a value of by, or a value / list), among the cells in within ({grouping: value(s)}). group "all": every
+    group against the other cells (de_all)."""
     col = _column(c, by)
+    if isinstance(group, str) and group in ALL and group not in set(col[pd.notna(col)]):
+        return de_all(c, by, within, top, full)
+    w = _within(c, within)
     a = _mask(c, by, group) & w
     b = (pd.notna(col) & ~_mask(c, by, group) if reference in (None, "", "rest") else _mask(c, by, reference)) & w
     if (a & b).any():
@@ -253,6 +262,45 @@ def de(c, by, group, reference="rest", within=None, top=20, full=False):
            "note": NOTE}
     if full:
         res["table"] = t.sort_values("auc", ascending=False)
+    return res
+
+
+def de_all(c, by, within=None, top=20, full=False, min_cells=ALL_MIN_CELLS, max_cells=ALL_TEST_CELLS):
+    """DE genes of every group of grouping by against the other cells (within the filter), as de() gives them for
+    one group: per group the top up and down genes, counts and the per-slice check. full: the gene table of every
+    group (column group first)."""
+    w = _within(c, within)
+    col = _column(c, by)
+    vc = pd.Series(col[w & pd.notna(col)]).value_counts()
+    if len(vc) < 2:
+        raise ValueError(f"{by} has only one value here ({', '.join(map(str, vc.index))}): nothing to compare")
+    groups, tables, skipped = [], [], []
+    for g, n in vc.items():
+        a = w & (col == g)
+        b = w & pd.notna(col) & (col != g)
+        if n < min_cells or b.sum() < MIN_CELLS:
+            skipped.append(str(g))
+            continue
+        t, info = _compare(c, a, b, max_cells=max_cells)
+        sig = t.fdr < 0.05
+        up = t[sig & (t.auc > 0.5) & (t.log2fc > 0)].sort_values("auc", ascending=False)
+        down = t[sig & (t.auc < 0.5) & (t.log2fc < 0)].sort_values("auc")
+        groups.append({"group": str(g), **info, "n_up": int(len(up)), "n_down": int(len(down)),
+                       "up": _rows(up, top), "down": _rows(down, top)})
+        if full:
+            tables.append(t.sort_values("auc", ascending=False).assign(group=str(g)))
+    if not groups:
+        raise ValueError(f"no {by} group has {min_cells} cells or more here")
+    res = {"scope": "project" if c.pid else "slice", "by": by, "group": "all", "reference": "rest",
+           "within": within or {}, "all": True, "groups": groups, "skipped_small": skipped,
+           "max_test_cells": max_cells, "note": NOTE}
+    if full:
+        tab = pd.concat(tables, ignore_index=True)
+        tab = tab[["group"] + [k for k in tab.columns if k != "group"]]
+        if len(tab) > ALL_MAX_ROWS:
+            tab = tab[tab.fdr < 0.05]
+            res["table_note"] = "the table holds the genes with FDR < 0.05 (all genes of every group would be too many rows)"
+        res["table"] = tab
     return res
 
 
@@ -319,21 +367,34 @@ def crosstab(c, rows, cols, within=None, top_cols=None):
     return res
 
 
-def dots(c, by, genes, within=None, first=(), max_groups=25):
+def dots(c, by, genes, within=None, first=(), max_groups=25, compare=None):
     """Dot plot data: for every group of grouping by (within the filter; the groups in first, then the largest, at
-    most max_groups) the share of its cells detecting each gene and the mean log-normalized expression."""
+    most max_groups, or all of first) the share of its cells detecting each gene and the mean log-normalized expression. compare =
+    {"group", "reference"} (values or lists, reference "rest"): only the two sides of that comparison, the rest of
+    the cells as one row "all other cells"."""
     col = _column(c, by)
     m = _within(c, within) & pd.notna(col)
     vc = pd.Series(col[m]).value_counts()
-    order = [g for g in first if g in vc.index] + [g for g in vc.index if g not in first]
-    order = order[:max_groups]
     pos = {g: i for i, g in enumerate(c.genes)}
     missing = [g for g in genes if g not in pos]
     if missing:
         raise ValueError(f"not in the panel: {', '.join(missing[:5])}")
-    gi = {g: i for i, g in enumerate(order)}
-    rows = np.where(m & np.isin(col, order))[0]
-    G = sp.csr_matrix((np.ones(len(rows), np.float32), ([gi[x] for x in col[rows]], rows)), shape=(len(order), len(col)))
+    if compare:
+        name = lambda v: v if isinstance(v, str) else " + ".join(map(str, v))
+        a = m & _mask(c, by, compare["group"])
+        ref = compare.get("reference") or "rest"
+        b = m & ~a if ref == "rest" else m & _mask(c, by, ref)
+        order = [name(compare["group"]), "all other cells" if ref == "rest" else name(ref)]
+        sides = [np.where(a)[0], np.where(b)[0]]
+        rows = np.concatenate(sides)
+        G = sp.csr_matrix((np.ones(len(rows), np.float32), (np.repeat([0, 1], [len(x) for x in sides]), rows)),
+                          shape=(2, len(col)))
+    else:
+        order = [g for g in first if g in vc.index] + [g for g in vc.index if g not in first]
+        order = order[:max(max_groups, len(first))]  # every group of a result (first) has its row
+        gi = {g: i for i, g in enumerate(order)}
+        rows = np.where(m & np.isin(col, order))[0]
+        G = sp.csr_matrix((np.ones(len(rows), np.float32), ([gi[x] for x in col[rows]], rows)), shape=(len(order), len(col)))
     X = c.X[:, [pos[g] for g in genes]].tocsc()
     n = np.asarray(G.sum(1)).ravel()
     det = X.copy()
@@ -341,12 +402,16 @@ def dots(c, by, genes, within=None, first=(), max_groups=25):
     pct = np.asarray((G @ det).todense()) / n[:, None]
     mean = np.asarray((G @ X).todense()) / n[:, None]
     return {"by": by, "groups": [str(g) for g in order], "n_cells": [int(x) for x in n], "genes": list(genes),
-            "pct": np.round(pct, 3).tolist(), "mean": np.round(mean, 3).tolist(), "n_groups_total": int(len(vc))}
+            "pct": np.round(pct, 3).tolist(), "mean": np.round(mean, 3).tolist(),
+            "n_groups_total": len(order) if compare else int(len(vc))}
 
 
 # ---------------- the analyses the user ran in the app ----------------
 def headline(kind, r):
     """A few lines of a result, for the log the agent reads."""
+    if kind == "de" and r.get("all"):
+        return {"groups": {g["group"]: {"up": [x["gene"] for x in g["up"][:5]], "down": [x["gene"] for x in g["down"][:3]]}
+                           for g in r["groups"][:30]}}
     if kind == "de":
         return {"n_group": r["n_group"], "n_reference": r["n_reference"], "n_up": r["n_up"], "n_down": r["n_down"],
                 "top_up": [x["gene"] for x in r["up"][:8]], "top_down": [x["gene"] for x in r["down"][:8]],

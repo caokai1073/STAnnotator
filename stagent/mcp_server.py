@@ -1176,7 +1176,9 @@ def de_genes(by: str, group: Union[str, list], reference: Union[str, list] = "re
     "rest" (every other cell with a value of by) or another value (or list); within = {grouping: value(s)} limits
     both sides (e.g. by="region", group="mucosa", within={"cell type": "Fibroblasts"}). Wilcoxon test on
     log-normalized expression; returns the top up and down genes ranked by AUC, with log2 fold change, detection
-    rates, FDR and, with several slices, the per-slice check. scope as in analysis_groupings."""
+    rates, FDR and, with several slices, the per-slice check. group="all": every group of by against the other
+    cells in one run (groups under 30 cells skipped; the test on up to 5,000 cells per side), the top genes per
+    group. scope as in analysis_groupings."""
     from . import analysis
     c = _cells(scope, _uses_selection(by, within))
     return _j(analysis.de(c, by, group, reference, within, max(1, min(int(top), 100))))

@@ -68,6 +68,7 @@ table.an th { text-align: right; font-weight: 600; color: var(--muted); padding:
 table.an td { text-align: right; padding: 3px 8px; border-bottom: 1px solid var(--line); }
 table.an th:first-child, table.an td:first-child { text-align: left; }
 table.an td { white-space: nowrap; }
+table.an.deall td:nth-child(2), table.an.deall th:nth-child(2) { text-align: left; } table.an.deall tr.grpstart td { border-top: 2px solid var(--muted); }
 table.an td.genes { text-align: left; white-space: normal; }
 table.an td.heat { min-width: 44px; }
 .gene { cursor: pointer; color: var(--accent); margin-right: 8px; white-space: nowrap; }
@@ -2593,7 +2594,8 @@ async function adviceRerun(x, act) {  // the advice's settings, put in their tab
     await loadAnOptions(true);
     if (p.kind) { set("aKind", p.kind); syncAnKind(); }
     if (p.by) { set("aBy", p.by); anGroups(); }
-    set("aGroup", p.group); anGroups(); if (p.group) set("aGroup", p.group); set("aRef", p.reference || "rest");
+    const grp = p.group === "all" && !((AN.opts && AN.opts.groupings[$("aBy").value]) || []).includes("all") ? "__all__" : p.group;
+    set("aGroup", grp); anGroups(); if (grp) set("aGroup", grp); anGroups(); set("aRef", p.reference || "rest");
     set("aRows", p.rows); set("aCols", p.cols); within("aWBy", "aWVal", p.within);
   } else if (act.tab === "signal") {
     if (p.scope) set("sScope", p.scope);
@@ -3471,7 +3473,8 @@ const HELP = `
 
 <h3>Compare</h3><ul>
 <li>For this slice or all slices pooled. Three analyses:<ul>
-  <li><b>DE genes</b> of one group against the other cells or another group.<ul>
+  <li><b>DE genes</b> of one group against the other cells or another group, or of every group at once (Group: <b>All</b>,
+    each against the other cells).<ul>
     <li>A group: a cell type, lineage, region, niche, Leiden cluster, the cells selected in the UMAP window, a slice,
       or a metadata value such as condition.</li>
     <li>Optionally only within e.g. one cell type.</li>
@@ -3481,7 +3484,7 @@ const HELP = `
     condition), as shares or as enrichment.</li></ul></li>
 <li>Plots and output:<ul>
   <li>DE genes and Top genes also show a <b>Dot plot</b>: the share of cells detecting each gene and its mean
-    expression, per group.</li>
+    expression, per group (for one comparison, only its two sides).</li>
   <li>The number next to it sets how many genes the table and the plot show (DE: 5–60; Top genes: 1–15 per group).</li>
   <li><b>Save figure…</b> writes the plot as PDF; <b>Save CSV…</b> keeps every gene.</li>
   <li>Click a gene to color the map by it; <b>Ask Agent</b> asks the agent what the result may mean.</li>
@@ -4396,8 +4399,8 @@ async function paintTile(t, mode, sel) {  // the image, then the cells: light gr
 }
 $("allSamples").onclick = () => openGallery(true);
 // ---------------- Compare: DE genes, top genes per group, composition (one slice or all slices pooled) ----------------
-const AN = { opts: null, key: "", last: null, req: null, view: "", by: {}, n: { de: 20, markers: 5, run: 20, compare: 20, circle: 40 } };
-const AN_N = { de: [5, 60], markers: [1, 15], run: [5, 60], compare: [5, 80], circle: [5, 300] };  // the dialog's number: least, most
+const AN = { opts: null, key: "", last: null, req: null, view: "", by: {}, n: { de: 20, deall: 5, markers: 5, run: 20, compare: 20, circle: 40 } };
+const AN_N = { de: [5, 60], deall: [1, 30], markers: [1, 15], run: [5, 60], compare: [5, 80], circle: [5, 300] };  // the dialog's number: least, most
 const AN_LABEL = { "cell type": "cell type", leiden: "Leiden cluster", selection: "UMAP selection" };
 const anLabel = (g) => AN_LABEL[g] || g;
 const AN_LEGEND = { "cell type": "type", lineage: "lineage", niche: "niche", leiden: "leiden", region: "region" };
@@ -4443,11 +4446,13 @@ async function loadAnOptions(force) {  // the groupings of the open annotation (
     sel ? "UMAP selection available" : null, ...miss].filter(Boolean).join(" · ");
   $("aRun").disabled = !many.length;
 }
-function anGroups() {
-  const vals = (AN.opts && AN.opts.groupings[$("aBy").value]) || [];
-  fillSelect("aGroup", vals.map((v) => [v, v]));
-  const ref = vals.filter((v) => v !== $("aGroup").value);
+function anGroups() {  // Group: one value, or All (every group against the other cells); Versus: the rest or another value
+  const vals = (AN.opts && AN.opts.groupings[$("aBy").value]) || [], cur = $("aGroup").value;
+  fillSelect("aGroup", [["__all__", "All (each against the other cells)"], ...vals.map((v) => [v, v])],
+             cur === "__all__" || vals.includes(cur) ? cur : vals[0]);
+  const all = $("aGroup").value === "__all__", ref = all ? [] : vals.filter((v) => v !== $("aGroup").value);
   fillSelect("aRef", ref.map((v) => [v, v]), undefined, ["rest", "all other cells"]);
+  $("aRef").disabled = all;
 }
 function anWithin() {
   const by = $("aWBy").value, vals = by && AN.opts ? AN.opts.groupings[by] || [] : [];
@@ -4460,7 +4465,7 @@ function syncAnKind() {
   $("aByLbl").textContent = k === "markers" ? "Group by" : "Compare by";
   setLabel($("aRun"), { de: "Find DE genes", markers: "Find top genes", composition: "Show composition" }[k]);
   $("aHint").textContent = {
-    de: "Wilcoxon test on log-normalized expression; genes ranked by AUC (0.5 = no difference). Click a gene to color the map by it.",
+    de: "Wilcoxon test on log-normalized expression; genes ranked by AUC (0.5 = no difference). Group All compares every group with the other cells at once. Click a gene to color the map by it.",
     markers: "Every group against the other cells: what sets each niche, cluster or region apart.",
     composition: "Shares of each value per row, and how much more or less common it is than if the two were unrelated.",
   }[k];
@@ -4540,7 +4545,41 @@ async function showAnalysis() {
   const where = [r.scope === "project" ? "all slices pooled" : "this slice", within && `only ${within}`].filter(Boolean).join(" · ");
   $("anBody").textContent = ""; $("anLegend").textContent = ""; $("anNote").textContent = r.note || "";
   $("anAsk").hidden = !(st.desktop || st.chatAvailable);
-  if (q.kind === "de") {
+  if (q.kind === "de" && r.all) {  // every group against the other cells
+    $("anTitle").textContent = `Every ${anLabel(r.by)} vs the other cells`;
+    $("anSub").textContent = `${where} · ${r.groups.length} groups` + (r.skipped_small.length ? ` · skipped (under 30 cells): ${r.skipped_small.join(", ")}` : "") +
+      ` · test on up to ${r.max_test_cells.toLocaleString()} cells per side`;
+    const dir = AN.view || "up", N = AN.n.deall;
+    anSeg([["up", "Up"], ["down", "Down"], ["dots", "Dot plot"]], dir, (v) => { AN.view = v; showAnalysis(); });
+    $("anNWrap").hidden = false; $("anNLabel").textContent = "genes per group";
+    Object.assign($("anN"), { min: 1, max: 30, value: N });
+    if (dir === "dots") {  // the top up genes of every group, group by group, over all groups
+      const genes = [], breaks = [];
+      r.groups.forEach((g) => { const mine = g.up.slice(0, N).map((x) => x.gene).filter((x) => !genes.includes(x));
+        if (mine.length) { breaks.push([genes.length, g.group]); genes.push(...mine); } });
+      $("anFig").hidden = false;
+      $("anNote").textContent = `The top ${N} up gene(s) of each group (by AUC; a gene already shown for an earlier group is not repeated). Click a gene to color the map by it.`;
+      if (!$("anDlg").open) $("anDlg").showModal();
+      if (!genes.length) $("anBody").textContent = "No significant genes.";
+      else await showDots(genes.slice(0, 200), { breaks: breaks.length <= 30 ? breaks : [] }, r.groups.map((g) => g.group));
+      return;
+    }
+    const first = r.groups.find((g) => g[dir].length), slc = first && ("slices_same_direction" in first[dir][0] ? "slices_same_direction" : "slices_separate" in first[dir][0] ? "slices_separate" : null);
+    const head = ["Group", "Gene", "AUC", "log<sub>2</sub> FC", "% group", "% other cells", "Mean group", "Mean other", "FDR"];
+    if (slc) head.push(slc === "slices_same_direction" ? "Same in slices" : "Slices apart");
+    const rows = [], starts = [];
+    r.groups.forEach((g) => {
+      const list = g[dir].slice(0, N), label = `${g.group} (${g.n_group.toLocaleString()} cells, ${g[dir === "up" ? "n_up" : "n_down"]} ${dir})`;
+      starts.push(rows.length);
+      if (!list.length) { rows.push([label, "none", "", "", "", "", "", "", "", ...(slc ? [""] : [])]); return; }
+      list.forEach((x, i) => rows.push([i ? "" : label, geneLink(x.gene), fmt(x.auc, 3), fmt(x.log2fc), fmt(100 * x.pct_group, 0), fmt(100 * x.pct_reference, 0),
+        fmt(x.mean_group), fmt(x.mean_reference), x.fdr ? Number(x.fdr).toExponential(1) : "< 1e-300", ...(slc ? [slc === "slices_same_direction" ? x[slc] : x[slc] ? "yes" : "no"] : [])]));
+    });
+    const tb = anTable(head, rows); tb.classList.add("deall"); $("anBody").append(tb);
+    const trs = tb.querySelectorAll("tr"); starts.forEach((k) => { if (k) trs[k + 1].classList.add("grpstart"); });
+    $("anNote").textContent = `The ${N} strongest gene(s) per group (up to 30 with the number above); Save CSV has every group's genes` +
+      (r.table_note ? ` (${r.table_note})` : "") + ". " + r.note;
+  } else if (q.kind === "de") {
     const ref = r.reference === "rest" ? "all other cells" : r.reference;
     $("anTitle").textContent = `${r.group} vs ${ref}`;
     $("anSub").textContent = `${anLabel(r.by)} · ${where} · ${r.n_group.toLocaleString()} vs ${r.n_reference.toLocaleString()} cells` +
@@ -4553,12 +4592,11 @@ async function showAnalysis() {
     if (dir === "dots") {
       const up = r.up.slice(0, Math.min(N, 30)).map((x) => x.gene), down = r.down.slice(0, Math.min(N, 30)).map((x) => x.gene);
       $("anFig").hidden = false;
-      $("anNote").textContent = `Top ${up.length} up and ${down.length} down genes (by AUC) over the ${anLabel(r.by)} groups; ${r.group}` +
-        (r.reference !== "rest" ? ` and ${r.reference}` : "") + " first. Click a gene to color the map by it.";
+      $("anNote").textContent = `Top ${up.length} up and ${down.length} down genes (by AUC) in the two sides compared: ${r.group} and ${ref}. Click a gene to color the map by it.`;
       if (!$("anDlg").open) $("anDlg").showModal();
       if (!up.length && !down.length) { $("anBody").textContent = "No significant genes."; }
       else await showDots([...up, ...down], { highlight: [r.group], breaks: [[0, "up"], ...(down.length ? [[up.length, "down"]] : [])] },
-                          [r.group, ...(r.reference !== "rest" ? [r.reference] : [])]);
+                          [], { group: r.group, reference: r.reference });
       return;
     }
     const list = r[dir].slice(0, N), slc = list.length && ("slices_same_direction" in list[0] ? "slices_same_direction" : "slices_separate" in list[0] ? "slices_separate" : null);
@@ -4643,7 +4681,7 @@ async function showAnalysis() {
 $("anClose").onclick = () => $("anDlg").close();
 $("anCsv").onclick = async () => {
   const r = AN.last, q = AN.req; if (!r) return;
-  const part = q.kind === "de" ? `de_${r.group}_vs_${r.reference}` : q.kind === "markers" ? `top_genes_by_${r.by}`
+  const part = q.kind === "de" ? (r.all ? `de_every_${r.by}` : `de_${r.group}_vs_${r.reference}`) : q.kind === "markers" ? `top_genes_by_${r.by}`
     : q.kind === "run" ? `communication_${r.by}` : q.kind === "compare" ? `communication_by_${r.split}` : `${r.cols}_per_${r.rows}`;
   const name = `${st.sample.sample_id}_${part}`.replace(/[^A-Za-z0-9_.-]+/g, "_") + ".csv", url = `/api/analysis/${r.id}.csv?name=${encodeURIComponent(name)}`;
   if (st.remote) { await saveDownload(name, url); return; }
@@ -4956,12 +4994,12 @@ function dotPlotSVG(d, opts = {}) {  // d: {groups, n_cells, genes, pct, mean}; 
   out.push("</svg>");
   return out.join("");
 }
-async function showDots(genes, opts, first) {  // fetch the dot plot data of the result shown and draw it
-  const q = AN.req, box = $("anBody");
+async function showDots(genes, opts, first, compare) {  // fetch the dot plot data of the result shown and draw it
+  const q = AN.req, box = $("anBody");  // compare: only the two sides of a DE comparison
   box.textContent = "Drawing…";
   try {
     const d = await post("/api/analysis/dots", { session: q.session, version: q.version, scope: q.scope, selection: AN.sel, sessions: q.sessions,
-      by: q.by, genes, within: q.within, first });
+      by: q.by, genes, within: q.within, first, compare });
     if (AN.req !== q || !$("anDlg").open) return;  // another result was opened, or the window closed, meanwhile
     box.innerHTML = dotPlotSVG(d, opts);
     box.querySelectorAll(".dpgene").forEach((t) => (t.onclick = () => colorByGene(t.dataset.gene)));
@@ -4982,7 +5020,7 @@ async function saveClientText(name, text, type) {  // a file made in the page: S
 $("anFig").onclick = () => {
   if (!AN.svg) return;
   const r = AN.last, k = AN.req.kind;
-  const part = k === "de" ? `de_${r.group}_vs_${r.reference}_dotplot` : k === "markers" ? `top_genes_by_${r.by}_dotplot`
+  const part = k === "de" ? (r.all ? `de_every_${r.by}_dotplot` : `de_${r.group}_vs_${r.reference}_dotplot`) : k === "markers" ? `top_genes_by_${r.by}_dotplot`
     : k === "run" ? `communication_${r.by}_${AN.view}` : `communication_by_${r.split}_${AN.view}`;
   saveFigure(`${st.sample.sample_id}_${part}.pdf`.replace(/[^A-Za-z0-9_.-]+/g, "_"), AN.svg);
 };
@@ -4998,7 +5036,8 @@ async function saveFigure(name, svg) {  // an SVG of the page as PDF (made on th
   } catch (e) { toast(e.message, 6000); }
 }
 $("anN").onchange = () => {  // also fires when the box loses focus: redraw only when the number changed
-  const kind = AN.req && (AN.req.kind === "run" && AN.view === "circle" ? "circle" : AN.req.kind), lim = AN_N[kind] || [1, 15];
+  const kind = AN.req && (AN.req.kind === "run" && AN.view === "circle" ? "circle" : AN.req.kind === "de" && AN.last && AN.last.all ? "deall" : AN.req.kind),
+    lim = AN_N[kind] || [1, 15];
   const n = Math.max(lim[0], Math.min(lim[1], Math.round(+$("anN").value) || lim[0]));
   $("anN").value = n;
   if (n === AN.n[kind]) return;
