@@ -15,6 +15,7 @@ marker_lists/
 # planning notes (only README.md is published from the top level)
 /*.md
 !/README.md
+!/CONTRIBUTING.md
 share/
 
 # app builds
@@ -25,5 +26,5 @@ share/
 packaging/macos/AppIcon.icns
 packaging/windows/STAnnotator.ico
 
-# the public repository (website, README, releases), filled by packaging/publish_public.py
+# the old checkout of the website-only public repository (before the source was published there)
 /public/

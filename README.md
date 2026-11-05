@@ -145,6 +145,18 @@ stagent mcp                 # the agent's tools, for Claude Code without the app
   (`ssh user@server ~/STAnnotator/.venv/bin/stagent remote-serve --check` prints JSON).
 - **Few cells on the H&E**: check the registration file and that cell coordinates are in micrometers.
 
+## Contributing
+
+Bug reports, ideas and pull requests are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md) for setting up the source
+and running the tests.
+
+## Citation
+
+If you use STAnnotator in published work, please cite it (the paper reference will be added here):
+STAnnotator, https://github.com/caokai1073/STAnnotator, and the version you used.
+
 ## License
 
-All rights reserved; the app is free to download and use. See [LICENSE](LICENSE).
+[PolyForm Noncommercial 1.0.0](LICENSE): free for research, teaching and other noncommercial use, including the source
+code; for commercial use, contact us through the [issues](https://github.com/caokai1073/STAnnotator/issues).
+Versions up to 0.2.42 remain under Apache 2.0.

@@ -2,7 +2,7 @@
 name = "stagent"
 dynamic = ["version"]
 description = "Spatial transcriptomics cell type annotation driven by natural-language spatial priors"
-license = "LicenseRef-Proprietary"
+license = "PolyForm-Noncommercial-1.0.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
