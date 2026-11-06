@@ -4992,7 +4992,7 @@ $("tRun").onclick = async () => {
   $("tRun").disabled = true; TR.running = true; $("tprogress").classList.add("show");
   try {
     const { job } = await post("/api/trajectory/run", b);
-    const j = await pollJob(job, $("tprogress"), $("tfill"), $("tstage"), $("tRun"), 600);
+    const j = await pollJob(job, $("tprogress"), $("tfill"), $("tstage"), $("tRun"), 300);  // most runs take seconds
     AN.last = j.result; AN.req = { ...b, selection: undefined }; AN.sel = b.selection; AN.view = "";
     AN.by[`trajectory_${m}`] = { last: AN.last, req: AN.req, sel: AN.sel }; syncLast();
     await loadTraj(); loadTrajOptions(true);

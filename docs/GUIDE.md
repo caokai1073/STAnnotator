@@ -456,11 +456,11 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
      central regions in the liver. Under a second for 100,000 cells.
    - **Pseudotime**: diffusion pseudotime (Haghverdi et al. 2016): a diffusion map of the neighbor graph of the
      cells' PCA (15 neighbors, adaptive Gaussian kernel, density-normalized, 10 components), and t = the diffusion
-     distance from the root group's mean, scaled to 0..1. Up to 300,000 cells the graph holds every cell; above, a
+     distance from the root group's mean, scaled to 0..1. Up to 1,000,000 cells the graph holds every cell; above, a
      random sample (the same for every root), and the other cells take the mean t of their neighbors that have one;
-     cells the root does not reach get none. About 5 s for 97,000 epithelial cells, 30 s for 356,000 cells; the PCA,
-     graphs and diffusion maps are kept, so another root, weight of space or composition on the same cells takes about
-     a second.
+     cells the root does not reach get none. About 3 s for 97,000 epithelial cells, 17 s for all 356,000 cells of a
+     section (with or without space); the PCA, graphs and diffusion maps are kept, so another root, weight of space or
+     composition on the same cells takes about a second (5 s for 356,000 cells).
    - **Expression + space**: the same on W = (1 - w) W_expression + w W_space, the spatial graph joining each cell's
      15 nearest cells in the tissue; **Weight of space** w from 0 (expression only) to 1 (the tissue alone).
    - Genes along it: each gene's correlation with the rank of t (rising, falling) and its mean in 20 bins of equal

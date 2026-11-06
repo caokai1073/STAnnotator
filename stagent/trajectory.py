@@ -10,7 +10,7 @@ Methods, on the cells of an analysis (one slice, or the pooled slices of a proje
               root group (the mean of its cells in the scaled diffusion components), scaled to 0..1.
   mixed       the same on a graph that also joins cells that are close in the tissue:
               W = (1 - alpha) W_expression + alpha W_space (alpha 0: expression only; 1: space only).
-Up to MAX_GRAPH_CELLS cells the graph holds every cell (about 5 s for 100,000); above, a random sample (the same for
+Up to MAX_GRAPH_CELLS cells the graph holds every cell (about 5 s for 100,000, 25 s for 350,000); above, a random sample (the same for
 every root) and the other cells take the mean t of their neighbors that have one. Cells in a part of the graph that
 the root does not reach get no t. The PCA, graphs and diffusion maps of the last cell sets are kept (_CACHE), so a new
 root, weight of space or composition on the same cells takes about a second. Each method keeps its own last run.
@@ -26,7 +26,8 @@ import numpy as np, scipy.sparse as sp
 K = 15                 # neighbors of the expression and the spatial graph
 N_PCS = 30
 N_DCS = 10             # diffusion components used for the pseudotime
-MAX_GRAPH_CELLS = 300000  # beyond: the graph of a random sample, the other cells placed by their neighbors
+MAX_GRAPH_CELLS = 1000000  # beyond: the graph of a random sample, the other cells placed by their neighbors
+EIG_TOL = 1e-6  # of the diffusion map's eigenvectors: the order is the same as at machine precision (rank r = 1.0)
 NBINS = 20
 MAX_GENE_CELLS = 30000
 MIN_DETECTED = 0.02    # genes detected in fewer cells than this share (of the cells on the trajectory) are left out
@@ -115,7 +116,7 @@ def diffusion_components(W, n_dcs=N_DCS):
     z[z == 0] = 1
     T = sp.diags(1 / np.sqrt(z)) @ Wn @ sp.diags(1 / np.sqrt(z))
     k = min(n_dcs + 1, W.shape[0] - 2)
-    lam, U = eigsh(T, k=k, which="LA", v0=np.random.default_rng(SEED).random(W.shape[0]))
+    lam, U = eigsh(T, k=k, which="LA", v0=np.random.default_rng(SEED).random(W.shape[0]), tol=EIG_TOL)
     o = np.argsort(-lam)
     lam, U = lam[o], U[:, o]
     psi = U / np.sqrt(z)[:, None]  # right eigenvectors of the transition matrix
