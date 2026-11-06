@@ -10,8 +10,10 @@ Methods, on the cells of an analysis (one slice, or the pooled slices of a proje
               root group (the mean of its cells in the scaled diffusion components), scaled to 0..1.
   mixed       the same on a graph that also joins cells that are close in the tissue:
               W = (1 - alpha) W_expression + alpha W_space (alpha 0: expression only; 1: space only).
-Above MAX_GRAPH_CELLS cells the diffusion map is computed on a random sample and the other cells take the mean t of
-their nearest sampled cells. Cells in a part of the graph that the root does not reach get no t.
+Up to MAX_GRAPH_CELLS cells the graph holds every cell (about 5 s for 100,000); above, a random sample (the same for
+every root) and the other cells take the mean t of their neighbors that have one. Cells in a part of the graph that
+the root does not reach get no t. The PCA, graphs and diffusion maps of the last cell sets are kept (_CACHE), so a new
+root, weight of space or composition on the same cells takes about a second. Each method keeps its own last run.
 
 Genes along t (gene_trends): each gene's correlation with the rank of t (rising and falling genes), and its mean in
 NBINS bins of equal cell numbers along t: the share of a gene's variance between bins (eta squared) finds genes that
@@ -24,7 +26,7 @@ import numpy as np, scipy.sparse as sp
 K = 15                 # neighbors of the expression and the spatial graph
 N_PCS = 30
 N_DCS = 10             # diffusion components used for the pseudotime
-MAX_GRAPH_CELLS = 60000
+MAX_GRAPH_CELLS = 300000  # beyond: the graph of a random sample, the other cells placed by their neighbors
 NBINS = 20
 MAX_GENE_CELLS = 30000
 MIN_DETECTED = 0.02    # genes detected in fewer cells than this share (of the cells on the trajectory) are left out
@@ -121,33 +123,41 @@ def diffusion_components(W, n_dcs=N_DCS):
     return psi[:, 1:] * (lam / (1 - lam))[None, :], lam
 
 
-def pseudotime(Z, xy, slices, root, alpha=0.0, k=K, n_dcs=N_DCS, max_cells=MAX_GRAPH_CELLS, progress=None):
+def pseudotime(Z, xy, slices, root, alpha=0.0, k=K, n_dcs=N_DCS, max_cells=MAX_GRAPH_CELLS, progress=None, cache=None):
     """Diffusion pseudotime from the root cells (mask), on the expression graph of Z (PCA) mixed with the spatial
-    graph by alpha. Returns (t in 0..1 with NaN where the root does not reach, info)."""
+    graph by alpha. Returns (t in 0..1 with NaN where the root does not reach, info). cache: a dict kept between runs
+    on the same cells (Z, xy, slices): the graphs and diffusion maps in it are reused, so a new root or composition
+    costs a second and a new alpha only its own graph mix."""
     say = progress or (lambda f, m: None)
     from scipy.sparse.csgraph import connected_components
+    c = cache if cache is not None else {}
     n = len(Z)
     if not root.any():
         raise ValueError("the root group has no cells among the cells of the trajectory")
-    rng = np.random.default_rng(SEED)
-    if n > max_cells:  # a sample, the root cells kept in proportion (at least 200 of them when there are)
-        r_idx, o_idx = np.where(root)[0], np.where(~root)[0]
-        nr = min(len(r_idx), max(200, int(max_cells * len(r_idx) / n)))
-        samp = np.sort(np.r_[rng.choice(r_idx, nr, replace=False), rng.choice(o_idx, max_cells - nr, replace=False)])
+
+    def get(key, fn):
+        if key not in c:
+            c[key] = fn()
+        return c[key]
+    if n > max_cells:  # a random sample for the graph (the same for every root), the other cells placed after
+        samp = get("samp", lambda: np.sort(np.random.default_rng(SEED).choice(n, max_cells, replace=False)))
+        tag = "s"
+        if not root[samp].any():  # a rare root: its cells join the sample (graphs of this run only)
+            samp, tag, c = np.union1d(samp, np.where(root)[0]), "r", {}
     else:
-        samp = np.arange(n)
-    Zs, xys, sls, rs = Z[samp], xy[samp], slices[samp], root[samp]
-    say(0.2, f"neighbor graph of {len(samp):,} cells")
+        samp, tag = np.arange(n), "a"
+    rs = root[samp]
+    say(0.2, f"neighbor graph of {len(samp):,} cells" + (" (kept from the last run)" if (tag, "We") in c or (tag, "Ws") in c else ""))
     W = sp.csr_matrix((len(samp), len(samp)))
     if alpha < 1:
-        W = W + (1 - alpha) * expression_graph(Zs, k)
+        W = W + (1 - alpha) * get((tag, "We"), lambda: expression_graph(Z[samp], k))
     if alpha > 0:
-        W = W + alpha * spatial_graph(xys, sls, k)
-    ncomp, comp = connected_components(W, directed=False)
-    reach = np.isin(comp, np.unique(comp[rs]))
+        W = W + alpha * get((tag, "Ws"), lambda: spatial_graph(xy[samp], slices[samp], k))
+    ncomp, comp = get((tag, "cc", alpha), lambda: connected_components(W, directed=False))
+    comps = tuple(int(x) for x in np.unique(comp[rs]))
+    sub = np.where(np.isin(comp, comps))[0]
     say(0.45, "diffusion map")
-    sub = np.where(reach)[0]
-    D, lam = diffusion_components(W[sub][:, sub], n_dcs)
+    D, lam = get((tag, "dm", alpha, comps), lambda: diffusion_components(W[sub][:, sub], n_dcs))
     r0 = D[rs[sub]].mean(0)
     ts = np.full(len(samp), np.nan)
     ts[sub] = np.sqrt(((D - r0) ** 2).sum(1))
@@ -155,30 +165,58 @@ def pseudotime(Z, xy, slices, root, alpha=0.0, k=K, n_dcs=N_DCS, max_cells=MAX_G
     ts = np.clip(ts / max(hi, 1e-12), 0, 1)
     t = np.full(n, np.nan)
     t[samp] = ts
-    if len(samp) < n:  # the other cells: the mean t of their nearest sampled cells (expression, and space when mixed)
+    if len(samp) < n:  # the other cells: the mean t of their neighbors that have one (expression, and space when mixed)
         say(0.75, "placing the other cells")
-        from scipy.spatial import cKDTree
-        rest = np.setdiff1d(np.arange(n), samp)
-        ok = np.isfinite(ts)
-        tv = []
+        lists = []
         if alpha < 1:
-            _, j = cKDTree(Zs[ok]).query(Z[rest], K)
-            tv.append(((1 - alpha), ts[ok][j].mean(1)))
+            from . import markers
+            lists.append((1 - alpha, get("nbr_all", lambda: np.asarray(markers.knn(Z, k, mode="auto")[1]))))
         if alpha > 0:
-            est = np.full(len(rest), np.nan)
-            for sl in np.unique(slices[rest]):
-                m, ms = slices[rest] == sl, (sls == sl) & ok
-                if ms.sum() >= K:
-                    _, j = cKDTree(xys[ms]).query(xy[rest][m], K)
-                    est[m] = ts[ms][j].mean(1)
-            tv.append((alpha, est))
-        num = sum(w * np.nan_to_num(v) for w, v in tv)
-        den = sum(w * np.isfinite(v) for w, v in tv)
-        with np.errstate(invalid="ignore"):
-            t[rest] = np.where(den > 0, num / np.where(den > 0, den, 1), np.nan)
+            lists.append((alpha, get("snbr_all", lambda: _spatial_neighbors(xy, slices, k))))
+        rest = np.setdiff1d(np.arange(n), samp)
+        for _ in range(8):  # cells whose neighbors are all unplaced take a value in a later round
+            todo = rest[np.isnan(t[rest])]
+            if not len(todo):
+                break
+            num, den = np.zeros(len(todo)), np.zeros(len(todo))
+            for w, nb in lists:
+                v = t[nb[todo]]
+                f = np.isfinite(v)
+                num += w * np.where(f, v, 0).sum(1) / np.maximum(f.sum(1), 1)
+                den += w * (f.sum(1) > 0)
+            new = np.where(den > 0, num / np.where(den > 0, den, 1), np.nan)
+            if not np.isfinite(new).any():
+                break
+            t[todo] = new
     info = {"n_graph_cells": int(len(samp)), "n_components": int(ncomp), "n_unreached": int(np.isnan(t).sum()),
             "eigenvalues": [round(float(x), 4) for x in lam]}
     return t, info
+
+
+def _spatial_neighbors(xy, slices, k=K):
+    """Each cell's k nearest cells in the tissue within its slice (itself where a slice has too few)."""
+    from scipy.spatial import cKDTree
+    out = np.tile(np.arange(len(xy))[:, None], (1, k))
+    for sl in np.unique(slices):
+        idx = np.where(slices == sl)[0]
+        kk = min(k, len(idx) - 1)
+        if kk >= 1:
+            out[idx, :kk] = idx[cKDTree(xy[idx]).query(xy[idx], kk + 1)[1][:, 1:]]
+    return out
+
+
+_CACHE = {}  # graphs of the last few cell sets ordered (trajectory.run), most recent last
+CACHE_SETS = 2
+
+
+def _cache_for(key):
+    if key in _CACHE:
+        _CACHE[key] = _CACHE.pop(key)
+    else:
+        _CACHE[key] = {}
+        while len(_CACHE) > CACHE_SETS:
+            _CACHE.pop(next(iter(_CACHE)))
+    return _CACHE[key]
 
 
 # ---------------- genes and composition along t ----------------
@@ -329,12 +367,16 @@ def run(c, method, within=None, start=None, end=None, root=None, alpha=0.3, by="
         if not R.any():
             raise ValueError(f"no {root['by']} {', '.join(map(str, root['values']))} among the cells of the trajectory")
         rows = np.where(sel)[0]
-        say(0.05, f"PCA of {len(rows):,} cells")
-        Z = markers.pca(c.X[rows], N_PCS)[:, ::-1].copy()
         a = float(alpha) if method == "mixed" else 0.0
         if not 0 <= a <= 1:
             raise ValueError("the weight of space must be between 0 and 1")
-        ts, info = pseudotime(Z, xy[rows], slices[rows], R[rows], alpha=a, progress=say)
+        import hashlib
+        cache = _cache_for((tuple((s.id, getattr(s, "_cells_mtime", None)) for s in c.sessions),
+                            hashlib.sha1(rows.tobytes()).hexdigest()))
+        if "Z" not in cache:
+            say(0.05, f"PCA of {len(rows):,} cells")
+            cache["Z"] = markers.pca(c.X[rows], N_PCS)[:, ::-1].copy()
+        ts, info = pseudotime(cache["Z"], xy[rows], slices[rows], R[rows], alpha=a, progress=say, cache=cache)
         t = np.full(len(sel), np.nan)
         t[rows] = ts
         raw = t.copy()
@@ -368,32 +410,71 @@ TRAJ_BINS = [(f"t{i}", c) for i, c in enumerate(_VIRIDIS)]
 NONE_KEY, NONE_RGB = "none", (200, 200, 200)
 
 
+METHODS = ("spatial", "expression", "mixed")
+METHOD_NAMES = {"spatial": "spatial axis", "expression": "pseudotime", "mixed": "expression + space"}
+
+
 def save(s, t, raw, res, run_id, masks=None, request=None):
-    """Keep a run's t of the cells of annotation s (its rows of the analysis) for the map ("trajectory" color), with
-    the masks and the request that define it (masks: this annotation's rows; the notebook replays the run)."""
-    import json
+    """Keep a run's t of the cells of annotation s (its rows of the analysis) for the map (color "trajectory:<method>"),
+    with the masks and the request that define it (masks: this annotation's rows; the notebook replays the run).
+    Each method keeps its own last run (trajectory/<method>.npz and .json)."""
+    import json, time
     d = s.dir / "trajectory"
     d.mkdir(exist_ok=True)
     m = {f"mask_{k}": np.asarray(v, bool) for k, v in (masks or {}).items() if v is not None}
-    np.savez_compressed(d / "last.npz", t=np.asarray(t, np.float32), raw=np.asarray(raw, np.float32), **m)
-    meta = {"run_id": run_id, "label": label(res), "method": res["method"],
+    meth = res["method"]
+    np.savez_compressed(d / f"{meth}.npz", t=np.asarray(t, np.float32), raw=np.asarray(raw, np.float32), **m)
+    meta = {"run_id": run_id, "label": label(res), "method": meth, "time": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "unit": (res.get("axis") or {}).get("unit", "0..1"), "max_um": (res.get("axis") or {}).get("max_um"),
             "alpha": res.get("alpha"), "within": res.get("within"), "by": res.get("by"),
             "pooled": bool(request and request.get("scope") == "project"),
             "top": {k: [x["gene"] for x in res[k][:10]] for k in ("rising", "falling", "transient")}}
-    json.dump(meta, open(d / "last.json", "w"), indent=1)
+    json.dump(meta, open(d / f"{meth}.json", "w"), indent=1)
 
 
-def last(s):
-    """(meta, t, raw) of the annotation's last trajectory, or (None, None, None)."""
+def _files(s, method):
+    """The files of a method's last run (an annotation of an earlier build kept one run, last.*, of any method)."""
     import json
     d = s.dir / "trajectory"
-    if not (d / "last.json").exists():
+    if (d / f"{method}.json").exists():
+        return d / f"{method}.json", d / f"{method}.npz"
+    if (d / "last.json").exists() and json.load(open(d / "last.json")).get("method") == method:
+        return d / "last.json", d / "last.npz"
+    return None, None
+
+
+def last(s, method=None):
+    """(meta, t, raw) of the annotation's last trajectory of a method (None: the most recent of any), or
+    (None, None, None)."""
+    import json
+    if method is None:
+        runs = [x for x in (all_last(s)).values()]
+        if not runs:
+            return None, None, None
+        method = max(runs, key=lambda x: x.get("time") or "")["method"]
+    j, z = _files(s, method)
+    if j is None:
         return None, None, None
-    z = np.load(d / "last.npz")
+    z = np.load(z)
     if len(z["t"]) != len(s.cells):  # the cells changed (filter) since
         return None, None, None
-    return json.load(open(d / "last.json")), z["t"], z["raw"]
+    return json.load(open(j)), z["t"], z["raw"]
+
+
+def all_last(s):
+    """{method: meta} of the methods that have a last run."""
+    import json
+    out = {}
+    for m in METHODS:
+        j, z = _files(s, m)
+        if j is not None:
+            out[m] = json.load(open(j))
+    return out
+
+
+def mode_method(mode):
+    """The method of a color mode "trajectory:<method>" ("trajectory" alone: the most recent)."""
+    return mode.split(":", 1)[1] if ":" in mode else None
 
 
 def bin_of(t):

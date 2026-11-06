@@ -214,9 +214,9 @@ def colors_for(s: Session, version, mode, only):
             if lab is not None:
                 out[:, :3] = np.array([cluster_rgb(i) for i in range(int(lab.max()) + 1)], np.uint8)[lab]
                 out[:, 3] = 225
-        elif mode == "trajectory":
+        elif mode.startswith("trajectory"):  # "trajectory:<method>": that method's last run
             from . import trajectory
-            meta, t, _ = trajectory.last(s)
+            meta, t, _ = trajectory.last(s, trajectory.mode_method(mode))
             out[:] = trajectory.NONE_RGB + (40,)
             if t is not None:
                 b = trajectory.bin_of(t)
@@ -258,9 +258,9 @@ def colors_for(s: Session, version, mode, only):
 
 def mode_key(s, mode):
     """Cache key of a color mode; niche colors change with every niche run."""
-    if mode == "trajectory":
+    if mode.startswith("trajectory"):
         from . import trajectory
-        return f"traj:{(trajectory.last(s)[0] or {}).get('run_id')}"
+        return f"traj:{(trajectory.last(s, trajectory.mode_method(mode))[0] or {}).get('run_id')}"
     if mode == "leiden":
         return f"leiden:{(embedding.current(s.sample_id) or {}).get('run_id')}"
     return f"niche:{(niches.current(s)[0] or {}).get('run_id')}" if mode == "niche" else mode
@@ -343,9 +343,9 @@ def cell_keys(s: Session, version, mode):
         return np.array([f"N{i + 1}" for i in range(meta["n_niches"])], dtype=object)[lab] if meta else np.full(n, "", dtype=object)
     if mode == "confidence":
         return np.where(r["conf"] < 0.5, "low", np.where(r["conf"] < 0.8, "mid", "high")).astype(object)
-    if mode == "trajectory":
+    if mode.startswith("trajectory"):
         from . import trajectory
-        t = trajectory.last(s)[1]
+        t = trajectory.last(s, trajectory.mode_method(mode))[1]
         if t is None:
             return np.full(n, trajectory.NONE_KEY, dtype=object)
         b = trajectory.bin_of(t)
@@ -396,9 +396,9 @@ def legend_for(s: Session, version, mode):
     if mode.startswith("gene:"):
         n = np.bincount(gene_bins(s, mode), minlength=len(GENE_BINS))
         return [{"key": k, "label": lab, "color": c, "count": int(n[i])} for i, (k, lab, c, _) in enumerate(GENE_BINS)][::-1]
-    if mode == "trajectory":
+    if mode.startswith("trajectory"):
         from . import trajectory
-        meta, t, _ = trajectory.last(s)
+        meta, t, _ = trajectory.last(s, trajectory.mode_method(mode))
         if t is None:
             return []
         b = trajectory.bin_of(t)
@@ -1297,7 +1297,7 @@ async def api_communication_run(req: Request):
 async def api_trajectory_run(req: Request):
     """A trajectory in the background (trajectory.run): {session, version, scope, selection, sessions, method,
     within, start, end, root, alpha, by}; progress and result under /api/job/traj:<session>. Each annotation keeps
-    the t of its cells for the map (color "trajectory")."""
+    the t of its cells for the map (color "trajectory:<method>", one last run per method)."""
     from . import trajectory
     b = await req.json()
     job = f"traj:{b['session']}"
@@ -2432,10 +2432,10 @@ def _regions_geojson(s, v):
 
 
 def api_trajectory_last(req):
-    """The annotation's last trajectory (its title and run), or null."""
+    """The annotation's last trajectory of each method ({method: its title and run})."""
     from . import trajectory
     s = review_app._session(req.path_params["sid"])
-    return _json({"trajectory": trajectory.last(s)[0]})
+    return _json({"trajectories": trajectory.all_last(s)})
 
 
 def api_regions_geojson(req):

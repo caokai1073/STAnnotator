@@ -456,9 +456,11 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
      central regions in the liver. Under a second for 100,000 cells.
    - **Pseudotime**: diffusion pseudotime (Haghverdi et al. 2016): a diffusion map of the neighbor graph of the
      cells' PCA (15 neighbors, adaptive Gaussian kernel, density-normalized, 10 components), and t = the diffusion
-     distance from the root group's mean, scaled to 0..1. Above 60,000 cells the graph is built on a random sample
-     (root cells kept in proportion) and the other cells take the mean t of their nearest sampled cells; cells the
-     root does not reach get none. About 30 s for 97,000 epithelial cells.
+     distance from the root group's mean, scaled to 0..1. Up to 300,000 cells the graph holds every cell; above, a
+     random sample (the same for every root), and the other cells take the mean t of their neighbors that have one;
+     cells the root does not reach get none. About 5 s for 97,000 epithelial cells, 30 s for 356,000 cells; the PCA,
+     graphs and diffusion maps are kept, so another root, weight of space or composition on the same cells takes about
+     a second.
    - **Expression + space**: the same on W = (1 - w) W_expression + w W_space, the spatial graph joining each cell's
      15 nearest cells in the tissue; **Weight of space** w from 0 (expression only) to 1 (the tissue alone).
    - Genes along it: each gene's correlation with the rank of t (rising, falling) and its mean in 20 bins of equal
@@ -466,8 +468,10 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
      again on both sides (transient). Results: **Gene heatmap** (z-scores of the bin means, genes in the order of their
      peak), **Genes** (r, eta squared, peak t, % cells; a click colors the map by the gene), **Composition** along it
      (shares of a grouping per bin), **Save CSV…** (every gene), **Save figure…**, **Ask Agent**. **Show on the map**
-     colors the cells in ten steps of t (Color by: trajectory; the annotation keeps its last trajectory, and a saved
-     annotation and the exported notebook carry it: the notebook replays it from its cells with the same code). On
+     colors the cells in ten steps of t (Color by: trajectory: spatial axis, pseudotime or expression + space). The
+     three methods are kept apart: each has its own last result (**Last result** opens the one of the method chosen),
+     its own color on the map, and its own section in the exported notebook, which replays it from its cells with the
+     same code; a saved annotation carries them. On
      SCP2927 section 147328 the epithelial cells ordered from stem cells rise in APOB, FABP2, CYP3A4, fall in OLFM4,
      GPX2, LGR5, and MKI67, TOP2A, RRM2 peak in between (the transit-amplifying zone). An axis or a root sets the
      order: a gradient along a spatial axis is position, not time, and spillover from neighboring cells follows the

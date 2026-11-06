@@ -1182,7 +1182,7 @@ function grayColors() {
 async function loadColors() {
   const q = new URLSearchParams({ version: st.version, mode: st.mode, only: [...filt()].join("|") });
   const key = `${st.sid}|${q}|${st.mode === "region" ? st.colorEpoch || 0 : st.mode === "niche" && st.niche ? st.niche.params.run_id
-    : st.mode === "trajectory" && st.traj ? st.traj.run_id : 0}`;
+    : st.mode.startsWith("trajectory:") ? ((st.trajs || {})[st.mode.slice(11)] || {}).run_id : 0}`;
   if (GL.colorKey === key) return;
   if (!GL.colors[key]) {
     const r = await fetch(`/api/s/${st.sid}/colors.bin?${q}`);
@@ -1323,6 +1323,8 @@ function fillSampleSelect() {  // the slices of each project, then the samples o
 
 // Color-by options appear only when they have something to show: the data starts with no cell types, and
 // region / changes / conflicts appear once regions are drawn, labels change, or priors conflict with cells.
+const TR_METHODS = [["spatial", "spatial axis"], ["expression", "pseudotime"], ["mixed", "expression + space"]];  // Trajectory
+const TR_NAME = Object.fromEntries(TR_METHODS);
 function fillModes(sm) {
   const sel = $("mode"); sel.textContent = "";
   const add = (v, t) => { const o = document.createElement("option"); o.value = v; o.textContent = t; sel.append(o); };
@@ -1339,7 +1341,7 @@ function fillModes(sm) {
   if (st.niche) avail.push(["niche", "niche"]);
   if (st.emb) avail.push(["leiden", "Leiden clusters"]);
   if (st.lrMode) avail.push(["lr", "ligand-receptor signal"]);
-  if (st.traj) avail.push(["trajectory", "trajectory"]);
+  TR_METHODS.forEach(([m, name]) => { if (st.trajs && st.trajs[m]) avail.push([`trajectory:${m}`, `trajectory: ${name}`]); });
   const extra = [["confidence", "confidence"]];
   if (st.vocab && st.vocab.method === "markers") extra.push(["cluster", "clusters (marker step)"]);
   if (st.showMore) avail.push(...extra);
@@ -1509,7 +1511,7 @@ async function openSession(sid) {
   }
   await loadNiches(false);
   await loadEmbedding(false);
-  st.traj = (await api(`/api/s/${sid}/trajectory`).catch(() => ({}))).trajectory || null;
+  st.trajs = (await api(`/api/s/${sid}/trajectory`).catch(() => ({}))).trajectories || {};
   loadResults(sid).catch(() => {});
   $("anSave").disabled = false;
   loadGenes(st.sample.sample_id).catch(() => {});
@@ -1969,7 +1971,8 @@ async function loadLegend() {
   st.legend = r.items;
   const f = filt();
   $("legend").hidden = !!st.imageOnly;  // an image only: no cells to list
-  $("lgtitle").textContent = (st.mode.startsWith("gene:") ? `${st.mode.slice(5)} transcripts` : st.mode.startsWith("lr:") ? lrTitle(st.mode) : MODE_TITLES[st.mode]) + (f.size ? ` (${f.size} shown)` : "");
+  $("lgtitle").textContent = (st.mode.startsWith("gene:") ? `${st.mode.slice(5)} transcripts` : st.mode.startsWith("lr:") ? lrTitle(st.mode)
+    : st.mode.startsWith("trajectory:") ? `Trajectory: ${((st.trajs || {})[st.mode.slice(11)] || {}).label || TR_NAME[st.mode.slice(11)]}` : MODE_TITLES[st.mode]) + (f.size ? ` (${f.size} shown)` : "");
   $("lgall").disabled = !f.size;
   const box = $("lgitems"); box.textContent = "";
   const toggle = (keys) => {
@@ -3692,7 +3695,8 @@ const HELP = `
     0 is expression only, 1 the tissue alone.</li></ul></li>
 <li>Results: a <b>Gene heatmap</b> (the top rising, transient and falling genes in the order of their peak),
   <b>Genes</b> (r: correlation with the order; η²: share of variance between bins) and the <b>Composition</b> along
-  it. <b>Show on the map</b> colors the cells by their place (Color by: trajectory).</li>
+  it. <b>Show on the map</b> colors the cells by their place (Color by: trajectory: …).</li>
+<li>The three methods are kept apart: each has its own <b>Last result</b> and its own color on the map.</li>
 <li>An axis or a root sets the order: a gradient along a spatial axis is position, not time.</li></ul>
 
 <h3>Undo, export and the agent</h3><ul>
@@ -4948,7 +4952,7 @@ async function loadTrajOptions(force) {
   fillSelect("tWBy", items.filter(([k]) => g[k].length > 1), undefined, ["", "all cells"]);
   trValues();
   $("tinfo").textContent = [`${TR.opts.n_cells.toLocaleString()} cells`, trScope() === "project" ? "all slices pooled" : "this slice",
-    st.traj ? `last: ${st.traj.label}` : null].filter(Boolean).join(" · ");
+    trLastText()].filter(Boolean).join(" · ");
   $("tRun").disabled = !!TR.running;  // one trajectory at a time, whatever its method
 }
 function trValues() {  // the values of the chosen groupings
@@ -4967,7 +4971,10 @@ function syncTrMethod() {
     mixed: "Diffusion pseudotime on a graph that also joins neighbors in the tissue: Weight of space 0 is expression only, 1 the tissue alone. Space keeps neighboring cells close in the order; it also makes the order follow the tissue, so compare with 0.",
   }[m];
 }
-$("tMethod").onchange = () => { syncTrMethod(); syncLast(); }; syncTrMethod();
+$("tMethod").onchange = () => {
+  syncTrMethod(); syncLast();
+  if (TR.opts) $("tinfo").textContent = [`${TR.opts.n_cells.toLocaleString()} cells`, trScope() === "project" ? "all slices pooled" : "this slice", trLastText()].filter(Boolean).join(" · ");
+}; syncTrMethod();
 $("tScope").onchange = () => loadTrajOptions(true);
 ["tFromBy", "tToBy", "tRootBy", "tWBy"].forEach((id) => ($(id).onchange = trValues));
 $("tAlpha").oninput = () => ($("tAlphaVal").textContent = (+$("tAlpha").value).toFixed(2));
@@ -4995,14 +5002,19 @@ $("tRun").onclick = async () => {
   finally { TR.running = false; $("tRun").disabled = false; }
 };
 $("tLast").onclick = () => openLast(`trajectory_${$("tMethod").value}`);
-async function loadTraj() {  // the open annotation's last trajectory (the "trajectory" color of the map)
-  st.traj = st.sid ? (await api(`/api/s/${st.sid}/trajectory`).catch(() => ({}))).trajectory || null : null;
+async function loadTraj() {  // the open annotation's last trajectory of each method (each a color of the map)
+  st.trajs = st.sid ? (await api(`/api/s/${st.sid}/trajectory`).catch(() => ({}))).trajectories || {} : {};
   fillModes(st.lastSummary);
 }
-function showOnMapTraj() {
+function trLastText() {  // the last run of the method chosen in the tab
+  const x = (st.trajs || {})[$("tMethod").value];
+  return x ? `last: ${x.label}` : null;
+}
+function showOnMapTraj(method) {
   $("anDlg").close();
-  if (![...$("mode").options].some((o) => o.value === "trajectory")) { toast("Run a trajectory of this annotation first"); return; }
-  $("mode").value = "trajectory"; $("mode").dispatchEvent(new Event("change"));
+  const v = `trajectory:${method}`;
+  if (![...$("mode").options].some((o) => o.value === v)) { toast("Run this trajectory first"); return; }
+  $("mode").value = v; $("mode").dispatchEvent(new Event("change"));
 }
 const TR_DIV = (z) => {  // blue - white - red for z-scores (clipped at ±2)
   const v = Math.max(-1, Math.min(1, z / 2));
@@ -5055,9 +5067,10 @@ async function showTrajectory(r, q) {
   anSeg([["heat", "Gene heatmap"], ["genes", "Genes"], ["comp", "Composition"]], view, (v) => { AN.view = v; showAnalysis(); });
   const bar = document.createElement("div"); bar.className = "row"; bar.style.margin = "4px 0 8px";
   const mapBtn = document.createElement("button"); mapBtn.textContent = "Show on the map";
-  mapBtn.title = "Color the cells by their place on this trajectory (Color by: trajectory)"; mapBtn.onclick = showOnMapTraj;
-  mapBtn.disabled = !(st.traj && st.traj.run_id === r.id);
-  if (mapBtn.disabled) mapBtn.title = "The map shows this annotation's latest trajectory only: run this one again to see it";
+  mapBtn.title = `Color the cells by their place on this trajectory (Color by: trajectory: ${TR_NAME[r.method]})`;
+  mapBtn.onclick = () => showOnMapTraj(r.method);
+  mapBtn.disabled = !(st.trajs && st.trajs[r.method] && st.trajs[r.method].run_id === r.id);
+  if (mapBtn.disabled) mapBtn.title = `The map keeps the latest ${TR_NAME[r.method]} only: run this one again to see it`;
   bar.append(mapBtn); $("anBody").append(bar);
   $("anFig").hidden = view === "genes"; AN.svg = null;
   if (view === "heat") {

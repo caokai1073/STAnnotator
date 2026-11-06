@@ -1231,7 +1231,7 @@ def trajectory(method: str = "spatial", within: Optional[dict] = None, start: Op
     joined in, alpha = the weight of space (0..1). within = {grouping: value(s)} orders only those cells (e.g.
     {"lineage": "Epithelial"}). Returns the rising, falling and transient genes (r = correlation with the order,
     eta2 = share of variance between bins, peak), the composition of `by` along it and a heatmap of bin means. The
-    result also becomes the map's "trajectory" color in the app. A spatial axis or a root forces the order: say
+    result also becomes the map's "trajectory: <method>" color in the app (each method keeps its own last run). A spatial axis or a root forces the order: say
     which; pooled slices are not batch-corrected."""
     from . import trajectory as tr
     c = _cells(scope, _uses_selection(within))

@@ -46,6 +46,14 @@ for alpha in (0.0, 0.5):
     rho = np.corrcoef(np.argsort(np.argsort(pt)), np.argsort(np.argsort(s_true)))[0, 1]
     print(f"pseudotime (space {alpha}): rank correlation with the truth {rho:.3f}; unreached {info['n_unreached']}")
     assert rho > (0.8 if alpha == 0 else 0.9), rho  # noisy counts of 8 genes; the tissue's order helps
+cache = {}
+pt, _ = tr.pseudotime(Z, xy, one, start, max_cells=1000, cache=cache)  # a sample of 1,000, the others placed
+rho = np.corrcoef(np.argsort(np.argsort(pt)), np.argsort(np.argsort(s_true)))[0, 1]
+print(f"pseudotime on a sample of 1,000: rank correlation {rho:.3f}; unplaced {int(np.isnan(pt).sum())}")
+assert rho > 0.75 and not np.isnan(pt).any(), rho
+n_keys = len(cache)
+pt2, _ = tr.pseudotime(Z, xy, one, end, max_cells=1000, cache=cache)  # another root: the graph is reused
+assert len(cache) == n_keys and np.corrcoef(pt, pt2)[0, 1] < -0.5, (len(cache), n_keys)
 comp = tr.composition(t, np.where(s_true < 0.5, "A", "B"))
 assert comp["shares"][0][0] > 0.9 and comp["shares"][-1][1] > 0.9
 assert tr.legend({"unit": "um", "max_um": 1000})[0] == "0–100 µm"

@@ -588,16 +588,22 @@ plt.show()'''
 
 
 def _trajectory_section(s, nb, sec):
-    """The last trajectory of the annotation, replayed: its cells (the masks of the run, packed rows), the same
-    functions (trajectory.py, carried), the genes along it, checked against the order at export time."""
+    """The last trajectory of each method of the annotation, replayed: its cells (the masks of the run, packed rows),
+    the same functions (trajectory.py, carried), the genes along it, checked against the order at export time."""
     from . import trajectory
-    meta, t, raw = trajectory.last(s)
+    for method in trajectory.all_last(s):
+        _trajectory_one(s, nb, sec, method)
+
+
+def _trajectory_one(s, nb, sec, method):
+    from . import trajectory
+    meta, t, raw = trajectory.last(s, method)
     if meta is None:
         return
-    z = np.load(s.dir / "trajectory" / "last.npz")
+    z = np.load(trajectory._files(s, method)[1])
     masks = {k[5:]: np.where(z[k])[0] for k in z.files if k.startswith("mask_")}
     if "within" not in masks or meta.get("pooled"):
-        nb.append(_md(f"## {sec()}. Trajectory\nThe last trajectory ({meta['label']}) "
+        nb.append(_md(f"## {sec()}. Trajectory ({trajectory.METHOD_NAMES[method]})\nThe last trajectory ({meta['label']}) "
                       + ("pooled the slices of the project: run it again on this slice to replay it here."
                          if meta.get("pooled") else "was made before the app kept its cells: run it again to replay it here.")))
         return
@@ -607,8 +613,8 @@ def _trajectory_section(s, nb, sec):
     else:
         how = "diffusion pseudotime from the root group on the PCA neighbor graph" + (
             f", with tissue neighbors joined in (weight of space {meta.get('alpha')})" if meta["method"] == "mixed" else "")
-    nb.append(_md(f"""## {sec()}. Trajectory
-The annotation's last trajectory: **{meta['label']}** ({how}). The cells it orders and its groups are given as their
+    nb.append(_md(f"""## {sec()}. Trajectory ({trajectory.METHOD_NAMES[method]})
+The annotation's last trajectory of this method: **{meta['label']}** ({how}). The cells it orders and its groups are given as their
 rows (as at the time of the run); the functions are the app's (`trajectory.py`). The genes along it: the correlation of
 each gene with the order (rising, falling) and its share of variance between {trajectory.NBINS} bins (transient).
 The pseudotime uses approximate neighbors for large samples, so it can differ slightly from the app's."""))
