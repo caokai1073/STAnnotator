@@ -1018,7 +1018,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
 </dialog>
 <dialog id="hpDlg" style="width:min(760px,95vw)">
   <div class="dh"><b>STAnnotator</b><span class="spacer"></span>
-    <button id="hpHow" class="on">How to use</button><button id="hpAbout">About</button><button id="hpClose">Close</button></div>
+    <button id="hpHow" class="on">How to use</button><button id="hpMethods">Methods</button><button id="hpAbout">About</button><button id="hpClose">Close</button></div>
   <div id="hpBody" class="hpbody"></div>
 </dialog>
 <div class="toast" id="toast"></div>
@@ -3713,6 +3713,137 @@ const HELP = `
     parameters, and its results; the last trajectory too).</li></ul></li>
 <li><b>Ask Agent</b> (bar on the map) opens your own Claude Code, connected to this app. <b>Undo</b> and
   <b>Report</b> are there too.</li></ul>`;
+const METHODS = `
+<p class="hint">How each analysis computes its result. Expression is log-normalized throughout: counts per cell scaled
+to 100, then log(1 + x). Random steps use a fixed seed, so a rerun on the same computer gives the same result.</p>
+
+<h3>Data</h3><ul>
+<li><b>Cells and bins</b><ul>
+  <li>Xenium, CosMx, MERFISH, h5ad / RDS: the instrument's or the file's cells and raw counts, positions in µm.</li>
+  <li>Visium HD with cell outlines: every 2 µm bin is split between the cells it overlaps by area (16 points per bin
+    against the outlines); each count goes to a cell with the probability of its share. Without outlines: 2 µm bins
+    pooled into 8 µm bins.</li>
+  <li>Stereo-seq: SAW's cell bins (a DNB belongs to one cell), else the DNBs pooled into 8 µm bins.</li></ul></li>
+<li><b>Filter cells and genes</b>: cells outside the transcript and gene limits or above the mitochondrial share, then
+  genes detected in too few of the cells kept; always from the data as imported.</li>
+<li><b>Distance to the epithelium</b> (depth priors): a cell is part of the epithelial core when at least 30% of its
+  30 nearest cells have EPCAM + KRT8 (at least 3 transcripts and 5% of the cell's); depth = distance to the nearest
+  core cell.</li>
+<li><b>H&amp;E only</b>: no cells; an image without zoom levels is copied as a pyramidal OME-TIFF; the pixel size is
+  read from OME, SVS (MPP) or the TIFF resolution tags.</li></ul>
+
+<h3>Registration</h3><ul>
+<li><b>Registration file</b>: an affine from cell µm to image pixels, or a Xenium Explorer matrix (image pixels to
+  morphology pixels) turned into one.</li>
+<li><b>Align with Agent</b><ul>
+  <li>Search: the tissue on a thumbnail of the image against the cells' footprint, for 8 orientations (4 rotations,
+    mirrored or not) and a range of pixel sizes, by FFT cross-correlation; the best few are candidates.</li>
+  <li>Choice: the agent looks at the candidates' figures and picks the section and orientation.</li>
+  <li>Refinement: nuclei on the image (hematoxylin, or DAPI) cross-correlated with the cell centroids in windows over
+    the tissue; an affine fit of the windows' offsets; three rounds with a shrinking search.</li></ul></li>
+<li><b>Registration check and local correction</b> (Agent Review: Spatial organization)<ul>
+  <li>Windows of 200 µm: the offset of the nuclei from the cells, searched up to 25 µm; an offset counts when its
+    correlation is clear (at least 0.2, and the one at zero at most 85% of it).</li>
+  <li>A robust affine fit of the offsets is the global part; what is left are local shifts (tissue stretched, folded
+    or torn), applied as a smooth Gaussian field over the windows.</li>
+  <li>A coarse pass (600 µm windows, up to 100 µm) finds areas shifted further, where its peak is unique.</li></ul></li>
+<li><b>Piece moves</b> (torn or folded pieces): for the cells of an outlined piece, the rigid move (rotation, shift,
+  mirrored) that best matches their density with the nuclei and their footprint with the tissue (normalized
+  cross-correlation), with the other cells nearby taken off; it counts when clearly better than the place now and
+  unique.</li></ul>
+
+<h3>Regions</h3><ul>
+<li>Drawn by you (or an outline of the agent that you accept), in the image's full-resolution pixels; a cell belongs
+  to the region whose outline holds its center.</li>
+<li>Overlapping outlines: the smaller one takes the cells; cells moved into a region without an outline count last.</li>
+<li>GeoJSON (QuPath): a region per classification; holes stay out of it.</li>
+<li>Filling gaps (the agent's proposals): cells between regions, or a region's cells whose neighbors are mostly in
+  another, by position only.</li></ul>
+
+<h3>Annotate</h3><ul>
+<li><b>Marker genes</b> (hierarchical, top-down)<ul>
+  <li>At each level the parent's cells are clustered: PCA of standardized genes (30 PCs; above 6,000 genes the 3,000
+    most variable), 15 nearest neighbors, Leiden (modularity); with resolution <i>auto</i> 0.5, 1, 2 and 4 are tried
+    and the one whose clusters the markers assign best is kept.</li>
+  <li>Each cluster is scored per child type: the detection rate of each marker, z-scored across the parent's
+    clusters, sign-flipped for negative markers, averaged over the child's markers (A|B: the strongest).</li>
+  <li>A cluster goes to the best child when its score is at least 0.5 and 0.25 above the runner-up; otherwise its cells
+    stay at the parent. Cells no top-level type takes are Unassigned.</li></ul></li>
+<li><b>Expression model</b><ul>
+  <li>Multinomial logistic regression on the standardized log-normalized genes, trained on the marker step's labels
+    (class sizes corrected back to the sample's), so every cell gets a probability per cell type.</li>
+  <li>It labels the cells the marker step left at a parent level, within their lineage.</li>
+  <li>Hand corrections: the corrected cells (weight 20) fine-tune the model with the other cells replayed; only the
+    classes involved change.</li></ul></li>
+<li><b>Single-cell reference</b> (as CellTypist): the same regression trained on up to 3,000 reference cells per label,
+  on the genes shared with the panel, both sides normalized on those genes only; majority voting gives each
+  over-cluster its mean label.</li>
+<li><b>Load existing</b>: the labels of a CSV stay the labels; a model trained on them adds the confidence.</li>
+<li><b>Priors</b><ul>
+  <li>posterior(type | cell) ∝ p(type | expression) × the product of the priors' weights.</li>
+  <li>Kinds: region (in a drawn region), depth (within a distance of the epithelial core), neighborhood (a share of the
+    15 nearest cells are given types, typed by expression only, so a rule never feeds on itself).</li>
+  <li>Modes: only (lowered where the condition is false), exclude (lowered where true), enrich (raised where true).
+    Strength: strong × 0.01, moderate × 0.1, weak × 0.5 (enrich × 10, 3, 1.5).</li></ul></li>
+<li><b>Conflicts</b>: cells whose expression is confident but against a prior; kept (expression wins) or overridden,
+  and boundary, clustered or isolated by where they sit.</li>
+<li><b>Several slices together</b>: one marker step and one model on the pooled cells, so a name means the same cells
+  in every slice.</li></ul>
+
+<h3>Embed</h3><ul>
+<li>PCA of the log-normalized expression, 15 nearest neighbors (exact on a GPU or for small samples, else
+  pynndescent), Leiden on that graph, and UMAP on the same neighbors starting from PC1 / PC2.</li>
+<li>Several slices: one PCA of the pooled cells, optionally corrected with Harmony (soft k-means with a diversity
+  penalty, then a per-cluster correction of the slices).</li></ul>
+
+<h3>Niche</h3><ul>
+<li>Identity of each cell: its weights on NMF gene programs (20 by default; fitted on up to 60,000 cells, every cell
+  projected), scaled to sum 1; or its cell type.</li>
+<li>Neighborhood: the mean identity of the cell and its k nearest cells (one k, a k per drawn region, or every cell
+  within a radius).</li>
+<li>Niches: k-means of the neighborhoods into the number of niches chosen. Several slices: neighbors within each
+  slice, one k-means over all.</li></ul>
+
+<h3>Compare</h3><ul>
+<li><b>DE genes</b>: Wilcoxon rank-sum test of the log-normalized expression between the group and the reference (up
+  to 20,000 random cells per side; Group All: 5,000), AUC as the effect size, log2 fold change of the normalized
+  means, Benjamini-Hochberg FDR. Pooled slices: the direction is checked in every slice.</li>
+<li><b>Top genes</b>: every group against the other cells, ranked by AUC.</li>
+<li><b>Composition</b>: shares of one grouping within another, and log2 enrichment over what independence predicts.</li>
+<li>Cells are not independent replicates: rank by AUC and fold change, not by p.</li></ul>
+
+<h3>Signal</h3><ul>
+<li>Ligand-receptor pairs: CellChatDB v2, CellPhoneDB v5 and the OmniPath consensus, merged; a pair is used when all
+  its genes are in the panel; a complex counts as its lowest subunit.</li>
+<li>Neighbors: contact signals from cells within 15 µm (up to 12); secreted and ECM signals from the 30 nearest within
+  50 µm, weighted by a Gaussian of the distance; never across slices.</li>
+<li>Score of sender group A to receiver group B: the mean of ligand (sender) × receptor (receiver) over their neighbor
+  pairs; tested against random group labels with a z-score that counts distinct cells, FDR over all tests; only
+  when the ligand is detected in 10% of A, the receptor in 10% of B, and they share at least 20 neighbor pairs.</li>
+<li>Specificity: score / expected score; colocalization: score / (mean ligand of A × mean receptor of B).</li></ul>
+
+<h3>Trajectory</h3><ul>
+<li><b>Spatial axis</b>: t = d<sub>From</sub> / (d<sub>From</sub> + d<sub>To</sub>), with d the distance to the
+  nearest cell of the group in the same slice; without To, the distance to From in µm.</li>
+<li><b>Pseudotime</b> (diffusion pseudotime, Haghverdi et al. 2016)<ul>
+  <li>PCA (30 PCs) of the cells ordered, 15 nearest neighbors, adaptive Gaussian kernel (each cell's median neighbor
+    distance), density-normalized.</li>
+  <li>Diffusion map: the 10 leading non-trivial eigenvectors, each scaled by λ / (1 − λ).</li>
+  <li>t = the distance from the root group's mean in that space, scaled to 0–1; cells the root does not reach get
+    none. Above 1,000,000 cells the graph is built on a sample and the other cells take their neighbors' mean.</li></ul></li>
+<li><b>Expression + space</b>: the same on W = (1 − w) W<sub>expression</sub> + w W<sub>space</sub>, the spatial graph
+  joining each cell's 15 nearest cells in the tissue.</li>
+<li><b>Genes along it</b>: correlation of each gene with the rank of t (rising, falling); its mean in 20 bins of equal
+  cell numbers; η² = the share of its variance between bins; transient genes peak in the middle bins and fall again
+  on both sides.</li></ul>
+
+<h3>Agent Review</h3><ul>
+<li>Out-of-place cells: cells of types that form sheets (epithelium, smooth muscle) with few cells of their lineage
+  among their 15 nearest cells; tiles holding many more of them than expected form candidate areas.</li>
+<li>The agent reads these facts (marker detection per type, confusion between types, spatial profiles, quality per
+  tile, the registration check) with the H&amp;E and its knowledge, and proposes changes; nothing changes until you
+  accept.</li></ul>
+`;
 const localApp = () => !!native() && !st.remote;  // the desktop app working on this computer
 async function changeDataFolder(current) {  // another data folder from the next start: copy the data there, or use it as it is
   const msg = $("hpDataMsg");
@@ -3785,11 +3916,15 @@ async function showAbout() {
 }
 function showHelp(tab) {
   $("hpHow").classList.toggle("on", tab === "how"); $("hpAbout").classList.toggle("on", tab === "about");
-  if (tab === "how") $("hpBody").innerHTML = HELP; else showAbout().catch((e) => { $("hpBody").textContent = e.message; });
+  $("hpMethods").classList.toggle("on", tab === "methods");
+  if (tab === "how") $("hpBody").innerHTML = HELP;
+  else if (tab === "methods") { $("hpBody").innerHTML = METHODS; $("hpBody").scrollTop = 0; }
+  else showAbout().catch((e) => { $("hpBody").textContent = e.message; });
   if (!$("hpDlg").open) $("hpDlg").showModal();
 }
 $("helpBtn").onclick = () => showHelp("how");
 $("hpHow").onclick = () => showHelp("how");
+$("hpMethods").onclick = () => showHelp("methods");
 $("hpAbout").onclick = () => showHelp("about");
 $("hpClose").onclick = () => $("hpDlg").close();
 $("rmSample").onclick = async () => {

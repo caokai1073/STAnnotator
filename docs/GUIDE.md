@@ -375,7 +375,9 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
      Compare / Signal**); **show on map** colors the map by a gene or a signal.
    Advice changes nothing until you click; **dismiss** hides it.
    The **Priors** list under Regions shows the priors of the annotation (the user's words and how they were read);
-   **×** removes one (Undo brings it back). **?** (top of the toolbar on the right) explains every control and, under **About**, shows the
+   **×** removes one (Undo brings it back). **?** (top of the toolbar on the right) explains every control (**How to use**), summarizes the algorithm of every
+   analysis (**Methods**: data, registration, regions, annotation, embedding, niches, compare, signal, trajectory, review)
+   and, under **About**, shows the
    build, the data folder, whether Claude Code was found and when Claude last used the tools, with a button that
    copies these details for a bug report. In the desktop app on this computer, **Open** beside the data folder shows it
    in Explorer / Finder, and **Change…** picks another folder (another drive) for the data from the next start:
