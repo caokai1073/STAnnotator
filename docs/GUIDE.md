@@ -204,7 +204,8 @@ starts it, on the server's own localhost only; its process id is in `<data folde
 ## 3. The viewer
 
 The toolbar is a panel on the right of the map: **Import** and **Export** at the top, the server choice below, then
-the steps **Data**, **Annotate**, **Embed**, **Niche**, **Compare**, **Signal** and **Trajectory** as tabs (a dot on a tab whose analysis is running), and at
+two tabs, **Data** and **Analysis**; Analysis has the steps **Annotate**, **Embed**, **Niche**, **Compare**, **Signal**
+and **Trajectory** as a second row and reopens the one last used (a dot on a tab whose analysis is running), and at
 the bottom **Reset** and **Remove all**. On the map, next to the **Color by** bar, a bar holds **Undo**, **Ask Agent**
 (Claude Code), **Agent Review** and **Report**. **›** at its top (or `t`) folds it to the right edge for a bigger map,
 **‹** brings it back.
@@ -247,7 +248,7 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
    not applied. The data as imported stays in the sample folder (`original/`): new thresholds always start from
    it, and **Restore all** brings every cell and gene back. In a project one filter covers all slices (they keep
    one gene panel). Annotations and the PCA / UMAP of the filtered samples go to the trash (they number the
-   cells); marker genes the filter removed are left out of marker lists with a warning. Choose the **Method** (Annotate tab): *Marker genes* (a marker
+   cells); marker genes the filter removed are left out of marker lists with a warning. Choose the **Method** (Analysis → Annotate): *Marker genes* (a marker
    list, **Markers…**), *Single-cell reference* (a labeled reference h5ad, **Reference…**) or *Load existing* (a
    CSV with one cell type per cell, **Annotation file…**), then click
    **Annotate**. With marker genes, **Neighbors** chooses the neighbor search of the marker step: *Approximate*
@@ -388,7 +389,7 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
    **Show UMAP** opens a window on the right (UMAP or PC1/PC2, colored as the map, by cell type, Leiden cluster or
    niche). **Select** (or Shift-drag) draws around cells: they light up on the spatial map and the rest turn gray;
    **Show on map** zooms there. Leiden clusters are also a *Color by* option.
-10. **Niche** (fourth tab): places where cells of similar make-up live together. Every cell gets an identity, its
+10. **Niche** (Analysis tab): places where cells of similar make-up live together. Every cell gets an identity, its
    weights on NMF gene programs (*Identity: NMF programs*, independent of the annotation) or its cell type; the
    identities are averaged over the cell and its *k* nearest cells and clustered (k-means) into the chosen number of
    niches. **Run niches** uses one k everywhere (**k: Set k**); with **k: Agent chooses** the same button asks the agent to choose k per drawn region
@@ -397,7 +398,7 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
    a `niche` column in Export CSV. On SCP2927 section 147328 (356,629 cells) a run takes about 6 s (1.5 s once the
    NMF is cached) and the 8 niches match the tissue layers (surface epithelium, crypt base, lamina propria, lymphoid
    follicles, muscularis mucosae, muscularis propria, submucosal vessels and stroma).
-11. **Compare** (fifth tab), for this slice or all slices of a project pooled:
+11. **Compare** (Analysis tab), for this slice or all slices of a project pooled:
    - **DE genes**: the genes that differ between one group and the other cells (or another group). A group is a cell
      type, lineage, region, niche, Leiden cluster, the cells selected in the UMAP window, a slice, or a value of a
      slice metadata column such as condition; **Only within** restricts both sides (e.g. fibroblasts in the mucosa vs
@@ -421,7 +422,7 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
    **Ask Agent** asks the agent to interpret the result (it calls the same analysis through `de_genes`,
    `group_markers` or `composition`); **Save CSV…** keeps the full table. On SCP2927 (559,539 cells, 480 genes) a DE
    run takes 1-2 s and the top genes of 8 niches about 10 s.
-12. **Signal** (sixth tab): cell-cell communication, for this slice or all slices of a project pooled.
+12. **Signal** (Analysis tab): cell-cell communication, for this slice or all slices of a project pooled.
    - Ligand-receptor pairs: CellChatDB v2 (pathways and the kind of signaling), CellPhoneDB v5 (human) and the
      OmniPath consensus that LIANA uses (CellPhoneDB, CellChatDB, ICELLNET, connectomeDB2020, CellTalkDB), merged into
      `stagent/data/lr_human.csv.gz` (6,521 pairs) and `lr_mouse.csv.gz` (5,792) by `python -m stagent.lr_resource`;
@@ -447,7 +448,7 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
      first, as a table or a bubble plot with one column per group; with one slice per group the app says a slice effect cannot be told apart). Agent tools:
      `cell_communication`, `compare_communication`, `show_communication` (the signal on the H&E). A run on 356,629
      cells takes about 10 s.
-13. **Trajectory** (seventh tab): the order of cells and the genes that change along it, for this slice or all
+13. **Trajectory** (Analysis tab): the order of cells and the genes that change along it, for this slice or all
    slices of a project pooled, optionally only within a subset (**Only within**, e.g. one lineage).
    - **Spatial axis**: each cell's place between two groups of cells of any grouping (cell types, regions, niches),
      t = d_From / (d_From + d_To) with d the distance to the nearest cell of the group in the same slice: 0 at From,

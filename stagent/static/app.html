@@ -30,8 +30,13 @@ header h1 { font-size: 16px; margin: 0; font-weight: 650; line-height: 1.2; }
 header.collapsed { width: 38px; padding: 8px 4px; overflow: hidden; }
 header.collapsed .hrow, header.collapsed .tabs, header.collapsed .pane { display: none; }
 /* steps as tabs: one shown at a time; a dot on a tab whose analysis is running */
-.tabs { display: flex; gap: 0; padding: 3px; margin-top: 12px; background: var(--bg); border-radius: 10px; flex: none; }
-.tabs .tab { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 0; background: none; padding: 6px 1px; font-size: 11.5px; color: var(--muted); border-radius: 8px; }
+.tabs { display: flex; gap: 2px; padding: 3px; margin-top: 12px; background: var(--bg); border-radius: 10px; flex: none; }
+.tabs .tab { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 0; background: none; padding: 6px 2px; font-size: 13px; color: var(--muted); border-radius: 8px; }
+/* Analysis: its steps as a second row, underlined */
+.tabs.sub { margin-top: 6px; padding: 0; gap: 0; background: none; border-radius: 0; border-bottom: 1px solid var(--line); }
+.tabs.sub[hidden] { display: none; }
+.tabs.sub .tab { font-size: 12px; padding: 7px 2px 8px; border-radius: 0; }
+.tabs.sub .tab.on { background: none; box-shadow: inset 0 -2px 0 var(--accent); }
 .tabs .tab:hover:not(.on):not(:disabled) { background: none; color: var(--ink); }
 .tabs .tab.on { background: var(--panel); color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
 .tabs .tab.busy::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
@@ -390,7 +395,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="ic-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol><symbol id="ic-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></symbol><symbol id="ic-upload" viewBox="0 0 24 24"><path d="M12 16V5M7 9l5-5 5 5M5 20h14"/></symbol><symbol id="ic-import" viewBox="0 0 24 24"><path d="M12 3v11M7.5 9.5L12 14l4.5-4.5M4 14v6h16v-6"/></symbol><symbol id="ic-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5zM8 4v5h7V4M8 20v-6h8v6"/></symbol><symbol id="ic-help" viewBox="0 0 24 24"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.6 9.4a2.5 2.5 0 1 1 3.6 2.3c-.7.3-1.2 1-1.2 1.8v.4M12 17.2v.1"/></symbol><symbol id="ic-chev-left" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol><symbol id="ic-chev-right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol><symbol id="ic-chev-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol><symbol id="ic-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol><symbol id="ic-grid" viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></symbol><symbol id="ic-chart" viewBox="0 0 24 24"><path d="M4 20h16M7 16v-5M12 16V6M17 16V9"/></symbol><symbol id="ic-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></symbol><symbol id="ic-play" viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></symbol><symbol id="ic-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 15.5l.8 1.7 1.7.8-1.7.8-.8 1.7-.8-1.7-1.7-.8 1.7-.8z"/></symbol><symbol id="ic-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3"/></symbol><symbol id="ic-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7M20 4v5h-5"/></symbol><symbol id="ic-terminal" viewBox="0 0 24 24"><path d="M3 5h18v14H3zM7 10l3 2-3 2M12.5 15h4.5"/></symbol><symbol id="ic-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM8.6 12.2l2.4 2.4 4.4-4.8"/></symbol><symbol id="ic-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h6"/></symbol><symbol id="ic-share" viewBox="0 0 24 24"><path d="M12 15V4M8 8l4-4 4 4M5 12v8h14v-8"/></symbol><symbol id="ic-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol><symbol id="ic-server" viewBox="0 0 24 24"><path d="M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01"/></symbol><symbol id="ic-monitor" viewBox="0 0 24 24"><path d="M3 4h18v12H3zM8 20h8M12 16v4"/></symbol><symbol id="ic-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></symbol><symbol id="ic-image" viewBox="0 0 24 24"><path d="M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15.5 8.5h.01"/></symbol><symbol id="ic-pen" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"/></symbol><symbol id="ic-lasso" viewBox="0 0 24 24"><path d="M7 15.5C4.6 14.4 3 12.6 3 10.5 3 6.9 7 4 12 4s9 2.9 9 6.5S17 17 12 17c-1 0-2-.1-2.9-.3M7 15.5c-1 .8-1.5 1.7-1.5 2.6C5.5 19.7 7 21 9 21M7 15.5a1.6 1.6 0 1 0 2.3 1"/></symbol><symbol id="ic-target" viewBox="0 0 24 24"><path d="M12 19a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM12 2v4M12 18v4M2 12h4M18 12h4"/></symbol><symbol id="ic-scatter" viewBox="0 0 24 24"><path d="M4 4v16h16M8 15h.01M10 10h.01M14 13h.01M16 8h.01M18 15h.01"/></symbol><symbol id="ic-folder" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v11H3z"/></symbol><symbol id="ic-send" viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-3-7z"/></symbol><symbol id="ic-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></symbol><symbol id="ic-home" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9H4zM10 20v-6h4v6"/></symbol><symbol id="ic-move" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3L9.5 5.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5M3 12l2.5-2.5M3 12l2.5 2.5M21 12l-2.5-2.5M21 12l-2.5 2.5"/></symbol><symbol id="ic-copy" viewBox="0 0 24 24"><path d="M8 8h12v12H8zM4 16V4h12"/></symbol><symbol id="ic-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5zM3 13l9 5 9-5"/></symbol></svg>
 <header>
   <div class="hmini"><button id="hdrShow" title="Show the toolbar (t)">‹</button><b>STAnnotator</b><span id="miniInfo"></span></div>
-  <!-- the toolbar: a panel on the right of the map: the app, then the steps data / annotate / embedding / niches as tabs,
+  <!-- the toolbar: a panel on the right of the map: the app, then the tabs Data and Analysis (its steps as a second row),
        review and export, and at the bottom the buttons that delete -->
   <div class="hrow r1">
     <div class="cap"><div><h1>STAnnotator</h1><span id="build" class="buildtag"></span></div>
@@ -402,8 +407,10 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <button id="connBtn" hidden title="Work on this computer or on a server over SSH">This computer</button>
     <span class="folder">Data folder <span class="path" id="path">–</span></span>
   </div>
-  <div class="tabs" id="tabs" role="tablist">
-    <button class="tab" data-tab="data" role="tab">Data</button><button class="tab" data-tab="annotate" role="tab">Annotate</button>
+  <div class="tabs main" id="mainTabs" role="tablist">
+    <button class="tab" data-main="data" role="tab" title="The sample: import, its cells and image, its annotations">Data</button><button class="tab" data-main="analysis" role="tab" title="Annotate, Embed, Niche, Compare, Signal, Trajectory">Analysis</button></div>
+  <div class="tabs sub" id="tabs" role="tablist">
+    <button class="tab" data-tab="data" role="tab" hidden>Data</button><button class="tab" data-tab="annotate" role="tab">Annotate</button>
     <button class="tab" data-tab="embed" role="tab" title="PCA, UMAP and Leiden clusters">Embed</button><button class="tab" data-tab="niches" role="tab" title="Niches: places where cells of similar make-up live together">Niche</button>
     <button class="tab" data-tab="compare" role="tab" title="DE genes, top genes per group, composition">Compare</button><button class="tab" data-tab="signal" role="tab" title="Cell-cell communication: ligand-receptor signaling between neighboring cells">Signal</button>
     <button class="tab" data-tab="traj" role="tab" title="Spatial axes and pseudotime: the order of cells in the tissue or along a differentiation, and the genes that change along it">Trajectory</button></div>
@@ -1525,6 +1532,7 @@ function imageOnlyUI() {
     const tab = document.querySelector(`#tabs .tab[data-tab=${t}]`);
     tab.disabled = on; tab.title = on ? "An H&E only: no cells to analyze" : tab.dataset.title || tab.title;
   });
+  document.querySelector('#mainTabs .tab[data-main="analysis"]').disabled = on;
   if (on && document.querySelector("#tabs .tab.on:disabled")) showTab("data");
   ["tools", "legend"].forEach((id) => { if (on) $(id).hidden = true; });
   if (!on) $("tools").hidden = false;
@@ -3568,7 +3576,8 @@ const HELP = `
   <li><b>Opacity</b> and <b>Dot size</b> sliders.</li>
   <li><b>Hide cells</b> <kbd>h</kbd>, <b>Hide H&amp;E</b> <kbd>e</kbd>.</li></ul></li>
 <li>The toolbar on the right:<ul>
-  <li>Data, Annotate, Embed, Niche, Compare, Signal and Trajectory are tabs; a dot marks a running analysis.</li>
+  <li>Two tabs: <b>Data</b> and <b>Analysis</b>, whose steps (Annotate, Embed, Niche, Compare, Signal, Trajectory) are a
+    second row; a dot marks a running analysis.</li>
   <li><b>›</b> at its top folds it to the right edge for a bigger map; <b>‹</b> or <kbd>t</kbd> brings it back.</li></ul></li>
 <li><b>Reset</b> (bottom): removes the annotations of this sample (in a project, of all its slices), optionally the
   PCA / UMAP too.</li></ul>
@@ -5467,15 +5476,33 @@ function sampleInfo() {  // the Data tab's card: what the open sample is
   const filt = s.filter ? `filtered (${s.filter.n_cells_removed.toLocaleString()} cells, ${s.filter.n_genes_removed} genes removed)` : "";
   $("sampleInfo").textContent = [`${s.n_cells.toLocaleString()} ${s.unit === "bins" ? "bins" : "cells"}${s.platform ? ` (${s.platform})` : ""}`, img, filt, s.description].filter(Boolean).join(" · ");
 }
+// Two tabs, Data and Analysis; Analysis shows its steps (Annotate ... Trajectory) as a second row and reopens the
+// step last used there
+const ANALYSIS_TABS = ["annotate", "embed", "niches", "compare", "signal", "traj"];
 function showTab(name) {
   document.querySelectorAll("#tabs .tab").forEach((t) => { t.classList.toggle("on", t.dataset.tab === name); t.setAttribute("aria-selected", t.dataset.tab === name); });
   document.querySelectorAll("header .pane").forEach((p) => p.classList.toggle("on", p.dataset.pane === name));
+  const main = name === "data" ? "data" : "analysis";
+  document.querySelectorAll("#mainTabs .tab").forEach((t) => { t.classList.toggle("on", t.dataset.main === main); t.setAttribute("aria-selected", t.dataset.main === main); });
+  $("tabs").hidden = main === "data";
+  if (main === "analysis") store("atab", name);
   store("tab", name);
 }
 document.querySelectorAll("#tabs .tab").forEach((t) => { t.dataset.title = t.title; t.onclick = () => showTab(t.dataset.tab); });
-showTab(["data", "annotate", "embed", "niches", "compare", "signal", "traj"].includes(load("tab")) ? load("tab") : "data");
-setInterval(() => document.querySelectorAll("header .pane").forEach((p) =>  // a running analysis shows on its tab
-  document.querySelector(`#tabs .tab[data-tab=${p.dataset.pane}]`).classList.toggle("busy", !!p.querySelector(".progress.show"))), 700);
+document.querySelectorAll("#mainTabs .tab").forEach((t) => (t.onclick = () => {
+  if (t.dataset.main === "data") { showTab("data"); return; }
+  const last = load("atab"), b = document.querySelector(`#tabs .tab[data-tab=${ANALYSIS_TABS.includes(last) ? last : "annotate"}]`);
+  b.click();  // through the step's own click: Compare, Signal and Trajectory load their options then
+}));
+showTab(["data", ...ANALYSIS_TABS].includes(load("tab")) ? load("tab") : "data");
+setInterval(() => {  // a running analysis shows on its tab, and on Analysis
+  let any = false;
+  document.querySelectorAll("header .pane").forEach((p) => {
+    const busy = !!p.querySelector(".progress.show"); any = any || (busy && p.dataset.pane !== "data");
+    document.querySelector(`#tabs .tab[data-tab=${p.dataset.pane}]`).classList.toggle("busy", busy);
+  });
+  document.querySelector('#mainTabs .tab[data-main="analysis"]').classList.toggle("busy", any);
+}, 700);
 $("hdrShow").onclick = () => setHeader(false);
 if (load("header") === "collapsed") setHeader(true);
 { const v = +load("dotsize"); if (v >= 20 && v <= 300) { $("dotsize").value = v; st.dotSize = v / 100; $("dotsizeVal").textContent = `${st.dotSize.toFixed(1)}×`; } }
