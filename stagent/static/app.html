@@ -50,7 +50,6 @@ body.running :is(#annotate, #eRun, #nRun, #aRun, #sRun, #tRun, #qfBtn, #qfGo, #q
   opacity: .4; filter: grayscale(1); cursor: not-allowed; }
 header .hrow.bottom button { padding: 5px 8px; font-size: 12px; gap: 4px; white-space: nowrap; flex: 0 1 auto; min-width: 0; }
 header.collapsed .hmini { display: flex; }
-.buildtag { display: block; font-size: 10px; font-weight: 400; color: var(--muted); }
 .cap { width: 100%; flex: none; display: flex; align-items: center; gap: 6px; }
 .captxt { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .14em; color: var(--muted); }
 .fl { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); white-space: nowrap; }
@@ -123,7 +122,7 @@ button.on { background: var(--accent); color: #fff; border-color: var(--accent);
 button:disabled { opacity: .45; cursor: default; }
 .spacer { flex: 1; }
 .hrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 0; border-top: 1px solid var(--line); }
-.hrow.r1 { border-top: 0; padding-top: 0; }
+.hrow.r1 { border-top: 0; padding-top: 0; row-gap: 6px; }
 /* in the panel: one control per line where it needs the width, the rest side by side */
 header .hrow > * { flex: none; }
 header .sep, header .hrow > .spacer { display: none; }
@@ -398,7 +397,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
   <!-- the toolbar: a panel on the right of the map: the app, then the tabs Data and Analysis (its steps as a second row),
        review and export, and at the bottom the buttons that delete -->
   <div class="hrow r1">
-    <div class="cap"><div><h1>STAnnotator</h1><span id="build" class="buildtag"></span></div>
+    <div class="cap"><h1>STAnnotator</h1>
       <button id="helpBtn" title="How to use the app, and About (version, agent connection, data folder)" style="padding:4px 10px;font-weight:600;margin-left:auto">?</button>
       <button id="hdrHide" title="Fold the toolbar to the right for a bigger map (t)" style="padding:4px 9px">›</button></div>
     <button id="importBtn" title="Add a sample (Xenium files, h5ad or RDS), then its image and registration">Import…</button>
@@ -5774,8 +5773,6 @@ async function initConnection(serverRemote) {  // in the app: is this page the s
 api("/api/config").then((c) => {  // the desktop app (or no Claude Code CLI): the conversation happens in Claude's apps
   st.chatAvailable = c.chat; st.desktop = c.desktop; st.platform = c.platform;
   syncKMode();
-  $("build").textContent = c.version ? `v${c.version}` : c.build ? `build ${c.build}` : "";  // the build is in About
-  $("build").title = c.build ? `build ${c.build}` : "";
   $("claudeBtn").hidden = !c.desktop;
   $("clearAll").hidden = !c.desktop;
   st.home = c.home;
