@@ -12,7 +12,8 @@ segment(): a thumbnail of the whole image at about STEP_UM per pixel. Tissue = p
   Per class: area, mean hematoxylin, eosin and texture, the distance to the background (tissue edge or a lumen),
   the share next to it.
 outline(): the pixels of chosen classes (optionally only within a box or a polygon), thin seams opened, closed over
-  gaps of CLOSE_UM, holes under MAX_HOLE_UM2 filled, pieces under min_area dropped, traced into polygons (contourpy) and simplified, in the image's
+  gaps of CLOSE_UM, holes under MAX_HOLE_UM2 filled, pieces under min_area dropped, traced smoothly into polygons
+  (the mask blurred and its half level traced between pixels, corners rounded), in the image's
   full-resolution pixels.
 view(): the image, or a box of it, with a grid labelled in full-resolution pixels, so an outline can be given point
   by point.
@@ -22,8 +23,8 @@ import json, re, time
 import numpy as np
 from . import config
 
-STEP_UM = 8.0          # thumbnail resolution
-MAX_SIDE = 3000        # thumbnail pixels on its longer side, at most
+STEP_UM = 6.0          # thumbnail resolution
+MAX_SIDE = 4500        # thumbnail pixels on its longer side, at most
 TISSUE_OD = 0.05       # summed optical density above this (and colored: MIN_SAT) is tissue
 MIN_SAT = 0.05         # saturation of stained tissue, at least (the gray of glass is near 0; pale submucosa ~0.1)
 MIN_SPECK_UM2 = 20000.0  # tissue pieces smaller than this are dust
@@ -31,6 +32,8 @@ MIN_HOLE_UM2 = 3000.0    # holes in the tissue smaller than this are filled; lar
 CLOSE_UM = 40.0        # outline(): gaps narrower than this are closed
 MIN_AREA_UM2 = 20000.0 # outline(): smaller pieces are dropped
 MAX_HOLE_UM2 = 50000.0 # outline(): holes smaller than this are filled
+SMOOTH_PX = 1.2        # outline(): the mask is blurred by this many thumbnail pixels before it is traced
+SIMPLIFY_PX = 0.15     # outline(): points closer than this (thumbnail pixels) to the line are dropped
 FIT_PIXELS = 200000    # k-means is fitted on a random sample of the tissue pixels
 SEED = 0
 # hematoxylin, eosin and residual stain vectors (optical density, RGB), Ruifrok & Johnston 2001
@@ -201,6 +204,15 @@ def _simplify_open(pts, tol):
     return pts[keep]
 
 
+def _chaikin(p, rounds):
+    """Corner cutting of a closed ring (the last point = the first): every edge becomes its 1/4 and 3/4 points."""
+    q = p[:-1] if np.allclose(p[0], p[-1]) else p
+    for _ in range(rounds):
+        nxt = np.roll(q, -1, axis=0)
+        q = np.stack([0.75 * q + 0.25 * nxt, 0.25 * q + 0.75 * nxt], 1).reshape(-1, 2)
+    return np.vstack([q, q[:1]])
+
+
 def _ring_area(p):
     x, y = p[:, 0], p[:, 1]
     return abs(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))) / 2
@@ -240,10 +252,13 @@ def outline(sample_id, classes=None, box_px=None, within_px=None, min_area_um2=M
     m = np.isin(comp, 1 + np.nonzero(sizes >= min_area_um2)[0])
     if not m.any():
         raise ValueError("nothing of that size: choose other classes, a larger box, or a smaller min_area_um2")
-    def ring(mask, oy, ox):  # the longest closed boundary of a mask, in level-0 pixels
-        lines = contourpy.contour_generator(z=np.pad(mask, 1).astype(np.float32)).lines(0.5)
-        p = max((np.asarray(ln, float) for ln in lines), key=len) - 1 + 0.5 + [ox, oy]  # pixel centers
-        p = _simplify(p, 0.8)
+    def ring(mask, oy, ox):  # the longest closed boundary of a mask, smooth, in level-0 pixels
+        # the mask blurred, its 0.5 level traced between pixels (no pixel stairs), corners rounded (Chaikin), then
+        # only points closer than SIMPLIFY_PX to the line dropped
+        z = ndi.gaussian_filter(np.pad(mask, 4).astype(np.float32), SMOOTH_PX)
+        lines = contourpy.contour_generator(z=z).lines(0.5)
+        p = max((np.asarray(ln, float) for ln in lines), key=len) - 4 + 0.5 + [ox, oy]  # pixel centers
+        p = _simplify(_chaikin(p, 2), SIMPLIFY_PX)
         return [[round(float(x * scale), 1), round(float(y * scale), 1)] for x, y in p[:-1]]
     pieces = []
     comp, n = ndi.label(m)
@@ -338,6 +353,7 @@ def fig_outline(sample_id, pieces, name, s=None, box=None):
             q = (np.asarray(p + p[:1], float) - [b[0], b[1]]) / scale
             ax.plot(q[:, 0], q[:, 1], color="#00e6ff", lw=1.6, ls="-" if j == 0 else "--")
             ax.plot(q[:, 0], q[:, 1], color="k", lw=0.5)
+    ax.set_xlim(-0.5, rgb.shape[1] - 0.5); ax.set_ylim(rgb.shape[0] - 0.5, -0.5)  # a box: the outline beyond is cut
     nh = sum(len(pc.get("holes") or []) for pc in pieces)
     ax.set_title(f"proposed {name}: {len(pieces)} outline(s)" + (f", {nh} hole(s) dashed" if nh else ""), fontsize=9)
     out = _out(sample_id, s, f"he_outline_{re.sub(r'[^A-Za-z0-9]+', '_', name)}")

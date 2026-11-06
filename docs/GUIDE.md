@@ -51,16 +51,15 @@ rows as 816,465 bins of 8 um, 229 s, 6.7 GB; the cells sit on the H&E's nuclei) 
 (cell-bin GEM: 56,731 cells, 62 s). The bin GEF (`tissue.gef`) is not read: use the GEM SAW writes beside it. From
 the command line: `stagent import-stereoseq --name brain --path saw_outs/ [--unit bins] [--image regist.tif]`.
 
-The folded part at the bottom of the dialog, **Already imported: change the image or registration**, is for the sample
-already open: add or replace its image, give it a registration file, align it with the agent, or undo an alignment.
-Until the image is registered the cells are shown on a blank background (or the DAPI) with a yellow bar over the
+To give a sample another image or registration file, import it again with them under the same name. Until the image
+is registered the cells are shown on a blank background (or the DAPI) with a yellow bar over the
 map. **No registration file?** **Align with Agent** (next to No registration, or the bar) asks the agent (your Claude Code) to align it:
 the tissue on the image is matched with the cells' footprint over 4 rotations, mirroring and a range of pixel sizes
 (around the size stored in an OME-TIFF), Claude picks the right section and orientation from the candidates' figures,
 and a refinement moves the cells onto their nuclei (nuclei on the image vs cell centroids in windows, affine fit,
 three rounds). On SCP2927 section 147328 (two sections on the slide, rotated 180 degrees) the search took 8 s and the
 refinement 3 s; the result agreed with the nuclei-corrected registration to 0.5 um (median; 1.6 um for 95% of
-cells), while the shipped registration file was 13 um off. **Undo last alignment** goes back. A registration needs
+cells), while the shipped registration file was 13 um off. A registration needs
 at least 90% of the cells on the image. Regions drawn before the cells move are moved along with them.
 
 **Regions drawn elsewhere** (e.g. QuPath annotations on the H&E, exported as GeoJSON in the image's full-resolution

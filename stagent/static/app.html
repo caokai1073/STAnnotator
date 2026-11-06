@@ -379,7 +379,6 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .imkind { display: flex; gap: 16px; margin-bottom: 6px; }
 .choice { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font-size: 13px; }
 .choice button { padding: 2px 10px; font-size: 12.5px; }
-#imExisting summary { cursor: pointer; }
 #alignbar { position: absolute; top: calc(var(--maptop, 44px) + 18px); left: 50%; transform: translateX(-50%); z-index: 6; display: flex; gap: 10px;
             align-items: center; padding: 6px 12px; font-size: 12.5px; background: #fff5e0; color: #6b4a00;
             border: 1px solid #f0c674; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
@@ -629,7 +628,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <div class="items" id="plitems"></div>
     </div>
     <svg id="regsvg"></svg>
-    <div id="alignbar" hidden><span id="alignmsg"></span><button id="alignNow">Align with Agent</button><button id="alignReg">Registration file…</button></div>
+    <div id="alignbar" hidden><span id="alignmsg"></span><button id="alignNow">Align with Agent</button></div>
     <div id="empanel" class="float" hidden>
       <div class="lh"><b>Embedding</b>
         <select id="emKind" title="Which embedding"><option value="umap">UMAP</option><option value="pca">PCA (PC1, PC2)</option></select>
@@ -875,16 +874,6 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <div class="hint" id="imPairs" hidden style="margin-left:138px;white-space:pre-line"></div>
     <div class="frow"><span>Description<small class="opt">optional</small></span><input type="text" id="imDesc" placeholder="e.g. tissue and condition"><span></span></div>
     <div class="row" style="margin-top:6px"><span class="hint" id="imStatus"></span><span class="spacer"></span><button id="imGo" class="primary">Import</button></div>
-    <details id="imExisting" class="clcard" style="margin-top:12px">
-      <summary><b id="imExTitle">Already imported: change the image or registration</b></summary>
-      <div class="hint" id="imExInfo" style="margin:4px 0"></div>
-      <div class="frow"><span>Image</span><input type="text" id="imImgPath" placeholder="H&amp;E or fluorescence image"><button data-pick="image" data-target="imImgPath">Choose…</button></div>
-      <div class="frow"><span>Image kind</span><select id="imImgKind"><option value="H&amp;E">H&amp;E</option><option value="DAPI">DAPI / fluorescence</option></select><button id="imImgGo">Add image</button></div>
-      <div class="frow"><span>Registration</span><input type="text" id="imRegPath" placeholder="registration file"><button data-pick="csv" data-target="imRegPath">Choose…</button></div>
-      <div class="frow"><span>Registration row</span><input type="text" id="imRegSec" placeholder="only if the file has one row per section"><button id="imRegGo">Apply</button></div>
-      <div class="row"><button id="imAlign">Align with Agent</button><button id="imUndoPlace" hidden>Undo last alignment</button>
-        <span class="hint" id="imExStatus"></span><span class="spacer"></span></div>
-    </details>
   </div>
 </dialog>
 <dialog id="refDlg" style="width:min(760px,95vw)">
@@ -1053,8 +1042,7 @@ const ICON_TEXT = { qfBtn: "play", importBtn: "import", clearAll: "trash", rmSam
   undo: "undo", refresh: "refresh", claudeBtn: "sparkle", plaus: "shield", report: "file", export: "share", reset: "trash",
   draw: "pen", emLasso: "lasso", emClear: "x", emZoom: "target", send: "send",
   mkImport: "import", mkCheck: "check", mkSave: "save", mkDraft: "sparkle", mkOrganUse: "list", mkOrganAgent: "sparkle", mkClose: "check", imGo: "import",
-  imNewAlign: "sparkle", imAlign: "sparkle", alignNow: "sparkle", alignReg: "file", imImgGo: "image", imRegGo: "check",
-  imUndoPlace: "undo", refPick: "folder", exPick: "folder", refClose: "check", exClose: "check", rcTest: "check",
+  imNewAlign: "sparkle", alignNow: "sparkle", refPick: "folder", exPick: "folder", refClose: "check", exClose: "check", rcTest: "check",
   rcGo: "server", fbOk: "check", rpAsk: "sparkle", xpCsv: "download", xpNb: "download", xpReg: "download", xpPos: "download", xpGeo: "download",
   hpCopy: "copy", editSave: "check", nameSave: "check", rsGo: "trash", anFig: "download", aRun: "play", aLast: "list", anAsk: "sparkle", sRun: "play", sLast: "list", tRun: "play", tLast: "list", rvGo: "sparkle", rvShow: "list" };
 const ICON_TITLES = { lgtoggle: "Fold or unfold", rgtoggle: "Fold or unfold", anCsv: "Save as CSV…", rpSave: "Save as Markdown…",
@@ -1384,6 +1372,7 @@ async function selectSample(id) {
   $("sampleRename").disabled = false;
   $("qfBtn").disabled = false; $("anLoad").disabled = false; $("rmSample").disabled = false; $("allSamples").disabled = false; $("pjBtn").disabled = false;
   $("reset").disabled = !st.sample.allSessions.length && !projectOf(id);  // in a project: also to reset the other slices
+  imageOnlyUI();  // now, not only when an annotation opens: a sample whose annotations are not opened yet opens none
   store("sample", id);
   $("path").textContent = st.sample.bundle_dir;
   $("path").title = `bundle: ${st.sample.bundle_dir}\nsource: ${st.sample.source_dir}\nH&E: ${st.sample.he_path}`;
@@ -1537,7 +1526,7 @@ function imageOnlyUI() {
   st.imageOnly = on;
   ["annotate", "embed", "niches", "compare", "signal", "traj"].forEach((t) => {  // shown as they are, grayed out
     const tab = document.querySelector(`#tabs .tab[data-tab=${t}]`);
-    tab.disabled = on; tab.title = on ? "An H&E only: no cells to analyze" : tab.dataset.title || tab.title;
+    tab.disabled = on; tab.title = on ? "An H&E only: no cells to analyze" : tab.dataset.title || "";
   });
   document.querySelector('#mainTabs .tab[data-main="analysis"]').disabled = on;
   if (on && document.querySelector("#tabs .tab.on:disabled")) showTab("data");
@@ -3137,7 +3126,7 @@ $("refPick").onclick = async () => { const p = await pickFiles("h5ad"); if (p.le
 const native = () => window.pywebview && window.pywebview.api;  // file dialogs in the desktop app
 function imKind() { return document.querySelector("input[name=imKind]:checked").value; }
 function openImport() {
-  imForm(); imExisting();
+  imForm();
   document.querySelectorAll("#imDlg [data-pick]").forEach((b) => (b.hidden = !native()));
   $("imStatus").textContent = !native() ? "Paste full paths (files on the computer running this viewer)."
     : st.remote ? `Files on the server ${st.remote.host}: Choose… browses them.` : "";
@@ -3413,17 +3402,6 @@ function imForm() {  // show the fields of the chosen options; Align with Claude
 }
 document.querySelectorAll("input[name=imImgMode], input[name=imRegMode]").forEach((r) => (r.onchange = imForm));
 $("imNewImg").addEventListener("input", imForm); $("imNewImg").addEventListener("change", imForm);
-function imExisting() {  // the folded part: image and registration of the selected sample
-  const s = st.sample;
-  $("imExisting").hidden = !s || s.image_only;  // an image only: nothing to place on it
-  if (!s || s.image_only) return;
-  $("imExTitle").textContent = `Already imported: change the image or registration of ${s.sample_id}`;
-  const shown = s.image_kind && s.image_kind !== "none" ? `${s.image_kind} shown` : "no image shown";
-  const placed = s.registration_by ? `cells placed by ${placedBy(s.registration_by)}` : "no registration";
-  $("imExInfo").textContent = `${shown}; ${placed}` + (s.image_pending ? `; waiting for alignment: ${s.image_pending}` : "");
-  $("imAlign").disabled = !(s.image_pending || (s.image_kind && s.image_kind !== "none"));
-  $("imUndoPlace").hidden = !s.can_undo_placement;
-}
 async function afterPlacement(msg) {  // the sample's image or cell positions changed
   const id = st.sample.sample_id, before = `${st.sample.image_kind}|${st.sample.he_path}`;
   st.samples = await api("/api/samples");
@@ -3431,27 +3409,9 @@ async function afterPlacement(msg) {  // the sample's image or cell positions ch
   Object.assign(st.sample, fresh, { sessions: st.sample.sessions, allSessions: st.sample.allSessions });
   const sameImage = before === `${st.sample.image_kind}|${st.sample.he_path}`;  // else show the whole new image
   if (st.sid) await reloadGeometry(sameImage); else { await openHE(id); GL.colorKey = null; fillModes(null); refreshOverlay(); }
-  alignBar(); imExisting();
+  alignBar();
   if (msg) toast(msg, 6000);
 }
-$("imImgGo").onclick = async () => {
-  const path = $("imImgPath").value.trim(); if (!path) { $("imExStatus").textContent = "Choose the image"; return; }
-  $("imExStatus").textContent = "adding…";
-  try {
-    const r = await post(`/api/sample/${st.sample.sample_id}/image`, { path, kind: $("imImgKind").value });
-    $("imExStatus").textContent = r.pending ? "Added; it waits for a registration (Apply, or Align with Agent)." : "Added; the cells are on it.";
-    await afterPlacement();
-  } catch (e) { $("imExStatus").textContent = e.message; }
-};
-$("imRegGo").onclick = async () => {
-  const path = $("imRegPath").value.trim(); if (!path) { $("imExStatus").textContent = "Choose the registration file"; return; }
-  $("imExStatus").textContent = "applying…";
-  try {
-    const r = await post(`/api/sample/${st.sample.sample_id}/registration`, { path, section: $("imRegSec").value.trim() });
-    $("imExStatus").textContent = r.stored ? "Stored; add the image to see the cells on it." : "Applied: the cells are on the image.";
-    await afterPlacement();
-  } catch (e) { $("imExStatus").textContent = e.message; }
-};
 async function askAlign() {
   try {
     const r = await post("/api/claude/align", { sample: st.sample.sample_id, session: st.sid });
@@ -3460,14 +3420,7 @@ async function askAlign() {
     else toast("Open the agent first (Ask Agent)", 5000);
   } catch (e) { toast(e.message, 6000); }
 }
-$("imAlign").onclick = askAlign;
 $("alignNow").onclick = askAlign;
-$("alignReg").onclick = () => { openImport(); $("imExisting").open = true; };
-$("imUndoPlace").onclick = async () => {
-  if (!confirm("Go back to where the cells were before the last alignment or registration?")) return;
-  try { await post(`/api/sample/${st.sample.sample_id}/placement/undo`); await afterPlacement("Back to the earlier placement"); }
-  catch (e) { toast(e.message, 6000); }
-};
 function alignBar() {  // an image waits for its alignment
   const s = st.sample;
   $("alignbar").hidden = !(s && s.image_pending);
@@ -3587,9 +3540,7 @@ const HELP = `
   <li>It is next to No registration, or in the yellow bar over the map.</li>
   <li>It imports, then the agent finds the section and its orientation on the image and refines it until the cells
     sit on their nuclei.</li></ul></li>
-<li>The folded part at the bottom of Import:<ul>
-  <li>changes the image or the registration of the selected sample, or undoes an alignment;</li>
-  <li>regions drawn before the cells move are moved along with them.</li></ul></li></ul>
+<li>Another image or registration for a sample: import it again with them (same name).</li></ul>
 
 <h3>Several slices</h3><ul>
 <li>Import several slices at once; each becomes a sample of one project, with its metadata (condition, day, …).<ul>
@@ -3811,7 +3762,7 @@ to 100, then log(1 + x). Random steps use a fixed seed, so a rerun on the same c
 <li>Filling gaps (the agent's proposals): cells between regions, or a region's cells whose neighbors are mostly in
   another, by position only.</li>
 <li><b>Outlines from the H&amp;E</b> (the agent; no cells needed)<ul>
-  <li>A thumbnail of the image at about 8 µm per pixel; tissue = stained pixels (colored, not the gray of the glass),
+  <li>A thumbnail of the image at about 6 µm per pixel; tissue = stained pixels (colored, not the gray of the glass),
     without dust; holes larger than 3,000 µm² (lumens) stay out.</li>
   <li>Color deconvolution into hematoxylin and eosin (Ruifrok and Johnston stain vectors); per pixel: both stains
     smoothed at 10 and 40 µm over the tissue only, and the texture of the hematoxylin (the distance to the tissue edge
@@ -3819,7 +3770,8 @@ to 100, then log(1 + x). Random steps use a fixed seed, so a rerun on the same c
   <li>k-means into classes (1 = most hematoxylin), smoothed; the agent matches classes to compartments with the
     organ's priors (how each looks on the H&amp;E).</li>
   <li>Outline: the chosen classes (within a box or polygon), thin seams removed, gaps under 40 µm closed, holes under
-    0.05 mm² filled, small pieces dropped, traced and simplified.</li></ul></li></ul>
+    0.05 mm² filled, small pieces dropped, then traced smoothly: the mask blurred and its half level followed between
+    pixels, corners rounded (no pixel stairs).</li></ul></li></ul>
 
 <h3>Annotate</h3><ul>
 <li><b>Marker genes</b> (hierarchical, top-down)<ul>
