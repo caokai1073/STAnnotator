@@ -2,7 +2,8 @@
 1. trajectory.py: a spatial axis, diffusion pseudotime (expression only and mixed with space) and the genes along it,
    on cells along a gradient whose genes rise, fall or peak in the middle;
 2. an H&E-only sample (importer.import_image): regions drawn on an image without cells, written as GeoJSON and read
-   back, and handed to a sample of cells on the same image.
+   back, and handed to a sample of cells on the same image;
+3. outlines read from the H&E itself (hetissue.py) and the tissue priors document.
 Run: python tests/smoke_trajectory_image.py  (in a temporary data folder, removed at the end)."""
 import os, tempfile, time
 from pathlib import Path
@@ -96,6 +97,23 @@ print(f"H&E only: regions {[p['name'] for p in pieces]}; handed to 500 cells: {p
 assert per["mucosa"] == inside_m
 ph = Session.create("cells", "none", method="none")
 assert {r["name"] for r in ph.regions_info()["regions"]} == {"mucosa", "submucosa"}
+# ---- 3. outlines from the H&E itself: a synthetic "H&E" with a purple band (mucosa) over a pink one (muscle)
+from stagent import hetissue  # noqa: E402
+he = np.full((1200, 1600, 3), 235, np.uint8)
+he[200:500, 200:1400] = (120, 60, 150)      # hematoxylin-rich
+he[500:1000, 200:1400] = (230, 90, 140)     # eosin-rich
+he += rng.integers(0, 12, he.shape, dtype=np.uint8)
+Image.fromarray(he).save(HOME / "he2.png")
+importer.import_image("he2", HOME / "he2.png", um_per_px=2.0, progress=lambda *_: None)
+seg = hetissue.segment("he2", n_classes=2)
+blue = min(seg["classes"], key=lambda c: -c["hematoxylin"])["class"]
+polys = [pc["outer"] for pc in hetissue.outline("he2", [blue])]
+xs = np.array([x for p in polys for x, _ in p]); ys = np.array([y for p in polys for _, y in p])
+print(f"H&E classes: {[(c['class'], c['hematoxylin'], c['eosin']) for c in seg['classes']]}; outline box "
+      f"{xs.min():.0f}-{xs.max():.0f} x {ys.min():.0f}-{ys.max():.0f}")
+assert len(polys) == 1 and abs(ys.min() - 200) < 30 and abs(ys.max() - 500) < 30, (len(polys), ys.min(), ys.max())
+assert "Compartments to draw" in hetissue.tissue_priors("colon")["text"]
+
 import shutil  # noqa: E402
 shutil.rmtree(HOME, ignore_errors=True)
 print(f"ok ({time.time() - t0:.1f} s)")

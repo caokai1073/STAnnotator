@@ -80,7 +80,14 @@ and gives areas in pixels. Such a sample has only the Data tab and the regions (
 mm² with a pixel size); **Export…** writes the outlines as GeoJSON. Its regions go to the data: choose the sample
 under **Regions from** in **Import…** when importing the data registered to the same H&E (the same scan: the image
 size is checked), and every annotation of the data starts with them; or give the exported GeoJSON as the import's
-**Regions**. Agent tools: `import_he_only`, `export_regions`.
+**Regions** (QuPath opens it too: every outline is an annotation classified by its region, with its color). The
+agent can outline compartments on such an image when you ask (e.g. "draw the mucosa"): it reads the organ's priors
+(`tissue_priors`, the document of literature-based priors of 13 organs, with how each compartment looks on the
+H&E), splits the tissue into classes by its stains (`segment_he`: hematoxylin and eosin by color deconvolution and
+their texture, k-means; each class with its distance to the tissue edge), and proposes the classes that match as a region
+(`propose_he_region`, or points read on `show_he`); you see the outline in the review window, and Accept adds it as
+a draft to edit. Agent tools: `import_he_only`, `export_regions`, `tissue_priors`, `segment_he`, `show_he`,
+`propose_he_region`.
 
 **CosMx** and **MERFISH** (Vizgen MERSCOPE) output: choose the kind in **Import…** and give its two files, each in its
 field (Counts, Cell metadata); one slide or region per import (import several one after the other).
@@ -269,8 +276,11 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
    changes, conflicts, confidence or clusters, or by **gene expression…** (type any panel gene: cells are colored by
    their transcript count, 0 / 1 / 2–3 / 4–7 / 8+, and a clicked cell shows its count). Click a legend entry to show only that type; click a cell for
    its label, alternatives and region. Opacity, dot size, hide cells, hide H&E.
-3. **Regions are drawn by you.** In the Regions panel click **Draw region**, click points on the map, close
-   with a double-click, Enter or the first point (Backspace removes a point, Esc cancels), and name it. A
+3. **Regions are drawn by you.** In the Regions panel click **Draw**, click points on the map, close
+   with **Finish**, Enter or a click on the first point, and name it. While drawing, **Undo point** (Backspace) takes
+   back the last point and a double-click on a point removes it; the outline is saved as you draw, so **Pause** (or
+   another sample, or a reload) keeps it and **Continue** picks it up later (Shift-click Draw starts a new one; Esc
+   drops it). A
    name can have several polygons; regions can be renamed, deleted, zoomed to and outlined. Where outlines
    overlap the smaller one takes the cells, so a region drawn inside another (e.g. a follicle inside the
    mucosa) keeps its cells whichever was drawn first. Cells in no

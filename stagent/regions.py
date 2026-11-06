@@ -125,12 +125,17 @@ def parse_geojson(text):
 
 def to_geojson(state, colors=None, image_size=None):
     """The drawn outlines of a version as a GeoJSON FeatureCollection in the image's full-resolution pixels, as QuPath
-    writes its annotations (classification = region name, with its color), so parse_geojson reads it back and QuPath
-    opens it. Cells moved into regions without an outline (cells_override) have no shape and are not in it.
-    Returns (text, {"n_outlines", "regions", "n_without_outline"})."""
-    import json
-    colors = colors or {}
-    feats, names, moved = [], [], 0
+    writes its annotations, so QuPath opens it (Drag & Drop, or File > Import objects) and parse_geojson reads it
+    back: every feature has a UUID id, objectType "annotation", the region as its name and as its classification
+    {"name", "color": [r, g, b]} (QuPath's PathClass needs the color). colors: {region: "#rrggbb"} (else the app's
+    palette). Cells moved into regions without an outline (cells_override) have no shape and are not in it.
+    image_size: kept for the caller; not written (QuPath reads only the features). Returns (text, {"n_outlines",
+    "regions", "n_without_outline"})."""
+    import json, uuid
+    from .render import region_colors
+    names = list(dict.fromkeys(op["name"] for op in state.get("ops", []) if op.get("op") == "polygon"))
+    cols = region_colors(names, colors or {})
+    feats, moved = [], 0
     for op in state.get("ops", []):
         if op.get("op") != "polygon" or len(op.get("polygon") or []) < 3:
             moved += op.get("op") == "cells_override"
@@ -138,20 +143,15 @@ def to_geojson(state, colors=None, image_size=None):
         rings = [op["polygon"]] + [h for h in op.get("holes", []) if len(h) >= 3]
         rings = [[[round(float(x), 2), round(float(y), 2)] for x, y in r] for r in rings]
         rings = [r + [r[0]] if r[0] != r[-1] else r for r in rings]  # GeoJSON rings are closed
-        c = colors.get(op["name"])
-        cls = {"name": op["name"]} | ({"color": [int(c[i:i + 2], 16) for i in (1, 3, 5)]} if c else {})
-        feats.append({"type": "Feature", "id": op.get("id"), "geometry": {"type": "Polygon", "coordinates": rings},
-                      "properties": {"objectType": "annotation", "name": op["name"], "classification": cls,
-                                     "author": op.get("author"), "created_at": op.get("created_at")}})
-        if op["name"] not in names:
-            names.append(op["name"])
+        c = cols[op["name"]]
+        fid = str(uuid.uuid5(uuid.NAMESPACE_URL, f"stannotator:{op.get('id')}:{op['name']}:{rings[0][:3]}"))
+        feats.append({"type": "Feature", "id": fid, "geometry": {"type": "Polygon", "coordinates": rings},
+                      "properties": {"objectType": "annotation", "name": op["name"],
+                                     "classification": {"name": op["name"], "color": [int(c[k:k + 2], 16) for k in (1, 3, 5)]}}})
     if not feats:
         raise ValueError("no region outlines drawn in this version")
-    d = {"type": "FeatureCollection", "features": feats}
-    if image_size:
-        d["properties"] = {"coordinates": "full-resolution image pixels", "image_size_px": list(image_size)}
-    return json.dumps(d, ensure_ascii=False, indent=1), {"n_outlines": len(feats), "regions": names,
-                                                         "n_without_outline": moved}
+    return json.dumps({"type": "FeatureCollection", "features": feats}, ensure_ascii=False, separators=(",", ":")), \
+        {"n_outlines": len(feats), "regions": names, "n_without_outline": moved}
 
 
 def cells_in_polygon(px, py, polygon):

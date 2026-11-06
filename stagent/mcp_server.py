@@ -39,16 +39,19 @@ Getting started
   regions, check_registration_map, the registration correction and fit_piece / move_piece work on it; tools about
   cell types do not. A new annotation of the sample (start_session) starts with the placeholder's regions.
 - A sample of an H&E only (list_samples: image_only; import_he_only) has no cells: the user (e.g. a pathologist)
-  draws and names regions on it, and show_area can look at the image; nothing else applies. Its regions go to the
-  data registered to the same image: the app's Import dialog ("Regions from"), or export_regions and the regions
-  file of the import.
+  draws and names regions on it. Asked to outline a compartment there (e.g. "draw the mucosa"), do it from the image
+  and the tissue's priors: tissue_priors(organ) for how each compartment looks on the H&E, segment_he for the
+  classes of the tissue (hematoxylin, eosin, texture, distance to the edge), then propose_he_region with the classes
+  that match (within a box for one section), or with points read on show_he; say it is a draft from the image for the
+  user to check and edit. The tools about cells do not apply. Its regions go to the data registered to the same
+  image: the app's Import dialog ("Regions from"), or export_regions and the regions file of the import.
 - A new gene panel needs its own marker list: start from organ_marker_draft (built-in lists of common organs pruned
   to the panel; search the literature for types it lacks), or draft one from get_panel_genes; validate it with check_marker_list,
   and save it with save_marker_list; the user loads it in the viewer's "Markers..." dialog and clicks Annotate (or
   start_session(markers_text=...) when the user asks you to run it).
 
 Changes to the data are reviewed by the user
-- Every tool that changes data (import_sample, import_cosmx_merfish, import_visium, import_stereoseq, import_he_only, start_session, add / update / remove_constraint, label_cells,
+- Every tool that changes data (import_sample, import_cosmx_merfish, import_visium, import_stereoseq, import_he_only, start_session, add / update / remove_constraint, propose_he_region, label_cells,
   label_cluster, remove_correction, recluster, revert, apply_alignment, run_niches, name_niches, record_verdicts,
   resolve_rule_suggestion, assign_region_cells, propose_region, move_piece, undo_piece_move) only proposes the change: the app shows it in a review window with what it does, and it
   is applied only when the user clicks Accept there (Dismiss drops it). The tool waits a little for the decision and
@@ -1103,6 +1106,104 @@ def propose_region(name: str, compartment: Optional[str] = None, area: Optional[
     s = _s()
     v = s.add_region_pieces(name, resolved, author="agent (accepted by the user)")
     return _j({"new_version": v, "message": s.state(v)["message"], "regions": s.regions_info(v)["regions"]})
+
+
+# ---------------- regions from the H&E itself (also a sample of an H&E only) ----------------
+@mcp.tool()
+def tissue_priors(organ: Optional[str] = None) -> str:
+    """The app's literature-based tissue priors (data/priors/tissue_priors.md) of an organ: its compartments to draw
+    with how each looks on the H&E, and spatial priors (where each cell type lives, as rules of the constraint
+    language, with exceptions and references). Without organ: the organs covered and how to read a rule. Use it to
+    outline compartments on the H&E (segment_he, propose_he_region) and to suggest priors (preview_constraint),
+    always with the user's agreement."""
+    from . import hetissue
+    return _j(hetissue.tissue_priors(organ))
+
+
+@mcp.tool()
+def segment_he(n_classes: int = 6) -> list:
+    """Classes of the tissue read from the H&E itself (no cells needed: works on a sample of an H&E only): color
+    deconvolution into hematoxylin and eosin and their texture, k-means into
+    n_classes (1 = the most hematoxylin). Returns each class's area, hematoxylin, eosin, texture, distance from the
+    edge and share at the edge, and a figure: the H&E with ticks in full-resolution pixels beside the class map.
+    Match classes to the compartments of tissue_priors(organ) (e.g. colon: mucosa = dense purple crypts at the
+    luminal edge, often 2-3 classes with high hematoxylin; lymphoid follicles = the darkest round blue spots;
+    submucosa = pale, loose, low stain; muscularis propria = thick bands of the highest eosin and no texture), then
+    propose_he_region. Changes nothing; the classes are kept for propose_he_region."""
+    from . import hetissue
+    s = _s()
+    meta = hetissue.segment(s.sample_id, n_classes)
+    png = hetissue.fig_classes(s.sample_id, s)
+    return [_j({k: meta[k] for k in ("n_classes", "um_per_px", "classes", "pixel_size_known")} | {"path": png}),
+            Image(path=png)]
+
+
+@mcp.tool()
+def show_he(box_px: Optional[list[float]] = None) -> list:
+    """The H&E (whole, or box_px = [x0, y0, x1, y1] in full-resolution pixels, at about 1 um per pixel) with a grid
+    labelled in full-resolution pixels and the regions drawn so far, to check an outline or read the points of one
+    (propose_he_region polygon_px). Changes nothing."""
+    from . import hetissue
+    s = _s()
+    ops = [o for o in s.state()["regions"].get("ops", []) if o.get("op") == "polygon"]
+    regs = {}
+    for o in ops:
+        regs.setdefault(o["name"], []).append(o["polygon"])
+    png = hetissue.fig_view(s.sample_id, box_px, s, regs)
+    return [_j({"path": png, "box_px": box_px}), Image(path=png)]
+
+
+def _he_outline(s, a):
+    from . import hetissue
+    if a.get("polygon_px"):
+        outer = [[float(x), float(y)] for x, y in a["polygon_px"]]
+        if len(outer) < 3:
+            raise ValueError("polygon_px needs at least 3 points")
+        return [{"outer": outer, "holes": []}], "points read on the H&E"
+    if not a.get("classes"):
+        raise ValueError("give classes (from segment_he) or polygon_px")
+    polys = hetissue.outline(s.sample_id, a["classes"], a.get("box_px"), a.get("within_px"),
+                             float(a.get("min_area_um2") or hetissue.MIN_AREA_UM2))
+    return polys, f"H&E classes {', '.join(map(str, a['classes']))}" + (" within a box" if a.get("box_px") else "")
+
+
+def _d_propose_he_region(a):
+    from . import hetissue, regions as regmod
+    s = _s()
+    name = regmod.validate_name(re.sub(r"\s+", "_", str(a["name"]).strip()))
+    if a.get("resolved"):
+        polys, how = a["resolved"], a.get("how") or "the H&E"
+    else:
+        polys, how = _he_outline(s, a)
+    exists = name in s.region_names()
+    return {"title": f"Add region {name}" + (f" ({len(polys)} pieces)" if len(polys) > 1 else "") + " outlined on the H&E",
+            "version": s.state()["version"],
+            "args": dict(a, name=name, resolved=polys, how=how),  # applied exactly as reviewed
+            "details": [*_words(a), f"Outlined by the agent from the image alone ({how}), guided by the tissue's "
+                        "priors: check it against the H&E; it is a draft to correct.",
+                        f"Adds {len(polys)} polygon(s) " + (f"to the existing region {name}" if exists else
+                        f"as region {name}") + "; you can edit its points afterwards, and Undo takes it back."],
+            "preview": {"kind": "image", "path": hetissue.fig_outline(s.sample_id, polys, name, s)}}
+
+
+@mcp.tool()
+@_reviewed(_d_propose_he_region)
+def propose_he_region(name: str, classes: Optional[list[int]] = None, box_px: Optional[list[float]] = None,
+                      within_px: Optional[list[list[float]]] = None, polygon_px: Optional[list[list[float]]] = None,
+                      min_area_um2: float = 20000.0, text: str = "", resolved: Optional[list] = None,
+                      how: Optional[str] = None) -> str:
+    """Propose a region outlined on the H&E (works without cells, e.g. a sample of an H&E only): the pixels of
+    classes (from segment_he; e.g. the classes of the mucosa), optionally only within box_px [x0, y0, x1, y1] or the
+    polygon within_px (full-resolution pixels; one section of a slide, one side of the tissue), gaps closed, holes
+    filled, pieces under min_area_um2 dropped; or polygon_px, points you read on show_he. The user sees the outline
+    on the H&E in the review window and Accept adds it as region `name` (editable afterwards). text: the user's
+    words. resolved, how: filled in by the app (leave them out). Only when the user asked for the region; say it is a
+    draft from the image."""
+    s = _s()
+    from . import regions as regmod
+    pieces = [dict(p, name=regmod.validate_name(re.sub(r"\s+", "_", str(name).strip()))) for p in resolved]
+    r = s.import_regions(pieces, source="the H&E", author="agent from the H&E (accepted by the user)")
+    return _j({"new_version": r["new_version"], "message": r["message"], "regions": s.regions_info(r["new_version"])["regions"]})
 
 
 # ---------------- aligning cells to an image without a registration file ----------------

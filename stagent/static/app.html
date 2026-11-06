@@ -654,7 +654,12 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
         <button id="rgtoggle" style="padding:1px 7px;font-size:11px">−</button></div>
       <div class="items" id="rgitems"></div>
       <div class="hint" id="drawhint" hidden style="padding:6px 10px;border-top:1px solid var(--line)">
-        Click to add points · double-click / Enter / first point to close · Backspace undo point · Esc cancel</div>
+        <div class="row" style="gap:6px;margin-bottom:4px"><b id="drawinfo">0 points</b><span class="spacer"></span>
+          <button id="drawUndo" style="padding:1px 8px;font-size:12px" title="Take back the last point (Backspace)">Undo point</button>
+          <button id="drawPause" style="padding:1px 8px;font-size:12px" title="Stop drawing for now: the outline is kept (also after a reload) and Continue picks it up">Pause</button>
+          <button id="drawDone" class="primary" style="padding:1px 8px;font-size:12px" title="Close the outline and name it (Enter)">Finish</button></div>
+        Click to add points · double-click a point to remove it · click the first point, Enter or Finish to close ·
+        Backspace undo point · Esc cancel · the outline is saved as you draw</div>
       <div class="hint" id="edithint" hidden style="padding:6px 10px;border-top:1px solid var(--line)">
         <div id="editinfo" style="margin-bottom:4px"></div>
         Drag a point to move it · drag a small ◦ between two points to add one · double-click a point to remove it
@@ -1423,7 +1428,7 @@ function reportState() {  // so Claude (use_viewer_session) knows what the user 
 }
 function closeSession() {
   st.sid = null; st.placeholder = false; st.version = null; st.filters = {}; st.regions = null; st.advice = null; st.advicePollSig = undefined; st.adviceSeen = null;
-  cancelDraw(); if (st.editing) stopEdit(); closePlaus();
+  if (st.drawing) stopDraw(); if (st.editing) stopEdit(); closePlaus();  // an outline being drawn stays as its sample's draft
   $("legend").hidden = true; $("cellcard").classList.remove("show");
   $("empty").style.display = "flex";
   ["undo", "export", "send", "plaus", "report", "nRun", "eRun", "eShow"].forEach((b) => ($(b).disabled = true));
@@ -1523,6 +1528,7 @@ async function openSession(sid) {
     $("anSave").disabled = true;
   }
   imageOnlyUI();
+  syncDrawBtn();  // Continue when an outline of this sample was paused
 }
 // A sample of an image only (H&E only, no cells): its regions are all there is. The tabs and tools about cells are
 // hidden; Export writes the regions (GeoJSON); the regions panel shows each outline's area.
@@ -2146,6 +2152,11 @@ function drawRegions() {
                                   stroke: "#00e6ff", "stroke-width": 2.5 }));
   }
   if (st.editing) drawEditing(svg);
+  if (!st.drawing && st.pausedDraft && $("outlines").checked) {  // a paused outline: gray, dashed
+    const pts = st.pausedDraft.map(([x, y]) => toScreen(x, y));
+    svg.append(svgEl("polyline", { points: pts.map((q) => `${q.x},${q.y}`).join(" "), fill: "none",
+                                    stroke: "#8a8a8a", "stroke-width": 2, "stroke-dasharray": "4 4" }));
+  }
   if (st.drawing && st.drawing.length) {
     const pts = st.drawing.map(([x, y]) => toScreen(x, y));
     svg.append(svgEl("polyline", { points: pts.map((q) => `${q.x},${q.y}`).join(" "), fill: "rgba(0,200,255,.08)",
@@ -2335,7 +2346,7 @@ function simplifyRing(pts, tol) {  // Douglas-Peucker on a closed outline: the p
   return pts.filter((_, i) => keep[i]).map((q) => [q[0], q[1]]);
 }
 function startEdit(p) {
-  if (st.drawing) cancelDraw();
+  if (st.drawing) pauseDraw();
   const pts = simplifyRing(p.polygon, EDIT_TOL_UM / st.he.um_per_px);  // unchanged unless a point is moved and saved
   st.editing = { id: p.id, name: p.name, pts, dirty: false, from: p.polygon.length };
   $("edithint").hidden = false; $("draw").disabled = true;
@@ -2418,50 +2429,85 @@ function beginDrag(i) {
 $("editSave").onclick = saveEdit;
 $("editCancel").onclick = stopEdit;
 
-function startDraw() {
-  if (!st.sid) return;
-  st.drawing = [];
-  viewer.gestureSettingsMouse.dblClickToZoom = false;
-  $("draw").classList.add("on"); setLabel($("draw"), "Cancel"); $("drawhint").hidden = false;
-  $("osd").style.cursor = "crosshair";
+// Drawing a region: the points are kept as a draft of the sample (browser storage) at every change, so a long outline
+// can be paused (Pause, or another sample) and continued later, also after a reload; a double-click on a point
+// removes it, Undo point (Backspace) the last one.
+const draftKey = () => st.sample ? `draft:${st.sample.sample_id}` : "";
+function saveDraft() {
+  const k = draftKey(); if (!k) return;
+  try { if (st.drawing && st.drawing.length) localStorage.setItem(k, JSON.stringify(st.drawing)); else localStorage.removeItem(k); } catch (e) {}
+}
+function loadDraft() { try { const d = JSON.parse(localStorage.getItem(draftKey()) || "null"); return Array.isArray(d) && d.length ? d : null; } catch (e) { return null; } }
+function syncDrawBtn() {  // Draw, Continue (a paused outline waits) or Cancel
+  const paused = !st.drawing && st.sid && loadDraft();
+  st.pausedDraft = paused || null;
+  setLabel($("draw"), st.drawing ? "Cancel" : paused ? "Continue" : "Draw");
+  $("draw").title = st.drawing ? "Stop and drop this outline (Esc); Pause keeps it" : paused ? `Continue the paused outline (${paused.length} points); Shift-click: start a new one`
+    : "Draw a region: click points on the map; click the first point, Enter or Finish to close";
+  if (st.drawing) $("drawinfo").textContent = `${st.drawing.length} point${st.drawing.length === 1 ? "" : "s"}`;
   drawRegions();
 }
-function cancelDraw() {
+function startDraw(fresh) {
+  if (!st.sid) return;
+  st.drawing = (!fresh && loadDraft()) || [];
+  viewer.gestureSettingsMouse.dblClickToZoom = false;
+  $("draw").classList.add("on"); $("drawhint").hidden = false;
+  $("osd").style.cursor = "crosshair";
+  saveDraft(); syncDrawBtn();
+}
+function stopDraw() {  // out of drawing mode; the draft stays as it is in storage
   st.drawing = null;
   viewer.gestureSettingsMouse.dblClickToZoom = true;
-  $("draw").classList.remove("on"); setLabel($("draw"), "Draw"); $("drawhint").hidden = true;
+  $("draw").classList.remove("on"); $("drawhint").hidden = true;
   $("osd").style.cursor = "";
-  drawRegions();
+  syncDrawBtn();
+}
+function pauseDraw() {
+  if (!st.drawing) return;
+  const n = st.drawing.length; saveDraft(); stopDraw();
+  if (n) toast(`Outline paused (${n} points): Continue in the Regions panel picks it up`, 5000);
+}
+function cancelDraw() {
+  if (st.drawing && st.drawing.length > 4 && !confirm(`Drop this outline of ${st.drawing.length} points? (Pause keeps it.)`)) return;
+  st.drawing = []; saveDraft(); stopDraw();
+}
+function nearPoint(pos, pts, px = 8) {  // the point of the outline under the mouse, or -1
+  let best = -1, bd = px;
+  pts.forEach(([x, y], i) => { const q = toScreen(x, y), d = Math.hypot(q.x - pos.x, q.y - pos.y); if (d < bd) { bd = d; best = i; } });
+  return best;
 }
 function addPoint(pos) {
   const p = imgPointFromEvent(pos);
   const pts = st.drawing;
-  if (pts.length >= 3) {  // clicking the first point closes the polygon
-    const f = toScreen(pts[0][0], pts[0][1]);
-    if (Math.hypot(f.x - pos.x, f.y - pos.y) < 10) { finishDraw(); return; }
-  }
-  if (pts.length) {  // ignore a repeat click on the same spot (the two clicks of a double-click)
-    const l = toScreen(pts[pts.length - 1][0], pts[pts.length - 1][1]);
-    if (Math.hypot(l.x - pos.x, l.y - pos.y) < 4) { drawRegions(); return; }
-  }
+  const hit = nearPoint(pos, pts);
+  if (hit === 0 && pts.length >= 3) { finishDraw(); return; }  // clicking the first point closes the polygon
+  if (hit >= 0) { drawRegions(); return; }  // on a point already there (the first click of a double-click): nothing
   pts.push([p.x, p.y]);
-  drawRegions();
+  saveDraft(); syncDrawBtn();
 }
 function finishDraw() {
   if (!st.drawing || st.drawing.length < 3) { toast("A region needs at least 3 points"); return; }
   $("nameErr").textContent = ""; $("nameInfo").textContent = `${st.drawing.length} points`;
   $("nameDlg").showModal(); $("regname").focus(); $("regname").select();
 }
-viewer.addHandler("canvas-double-click", (e) => { if (st.drawing) { e.preventDefaultAction = true; finishDraw(); } });
+viewer.addHandler("canvas-double-click", (e) => {
+  if (!st.drawing) return;
+  e.preventDefaultAction = true;
+  const hit = nearPoint(e.position, st.drawing);
+  if (hit > 0 || (hit === 0 && st.drawing.length < 3)) { st.drawing.splice(hit, 1); saveDraft(); syncDrawBtn(); return; }  // remove that point
+});
 $("nameSave").onclick = async () => {
   try {
     const r = await post(`/api/s/${st.sid}/regions/add`, { name: $("regname").value, polygon: st.drawing });
-    $("nameDlg").close(); cancelDraw(); await afterRegionChange(r);
+    $("nameDlg").close(); st.drawing = []; saveDraft(); stopDraw(); await afterRegionChange(r);
   } catch (e) { $("nameErr").textContent = e.message; }
 };
 $("regname").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("nameSave").click(); } });
 $("nameCancel").onclick = () => { $("nameDlg").close(); };  // keep the points so the user can continue or Esc
-$("draw").onclick = () => (st.drawing ? cancelDraw() : startDraw());
+$("draw").onclick = (e) => (st.drawing ? cancelDraw() : startDraw(e.shiftKey));
+$("drawUndo").onclick = () => { if (st.drawing && st.drawing.length) { st.drawing.pop(); saveDraft(); syncDrawBtn(); } };
+$("drawPause").onclick = pauseDraw;
+$("drawDone").onclick = finishDraw;
 $("outlines").onchange = drawRegions;
 $("rgtoggle").onclick = () => { $("regpanel").classList.toggle("collapsed"); $("rgtoggle").classList.toggle("flip", $("regpanel").classList.contains("collapsed")); };
 
@@ -3525,6 +3571,8 @@ const HELP = `
     draw and name regions before the expression data exist.<ul>
     <li>The pixel size is read from the image, or typed in; without it no µm are shown (areas in pixels).</li>
     <li>Only the Data tab and the regions apply; the regions panel shows each outline's area.</li>
+    <li>Ask the agent to outline a compartment (“draw the mucosa”): it reads the organ's priors and the stains of the
+      image and proposes an outline for you to accept and edit.</li>
     <li>The regions go to the data later: <b>Regions from</b> when importing the data registered to the same image,
       or Export → Regions (GeoJSON).</li></ul></li></ul></li>
 <li>Then the image and its registration:<ul>
@@ -3586,8 +3634,11 @@ const HELP = `
 
 <h3>Regions</h3><ul>
 <li><b>Draw</b> (Regions panel): click points on the map.<ul>
-  <li>Close it with a double-click, <kbd>Enter</kbd>, or a click on the first point; then name it.</li>
-  <li><kbd>Backspace</kbd> removes the last point; <kbd>Esc</kbd> cancels.</li>
+  <li>Close it with <b>Finish</b>, <kbd>Enter</kbd>, or a click on the first point; then name it.</li>
+  <li><b>Undo point</b> (<kbd>Backspace</kbd>) removes the last point; a double-click on a point removes it;
+    <kbd>Esc</kbd> cancels.</li>
+  <li>The outline is saved as you draw: <b>Pause</b> (or another sample, or a reload) keeps it and <b>Continue</b>
+    picks it up; Shift-click Draw starts a new one.</li>
   <li>A name can have several polygons.</li>
   <li>Where outlines overlap, the smaller one takes the cells: a region drawn inside another keeps its cells.</li></ul></li>
 <li><b>Import</b> (Regions panel): regions from a GeoJSON of outlines drawn on this H&amp;E (e.g. QuPath annotations,
@@ -3758,7 +3809,17 @@ to 100, then log(1 + x). Random steps use a fixed seed, so a rerun on the same c
 <li>Overlapping outlines: the smaller one takes the cells; cells moved into a region without an outline count last.</li>
 <li>GeoJSON (QuPath): a region per classification; holes stay out of it.</li>
 <li>Filling gaps (the agent's proposals): cells between regions, or a region's cells whose neighbors are mostly in
-  another, by position only.</li></ul>
+  another, by position only.</li>
+<li><b>Outlines from the H&amp;E</b> (the agent; no cells needed)<ul>
+  <li>A thumbnail of the image at about 8 µm per pixel; tissue = stained pixels (colored, not the gray of the glass),
+    without dust; holes larger than 3,000 µm² (lumens) stay out.</li>
+  <li>Color deconvolution into hematoxylin and eosin (Ruifrok and Johnston stain vectors); per pixel: both stains
+    smoothed at 10 and 40 µm over the tissue only, and the texture of the hematoxylin (the distance to the tissue edge
+    is reported per class).</li>
+  <li>k-means into classes (1 = most hematoxylin), smoothed; the agent matches classes to compartments with the
+    organ's priors (how each looks on the H&amp;E).</li>
+  <li>Outline: the chosen classes (within a box or polygon), thin seams removed, gaps under 40 µm closed, holes under
+    0.05 mm² filled, small pieces dropped, traced and simplified.</li></ul></li></ul>
 
 <h3>Annotate</h3><ul>
 <li><b>Marker genes</b> (hierarchical, top-down)<ul>
@@ -5804,7 +5865,7 @@ document.addEventListener("keydown", (e) => {
   if (st.editing && e.key === "Enter") { e.preventDefault(); saveEdit(); }
   if (st.drawing && e.key === "Escape") cancelDraw();
   if (st.drawing && e.key === "Enter") { e.preventDefault(); finishDraw(); }
-  if (st.drawing && e.key === "Backspace") { e.preventDefault(); st.drawing.pop(); drawRegions(); }
+  if (st.drawing && e.key === "Backspace") { e.preventDefault(); $("drawUndo").click(); }
 });
 // ---------------- where the app works: this computer, or a server over SSH (desktop app; remote.py) ----------------
 // On a server the window shows the server's viewer through an SSH tunnel: file choosers browse the server, exports are
