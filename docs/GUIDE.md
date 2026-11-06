@@ -204,7 +204,7 @@ starts it, on the server's own localhost only; its process id is in `<data folde
 ## 3. The viewer
 
 The toolbar is a panel on the right of the map: **Import** and **Export** at the top, the server choice below, then
-the steps **Data**, **Annotate**, **Embed**, **Niches**, **Compare**, **Signaling** and **Trajectory** as tabs (a dot on a tab whose analysis is running), and at
+the steps **Data**, **Annotate**, **Embed**, **Niche**, **Compare**, **Signal** and **Trajectory** as tabs (a dot on a tab whose analysis is running), and at
 the bottom **Reset** and **Remove all**. On the map, next to the **Color by** bar, a bar holds **Undo**, **Ask Agent**
 (Claude Code), **Agent Review** and **Report**. **›** at its top (or `t`) folds it to the right edge for a bigger map,
 **‹** brings it back.
@@ -368,10 +368,10 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
      joint embedding, clusters made of one slice (`embedding_facts`, `show_embedding`); **put in Embed** fills in
      suggested settings.
    - *Niches*: what each niche is on the H&E, names (**name the niches**), k and the number of niches (**put in
-     Niches**).
+     Niche**).
    - *Compare* and *Signaling*: what the DE genes, compositions or interactions you looked at mean, the caveats
      (replicate slices, spillover, panel coverage) and the analysis that would settle a question (**put in
-     Compare / Signaling**); **show on map** colors the map by a gene or a signal.
+     Compare / Signal**); **show on map** colors the map by a gene or a signal.
    Advice changes nothing until you click; **dismiss** hides it.
    The **Priors** list under Regions shows the priors of the annotation (the user's words and how they were read);
    **×** removes one (Undo brings it back). **?** (top of the toolbar on the right) explains every control and, under **About**, shows the
@@ -388,7 +388,7 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
    **Show UMAP** opens a window on the right (UMAP or PC1/PC2, colored as the map, by cell type, Leiden cluster or
    niche). **Select** (or Shift-drag) draws around cells: they light up on the spatial map and the rest turn gray;
    **Show on map** zooms there. Leiden clusters are also a *Color by* option.
-10. **Niches** (fourth row): places where cells of similar make-up live together. Every cell gets an identity, its
+10. **Niche** (fourth tab): places where cells of similar make-up live together. Every cell gets an identity, its
    weights on NMF gene programs (*Identity: NMF programs*, independent of the annotation) or its cell type; the
    identities are averaged over the cell and its *k* nearest cells and clustered (k-means) into the chosen number of
    niches. **Run niches** uses one k everywhere (**k: Set k**); with **k: Agent chooses** the same button asks the agent to choose k per drawn region
@@ -417,11 +417,11 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
    or all other cells): the number in the window sets how many genes the table and the plot show (DE: 5–60, the plot
    the top N up and down; DE of All: 1–30 per group; Top genes: 1–15 per group), **Save figure…**
    writes the plot as PDF, and a click on a gene colors the map by it. **Last result** reopens the last result of
-   the analysis chosen in the tab (DE genes, Top genes or Composition; in Signaling, Interactions or Compare groups).
+   the analysis chosen in the tab (DE genes, Top genes or Composition; in Signal, Interactions or Compare groups).
    **Ask Agent** asks the agent to interpret the result (it calls the same analysis through `de_genes`,
    `group_markers` or `composition`); **Save CSV…** keeps the full table. On SCP2927 (559,539 cells, 480 genes) a DE
    run takes 1-2 s and the top genes of 8 niches about 10 s.
-12. **Signaling** (sixth tab): cell-cell communication, for this slice or all slices of a project pooled.
+12. **Signal** (sixth tab): cell-cell communication, for this slice or all slices of a project pooled.
    - Ligand-receptor pairs: CellChatDB v2 (pathways and the kind of signaling), CellPhoneDB v5 (human) and the
      OmniPath consensus that LIANA uses (CellPhoneDB, CellChatDB, ICELLNET, connectomeDB2020, CellTalkDB), merged into
      `stagent/data/lr_human.csv.gz` (6,521 pairs) and `lr_mouse.csv.gz` (5,792) by `python -m stagent.lr_resource`;

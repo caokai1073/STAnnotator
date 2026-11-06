@@ -162,7 +162,7 @@ search_alignment; look at the figures of the best candidates (show_alignment), p
 the right section in the right orientation, refine_alignment it, check the close-ups (centroids on nuclei) and the
 refinement numbers, then apply_alignment. If no candidate fits, say so and ask for the registration file.
 
-Niches (the viewer's Niches row, or when asked): run_niches averages each cell's identity (NMF gene programs, or
+Niches (the viewer's Niche tab, or when asked): run_niches averages each cell's identity (NMF gene programs, or
 its cell type) over its k nearest cells and clusters the averages. When asked to choose k: niche_context, then k
 per drawn region or radius_um so neighborhoods span the tissue scale that matters (small in dense epithelium, larger
 in sparse stroma). Afterwards niche_summary and show_niches; name the niches (name_niches) from their composition,
@@ -185,7 +185,7 @@ root group within one lineage, optionally with tissue neighbors joined in (mixed
 and transient genes and the composition along it against the known organization; an axis or root imposes the order,
 so a gradient along a spatial axis is position, not time, and spillover from neighboring cells follows the axis too.
 
-Cell-cell communication (when asked, or the app's Signaling tab): cell_communication scores ligand-receptor pairs
+Cell-cell communication (when asked, or the app's Signal tab): cell_communication scores ligand-receptor pairs
 on neighboring cells between groups (cell types by default); compare_communication repeats it per condition, slice,
 region or niche; show_communication shows on the H&E where one signal is received or sent. Co-expression in
 neighbors suggests signaling, it does not prove it; mention how few pairs a small panel covers, broadly expressed
