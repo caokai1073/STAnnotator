@@ -156,6 +156,14 @@ class Api:
         except Exception as e:
             return {"error": str(e)}
 
+    def report_add_local(self, path, days=7, parts=("conversations", "app_log")):
+        """A problem report made on the server: add this computer's agent conversations and app.log to it."""
+        from . import report
+        try:
+            return {"added": report.add_local(path, int(days), parts)}
+        except Exception as e:
+            return {"error": str(e)}
+
     def write_text(self, path, text):
         try:
             Path(path).write_text(text)

@@ -202,6 +202,34 @@ mcp = FastMCP("stagent", instructions=INSTRUCTIONS)
 _active: dict = {}
 
 
+def _log_calls(manager):
+    """Every tool call goes to agent_calls.jsonl (report.py), so a problem report shows what the agent did."""
+    import time
+    call = manager.call_tool
+
+    async def logged(name, arguments, *a, **kw):
+        from . import report
+        t0 = time.time()
+        s = _active.get("session")
+        try:
+            out = await call(name, arguments, *a, **kw)
+        except Exception as e:
+            report.log_call(name, arguments, time.time() - t0, error=f"{type(e).__name__}: {e}",
+                            session=s.id if s else None, via=_active.get("via"))
+            raise
+        res = out[0] if isinstance(out, tuple) and len(out) == 2 and isinstance(out[0], (list, tuple)) else out
+        if isinstance(res, (list, tuple)):  # content blocks: their text; images are left out
+            res = [getattr(b, "text", f"<{getattr(b, 'type', 'content')}>") for b in res]
+        s = _active.get("session") or s
+        report.log_call(name, arguments, time.time() - t0, result=res, session=s.id if s else None,
+                        via=_active.get("via"))
+        return out
+    manager.call_tool = logged
+
+
+_log_calls(mcp._tool_manager)
+
+
 def _heartbeat():
     """Note that Claude is connected (the app's About shows when Claude last used the tools)."""
     import time

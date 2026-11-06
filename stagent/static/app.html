@@ -1010,6 +1010,22 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <button id="anAsk" hidden title="Ask the agent what this result may mean">Ask Agent</button><button id="anFig" hidden title="Save the figure as a PDF file">Save figure…</button><button id="anCsv">Save CSV…</button><button id="anClose">Close</button></div>
   <div class="imbody"><div class="hint" id="anSub"></div><div id="anBody"></div><div id="anLegend" class="cmplegend"></div><div class="hint" id="anNote"></div></div>
 </dialog>
+<dialog id="bugDlg" style="width:min(560px,94vw)">
+  <div class="dh"><b>Report a problem</b><span class="spacer"></span></div>
+  <div style="padding:12px 14px;display:flex;flex-direction:column;gap:10px">
+    <div class="hint">Saves one file for the developers, to see what you and the agent did. It holds text only: no
+      expression data, cell tables or images. Conversations can include file paths, gene names and numbers the agent
+      read; open the file to check it before you send it.</div>
+    <label class="f">What happened, and what did you expect?<textarea id="bugNote" rows="4" maxlength="20000"
+      placeholder="e.g. I asked the agent to align the H&amp;E; it said the alignment was applied but the cells stayed where they were."></textarea></label>
+    <label class="f">From<select id="bugDays"><option value="1">the last day</option><option value="3">the last 3 days</option>
+      <option value="7" selected>the last 7 days</option><option value="30">the last 30 days</option></select></label>
+    <div id="bugParts" style="display:flex;flex-direction:column;gap:6px"></div>
+    <div class="row"><span class="err" id="bugErr"></span><span class="spacer"></span>
+      <button id="bugCancel">Cancel</button><button id="bugSave" class="primary">Save report…</button></div>
+    <div class="hint" id="bugMsg"></div>
+  </div>
+</dialog>
 <dialog id="hpDlg" style="width:min(760px,95vw)">
   <div class="dh"><b>STAnnotator</b><span class="spacer"></span>
     <button id="hpHow" class="on">How to use</button><button id="hpMethods">Methods</button><button id="hpAbout">About</button><button id="hpClose">Close</button></div>
@@ -3714,7 +3730,11 @@ const HELP = `
   <li>or the whole analysis as a Jupyter notebook that runs without this app (code with this annotation's
     parameters, and its results; the last trajectory too).</li></ul></li>
 <li><b>Ask Agent</b> (bar on the map) opens your own Claude Code, connected to this app. <b>Undo</b> and
-  <b>Report</b> are there too.</li></ul>`;
+  <b>Report</b> are there too.</li>
+<li>Something went wrong? <b>About</b> (top of this window) → <b>Report a problem…</b> saves one file for the
+  developers:<ul>
+  <li>your conversations with the agent, its tool calls and proposals, this annotation's history and the app's log;</li>
+  <li>text only: no expression data, cell tables or images. You choose what goes in, and the app sends nothing.</li></ul></li></ul>`;
 const METHODS = `
 <p class="hint">How each analysis computes its result. Expression is log-normalized throughout: counts per cell scaled
 to 100, then log(1 + x). Random steps use a fixed seed, so a rerun on the same computer gives the same result.</p>
@@ -3910,7 +3930,9 @@ async function showAbout() {
       <button id="hpTrashSet">Set</button> <button id="hpTrashEmpty" class="danger">Empty trash</button>
       <div class="hint">What Reset, Remove sample and the cell filter moved away (${cache.trash_entries} removal${cache.trash_entries === 1 ? "" : "s"}), in <code>${esc(cache.trash_path)}</code>; past the limit the oldest are deleted for good.</div>`]);
   $("hpBody").innerHTML = `<dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>
+    <button id="hpBug" class="primary" title="Save your conversations with the agent, its tool calls and the app's log as one file for the developers">Report a problem…</button>
     <button id="hpCopy">Copy for a bug report</button>`;
+  $("hpBug").onclick = () => openBugReport();
   if ($("hpOpenData")) $("hpOpenData").onclick = () => post("/api/open_folder", { which: "data" }).catch((e) => toast(e.message, 6000));
   if ($("hpMoveData")) $("hpMoveData").onclick = () => changeDataFolder(d.data_folder);
   const cacheDo = async (body, what) => {
@@ -3927,6 +3949,69 @@ async function showAbout() {
   }
   $("hpCopy").onclick = () => { navigator.clipboard.writeText(JSON.stringify(d, null, 1)).then(() => toast("Copied")).catch(() => toast("Could not copy")); };
 }
+// ---------------- a problem report (report.py): what the user and the agent did, as one file to send ----------------
+const BUG_PARTS = [
+  ["conversations", "Conversations with the agent", (c) => c.conversations.files ? `${c.conversations.files} conversation${c.conversations.files === 1 ? "" : "s"}, ${(c.conversations.bytes / 2 ** 20).toFixed(1)} MB with images (left out)` : "none in this time"],
+  ["calls", "The agent's tool calls", (c) => c.calls.n ? `${c.calls.n} call${c.calls.n === 1 ? "" : "s"}` : "none in this time"],
+  ["proposals", "Changes the agent proposed, and what became of them", (c) => c.proposals.n ? `${c.proposals.n}` : "none in this time"],
+  ["annotation", "This annotation's history: versions, priors, corrections, analyses run", (c) => c.session ? "the annotation open now" : "no annotation open"],
+  ["app_log", "The app's log", (c) => c.app_log.files.length ? `the last ${Math.max(0.1, c.app_log.bytes / 2 ** 20).toFixed(1)} MB` : "none found"]];
+async function bugContents() {
+  const q = new URLSearchParams({ days: $("bugDays").value, session: st.sid || "" });
+  const c = await api(`/api/report?${q}`);
+  const keep = {}; $("bugParts").querySelectorAll("input").forEach((i) => { keep[i.value] = i.checked; });
+  $("bugParts").innerHTML = BUG_PARTS.map(([k, label, info]) => {
+    const empty = (k === "annotation" && !c.session) || (k === "app_log" && !c.app_log.files.length);
+    const on = !empty && (keep[k] ?? true);
+    return `<label class="row" style="gap:8px;align-items:flex-start"><input type="checkbox" value="${k}"${on ? " checked" : ""}${empty ? " disabled" : ""}>` +
+      `<span>${label}<span class="hint"> · ${info(c)}</span></span></label>`;
+  }).join("");
+}
+async function openBugReport() {
+  $("bugErr").textContent = ""; $("bugMsg").textContent = ""; $("bugSave").disabled = false;
+  if ($("hpDlg").open) $("hpDlg").close();
+  $("bugDlg").showModal();
+  $("bugParts").innerHTML = `<span class="hint">Checking…</span>`;
+  try { await bugContents(); } catch (e) { $("bugErr").textContent = e.message; }
+}
+$("bugDays").onchange = () => bugContents().catch((e) => { $("bugErr").textContent = e.message; });
+$("bugCancel").onclick = () => $("bugDlg").close();
+$("bugSave").onclick = async () => {
+  const parts = [...$("bugParts").querySelectorAll("input:checked")].map((i) => i.value);
+  const days = +$("bugDays").value, note = $("bugNote").value;
+  const d = new Date(), two = (n) => String(n).padStart(2, "0");
+  const stamp = `${d.getFullYear()}${two(d.getMonth() + 1)}${two(d.getDate())}-${two(d.getHours())}${two(d.getMinutes())}`;
+  const name = `STAnnotator-report-${stamp}.zip`, body = { days, parts, note, session: st.sid || "" };
+  $("bugErr").textContent = ""; $("bugSave").disabled = true; $("bugMsg").textContent = "Saving…";
+  try {
+    let saved = null;
+    if (native() && !st.remote) {  // the desktop app on this computer: written where the user chooses
+      const path = await native().save_path(name);
+      if (path) saved = (await post("/api/report", { ...body, path })).saved;
+    } else {
+      const r = await post("/api/report", body), url = `/api/report/${r.key}?name=${encodeURIComponent(name)}`;
+      if (st.remote) {  // made on the server; Claude Code runs here, so its conversations are added here
+        saved = await saveDownload(name, url);
+        if (saved) {
+          const add = await native().report_add_local(saved, days, parts.filter((p) => p === "conversations" || p === "app_log"));
+          if (add.error) toast(`This computer's part could not be added: ${add.error}`, 8000);
+        }
+      } else {
+        const a = document.createElement("a"); a.href = url; a.download = name; document.body.append(a); a.click(); a.remove();
+        saved = name;
+      }
+    }
+    if (!saved) { $("bugMsg").textContent = ""; return; }
+    $("bugMsg").innerHTML = `Saved <code>${saved.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</code>. Send it to the developers, or attach it to
+      <a href="#" id="bugIssue">a new issue on GitHub</a> with a few words on what happened.`;
+    $("bugIssue").onclick = (e) => {
+      e.preventDefault();
+      const u = "https://github.com/caokai1073/STAnnotator/issues/new";
+      if (native()) native().open_url(u); else window.open(u, "_blank");
+    };
+  } catch (e) { $("bugErr").textContent = e.message; $("bugMsg").textContent = ""; }
+  finally { $("bugSave").disabled = false; }
+};
 function showHelp(tab) {
   $("hpHow").classList.toggle("on", tab === "how"); $("hpAbout").classList.toggle("on", tab === "about");
   $("hpMethods").classList.toggle("on", tab === "methods");
@@ -5807,7 +5892,7 @@ $("xpReg").onclick = () => exportAs("registration");
 $("xpPos").onclick = () => exportAs("positions");
 $("xpGeo").onclick = () => exportAs("regions");
 document.addEventListener("keydown", (e) => {
-  if ($("mkDlg").open || $("rpDlg").open || $("hpDlg").open || $("xpDlg").open || $("glDlg").open || $("anDlg").open || $("rvDlg").open || $("nameDlg").open || $("rnDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
+  if ($("mkDlg").open || $("rpDlg").open || $("bugDlg").open || $("hpDlg").open || $("xpDlg").open || $("glDlg").open || $("anDlg").open || $("rvDlg").open || $("nameDlg").open || $("rnDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
   if (e.key === "h") $("hide").click();
   if (e.key === "e") $("hideHE").click();
   if (e.key === "[") stepSlice(-1);

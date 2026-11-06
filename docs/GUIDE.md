@@ -388,7 +388,8 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
    analysis (**Methods**: data, registration, regions, annotation, embedding, niches, compare, signal, trajectory, review)
    and, under **About**, shows the
    build, the data folder, whether Claude Code was found and when Claude last used the tools, with a button that
-   copies these details for a bug report. In the desktop app on this computer, **Open** beside the data folder shows it
+   copies these details for a bug report. **Report a problem…** there saves one file for the developers (see
+   Troubleshooting). In the desktop app on this computer, **Open** beside the data folder shows it
    in Explorer / Finder, and **Change…** picks another folder (another drive) for the data from the next start:
    **Copy my data there** copies the samples and annotations (in the background, with Stop; the old folder stays as
    it was) or **Use it as it is** (empty, or the data folder of an earlier installation). The choice is kept in
@@ -567,6 +568,14 @@ colors are immediate.
 
 ## Troubleshooting
 
+- Something went wrong with the agent or the app: **?** → **About** → **Report a problem…** saves one zip file with
+  what you write about it, your conversations with the agent (Claude Code's own records of them, images left out),
+  every call of the app's tools by the agent (arguments, results or errors), the changes it proposed and what became
+  of them, the open annotation's history (versions, priors, corrections, analyses run) and the end of the app's log,
+  from the last 1 to 30 days. You choose which of these go in. It holds no expression data, cell tables or images;
+  conversations can include file paths, gene names and numbers the agent read. Nothing is sent by the app: send the
+  file to the developers or attach it to an [issue](https://github.com/caokai1073/STAnnotator/issues). With the app
+  working on a server, the report is made there and this computer's conversations and log are added to it.
 - The app does not open: see `<data folder>/app.log`; run `.venv/bin/stagent app` in a terminal to see
   errors, or `--browser` to use the browser. The web viewer logs to `<data folder>/viewer.log`.
 - Claude Code does not open: it must be installed and logged in (`claude` works in Terminal). By hand:

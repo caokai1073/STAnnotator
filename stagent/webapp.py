@@ -1887,6 +1887,10 @@ async def api_open_folder(req: Request):
 
 def api_diagnostics(req):
     """About / diagnostics: what runs where, whether Claude Code is found and connected, the data folder."""
+    return _json(_about())
+
+
+def _about():
     import importlib.metadata as md, platform
     def ver(pkg):
         try:
@@ -1897,14 +1901,70 @@ def api_diagnostics(req):
     n_sessions = sum(1 for d in config.SESSIONS.iterdir() if (d / "session.json").exists()) if config.SESSIONS.exists() else 0
     size = sum(f.stat().st_size for f in config.HOME.rglob("*") if f.is_file()) if config.HOME.exists() else 0
     from . import __version__
-    return _json({"version": __version__, "build": config.build(), "app": "desktop app" if desktop_mode() else "web viewer",
+    return {"version": __version__, "build": config.build(), "app": "desktop app" if desktop_mode() else "web viewer",
                   "standalone": bool(config.FROZEN), "system": f"{platform.system()} {platform.release()} ({platform.machine()})",
                   "python": platform.python_version(), "data_folder": str(config.HOME),
                   "data_folder_source": config.HOME_SOURCE, "data_folder_next": config.read_settings().get("data_folder"),
                   "n_samples": n_samples, "n_annotations": n_sessions, "data_size_mb": round(size / 2 ** 20),
                   "claude_code": claudelink.claude_code_path(), "claude_workspace": str(claudelink.workspace()),
                   "claude_connection": claudelink.mcp_seen(),
-                  "libraries": {k: ver(k) for k in ("numpy", "scipy", "scikit-learn", "igraph", "pywebview", "mcp")}})
+                  "libraries": {k: ver(k) for k in ("numpy", "scipy", "scikit-learn", "igraph", "pywebview", "mcp")}}
+
+
+# ---------------- a problem report (report.py): Help > About > Report a problem ----------------
+REPORTS = config.HOME / "cache" / "reports"
+
+
+def _report_args(q):
+    try:
+        days = min(max(int(q.get("days", 7)), 1), 90)
+    except (TypeError, ValueError):
+        days = 7
+    sid = q.get("session") or None
+    return days, (sid if sid and re.fullmatch(r"[A-Za-z0-9_.-]+", sid) else None)
+
+
+async def api_report_contents(req: Request):
+    """What a report would hold (counts, sizes) for the dialog."""
+    from . import report
+    days, sid = _report_args(req.query_params)
+    return _json(await asyncio.to_thread(report.contents, days, sid))
+
+
+async def api_report_save(req: Request):
+    """{days, session, parts, note, path}: with a path (desktop app on this computer) the report is written there,
+    else kept for a download from /api/report/<key>."""
+    from . import report
+    b = await req.json()
+    days, sid = _report_args(b)
+    parts = [p for p in b.get("parts", []) if p in ("conversations", "calls", "proposals", "annotation", "app_log")]
+    note = str(b.get("note", ""))[:20000]
+    about = await asyncio.to_thread(_about)
+    if b.get("path"):
+        if not desktop_mode():
+            return _json({"error": "only in the desktop app"}, 403)
+        dest = Path(b["path"]).expanduser()
+        try:
+            return _json(await asyncio.to_thread(report.build, dest, about, days, parts, sid, note))
+        except OSError as e:
+            return _json({"error": str(e)}, 400)
+    REPORTS.mkdir(parents=True, exist_ok=True)
+    for old in sorted(REPORTS.glob("*.zip"), key=lambda p: p.stat().st_mtime)[:-2]:  # keep the last few
+        old.unlink(missing_ok=True)
+    key = uuid.uuid4().hex[:12]
+    try:
+        info = await asyncio.to_thread(report.build, REPORTS / f"{key}.zip", about, days, parts, sid, note)
+    except OSError as e:
+        return _json({"error": str(e)}, 400)
+    return _json({"key": key, **info})
+
+
+def api_report_get(req):
+    key = req.path_params["key"]
+    f = REPORTS / f"{key}.zip"
+    if not re.fullmatch(r"[0-9a-f]{12}", key) or not f.exists():
+        return _json({"error": "this file is gone: save the report again"}, 404)
+    return FileResponse(f, media_type="application/zip", filename=req.query_params.get("name", "STAnnotator-report.zip"))
 
 
 async def api_region_color(req: Request):
@@ -2950,6 +3010,9 @@ def build_app(port):
         Route("/api/proposals", api_proposals),
         Route("/api/cache", api_cache, methods=["GET", "POST"]),
         Route("/api/s/{sid}/results", api_results),
+        Route("/api/report", api_report_contents),
+        Route("/api/report", api_report_save, methods=["POST"]),
+        Route("/api/report/{key}", api_report_get),
         Route("/api/s/{sid}/bundle", api_bundle_save, methods=["POST"]),
         Route("/api/bundle/{key}", api_bundle_get),
         Route("/api/bundle-load", api_bundle_load, methods=["POST"]),

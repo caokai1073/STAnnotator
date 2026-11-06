@@ -1,0 +1,285 @@
+"""A problem report: what the user did with the agent and what the app logged, as one zip the user chooses to send.
+
+Help > About > Report a problem... saves it. It holds text only, no expression data and no images:
+- README.txt: what the report holds, the version and the system; note.txt: what the user wrote;
+- about.json: the About information (version, build, data folder, Claude Code found / connected, libraries);
+- agent/<id>.jsonl: the Claude Code conversations of the agent (Ask Agent's workspace, the app's chat box) touched
+  in the last days, with images left out;
+- agent_calls.jsonl: every call of the app's agent tools in those days (tool, arguments, time, result or error),
+  written by log_call;
+- proposals/: the changes the agent proposed in those days and what became of them (Accept, Dismiss, error);
+- annotation/: the open annotation's history (versions, priors, corrections, analyses run, chat), no cell tables;
+- app.log: the end of the app's log.
+The user sees what goes in before saving; nothing is sent by the app.
+"""
+import json
+import os
+import platform
+import re
+import time
+import zipfile
+from pathlib import Path
+
+from . import config
+
+CALLS = config.HOME / "agent_calls.jsonl"
+CALLS_MAX = 8 * 2 ** 20      # agent_calls.jsonl keeps its newer half past this size
+ARG_MAX = 4000               # characters of one argument / result kept in the call log
+LOG_TAIL = 2 * 2 ** 20       # the end of app.log that goes into a report
+TRANSCRIPT_MAX = 40 * 2 ** 20  # all conversations together; the newest first
+SESSION_FILE_MAX = 2 * 2 ** 20
+SESSION_TYPES = {".json", ".jsonl", ".md", ".txt"}
+
+
+# ---------------- the agent's tool calls ----------------
+def _short(v):
+    s = v if isinstance(v, str) else json.dumps(v, default=str, ensure_ascii=False)
+    return s if len(s) <= ARG_MAX else s[:ARG_MAX] + f"… ({len(s)} characters)"
+
+
+def log_call(tool, args, seconds, result=None, error=None, session=None, via=None):
+    """One line per call of an agent tool (mcp_server wraps every tool with it). Never raises."""
+    try:
+        rec = {"time": time.strftime("%Y-%m-%dT%H:%M:%S"), "tool": tool, "seconds": round(seconds, 2),
+               "session": session, "via": via, "args": {k: _short(v) for k, v in (args or {}).items()}}
+        if error is not None:
+            rec["error"] = _short(error)
+        else:
+            rec["result"] = _short(result)
+        CALLS.parent.mkdir(parents=True, exist_ok=True)
+        with open(CALLS, "a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        if CALLS.stat().st_size > CALLS_MAX:
+            lines = CALLS.read_text(encoding="utf-8").splitlines(keepends=True)
+            CALLS.write_text("".join(lines[len(lines) // 2:]), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _recent_calls(since):
+    if not CALLS.exists():
+        return []
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(since))
+    out = []
+    for line in CALLS.read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            if json.loads(line).get("time", "") >= stamp:
+                out.append(line)
+        except ValueError:
+            continue
+    return out
+
+
+# ---------------- the Claude Code conversations ----------------
+def _claude_dir():
+    return Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+
+
+def project_dir(folder):
+    """Where Claude Code keeps the conversations it had in this working folder: the folder's path with every
+    character other than a letter or digit made '-' (long names are cut at 200 characters and given a hash)."""
+    name = re.sub(r"[^A-Za-z0-9]", "-", str(Path(folder).resolve()))
+    base = _claude_dir() / "projects"
+    if len(name) <= 200:
+        return base / name
+    hits = sorted(base.glob(name[:200] + "*")) if base.exists() else []
+    return hits[0] if hits else base / name
+
+
+def _agent_folders():
+    """The working folders the app starts Claude Code in: Ask Agent's workspace (one per server) and the chat box."""
+    return [*sorted(config.HOME.glob("claude_workspace*")), config.ROOT]
+
+
+def _chat_box_ids():
+    """The conversations of the app's chat box (their ids are kept with each annotation)."""
+    ids = set()
+    if config.SESSIONS.is_dir():
+        for f in [*config.SESSIONS.glob("*/chat_meta.json"), *config.SESSIONS.glob("*/chat_archive/*_chat_meta.json")]:
+            try:
+                ids.add(json.loads(f.read_text(encoding="utf-8")).get("claude_session"))
+            except (OSError, ValueError):
+                continue
+    return {i for i in ids if i}
+
+
+def transcripts(since):
+    """Conversation files touched since then, newest first: (path, name in the report). Ask Agent's workspaces hold
+    only the app's conversations, so all of them count; the chat box runs in the app's own folder, which (run from
+    source) may hold other Claude Code work, so only its own conversations count there."""
+    out = []
+    for folder in _agent_folders():
+        d = project_dir(folder)
+        if not d.is_dir():
+            continue
+        box = Path(folder) == config.ROOT
+        ids = _chat_box_ids() if box else None
+        tag = "chat_box" if box else Path(folder).name
+        for f in d.rglob("*.jsonl"):  # sub-agents' conversations sit in <id>/subagents/
+            rel = f.relative_to(d)
+            if box and rel.parts[0].removesuffix(".jsonl") not in ids:
+                continue
+            try:
+                if f.stat().st_mtime >= since:
+                    out.append((f, f"agent/{tag}/{rel.as_posix()}"))
+            except OSError:
+                continue
+    return sorted(out, key=lambda x: -x[0].stat().st_mtime)
+
+
+def _drop_images(o):
+    """Images the tools showed the agent (figures, H&E views) are large and not needed to follow a conversation."""
+    if isinstance(o, dict):
+        if o.get("type") == "image" and isinstance(o.get("source"), dict):
+            return {"type": "image", "source": {"type": "omitted from the report"}}
+        return {k: _drop_images(v) for k, v in o.items()}
+    if isinstance(o, list):
+        return [_drop_images(v) for v in o]
+    return o
+
+
+def _clean_transcript(path):
+    lines = []
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            lines.append(json.dumps(_drop_images(json.loads(line)), ensure_ascii=False))
+        except ValueError:
+            lines.append(line)
+    return "\n".join(lines) + "\n"
+
+
+# ---------------- the rest ----------------
+def app_logs():
+    """app.log where it is written: the data folder (from source), else the app's own folder (the built app)."""
+    cands = [config.HOME / "app.log", Path.home() / "Library" / "Caches" / "STAnnotator" / "app.log",
+             Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / "STAnnotator" / "app.log"]
+    return [p for p in dict.fromkeys(cands) if p.is_file()]
+
+
+def _proposals(since):
+    d = config.HOME / "proposals"
+    return sorted((p for p in d.glob("*.json") if p.stat().st_mtime >= since), key=lambda p: p.stat().st_mtime) \
+        if d.is_dir() else []
+
+
+def _session_files(sid):
+    if not sid or not re.fullmatch(r"[A-Za-z0-9_.-]+", sid):
+        return []
+    d = config.SESSIONS / sid
+    if not d.is_dir():
+        return []
+    fs = [f for f in d.rglob("*") if f.is_file() and f.suffix in SESSION_TYPES and f.stat().st_size <= SESSION_FILE_MAX
+          and "cache" not in f.relative_to(d).parts]
+    return sorted(fs)
+
+
+def contents(days=7, sid=None):
+    """What a report with these settings would hold: counts and sizes per part, for the dialog."""
+    since = time.time() - days * 86400
+    tr = transcripts(since)
+    props = _proposals(since)
+    sess = _session_files(sid)
+    logs = app_logs()
+    return {"days": days, "session": sid if sess else None,
+            "conversations": {"files": len([1 for _, n in tr if "/subagents/" not in n]), "bytes": sum(p.stat().st_size for p, _ in tr),
+                              "folders": [str(project_dir(f)) for f in _agent_folders() if project_dir(f).is_dir()]},
+            "calls": {"n": len(_recent_calls(since))},
+            "proposals": {"n": len(props)},
+            "annotation": {"files": len(sess)},
+            "app_log": {"files": [str(p) for p in logs], "bytes": sum(min(p.stat().st_size, LOG_TAIL) for p in logs)}}
+
+
+def _readme(about, days, parts, sid):
+    lines = ["STAnnotator problem report", "",
+             f"Made {time.strftime('%Y-%m-%d %H:%M')} with STAnnotator {about.get('version')} (build {about.get('build')})",
+             f"System: {platform.system()} {platform.release()} ({platform.machine()}), Python {platform.python_version()}",
+             f"Covers the last {days} day(s){f'; annotation {sid}' if sid else ''}", "", "Holds:"]
+    what = {"note": "note.txt: what the user wrote", "about": "about.json: the About information",
+            "conversations": "agent/: the agent's Claude Code conversations (JSON lines; images left out)",
+            "calls": "agent_calls.jsonl: the app's agent tools called (arguments, results or errors, seconds)",
+            "proposals": "proposals/: changes the agent proposed and what became of them",
+            "annotation": "annotation/: the annotation's history (versions, priors, corrections, analyses, chat)",
+            "app_log": "app.log: the end of the app's log"}
+    lines += [f"- {what[p]}" for p in what if p in parts]
+    lines += ["", "No expression data, cell tables or images are included."]
+    return "\n".join(lines) + "\n"
+
+
+def build(dest, about, days=7, parts=("conversations", "calls", "proposals", "annotation", "app_log"), sid=None,
+          note=""):
+    """Write the report to dest (a .zip); returns what went in."""
+    since = time.time() - days * 86400
+    parts = set(parts) | {"about"} | ({"note"} if note.strip() else set())
+    dest = Path(dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_name(dest.name + ".part")
+    n = {"conversations": 0, "calls": 0, "proposals": 0, "annotation": 0, "app_log": 0}
+    skipped = []
+    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
+        if note.strip():
+            z.writestr("note.txt", note.strip() + "\n")
+        z.writestr("about.json", json.dumps(about, indent=1, default=str, ensure_ascii=False))
+        if "conversations" in parts:
+            total = 0
+            for p, name in transcripts(since):
+                try:
+                    text = _clean_transcript(p)
+                except OSError:
+                    continue
+                if total + len(text) > TRANSCRIPT_MAX:
+                    skipped.append(name)
+                    continue
+                total += len(text)
+                z.writestr(name, text)
+                n["conversations"] += "/subagents/" not in name
+        if "calls" in parts:
+            calls = _recent_calls(since)
+            if calls:
+                z.writestr("agent_calls.jsonl", "\n".join(calls) + "\n")
+            n["calls"] = len(calls)
+        if "proposals" in parts:
+            for p in _proposals(since):
+                z.write(p, f"proposals/{p.name}")
+                n["proposals"] += 1
+        if "annotation" in parts:
+            d = config.SESSIONS / (sid or "")
+            for f in _session_files(sid):
+                z.write(f, f"annotation/{f.relative_to(d).as_posix()}")
+                n["annotation"] += 1
+        if "app_log" in parts:
+            for i, p in enumerate(app_logs()):
+                with open(p, "rb") as f:
+                    f.seek(max(0, p.stat().st_size - LOG_TAIL))
+                    z.writestr("app.log" if i == 0 else f"app{i + 1}.log", f.read())
+                n["app_log"] += 1
+        z.writestr("README.txt", _readme(about, days, parts, sid if n["annotation"] else None))
+    os.replace(tmp, dest)
+    return {"saved": str(dest), "bytes": dest.stat().st_size, "included": n, "left_out": skipped}
+
+
+def add_local(zip_path, days=7, parts=("conversations", "app_log")):
+    """With the app working on a server, the report is made there; the conversations (Claude Code runs on this
+    computer) and this computer's app.log are added to it here."""
+    since = time.time() - days * 86400
+    n = {"conversations": 0, "app_log": 0}
+    with zipfile.ZipFile(zip_path, "a", zipfile.ZIP_DEFLATED) as z:
+        have = set(z.namelist())
+        if "conversations" in parts:
+            total = 0
+            for p, name in transcripts(since):
+                name = "local/" + name
+                if name in have:
+                    continue
+                text = _clean_transcript(p)
+                if total + len(text) > TRANSCRIPT_MAX:
+                    continue
+                total += len(text)
+                z.writestr(name, text)
+                n["conversations"] += "/subagents/" not in name
+        if "app_log" in parts:
+            for i, p in enumerate(app_logs()):
+                with open(p, "rb") as f:
+                    f.seek(max(0, p.stat().st_size - LOG_TAIL))
+                    z.writestr(f"local/app{'' if i == 0 else i + 1}.log", f.read())
+                n["app_log"] += 1
+    return n
