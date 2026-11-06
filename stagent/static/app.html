@@ -32,7 +32,7 @@ header.collapsed .hrow, header.collapsed .tabs, header.collapsed .pane { display
 /* steps as tabs: one shown at a time; a dot on a tab whose analysis is running */
 .tabs { display: flex; gap: 2px; padding: 3px; margin-top: 12px; background: var(--bg); border-radius: 10px; flex: none; }
 .tabs .tab { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 0; background: none; padding: 6px 3px; font-size: 11px; color: var(--muted); border-radius: 8px; }
-.tabs .tab:hover:not(.on) { background: none; color: var(--ink); }
+.tabs .tab:hover:not(.on):not(:disabled) { background: none; color: var(--ink); }
 .tabs .tab.on { background: var(--panel); color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
 .tabs .tab.busy::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 header .pane:not(.on) { display: none; }
@@ -1477,7 +1477,7 @@ async function startAnnotation(mode, sid, token = st.switchToken) {
     $("pstage").textContent = (mode === "continue" ? "Could not open this annotation: " : "Annotation failed: ") + e.message;
     toast($("pstage").textContent, 8000);
   }
-  finally { $("annotate").disabled = $("session").disabled = false; }
+  finally { $("annotate").disabled = $("session").disabled = !!st.imageOnly; }  // an H&E only: stays grayed out
 }
 
 async function openSession(sid) {
@@ -1521,12 +1521,18 @@ async function openSession(sid) {
 function imageOnlyUI() {
   const on = !!(st.sample && st.sample.image_only);
   st.imageOnly = on;
-  ["annotate", "embed", "niches", "compare", "signal"].forEach((t) => (document.querySelector(`#tabs .tab[data-tab=${t}]`).hidden = on));
-  if (on && document.querySelector("#tabs .tab.on[hidden]")) showTab("data");
+  ["annotate", "embed", "niches", "compare", "signal", "traj"].forEach((t) => {  // shown as they are, grayed out
+    const tab = document.querySelector(`#tabs .tab[data-tab=${t}]`);
+    tab.disabled = on; tab.title = on ? "An H&E only: no cells to analyze" : tab.dataset.title || tab.title;
+  });
+  if (on && document.querySelector("#tabs .tab.on:disabled")) showTab("data");
   ["tools", "legend"].forEach((id) => { if (on) $(id).hidden = true; });
   if (!on) $("tools").hidden = false;
-  $("qfBtn").parentElement.hidden = on; $("sessWrap").hidden = on; $("anSave").parentElement.hidden = on;
-  if (on) { ["report", "plaus"].forEach((b) => ($(b).disabled = true)); $("export").disabled = !st.sid; }
+  $("session").disabled = on;
+  if (on) {
+    ["qfBtn", "sessDel", "anSave", "anLoad", "report", "plaus"].forEach((b) => ($(b).disabled = true));
+    $("export").disabled = !st.sid;
+  }
   $("composerhint").textContent = on ? "Tip: ask the agent about the tissue or to outline an area; regions you draw are named by you."
     : "Tip: refer to regions you drew by their name.";
 }
@@ -5466,7 +5472,7 @@ function showTab(name) {
   document.querySelectorAll("header .pane").forEach((p) => p.classList.toggle("on", p.dataset.pane === name));
   store("tab", name);
 }
-document.querySelectorAll("#tabs .tab").forEach((t) => (t.onclick = () => showTab(t.dataset.tab)));
+document.querySelectorAll("#tabs .tab").forEach((t) => { t.dataset.title = t.title; t.onclick = () => showTab(t.dataset.tab); });
 showTab(["data", "annotate", "embed", "niches", "compare", "signal", "traj"].includes(load("tab")) ? load("tab") : "data");
 setInterval(() => document.querySelectorAll("header .pane").forEach((p) =>  // a running analysis shows on its tab
   document.querySelector(`#tabs .tab[data-tab=${p.dataset.pane}]`).classList.toggle("busy", !!p.querySelector(".progress.show"))), 700);
