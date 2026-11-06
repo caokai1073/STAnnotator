@@ -28,3 +28,7 @@ packaging/windows/STAnnotator.ico
 
 # the old checkout of the website-only public repository (before the source was published there)
 /public/
+
+# the media repository (tutorial video, github.com/caokai1073/STAnnotator-media), one commit replaced per video
+/media/
+/STAnnotator_tutorial_*
