@@ -1327,7 +1327,7 @@ async def api_trajectory_run(req: Request):
                 i += n
             from . import analysis
             analysis.log_run(review_app._session(b["session"]), b | {"kind": "trajectory"}, r)
-            _keep_result(b, "trajectory", r, table)
+            _keep_result(b, f"trajectory_{r['method']}", r, table)  # the last result of each method
             JOBS[job].update(progress=1.0, stage="done", done=True, result=r)
         except Exception as e:
             JOBS[job].update(error=f"{type(e).__name__}: {e}" if not isinstance(e, (ValueError, KeyError)) else str(e).strip("'"),

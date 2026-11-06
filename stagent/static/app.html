@@ -46,7 +46,7 @@ header .hrow.bottom { flex-wrap: nowrap; gap: 6px; }  /* Reset, Remove sample, R
 #pcBack { left: 50%; transform: translateX(-50%); top: calc(var(--maptop, 44px) + 12px); display: flex; gap: 10px; align-items: center;
   padding: 8px 12px; font-size: 13px; z-index: 30; }
 /* one analysis at a time: while one runs, the buttons that start another or change the data are grayed out */
-body.running :is(#annotate, #eRun, #nRun, #aRun, #sRun, #qfBtn, #qfGo, #qfRestore, #reset, #rmSample, #clearAll, #heState, #anLoad, #importBtn, #refresh, #sessDel) {
+body.running :is(#annotate, #eRun, #nRun, #aRun, #sRun, #tRun, #qfBtn, #qfGo, #qfRestore, #reset, #rmSample, #clearAll, #heState, #anLoad, #importBtn, #refresh, #sessDel) {
   opacity: .4; filter: grayscale(1); cursor: not-allowed; }
 header .hrow.bottom button { padding: 5px 8px; font-size: 12px; gap: 4px; white-space: nowrap; flex: 0 1 auto; min-width: 0; }
 header.collapsed .hmini { display: flex; }
@@ -3202,7 +3202,7 @@ $("imVDir").oninput = soon(() => (st.imVPending = inspectVisium()));
 });
 // one analysis at a time (Annotate, Embed, Niches, Compare, Signaling, the cell filter, an import): the others'
 // buttons and Reset / Remove are grayed out (CSS body.running) and ignored until it is done
-const LOCKED = "#annotate, #eRun, #nRun, #aRun, #sRun, #qfBtn, #qfGo, #qfRestore, #reset, #rmSample, #clearAll, #heState, #anLoad, #importBtn, #refresh, #sessDel";
+const LOCKED = "#annotate, #eRun, #nRun, #aRun, #sRun, #tRun, #qfBtn, #qfGo, #qfRestore, #reset, #rmSample, #clearAll, #heState, #anLoad, #importBtn, #refresh, #sessDel";
 async function exclusive(what, fn) {
   if (st.running) { toast(`${st.running} is running: wait until it is done`, 4000); return; }
   st.running = what; document.body.classList.add("running");
@@ -4712,13 +4712,16 @@ async function loadResults(sid) {  // the last result of each analysis, kept wit
   const r = await api(`/api/s/${sid}/results`);
   if (sid !== st.sid) return;
   AN.by = {};
-  Object.entries(r).forEach(([kind, x]) => { AN.by[kind] = { last: x.result, req: x.request, sel: x.selection || undefined }; });
+  Object.entries(r).forEach(([kind, x]) => {
+    if (kind === "trajectory") kind = `trajectory_${x.request.method || "spatial"}`;  // kept before each method had its own
+    AN.by[kind] = { last: x.result, req: x.request, sel: x.selection || undefined };
+  });
   syncLast();
 }
 function openLast(kind) { const x = AN.by[kind]; if (!x) return; AN.last = x.last; AN.req = x.req; AN.sel = x.sel; AN.view = ""; showAnalysis(); }
 function syncLast() {  // Last result shows the last result of the analysis chosen in the tab
   $("aLast").hidden = !AN.by[$("aKind").value]; $("sLast").hidden = !AN.by[$("sKind").value];
-  $("tLast").hidden = !AN.by.trajectory;
+  $("tLast").hidden = !AN.by[`trajectory_${$("tMethod").value}`];  // the last result of the method chosen
 }
 $("aLast").onclick = () => openLast($("aKind").value);
 function anSeg(opts, cur, on) {  // the dialog's toggle (up / down genes, shares / enrichment)
@@ -4946,7 +4949,7 @@ async function loadTrajOptions(force) {
   trValues();
   $("tinfo").textContent = [`${TR.opts.n_cells.toLocaleString()} cells`, trScope() === "project" ? "all slices pooled" : "this slice",
     st.traj ? `last: ${st.traj.label}` : null].filter(Boolean).join(" · ");
-  $("tRun").disabled = false;
+  $("tRun").disabled = !!TR.running;  // one trajectory at a time, whatever its method
 }
 function trValues() {  // the values of the chosen groupings
   const vals = (by) => (by && TR.opts ? TR.opts.groupings[by] || [] : []).map((v) => [v, v]);
@@ -4964,7 +4967,7 @@ function syncTrMethod() {
     mixed: "Diffusion pseudotime on a graph that also joins neighbors in the tissue: Weight of space 0 is expression only, 1 the tissue alone. Space keeps neighboring cells close in the order; it also makes the order follow the tissue, so compare with 0.",
   }[m];
 }
-$("tMethod").onchange = syncTrMethod; syncTrMethod();
+$("tMethod").onchange = () => { syncTrMethod(); syncLast(); }; syncTrMethod();
 $("tScope").onchange = () => loadTrajOptions(true);
 ["tFromBy", "tToBy", "tRootBy", "tWBy"].forEach((id) => ($(id).onchange = trValues));
 $("tAlpha").oninput = () => ($("tAlphaVal").textContent = (+$("tAlpha").value).toFixed(2));
@@ -4979,19 +4982,19 @@ $("tRun").onclick = async () => {
     b.root = { by: $("tRootBy").value, values: [$("tRootVal").value] };
     b.alpha = m === "mixed" ? +$("tAlpha").value : 0;
   }
-  $("tRun").disabled = true; $("tprogress").classList.add("show");
+  $("tRun").disabled = true; TR.running = true; $("tprogress").classList.add("show");
   try {
     const { job } = await post("/api/trajectory/run", b);
     const j = await pollJob(job, $("tprogress"), $("tfill"), $("tstage"), $("tRun"), 600);
     AN.last = j.result; AN.req = { ...b, selection: undefined }; AN.sel = b.selection; AN.view = "";
-    AN.by.trajectory = { last: AN.last, req: AN.req, sel: AN.sel }; syncLast();
+    AN.by[`trajectory_${m}`] = { last: AN.last, req: AN.req, sel: AN.sel }; syncLast();
     await loadTraj(); loadTrajOptions(true);
     setTimeout(() => $("tprogress").classList.remove("show"), 800);
     await showAnalysis();
   } catch (e) { if (isStop(e)) stopped($("tprogress"), "Trajectory"); else { toast(e.message, 8000); $("tprogress").classList.remove("show"); } }
-  finally { $("tRun").disabled = false; }
+  finally { TR.running = false; $("tRun").disabled = false; }
 };
-$("tLast").onclick = () => openLast("trajectory");
+$("tLast").onclick = () => openLast(`trajectory_${$("tMethod").value}`);
 async function loadTraj() {  // the open annotation's last trajectory (the "trajectory" color of the map)
   st.traj = st.sid ? (await api(`/api/s/${st.sid}/trajectory`).catch(() => ({}))).trajectory || null : null;
   fillModes(st.lastSummary);
