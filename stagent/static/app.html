@@ -1013,19 +1013,26 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <button id="anAsk" hidden title="Ask the agent what this result may mean">Ask Agent</button><button id="anFig" hidden title="Save the figure as a PDF file">Save figure…</button><button id="anCsv">Save CSV…</button><button id="anClose">Close</button></div>
   <div class="imbody"><div class="hint" id="anSub"></div><div id="anBody"></div><div id="anLegend" class="cmplegend"></div><div class="hint" id="anNote"></div></div>
 </dialog>
-<dialog id="bugDlg" style="width:min(560px,94vw)">
+<dialog id="bugDlg" style="width:min(580px,94vw)">
   <div class="dh"><b>Report a bug</b><span class="spacer"></span></div>
   <div style="padding:12px 14px;display:flex;flex-direction:column;gap:10px">
-    <div class="hint">Saves one file for the developers, to see what you and the agent did. It holds text only: no
-      expression data, cell tables or images. Conversations can include file paths, gene names and numbers the agent
-      read; open the file to check it before you send it.</div>
-    <label class="f">What happened, and what did you expect?<textarea id="bugNote" rows="4" maxlength="20000"
+    <label class="f"><b>Describe the bug</b><span class="hint">What did you do, what happened, and what did you expect?</span>
+      <textarea id="bugNote" rows="5" maxlength="20000"
       placeholder="e.g. I asked the agent to align the H&amp;E; it said the alignment was applied but the cells stayed where they were."></textarea></label>
-    <label class="f">From<select id="bugDays"><option value="1">the last day</option><option value="3">the last 3 days</option>
-      <option value="7" selected>the last 7 days</option><option value="30">the last 30 days</option></select></label>
-    <div id="bugParts" style="display:flex;flex-direction:column;gap:6px"></div>
+    <label class="f">Your name or email <span class="hint">(optional, so the developers can reply)</span><input type="text" id="bugFrom" maxlength="200" autocomplete="email"></label>
+    <details id="bugMore"><summary class="hint" style="cursor:pointer">What goes in the report</summary>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
+        <div class="hint">Text only: no expression data, cell tables or images. Conversations can include file paths,
+          gene names and numbers the agent read.</div>
+        <label class="f">From<select id="bugDays"><option value="1">the last day</option><option value="3">the last 3 days</option>
+          <option value="7" selected>the last 7 days</option><option value="30">the last 30 days</option></select></label>
+        <div id="bugParts" style="display:flex;flex-direction:column;gap:6px"></div></div></details>
+    <div id="bugLinkRow" class="f" hidden><span>Upload link <span class="hint">(from the developers; once)</span></span>
+      <div class="row"><input type="text" id="bugLink" placeholder="https://script.google.com/macros/s/…/exec" style="flex:1;min-width:0">
+        <button id="bugLinkSave">Save link</button></div></div>
     <div class="row"><span class="err" id="bugErr"></span><span class="spacer"></span>
-      <button id="bugCancel">Cancel</button><button id="bugSave" class="primary">Save report…</button></div>
+      <button id="bugCancel">Cancel</button><button id="bugSave" title="Save the report as a file on this computer">Save to file…</button>
+      <button id="bugUpload" class="primary" title="Send the report to the developers' Google Drive folder">Upload to the developers</button></div>
     <div class="hint" id="bugMsg"></div>
   </div>
 </dialog>
@@ -3734,9 +3741,13 @@ const HELP = `
     parameters, and its results; the last trajectory too).</li></ul></li>
 <li><b>Ask Agent</b> (bar on the map) opens your own Claude Code, connected to this app. <b>Undo</b> and
   <b>Report</b> are there too.</li>
-<li>Something went wrong? <b>Report bug…</b> (right of Export) saves one file for the developers:<ul>
-  <li>your conversations with the agent, its tool calls and proposals, this annotation's history and the app's log;</li>
-  <li>text only: no expression data, cell tables or images. You choose what goes in, and the app sends nothing.</li></ul></li></ul>`;
+<li>Something went wrong? <b>Report bug…</b> (right of Export):<ul>
+  <li>describe the bug in a few words;</li>
+  <li>the report adds your conversations with the agent, its tool calls and proposals, this annotation's history and
+    the app's log (text only: no expression data, cell tables or images; <i>What goes in the report</i> lets you leave
+    parts out);</li>
+  <li><b>Upload to the developers</b> sends it to their Google Drive folder (the first time, paste the upload link
+    they gave you), or <b>Save to file…</b> keeps it on this computer to send yourself.</li></ul></li></ul>`;
 const METHODS = `
 <p class="hint">How each analysis computes its result. Expression is log-normalized throughout: counts per cell scaled
 to 100, then log(1 + x). Random steps use a fixed seed, so a rerun on the same computer gives the same result.</p>
@@ -3949,16 +3960,17 @@ async function showAbout() {
   }
   $("hpCopy").onclick = () => { navigator.clipboard.writeText(JSON.stringify(d, null, 1)).then(() => toast("Copied")).catch(() => toast("Could not copy")); };
 }
-// ---------------- a problem report (report.py): what the user and the agent did, as one file to send ----------------
+// ---------------- a bug report (report.py): what the user and the agent did, saved as a file or uploaded ----------------
 const BUG_PARTS = [
   ["conversations", "Conversations with the agent", (c) => c.conversations.files ? `${c.conversations.files} conversation${c.conversations.files === 1 ? "" : "s"}, ${(c.conversations.bytes / 2 ** 20).toFixed(1)} MB with images (left out)` : "none in this time"],
   ["calls", "The agent's tool calls", (c) => c.calls.n ? `${c.calls.n} call${c.calls.n === 1 ? "" : "s"}` : "none in this time"],
   ["proposals", "Changes the agent proposed, and what became of them", (c) => c.proposals.n ? `${c.proposals.n}` : "none in this time"],
   ["annotation", "This annotation's history: versions, priors, corrections, analyses run", (c) => c.session ? "the annotation open now" : "no annotation open"],
   ["app_log", "The app's log", (c) => c.app_log.files.length ? `the last ${Math.max(0.1, c.app_log.bytes / 2 ** 20).toFixed(1)} MB` : "none found"]];
+const BUG = { link: "" };
 async function bugContents() {
   const q = new URLSearchParams({ days: $("bugDays").value, session: st.sid || "" });
-  const c = await api(`/api/report?${q}`);
+  const c = await api(`/api/bug-report?${q}`);
   const keep = {}; $("bugParts").querySelectorAll("input").forEach((i) => { keep[i.value] = i.checked; });
   $("bugParts").innerHTML = BUG_PARTS.map(([k, label, info]) => {
     const empty = (k === "annotation" && !c.session) || (k === "app_log" && !c.app_log.files.length);
@@ -3967,51 +3979,82 @@ async function bugContents() {
       `<span>${label}<span class="hint"> · ${info(c)}</span></span></label>`;
   }).join("");
 }
+function bugLinkShown(show) {
+  $("bugLinkRow").hidden = !show;
+  $("bugUpload").textContent = BUG.link ? "Upload to the developers" : "Upload to the developers…";
+}
 async function openBugReport() {
-  $("bugErr").textContent = ""; $("bugMsg").textContent = ""; $("bugSave").disabled = false;
-  if ($("hpDlg").open) $("hpDlg").close();
-  $("bugDlg").showModal();
+  $("bugErr").textContent = ""; $("bugMsg").textContent = ""; $("bugSave").disabled = $("bugUpload").disabled = false;
+  $("bugFrom").value = load("bugFrom");
+  $("bugDlg").showModal(); $("bugNote").focus();
   $("bugParts").innerHTML = `<span class="hint">Checking…</span>`;
+  try { BUG.link = (await api("/api/bug-report/upload-url")).url || ""; } catch (e) { BUG.link = ""; }
+  $("bugLink").value = BUG.link; bugLinkShown(false);
   try { await bugContents(); } catch (e) { $("bugErr").textContent = e.message; }
 }
 $("bugBtn").onclick = () => openBugReport();
 $("bugDays").onchange = () => bugContents().catch((e) => { $("bugErr").textContent = e.message; });
 $("bugCancel").onclick = () => $("bugDlg").close();
-$("bugSave").onclick = async () => {
-  const parts = [...$("bugParts").querySelectorAll("input:checked")].map((i) => i.value);
-  const days = +$("bugDays").value, note = $("bugNote").value;
+$("bugLinkSave").onclick = async () => {
+  $("bugErr").textContent = ""; $("bugMsg").textContent = "Checking the link…";
+  try {
+    BUG.link = (await post("/api/bug-report/upload-url", { url: $("bugLink").value })).url;
+    bugLinkShown(false); $("bugMsg").textContent = "Link saved. Click Upload to the developers.";
+  } catch (e) { $("bugErr").textContent = e.message; $("bugMsg").textContent = ""; }
+};
+function bugRequest() {
   const d = new Date(), two = (n) => String(n).padStart(2, "0");
   const stamp = `${d.getFullYear()}${two(d.getMonth() + 1)}${two(d.getDate())}-${two(d.getHours())}${two(d.getMinutes())}`;
-  const name = `STAnnotator-report-${stamp}.zip`, body = { days, parts, note, session: st.sid || "" };
-  $("bugErr").textContent = ""; $("bugSave").disabled = true; $("bugMsg").textContent = "Saving…";
-  try {
-    let saved = null;
-    if (native() && !st.remote) {  // the desktop app on this computer: written where the user chooses
-      const path = await native().save_path(name);
-      if (path) saved = (await post("/api/report", { ...body, path })).saved;
-    } else {
-      const r = await post("/api/report", body), url = `/api/report/${r.key}?name=${encodeURIComponent(name)}`;
-      if (st.remote) {  // made on the server; Claude Code runs here, so its conversations are added here
-        saved = await saveDownload(name, url);
-        if (saved) {
-          const add = await native().report_add_local(saved, days, parts.filter((p) => p === "conversations" || p === "app_log"));
-          if (add.error) toast(`This computer's part could not be added: ${add.error}`, 8000);
-        }
-      } else {
-        const a = document.createElement("a"); a.href = url; a.download = name; document.body.append(a); a.click(); a.remove();
-        saved = name;
+  const from = $("bugFrom").value.trim(); store("bugFrom", from);
+  const note = (from ? `From: ${from}\n\n` : "") + $("bugNote").value.trim();
+  if ($("bugParts").querySelector("input")) BUG.parts = [...$("bugParts").querySelectorAll("input:checked")].map((i) => i.value);
+  return { name: `STAnnotator-report-${stamp}.zip`, from, note, days: +$("bugDays").value,
+           parts: BUG.parts || ["conversations", "calls", "proposals", "annotation", "app_log"] };
+}
+async function bugRun(label, fn) {
+  if (!$("bugNote").value.trim() && !confirm("Send the report without describing the bug? A few words on what happened help a lot.")) { $("bugNote").focus(); return; }
+  $("bugErr").textContent = ""; $("bugSave").disabled = $("bugUpload").disabled = true; $("bugMsg").textContent = label;
+  try { await fn(bugRequest()); }
+  catch (e) { $("bugErr").textContent = e.message; $("bugMsg").textContent = ""; }
+  finally { $("bugSave").disabled = $("bugUpload").disabled = false; }
+}
+$("bugSave").onclick = () => bugRun("Saving…", async (q) => {
+  const body = { days: q.days, parts: q.parts, note: q.note, session: st.sid || "" };
+  let saved = null;
+  if (native() && !st.remote) {  // the desktop app on this computer: written where the user chooses
+    const path = await native().save_path(q.name);
+    if (path) saved = (await post("/api/bug-report", { ...body, path })).saved;
+  } else {
+    const r = await post("/api/bug-report", body), url = `/api/bug-report/${r.key}?name=${encodeURIComponent(q.name)}`;
+    if (st.remote) {  // made on the server; Claude Code runs here, so its conversations are added here
+      saved = await saveDownload(q.name, url);
+      if (saved) {
+        const add = await native().report_add_local(saved, q.days, q.parts.filter((p) => p === "conversations" || p === "app_log"));
+        if (add.error) toast(`This computer's part could not be added: ${add.error}`, 8000);
       }
+    } else {
+      const a = document.createElement("a"); a.href = url; a.download = q.name; document.body.append(a); a.click(); a.remove();
+      saved = q.name;
     }
-    if (!saved) { $("bugMsg").textContent = ""; return; }
-    $("bugMsg").innerHTML = `Saved <code>${saved.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</code>. Send it to the developers, or attach it to
-      <a href="#" id="bugIssue">a new issue on GitHub</a> with a few words on what happened.`;
-    $("bugIssue").onclick = (e) => {
-      e.preventDefault();
-      const u = "https://github.com/caokai1073/STAnnotator/issues/new";
-      if (native()) native().open_url(u); else window.open(u, "_blank");
-    };
-  } catch (e) { $("bugErr").textContent = e.message; $("bugMsg").textContent = ""; }
-  finally { $("bugSave").disabled = false; }
+  }
+  if (!saved) { $("bugMsg").textContent = ""; return; }
+  $("bugMsg").innerHTML = `Saved <code>${saved.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</code>. Send it to the developers
+    privately (email or a shared folder); an issue on GitHub is public.`;
+});
+$("bugUpload").onclick = () => {
+  if (!BUG.link) { bugLinkShown(true); $("bugLink").focus(); $("bugMsg").textContent = "Paste the upload link the developers gave you, then Save link."; return; }
+  bugRun("Uploading…", async (q) => {
+    const body = { days: q.days, parts: q.parts, note: q.note, session: st.sid || "" };
+    const r = await post("/api/bug-report", body);
+    let up;
+    if (st.remote) {  // made on the server; this computer adds its conversations and sends it
+      up = await native().report_upload(`/api/bug-report/${r.key}?name=${encodeURIComponent(q.name)}`, q.name, q.days,
+        q.parts.filter((p) => p === "conversations" || p === "app_log"), q.note, q.from, BUG.link);
+      if (up.error) throw new Error(up.error);
+    } else up = await post("/api/bug-report/upload", { key: r.key, name: q.name, note: q.note, from: q.from });
+    $("bugMsg").textContent = `Uploaded ${up.uploaded} (${(up.bytes / 2 ** 10).toFixed(0)} KB). Thank you: the developers will look at it.`;
+    $("bugNote").value = "";
+  });
 };
 function showHelp(tab) {
   $("hpHow").classList.toggle("on", tab === "how"); $("hpAbout").classList.toggle("on", tab === "about");

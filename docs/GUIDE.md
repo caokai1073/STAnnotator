@@ -567,14 +567,16 @@ colors are immediate.
 
 ## Troubleshooting
 
-- Something went wrong with the agent or the app: **Report bug…** (right of **Export…**) saves one zip file with
-  what you write about it, your conversations with the agent (Claude Code's own records of them, images left out),
-  every call of the app's tools by the agent (arguments, results or errors), the changes it proposed and what became
-  of them, the open annotation's history (versions, priors, corrections, analyses run) and the end of the app's log,
-  from the last 1 to 30 days. You choose which of these go in. It holds no expression data, cell tables or images;
-  conversations can include file paths, gene names and numbers the agent read. Nothing is sent by the app: send the
-  file to the developers or attach it to an [issue](https://github.com/caokai1073/STAnnotator/issues). With the app
-  working on a server, the report is made there and this computer's conversations and log are added to it.
+- Something went wrong with the agent or the app: **Report bug…** (right of **Export…**). Describe the bug (what you
+  did, what happened, what you expected) and optionally your name or email. The report adds your conversations with
+  the agent (Claude Code's own records of them, images left out), every call of the app's tools by the agent
+  (arguments, results or errors), the changes it proposed and what became of them, the open annotation's history
+  (versions, priors, corrections, analyses run) and the end of the app's log, from the last 1 to 30 days; **What goes
+  in the report** lists each part and lets you leave it out. It holds no expression data, cell tables or images;
+  conversations can include file paths, gene names and numbers the agent read. **Upload to the developers** sends it
+  to the developers' Google Drive folder (the first time, paste the upload link they gave you; it is kept); **Save to
+  file…** keeps it on this computer to send yourself (privately: an issue on GitHub is public). With the app working
+  on a server, the report is made there and this computer's conversations and log are added to it.
 - The app does not open: see `<data folder>/app.log`; run `.venv/bin/stagent app` in a terminal to see
   errors, or `--browser` to use the browser. The web viewer logs to `<data folder>/viewer.log`.
 - Claude Code does not open: it must be installed and logged in (`claude` works in Terminal). By hand:

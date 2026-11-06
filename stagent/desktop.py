@@ -164,6 +164,23 @@ class Api:
         except Exception as e:
             return {"error": str(e)}
 
+    def report_upload(self, path, name, days=7, parts=("conversations", "app_log"), note="", sender="", url=""):
+        """With the app on a server: fetch the report made there, add this computer's conversations and app.log, and
+        upload it to the developers."""
+        import tempfile
+        from . import report
+        if not self._conn:
+            return {"error": "not connected to a server"}
+        tmp = Path(tempfile.mkdtemp()) / name
+        try:
+            self._conn.download(path, str(tmp))
+            report.add_local(tmp, int(days), parts)
+            return report.upload(tmp, name, {"version": config.build()}, note, sender, url)
+        except Exception as e:
+            return {"error": str(e)}
+        finally:
+            tmp.unlink(missing_ok=True)
+
     def write_text(self, path, text):
         try:
             Path(path).write_text(text)

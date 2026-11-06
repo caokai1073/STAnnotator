@@ -1924,16 +1924,16 @@ def _report_args(q):
     return days, (sid if sid and re.fullmatch(r"[A-Za-z0-9_.-]+", sid) else None)
 
 
-async def api_report_contents(req: Request):
+async def api_bug_contents(req: Request):
     """What a report would hold (counts, sizes) for the dialog."""
     from . import report
     days, sid = _report_args(req.query_params)
     return _json(await asyncio.to_thread(report.contents, days, sid))
 
 
-async def api_report_save(req: Request):
+async def api_bug_save(req: Request):
     """{days, session, parts, note, path}: with a path (desktop app on this computer) the report is written there,
-    else kept for a download from /api/report/<key>."""
+    else kept for a download from /api/bug-report/<key>."""
     from . import report
     b = await req.json()
     days, sid = _report_args(b)
@@ -1959,7 +1959,35 @@ async def api_report_save(req: Request):
     return _json({"key": key, **info})
 
 
-def api_report_get(req):
+async def api_bug_upload_url(req: Request):
+    """GET: the upload link kept in the settings; POST {url}: check it (the receiver answers) and keep it."""
+    from . import report
+    if req.method == "GET":
+        return _json({"url": report.upload_url()})
+    b = await req.json()
+    try:
+        return _json({"url": await asyncio.to_thread(report.set_upload_url, b.get("url", ""))})
+    except (ValueError, OSError) as e:
+        return _json({"error": str(e)}, 400)
+
+
+async def api_bug_upload(req: Request):
+    """{key, name, note, from}: send a report made here (/api/bug-report) to the developers' Drive folder."""
+    from . import report
+    b = await req.json()
+    key = str(b.get("key", ""))
+    f = REPORTS / f"{key}.zip"
+    if not re.fullmatch(r"[0-9a-f]{12}", key) or not f.exists():
+        return _json({"error": "this report is gone: make it again"}, 404)
+    name = re.sub(r"[^A-Za-z0-9_.-]", "_", str(b.get("name") or f"{key}.zip"))[:120]
+    try:
+        about = await asyncio.to_thread(_about)
+        return _json(await asyncio.to_thread(report.upload, f, name, about, str(b.get("note", "")), str(b.get("from", ""))))
+    except (ValueError, OSError) as e:
+        return _json({"error": str(e)}, 400)
+
+
+def api_bug_get(req):
     key = req.path_params["key"]
     f = REPORTS / f"{key}.zip"
     if not re.fullmatch(r"[0-9a-f]{12}", key) or not f.exists():
@@ -3010,9 +3038,11 @@ def build_app(port):
         Route("/api/proposals", api_proposals),
         Route("/api/cache", api_cache, methods=["GET", "POST"]),
         Route("/api/s/{sid}/results", api_results),
-        Route("/api/report", api_report_contents),
-        Route("/api/report", api_report_save, methods=["POST"]),
-        Route("/api/report/{key}", api_report_get),
+        Route("/api/bug-report", api_bug_contents),
+        Route("/api/bug-report", api_bug_save, methods=["POST"]),
+        Route("/api/bug-report/upload-url", api_bug_upload_url, methods=["GET", "POST"]),
+        Route("/api/bug-report/upload", api_bug_upload, methods=["POST"]),
+        Route("/api/bug-report/{key}", api_bug_get),
         Route("/api/s/{sid}/bundle", api_bundle_save, methods=["POST"]),
         Route("/api/bundle/{key}", api_bundle_get),
         Route("/api/bundle-load", api_bundle_load, methods=["POST"]),

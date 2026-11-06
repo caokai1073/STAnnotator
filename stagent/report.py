@@ -283,3 +283,61 @@ def add_local(zip_path, days=7, parts=("conversations", "app_log")):
                     z.writestr(f"local/app{'' if i == 0 else i + 1}.log", f.read())
                 n["app_log"] += 1
     return n
+
+
+# ---------------- upload to the developers (packaging/report_receiver.gs, a Google Apps Script web app) ----------------
+UPLOAD_MAX = 40 * 2 ** 20
+_URL = re.compile(r"https://script\.google(usercontent)?\.com/macros/s/[A-Za-z0-9_-]+/exec")
+
+
+def upload_url():
+    return config.read_settings().get("report_upload_url", "")
+
+
+def _check_url(url):
+    url = (url or "").strip()
+    if not _URL.fullmatch(url):
+        raise ValueError("this is not an upload link from the developers (it looks like "
+                         "https://script.google.com/macros/s/…/exec)")
+    return url
+
+
+def _request(url, payload=None, timeout=120):
+    """GET (payload None) or POST JSON; Apps Script answers through a redirect, which urllib follows."""
+    import urllib.request
+    data = None if payload is None else json.dumps(payload).encode()
+    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"} if data else {})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        text = r.read().decode("utf-8", errors="replace")
+    try:
+        return json.loads(text)
+    except ValueError:
+        raise ValueError("the upload link did not answer as expected: check it, or save the report and send it")
+
+
+def set_upload_url(url):
+    """Check the link (the receiver answers a GET) and keep it in the app's settings."""
+    url = _check_url(url)
+    r = _request(url, timeout=30)
+    if not r.get("ok"):
+        raise ValueError(r.get("error") or "the upload link did not answer as expected")
+    config.write_settings(report_upload_url=url)
+    return url
+
+
+def upload(path, name, about=None, note="", sender="", url=None):
+    """Send a saved report to the developers' Drive folder."""
+    import base64
+    url = _check_url(url or upload_url())
+    path = Path(path)
+    size = path.stat().st_size
+    if size > UPLOAD_MAX:
+        raise ValueError(f"the report is {size / 2 ** 20:.0f} MB, more than the upload takes (40 MB): "
+                         "choose fewer days or leave the conversations out, or save it and send it")
+    about = about or {}
+    r = _request(url, {"name": name, "data": base64.b64encode(path.read_bytes()).decode(),
+                       "version": about.get("version"), "system": about.get("system"),
+                       "from": sender[:200], "note": note[:2000]})
+    if not r.get("ok"):
+        raise ValueError(r.get("error") or "the upload failed")
+    return {"uploaded": r.get("name", name), "bytes": size}
