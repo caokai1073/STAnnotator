@@ -13,7 +13,9 @@ datas = [(str(ROOT / "stagent" / "static"), "stagent/static"),
          (str(ROOT / "stagent" / "data"), "stagent/data")]
 # source of the modules an exported notebook carries (the bundle otherwise holds only compiled code)
 import ast, re
-CARRIED = ast.literal_eval(re.search(r"^CARRIED = (\[.*?\])", (ROOT / "stagent" / "notebook.py").read_text(), re.M).group(1))
+# the list may run over several lines; UTF-8, not the Windows code page
+CARRIED = ast.literal_eval(re.search(r"^CARRIED = (\[.*?\])", (ROOT / "stagent" / "notebook.py").read_text(encoding="utf-8"),
+                                     re.M | re.S).group(1))
 datas += [(str(ROOT / "stagent" / f"{m}.py"), "stagent/algorithm_src") for m in CARRIED]
 # backend_pdf: Save figure writes PDF; PyInstaller's matplotlib hook packs only the backends named in matplotlib.use()
 binaries, hidden = [], ["stagent.mcp_server", "stagent.webapp", "stagent.desktop", "matplotlib.backends.backend_pdf"]
