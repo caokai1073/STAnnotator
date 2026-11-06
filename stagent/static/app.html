@@ -123,6 +123,8 @@ button:disabled { opacity: .45; cursor: default; }
 .spacer { flex: 1; }
 .hrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 0; border-top: 1px solid var(--line); }
 .hrow.r1 { border-top: 0; padding-top: 0; row-gap: 6px; }
+.hrow.r1 .io { display: flex; gap: 6px; width: 100%; }  /* Import, Export and Report bug share one line */
+.hrow.r1 .io > button { flex: 1 1 auto; padding-inline: 7px; gap: 5px; }
 /* in the panel: one control per line where it needs the width, the rest side by side */
 header .hrow > * { flex: none; }
 header .sep, header .hrow > .spacer { display: none; }
@@ -390,7 +392,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 </style>
 </head>
 <body>
-<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="ic-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol><symbol id="ic-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></symbol><symbol id="ic-upload" viewBox="0 0 24 24"><path d="M12 16V5M7 9l5-5 5 5M5 20h14"/></symbol><symbol id="ic-import" viewBox="0 0 24 24"><path d="M12 3v11M7.5 9.5L12 14l4.5-4.5M4 14v6h16v-6"/></symbol><symbol id="ic-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5zM8 4v5h7V4M8 20v-6h8v6"/></symbol><symbol id="ic-help" viewBox="0 0 24 24"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.6 9.4a2.5 2.5 0 1 1 3.6 2.3c-.7.3-1.2 1-1.2 1.8v.4M12 17.2v.1"/></symbol><symbol id="ic-chev-left" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol><symbol id="ic-chev-right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol><symbol id="ic-chev-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol><symbol id="ic-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol><symbol id="ic-grid" viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></symbol><symbol id="ic-chart" viewBox="0 0 24 24"><path d="M4 20h16M7 16v-5M12 16V6M17 16V9"/></symbol><symbol id="ic-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></symbol><symbol id="ic-play" viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></symbol><symbol id="ic-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 15.5l.8 1.7 1.7.8-1.7.8-.8 1.7-.8-1.7-1.7-.8 1.7-.8z"/></symbol><symbol id="ic-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3"/></symbol><symbol id="ic-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7M20 4v5h-5"/></symbol><symbol id="ic-terminal" viewBox="0 0 24 24"><path d="M3 5h18v14H3zM7 10l3 2-3 2M12.5 15h4.5"/></symbol><symbol id="ic-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM8.6 12.2l2.4 2.4 4.4-4.8"/></symbol><symbol id="ic-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h6"/></symbol><symbol id="ic-share" viewBox="0 0 24 24"><path d="M12 15V4M8 8l4-4 4 4M5 12v8h14v-8"/></symbol><symbol id="ic-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol><symbol id="ic-server" viewBox="0 0 24 24"><path d="M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01"/></symbol><symbol id="ic-monitor" viewBox="0 0 24 24"><path d="M3 4h18v12H3zM8 20h8M12 16v4"/></symbol><symbol id="ic-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></symbol><symbol id="ic-image" viewBox="0 0 24 24"><path d="M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15.5 8.5h.01"/></symbol><symbol id="ic-pen" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"/></symbol><symbol id="ic-lasso" viewBox="0 0 24 24"><path d="M7 15.5C4.6 14.4 3 12.6 3 10.5 3 6.9 7 4 12 4s9 2.9 9 6.5S17 17 12 17c-1 0-2-.1-2.9-.3M7 15.5c-1 .8-1.5 1.7-1.5 2.6C5.5 19.7 7 21 9 21M7 15.5a1.6 1.6 0 1 0 2.3 1"/></symbol><symbol id="ic-target" viewBox="0 0 24 24"><path d="M12 19a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM12 2v4M12 18v4M2 12h4M18 12h4"/></symbol><symbol id="ic-scatter" viewBox="0 0 24 24"><path d="M4 4v16h16M8 15h.01M10 10h.01M14 13h.01M16 8h.01M18 15h.01"/></symbol><symbol id="ic-folder" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v11H3z"/></symbol><symbol id="ic-send" viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-3-7z"/></symbol><symbol id="ic-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></symbol><symbol id="ic-home" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9H4zM10 20v-6h4v6"/></symbol><symbol id="ic-move" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3L9.5 5.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5M3 12l2.5-2.5M3 12l2.5 2.5M21 12l-2.5-2.5M21 12l-2.5 2.5"/></symbol><symbol id="ic-copy" viewBox="0 0 24 24"><path d="M8 8h12v12H8zM4 16V4h12"/></symbol><symbol id="ic-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5zM3 13l9 5 9-5"/></symbol></svg>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="ic-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol><symbol id="ic-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></symbol><symbol id="ic-upload" viewBox="0 0 24 24"><path d="M12 16V5M7 9l5-5 5 5M5 20h14"/></symbol><symbol id="ic-import" viewBox="0 0 24 24"><path d="M12 3v11M7.5 9.5L12 14l4.5-4.5M4 14v6h16v-6"/></symbol><symbol id="ic-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5zM8 4v5h7V4M8 20v-6h8v6"/></symbol><symbol id="ic-help" viewBox="0 0 24 24"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.6 9.4a2.5 2.5 0 1 1 3.6 2.3c-.7.3-1.2 1-1.2 1.8v.4M12 17.2v.1"/></symbol><symbol id="ic-chev-left" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol><symbol id="ic-chev-right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol><symbol id="ic-chev-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol><symbol id="ic-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol><symbol id="ic-grid" viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></symbol><symbol id="ic-chart" viewBox="0 0 24 24"><path d="M4 20h16M7 16v-5M12 16V6M17 16V9"/></symbol><symbol id="ic-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></symbol><symbol id="ic-play" viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></symbol><symbol id="ic-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 15.5l.8 1.7 1.7.8-1.7.8-.8 1.7-.8-1.7-1.7-.8 1.7-.8z"/></symbol><symbol id="ic-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3"/></symbol><symbol id="ic-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7M20 4v5h-5"/></symbol><symbol id="ic-terminal" viewBox="0 0 24 24"><path d="M3 5h18v14H3zM7 10l3 2-3 2M12.5 15h4.5"/></symbol><symbol id="ic-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM8.6 12.2l2.4 2.4 4.4-4.8"/></symbol><symbol id="ic-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h6"/></symbol><symbol id="ic-share" viewBox="0 0 24 24"><path d="M12 15V4M8 8l4-4 4 4M5 12v8h14v-8"/></symbol><symbol id="ic-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol><symbol id="ic-server" viewBox="0 0 24 24"><path d="M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01"/></symbol><symbol id="ic-monitor" viewBox="0 0 24 24"><path d="M3 4h18v12H3zM8 20h8M12 16v4"/></symbol><symbol id="ic-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></symbol><symbol id="ic-image" viewBox="0 0 24 24"><path d="M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15.5 8.5h.01"/></symbol><symbol id="ic-pen" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"/></symbol><symbol id="ic-lasso" viewBox="0 0 24 24"><path d="M7 15.5C4.6 14.4 3 12.6 3 10.5 3 6.9 7 4 12 4s9 2.9 9 6.5S17 17 12 17c-1 0-2-.1-2.9-.3M7 15.5c-1 .8-1.5 1.7-1.5 2.6C5.5 19.7 7 21 9 21M7 15.5a1.6 1.6 0 1 0 2.3 1"/></symbol><symbol id="ic-target" viewBox="0 0 24 24"><path d="M12 19a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM12 2v4M12 18v4M2 12h4M18 12h4"/></symbol><symbol id="ic-scatter" viewBox="0 0 24 24"><path d="M4 4v16h16M8 15h.01M10 10h.01M14 13h.01M16 8h.01M18 15h.01"/></symbol><symbol id="ic-folder" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v11H3z"/></symbol><symbol id="ic-send" viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-3-7z"/></symbol><symbol id="ic-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></symbol><symbol id="ic-home" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9H4zM10 20v-6h4v6"/></symbol><symbol id="ic-move" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3L9.5 5.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5M3 12l2.5-2.5M3 12l2.5 2.5M21 12l-2.5-2.5M21 12l-2.5 2.5"/></symbol><symbol id="ic-copy" viewBox="0 0 24 24"><path d="M8 8h12v12H8zM4 16V4h12"/></symbol><symbol id="ic-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5zM3 13l9 5 9-5"/></symbol><symbol id="ic-bug" viewBox="0 0 24 24"><path d="M8 9h8v6a4 4 0 0 1-8 0zM9 9V7a3 3 0 0 1 6 0v2M12 11v8M4 12h4M16 12h4M5 7l3 2M19 7l-3 2M5 18l3-2M19 18l-3-2"/></symbol></svg>
 <header>
   <div class="hmini"><button id="hdrShow" title="Show the toolbar (t)">‹</button><b>STAnnotator</b><span id="miniInfo"></span></div>
   <!-- the toolbar: a panel on the right of the map: the app, then the tabs Data and Analysis (its steps as a second row),
@@ -399,8 +401,9 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <div class="cap"><h1>STAnnotator</h1>
       <button id="helpBtn" title="How to use the app, and About (version, agent connection, data folder)" style="padding:4px 10px;font-weight:600;margin-left:auto">?</button>
       <button id="hdrHide" title="Fold the toolbar to the right for a bigger map (t)" style="padding:4px 9px">›</button></div>
-    <button id="importBtn" title="Add a sample (Xenium files, h5ad or RDS), then its image and registration">Import…</button>
+    <div class="io"><button id="importBtn" title="Add a sample (Xenium files, h5ad or RDS), then its image and registration">Import…</button>
     <button id="export" disabled title="Save the cell table (CSV), the registration, or the analysis as a Jupyter notebook">Export…</button>
+    <button id="bugBtn" title="Something went wrong? Save your conversations with the agent, its tool calls and the app's log as one file for the developers">Report bug…</button></div>
     <span class="br"></span>
     <button id="connBtn" hidden title="Work on this computer or on a server over SSH">This computer</button>
     <span class="folder">Data folder <span class="path" id="path">–</span></span>
@@ -1011,7 +1014,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
   <div class="imbody"><div class="hint" id="anSub"></div><div id="anBody"></div><div id="anLegend" class="cmplegend"></div><div class="hint" id="anNote"></div></div>
 </dialog>
 <dialog id="bugDlg" style="width:min(560px,94vw)">
-  <div class="dh"><b>Report a problem</b><span class="spacer"></span></div>
+  <div class="dh"><b>Report a bug</b><span class="spacer"></span></div>
   <div style="padding:12px 14px;display:flex;flex-direction:column;gap:10px">
     <div class="hint">Saves one file for the developers, to see what you and the agent did. It holds text only: no
       expression data, cell tables or images. Conversations can include file paths, gene names and numbers the agent
@@ -1055,7 +1058,7 @@ const ICON_ONLY = { sessDel: "x", hdrShow: "chev-left", hdrHide: "chev-right", h
   fbUp: "arrow-up", fbHome: "home", rsClose: "x", hide: "eye", hideHE: "image" };
 const ICON_TEXT = { qfBtn: "play", importBtn: "import", clearAll: "trash", rmSample: "trash", allSamples: "grid", connBtn: "monitor", 
   openMarkers: "list", openRef: "file", openEx: "file", annotate: "play", eRun: "play", eShow: "scatter", nRun: "play",
-  undo: "undo", refresh: "refresh", claudeBtn: "sparkle", plaus: "shield", report: "file", export: "share", reset: "trash",
+  undo: "undo", refresh: "refresh", claudeBtn: "sparkle", plaus: "shield", report: "file", export: "share", bugBtn: "bug", reset: "trash",
   draw: "pen", emLasso: "lasso", emClear: "x", emZoom: "target", send: "send",
   mkImport: "import", mkCheck: "check", mkSave: "save", mkDraft: "sparkle", mkOrganUse: "list", mkOrganAgent: "sparkle", mkClose: "check", imGo: "import",
   imNewAlign: "sparkle", alignNow: "sparkle", refPick: "folder", exPick: "folder", refClose: "check", exClose: "check", rcTest: "check",
@@ -3731,8 +3734,7 @@ const HELP = `
     parameters, and its results; the last trajectory too).</li></ul></li>
 <li><b>Ask Agent</b> (bar on the map) opens your own Claude Code, connected to this app. <b>Undo</b> and
   <b>Report</b> are there too.</li>
-<li>Something went wrong? <b>About</b> (top of this window) → <b>Report a problem…</b> saves one file for the
-  developers:<ul>
+<li>Something went wrong? <b>Report bug…</b> (right of Export) saves one file for the developers:<ul>
   <li>your conversations with the agent, its tool calls and proposals, this annotation's history and the app's log;</li>
   <li>text only: no expression data, cell tables or images. You choose what goes in, and the app sends nothing.</li></ul></li></ul>`;
 const METHODS = `
@@ -3930,9 +3932,7 @@ async function showAbout() {
       <button id="hpTrashSet">Set</button> <button id="hpTrashEmpty" class="danger">Empty trash</button>
       <div class="hint">What Reset, Remove sample and the cell filter moved away (${cache.trash_entries} removal${cache.trash_entries === 1 ? "" : "s"}), in <code>${esc(cache.trash_path)}</code>; past the limit the oldest are deleted for good.</div>`]);
   $("hpBody").innerHTML = `<dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>
-    <button id="hpBug" class="primary" title="Save your conversations with the agent, its tool calls and the app's log as one file for the developers">Report a problem…</button>
     <button id="hpCopy">Copy for a bug report</button>`;
-  $("hpBug").onclick = () => openBugReport();
   if ($("hpOpenData")) $("hpOpenData").onclick = () => post("/api/open_folder", { which: "data" }).catch((e) => toast(e.message, 6000));
   if ($("hpMoveData")) $("hpMoveData").onclick = () => changeDataFolder(d.data_folder);
   const cacheDo = async (body, what) => {
@@ -3974,6 +3974,7 @@ async function openBugReport() {
   $("bugParts").innerHTML = `<span class="hint">Checking…</span>`;
   try { await bugContents(); } catch (e) { $("bugErr").textContent = e.message; }
 }
+$("bugBtn").onclick = () => openBugReport();
 $("bugDays").onchange = () => bugContents().catch((e) => { $("bugErr").textContent = e.message; });
 $("bugCancel").onclick = () => $("bugDlg").close();
 $("bugSave").onclick = async () => {

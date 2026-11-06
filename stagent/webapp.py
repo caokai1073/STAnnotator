@@ -1911,7 +1911,7 @@ def _about():
                   "libraries": {k: ver(k) for k in ("numpy", "scipy", "scikit-learn", "igraph", "pywebview", "mcp")}}
 
 
-# ---------------- a problem report (report.py): Help > About > Report a problem ----------------
+# ---------------- a problem report (report.py): Report bug... in the toolbar ----------------
 REPORTS = config.HOME / "cache" / "reports"
 
 

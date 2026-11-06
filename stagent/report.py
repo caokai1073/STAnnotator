@@ -1,6 +1,6 @@
 """A problem report: what the user did with the agent and what the app logged, as one zip the user chooses to send.
 
-Help > About > Report a problem... saves it. It holds text only, no expression data and no images:
+Report bug... (right of Export in the toolbar) saves it. It holds text only, no expression data and no images:
 - README.txt: what the report holds, the version and the system; note.txt: what the user wrote;
 - about.json: the About information (version, build, data folder, Claude Code found / connected, libraries);
 - agent/<id>.jsonl: the Claude Code conversations of the agent (Ask Agent's workspace, the app's chat box) touched

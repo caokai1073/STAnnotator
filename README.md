@@ -142,7 +142,7 @@ stagent mcp                 # the agent's tools, for Claude Code without the app
 
 ## Troubleshooting
 
-- **Something went wrong**: **?** → **About** → **Report a problem…** saves one file with your conversations with
+- **Something went wrong**: **Report bug…** (right of **Export…**) saves one file with your conversations with
   the agent, its tool calls and the app's log (text only, no expression data); attach it to an
   [issue](https://github.com/caokai1073/STAnnotator/issues).
 - **The app does not open**: see `~/stagent/app.log` (Windows: `%LOCALAPPDATA%\STAnnotator\app.log`), or run
