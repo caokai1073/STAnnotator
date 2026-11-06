@@ -984,6 +984,128 @@ def import_flat(kind, name, src, he=None, registration=None, description="", ove
                          pending_kind=he_kind)
 
 
+# ---------------- H&E only ----------------
+IMAGE_ONLY_SUFFIXES = (".tif", ".tiff", ".btf", ".svs", ".ndpi", ".png", ".jpg", ".jpeg")
+NOMINAL_UM_PER_PX = 0.5  # stands in when the image does not say its pixel size (shown as "unknown")
+
+
+def image_pixel_size(path):
+    """um per level-0 pixel stored in the image (OME-TIFF, Aperio SVS "MPP", or the TIFF resolution tags in cm or
+    inches), or None."""
+    from .align import image_um_per_px
+    upp = image_um_per_px(path)
+    if upp:
+        return upp
+    try:
+        import tifffile
+        with tifffile.TiffFile(path) as t:
+            p = t.pages[0]
+            m = re.search(r"MPP\s*=\s*([0-9.eE+-]+)", p.description or "")
+            if m and 0.01 < float(m.group(1)) < 100:
+                return float(m.group(1))
+            tags = p.tags
+            if "XResolution" in tags and "ResolutionUnit" in tags:
+                num, den = tags["XResolution"].value
+                unit = int(tags["ResolutionUnit"].value)
+                per = {2: 25400.0, 3: 10000.0}.get(unit)  # um per inch, per cm
+                if per and num and den:
+                    upp = per / (num / den)
+                    if 0.05 < upp < 50:
+                        return upp
+    except Exception:
+        pass
+    return None
+
+
+def import_image(name, image, um_per_px=None, description="", overwrite=False, progress=print, image_kind="H&E"):
+    """A sample of an image only (H&E, or a DAPI / fluorescence image), no cells: regions are drawn on it (e.g. by a
+    pathologist before the expression data exist), exported as GeoJSON and given to a later import of the data on the
+    same image. um_per_px: the pixel size; read from the image when not given, else unknown (a nominal
+    NOMINAL_UM_PER_PX is used and the app shows no micrometers). A non-pyramidal image is copied into the sample
+    folder as a pyramid."""
+    name = _check_name(name, overwrite)
+    src = Path(str(image)).expanduser()
+    if not src.exists():
+        raise ValueError(f"no file {src}")
+    if not src.name.lower().endswith(IMAGE_ONLY_SUFFIXES):
+        raise ValueError(f"{src.name}: the image must be a TIFF / OME-TIFF, SVS, NDPI, PNG or JPEG file "
+                         "(convert other whole-slide formats, e.g. MRXS or CZI, to OME-TIFF first)")
+    upp = float(um_per_px) if um_per_px not in (None, "", 0) else image_pixel_size(src)
+    known = bool(upp)
+    progress(f"image: {src.name}, " + (f"{upp:.4f} um per pixel" if known else "pixel size unknown"))
+    shown, own = str(src.resolve()), False
+    try:
+        from .render import Slide
+        lv = Slide(shown).levels
+        flat = len(lv) == 1 and max(lv[0][:2]) > 4096
+    except Exception:
+        lv, flat = None, True  # PNG / JPEG, or a TIFF the viewer cannot tile
+    if flat:
+        stage = config.HOME / "importing" / f"{name}_image.ome.tif"
+        stage.parent.mkdir(parents=True, exist_ok=True)
+        progress("making an image pyramid for the viewer")
+        shown = str(visium.pyramid(str(src), stage, upp, progress))
+        own = shown != str(src.resolve())
+    A = np.array([[1 / (upp or NOMINAL_UM_PER_PX), 0, 0], [0, 1 / (upp or NOMINAL_UM_PER_PX), 0]])
+    out = config.SAMPLES / name
+    tmp = config.HOME / "importing" / name
+    if tmp.exists():
+        shutil.rmtree(tmp)
+    tmp.mkdir(parents=True)
+    try:
+        if own:
+            dst = f"image_{time.strftime('%Y%m%d-%H%M%S')}.ome.tif"
+            shutil.move(shown, str(tmp / dst))
+            shown = str(out / dst)
+        cells = pd.DataFrame({"cell": np.zeros(0, np.int64), "cell_id": np.zeros(0, dtype=object),
+                              "x": np.zeros(0), "y": np.zeros(0), "px": np.zeros(0), "py": np.zeros(0),
+                              "depth_um": np.zeros(0), "total_counts": np.zeros(0, np.int64)})
+        _write_files(tmp, out, name, cells, sp.csr_matrix((0, 0), dtype=np.float32), [], shown, A, description,
+                     {"kind": "image", "image": str(src.resolve())}, image_kind, upp or NOMINAL_UM_PER_PX, False,
+                     None, None, image_kind)
+        m = json.load(open(tmp / "meta.json"))
+        m.update(image_only=True, um_per_px_known=known)
+        json.dump(m, open(tmp / "meta.json", "w"), indent=1)
+        if out.exists():
+            from .render import forget
+            forget(out)
+            shutil.rmtree(out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(tmp), str(out))
+    finally:
+        if tmp.exists():
+            shutil.rmtree(tmp, ignore_errors=True)
+    progress(f"imported the image as sample {name}: draw and name regions on it")
+    return json.load(open(out / "meta.json"))
+
+
+def image_sample_regions(sample_id, image=None):
+    """GeoJSON text of the regions drawn on a sample of an image only (its latest version), to give them to the
+    import of the data on the same image; image: that import's image, checked to be the same size."""
+    from . import regions
+    from .session import Session, placeholder
+    m = _meta(sample_id)
+    if not m.get("image_only"):
+        raise ValueError(f"{sample_id} is not a sample of an image only")
+    ph = placeholder(sample_id)
+    if not ph:
+        raise ValueError(f"no regions drawn on {sample_id} yet")
+    s = Session(ph)
+    if image:
+        a, b = _he_size(m["he_path"]), _he_size(image)
+        if tuple(a) != tuple(b):
+            raise ValueError(f"the regions of {sample_id} were drawn on an image of {a[0]} x {a[1]} px, this image is "
+                             f"{b[0]} x {b[1]} px: they need the same image (the same scan)")
+    text, info = regions.to_geojson(s.state()["regions"], s.region_colors(), _he_size(m["he_path"]))
+    return text, info
+
+
+def image_only(meta_or_id):
+    """Whether a sample is an image without cells (import_image)."""
+    m = _meta(meta_or_id) if isinstance(meta_or_id, str) else meta_or_id
+    return bool(m.get("image_only"))
+
+
 def apply_registration_fix(sample_id, correction):
     """Move every cell onto its nucleus on the image: p + A (p - origin) + b in H&E level-0 pixels, the correction
     that insights.registration fitted, plus its "local" field if it has one (regcheck.correction: the local shifts of
@@ -1125,17 +1247,23 @@ def on_image(meta):
     return bool(meta.get("he_path")) and meta.get("image_kind") not in (None, "none") and not meta.get("image_pending")
 
 
-def attach_regions(sample_id, path):
-    """Keep a GeoJSON of outlines drawn on the sample's H&E (e.g. QuPath annotations) with the sample: every new
-    annotation of it starts with these regions. Returns the cells each region holds, or None when the H&E still waits
-    for its alignment (the file is kept and used once the cells are on the image)."""
+def attach_regions(sample_id, path=None, text=None, source=None):
+    """Keep a GeoJSON of outlines drawn on the sample's H&E (e.g. QuPath annotations, or the regions of a sample of
+    the image only) with the sample: every new annotation of it starts with these regions. path: the file, or text
+    with source (what it came from). Returns the cells each region holds, or None when the H&E still waits for its
+    alignment (the file is kept and used once the cells are on the image)."""
     from . import regions
-    text = regions.read_geojson(path)
+    if text is None:
+        text = regions.read_geojson(path)
+        source = str(Path(path).expanduser().resolve())
+        name = Path(path).name
+    else:
+        name = source or "the regions"
     pieces, skipped = regions.parse_geojson(text)
     m = _meta(sample_id)
     if not on_image(m):
         (config.SAMPLES / sample_id / "regions.geojson").write_text(text, encoding="utf-8")
-        m["regions_geojson"] = {"source": str(Path(path).expanduser().resolve()), "regions": None, "skipped": skipped}
+        m["regions_geojson"] = {"source": source, "regions": None, "skipped": skipped}
         json.dump(m, open(config.SAMPLES / sample_id / "meta.json", "w"), indent=1)
         return None
     c = pd.read_parquet(config.SAMPLES / sample_id / "cells.parquet", columns=["px", "py"])
@@ -1147,11 +1275,11 @@ def attach_regions(sample_id, path):
             rows = np.setdiff1d(rows, regions.cells_in_polygon(px, py, h))
         per[p["name"]] = per.get(p["name"], 0) + len(rows)
     if not any(per.values()):
-        raise ValueError(f"{Path(path).name}: no outline holds any cell of {sample_id}: was it drawn on this sample's "
+        raise ValueError(f"{name}: no outline holds any cell of {sample_id}: was it drawn on this sample's "
                          "H&E (full-resolution pixels), and is the H&E registered?")
     (config.SAMPLES / sample_id / "regions.geojson").write_text(text, encoding="utf-8")
     m = _meta(sample_id)
-    m["regions_geojson"] = {"source": str(Path(path).expanduser().resolve()), "regions": per, "skipped": skipped}
+    m["regions_geojson"] = {"source": source, "regions": per, "skipped": skipped}
     json.dump(m, open(config.SAMPLES / sample_id / "meta.json", "w"), indent=1)
     return per
 

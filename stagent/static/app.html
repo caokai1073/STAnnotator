@@ -31,7 +31,7 @@ header.collapsed { width: 38px; padding: 8px 4px; overflow: hidden; }
 header.collapsed .hrow, header.collapsed .tabs, header.collapsed .pane { display: none; }
 /* steps as tabs: one shown at a time; a dot on a tab whose analysis is running */
 .tabs { display: flex; gap: 2px; padding: 3px; margin-top: 12px; background: var(--bg); border-radius: 10px; flex: none; }
-.tabs .tab { flex: 1 1 0; border: 0; background: none; padding: 6px 2px; font-size: 12px; color: var(--muted); border-radius: 8px; }
+.tabs .tab { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 0; background: none; padding: 6px 3px; font-size: 11px; color: var(--muted); border-radius: 8px; }
 .tabs .tab:hover:not(.on) { background: none; color: var(--ink); }
 .tabs .tab.on { background: var(--panel); color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
 .tabs .tab.busy::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
@@ -68,6 +68,8 @@ table.an th { text-align: right; font-weight: 600; color: var(--muted); padding:
 table.an td { text-align: right; padding: 3px 8px; border-bottom: 1px solid var(--line); }
 table.an th:first-child, table.an td:first-child { text-align: left; }
 table.an td { white-space: nowrap; }
+.trgenes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; } .trgenes b { display: block; margin: 2px 0 4px; }
+@media (max-width: 760px) { .trgenes { grid-template-columns: minmax(0, 1fr); } }
 table.an.deall td:nth-child(2), table.an.deall th:nth-child(2) { text-align: left; } table.an.deall tr.grpstart td { border-top: 2px solid var(--muted); }
 table.an td.genes { text-align: left; white-space: normal; }
 table.an td.heat { min-width: 44px; }
@@ -403,7 +405,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
   <div class="tabs" id="tabs" role="tablist">
     <button class="tab" data-tab="data" role="tab">Data</button><button class="tab" data-tab="annotate" role="tab">Annotate</button>
     <button class="tab" data-tab="embed" role="tab" title="PCA, UMAP and Leiden clusters">Embed</button><button class="tab" data-tab="niches" role="tab">Niches</button>
-    <button class="tab" data-tab="compare" role="tab" title="DE genes, top genes per group, composition">Compare</button><button class="tab" data-tab="signal" role="tab" title="Cell-cell communication: ligand-receptor signaling between neighboring cells">Signaling</button></div>
+    <button class="tab" data-tab="compare" role="tab" title="DE genes, top genes per group, composition">Compare</button><button class="tab" data-tab="signal" role="tab" title="Cell-cell communication: ligand-receptor signaling between neighboring cells">Signaling</button>
+    <button class="tab" data-tab="traj" role="tab" title="Spatial axes and pseudotime: the order of cells in the tissue or along a differentiation, and the genes that change along it">Trajectory</button></div>
   <div class="pane" data-pane="data">
     <div class="fld" id="sampleWrap"><span>Sample</span><div class="inrow"><select id="sample" aria-label="Sample"></select>
       <button id="sampleRename" disabled title="Rename the sample as the app shows it (a slice: its name in the project)">Rename</button></div></div>
@@ -540,6 +543,41 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <div class="hint" id="sHint">Ligand on a sender cell, receptor on a neighbor: scored on neighboring cells, tested against random groups. Click an interaction to see on the map where it is received or sent.</div>
     <div class="act2"><button id="sLast" hidden title="Show the last result again">Last result</button></div>
     <button id="sRun" class="primary main" disabled>Find interactions</button>
+  </div>
+  <div class="pane" data-pane="traj">
+    <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-chart"/></svg><div><div id="tinfo">Open or make an annotation first</div>
+      <div class="progress" id="tprogress"><div class="pbar"><i id="tfill"></i></div><span id="tstage"></span></div></div></div>
+    <div class="fld" id="tScopeWrap" hidden><span>Cells</span><select id="tScope" class="segsel" title="The cells ordered">
+      <option value="slice" data-short="This slice">This slice</option>
+      <option value="project" data-short="All slices">All slices of the project, pooled (each slice's latest annotation)</option></select>
+      <div class="seg" data-for="tScope"></div></div>
+    <div class="fld"><span>Method</span><select id="tMethod" class="segsel" title="How the cells are ordered">
+      <option value="spatial" data-short="Spatial axis">Spatial axis: each cell's place between two groups of cells in the tissue</option>
+      <option value="expression" data-short="Pseudotime">Pseudotime: diffusion pseudotime on expression, from a root group</option>
+      <option value="mixed" data-short="Expression + space">Pseudotime on expression and tissue neighbors together</option></select>
+      <div class="seg" data-for="tMethod"></div></div>
+    <div class="fgrid t-sp">
+      <label class="fld" title="Where the axis starts (0): cells of this group, searched among all cells of the slice"><span>From</span><select id="tFromBy"></select></label>
+      <label class="fld"><span>&nbsp;</span><select id="tFromVal"></select></label>
+    </div>
+    <div class="fgrid t-sp">
+      <label class="fld" title="Where the axis ends (1); none: the distance to the start group in µm"><span>To</span><select id="tToBy"></select></label>
+      <label class="fld"><span>&nbsp;</span><select id="tToVal" disabled></select></label>
+    </div>
+    <div class="fgrid t-ex">
+      <label class="fld" title="Where the pseudotime starts: a group among the cells ordered (e.g. stem cells)"><span>Root</span><select id="tRootBy"></select></label>
+      <label class="fld"><span>&nbsp;</span><select id="tRootVal"></select></label>
+    </div>
+    <label class="fld t-mx" title="0: expression only; 1: tissue neighbors only"><span>Weight of space <b id="tAlphaVal">0.30</b></span>
+      <input type="range" id="tAlpha" min="0" max="1" step="0.05" value="0.3"></label>
+    <div class="fgrid">
+      <label class="fld" title="Order only these cells (e.g. one lineage or region)"><span>Only within</span><select id="tWBy"></select></label>
+      <label class="fld"><span>&nbsp;</span><select id="tWVal" disabled></select></label>
+    </div>
+    <label class="fld" title="The groups whose shares along the trajectory are shown"><span>Composition by</span><select id="tBy"></select></label>
+    <div class="hint" id="tHint"></div>
+    <div class="act2"><button id="tLast" hidden title="Show the last result again">Last result</button></div>
+    <button id="tRun" class="primary main" disabled>Find trajectory</button>
   </div>
   <div class="hrow bottom">
     <button id="reset" class="danger" disabled title="Remove every annotation and chat of this sample">Reset</button>
@@ -759,6 +797,13 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <label title="Visium HD or Visium (Space Ranger output): bins instead of cells; 2 µm bins are pooled into 8 µm"><input type="radio" name="imKind" value="visium"> Visium HD</label>
       <label title="Stereo-seq (STOmics SAW output): a cell-bin GEF, or a GEM; cells when there are cell bins, else 8 µm bins"><input type="radio" name="imKind" value="stereoseq"> Stereo-seq</label>
       <label title="AnnData (.h5ad), or an R file (.rds / .rda) with a Seurat or SpatialExperiment object"><input type="radio" name="imKind" value="h5ad"> h5ad / RDS</label>
+      <label title="An H&amp;E (or other) image alone, without cells: draw and name regions on it (e.g. a pathologist's outlines before the expression data exist), then give them to the import of the data on the same image"><input type="radio" name="imKind" value="image"> H&amp;E only</label>
+    </div>
+    <div id="imI" hidden>
+      <div class="frow"><span>Image <b class="req" title="required">*</b></span><textarea id="imIImg" class="fin" rows="1" placeholder="the H&amp;E: TIFF / OME-TIFF, SVS, NDPI, PNG or JPEG (convert other whole-slide formats, e.g. MRXS or CZI, to OME-TIFF first)"></textarea><button data-pick="heonly" data-target="imIImg">Choose…</button></div>
+      <div class="frow"><span>Pixel size<small class="opt">optional</small></span><input type="number" id="imIUpp" min="0.01" max="50" step="any" placeholder="µm per pixel: read from the image when it holds it, else unknown"><span></span></div>
+      <div class="frow"><span>Image kind</span><select id="imIKind"><option value="H&amp;E">H&amp;E</option><option value="DAPI">DAPI / fluorescence</option></select><span></span></div>
+      <div class="hint" style="margin-left:138px">No cells: draw and name regions on the image. Export them (Export → Regions, GeoJSON), or choose this sample under <b>Regions from</b> when you import the data registered to the same image: they become the regions of every annotation. Without a pixel size the app shows no micrometers.</div>
     </div>
     <div id="imS" hidden>
       <div class="frow"><span>SAW output <b class="req" title="required">*</b></span><textarea id="imSDir" class="fin" rows="1" placeholder="the SAW output folder, or its files: <SN>.cellbin.gef and / or <SN>.tissue.gem.gz, and the registered image <SN>_HE_regist.tif (or ssDNA)"></textarea><button data-pick="folder" data-target="imSDir">Choose…</button></div>
@@ -800,7 +845,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
         <div class="seclist" id="imSecList"></div></div><span></span></div>
       <div class="frow"><span>Region column</span><select id="imRegCol"><option value="">none (draw regions yourself)</option></select><span></span></div>
     </div>
-    <div class="frow"><span>H&amp;E image<small class="opt">optional</small></span><span class="choice">
+    <div class="frow" id="imImgModeRow"><span>H&amp;E image<small class="opt">optional</small></span><span class="choice">
       <label><input type="radio" name="imImgMode" value="none" checked> No H&amp;E</label>
       <label><input type="radio" name="imImgMode" value="file"> H&amp;E file</label>
       <span class="hint" id="imNoImgHint"></span></span><span></span></div>
@@ -812,7 +857,8 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <button id="imNewAlign" disabled title="Choose an image first">Align with Agent</button></span><span></span></div>
     <div class="frow" id="imRegRow" hidden><span></span><textarea id="imNewReg" rows="1" placeholder="affine CSV (a11,a12,a21,a22,tx,ty) or Xenium Explorer alignment (3x3); several slices: one file for all (a row per slice) or one per slice, in their order"></textarea><button data-pick="csv" data-multi="1" data-target="imNewReg">Choose…</button></div>
     <div class="frow" id="imRegSecRow" hidden><span>Registration row</span><input type="text" id="imNewRegSec" placeholder="only if the file has one row per section; default: the section chosen above"><span></span></div>
-    <div class="frow"><span>Regions<small class="opt">optional</small></span><textarea id="imNewGeo" rows="1" placeholder="GeoJSON of outlines drawn on this H&amp;E (e.g. QuPath annotations): they become regions of every new annotation; several slices: one per slice, in their order"></textarea><button data-pick="geojson" data-multi="1" data-target="imNewGeo">Choose…</button></div>
+    <div class="frow" id="imGeoFromRow" hidden><span>Regions from<small class="opt">optional</small></span><select id="imGeoFrom" title="Regions drawn on a sample of the H&amp;E only: the same image file (scan) as the one this data is registered to"><option value="">none</option></select><span></span></div>
+    <div class="frow" id="imGeoRow"><span>Regions<small class="opt">optional</small></span><textarea id="imNewGeo" rows="1" placeholder="GeoJSON of outlines drawn on this H&amp;E (e.g. QuPath annotations): they become regions of every new annotation; several slices: one per slice, in their order"></textarea><button data-pick="geojson" data-multi="1" data-target="imNewGeo">Choose…</button></div>
     <div class="frow"><span><span id="imNameLabel">Sample name</span><small class="opt">optional</small></span><input type="text" id="imName" placeholder="short id without spaces; by default from the file names"><span></span></div>
     <div class="hint" id="imProjectHint" hidden></div>
     <div class="hint" id="imPairs" hidden style="margin-left:138px;white-space:pre-line"></div>
@@ -923,21 +969,26 @@ T and NK cells: CD3E|NKG7+ EPCAM-
 <dialog id="xpDlg" style="width:min(640px,95vw)">
   <div class="dh"><b>Export</b><span class="hint" id="xpInfo" style="margin-left:8px"></span><span class="spacer"></span><button id="xpClose">Close</button></div>
   <div class="imbody">
-    <div class="clcard"><b>Cells table (CSV)</b>
+    <div class="clcard" id="xpCsvCard"><b>Cells table (CSV)</b>
       <div class="hint">One row per cell: cell id, region, cell type, lineage, type levels, confidence, expression label,
         marker cluster, hand-labeled, niche, Leiden cluster, UMAP 1 and 2 (when computed) and the coordinates (um).</div>
       <div class="row"><span class="spacer"></span><button id="xpCsv" class="primary">Save CSV…</button></div></div>
-    <div class="clcard"><b>Analysis notebook (Jupyter)</b>
+    <div class="clcard" id="xpNbCard"><b>Analysis notebook (Jupyter)</b>
       <div class="hint">The code of every step with this annotation's parameters (data, placement on the image, annotation
         with its regions, priors and corrections, PCA / UMAP / Leiden, niches) and its results (tables, figures).
         It runs without this app, with the data files and common Python packages, and checks that the labels,
         clusters and niches come out the same.</div>
       <div class="row"><span class="spacer"></span><button id="xpNb" class="primary">Save notebook…</button></div></div>
-    <div class="clcard"><b>Registration (CSV)</b>
+    <div class="clcard" id="xpRegCard"><b>Registration (CSV)</b>
       <div class="hint" id="xpRegInfo"></div>
       <div class="hint" id="xpPosInfo" style="margin-top:4px"></div>
       <div class="row"><span class="spacer"></span><button id="xpPos" title="Every cell's place on the image, local corrections and moved pieces included">Save cell positions…</button>
         <button id="xpReg" class="primary">Save registration…</button></div></div>
+    <div class="clcard"><b>Regions (GeoJSON)</b>
+      <div class="hint" id="xpGeoInfo">The outlines of this version's regions in the image's full-resolution pixels, named by their region, as
+        QuPath writes its annotations (QuPath opens it). Import it with the data registered to the same image, or
+        use it in other tools. Cells moved into a region without an outline are not in it.</div>
+      <div class="row"><span class="spacer"></span><button id="xpGeo">Save regions…</button></div></div>
     <div class="hint" id="xpStatus"></div>
   </div>
 </dialog>
@@ -993,8 +1044,8 @@ const ICON_TEXT = { qfBtn: "play", importBtn: "import", clearAll: "trash", rmSam
   mkImport: "import", mkCheck: "check", mkSave: "save", mkDraft: "sparkle", mkOrganUse: "list", mkOrganAgent: "sparkle", mkClose: "check", imGo: "import",
   imNewAlign: "sparkle", imAlign: "sparkle", alignNow: "sparkle", alignReg: "file", imImgGo: "image", imRegGo: "check",
   imUndoPlace: "undo", refPick: "folder", exPick: "folder", refClose: "check", exClose: "check", rcTest: "check",
-  rcGo: "server", fbOk: "check", rpAsk: "sparkle", xpCsv: "download", xpNb: "download", xpReg: "download", xpPos: "download",
-  hpCopy: "copy", editSave: "check", nameSave: "check", rsGo: "trash", anFig: "download", aRun: "play", aLast: "list", anAsk: "sparkle", sRun: "play", sLast: "list", rvGo: "sparkle", rvShow: "list" };
+  rcGo: "server", fbOk: "check", rpAsk: "sparkle", xpCsv: "download", xpNb: "download", xpReg: "download", xpPos: "download", xpGeo: "download",
+  hpCopy: "copy", editSave: "check", nameSave: "check", rsGo: "trash", anFig: "download", aRun: "play", aLast: "list", anAsk: "sparkle", sRun: "play", sLast: "list", tRun: "play", tLast: "list", rvGo: "sparkle", rvShow: "list" };
 const ICON_TITLES = { lgtoggle: "Fold or unfold", rgtoggle: "Fold or unfold", anCsv: "Save as CSV…", rpSave: "Save as Markdown…",
   mkExport: "Save the list as CSV…", fbHome: "Home folder", fbUp: "Parent folder", plclose: "Close", emClose: "Close" };
 Object.entries(ICON_TITLES).forEach(([id, t]) => $(id) && ($(id).title = t));
@@ -1123,7 +1174,8 @@ function grayColors() {
 }
 async function loadColors() {
   const q = new URLSearchParams({ version: st.version, mode: st.mode, only: [...filt()].join("|") });
-  const key = `${st.sid}|${q}|${st.mode === "region" ? st.colorEpoch || 0 : st.mode === "niche" && st.niche ? st.niche.params.run_id : 0}`;
+  const key = `${st.sid}|${q}|${st.mode === "region" ? st.colorEpoch || 0 : st.mode === "niche" && st.niche ? st.niche.params.run_id
+    : st.mode === "trajectory" && st.traj ? st.traj.run_id : 0}`;
   if (GL.colorKey === key) return;
   if (!GL.colors[key]) {
     const r = await fetch(`/api/s/${st.sid}/colors.bin?${q}`);
@@ -1242,7 +1294,7 @@ async function loadSamples(select, project) {
 }
 function fillSampleSelect() {  // the slices of each project, then the samples on their own
   const sel = $("sample"), keep = sel.value; sel.textContent = "";
-  const label = (s) => [s.name || s.sample_id, s.description || [s.disease, s.location].filter(Boolean).join(" · "), `${s.n_cells.toLocaleString()} ${s.unit || "cells"}`].filter(Boolean).join(" · ");
+  const label = (s) => [s.name || s.sample_id, s.description || [s.disease, s.location].filter(Boolean).join(" · "), s.image_only ? `${s.image_kind || "image"} only` : `${s.n_cells.toLocaleString()} ${s.unit || "cells"}`].filter(Boolean).join(" · ");
   const inProject = new Set();
   st.projects.forEach((p) => {  // the slices of a project together, with what distinguishes them
     const g = document.createElement("optgroup"); g.label = `project ${p.name} (${p.samples.length} slices)`;
@@ -1251,7 +1303,7 @@ function fillSampleSelect() {  // the slices of each project, then the samples o
       inProject.add(id);
       const o = document.createElement("option"); o.value = id;
       const md = metaText(s.metadata);
-      o.textContent = [p.slices[id] ? p.slices[id].section : id, md, `${s.n_cells.toLocaleString()} ${s.unit || "cells"}`].filter(Boolean).join(" · ");
+      o.textContent = [p.slices[id] ? p.slices[id].section : id, md, s.image_only ? `${s.image_kind || "image"} only` : `${s.n_cells.toLocaleString()} ${s.unit || "cells"}`].filter(Boolean).join(" · ");
       g.append(o);
     });
     sel.append(g);
@@ -1280,6 +1332,7 @@ function fillModes(sm) {
   if (st.niche) avail.push(["niche", "niche"]);
   if (st.emb) avail.push(["leiden", "Leiden clusters"]);
   if (st.lrMode) avail.push(["lr", "ligand-receptor signal"]);
+  if (st.traj) avail.push(["trajectory", "trajectory"]);
   const extra = [["confidence", "confidence"]];
   if (st.vocab && st.vocab.method === "markers") extra.push(["cluster", "clusters (marker step)"]);
   if (st.showMore) avail.push(...extra);
@@ -1430,6 +1483,7 @@ async function startAnnotation(mode, sid, token = st.switchToken) {
 async function openSession(sid) {
   if (sid !== st.sid) { st.advicePollSig = undefined; st.adviceSeen = null; }  // another annotation: its advice so far is not new
   st.sid = sid;
+  st.imageOnly = !!(st.sample && st.sample.image_only);  // before the legend and regions are drawn
   $("empty").style.display = "none";
   ["undo", "export", "send", "plaus", "report", "nRun", "eRun"].forEach((b) => ($(b).disabled = false));
   syncKMode();
@@ -1448,6 +1502,7 @@ async function openSession(sid) {
   }
   await loadNiches(false);
   await loadEmbedding(false);
+  st.traj = (await api(`/api/s/${sid}/trajectory`).catch(() => ({}))).trajectory || null;
   loadResults(sid).catch(() => {});
   $("anSave").disabled = false;
   loadGenes(st.sample.sample_id).catch(() => {});
@@ -1459,6 +1514,21 @@ async function openSession(sid) {
     $("einfo").textContent = $("nicheinfo").textContent = "Annotate the sample first";
     $("anSave").disabled = true;
   }
+  imageOnlyUI();
+}
+// A sample of an image only (H&E only, no cells): its regions are all there is. The tabs and tools about cells are
+// hidden; Export writes the regions (GeoJSON); the regions panel shows each outline's area.
+function imageOnlyUI() {
+  const on = !!(st.sample && st.sample.image_only);
+  st.imageOnly = on;
+  ["annotate", "embed", "niches", "compare", "signal"].forEach((t) => (document.querySelector(`#tabs .tab[data-tab=${t}]`).hidden = on));
+  if (on && document.querySelector("#tabs .tab.on[hidden]")) showTab("data");
+  ["tools", "legend"].forEach((id) => { if (on) $(id).hidden = true; });
+  if (!on) $("tools").hidden = false;
+  $("qfBtn").parentElement.hidden = on; $("sessWrap").hidden = on; $("anSave").parentElement.hidden = on;
+  if (on) { ["report", "plaus"].forEach((b) => ($(b).disabled = true)); $("export").disabled = !st.sid; }
+  $("composerhint").textContent = on ? "Tip: ask the agent about the tissue or to outline an area; regions you draw are named by you."
+    : "Tip: refer to regions you drew by their name.";
 }
 // Stepping to another slice keeps what is shown: the color mode (st.wantMode, in fillModes), the legend filters, the
 // embedding window with its settings, and, on an embedding of all slices together, its zoom and the lasso selection.
@@ -1879,12 +1949,12 @@ async function refreshVersion(force) {
 setInterval(() => { if (!st.busy) refreshVersion(false).catch(() => {}); }, 4000);
 
 // ---------------- legend ----------------
-const MODE_TITLES = { type: "Cell types", lineage: "Lineages", region: "Regions", changed: "Changes", conflicts: "Conflicts", plausibility: "Out-of-place cells", confidence: "Confidence", cluster: "Clusters (marker step)", niche: "Niches", leiden: "Leiden clusters" };
+const MODE_TITLES = { type: "Cell types", lineage: "Lineages", region: "Regions", changed: "Changes", conflicts: "Conflicts", plausibility: "Out-of-place cells", confidence: "Confidence", cluster: "Clusters (marker step)", niche: "Niches", leiden: "Leiden clusters", trajectory: "Trajectory" };
 async function loadLegend() {
   const r = await api(`/api/s/${st.sid}/legend?version=${st.version}&mode=${st.mode}`);
   st.legend = r.items;
   const f = filt();
-  $("legend").hidden = false;
+  $("legend").hidden = !!st.imageOnly;  // an image only: no cells to list
   $("lgtitle").textContent = (st.mode.startsWith("gene:") ? `${st.mode.slice(5)} transcripts` : st.mode.startsWith("lr:") ? lrTitle(st.mode) : MODE_TITLES[st.mode]) + (f.size ? ` (${f.size} shown)` : "");
   $("lgall").disabled = !f.size;
   const box = $("lgitems"); box.textContent = "";
@@ -2107,13 +2177,14 @@ async function loadRegions() {
     sw.title = "Click to choose another color";
     sw.onclick = (e) => { e.stopPropagation(); pickRegionColor(r, sw); };
     const t = document.createElement("span"); t.textContent = r.name;
-    const n = document.createElement("span"); n.className = "n"; n.textContent = r.n_cells.toLocaleString();
+    const n = document.createElement("span"); n.className = "n";
+    n.textContent = st.imageOnly ? areaText(st.regions.polygons.filter((p) => p.name === r.name)) : r.n_cells.toLocaleString();
     const ren = decorate(Object.assign(document.createElement("button"), { title: "Rename this region" }), "pen", true);
     ren.onclick = () => renameRegion(r.name);
     row.append(sw, t, n, ren); box.append(row);
     st.regions.polygons.filter((p) => p.name === r.name).forEach((p) => {
       const pr = document.createElement("div"); pr.className = "pg";
-      const lab = document.createElement("span"); lab.textContent = `${p.id} · ${p.n_cells_drawn.toLocaleString()} cells when drawn`;
+      const lab = document.createElement("span"); lab.textContent = st.imageOnly ? `${p.id} · ${areaText([p])}` : `${p.id} · ${p.n_cells_drawn.toLocaleString()} cells when drawn`;
       const mk = (n, title) => decorate(Object.assign(document.createElement("button"), { title }), n, true);
       const go = mk("target", "Zoom to this polygon"); go.onclick = () => zoomTo(p);
       const ed = mk("move", "Move, add or remove points of this outline"); ed.onclick = () => startEdit(p);
@@ -2137,11 +2208,22 @@ async function loadRegions() {
   });
   const u = document.createElement("div"); u.className = "hint"; u.style.padding = "4px";
   u.textContent = `${st.regions.n_unknown.toLocaleString()} cells in no region (region priors do not apply to them)`;
-  box.append(u);
-  renderPriors(box);
+  if (!st.imageOnly) { box.append(u); renderPriors(box); }
   $("regnames").textContent = "";
   st.regions.regions.forEach((r) => { const o = document.createElement("option"); o.value = r.name; $("regnames").append(o); });
   drawRegions();
+}
+function areaText(polys) {  // the area of outlines (holes left out): mm² when the pixel size is known, else pixels²
+  let a = 0;
+  for (const p of polys) {
+    const ring = (q) => { let s = 0; for (let i = 0; i < q.length; i++) { const [x0, y0] = q[i], [x1, y1] = q[(i + 1) % q.length]; s += x0 * y1 - x1 * y0; } return Math.abs(s) / 2; };
+    a += ring(p.polygon) - (p.holes || []).reduce((t, h) => t + ring(h), 0);
+  }
+  if (st.he && st.he.um_per_px_known !== false && st.he.um_per_px) {
+    const mm2 = a * st.he.um_per_px ** 2 / 1e6;
+    return `${mm2 >= 0.1 ? mm2.toFixed(2) : mm2.toFixed(3)} mm²`;
+  }
+  return a >= 1e6 ? `${(a / 1e6).toFixed(1)} M px²` : `${Math.round(a).toLocaleString()} px²`;
 }
 function renderPriors(box) {  // the priors of this version, each removable (a new version; Undo brings it back)
   const cons = (st.lastSummary && st.lastSummary.constraints) || [];
@@ -3009,7 +3091,7 @@ const flatField = (id) => $(id).value.split("\n").map((x) => x.trim()).filter(Bo
 const isFlat = () => ["cosmx", "merfish"].includes(imKind());
 document.querySelectorAll("input[name=imKind]").forEach((r) => (r.onchange = () => {
   $("imX").hidden = imKind() !== "xenium"; $("imH").hidden = imKind() !== "h5ad"; $("imF").hidden = !isFlat();
-  $("imV").hidden = imKind() !== "visium"; $("imS").hidden = imKind() !== "stereoseq";
+  $("imV").hidden = imKind() !== "visium"; $("imS").hidden = imKind() !== "stereoseq"; $("imI").hidden = imKind() !== "image";
   imDefaultName("");  // the default name comes from this kind's files: they are checked again (their check set it)
   st.imXKey = st.imFKey = st.imHKey = null;
   if (isFlat()) {
@@ -3022,8 +3104,14 @@ document.querySelectorAll("input[name=imKind]").forEach((r) => (r.onchange = () 
   if (imKind() === "h5ad" && has("imH5")) st.imHPending = inspectH5();
   if (imKind() === "visium" && has("imVDir")) st.imVPending = inspectVisium();
   if (imKind() === "stereoseq" && has("imSDir")) st.imSPending = inspectStereo();
+  if (imKind() === "image") imImageName();
   imForm(); imSections(); autoGrowAll();
 }));
+function imImageName() {  // H&E only: the default name from the image file's name
+  const f = $("imIImg").value.trim().split(/[\\/]/).pop().replace(/\.(ome\.)?(tiff?|btf|svs|ndpi|png|jpe?g)$/i, "");
+  imDefaultName(f.replace(/[^A-Za-z0-9_.-]+/g, "_"));
+}
+["input", "change"].forEach((ev) => $("imIImg").addEventListener(ev, () => { if (imKind() === "image") imImageName(); }));
 function flatEntries() {  // the two fields as one slice
   const counts = flatField("imFCounts"), cells = flatField("imFCells");
   if (counts.length > 1 || cells.length > 1) throw new Error("One file in each field: import several slides or regions one after the other");
@@ -3233,6 +3321,14 @@ function imDefaultName(n) {  // the name used when the field is left empty, show
 const imgMode = () => document.querySelector("input[name=imImgMode]:checked").value;
 const regMode = () => document.querySelector("input[name=imRegMode]:checked").value;
 function imForm() {  // show the fields of the chosen options; Align with Claude needs an image and no registration file
+  const only = imKind() === "image";  // an image without cells: none of the rows about cells
+  ["imImgModeRow", "imRegModeRow", "imGeoRow"].forEach((id) => ($(id).hidden = only));
+  const imgs = (st.samples || []).filter((s) => s.image_only);
+  $("imGeoFromRow").hidden = only || !imgs.length;
+  const was = $("imGeoFrom").value;
+  $("imGeoFrom").replaceChildren(new Option("none", ""), ...imgs.map((s) => new Option(s.sample_id, s.sample_id)));
+  $("imGeoFrom").value = imgs.some((s) => s.sample_id === was) ? was : "";
+  if (only) { ["imImgRow", "imImgKindRow", "imRegRow", "imRegSecRow"].forEach((id) => ($(id).hidden = true)); $("imPairs").hidden = true; setTimeout(autoGrowAll); return; }
   imPairs();
   $("imImgRow").hidden = imgMode() !== "file";
   $("imImgKindRow").hidden = imgMode() !== "file" || ["xenium", "visium"].includes(imKind());  // Xenium has its own DAPI field
@@ -3257,8 +3353,8 @@ document.querySelectorAll("input[name=imImgMode], input[name=imRegMode]").forEac
 $("imNewImg").addEventListener("input", imForm); $("imNewImg").addEventListener("change", imForm);
 function imExisting() {  // the folded part: image and registration of the selected sample
   const s = st.sample;
-  $("imExisting").hidden = !s;
-  if (!s) return;
+  $("imExisting").hidden = !s || s.image_only;  // an image only: nothing to place on it
+  if (!s || s.image_only) return;
   $("imExTitle").textContent = `Already imported: change the image or registration of ${s.sample_id}`;
   const shown = s.image_kind && s.image_kind !== "none" ? `${s.image_kind} shown` : "no image shown";
   const placed = s.registration_by ? `cells placed by ${placedBy(s.registration_by)}` : "no registration";
@@ -3323,6 +3419,7 @@ async function importSample() {  // returns true when the sample was imported
   if (imKind() === "stereoseq" && st.imSPending) await st.imSPending;
   if (imKind() === "h5ad" && st.imHPending) await st.imHPending;
   const kind = imKind(), name = $("imName").value.trim() || st.imDefault || "";
+  if (kind === "image") return importImageOnly(name);
   const images = imgMode() === "file" ? $("imNewImg").value.split("\n").map((s) => s.trim()).filter(Boolean) : [];
   const image = images.length > 1 ? images : (images[0] || "");
   const regs = regMode() === "file" ? $("imNewReg").value.split("\n").map((x) => x.trim()).filter(Boolean) : [];
@@ -3340,7 +3437,8 @@ async function importSample() {  // returns true when the sample was imported
   if (kind === "h5ad" && $("imSecCol").value && !body.sections.length) { $("imStatus").textContent = "Tick the section(s) to import"; return false; }
   const geo = $("imNewGeo").value.split("\n").map((x) => x.trim()).filter(Boolean);
   Object.assign(body, { he: image, he_kind: $("imNewImgKind").value, registration, registration_section: $("imNewRegSec").value.trim(),
-                        regions_geojson: geo });
+                        regions_geojson: geo, regions_from: $("imGeoFromRow").hidden ? "" : $("imGeoFrom").value });
+  if (body.regions_from && !images.length) { $("imStatus").textContent = `Regions from ${body.regions_from} need the H&E file they were drawn on (H&E file above, registered)`; return false; }
   if (!name) { $("imStatus").textContent = "Give a name (none could be taken from the files)"; return false; }
   if (imgMode() === "file" && !images.length) { $("imStatus").textContent = "Choose the H&E file, or No H&E"; return false; }
   if (kind === "xenium" && !(st.imXSlices || []).length) { $("imStatus").textContent = "Give the cells and counts files; check the message under the fields"; return false; }
@@ -3367,6 +3465,23 @@ async function importSample() {  // returns true when the sample was imported
   } catch (e) { $("imStatus").textContent = isStop(e) ? "Import stopped: nothing of it was kept" : e.message; return false; }
   finally { $("imGo").disabled = false; imForm(); }
 }
+async function importImageOnly(name) {  // H&E only: the image, its pixel size, no cells
+  const he = $("imIImg").value.trim(), upp = parseFloat($("imIUpp").value);
+  if (!he) { $("imStatus").textContent = "Choose the image"; return false; }
+  if (!name) { $("imStatus").textContent = "Give a name"; return false; }
+  if ($("imIUpp").value.trim() && !(upp > 0)) { $("imStatus").textContent = "The pixel size is µm per pixel, e.g. 0.25"; return false; }
+  $("imGo").disabled = true; $("imStatus").textContent = "importing…";
+  try {
+    const { job } = await post("/api/import", { kind: "image", name, he, um_per_px: upp > 0 ? upp : null,
+                                                he_kind: $("imIKind").value, description: $("imDesc").value });
+    await pollJob(job, $("imStatus").parentElement, null, $("imStatus"), $("imGo"), 700);
+    $("imDlg").close();
+    toast(`Imported ${name}: draw and name regions on the image`, 5000);
+    await loadSamples(name, null);
+    return true;
+  } catch (e) { $("imStatus").textContent = isStop(e) ? "Import stopped: nothing of it was kept" : e.message; return false; }
+  finally { $("imGo").disabled = false; imForm(); }
+}
 // Import acts on the press: leaving a file field starts its check, whose message can move the button before the
 // mouse is released, and the click would be lost
 function onPress(b, fn) {
@@ -3389,11 +3504,19 @@ const HELP = `
     Space Ranger's alignment places the cells on the image: no registration needed.</li>
   <li><b>Stereo-seq</b> (SAW output): cells from the cell bins when there are, else 8 µm bins. The registered image
     SAW wrote is used: no registration needed.</li>
-  <li><b>h5ad / RDS</b>: h5ad files, or an R file (.rds / .rda) with a Seurat or SpatialExperiment object, read without R.</li></ul></li>
+  <li><b>h5ad / RDS</b>: h5ad files, or an R file (.rds / .rda) with a Seurat or SpatialExperiment object, read without R.</li>
+  <li><b>H&amp;E only</b>: an image without cells (TIFF / OME-TIFF, SVS, NDPI, PNG or JPEG), e.g. for a pathologist to
+    draw and name regions before the expression data exist.<ul>
+    <li>The pixel size is read from the image, or typed in; without it no µm are shown (areas in pixels).</li>
+    <li>Only the Data tab and the regions apply; the regions panel shows each outline's area.</li>
+    <li>The regions go to the data later: <b>Regions from</b> when importing the data registered to the same image,
+      or Export → Regions (GeoJSON).</li></ul></li></ul></li>
 <li>Then the image and its registration:<ul>
   <li><b>H&amp;E image</b>: <b>No H&amp;E</b> or an <b>H&amp;E file</b>. For an h5ad, a DAPI / fluorescence image can
     stand in for it (Image kind).</li>
   <li><b>Registration</b>: a <b>Registration file</b>, or <b>No registration</b>.</li>
+  <li><b>Regions from</b> (optional, when there is an H&amp;E-only sample): its regions become the regions of every
+    annotation; it needs the same H&amp;E file (scan), registered.</li>
   <li><b>Regions</b> (optional): a GeoJSON of outlines drawn on this H&amp;E (e.g. QuPath annotations); they become
     regions of every new annotation.</li></ul></li>
 <li>An image without a registration file: <b>Align with Agent</b>.<ul>
@@ -3543,6 +3666,20 @@ const HELP = `
 <li><b>Compare groups</b> runs it per condition, slice, region or niche and lists the largest differences (table or
   bubble plot).</li></ul>
 
+<h3>Trajectory</h3><ul>
+<li>The order of cells and the genes that change along it, for this slice or all slices pooled.<ul>
+  <li><b>Spatial axis</b>: each cell's place between two groups in the tissue (any grouping: cell types, regions,
+    niches), 0 at From and 1 at To; without To, the distance to From in µm. E.g. the crypt axis from stem cells to
+    colonocytes.</li>
+  <li><b>Pseudotime</b>: diffusion pseudotime on expression from a root group (e.g. stem cells), best within one
+    lineage (<b>Only within</b>).</li>
+  <li><b>Expression + space</b>: the same on a graph that also joins neighbors in the tissue; <b>Weight of space</b>
+    0 is expression only, 1 the tissue alone.</li></ul></li>
+<li>Results: a <b>Gene heatmap</b> (the top rising, transient and falling genes in the order of their peak),
+  <b>Genes</b> (r: correlation with the order; η²: share of variance between bins) and the <b>Composition</b> along
+  it. <b>Show on the map</b> colors the cells by their place (Color by: trajectory).</li>
+<li>An axis or a root sets the order: a gradient along a spatial axis is position, not time.</li></ul>
+
 <h3>Undo, export and the agent</h3><ul>
 <li><b>Undo</b> takes back your last action; click again to go further back. An action is:<ul>
   <li>one region you drew;</li>
@@ -3553,8 +3690,9 @@ const HELP = `
   <li>the cell table (CSV, with niche, Leiden and UMAP when computed);</li>
   <li>the registration in use (CSV): the affine, and the cell positions on the image with local corrections and moved
     pieces included;</li>
+  <li>the regions as GeoJSON (the image's pixels, as QuPath writes annotations);</li>
   <li>or the whole analysis as a Jupyter notebook that runs without this app (code with this annotation's
-    parameters, and its results).</li></ul></li>
+    parameters, and its results; the last trajectory too).</li></ul></li>
 <li><b>Ask Agent</b> (bar on the map) opens your own Claude Code, connected to this app. <b>Undo</b> and
   <b>Report</b> are there too.</li></ul>`;
 const localApp = () => !!native() && !st.remote;  // the desktop app working on this computer
@@ -4481,6 +4619,7 @@ function anSelection(scope = anScope()) {  // the cells selected in the UMAP win
 function anRefresh() {  // the Compare and Signaling tabs follow the open annotation and the selection
   if (document.querySelector('header .pane[data-pane="compare"]').classList.contains("on")) setTimeout(() => loadAnOptions(), 0);
   if (document.querySelector('header .pane[data-pane="signal"]').classList.contains("on")) setTimeout(() => loadSigOptions(), 0);
+  if (document.querySelector('header .pane[data-pane="traj"]').classList.contains("on")) setTimeout(() => loadTrajOptions(), 0);
 }
 const anBody = () => ({ session: st.sid, version: st.version, scope: anScope(), selection: anSelection(), sessions: projectSessions() });
 function fillSelect(id, items, keep, first) {  // items: [value, label]; keeps the chosen value when it is still there
@@ -4564,6 +4703,7 @@ async function loadResults(sid) {  // the last result of each analysis, kept wit
 function openLast(kind) { const x = AN.by[kind]; if (!x) return; AN.last = x.last; AN.req = x.req; AN.sel = x.sel; AN.view = ""; showAnalysis(); }
 function syncLast() {  // Last result shows the last result of the analysis chosen in the tab
   $("aLast").hidden = !AN.by[$("aKind").value]; $("sLast").hidden = !AN.by[$("sKind").value];
+  $("tLast").hidden = !AN.by.trajectory;
 }
 $("aLast").onclick = () => openLast($("aKind").value);
 function anSeg(opts, cur, on) {  // the dialog's toggle (up / down genes, shares / enrichment)
@@ -4598,6 +4738,12 @@ async function showAnalysis() {
   const r = AN.last, q = AN.req; if (!r) return;
   $("anNWrap").hidden = $("anFig").hidden = true; AN.svg = null;
   $("anTitle").hidden = q.kind === "run" || q.kind === "compare";  // signaling: the views' bar comes first
+  if (q.kind === "trajectory") {
+    $("anAsk").hidden = !(st.desktop || st.chatAvailable);
+    showTrajectory(r, q);
+    if (!$("anDlg").open) $("anDlg").showModal();
+    return;
+  }
   if (q.kind === "run" || q.kind === "compare") {
     $("anBody").textContent = ""; $("anLegend").textContent = ""; $("anNote").textContent = "";
     $("anAsk").hidden = !(st.desktop || st.chatAvailable);
@@ -4746,7 +4892,8 @@ $("anClose").onclick = () => $("anDlg").close();
 $("anCsv").onclick = async () => {
   const r = AN.last, q = AN.req; if (!r) return;
   const part = q.kind === "de" ? (r.all ? `de_every_${r.by}` : `de_${r.group}_vs_${r.reference}`) : q.kind === "markers" ? `top_genes_by_${r.by}`
-    : q.kind === "run" ? `communication_${r.by}` : q.kind === "compare" ? `communication_by_${r.split}` : `${r.cols}_per_${r.rows}`;
+    : q.kind === "run" ? `communication_${r.by}` : q.kind === "compare" ? `communication_by_${r.split}`
+    : q.kind === "trajectory" ? `trajectory_genes_${r.label}` : `${r.cols}_per_${r.rows}`;
   const name = `${st.sample.sample_id}_${part}`.replace(/[^A-Za-z0-9_.-]+/g, "_") + ".csv", url = `/api/analysis/${r.id}.csv?name=${encodeURIComponent(name)}`;
   if (st.remote) { await saveDownload(name, url); return; }
   if (native()) { const path = await native().save_path(name); if (!path) return;
@@ -4763,6 +4910,159 @@ $("anAsk").onclick = async () => {
   } catch (e) { toast(e.message, 6000); }
 };
 syncAnKind();
+// ---------------- Trajectory: spatial axes and pseudotime (trajectory.py) ----------------
+const TR = { key: "", opts: null };
+function trScope() { return $("tScope").value === "project" && st.sample && projectOf(st.sample.sample_id) ? "project" : "slice"; }
+const trBody = () => ({ session: st.sid, version: st.version, scope: trScope(), selection: anSelection(trScope()), sessions: projectSessions() });
+async function loadTrajOptions(force) {
+  const p = st.sample && projectOf(st.sample.sample_id);
+  $("tScopeWrap").hidden = !p;
+  if (!st.sid || st.placeholder) { $("tinfo").textContent = "Open or make an annotation first"; $("tRun").disabled = true; TR.key = ""; return; }
+  const key = [st.sid, st.version, trScope()].join("|");
+  if (!force && key === TR.key) return;
+  TR.key = key; $("tRun").disabled = true; $("tinfo").textContent = "Loading the groupings…";
+  try { TR.opts = await post("/api/analysis/options", trBody()); } catch (e) { $("tinfo").textContent = e.message; TR.key = ""; return; }
+  const g = TR.opts.groupings, ks = Object.keys(g).filter((k) => k !== "selection" || g[k].includes("selected"));
+  const items = ks.map((k) => [k, anLabel(k)]);
+  const pick = (id, prefs, list, first) => fillSelect(id, list, [$(id).value, ...prefs].find((x) => list.some(([v]) => v === x)), first);
+  pick("tFromBy", ["region", "cell type"], items); pick("tToBy", [], items, ["", "none (distance in µm)"]);
+  pick("tRootBy", ["cell type"], items); pick("tBy", ["cell type"], items.filter(([k]) => g[k].length > 1));
+  fillSelect("tWBy", items.filter(([k]) => g[k].length > 1), undefined, ["", "all cells"]);
+  trValues();
+  $("tinfo").textContent = [`${TR.opts.n_cells.toLocaleString()} cells`, trScope() === "project" ? "all slices pooled" : "this slice",
+    st.traj ? `last: ${st.traj.label}` : null].filter(Boolean).join(" · ");
+  $("tRun").disabled = false;
+}
+function trValues() {  // the values of the chosen groupings
+  const vals = (by) => (by && TR.opts ? TR.opts.groupings[by] || [] : []).map((v) => [v, v]);
+  [["tFromBy", "tFromVal"], ["tToBy", "tToVal"], ["tRootBy", "tRootVal"], ["tWBy", "tWVal"]].forEach(([b, v]) => {
+    fillSelect(v, vals($(b).value)); $(v).disabled = !$(b).value; });
+}
+function syncTrMethod() {
+  const m = $("tMethod").value;
+  document.querySelectorAll("[data-pane=traj] .t-sp").forEach((e) => (e.hidden = m !== "spatial"));
+  document.querySelectorAll("[data-pane=traj] .t-ex").forEach((e) => (e.hidden = m === "spatial"));
+  document.querySelectorAll("[data-pane=traj] .t-mx").forEach((e) => (e.hidden = m !== "mixed"));
+  $("tHint").textContent = {
+    spatial: "Each cell's place between the From and To groups in the tissue: its distance to the nearest From cell over the sum of both distances (0 at From, 1 at To); without To, the distance to From in µm. E.g. from the crypt base (stem cells) to the surface (colonocytes), or from the portal to the central regions. Fast.",
+    expression: "Diffusion pseudotime: cells ordered by how far their expression is from the root group's on the neighbor graph (Haghverdi et al. 2016). Use it within one lineage, with the root at its start (e.g. stem cells). Up to a minute for large samples.",
+    mixed: "Diffusion pseudotime on a graph that also joins neighbors in the tissue: Weight of space 0 is expression only, 1 the tissue alone. Space keeps neighboring cells close in the order; it also makes the order follow the tissue, so compare with 0.",
+  }[m];
+}
+$("tMethod").onchange = syncTrMethod; syncTrMethod();
+$("tScope").onchange = () => loadTrajOptions(true);
+["tFromBy", "tToBy", "tRootBy", "tWBy"].forEach((id) => ($(id).onchange = trValues));
+$("tAlpha").oninput = () => ($("tAlphaVal").textContent = (+$("tAlpha").value).toFixed(2));
+document.querySelector('#tabs .tab[data-tab="traj"]').addEventListener("click", () => loadTrajOptions());
+$("tRun").onclick = async () => {
+  const m = $("tMethod").value, w = $("tWBy").value;
+  const b = { ...trBody(), kind: "trajectory", method: m, within: w ? { [w]: $("tWVal").value } : {}, by: $("tBy").value };
+  if (m === "spatial") {
+    b.start = { by: $("tFromBy").value, values: [$("tFromVal").value] };
+    b.end = $("tToBy").value ? { by: $("tToBy").value, values: [$("tToVal").value] } : null;
+  } else {
+    b.root = { by: $("tRootBy").value, values: [$("tRootVal").value] };
+    b.alpha = m === "mixed" ? +$("tAlpha").value : 0;
+  }
+  $("tRun").disabled = true; $("tprogress").classList.add("show");
+  try {
+    const { job } = await post("/api/trajectory/run", b);
+    const j = await pollJob(job, $("tprogress"), $("tfill"), $("tstage"), $("tRun"), 600);
+    AN.last = j.result; AN.req = { ...b, selection: undefined }; AN.sel = b.selection; AN.view = "";
+    AN.by.trajectory = { last: AN.last, req: AN.req, sel: AN.sel }; syncLast();
+    await loadTraj(); loadTrajOptions(true);
+    setTimeout(() => $("tprogress").classList.remove("show"), 800);
+    await showAnalysis();
+  } catch (e) { if (isStop(e)) stopped($("tprogress"), "Trajectory"); else { toast(e.message, 8000); $("tprogress").classList.remove("show"); } }
+  finally { $("tRun").disabled = false; }
+};
+$("tLast").onclick = () => openLast("trajectory");
+async function loadTraj() {  // the open annotation's last trajectory (the "trajectory" color of the map)
+  st.traj = st.sid ? (await api(`/api/s/${st.sid}/trajectory`).catch(() => ({}))).trajectory || null : null;
+  fillModes(st.lastSummary);
+}
+function showOnMapTraj() {
+  $("anDlg").close();
+  if (![...$("mode").options].some((o) => o.value === "trajectory")) { toast("Run a trajectory of this annotation first"); return; }
+  $("mode").value = "trajectory"; $("mode").dispatchEvent(new Event("change"));
+}
+const TR_DIV = (z) => {  // blue - white - red for z-scores (clipped at ±2)
+  const v = Math.max(-1, Math.min(1, z / 2));
+  const [a, b] = v < 0 ? [[49, 99, 177], -v] : [[202, 59, 50], v];
+  return `rgb(${a.map((c) => Math.round(255 + (c - 255) * b)).join(",")})`;
+};
+const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+function trAxisNames(r) {
+  if (r.method === "spatial") {
+    const a = r.axis; const g = (x) => x ? x.values.join(", ") : "";
+    return a.end ? [g(a.start), g(a.end)] : [g(a.start), `${a.max_um ? Math.round(a.max_um) + " µm" : "far"}`];
+  }
+  return [`root (${r.root.values.join(", ")})`, "late"];
+}
+function trHeatSVG(r) {
+  const H = r.heatmap, nb = r.bins.length, cw = 22, rh = 15, left = 110, top = 18, w = Math.max(left + nb * cw + 10, 470), h = top + H.genes.length * rh + 34;
+  const [a, b] = trAxisNames(r);
+  let s = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" font-family="sans-serif" font-size="11">`;
+  H.genes.forEach((g, i) => {
+    s += `<text x="${left - 6}" y="${top + i * rh + 11}" text-anchor="end" fill="currentColor" class="trgene" data-gene="${esc(g)}" style="cursor:pointer">${esc(g)}</text>`;
+    H.z[i].forEach((z, j) => { s += `<rect x="${left + j * cw}" y="${top + i * rh}" width="${cw - 1}" height="${rh - 1}" fill="${TR_DIV(z)}"><title>${esc(g)} · bin ${j + 1} (t ${r.bins[j]}) · mean ${H.mean[i][j]} · z ${z}</title></rect>`; });
+  });
+  const y = top + H.genes.length * rh + 14;
+  s += `<text x="${left}" y="${y}" fill="currentColor">${esc(a)}</text><text x="${left + nb * cw}" y="${y}" text-anchor="end" fill="currentColor">${esc(b)}</text>`;
+  s += `<text x="${left + nb * cw / 2}" y="${y + 14}" text-anchor="middle" fill="currentColor" font-size="10">${nb} bins of equal cell numbers · color: z-score of the bin's mean</text></svg>`;
+  return s;
+}
+async function trCompSVG(r) {
+  const c = r.composition; if (!c.groups.length) return { svg: "", colors: {} };
+  const colors = await groupColors(r.by, c.groups);
+  const nb = c.shares.length, cw = 26, ph = 220, left = 40, top = 10, w = left + nb * cw + 10, h = top + ph + 34;
+  const [a, b] = trAxisNames(r);
+  let s = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" font-family="sans-serif" font-size="11">`;
+  c.shares.forEach((row, j) => { let y0 = top + ph;
+    row.forEach((v, i) => { const hh = v * ph; y0 -= hh;
+      s += `<rect x="${left + j * cw}" y="${y0}" width="${cw - 1}" height="${hh}" fill="${c.groups[i] === "other" ? "#cccccc" : colors[c.groups[i]]}"><title>${esc(c.groups[i])}: ${(100 * v).toFixed(1)}% · bin ${j + 1} (t ${c.bins[j]})</title></rect>`; }); });
+  [0, 0.5, 1].forEach((v) => (s += `<text x="${left - 4}" y="${top + ph - v * ph + 4}" text-anchor="end" fill="currentColor">${v * 100}%</text>`));
+  s += `<text x="${left}" y="${top + ph + 16}" fill="currentColor">${esc(a)}</text><text x="${left + nb * cw}" y="${top + ph + 16}" text-anchor="end" fill="currentColor">${esc(b)}</text></svg>`;
+  return { svg: s, colors };
+}
+async function showTrajectory(r, q) {
+  const within = Object.entries(r.within || {}).map(([k, v]) => `${anLabel(k)} ${v}`).join(", ");
+  $("anTitle").hidden = false; $("anTitle").textContent = `Trajectory: ${r.label}`;
+  const how = r.method === "spatial" ? (r.axis.end ? "position between the two groups (0 to 1)" : "distance in the tissue")
+    : `diffusion pseudotime${r.method === "mixed" ? `, weight of space ${r.alpha}` : ""}` + (r.n_graph_cells < r.n_on_trajectory ? ` (graph of ${r.n_graph_cells.toLocaleString()} sampled cells)` : "");
+  $("anSub").textContent = [q.scope === "project" ? "all slices pooled" : "this slice", within && `only ${within}`,
+    `${r.n_on_trajectory.toLocaleString()} cells ordered`, how].filter(Boolean).join(" · ");
+  $("anNote").textContent = r.note || ""; $("anLegend").textContent = ""; $("anBody").textContent = "";
+  const view = AN.view || "heat";
+  anSeg([["heat", "Gene heatmap"], ["genes", "Genes"], ["comp", "Composition"]], view, (v) => { AN.view = v; showAnalysis(); });
+  const bar = document.createElement("div"); bar.className = "row"; bar.style.margin = "4px 0 8px";
+  const mapBtn = document.createElement("button"); mapBtn.textContent = "Show on the map";
+  mapBtn.title = "Color the cells by their place on this trajectory (Color by: trajectory)"; mapBtn.onclick = showOnMapTraj;
+  mapBtn.disabled = !(st.traj && st.traj.run_id === r.id);
+  if (mapBtn.disabled) mapBtn.title = "The map shows this annotation's latest trajectory only: run this one again to see it";
+  bar.append(mapBtn); $("anBody").append(bar);
+  $("anFig").hidden = view === "genes"; AN.svg = null;
+  if (view === "heat") {
+    const box = document.createElement("div"); box.style.overflow = "auto"; box.innerHTML = trHeatSVG(r); $("anBody").append(box);
+    box.querySelectorAll(".trgene").forEach((t) => (t.onclick = () => colorByGene(t.dataset.gene)));
+    AN.svg = trHeatSVG(r).replaceAll('fill="currentColor"', 'fill="#222"');
+    $("anNote").textContent = "The top rising, transient and falling genes, in the order of their peak. Click a gene to color the map by it. " + (r.note || "");
+  } else if (view === "comp") {
+    const { svg, colors } = await trCompSVG(r);
+    const box = document.createElement("div"); box.style.overflow = "auto"; box.innerHTML = svg; $("anBody").append(box);
+    AN.svg = svg.replaceAll('fill="currentColor"', 'fill="#222"');
+    r.composition.groups.forEach((g) => { const sp = document.createElement("span"); sp.innerHTML = `<span class="sw" style="background:${g === "other" ? "#cccccc" : colors[g]}"></span>${esc(g)}`; $("anLegend").append(sp); });
+  } else {
+    const grid = document.createElement("div"); grid.className = "trgenes";
+    [["Rising", r.rising], ["Transient", r.transient], ["Falling", r.falling]].forEach(([title, list]) => {
+      const col = document.createElement("div"); const h = document.createElement("b"); h.textContent = title; col.append(h);
+      col.append(anTable(["Gene", "r", "η²", "Peak t", "% cells"], list.map((x) => [geneLink(x.gene), fmt(x.r), fmt(x.eta2), fmt(x.peak), (100 * x.pct).toFixed(0)])));
+      grid.append(col);
+    });
+    $("anBody").append(grid);
+    $("anNote").textContent = "r: correlation with the order along the trajectory (Spearman-like); η²: share of the gene's variance between bins (high with a low r: it peaks in the middle); Peak t: where its mean is highest. Save CSV has every gene. " + (r.note || "");
+  }
+}
 // ---------------- Signaling: cell-cell communication between groups of neighboring cells ----------------
 const SG = { key: "", opts: null };
 const lrTitle = (m) => { const [l, r, side] = m.slice(3).split("~");
@@ -4819,7 +5119,7 @@ $("sRun").onclick = async () => {
   finally { $("sRun").disabled = false; }
 };
 // the analyses run one at a time (exclusive)
-[["annotate", "Annotate"], ["eRun", "PCA + UMAP"], ["nRun", "Niches"], ["aRun", "Compare"], ["sRun", "Signaling"],
+[["annotate", "Annotate"], ["eRun", "PCA + UMAP"], ["nRun", "Niches"], ["aRun", "Compare"], ["sRun", "Signaling"], ["tRun", "Trajectory"],
  ["qfGo", "The cell filter"], ["qfRestore", "The cell filter"]].forEach(([id, what]) => {
   const run = $(id).onclick;
   $(id).onclick = (e) => exclusive(what, () => run(e));
@@ -5085,7 +5385,7 @@ $("anFig").onclick = () => {
   if (!AN.svg) return;
   const r = AN.last, k = AN.req.kind;
   const part = k === "de" ? (r.all ? `de_every_${r.by}_dotplot` : `de_${r.group}_vs_${r.reference}_dotplot`) : k === "markers" ? `top_genes_by_${r.by}_dotplot`
-    : k === "run" ? `communication_${r.by}_${AN.view}` : `communication_by_${r.split}_${AN.view}`;
+    : k === "run" ? `communication_${r.by}_${AN.view}` : k === "trajectory" ? `trajectory_${AN.view || "heat"}_${r.label}` : `communication_by_${r.split}_${AN.view}`;
   saveFigure(`${st.sample.sample_id}_${part}.pdf`.replace(/[^A-Za-z0-9_.-]+/g, "_"), AN.svg);
 };
 async function saveFigure(name, svg) {  // an SVG of the page as PDF (made on the server): Save dialog in the app, a download in a browser
@@ -5132,7 +5432,7 @@ function segmented(id) {  // a select shown as a row of buttons (the select keep
   syncSeg(id);
 }
 function syncSeg(id) { document.querySelectorAll(`.seg[data-for="${id}"] button`).forEach((b) => b.classList.toggle("on", b.dataset.v === $(id).value)); }
-segmented("method"); segmented("knn"); segmented("nIdentity"); segmented("nKMode"); segmented("aScope"); segmented("aKind"); segmented("sScope"); segmented("sKind");
+segmented("method"); segmented("knn"); segmented("nIdentity"); segmented("nKMode"); segmented("aScope"); segmented("aKind"); segmented("sScope"); segmented("sKind"); segmented("tScope"); segmented("tMethod");
 function heStateBtn() {  // Unload H&E (free its memory) / Load H&E (back, with its registration)
   const s = st.sample, has = s && (s.image_unloaded || (s.image_kind && s.image_kind !== "none"));
   $("heStateWrap").hidden = !has;
@@ -5149,6 +5449,12 @@ $("heState").onclick = async () => {
 };
 function sampleInfo() {  // the Data tab's card: what the open sample is
   const s = st.sample; if (!s) { $("sampleInfo").textContent = "No sample yet"; return; }
+  if (s.image_only) {
+    const upp = st.he && st.he.um_per_px;
+    $("sampleInfo").textContent = [`${s.image_kind || "image"} only, no cells`, s.um_per_px_known === false ? "pixel size unknown"
+      : upp ? `${upp.toFixed(3)} µm per pixel` : "", s.description].filter(Boolean).join(" · ");
+    return;
+  }
   const img = s.image_pending ? "image waiting for its alignment" : !s.image_kind || s.image_kind === "none" ? "no image"
     : s.image_unloaded ? `${s.image_kind} unloaded` : s.image_kind;
   heStateBtn();
@@ -5161,7 +5467,7 @@ function showTab(name) {
   store("tab", name);
 }
 document.querySelectorAll("#tabs .tab").forEach((t) => (t.onclick = () => showTab(t.dataset.tab)));
-showTab(["data", "annotate", "embed", "niches", "compare", "signal"].includes(load("tab")) ? load("tab") : "data");
+showTab(["data", "annotate", "embed", "niches", "compare", "signal", "traj"].includes(load("tab")) ? load("tab") : "data");
 setInterval(() => document.querySelectorAll("header .pane").forEach((p) =>  // a running analysis shows on its tab
   document.querySelector(`#tabs .tab[data-tab=${p.dataset.pane}]`).classList.toggle("busy", !!p.querySelector(".progress.show"))), 700);
 $("hdrShow").onclick = () => setHeader(false);
@@ -5265,6 +5571,10 @@ $("export").onclick = () => {
   $("xpRegInfo").textContent = placed
     ? `Registration: the affine that places the cells on the image (made by: ${placedBy(by)}): columns a11, a12, a21, a22, tx, ty (cell um to image pixels). It can be used again as the registration file of an import, or by other tools.`
     : "The cells are not on an image yet: import an image and its registration, or align it with the agent.";
+  const only = !!st.sample.image_only, nOut = ((st.regions && st.regions.polygons) || []).length;
+  ["xpCsvCard", "xpNbCard", "xpRegCard"].forEach((id) => ($(id).hidden = only));
+  $("xpGeo").disabled = !nOut; $("xpGeo").title = nOut ? "" : "No outlines drawn in this version";
+  $("xpGeo").classList.toggle("primary", only);
   $("xpPosInfo").textContent = !placed ? "" : local
     ? "This sample's registration was corrected in the app: the affine holds the overall part of the correction; local shifts and moved pieces are only in Cell positions, the complete placement: every cell's id, x and y (um) and its px and py on the image (full-resolution pixels), as the app shows them."
     : "Cell positions: every cell's id, x and y (um) and its px and py on the image (full-resolution pixels), as the app shows them.";
@@ -5274,9 +5584,10 @@ $("xpClose").onclick = () => $("xpDlg").close();
 async function exportAs(kind) {  // the cell table or the notebook of the current version
   const ext = kind === "notebook" ? "ipynb" : "csv";
   const sampleFile = { registration: "registration.csv", positions: "cell_positions.csv" }[kind];  // of the sample, not the version
-  const name = sampleFile ? `${st.sample.sample_id}_${sampleFile}`
+  const name = sampleFile ? `${st.sample.sample_id}_${sampleFile}` : kind === "regions" ? `${st.sample.sample_id}_v${st.version}_regions.geojson`
     : `${st.sample.sample_id}_v${st.version}_${kind === "notebook" ? "analysis" : "cells"}.${ext}`;
-  const url = sampleFile ? `/api/sample/${st.sample.sample_id}/${sampleFile}` : `/api/s/${st.sid}/export.${ext}?version=${st.version}`;
+  const url = sampleFile ? `/api/sample/${st.sample.sample_id}/${sampleFile}` : kind === "regions" ? `/api/s/${st.sid}/regions.geojson?version=${st.version}`
+    : `/api/s/${st.sid}/export.${ext}?version=${st.version}`;
   if (st.remote) {  // on a server: downloaded through the SSH tunnel into a file on this computer
     $("xpStatus").textContent = kind === "notebook" ? "Writing the notebook (figures included) and downloading it…" : "Downloading…";
     const path = await saveDownload(name, url);
@@ -5298,6 +5609,7 @@ $("xpCsv").onclick = () => exportAs("csv");
 $("xpNb").onclick = () => exportAs("notebook");
 $("xpReg").onclick = () => exportAs("registration");
 $("xpPos").onclick = () => exportAs("positions");
+$("xpGeo").onclick = () => exportAs("regions");
 document.addEventListener("keydown", (e) => {
   if ($("mkDlg").open || $("rpDlg").open || $("hpDlg").open || $("xpDlg").open || $("glDlg").open || $("anDlg").open || $("rvDlg").open || $("nameDlg").open || $("rnDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
   if (e.key === "h") $("hide").click();

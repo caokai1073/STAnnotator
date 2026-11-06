@@ -121,8 +121,12 @@ After updating STAnnotator on the server, reconnect once so that the server's vi
 2. **Annotate** tab: a marker list (**Markers…**: import a CSV, or **Start from an organ**: a built-in list for
    12 common organs pruned to your gene panel, which the agent can complete) or a reference, then **Annotate**.
 3. Draw regions on the map; ask the agent with **Ask Agent**, e.g. "epithelial cells are only in the mucosa".
-4. **Embed**, **Niches**, **Compare** and **Signaling** tabs for the analyses; **Agent Review** for a second opinion;
-   **Export** for the cell table, the registration or a Jupyter notebook that reproduces the analysis.
+4. **Embed**, **Niches**, **Compare**, **Signaling** and **Trajectory** (spatial axes, pseudotime) tabs for the
+   analyses; **Agent Review** for a second opinion; **Export** for the cell table, the registration, the regions
+   (GeoJSON) or a Jupyter notebook that reproduces the analysis.
+
+An **H&E only** import lets a pathologist draw and name regions before the expression data exist; they go to the
+data imported later on the same image.
 
 Example data and marker lists: `examples/` (SCP2927 IBD Xenium atlas, Cadinu et al. MERFISH mouse colon).
 Every control and method is described in the [user guide](docs/GUIDE.md).

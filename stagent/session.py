@@ -75,7 +75,7 @@ def list_samples():
             m = json.load(open(d / "meta.json"))
             rows.append({k: _clean(m.get(k)) for k in ["sample_id", "name", "description", "disease", "location", "inflammation",
                                                          "ulceration", "n_cells", "has_pathologist_regions"]}
-                        | {"has_he": m.get("he_path") is not None})
+                        | {"has_he": m.get("he_path") is not None, "image_only": bool(m.get("image_only"))})
     return pd.DataFrame(rows)
 
 
@@ -179,6 +179,9 @@ class Session:
         if not (sd / "meta.json").exists():
             raise ValueError(f"unknown sample {sample_id!r}; see list_samples()")
         meta = json.load(open(sd / "meta.json"))
+        if meta.get("image_only") and method != "none":
+            raise ValueError(f"{sample_id} is an image only (no cells): draw regions on it, then import the data on the "
+                             "same image with these regions (Import: Regions from)")
         if region_source == "auto":  # older clients
             region_source = "none"
         if region_source == "pathologist" and not meta["has_pathologist_regions"]:
@@ -774,15 +777,17 @@ class Session:
 
     def add_region_pieces(self, name, polygons_px, author=None, expected_parent=None):
         """Save several polygons (e.g. the pieces of an outline the agent proposed) as region `name`, in one version
-        (one Undo takes them all back). Pieces without cells are left out."""
+        (one Undo takes them all back). Pieces without cells are left out, except on a sample of an image only
+        (no cells: the outlines are what is drawn)."""
         name = regmod.validate_name(name)
         cur = self.state()
         ops = list(cur["regions"].get("ops", []))
         used, ids, n = {o.get("id") for o in ops}, [], 0
         cell_ids = self.cells.cell.to_numpy()
+        keep_empty = bool(self.meta.get("image_only"))
         for poly in polygons_px:
             rows = regmod.cells_in_polygon(self.cells.px.to_numpy(), self.cells.py.to_numpy(), poly)
-            if not len(rows):
+            if not len(rows) and not keep_empty:
                 continue
             i = 1
             while f"R{i}" in used:
@@ -794,8 +799,12 @@ class Session:
                         "cells": cell_ids[rows].tolist(), "author": author, "created_at": _now()})
         if not ids:
             raise vocab.VocabError("the polygon contains no cells" if len(polygons_px) == 1 else "the outline contains no cells")
-        msg = (f"{ids[0]}: {n} cells drawn as region {name}" if len(ids) == 1 else
-               f"{ids[0]}-{ids[-1]}: {n} cells in {len(ids)} pieces drawn as region {name}")
+        if keep_empty:
+            msg = (f"{ids[0]}: region {name} drawn" if len(ids) == 1 else
+                   f"{ids[0]}-{ids[-1]}: region {name} drawn in {len(ids)} pieces")
+        else:
+            msg = (f"{ids[0]}: {n} cells drawn as region {name}" if len(ids) == 1 else
+                   f"{ids[0]}-{ids[-1]}: {n} cells in {len(ids)} pieces drawn as region {name}")
         return self._commit("add_region", msg, regions=dict(cur["regions"], ops=ops),
                             expected_parent=expected_parent or cur["version"])
 
@@ -807,12 +816,13 @@ class Session:
         ops = list(cur["regions"].get("ops", []))
         used, ids, n, empty, per = {o.get("id") for o in ops}, [], 0, 0, {}
         cell_ids, px, py = self.cells.cell.to_numpy(), self.cells.px.to_numpy(), self.cells.py.to_numpy()
+        keep_empty = bool(self.meta.get("image_only"))  # an image without cells: the outlines are the regions
         for p in pieces:
             name = regmod.validate_name(p["name"])
             rows = regmod.cells_in_polygon(px, py, p["outer"])
             for h in p.get("holes", []):
                 rows = np.setdiff1d(rows, regmod.cells_in_polygon(px, py, h))
-            if not len(rows):
+            if not len(rows) and not keep_empty:
                 empty += 1
                 continue
             i = 1
@@ -832,7 +842,7 @@ class Session:
             if p.get("color") and p["name"] in per and p["name"] not in cols:
                 self.set_region_color(p["name"], p["color"]); cols[p["name"]] = p["color"]
         msg = (f"{len(ids)} outlines{f' from {source}' if source else ''} as {len(per)} region(s): "
-               + ", ".join(f"{k} ({v} cells)" for k, v in per.items()) + (f"; {empty} without cells left out" if empty else ""))
+               + ", ".join(k if keep_empty else f"{k} ({v} cells)" for k, v in per.items()) + (f"; {empty} without cells left out" if empty else ""))
         v = self._commit("import_regions", msg, regions=dict(cur["regions"], ops=ops), expected_parent=cur["version"])
         return {"new_version": v, "regions": per, "n_outlines": len(ids), "n_empty": empty, "message": msg}
 
@@ -878,7 +888,7 @@ class Session:
         rows = regmod.cells_in_polygon(px, py, polygon_px)
         for h in op.get("holes", []):  # an imported outline's holes stay out of the region
             rows = np.setdiff1d(rows, regmod.cells_in_polygon(px, py, h))
-        if not len(rows):
+        if not len(rows) and not self.meta.get("image_only"):
             raise vocab.VocabError("the polygon contains no cells")
         new = dict(op, polygon=[[float(x), float(y)] for x, y in polygon_px], cells=self.cells.cell.to_numpy()[rows].tolist(),
                    edited_by=author, edited_at=_now())

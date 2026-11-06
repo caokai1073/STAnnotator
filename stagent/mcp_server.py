@@ -38,13 +38,17 @@ Getting started
 - A sample not annotated yet opens in the app as its placeholder (method "none": every cell "Not annotated"):
   regions, check_registration_map, the registration correction and fit_piece / move_piece work on it; tools about
   cell types do not. A new annotation of the sample (start_session) starts with the placeholder's regions.
+- A sample of an H&E only (list_samples: image_only; import_he_only) has no cells: the user (e.g. a pathologist)
+  draws and names regions on it, and show_area can look at the image; nothing else applies. Its regions go to the
+  data registered to the same image: the app's Import dialog ("Regions from"), or export_regions and the regions
+  file of the import.
 - A new gene panel needs its own marker list: start from organ_marker_draft (built-in lists of common organs pruned
   to the panel; search the literature for types it lacks), or draft one from get_panel_genes; validate it with check_marker_list,
   and save it with save_marker_list; the user loads it in the viewer's "Markers..." dialog and clicks Annotate (or
   start_session(markers_text=...) when the user asks you to run it).
 
 Changes to the data are reviewed by the user
-- Every tool that changes data (import_sample, import_cosmx_merfish, import_visium, import_stereoseq, start_session, add / update / remove_constraint, label_cells,
+- Every tool that changes data (import_sample, import_cosmx_merfish, import_visium, import_stereoseq, import_he_only, start_session, add / update / remove_constraint, label_cells,
   label_cluster, remove_correction, recluster, revert, apply_alignment, run_niches, name_niches, record_verdicts,
   resolve_rule_suggestion, assign_region_cells, propose_region, move_piece, undo_piece_move) only proposes the change: the app shows it in a review window with what it does, and it
   is applied only when the user clicks Accept there (Dismiss drops it). The tool waits a little for the decision and
@@ -174,6 +178,12 @@ Rank DE genes by AUC and fold change rather than p-values (cells are not indepen
 slices trust what holds in every slice (slices_same_direction / slices_separate), and with one slice per side say a
 slice effect cannot be told from a group effect. A gene of the neighboring cell types may be spillover. Interpret the
 genes with care and say which claims come from the data and which from general knowledge.
+
+Trajectories (when asked, or the app's Trajectory tab): trajectory orders cells on a spatial axis between two groups
+(e.g. the crypt axis from stem cells to colonocytes, portal to central regions), or by diffusion pseudotime from a
+root group within one lineage, optionally with tissue neighbors joined in (mixed, alpha). Read the rising, falling
+and transient genes and the composition along it against the known organization; an axis or root imposes the order,
+so a gradient along a spatial axis is position, not time, and spillover from neighboring cells follows the axis too.
 
 Cell-cell communication (when asked, or the app's Signaling tab): cell_communication scores ligand-receptor pairs
 on neighboring cells between groups (cell types by default); compare_communication repeats it per condition, slice,
@@ -558,6 +568,31 @@ def import_visium(name: str, path: str, he: Optional[str] = None, description: s
                                   segmentation=segmentation, unit=unit)
     return _j({"imported": meta["sample_id"], "unit": meta["source"]["unit"], "n": meta["n_cells"],
                "n_genes": meta["n_genes"], "bin_um": meta["source"]["bin_um"], "log": log[-12:]})
+
+
+def _d_import_he_only(a):
+    from . import importer
+    upp = a.get("um_per_px") or importer.image_pixel_size(a["image"])
+    return {"title": f"Import a new sample {a['name']} (H&E only)", "session_id": None, "sample_id": a["name"],
+            "details": [f"Image: {a['image']}, " + (f"{upp:.4f} um per pixel" if upp else "pixel size unknown"),
+                        "No cells: regions are drawn and named on it, exported as GeoJSON, or given to the import of the "
+                        "data registered to the same image (import_sample / import_xenium ... regions_from).",
+                        "Adds a sample; nothing that exists now changes."]}
+
+
+@mcp.tool()
+@_reviewed(_d_import_he_only)
+def import_he_only(name: str, image: str, um_per_px: Optional[float] = None, description: str = "") -> str:
+    """Import an H&E (TIFF / OME-TIFF, SVS, NDPI, PNG, JPEG) without any cells, e.g. for a pathologist to draw and
+    name regions before the expression data exist. um_per_px: the pixel size, read from the image when not given (else
+    unknown: no micrometers are shown). The regions drawn on it go to the data later: in the app's Import dialog
+    ("Regions from"), or exported as GeoJSON (export_regions) and given as the import's regions file. Tools about cells
+    do not apply to such a sample."""
+    from . import importer
+    log = []
+    m = importer.import_image(name, image, um_per_px=um_per_px, description=description, progress=log.append)
+    return _j({"imported": m["sample_id"], "image_only": True, "um_per_px": m["he_um_per_px"] if m.get("um_per_px_known") else None,
+               "log": log[-6:]})
 
 
 def _d_import_stereoseq(a):
@@ -1185,6 +1220,36 @@ def de_genes(by: str, group: Union[str, list], reference: Union[str, list] = "re
 
 
 @mcp.tool()
+def trajectory(method: str = "spatial", within: Optional[dict] = None, start: Optional[dict] = None,
+               end: Optional[dict] = None, root: Optional[dict] = None, alpha: float = 0.3, by: str = "cell type",
+               scope: str = "slice") -> str:
+    """Order cells along a trajectory and find the genes that change along it.
+    method "spatial": each cell's place on an axis in the tissue between start and end = {"by": grouping, "values":
+    [...]} (e.g. start cell type Stem cells, end Colonocytes for the crypt axis; regions; niches): t = d_start /
+    (d_start + d_end), 0..1; without end, the distance to start in um. "expression": diffusion pseudotime from root
+    ({"by", "values"}, among the cells ordered) on the PCA neighbor graph; "mixed": the same with tissue neighbors
+    joined in, alpha = the weight of space (0..1). within = {grouping: value(s)} orders only those cells (e.g.
+    {"lineage": "Epithelial"}). Returns the rising, falling and transient genes (r = correlation with the order,
+    eta2 = share of variance between bins, peak), the composition of `by` along it and a heatmap of bin means. The
+    result also becomes the map's "trajectory" color in the app. A spatial axis or a root forces the order: say
+    which; pooled slices are not batch-corrected."""
+    from . import trajectory as tr
+    c = _cells(scope, _uses_selection(within))
+    r, _, t, raw, masks = tr.run(c, method, within, start, end, root, alpha, by)
+    import uuid as _u
+    run_id = _u.uuid4().hex[:12]
+    i = 0
+    for s in c.sessions:
+        n = len(s.cells)
+        tr.save(s, t[i:i + n], raw[i:i + n], r, run_id, {k: v[i:i + n] for k, v in masks.items() if v is not None},
+                {"scope": scope})
+        i += n
+    r["label"] = tr.label(r)
+    r["heatmap"] = {"genes": r["heatmap"]["genes"]}  # the bin means stay in the app
+    return _j(r)
+
+
+@mcp.tool()
 def group_markers(by: str, top: int = 8, within: Optional[dict] = None, scope: str = "slice") -> str:
     """The top genes (by AUC) of every group of grouping by against the other cells, e.g. by="niche" for what sets
     each niche apart, by="leiden" for the clusters; groups under 30 cells are skipped."""
@@ -1514,8 +1579,9 @@ def list_advice(scope: Optional[str] = None, status: Optional[str] = None) -> st
 @mcp.tool()
 def recent_analyses(section: Optional[str] = None) -> str:
     """The analyses the user ran in the app on this annotation, newest last: section "compare" (DE genes, top genes,
-    composition) or "signaling" (cell-cell communication), each with its settings and headline result. Rerun one
-    with de_genes, group_markers, composition, cell_communication or compare_communication to see it in full."""
+    composition), "signaling" (cell-cell communication) or "trajectory", each with its settings and headline result.
+    Rerun one with de_genes, group_markers, composition, cell_communication, compare_communication or trajectory to
+    see it in full."""
     from . import analysis
     return _j(analysis.recent(_s(), section))
 
@@ -1822,6 +1888,23 @@ def export(version: Optional[int] = None) -> str:
     """Write cells.csv (cell_id, region, cell_type, lineage, type levels, confidence, ...), conflicts.csv, state.json
     and CHANGELOG.md for a version; returns the folder."""
     return _j({"folder": _s().export(version)})
+
+
+@mcp.tool()
+def export_regions(version: Optional[int] = None) -> str:
+    """Write the region outlines of a version as GeoJSON (the image's full-resolution pixels, named by region, as QuPath
+    writes annotations) into the session's exports; returns its path. It is what a later import of the data on the same
+    image takes as its regions file."""
+    from . import regions as regmod, importer
+    s = _s()
+    v = version or s.versions()[-1]
+    m = importer._meta(s.sample_id)
+    size = importer._he_size(m["he_path"]) if m.get("he_path") and m.get("image_kind") not in (None, "none") else None
+    text, info = regmod.to_geojson(s.state(v)["regions"], s.region_colors(), size)
+    p = s.dir / "exports" / f"{s.sample_id}_v{v}_regions.geojson"
+    p.parent.mkdir(exist_ok=True)
+    p.write_text(text, encoding="utf-8")
+    return _j({"path": str(p)} | info)
 
 
 @mcp.tool()

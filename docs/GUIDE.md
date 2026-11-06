@@ -72,6 +72,16 @@ The H&E must be the image the outlines were drawn on (drawing before the registr
 the image's own pixels). They apply once the cells sit on it: an H&E still waiting for its alignment keeps the file,
 and new annotations start with the regions after the alignment (an annotation made before: Regions panel, Import).
 
+**H&E only**: an image without any cells (TIFF / OME-TIFF, SVS, NDPI, PNG or JPEG; other whole-slide formats such as
+MRXS or CZI converted to OME-TIFF first; an image without zoom levels is copied into the sample folder as a pyramid),
+e.g. for a pathologist to draw and name regions before the expression data exist. The pixel size is read from the
+image (OME-TIFF, the SVS `MPP`, or the TIFF resolution tags) or typed in; without one the app shows no micrometers
+and gives areas in pixels. Such a sample has only the Data tab and the regions (the panel shows each outline's area,
+mm² with a pixel size); **Export…** writes the outlines as GeoJSON. Its regions go to the data: choose the sample
+under **Regions from** in **Import…** when importing the data registered to the same H&E (the same scan: the image
+size is checked), and every annotation of the data starts with them; or give the exported GeoJSON as the import's
+**Regions**. Agent tools: `import_he_only`, `export_regions`.
+
 **CosMx** and **MERFISH** (Vizgen MERSCOPE) output: choose the kind in **Import…** and give its two files, each in its
 field (Counts, Cell metadata); one slide or region per import (import several one after the other).
 CosMx: a slide's AtoMx flat files `<slide>_exprMat_file.csv` and `<slide>_metadata_file.csv`; a cell is
@@ -194,7 +204,7 @@ starts it, on the server's own localhost only; its process id is in `<data folde
 ## 3. The viewer
 
 The toolbar is a panel on the right of the map: **Import** and **Export** at the top, the server choice below, then
-the steps **Data**, **Annotate**, **Embed**, **Niches**, **Compare** and **Signaling** as tabs (a dot on a tab whose analysis is running), and at
+the steps **Data**, **Annotate**, **Embed**, **Niches**, **Compare**, **Signaling** and **Trajectory** as tabs (a dot on a tab whose analysis is running), and at
 the bottom **Reset** and **Remove all**. On the map, next to the **Color by** bar, a bar holds **Undo**, **Ask Agent**
 (Claude Code), **Agent Review** and **Report**. **›** at its top (or `t`) folds it to the right edge for a bigger map,
 **‹** brings it back.
@@ -288,7 +298,10 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
    a11..ty that places the cells on the image now, whether it came from the file, Claude's alignment or a
    correction; it can be imported again), the **cell positions** (CSV: `cell_id`, `x_um`, `y_um`, `px`, `py`, every
    cell's place on the image as the app shows it; after a local correction or a piece move this is the complete
-   placement, since local shifts and moved pieces are not part of the affine), or the **analysis notebook** (Jupyter). The notebook runs without this
+   placement, since local shifts and moved pieces are not part of the affine), the **regions** (GeoJSON: the outlines
+   of the version in the image's full-resolution pixels, named by region with their colors, as QuPath writes
+   annotations; cells moved into a region without an outline are not in it), or the **analysis notebook** (Jupyter;
+   it also replays the annotation's last trajectory from its cells). The notebook runs without this
    app: it needs the data files and `numpy pandas scipy scikit-learn python-igraph pynndescent umap-learn h5py
    matplotlib` (and `pillow` for Visium HD cells built from outlines). It reads the cells from the original files
    of every platform as the import did (Xenium, h5ad, CosMx, MERSCOPE, Visium HD cells or bins, Stereo-seq cells or
@@ -434,7 +447,31 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
      first, as a table or a bubble plot with one column per group; with one slice per group the app says a slice effect cannot be told apart). Agent tools:
      `cell_communication`, `compare_communication`, `show_communication` (the signal on the H&E). A run on 356,629
      cells takes about 10 s.
-13. **Report** shows the annotation report the agent writes (**Ask Agent to write it**): sample, method and inputs,
+13. **Trajectory** (seventh tab): the order of cells and the genes that change along it, for this slice or all
+   slices of a project pooled, optionally only within a subset (**Only within**, e.g. one lineage).
+   - **Spatial axis**: each cell's place between two groups of cells of any grouping (cell types, regions, niches),
+     t = d_From / (d_From + d_To) with d the distance to the nearest cell of the group in the same slice: 0 at From,
+     1 at To. Without To, the distance to From in um. E.g. the crypt axis from stem cells to colonocytes, or portal to
+     central regions in the liver. Under a second for 100,000 cells.
+   - **Pseudotime**: diffusion pseudotime (Haghverdi et al. 2016): a diffusion map of the neighbor graph of the
+     cells' PCA (15 neighbors, adaptive Gaussian kernel, density-normalized, 10 components), and t = the diffusion
+     distance from the root group's mean, scaled to 0..1. Above 60,000 cells the graph is built on a random sample
+     (root cells kept in proportion) and the other cells take the mean t of their nearest sampled cells; cells the
+     root does not reach get none. About 30 s for 97,000 epithelial cells.
+   - **Expression + space**: the same on W = (1 - w) W_expression + w W_space, the spatial graph joining each cell's
+     15 nearest cells in the tissue; **Weight of space** w from 0 (expression only) to 1 (the tissue alone).
+   - Genes along it: each gene's correlation with the rank of t (rising, falling) and its mean in 20 bins of equal
+     cell numbers; the share of its variance between bins (eta squared) finds genes that peak in the middle and fall
+     again on both sides (transient). Results: **Gene heatmap** (z-scores of the bin means, genes in the order of their
+     peak), **Genes** (r, eta squared, peak t, % cells; a click colors the map by the gene), **Composition** along it
+     (shares of a grouping per bin), **Save CSV…** (every gene), **Save figure…**, **Ask Agent**. **Show on the map**
+     colors the cells in ten steps of t (Color by: trajectory; the annotation keeps its last trajectory, and a saved
+     annotation and the exported notebook carry it: the notebook replays it from its cells with the same code). On
+     SCP2927 section 147328 the epithelial cells ordered from stem cells rise in APOB, FABP2, CYP3A4, fall in OLFM4,
+     GPX2, LGR5, and MKI67, TOP2A, RRM2 peak in between (the transit-amplifying zone). An axis or a root sets the
+     order: a gradient along a spatial axis is position, not time, and spillover from neighboring cells follows the
+     axis too. Agent tool: `trajectory`.
+14. **Report** shows the annotation report the agent writes (**Ask Agent to write it**): sample, method and inputs,
    composition, compartments, quality and open questions, from the tools' facts. **Save…** writes it as Markdown.
 
 The app has no chat box of its own: you talk to Claude in Claude Code. The web viewer on a

@@ -72,8 +72,11 @@ class SampleView:
         px, py = cells.px.to_numpy(), cells.py.to_numpy()
         self.px, self.py = px, py
         lo = -math.inf if type(self.slide) is render.BlankSlide else 0  # a blank background has no edge at 0
-        self.ox, self.oy = int(max(lo, math.floor(px.min()) - MARGIN_PX)), int(max(lo, math.floor(py.min()) - MARGIN_PX))
-        x1, y1 = min(self.slide.W0, int(px.max()) + MARGIN_PX), min(self.slide.H0, int(py.max()) + MARGIN_PX)
+        if not len(px):  # an image only (no cells): all of it
+            self.ox, self.oy, x1, y1 = 0, 0, self.slide.W0, self.slide.H0
+        else:
+            self.ox, self.oy = int(max(lo, math.floor(px.min()) - MARGIN_PX)), int(max(lo, math.floor(py.min()) - MARGIN_PX))
+            x1, y1 = min(self.slide.W0, int(px.max()) + MARGIN_PX), min(self.slide.H0, int(py.max()) + MARGIN_PX)
         self.W, self.H = x1 - self.ox, y1 - self.oy
         self.max_level = int(math.ceil(math.log2(max(self.W, self.H))))
         self.order = np.argsort(px)
@@ -211,6 +214,15 @@ def colors_for(s: Session, version, mode, only):
             if lab is not None:
                 out[:, :3] = np.array([cluster_rgb(i) for i in range(int(lab.max()) + 1)], np.uint8)[lab]
                 out[:, 3] = 225
+        elif mode == "trajectory":
+            from . import trajectory
+            meta, t, _ = trajectory.last(s)
+            out[:] = trajectory.NONE_RGB + (40,)
+            if t is not None:
+                b = trajectory.bin_of(t)
+                on = b >= 0
+                out[on, :3] = np.array([c for _, c in trajectory.TRAJ_BINS], np.uint8)[b[on]]
+                out[on, 3] = 240
         elif mode == "niche":
             meta, lab = niches.current(s)
             if lab is not None:
@@ -246,6 +258,9 @@ def colors_for(s: Session, version, mode, only):
 
 def mode_key(s, mode):
     """Cache key of a color mode; niche colors change with every niche run."""
+    if mode == "trajectory":
+        from . import trajectory
+        return f"traj:{(trajectory.last(s)[0] or {}).get('run_id')}"
     if mode == "leiden":
         return f"leiden:{(embedding.current(s.sample_id) or {}).get('run_id')}"
     return f"niche:{(niches.current(s)[0] or {}).get('run_id')}" if mode == "niche" else mode
@@ -328,6 +343,14 @@ def cell_keys(s: Session, version, mode):
         return np.array([f"N{i + 1}" for i in range(meta["n_niches"])], dtype=object)[lab] if meta else np.full(n, "", dtype=object)
     if mode == "confidence":
         return np.where(r["conf"] < 0.5, "low", np.where(r["conf"] < 0.8, "mid", "high")).astype(object)
+    if mode == "trajectory":
+        from . import trajectory
+        t = trajectory.last(s)[1]
+        if t is None:
+            return np.full(n, trajectory.NONE_KEY, dtype=object)
+        b = trajectory.bin_of(t)
+        return np.where(b >= 0, np.array([k for k, _ in trajectory.TRAJ_BINS], dtype=object)[np.maximum(b, 0)],
+                        trajectory.NONE_KEY).astype(object)
     if mode == "cluster":
         inv, names = cluster_ids(s, version)
         return np.array(names, dtype=object)[inv] if inv is not None else np.full(n, "", dtype=object)
@@ -373,6 +396,16 @@ def legend_for(s: Session, version, mode):
     if mode.startswith("gene:"):
         n = np.bincount(gene_bins(s, mode), minlength=len(GENE_BINS))
         return [{"key": k, "label": lab, "color": c, "count": int(n[i])} for i, (k, lab, c, _) in enumerate(GENE_BINS)][::-1]
+    if mode == "trajectory":
+        from . import trajectory
+        meta, t, _ = trajectory.last(s)
+        if t is None:
+            return []
+        b = trajectory.bin_of(t)
+        n = np.bincount(b[b >= 0], minlength=10)
+        labs = trajectory.legend(meta)
+        return [{"key": k, "label": labs[i], "color": c, "count": int(n[i])} for i, (k, c) in enumerate(trajectory.TRAJ_BINS)] + \
+               [{"key": trajectory.NONE_KEY, "label": "not on the trajectory", "color": trajectory.NONE_RGB, "count": int((b < 0).sum())}]
     if mode == "niche":
         meta, lab = niches.current(s)
         if meta is None:
@@ -527,7 +560,8 @@ FS_KINDS = {"h5ad": (".h5ad", ".rds", ".rda", ".rdata"),
             "xenium": (".parquet", ".csv.gz", ".h5", ".xenium", ".mtx.gz", ".tsv.gz", ".ome.tif"),
             "xcells": (".parquet", ".csv.gz"), "xcounts": (".h5", ".mtx.gz", ".tsv.gz"), "xexp": (".xenium",),
             "ximage": (".ome.tif", ".tif", ".tiff"), "image": (".tif", ".tiff", ".btf"), "csv": (".csv", ".tsv", ".txt"),
-            "markers": (".csv", ".tsv", ".txt"), "flat": (".csv", ".csv.gz"), "geojson": (".geojson", ".json")}
+            "markers": (".csv", ".tsv", ".txt"), "flat": (".csv", ".csv.gz"), "geojson": (".geojson", ".json"),
+            "heonly": importer.IMAGE_ONLY_SUFFIXES}
 
 
 def api_fs_list(req):
@@ -965,7 +999,11 @@ async def api_import(req: Request):
             kind = b.get("kind", "h5ad")
             flat = importer.flat_sources(kind, folders) if kind in importer.FLAT_FILES else None
             n_xenium = len(importer.xenium_sources(folders)) if kind == "xenium" and folders else len(flat or [])
-            if kind == "stereoseq":  # a SAW output: cells or 8 um bins (stereoseq.py), on its registered image
+            if kind == "image":  # an H&E (or other image) without cells: regions are drawn on it
+                importer.import_image(name, b.get("he") or "", um_per_px=b.get("um_per_px") or None,
+                                      description=b.get("description", ""), overwrite=bool(b.get("overwrite")),
+                                      progress=say, image_kind=b.get("he_kind") or "H&E")
+            elif kind == "stereoseq":  # a SAW output: cells or 8 um bins (stereoseq.py), on its registered image
                 importer.import_stereoseq(name, folders or b["folder"], image=b.get("he") or None,
                                           description=b.get("description", ""), overwrite=bool(b.get("overwrite")),
                                           progress=say, unit=b.get("unit") or "auto")
@@ -1005,6 +1043,18 @@ async def api_import(req: Request):
                     per = importer.attach_regions(sid, g)
                     say(f"regions of {sid}: " + (", ".join(f"{k} ({v} cells)" for k, v in per.items()) if per is not None
                         else "kept until the H&E is aligned (new annotations start with them from then on)"))
+            if b.get("regions_from") and kind != "image":  # regions drawn on a sample of the same H&E only
+                text, info = importer.image_sample_regions(b["regions_from"], b.get("he") or None)
+                for sid in (projects.load(name)["samples"] if (projects.PROJECTS / f"{name}.json").exists()
+                            and (len(sections) > 1 or n_xenium > 1) else [name]):
+                    try:
+                        per = importer.attach_regions(sid, text=text, source=f"sample {b['regions_from']}")
+                    except ValueError as e:  # a slice of a shared H&E outside every outline
+                        say(f"regions of {sid}: none ({e})")
+                        continue
+                    say(f"regions of {sid} from {b['regions_from']}: " + (
+                        ", ".join(f"{k} ({v} cells)" for k, v in per.items()) if per is not None
+                        else "kept until the H&E is aligned (new annotations start with them from then on)"))
             JOBS[job].update(progress=1.0, stage="done", done=True)
         except Exception as e:  # shown in the dialog
             undo()
@@ -1030,6 +1080,7 @@ def api_samples(req):
                          "platform": {"visium_hd": "Visium HD", "visium": "Visium", "stereoseq": "Stereo-seq"}.get(
                              (meta.get("source") or {}).get("kind")),
                          "n_genes": meta.get("n_genes"), "image_unloaded": bool(meta.get("image_unloaded")),
+                         "image_only": bool(meta.get("image_only")), "um_per_px_known": meta.get("um_per_px_known", True),
                          "filter": {"params": f["params"], "n_cells_removed": f["n_cells_removed"],
                                     "n_genes_removed": len(f["genes_removed"])} if (f := meta.get("filter")) else None,
                          "sessions": mine.sort_values("created_at", ascending=False)[["session_id", "created_at", "n_versions", "method"]]
@@ -1243,6 +1294,53 @@ async def api_communication_run(req: Request):
     return await _spawn(job, work) or _json({"job": job})
 
 
+async def api_trajectory_run(req: Request):
+    """A trajectory in the background (trajectory.run): {session, version, scope, selection, sessions, method,
+    within, start, end, root, alpha, by}; progress and result under /api/job/traj:<session>. Each annotation keeps
+    the t of its cells for the map (color "trajectory")."""
+    from . import trajectory
+    b = await req.json()
+    job = f"traj:{b['session']}"
+    if job in JOBS and not JOBS[job]["done"]:
+        return _json({"error": "a trajectory of this annotation is still running"}, 409)
+    JOBS[job] = {"stage": "starting", "progress": 0.0, "done": False, "error": None}
+
+    def work():
+        try:
+            c = _analysis_cells(b)
+            say = lambda f, m: JOBS[job].update(progress=round(f, 3), stage=m)
+            within = {k: v for k, v in (b.get("within") or {}).items() if v not in (None, "", [])}
+            r, table, t, raw, masks = trajectory.run(c, b.get("method", "spatial"), within, b.get("start"), b.get("end"),
+                                              b.get("root"), float(b.get("alpha", 0.3)), b.get("by") or "cell type",
+                                              progress=say)
+            key = uuid.uuid4().hex[:12]
+            ANALYSES[key] = table
+            while len(ANALYSES) > ANALYSES.n:
+                ANALYSES.popitem(last=False)
+            r |= {"id": key, "kind": "trajectory", "label": trajectory.label(r)}
+            i = 0
+            for s in c.sessions:  # each annotation keeps its cells' part
+                n = len(s.cells)
+                trajectory.save(s, t[i:i + n], raw[i:i + n], r, key,
+                                {k: v[i:i + n] for k, v in masks.items() if v is not None}, b)
+                _colors_forget(s)
+                i += n
+            from . import analysis
+            analysis.log_run(review_app._session(b["session"]), b | {"kind": "trajectory"}, r)
+            _keep_result(b, "trajectory", r, table)
+            JOBS[job].update(progress=1.0, stage="done", done=True, result=r)
+        except Exception as e:
+            JOBS[job].update(error=f"{type(e).__name__}: {e}" if not isinstance(e, (ValueError, KeyError)) else str(e).strip("'"),
+                             done=True)
+    return await _spawn(job, work) or _json({"job": job})
+
+
+def _colors_forget(s):
+    """Drop the cached colors of the trajectory mode of an annotation (a new run)."""
+    for k in [k for k in _colors if k[0] == s.id and str(k[2]).startswith("traj")]:
+        _colors.pop(k, None)
+
+
 ANALYSIS_ASK = {
     "de": ("Interpret the DE genes I found in the app: de_genes(by={by}, group={group}, reference={reference}, "
            "within={within}, scope={scope}). Say in a few lines what sets the group apart, which genes point to which "
@@ -1257,6 +1355,11 @@ ANALYSIS_ASK = {
             "scope={scope}, resource={resource}). Say in a few lines which signaling axes and pathways stand out between "
             "which groups, which fit the tissue, which may be artifacts (spillover, broadly expressed genes), and what to "
             "check next (e.g. show_communication on the H&E)."),
+    "trajectory": ("Interpret the trajectory I computed in the app: trajectory(method={method}, within={within}, "
+                   "start={start}, end={end}, root={root}, alpha={alpha}, by={by}, scope={scope}). Say in a few lines what "
+                   "the order of the cells along it shows (rising, falling and transient genes, the composition along "
+                   "it), what fits the tissue's known organization or differentiation, what may be an artifact "
+                   "(spillover, a root or axis that forces the order, pooled slices), and what to check next."),
     "compare": ("Interpret the comparison of cell-cell communication I made in the app: compare_communication("
                 "split={split}, by={by}, within={within}, scope={scope}, resource={resource}). Say in a few lines which "
                 "interactions differ between the groups, how much to trust it (replicate slices), and what it may mean."),
@@ -1269,7 +1372,8 @@ async def api_claude_analysis(req: Request):
     s = review_app._session(b["session"])
     q = b["request"]
     args = {k: json.dumps(q.get(k), ensure_ascii=False) for k in ("by", "group", "reference", "rows", "cols", "scope",
-                                                                  "split", "resource")}
+                                                                  "split", "resource", "method", "start", "end",
+                                                                  "root", "alpha")}
     if q.get("group") == "__all__":  # every group against the other cells
         args["group"] = '"all"'
     args["within"] = json.dumps(q.get("within") or None, ensure_ascii=False)
@@ -1364,8 +1468,10 @@ def api_projects(req):
 
 def api_he_info(req):
     v = view(req.path_params["sample"])
+    m = importer._meta(req.path_params["sample"])
     return _json({"width": v.W, "height": v.H, "tile_size": TILE, "origin": [v.ox, v.oy], "um_per_px": v.um_per_px,
-                  "image_kind": v.image_kind, "image_unloaded": v.unloaded, "rev": int(v.rev)})
+                  "image_kind": v.image_kind, "image_unloaded": v.unloaded, "rev": int(v.rev),
+                  "image_only": bool(m.get("image_only")), "um_per_px_known": m.get("um_per_px_known", True)})
 
 
 async def api_annotate(req: Request):
@@ -2318,6 +2424,32 @@ def api_positions_csv(req):
                     headers={"Content-Disposition": f'attachment; filename="{sample}_cell_positions.csv"'})
 
 
+def _regions_geojson(s, v):
+    """(text, info) of the outlines of version v as GeoJSON in the image's full-resolution pixels."""
+    from . import regions as regmod
+    v_ = view(s.sample_id)
+    return regmod.to_geojson(s.state(v)["regions"], s.region_colors(), (v_.W, v_.H) if v_.W else None)
+
+
+def api_trajectory_last(req):
+    """The annotation's last trajectory (its title and run), or null."""
+    from . import trajectory
+    s = review_app._session(req.path_params["sid"])
+    return _json({"trajectory": trajectory.last(s)[0]})
+
+
+def api_regions_geojson(req):
+    """Download the region outlines of a version (default: latest) as GeoJSON (QuPath reads it too)."""
+    s = review_app._session(req.path_params["sid"])
+    v = int(req.query_params["version"]) if req.query_params.get("version") else s.versions()[-1]
+    try:
+        text, _ = _regions_geojson(s, v)
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+    return Response(text.encode("utf-8"), media_type="application/geo+json",
+                    headers={"Content-Disposition": f'attachment; filename="{s.sample_id}_v{v}_regions.geojson"'})
+
+
 def api_export_notebook(req):
     """Download the analysis notebook of a version (default: latest)."""
     from . import notebook
@@ -2525,6 +2657,8 @@ async def api_export_to(req: Request):
             Path(b["path"]).expanduser().write_text(notebook.registration_csv(s.sample_id), encoding="utf-8")
         elif b.get("kind") == "positions":
             Path(b["path"]).expanduser().write_text(notebook.positions_csv(s.sample_id), encoding="utf-8")
+        elif b.get("kind") == "regions":
+            Path(b["path"]).expanduser().write_text(_regions_geojson(s, v)[0], encoding="utf-8")
         else:
             src = notebook.build(s, v) if b.get("kind") == "notebook" else Path(s.export(v)) / "cells.csv"
             shutil.copy(src, Path(b["path"]).expanduser())
@@ -2747,6 +2881,7 @@ def build_app(port):
         Route("/api/figure/{key}.pdf", api_figure_get),
         Route("/api/claude/analysis", api_claude_analysis, methods=["POST"]),
         Route("/api/communication/run", api_communication_run, methods=["POST"]),
+        Route("/api/trajectory/run", api_trajectory_run, methods=["POST"]),
         Route("/api/config", api_config),
         Route("/api/viewer/state", api_viewer_state, methods=["POST"]),
         Route("/api/viewer/request", api_viewer_request),
@@ -2830,6 +2965,8 @@ def build_app(port):
         Route("/api/s/{sid}/export.ipynb", api_export_notebook),
         Route("/api/sample/{sample}/registration.csv", api_registration_csv),
         Route("/api/sample/{sample}/cell_positions.csv", api_positions_csv),
+        Route("/api/s/{sid}/regions.geojson", api_regions_geojson),
+        Route("/api/s/{sid}/trajectory", api_trajectory_last),
         Route("/api/s/{sid}/chat", api_chat, methods=["POST"]),
         Route("/api/s/{sid}/chat_log", api_chat_log),
         Route("/api/panel", api_panel),

@@ -14,7 +14,8 @@ from . import config, embedding, niches, render
 
 # app modules carried into the notebook, in import order (relative imports resolve inside the notebook)
 # visium and stereoseq before importer, which imports them
-CARRIED = ["timing", "vocab", "markers", "model", "constraints", "regions", "existing", "visium", "stereoseq", "importer", "scref"]
+CARRIED = ["timing", "vocab", "markers", "model", "constraints", "regions", "existing", "visium", "stereoseq", "importer", "scref",
+           "trajectory"]
 CONFIG_STUB = '''"""Stand-in for the app's settings: only what the carried modules use."""
 from pathlib import Path
 HOME = WORK = SAMPLES = SESSIONS = Path(".")
@@ -524,6 +525,9 @@ pd.DataFrame({{"niche": niche_name, "cell type": labels}}).groupby("niche")["cel
                         [_text("niches identical to the original: True"), _table(tab),
                          _image(_scatter(px, py, np.array(names, dtype=object)[nlab], "niches"))]))
 
+    # ---- trajectory: the annotation's last run (Trajectory tab or the agent), replayed from its cells
+    _trajectory_section(s, nb, sec)
+
     # ---- 8. table
     table = s.export_table(v)
     cols = ["cell_id", "region", "cell_type", "lineage", "confidence"] + [c for c in ("niche", "leiden", "umap_1", "umap_2")
@@ -554,6 +558,66 @@ table.head()''', [_table(table[cols].head())]))
     with open(out, "w", encoding="utf-8") as fh:
         json.dump(doc, fh, indent=1)
     return str(out)
+
+
+TRAJ_CODE = '''
+TRAJ = {traj}
+rows_of = lambda s: unpack(s, np.int32)
+MASK = {{k: np.isin(np.arange(len(cells)), rows_of(v)) for k, v in {masks}.items()}}
+one = np.zeros(len(cells), dtype=object)   # one slice
+Xn = sa.model.lognorm(counts)
+if TRAJ["method"] == "spatial":
+    t, raw = sa.trajectory.spatial_axis(xy, one, MASK["start"], MASK.get("end"))
+    t[~MASK["within"]] = np.nan
+else:
+    rows = np.where(MASK["within"])[0]
+    Z = sa.markers.pca(Xn[rows], sa.trajectory.N_PCS)[:, ::-1].copy()
+    tt, info = sa.trajectory.pseudotime(Z, xy[rows], one[rows], MASK["root"][rows], alpha=TRAJ["alpha"])
+    t = np.full(len(cells), np.nan); t[rows] = tt
+T_APP = unpack({t_app}, np.float32)   # the order at export time (-1: not ordered)
+both = (T_APP >= 0) & np.isfinite(t)
+print(f"{{np.isfinite(t).sum():,}} cells ordered; correlation with the app's order: {{np.corrcoef(t[both], T_APP[both])[0, 1]:.4f}}")
+trends, gene_table = sa.trajectory.gene_trends(Xn, t, list(genes))
+for k in ("rising", "transient", "falling"):
+    print(k + ":", ", ".join(x["gene"] for x in trends[k][:10]))
+H = trends["heatmap"]
+fig, ax = plt.subplots(figsize=(6, 0.18 * len(H["genes"]) + 1))
+ax.imshow(np.clip(np.array(H["z"]), -2, 2), cmap="RdBu_r", aspect="auto", vmin=-2, vmax=2)
+ax.set_yticks(range(len(H["genes"]))); ax.set_yticklabels(H["genes"], fontsize=7); ax.set_xlabel("bins along the trajectory")
+plt.show()'''
+
+
+def _trajectory_section(s, nb, sec):
+    """The last trajectory of the annotation, replayed: its cells (the masks of the run, packed rows), the same
+    functions (trajectory.py, carried), the genes along it, checked against the order at export time."""
+    from . import trajectory
+    meta, t, raw = trajectory.last(s)
+    if meta is None:
+        return
+    z = np.load(s.dir / "trajectory" / "last.npz")
+    masks = {k[5:]: np.where(z[k])[0] for k in z.files if k.startswith("mask_")}
+    if "within" not in masks or meta.get("pooled"):
+        nb.append(_md(f"## {sec()}. Trajectory\nThe last trajectory ({meta['label']}) "
+                      + ("pooled the slices of the project: run it again on this slice to replay it here."
+                         if meta.get("pooled") else "was made before the app kept its cells: run it again to replay it here.")))
+        return
+    if meta["method"] == "spatial":
+        how = ("each cell's place between the start and end groups in the tissue: t = d_start / (d_start + d_end)"
+               if "end" in masks else "the distance to the start group (um)")
+    else:
+        how = "diffusion pseudotime from the root group on the PCA neighbor graph" + (
+            f", with tissue neighbors joined in (weight of space {meta.get('alpha')})" if meta["method"] == "mixed" else "")
+    nb.append(_md(f"""## {sec()}. Trajectory
+The annotation's last trajectory: **{meta['label']}** ({how}). The cells it orders and its groups are given as their
+rows (as at the time of the run); the functions are the app's (`trajectory.py`). The genes along it: the correlation of
+each gene with the order (rising, falling) and its share of variance between {trajectory.NBINS} bins (transient).
+The pseudotime uses approximate neighbors for large samples, so it can differ slightly from the app's."""))
+    code = TRAJ_CODE.format(traj=_py({"method": meta["method"], "alpha": meta.get("alpha") or 0.0}),
+                            masks=_py({k: _pack(v, np.int32) for k, v in masks.items()}),
+                            t_app=_py(_pack(np.nan_to_num(t, nan=-1).astype(np.float32), np.float32)))
+    out = (f"{int(np.isfinite(t).sum()):,} cells ordered; correlation with the app's order: 1.0000 (at export)\n"
+           + "\n".join(f"{k}: " + ", ".join(meta.get("top", {}).get(k, [])) for k in ("rising", "transient", "falling")))
+    nb.append(_code(code, [_text(out)]))
 
 
 def _replay_error(cells, meta):
