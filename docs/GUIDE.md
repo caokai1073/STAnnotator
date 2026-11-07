@@ -587,6 +587,10 @@ colors are immediate.
   to the developers' Google Drive folder (the installed app knows where; run from source, it asks once for the
   upload link the developers gave you); **Save to file…** keeps it on this computer to send yourself (privately: an issue on GitHub is public). With the app working
   on a server, the report is made there and this computer's conversations and log are added to it.
+- Usage sharing (testing): the desktop app asks once whether it may send the developers a report of its use every
+  3 days (the same contents as a bug report, for the time since the last one; nothing when the app was not used). The
+  reports carry a random id of the installation, not the user's name. **?** -> **About** -> **Usage sharing** shows
+  when the last one was sent, turns it off or on, and sends one now.
 - The app does not open: see its log, `~/Library/Caches/STAnnotator/app.log` on macOS and
   `%LOCALAPPDATA%\STAnnotator\app.log` on Windows (`<data folder>/app.log` when run from source); run `.venv/bin/stagent app` in a terminal to see
   errors, or `--browser` to use the browser. The web viewer logs to `<data folder>/viewer.log`.

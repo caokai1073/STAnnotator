@@ -252,6 +252,19 @@ class Api:
         updater.skip(str(version))
         return {"ok": True}
 
+    # ---- usage sharing during testing (autoshare.py) ----
+    def share_status(self):
+        from . import autoshare
+        return autoshare.status()
+
+    def share_set(self, yes):
+        from . import autoshare
+        return autoshare.set_consent(bool(yes))
+
+    def share_now(self):
+        from . import autoshare, webapp
+        return autoshare.send(webapp._about(False), force=True)
+
     def _close(self):
         if self._conn:
             self._conn.stop()
@@ -282,6 +295,8 @@ def main(argv=None):
     config.ensure_dirs()
     from . import updater
     threading.Thread(target=updater.cleanup, daemon=True).start()  # installers of earlier updates
+    from . import autoshare, webapp
+    autoshare.start(lambda: webapp._about(False))  # usage reports every few days, when the user allowed them
     port = free_port(a.port)
     server = start_server(port)
     url = f"http://127.0.0.1:{port}/"

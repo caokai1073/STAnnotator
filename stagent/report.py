@@ -487,8 +487,9 @@ def set_upload_url(url):
     return url
 
 
-def upload(path, name, about=None, note="", sender="", url=None):
-    """Send a saved report to the developers' Drive folder."""
+def upload(path, name, about=None, note="", sender="", url=None, extra=None):
+    """Send a saved report to the developers' Drive folder. extra: more fields for the receiver (an automatic report
+    sends {"auto": True, "install": <id>}, which it files under autosave/<id>/)."""
     import base64
     url = _check_url(url or upload_url())
     path = Path(path)
@@ -499,7 +500,7 @@ def upload(path, name, about=None, note="", sender="", url=None):
     about = about or {}
     r = _request(url, {"name": name, "data": base64.b64encode(path.read_bytes()).decode(),
                        "version": about.get("version"), "system": about.get("system"),
-                       "from": sender[:200], "note": note[:2000]})
+                       "from": sender[:200], "note": note[:2000], "install": install_id(), **(extra or {})})
     if not r.get("ok"):
         raise ValueError(r.get("error") or "the upload failed")
     return {"uploaded": r.get("name", name), "bytes": size}

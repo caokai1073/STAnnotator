@@ -1016,6 +1016,22 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <button id="anAsk" hidden title="Ask the agent what this result may mean">Ask Agent</button><button id="anFig" hidden title="Save the figure as a PDF file">Save figure…</button><button id="anCsv">Save CSV…</button><button id="anClose">Close</button></div>
   <div class="imbody"><div class="hint" id="anSub"></div><div id="anBody"></div><div id="anLegend" class="cmplegend"></div><div class="hint" id="anNote"></div></div>
 </dialog>
+<dialog id="shareDlg" style="width:min(560px,94vw)">
+  <div class="dh"><b>Help test STAnnotator</b><span class="spacer"></span></div>
+  <div style="padding:12px 14px;display:flex;flex-direction:column;gap:10px">
+    <p style="margin:0">While STAnnotator is being tested, it can send the developers a report of how it is used, every
+      3 days, so that they can find and fix problems you may not report.</p>
+    <ul style="margin:0;padding-left:18px" class="hint">
+      <li>Sent: your conversations with the agent (without images), the agent's tool calls and their errors, the changes
+        it proposed, the history of the annotation you work on, and the app's log.</li>
+      <li>Never sent: expression data, cell tables or images.</li>
+      <li>The reports go to the developers' private folder under a random id of this installation
+        (<code id="shareId">…</code>), not your name. Nothing is sent when you did not use the app.</li>
+      <li>You can change this at any time in <b>?</b> → <b>About</b>.</li></ul>
+    <div class="row"><span class="spacer"></span><button id="shareNo">Don't send</button>
+      <button id="shareYes" class="primary">Send every 3 days</button></div>
+  </div>
+</dialog>
 <dialog id="updDlg" style="width:min(620px,94vw)">
   <div class="dh"><b id="updTitle">A new version</b><span class="spacer"></span><span class="hint" id="updHave"></span></div>
   <div style="padding:12px 14px;display:flex;flex-direction:column;gap:10px">
@@ -4074,6 +4090,7 @@ async function showAbout() {
     ["Agent connection", cc.seen ? `<span class="${cc.running ? "ok" : ""}">last used the tools ${esc(cc.last)}</span>` + (cc.running ? " (still open)" : " (closed since)") : `<span class="bad">not yet</span>: click Ask Agent and ask something`],
     ["Agent workspace", esc(d.claude_workspace)],
     ["Libraries", Object.entries(d.libraries).map(([k, v]) => `${k} ${v || "–"}`).join(" · ")]];
+  if (native() && native().share_status) rows.push(["Usage sharing", `<span id="hpShare">…</span>`]);
   const gb = (b) => `${(b / 1e9).toFixed(b < 1e8 ? 2 : 1)} GB`;
   const cache = await api("/api/cache").catch(() => null);
   if (cache) rows.splice(5, 0, ["Cache", `<span id="hpCacheUse">${gb(cache.bytes)}</span> of at most <input type="number" id="hpCacheGb" min="0.5" step="0.5" value="${cache.limit_gb}" style="width:64px"> GB
@@ -4085,6 +4102,7 @@ async function showAbout() {
   $("hpBody").innerHTML = `<dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>
     <button id="hpCopy">Copy for a bug report</button>${native() && native().update_check ? ` <button id="hpUpdate">Check for updates</button>` : ""}`;
   if ($("hpUpdate")) $("hpUpdate").onclick = () => checkForUpdate(true);
+  if ($("hpShare")) fillShare().catch(() => {});
   if ($("hpOpenData")) $("hpOpenData").onclick = () => post("/api/open_folder", { which: "data" }).catch((e) => toast(e.message, 6000));
   if ($("hpMoveData")) $("hpMoveData").onclick = () => changeDataFolder(d.data_folder);
   const cacheDo = async (body, what) => {
@@ -4218,6 +4236,34 @@ $("bugUpload").onclick = () => {
     $("bugNote").value = "";
   });
 };
+// ---------------- usage sharing during testing (autoshare.py): asked once, changed in About ----------------
+async function fillShare() {
+  const s = await native().share_status(), el = $("hpShare"); if (!el) return;
+  const sent = s.last_sent ? new Date(s.last_sent * 1000).toLocaleString() : "nothing yet";
+  el.innerHTML = (s.consent === "yes" ? `On: a report every ${s.every_days} days when the app was used (last sent: ${sent})`
+                  : s.consent === "no" ? "Off" : "Not decided yet") +
+    ` · installation <code>${s.install_id}</code> <button id="hpShareToggle">${s.consent === "yes" ? "Turn off" : "Turn on"}</button>` +
+    (s.consent === "yes" && s.link ? ` <button id="hpShareNow">Send now</button>` : "") +
+    (s.link ? "" : `<div class="hint">This app has no upload link: nothing can be sent.</div>`) +
+    `<div class="hint">Your conversations with the agent (without images), its tool calls and errors, the changes it proposed, the annotation's history and the app's log; never expression data, cell tables or images.</div>`;
+  $("hpShareToggle").onclick = async () => { await native().share_set(s.consent !== "yes"); fillShare(); };
+  if ($("hpShareNow")) $("hpShareNow").onclick = async () => {
+    $("hpShareNow").disabled = true; toast("Sending the usage report…", 30000);
+    const r = await native().share_now();
+    toast(r.sent ? `Sent ${r.sent}` : r.error ? `Not sent: ${r.error}` : `Not sent: ${r.skipped}`, 8000); fillShare();
+  };
+}
+async function askShare() {  // once: the first start of an app with usage sharing
+  if (!native() || !native().share_status) return;
+  const s = await native().share_status();
+  if (s.consent || !s.link) return;
+  if ($("updDlg").open || $("bugDlg").open) { setTimeout(() => askShare().catch(() => {}), 15000); return; }
+  $("shareId").textContent = s.install_id;
+  $("shareDlg").showModal();
+}
+$("shareYes").onclick = async () => { await native().share_set(true); $("shareDlg").close(); toast("Thank you: a usage report goes to the developers every 3 days (About to change it)", 6000); };
+$("shareNo").onclick = async () => { await native().share_set(false); $("shareDlg").close(); toast("Nothing will be sent (About to change it)", 5000); };
+
 // ---------------- updates of the desktop app (updater.py): offered at start, downloaded and installed here ----------------
 const UPD = { info: null, timer: null };
 function releaseNotes(md) {  // the release's Markdown, enough of it to read: headings, lists, bold, code, links as text
@@ -6182,7 +6228,7 @@ $("xpReg").onclick = () => exportAs("registration");
 $("xpPos").onclick = () => exportAs("positions");
 $("xpGeo").onclick = () => exportAs("regions");
 document.addEventListener("keydown", (e) => {
-  if ($("mkDlg").open || $("rpDlg").open || $("bugDlg").open || $("updDlg").open || $("hpDlg").open || $("xpDlg").open || $("glDlg").open || $("anDlg").open || $("rvDlg").open || $("nameDlg").open || $("rnDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
+  if ($("mkDlg").open || $("rpDlg").open || $("bugDlg").open || $("updDlg").open || $("shareDlg").open || $("hpDlg").open || $("xpDlg").open || $("glDlg").open || $("anDlg").open || $("rvDlg").open || $("nameDlg").open || $("rnDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
   if (e.key === "h") $("hide").click();
   if (e.key === "e") $("hideHE").click();
   if (e.key === "[") stepSlice(-1);
@@ -6305,7 +6351,8 @@ api("/api/config").then((c) => {  // the desktop app (or no Claude Code CLI): th
   // wait until the functions are there (polling as well, in case the event fired before this listener)
   let tries = 0;
   const ready = () => (native() && native().connection
-    ? (initConnection(c.remote).catch(() => {}), setTimeout(() => checkForUpdate(false).catch(() => {}), 4000))
+    ? (initConnection(c.remote).catch(() => {}), setTimeout(() => checkForUpdate(false).catch(() => {}), 4000),
+       setTimeout(() => askShare().catch(() => {}), 9000))
     : ++tries < 300 && setTimeout(ready, 100));
   if (window.pywebview) ready();
   else window.addEventListener("pywebviewready", ready, { once: true });
