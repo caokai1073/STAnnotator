@@ -4095,17 +4095,13 @@ $("bugUpload").onclick = () => {
   bugRun("Uploading…", async (q) => {
     const body = { days: q.days, parts: q.parts, note: q.note, session: st.sid || "", page_errors: bugPageErrors() };
     const r = await post("/api/bug-report", body);
-    const mb = r.bytes / 2 ** 20, chunks = Math.ceil(r.bytes / (30 * 2 ** 20));
-    if (mb > 10) $("bugMsg").textContent = `Uploading ${mb.toFixed(0)} MB` + (chunks > 1 ? ` in ${chunks} parts` : "") +
-      ": this takes a few minutes, keep this window open…";
     let up;
     if (st.remote) {  // made on the server; this computer adds its conversations and sends it
       up = await native().report_upload(`/api/bug-report/${r.key}?name=${encodeURIComponent(q.name)}`, q.name, q.days,
         q.parts.filter((p) => p === "conversations" || p === "app_log"), q.note, q.from, "");
       if (up.error) throw new Error(up.error);
     } else up = await post("/api/bug-report/upload", { key: r.key, name: q.name, note: q.note, from: q.from });
-    const size = up.bytes > 2 ** 20 ? `${(up.bytes / 2 ** 20).toFixed(1)} MB` : `${(up.bytes / 2 ** 10).toFixed(0)} KB`;
-    $("bugMsg").textContent = `Uploaded ${up.uploaded} (${size}${up.parts > 1 ? `, in ${up.parts} parts` : ""}). Thank you: the developers will look at it.`;
+    $("bugMsg").textContent = `Uploaded ${up.uploaded} (${(up.bytes / 2 ** 10).toFixed(0)} KB). Thank you: the developers will look at it.`;
     $("bugNote").value = "";
   });
 };

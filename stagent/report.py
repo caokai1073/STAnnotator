@@ -26,10 +26,10 @@ CALLS = config.HOME / "agent_calls.jsonl"
 CALLS_MAX = 8 * 2 ** 20      # agent_calls.jsonl keeps its newer half past this size
 ARG_MAX = 4000               # characters of one argument / result kept in the call log
 LOG_TAIL = 2 * 2 ** 20       # the end of app.log that goes into a report
-TRANSCRIPT_MAX = 200 * 2 ** 20  # all conversations together (text, images left out); the newest first
+TRANSCRIPT_MAX = 40 * 2 ** 20  # all conversations together; the newest first
 SESSION_FILE_MAX = 2 * 2 ** 20
-ANNOTATION_MAX = 100 * 2 ** 20  # the annotation's files together (a long history has many versions of ~1 MB); text
-                                # zips ~4x smaller, so a report stays near 70 MB at most
+ANNOTATION_MAX = 40 * 2 ** 20  # the annotation's files together (a long history has many versions of ~1 MB); the
+                               # whole report then stays under the upload's 35 MB once zipped (text: ~4x smaller)
 SESSION_TYPES = {".json", ".jsonl", ".md", ".txt"}
 
 
@@ -410,8 +410,7 @@ def add_local(zip_path, days=7, parts=("conversations", "app_log")):
 
 
 # ---------------- upload to the developers (packaging/report_receiver.gs, a Google Apps Script web app) ----------------
-UPLOAD_MAX = 300 * 2 ** 20
-CHUNK = 30 * 2 ** 20  # one request: sent as base64 (x 4/3), and Apps Script takes requests up to about 50 MB
+UPLOAD_MAX = 35 * 2 ** 20  # sent as base64 (x 4/3): Apps Script takes requests up to about 50 MB
 _URL = re.compile(r"https://script\.google(usercontent)?\.com/macros/s/[A-Za-z0-9_-]+/exec")
 
 
@@ -471,35 +470,18 @@ def set_upload_url(url):
 
 
 def upload(path, name, about=None, note="", sender="", url=None):
-    """Send a saved report to the developers' Drive folder: in one request up to CHUNK, else in parts of CHUNK, each
-    saved as <name>.part<ii>of<nn> (joined again with cat <name>.part* > <name>); a part that fails is sent again."""
+    """Send a saved report to the developers' Drive folder."""
     import base64
-    import uuid
     url = _check_url(url or upload_url())
     path = Path(path)
     size = path.stat().st_size
     if size > UPLOAD_MAX:
-        raise ValueError(f"the report is {size / 2 ** 20:.0f} MB, more than the upload takes "
-                         f"({UPLOAD_MAX // 2 ** 20} MB): choose fewer days, or save it and send it")
+        raise ValueError(f"the report is {size / 2 ** 20:.0f} MB, more than the upload takes (35 MB): "
+                         "choose fewer days or leave the conversations out, or save it and send it")
     about = about or {}
-    n = max(1, -(-size // CHUNK))
-    upload_id = uuid.uuid4().hex[:12]
-    with open(path, "rb") as f:
-        for i in range(1, n + 1):
-            part = f.read(CHUNK)
-            # numbered with zeros (part02of10) so that the names sort in order for cat
-            body = {"name": name if n == 1 else f"{name}.part{i:02d}of{n:02d}", "data": base64.b64encode(part).decode(),
-                    "upload": upload_id, "part": i, "parts": n,
-                    "version": about.get("version"), "system": about.get("system"),
-                    "from": sender[:200], "note": note[:2000] if i == 1 else ""}
-            for attempt in range(3):
-                try:
-                    r = _request(url, body, timeout=300)
-                    break
-                except (OSError, ValueError):
-                    if attempt == 2:
-                        raise
-                    time.sleep(5)
-            if not r.get("ok"):
-                raise ValueError((r.get("error") or "the upload failed") + (f" (part {i} of {n})" if n > 1 else ""))
-    return {"uploaded": name, "parts": n, "bytes": size}
+    r = _request(url, {"name": name, "data": base64.b64encode(path.read_bytes()).decode(),
+                       "version": about.get("version"), "system": about.get("system"),
+                       "from": sender[:200], "note": note[:2000]})
+    if not r.get("ok"):
+        raise ValueError(r.get("error") or "the upload failed")
+    return {"uploaded": r.get("name", name), "bytes": size}
