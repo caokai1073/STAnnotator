@@ -1,8 +1,8 @@
 # Breast
-Epithelial: EPCAM KRT8 KRT18 KRT19 CDH1 -PTPRC
+Epithelial: EPCAM KRT8 KRT14 KRT18 KRT5 KRT19 CDH1 -PTPRC
   Luminal hormone-sensing: ESR1 PGR FOXA1 AR ANKRD30A TFF1 -KRT5
   Luminal progenitors: KIT ELF5 LTF MMP7 SLPI KRT15 -ESR1
-  Basal / myoepithelial cells: KRT5 KRT14 KRT17 TP63 OXTR MYLK ACTA2 -ESR1
+  Basal / myoepithelial cells: TP63 KRT14 OXTR ACTA2 MYH11 MYLK KRT5 KRT17 -ESR1
 Adipocytes: ADIPOQ PLIN1 LEP PLIN4 CIDEA LPL
 @immune
 @stroma

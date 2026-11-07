@@ -1,8 +1,9 @@
 # Heart
 Cardiomyocytes: TNNT2 ACTN2 MYH7 MYH6 TTN RYR2 TNNI3 NPPB -PTPRC
-  Ventricular cardiomyocytes: MYL2! MYL3 MYH7 IRX4 HEY2 FHL2 -NPPA
-  Atrial cardiomyocytes: NPPA MYL7 MYL4 KCNA5 PITX2 -MYL2
+  Ventricular cardiomyocytes: MYL2! MYL3 MYH7 IRX4 HEY2 FHL2 -MYL7
+  Atrial cardiomyocytes: MYL7 MYL4 SLN NPPA KCNA5 PITX2 -MYL2
 Mesothelial cells: MSLN UPK3B WT1 CALB2
 Adipocytes: ADIPOQ PLIN1 LEP PLIN4
 @immune
 @stroma
+Endothelial > Endocardial cells: NPR3 SMOC1 CDH11 LEPR PCDH15
