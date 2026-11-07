@@ -15,7 +15,7 @@ and cell types to regions, niches, cell-cell communication and comparisons acros
 side.
 
 <p align="center">
-  <img src="docs/assets/overview.png" width="900" alt="How STAnnotator works: the researcher gives input and decisions to the app and sees views and advice; the app's engine runs the method modules (registration, cell types, niches, regions, DE genes, signaling) and offers them as MCP tools to the agent (Claude Code), which calls the tools, reads numbers and H&E views, and asks the language model for the next step and advice">
+  <img src="docs/assets/overview.png" width="900" alt="How STAnnotator works: the researcher gives input and decisions to the app and sees views and advice; the app's engine runs the method modules (registration, cell types, niches, regions, DE genes, signaling, trajectory) and offers them as MCP tools to the agent (Claude Code), which calls the tools, reads numbers and H&E views, and asks the language model for the next step and advice">
 </p>
 
 - **Annotate** from a marker gene list, a labeled single-cell reference, or an existing annotation.
