@@ -35,3 +35,6 @@ packaging/windows/STAnnotator.ico
 
 # the upload link of Report bug (the developers' Apps Script), built into the app, never published
 stagent/data/report_upload_url.txt
+
+# bug reports sent by testers (conversations, paths): never published
+/STAnnotator-report-*.zip
