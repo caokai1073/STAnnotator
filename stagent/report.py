@@ -28,6 +28,7 @@ ARG_MAX = 4000               # characters of one argument / result kept in the c
 LOG_TAIL = 2 * 2 ** 20       # the end of app.log that goes into a report
 TRANSCRIPT_MAX = 40 * 2 ** 20  # all conversations together; the newest first
 SESSION_FILE_MAX = 2 * 2 ** 20
+MAX_VERSIONS = 10  # the annotation's latest versions: a bug is in what happened last
 ANNOTATION_MAX = 40 * 2 ** 20  # the annotation's files together (a long history has many versions of ~1 MB); the
                                # whole report then stays under the upload's 35 MB once zipped (text: ~4x smaller)
 SESSION_TYPES = {".json", ".jsonl", ".md", ".txt"}
@@ -229,12 +230,12 @@ def _session_files(sid):
 
 
 def _capped(fs, limit):
-    """The annotation's files within limit: everything but its versions first (smallest first), then the versions
-    from the newest back. Returns (kept, left out)."""
+    """The annotation's files within limit: everything but its versions first (smallest first), then its latest
+    MAX_VERSIONS versions from the newest back. Returns (kept, left out)."""
     versions = sorted((f for f in fs if f.parent.name == "versions"), key=lambda f: f.name, reverse=True)
     others = sorted((f for f in fs if f.parent.name != "versions"), key=lambda f: f.stat().st_size)
-    kept, out, total = [], [], 0
-    for f in others + versions:
+    kept, out, total = [], versions[MAX_VERSIONS:], 0
+    for f in others + versions[:MAX_VERSIONS]:
         size = f.stat().st_size
         if total + size > limit:
             out.append(f)
@@ -254,7 +255,7 @@ def _session_left_out(sid):
     return [f"annotation/{f.relative_to(d).as_posix()}" for f in _capped(fs, ANNOTATION_MAX)[1]]
 
 
-def contents(days=7, sid=None):
+def contents(days=3, sid=None):
     """What a report with these settings would hold: counts and sizes per part, for the dialog."""
     since = time.time() - days * 86400
     tr = transcripts(since)
@@ -313,7 +314,7 @@ def _page_errors(errors):
     return out
 
 
-def build(dest, about, days=7, parts=("conversations", "calls", "proposals", "annotation", "app_log"), sid=None,
+def build(dest, about, days=3, parts=("conversations", "calls", "proposals", "annotation", "app_log"), sid=None,
           note="", page_errors=None):
     """Write the report to dest (a .zip); returns what went in."""
     since = time.time() - days * 86400
@@ -381,7 +382,7 @@ def _build(tmp, dest, about, days, since, parts, sid, note, page_errors):
     return {"saved": str(dest), "bytes": dest.stat().st_size, "included": n, "left_out": skipped}
 
 
-def add_local(zip_path, days=7, parts=("conversations", "app_log")):
+def add_local(zip_path, days=3, parts=("conversations", "app_log")):
     """With the app working on a server, the report is made there; the conversations (Claude Code runs on this
     computer) and this computer's app.log are added to it here."""
     since = time.time() - days * 86400

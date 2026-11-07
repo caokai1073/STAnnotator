@@ -578,7 +578,8 @@ colors are immediate.
   (arguments, results, or errors with where in the code they happened), the changes it proposed and what became of
   them, the open annotation's history (versions, priors, corrections, analyses run) and its sample's description
   (platform, cells, genes, image, registration), errors in the app's window (scripts, failed requests) and the end of
-  the app's logs, from the last 1 to 30 days; **What goes
+  the app's logs, from the last 1 to 30 days (3 by default; of the annotation's
+  versions only the latest 10); **What goes
   in the report** lists each part and lets you leave it out. It holds no expression data, cell tables or images;
   conversations can include file paths, gene names and numbers the agent read. **Upload to the developers** sends it
   to the developers' Google Drive folder (the installed app knows where; run from source, it asks once for the

@@ -158,7 +158,7 @@ class Api:
         except Exception as e:
             return {"error": str(e)}
 
-    def report_add_local(self, path, days=7, parts=("conversations", "app_log")):
+    def report_add_local(self, path, days=3, parts=("conversations", "app_log")):
         """A problem report made on the server: add this computer's agent conversations and app.log to it."""
         from . import report
         try:
@@ -166,7 +166,7 @@ class Api:
         except Exception as e:
             return {"error": str(e)}
 
-    def report_upload(self, path, name, days=7, parts=("conversations", "app_log"), note="", sender="", url=""):
+    def report_upload(self, path, name, days=3, parts=("conversations", "app_log"), note="", sender="", url=""):
         """With the app on a server: fetch the report made there, add this computer's conversations and app.log, and
         upload it to the developers."""
         import tempfile

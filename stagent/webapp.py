@@ -1924,9 +1924,9 @@ REPORTS = config.HOME / "cache" / "reports"
 
 def _report_args(q):
     try:
-        days = min(max(int(q.get("days", 7)), 1), 90)
+        days = min(max(int(q.get("days", 3)), 1), 90)
     except (TypeError, ValueError):
-        days = 7
+        days = 3
     sid = q.get("session") or None
     return days, (sid if sid and re.fullmatch(r"[A-Za-z0-9_.-]+", sid) else None)
 

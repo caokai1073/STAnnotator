@@ -1039,8 +1039,8 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
         <div class="hint">Text only: no expression data, cell tables or images. Conversations can include file paths,
           gene names and numbers the agent read.</div>
-        <label class="f">From<select id="bugDays"><option value="1">the last day</option><option value="3">the last 3 days</option>
-          <option value="7" selected>the last 7 days</option><option value="30">the last 30 days</option></select></label>
+        <label class="f">From<select id="bugDays"><option value="1">the last day</option><option value="3" selected>the last 3 days</option>
+          <option value="7">the last 7 days</option><option value="30">the last 30 days</option></select></label>
         <div id="bugParts" style="display:flex;flex-direction:column;gap:6px"></div></div></details>
     <div id="bugLinkRow" class="f" hidden><span>Upload link <span class="hint">(from the developers; once)</span></span>
       <div class="row"><input type="text" id="bugLink" placeholder="https://script.google.com/macros/s/…/exec" style="flex:1;min-width:0">
@@ -4007,7 +4007,7 @@ const BUG_PARTS = [
   ["page_errors", "Errors in the app's window (scripts, failed requests)", () => { const n = bugPageErrors().length; return n ? `${n}` : "none in this time"; }],
   ["app_log", "The app's logs", (c) => c.app_log.files.length ? `the last ${Math.max(0.1, c.app_log.bytes / 2 ** 20).toFixed(1)} MB` : "none found"]];
 function bugPageErrors() {
-  const since = new Date(Date.now() - (+$("bugDays").value || 7) * 864e5).toISOString();
+  const since = new Date(Date.now() - (+$("bugDays").value || 3) * 864e5).toISOString();
   return PAGE_ERRORS.filter((e) => e.time >= since && !String(e.path || "").startsWith("/api/bug-report"));
 }
 const BUG = { link: "" };
