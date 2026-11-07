@@ -1911,7 +1911,8 @@ def _about(sizes=True):
                   "standalone": bool(config.FROZEN), "system": f"{platform.system()} {platform.release()} ({platform.machine()})",
                   "python": platform.python_version(), "data_folder": str(config.HOME),
                   "data_folder_source": config.HOME_SOURCE, "data_folder_next": config.read_settings().get("data_folder"),
-                  "n_samples": n_samples, "n_annotations": n_sessions, "data_size_mb": round(size / 2 ** 20),
+                  "n_samples": n_samples, "n_annotations": n_sessions,
+                  "data_size_mb": round(size / 2 ** 20) if sizes else None,  # None: not counted (a bug report)
                   "claude_code": claudelink.claude_code_path(), "claude_workspace": str(claudelink.workspace()),
                   "claude_connection": claudelink.mcp_seen(),
                   "libraries": {k: ver(k) for k in ("numpy", "scipy", "scikit-learn", "igraph", "pywebview", "mcp")}}
