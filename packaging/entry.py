@@ -24,10 +24,13 @@ def _numba_cache():
     os.environ.setdefault("NUMBA_CACHE_DIR", str(_local_dir() / "numba"))
 
 
-def _log_streams():
-    """The windowed Windows program (STAnnotator.exe) has no console: sys.stdout and sys.stderr are None, which the
-    web server's logging (uvicorn) and every print fail on. They go to app.log in _local_dir() instead."""
-    if sys.stdout is not None and sys.stderr is not None:
+def _log_streams(to_file=False):
+    """The app's output goes to app.log in _local_dir(): always for the windowed Windows program (STAnnotator.exe has
+    no console: sys.stdout and sys.stderr are None, which the web server's logging (uvicorn) and every print fail on),
+    and with to_file for the macOS app opened from Finder or the Dock, whose output the system drops. There the file
+    also takes the process's own output (C libraries, child processes) and, through faulthandler, the Python stack of
+    a crash. A Report bug takes the end of this log."""
+    if not to_file and sys.stdout is not None and sys.stderr is not None:
         return
     log = _local_dir() / "app.log"
     try:
@@ -37,16 +40,31 @@ def _log_streams():
         f = open(log, "a", encoding="utf-8", buffering=1)
     except OSError:
         f = open(os.devnull, "w")
-    if sys.stdout is None:
+    if to_file:
+        try:
+            for fd in (1, 2):
+                os.dup2(f.fileno(), fd)
+        except OSError:
+            pass
+    if to_file or sys.stdout is None:
         sys.stdout = f
-    if sys.stderr is None:
+    if to_file or sys.stderr is None:
         sys.stderr = f
+    try:
+        import faulthandler
+        faulthandler.enable(file=f)
+    except Exception:
+        pass
+    import time
+    print(f"== STAnnotator started {time.strftime('%Y-%m-%d %H:%M:%S')}", flush=True)
 
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()
-    _log_streams()
-    _numba_cache()
     args = [a for a in sys.argv[1:] if not a.startswith("-psn_")]  # Finder may pass a process serial number
+    # the macOS app opened from Finder or the Dock (no subcommand, no terminal); a subcommand keeps its output (Claude
+    # Code talks to "mcp" over stdin / stdout)
+    _log_streams(to_file=sys.platform == "darwin" and not args and not (sys.stdout and sys.stdout.isatty()))
+    _numba_cache()
     from stagent.cli import main
     main(args or ["app"])

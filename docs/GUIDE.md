@@ -584,7 +584,8 @@ colors are immediate.
   to the developers' Google Drive folder (the installed app knows where; run from source, it asks once for the
   upload link the developers gave you); **Save to file…** keeps it on this computer to send yourself (privately: an issue on GitHub is public). With the app working
   on a server, the report is made there and this computer's conversations and log are added to it.
-- The app does not open: see `<data folder>/app.log`; run `.venv/bin/stagent app` in a terminal to see
+- The app does not open: see its log, `~/Library/Caches/STAnnotator/app.log` on macOS and
+  `%LOCALAPPDATA%\STAnnotator\app.log` on Windows (`<data folder>/app.log` when run from source); run `.venv/bin/stagent app` in a terminal to see
   errors, or `--browser` to use the browser. The web viewer logs to `<data folder>/viewer.log`.
 - Claude Code does not open: it must be installed and logged in (`claude` works in Terminal). By hand:
   `cd ~/stagent/claude_workspace && claude --mcp-config stagent_mcp.json`.

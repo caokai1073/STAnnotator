@@ -156,14 +156,17 @@ def _clean_transcript(path):
 
 # ---------------- the rest ----------------
 def app_logs():
-    """The logs and their names in the report: app.log (the data folder when run from source, else the built app's
-    own folder), viewer.log (the viewer in a browser, or started by the agent) and remote_viewer.log (the viewer this
-    computer serves to the desktop app as a server)."""
+    """The logs and their names in the report: app.log of the built app (its own folder: ~/Library/Caches/STAnnotator
+    on macOS, %LOCALAPPDATA%\\STAnnotator on Windows), app-source.log (the data folder's app.log, written when the
+    app runs from source), viewer.log (the viewer in a browser, or started by the agent) and remote_viewer.log (the
+    viewer this computer serves to the desktop app as a server)."""
     out = {}
-    for p in (config.HOME / "app.log", Path.home() / "Library" / "Caches" / "STAnnotator" / "app.log",
+    for p in (Path.home() / "Library" / "Caches" / "STAnnotator" / "app.log",
               Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / "STAnnotator" / "app.log"):
         if p.is_file() and "app.log" not in out.values():
             out[p] = "app.log"
+    if (config.HOME / "app.log").is_file():
+        out[config.HOME / "app.log"] = "app-source.log"
     for n in ("viewer.log", "remote_viewer.log"):
         if (config.HOME / n).is_file():
             out[config.HOME / n] = n
