@@ -85,9 +85,10 @@ def check(force=False):
             tmp = f.with_name(f"update.{os.getpid()}.tmp")
             tmp.write_text(json.dumps({"latest": cached, "checked": time.time()}), encoding="utf-8")
             os.replace(tmp, f)
-        except Exception as e:
+        except Exception:
             if not cached:
-                return {"current": __version__, "available": False, "error": f"could not reach GitHub: {e}"}
+                return {"current": __version__, "available": False,
+                        "error": "could not check for updates: no internet connection, or GitHub did not answer"}
     latest = cached.get("version", "")
     available = bool(latest) and newer(latest, __version__)
     return {"current": __version__, "latest": latest, "available": available, "platform": _platform(),

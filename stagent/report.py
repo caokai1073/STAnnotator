@@ -452,8 +452,12 @@ def _request(url, payload=None, timeout=120):
     data = None if payload is None else json.dumps(payload).encode()
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"} if data else {})
     from .osutil import https_context
-    with urllib.request.urlopen(req, timeout=timeout, context=https_context()) as r:
-        text = r.read().decode("utf-8", errors="replace")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout, context=https_context()) as r:
+            text = r.read().decode("utf-8", errors="replace")
+    except OSError as e:  # no internet, a proxy, the server away (urllib's URLError is an OSError)
+        raise ValueError("Could not reach the upload server (no internet connection?). Save the report to a file "
+                         "and send it later.") from e
     try:
         return json.loads(text)
     except ValueError:
