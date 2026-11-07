@@ -1,0 +1,142 @@
+# Build the macOS DMG (signed and notarized) and the Windows installer, and publish them as a GitHub release.
+#
+# A tag v<version> that matches stagent/__init__.py starts it: git tag v0.2.49 && git push origin v0.2.49
+# The release notes come from packaging/release_notes/v<version>.md (the app shows them in its update window).
+# "Run workflow" (Actions tab) builds without publishing, to try the build.
+#
+# Repository secrets (Settings > Secrets and variables > Actions):
+#   MACOS_CERT_P12        the "Developer ID Application" certificate with its key, exported as .p12, base64-encoded
+#   MACOS_CERT_PASSWORD   the password given when exporting the .p12
+#   MACOS_DEVELOPER_ID    its name, e.g. Developer ID Application: Your Name (TEAMID)
+#   APPLE_ID              the Apple ID of the developer account
+#   APPLE_TEAM_ID         the Team ID
+#   APPLE_APP_PASSWORD    an app-specific password of that Apple ID (for the notary service)
+#   REPORT_UPLOAD_URL     the bug report upload link (stagent/data/report_upload_url.txt, not in git)
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: |
+          version=$(sed -n 's/^__version__ = "\([^"]*\)".*/\1/p' stagent/__init__.py)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${GITHUB_REF_NAME}" != "v$version" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match the code's version $version"; exit 1
+          fi
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ ! -f "packaging/release_notes/v$version.md" ]; then
+            echo "::error::no packaging/release_notes/v$version.md"; exit 1
+          fi
+
+  macos:
+    needs: version
+    runs-on: macos-14   # Apple silicon
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: astral-sh/setup-uv@v6
+      - name: Build stamp and upload link
+        env:
+          REPORT_UPLOAD_URL: ${{ secrets.REPORT_UPLOAD_URL }}
+        run: |
+          git log -1 --format="%h %cs" > stagent/data/build.txt
+          if [ -n "$REPORT_UPLOAD_URL" ]; then printf '%s\n' "$REPORT_UPLOAD_URL" > stagent/data/report_upload_url.txt; fi
+      - name: Signing certificate and notary credentials
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          KCP=$(openssl rand -hex 16)
+          security create-keychain -p "$KCP" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KCP" "$KEYCHAIN"
+          echo "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCP" "$KEYCHAIN" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          security default-keychain -s "$KEYCHAIN"
+          xcrun notarytool store-credentials stannotator --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_PASSWORD" --keychain "$KEYCHAIN"
+      - name: Build, sign and notarize
+        env:
+          DEVELOPER_ID: ${{ secrets.MACOS_DEVELOPER_ID }}
+        run: bash packaging/macos/build_app.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/STAnnotator.dmg
+          if-no-files-found: error
+
+  windows:
+    needs: version
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: astral-sh/setup-uv@v6
+      - name: Build stamp, upload link and Inno Setup
+        shell: pwsh
+        env:
+          REPORT_UPLOAD_URL: ${{ secrets.REPORT_UPLOAD_URL }}
+        run: |
+          git log -1 --format="%h %cs" | Out-File -Encoding ascii stagent/data/build.txt
+          if ($env:REPORT_UPLOAD_URL) { [IO.File]::WriteAllText("stagent/data/report_upload_url.txt", "$env:REPORT_UPLOAD_URL`n") }
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+      - name: Build the installer
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File packaging\windows\build.ps1
+      - name: Fixed name for the download links
+        shell: pwsh
+        run: |
+          $v = "${{ needs.version.outputs.version }}"
+          Copy-Item "dist\STAnnotator-Setup-$v.exe" "dist\STAnnotator-Setup.exe"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/STAnnotator-Setup.exe
+          if-no-files-found: error
+
+  release:
+    needs: [version, macos, windows]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${{ needs.version.outputs.version }}"
+          ls -la assets
+          if gh release view "v$v" > /dev/null 2>&1; then
+            gh release upload "v$v" assets/STAnnotator.dmg assets/STAnnotator-Setup.exe --clobber
+            gh release edit "v$v" --notes-file "packaging/release_notes/v$v.md" --latest
+          else
+            gh release create "v$v" assets/STAnnotator.dmg assets/STAnnotator-Setup.exe \
+              --title "STAnnotator $v" --notes-file "packaging/release_notes/v$v.md" --latest
+          fi
