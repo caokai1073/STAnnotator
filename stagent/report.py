@@ -28,6 +28,8 @@ ARG_MAX = 4000               # characters of one argument / result kept in the c
 LOG_TAIL = 2 * 2 ** 20       # the end of app.log that goes into a report
 TRANSCRIPT_MAX = 40 * 2 ** 20  # all conversations together; the newest first
 SESSION_FILE_MAX = 2 * 2 ** 20
+ANNOTATION_MAX = 40 * 2 ** 20  # the annotation's files together (a long history has many versions of ~1 MB); the
+                               # whole report then stays under the upload's 35 MB once zipped (text: ~4x smaller)
 SESSION_TYPES = {".json", ".jsonl", ".md", ".txt"}
 
 
@@ -223,7 +225,33 @@ def _session_files(sid):
         return []
     fs = [f for f in d.rglob("*") if f.is_file() and f.suffix in SESSION_TYPES and f.stat().st_size <= SESSION_FILE_MAX
           and "cache" not in f.relative_to(d).parts]
-    return sorted(fs)
+    return sorted(_capped(fs, ANNOTATION_MAX)[0])
+
+
+def _capped(fs, limit):
+    """The annotation's files within limit: everything but its versions first (smallest first), then the versions
+    from the newest back. Returns (kept, left out)."""
+    versions = sorted((f for f in fs if f.parent.name == "versions"), key=lambda f: f.name, reverse=True)
+    others = sorted((f for f in fs if f.parent.name != "versions"), key=lambda f: f.stat().st_size)
+    kept, out, total = [], [], 0
+    for f in others + versions:
+        size = f.stat().st_size
+        if total + size > limit:
+            out.append(f)
+            continue
+        kept.append(f)
+        total += size
+    return kept, out
+
+
+def _session_left_out(sid):
+    """Files of the annotation the cap left out (the oldest versions of a long history)."""
+    if not sid or not re.fullmatch(r"[A-Za-z0-9_.-]+", sid) or not (config.SESSIONS / sid).is_dir():
+        return []
+    d = config.SESSIONS / sid
+    fs = [f for f in d.rglob("*") if f.is_file() and f.suffix in SESSION_TYPES and f.stat().st_size <= SESSION_FILE_MAX
+          and "cache" not in f.relative_to(d).parts]
+    return [f"annotation/{f.relative_to(d).as_posix()}" for f in _capped(fs, ANNOTATION_MAX)[1]]
 
 
 def contents(days=7, sid=None):
@@ -243,7 +271,7 @@ def contents(days=7, sid=None):
             "app_log": {"files": [str(p) for p in logs], "bytes": sum(min(p.stat().st_size, LOG_TAIL) for p in logs)}}
 
 
-def _readme(about, days, parts, sid):
+def _readme(about, days, parts, sid, left_out=()):
     lines = ["STAnnotator problem report", "",
              f"Made {time.strftime('%Y-%m-%d %H:%M')} with STAnnotator {about.get('version')} (build {about.get('build')})",
              f"System: {platform.system()} {platform.release()} ({platform.machine()}), Python {platform.python_version()}",
@@ -258,6 +286,9 @@ def _readme(about, days, parts, sid):
             "app_log": "logs/: the end of the app's logs (app.log, viewer.log, remote_viewer.log)"}
     lines += [f"- {what[p]}" for p in what if p in parts]
     lines += ["", "No expression data, cell tables or images are included."]
+    if left_out:
+        lines += ["", f"Left out to keep the report small ({len(left_out)}; the oldest first):"] + \
+                 [f"- {n}" for n in left_out[:50]] + (["- ..."] if len(left_out) > 50 else [])
     return "\n".join(lines) + "\n"
 
 
@@ -330,6 +361,7 @@ def _build(tmp, dest, about, days, since, parts, sid, note, page_errors):
             for f in _session_files(sid):
                 z.write(f, f"annotation/{f.relative_to(d).as_posix()}")
                 n["annotation"] += 1
+            skipped += _session_left_out(sid)
             meta = _sample_meta(sid) if n["annotation"] else None
             if meta:
                 z.write(meta, "sample/meta.json")
@@ -344,7 +376,7 @@ def _build(tmp, dest, about, days, since, parts, sid, note, page_errors):
                     f.seek(max(0, p.stat().st_size - LOG_TAIL))
                     _put(z, f"logs/{name}", f.read())
                 n["app_log"] += 1
-        _put(z, "README.txt", _readme(about, days, parts, sid if n["annotation"] else None))
+        _put(z, "README.txt", _readme(about, days, parts, sid if n["annotation"] else None, skipped))
     os.replace(tmp, dest)
     return {"saved": str(dest), "bytes": dest.stat().st_size, "included": n, "left_out": skipped}
 
