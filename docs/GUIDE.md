@@ -388,7 +388,12 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
    analysis (**Methods**: data, registration, regions, annotation, embedding, niches, compare, signal, trajectory, review)
    and, under **About**, shows the
    build, the data folder, whether Claude Code was found and when Claude last used the tools, with a button that
-   copies these details for a bug report. In the desktop app on this computer, **Open** beside the data folder shows it
+   copies these details for a bug report. The desktop app offers a newer release when it starts (at most every few
+   hours it asks GitHub; **Check for updates** in About asks now): the window shows the release notes, **Download
+   and install** fetches the installer in the background, and **Install and restart** closes the app, puts the new
+   version in its place (macOS: the STAnnotator.app it runs from; Windows: the installer, silently, into the same
+   folder) and opens it again. The data folder and the settings stay. **Skip this version** stops offering it.
+   A copy run from source is pointed to the release page instead. In the desktop app on this computer, **Open** beside the data folder shows it
    in Explorer / Finder, and **Change…** picks another folder (another drive) for the data from the next start:
    **Copy my data there** copies the samples and annotations (in the background, with Stop; the old folder stays as
    it was) or **Use it as it is** (empty, or the data folder of an earlier installation). The choice is kept in

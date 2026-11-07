@@ -123,6 +123,10 @@ button:disabled { opacity: .45; cursor: default; }
 .spacer { flex: 1; }
 .hrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 0; border-top: 1px solid var(--line); }
 .hrow.r1 { border-top: 0; padding-top: 0; row-gap: 6px; }
+.updnotes { max-height: 46vh; overflow: auto; border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px;
+  font-size: 13px; background: var(--bg); }
+.updnotes h3 { font-size: 14px; margin: 10px 0 4px; } .updnotes h4 { font-size: 13px; margin: 8px 0 2px; }
+.updnotes ul { margin: 2px 0 6px; padding-left: 18px; } .updnotes p { margin: 4px 0; }
 .hrow.r1 .io { display: flex; gap: 6px; width: 100%; }  /* Import, Export and Report bug share one line */
 .hrow.r1 .io > button { flex: 1 1 auto; padding-inline: 7px; gap: 5px; }
 /* in the panel: one control per line where it needs the width, the rest side by side */
@@ -1012,6 +1016,17 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <input type="number" id="anN" style="width:58px;height:28px"></label><span class="spacer"></span>
     <button id="anAsk" hidden title="Ask the agent what this result may mean">Ask Agent</button><button id="anFig" hidden title="Save the figure as a PDF file">Save figure…</button><button id="anCsv">Save CSV…</button><button id="anClose">Close</button></div>
   <div class="imbody"><div class="hint" id="anSub"></div><div id="anBody"></div><div id="anLegend" class="cmplegend"></div><div class="hint" id="anNote"></div></div>
+</dialog>
+<dialog id="updDlg" style="width:min(620px,94vw)">
+  <div class="dh"><b id="updTitle">A new version</b><span class="spacer"></span><span class="hint" id="updHave"></span></div>
+  <div style="padding:12px 14px;display:flex;flex-direction:column;gap:10px">
+    <div id="updNotes" class="updnotes"></div>
+    <div id="updProg" class="row" hidden><progress id="updBar" max="1" value="0" style="flex:1"></progress><span class="hint" id="updPct"></span></div>
+    <div class="hint" id="updHint"></div>
+    <div class="row"><span class="err" id="updErr"></span><span class="spacer"></span>
+      <button id="updSkip" title="Do not offer this version again (About > Check for updates still finds it)">Skip this version</button>
+      <button id="updLater">Later</button><button id="updGo" class="primary">Download and install</button></div>
+  </div>
 </dialog>
 <dialog id="bugDlg" style="width:min(580px,94vw)">
   <div class="dh"><b>Report a bug</b><span class="spacer"></span></div>
@@ -3960,7 +3975,8 @@ async function showAbout() {
       <button id="hpTrashSet">Set</button> <button id="hpTrashEmpty" class="danger">Empty trash</button>
       <div class="hint">What Reset, Remove sample and the cell filter moved away (${cache.trash_entries} removal${cache.trash_entries === 1 ? "" : "s"}), in <code>${esc(cache.trash_path)}</code>; past the limit the oldest are deleted for good.</div>`]);
   $("hpBody").innerHTML = `<dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>
-    <button id="hpCopy">Copy for a bug report</button>`;
+    <button id="hpCopy">Copy for a bug report</button>${native() && native().update_check ? ` <button id="hpUpdate">Check for updates</button>` : ""}`;
+  if ($("hpUpdate")) $("hpUpdate").onclick = () => checkForUpdate(true);
   if ($("hpOpenData")) $("hpOpenData").onclick = () => post("/api/open_folder", { which: "data" }).catch((e) => toast(e.message, 6000));
   if ($("hpMoveData")) $("hpMoveData").onclick = () => changeDataFolder(d.data_folder);
   const cacheDo = async (body, what) => {
@@ -4083,6 +4099,88 @@ $("bugUpload").onclick = () => {
     $("bugMsg").textContent = `Uploaded ${up.uploaded} (${(up.bytes / 2 ** 10).toFixed(0)} KB). Thank you: the developers will look at it.`;
     $("bugNote").value = "";
   });
+};
+// ---------------- updates of the desktop app (updater.py): offered at start, downloaded and installed here ----------------
+const UPD = { info: null, timer: null };
+function releaseNotes(md) {  // the release's Markdown, enough of it to read: headings, lists, bold, code, links as text
+  const esc = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const inline = (t) => esc(t).replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
+  let html = "", list = false, skip = false, para = [];
+  const flush = () => { if (para.length) { html += `<p>${inline(para.join(" "))}</p>`; para = []; } };
+  for (const raw of String(md || "").split(/\r?\n/)) {
+    const line = raw.trimEnd();
+    const h = line.match(/^(#{2,4})\s+(.*)/);
+    if (h) skip = /^downloads?$/i.test(h[2].trim());
+    if (skip) continue;
+    if (/^\s*[-*]\s+/.test(line)) { flush(); if (!list) { html += "<ul>"; list = true; } html += `<li>${inline(line.replace(/^\s*[-*]\s+/, ""))}</li>`; continue; }
+    if (list && /^\s{2,}\S/.test(line)) { html = html.replace(/<\/li>$/, ` ${inline(line.trim())}</li>`); continue; }
+    if (list) { html += "</ul>"; list = false; }
+    if (h) { flush(); html += h[1].length <= 2 ? `<h3>${inline(h[2])}</h3>` : `<h4>${inline(h[2])}</h4>`; }
+    else if (/^\|/.test(line)) continue;  // tables (the downloads)
+    else if (line.trim()) para.push(line.trim());  // a paragraph wrapped over several lines
+    else flush();
+  }
+  flush();
+  return html + (list ? "</ul>" : "");
+}
+function showUpdate(u) {
+  UPD.info = u;
+  $("updTitle").textContent = `STAnnotator ${u.latest} is available`;
+  $("updHave").textContent = `you have ${u.current}`;
+  $("updNotes").innerHTML = releaseNotes(u.notes) || `<p class="hint">No release notes.</p>`;
+  $("updErr").textContent = ""; $("updProg").hidden = true; $("updSkip").hidden = false; $("updLater").textContent = "Later";
+  const mac = u.platform ? u.platform === "mac" : /Mac/i.test(navigator.platform || navigator.userAgent);
+  $("updHint").textContent = !u.can_install ? "Download it from the release page and install it as the first time." :
+    (mac ? "The app closes, is replaced by the new version and opens again." :
+           "The app closes, the new version installs into the same folder (Windows may ask for permission) and opens again.") +
+    " Your data, annotations and settings stay as they are." + (st.remote ? " Update STAnnotator on the server too, to the same version." : "");
+  $("updGo").textContent = u.can_install ? "Download and install" : "Open the release page"; $("updGo").disabled = false;
+  if (!$("updDlg").open) $("updDlg").showModal();
+}
+async function checkForUpdate(force) {
+  if (!native() || !native().update_check) return;
+  const u = await native().update_check(!!force);
+  if (u.error) { if (force) toast(u.error, 7000); return; }
+  if (u.available && (force || !u.skipped)) showUpdate(u);
+  else if (force) toast(u.available ? `${u.latest} was skipped; showing it again` : `STAnnotator ${u.current} is the latest version`, 5000);
+}
+function updProgress(s) {
+  $("updProg").hidden = false;
+  const mb = (b) => (b / 2 ** 20).toFixed(0);
+  $("updBar").max = s.total || 1; $("updBar").value = s.done || 0;
+  $("updPct").textContent = s.total ? `${mb(s.done)} of ${mb(s.total)} MB` : `${mb(s.done)} MB`;
+}
+$("updLater").onclick = () => {
+  if (UPD.timer) { clearInterval(UPD.timer); UPD.timer = null; native().update_stop(); }
+  $("updDlg").close();
+};
+$("updSkip").onclick = async () => { if (UPD.info) await native().update_skip(UPD.info.latest); $("updDlg").close(); };
+$("updGo").onclick = async () => {
+  const u = UPD.info; if (!u) return;
+  if (!u.can_install) { native().open_url(u.page); return; }
+  $("updErr").textContent = "";
+  const s = await native().update_state();
+  if (s.ready && s.version === u.latest) {  // downloaded: install, the app closes and opens again
+    $("updGo").disabled = true; $("updGo").textContent = "Installing…";
+    const r = await native().update_install();
+    if (r.error) { $("updErr").textContent = r.error; $("updGo").disabled = false; $("updGo").textContent = "Install and restart"; return; }
+    $("updHint").textContent = r.mode === "finder" ? r.note : "Closing to install the update…";
+    return;
+  }
+  const st0 = await native().update_download();
+  if (st0.error) { $("updErr").textContent = st0.error; return; }
+  $("updGo").disabled = true; $("updGo").textContent = "Downloading…"; $("updSkip").hidden = true; $("updLater").textContent = "Stop";
+  updProgress(st0);
+  UPD.timer = setInterval(async () => {
+    const s = await native().update_state();
+    updProgress(s);
+    if (s.error || s.ready) {
+      clearInterval(UPD.timer); UPD.timer = null; $("updLater").textContent = "Later"; $("updGo").disabled = false;
+      if (s.error) { $("updErr").textContent = s.error === "stopped" ? "" : `The download failed: ${s.error}`; $("updGo").textContent = "Download and install"; }
+      else { $("updGo").textContent = "Install and restart"; $("updHint").textContent = "Downloaded. " + $("updHint").textContent; }
+    }
+  }, 500);
 };
 function showHelp(tab) {
   $("hpHow").classList.toggle("on", tab === "how"); $("hpAbout").classList.toggle("on", tab === "about");
@@ -5964,7 +6062,7 @@ $("xpReg").onclick = () => exportAs("registration");
 $("xpPos").onclick = () => exportAs("positions");
 $("xpGeo").onclick = () => exportAs("regions");
 document.addEventListener("keydown", (e) => {
-  if ($("mkDlg").open || $("rpDlg").open || $("bugDlg").open || $("hpDlg").open || $("xpDlg").open || $("glDlg").open || $("anDlg").open || $("rvDlg").open || $("nameDlg").open || $("rnDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
+  if ($("mkDlg").open || $("rpDlg").open || $("bugDlg").open || $("updDlg").open || $("hpDlg").open || $("xpDlg").open || $("glDlg").open || $("anDlg").open || $("rvDlg").open || $("nameDlg").open || $("rnDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
   if (e.key === "h") $("hide").click();
   if (e.key === "e") $("hideHE").click();
   if (e.key === "[") stepSlice(-1);
@@ -6084,7 +6182,8 @@ api("/api/config").then((c) => {  // the desktop app (or no Claude Code CLI): th
   // pywebview first puts an empty window.pywebview.api, adds its functions a moment later, then fires pywebviewready:
   // wait until the functions are there (polling as well, in case the event fired before this listener)
   let tries = 0;
-  const ready = () => (native() && native().connection ? initConnection(c.remote).catch(() => {})
+  const ready = () => (native() && native().connection
+    ? (initConnection(c.remote).catch(() => {}), setTimeout(() => checkForUpdate(false).catch(() => {}), 4000))
     : ++tries < 300 && setTimeout(ready, 100));
   if (window.pywebview) ready();
   else window.addEventListener("pywebviewready", ready, { once: true });

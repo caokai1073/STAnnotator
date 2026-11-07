@@ -69,6 +69,7 @@ class Api:
         self._local_url = local_url
         self._conn = None
         self._auto_tried = False
+        self._update = None  # the download of a newer release (updater.Download)
 
     def pick(self, kind, multiple=False):
         import webview
@@ -199,6 +200,54 @@ class Api:
         except OSError as e:
             return {"error": str(e)}
 
+    # ---- updates (updater.py) ----
+    def update_check(self, force=False):
+        """The latest release and whether it is newer than this app (GitHub, at most every few hours unless force)."""
+        from . import updater
+        try:
+            return updater.check(bool(force))
+        except Exception as e:
+            return {"error": str(e)}
+
+    def update_download(self):
+        """Fetch the installer of the newer release in the background; poll update_state."""
+        from . import updater
+        info = updater.check()
+        if not info.get("available") or not info.get("can_install"):
+            return {"error": "no update to install in this app"}
+        d = self._update
+        if not d or d.error or d.info["version"] != info["latest"]:
+            self._update = updater.Download({"version": info["latest"], "asset": info["asset"]})
+        return self._update.state()
+
+    def update_state(self):
+        return self._update.state() if self._update else {}
+
+    def update_stop(self):
+        if self._update and not self._update.path:
+            self._update.stop = True
+        return {"ok": True}
+
+    def update_install(self):
+        """Install the downloaded update; the app closes and opens again (macOS: replaced in place; Windows: the
+        installer runs silently)."""
+        from . import updater
+        d = self._update
+        if not d or not d.path:
+            return {"error": "the update is not downloaded yet"}
+        try:
+            r = updater.install(d.path)
+        except Exception as e:
+            return {"error": str(e)}
+        if r["mode"] in ("replace", "installer"):
+            threading.Timer(1.0, self._window.destroy).start()  # quit, so that the app can be replaced
+        return r
+
+    def update_skip(self, version):
+        from . import updater
+        updater.skip(str(version))
+        return {"ok": True}
+
     def _close(self):
         if self._conn:
             self._conn.stop()
@@ -227,6 +276,8 @@ def main(argv=None):
     a = ap.parse_args(argv)
     os.environ["STAGENT_DESKTOP"] = "1"  # the page then offers Claude Code instead of a chat box
     config.ensure_dirs()
+    from . import updater
+    threading.Thread(target=updater.cleanup, daemon=True).start()  # installers of earlier updates
     port = free_port(a.port)
     server = start_server(port)
     url = f"http://127.0.0.1:{port}/"
