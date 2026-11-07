@@ -15,7 +15,7 @@ from PIL import Image, ImageDraw
 from scipy.spatial import cKDTree
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import FileResponse, Response, StreamingResponse
+from starlette.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from . import config, vocab, mcp_server, review_app, render
@@ -1890,7 +1890,8 @@ def api_diagnostics(req):
     return _json(_about())
 
 
-def _about():
+def _about(sizes=True):
+    """sizes: count the data folder's samples and bytes (slow on a large folder; a bug report leaves it out)."""
     import importlib.metadata as md, platform
     def ver(pkg):
         try:
@@ -1899,7 +1900,12 @@ def _about():
             return None
     n_samples = sum(1 for d in config.SAMPLES.iterdir() if (d / "meta.json").exists()) if config.SAMPLES.exists() else 0
     n_sessions = sum(1 for d in config.SESSIONS.iterdir() if (d / "session.json").exists()) if config.SESSIONS.exists() else 0
-    size = sum(f.stat().st_size for f in config.HOME.rglob("*") if f.is_file()) if config.HOME.exists() else 0
+    def size_of(f):
+        try:
+            return f.stat().st_size if f.is_file() else 0
+        except OSError:  # removed meanwhile (a cache file, a download put in place)
+            return 0
+    size = sum(size_of(f) for f in config.HOME.rglob("*")) if sizes and config.HOME.exists() else 0
     from . import __version__
     return {"version": __version__, "build": config.build(), "app": "desktop app" if desktop_mode() else "web viewer",
                   "standalone": bool(config.FROZEN), "system": f"{platform.system()} {platform.release()} ({platform.machine()})",
@@ -1941,23 +1947,23 @@ async def api_bug_save(req: Request):
                                                    "app_log")]
     errors = b.get("page_errors")
     note = str(b.get("note", ""))[:20000]
-    about = await asyncio.to_thread(_about)
+    about = await asyncio.to_thread(_about, False)
     if b.get("path"):
         if not desktop_mode():
             return _json({"error": "only in the desktop app"}, 403)
         dest = Path(b["path"]).expanduser()
         try:
             return _json(await asyncio.to_thread(report.build, dest, about, days, parts, sid, note, errors))
-        except OSError as e:
-            return _json({"error": str(e)}, 400)
+        except Exception as e:
+            return _json({"error": f"the report could not be made: {e}"}, 400)
     REPORTS.mkdir(parents=True, exist_ok=True)
     for old in sorted(REPORTS.glob("*.zip"), key=lambda p: p.stat().st_mtime)[:-2]:  # keep the last few
         old.unlink(missing_ok=True)
     key = uuid.uuid4().hex[:12]
     try:
         info = await asyncio.to_thread(report.build, REPORTS / f"{key}.zip", about, days, parts, sid, note, errors)
-    except OSError as e:
-        return _json({"error": str(e)}, 400)
+    except Exception as e:
+        return _json({"error": f"the report could not be made: {e}"}, 400)
     return _json({"key": key, **info})
 
 
@@ -1985,9 +1991,9 @@ async def api_bug_upload(req: Request):
         return _json({"error": "this report is gone: make it again"}, 404)
     name = re.sub(r"[^A-Za-z0-9_.-]", "_", str(b.get("name") or f"{key}.zip"))[:120]
     try:
-        about = await asyncio.to_thread(_about)
+        about = await asyncio.to_thread(_about, False)
         return _json(await asyncio.to_thread(report.upload, f, name, about, str(b.get("note", "")), str(b.get("from", ""))))
-    except (ValueError, OSError) as e:
+    except Exception as e:
         return _json({"error": str(e)}, 400)
 
 
@@ -3083,15 +3089,49 @@ def build_app(port):
         Route("/api/markers/organ_draft", api_markers_organ_draft, methods=["POST"]),
         Route("/api/claude/markers", api_claude_markers, methods=["POST"]),
     ] + [r for r in review_app.app.routes if r.path != "/"] + list(mcp_http.routes)
-    return Starlette(routes=routes, lifespan=lifespan)
+    return SameOrigin(Starlette(routes=routes, lifespan=lifespan))
+
+
+LOOPBACK = {"127.0.0.1", "localhost", "[::1]", "::1"}
+OPEN_HOST = False  # set when the viewer is served on another address than this computer's (--host)
+
+
+class SameOrigin:
+    """Only the app's own page, and clients that are not browsers (Claude Code, the app itself), may change things:
+    a page of another site open in the user's browser can send requests to 127.0.0.1 (and could make the app write
+    files, delete annotations or send a bug report elsewhere), but its browser marks them with that page's Origin,
+    which must then be this server's own. The Host must be this computer (a site that points its own name at
+    127.0.0.1 would otherwise read the answers), unless the viewer was served on another address on purpose."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            h = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers") or []}
+            host = h.get("host", "")
+            name = host.split("]")[0] + "]" if host.startswith("[") else host.rsplit(":", 1)[0]
+            bad = None
+            if host and not OPEN_HOST and name.lower() not in LOOPBACK:
+                bad = f"this viewer answers only on this computer (host {host})"
+            elif scope["method"] not in ("GET", "HEAD", "OPTIONS"):
+                origin = h.get("origin")
+                if origin and origin.lower() != f"{scope.get('scheme', 'http')}://{host}".lower():
+                    bad = f"a request from another page ({origin}) was refused"
+            if bad:
+                await JSONResponse({"error": bad}, status_code=403)(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
 
 
 def main():
     import uvicorn
+    global OPEN_HOST
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8765)
     a = ap.parse_args()
+    OPEN_HOST = a.host not in LOOPBACK
     uvicorn.run(build_app(a.port), host=a.host, port=a.port, log_level="warning")
 
 

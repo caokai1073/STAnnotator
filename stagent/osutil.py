@@ -94,3 +94,17 @@ def open_folder(path):
         subprocess.Popen(["open", path])
     else:
         subprocess.Popen(["xdg-open", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def https_context():
+    """TLS for the app's own requests to the internet (updates, bug reports): the system's certificates and certifi's.
+    The built app's Python may not find the system's (macOS keeps them in the Keychain, out of OpenSSL's reach);
+    certifi comes with the app."""
+    import ssl
+    ctx = ssl.create_default_context()
+    try:
+        import certifi
+        ctx.load_verify_locations(certifi.where())
+    except Exception:
+        pass
+    return ctx

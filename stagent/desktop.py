@@ -70,6 +70,7 @@ class Api:
         self._conn = None
         self._auto_tried = False
         self._update = None  # the download of a newer release (updater.Download)
+        self._update_lock = threading.Lock()
 
     def pick(self, kind, multiple=False):
         import webview
@@ -172,7 +173,9 @@ class Api:
         from . import report
         if not self._conn:
             return {"error": "not connected to a server"}
-        tmp = Path(tempfile.mkdtemp()) / name
+        import shutil
+        folder = Path(tempfile.mkdtemp())
+        tmp = folder / name
         try:
             self._conn.download(path, str(tmp))
             report.add_local(tmp, int(days), parts)
@@ -180,7 +183,7 @@ class Api:
         except Exception as e:
             return {"error": str(e)}
         finally:
-            tmp.unlink(missing_ok=True)
+            shutil.rmtree(folder, ignore_errors=True)
 
     def report_link(self, url=None):
         """The upload link on this computer (with the app on a server the upload goes from here): its status, or with
@@ -195,9 +198,9 @@ class Api:
 
     def write_text(self, path, text):
         try:
-            Path(path).write_text(text)
+            Path(path).write_text(text, encoding="utf-8")  # (the Windows code page would fail on "…", "µ")
             return {"saved": path}
-        except OSError as e:
+        except (OSError, UnicodeError) as e:
             return {"error": str(e)}
 
     # ---- updates (updater.py) ----
@@ -212,13 +215,14 @@ class Api:
     def update_download(self):
         """Fetch the installer of the newer release in the background; poll update_state."""
         from . import updater
-        info = updater.check()
-        if not info.get("available") or not info.get("can_install"):
-            return {"error": "no update to install in this app"}
-        d = self._update
-        if not d or d.error or d.info["version"] != info["latest"]:
-            self._update = updater.Download({"version": info["latest"], "asset": info["asset"]})
-        return self._update.state()
+        with self._update_lock:  # a double click starts one download, not two
+            info = updater.check()
+            if not info.get("available") or not info.get("can_install"):
+                return {"error": "no update to install in this app"}
+            d = self._update
+            if not d or d.error or d.info["version"] != info["latest"]:
+                self._update = updater.Download({"version": info["latest"], "asset": info["asset"]})
+            return self._update.state()
 
     def update_state(self):
         return self._update.state() if self._update else {}

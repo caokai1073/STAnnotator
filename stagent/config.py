@@ -35,9 +35,14 @@ def read_settings():
 
 
 def write_settings(**kw):
+    """Written whole and then put in place: another process (Claude Code starting the agent's tools) reading it at
+    that moment would otherwise get half a file, take it for none and use the default data folder."""
     f = settings_file()
     f.parent.mkdir(parents=True, exist_ok=True)
-    json.dump(read_settings() | kw, open(f, "w", encoding="utf-8"), indent=1)
+    tmp = f.with_name(f"{f.name}.{os.getpid()}.tmp")
+    with open(tmp, "w", encoding="utf-8") as out:
+        json.dump(read_settings() | kw, out, indent=1)
+    os.replace(tmp, f)
 
 
 def _home():

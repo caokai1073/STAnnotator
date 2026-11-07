@@ -37,6 +37,9 @@ def _log_streams(to_file=False):
         log.parent.mkdir(parents=True, exist_ok=True)
         if log.exists() and log.stat().st_size > LOG_MB * 1e6:
             log.replace(log.with_suffix(".old.log"))
+    except OSError:  # another instance holds it (Windows): keep writing to it
+        pass
+    try:
         f = open(log, "a", encoding="utf-8", buffering=1)
     except OSError:
         f = open(os.devnull, "w")

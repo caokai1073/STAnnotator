@@ -230,7 +230,10 @@ def _log_calls(manager):
     manager.call_tool = logged
 
 
-_log_calls(mcp._tool_manager)
+try:
+    _log_calls(mcp._tool_manager)  # FastMCP's internals: without them the tools still work, unlogged
+except AttributeError:
+    pass
 
 
 def _heartbeat():

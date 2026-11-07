@@ -50,7 +50,8 @@ def can_install():
 def _fetch_latest(timeout=15):
     import urllib.request
     req = urllib.request.Request(API, headers={"Accept": "application/vnd.github+json", "User-Agent": "STAnnotator-app"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
+    from .osutil import https_context
+    with urllib.request.urlopen(req, timeout=timeout, context=https_context()) as r:
         rel = json.loads(r.read().decode("utf-8"))
     want = {"mac": ".dmg", "win": ".exe"}.get(_platform())
     asset = next((a for a in rel.get("assets", []) if want and a.get("name", "").lower().endswith(want)), None)
@@ -59,14 +60,31 @@ def _fetch_latest(timeout=15):
             "asset": {"name": asset["name"], "url": asset["browser_download_url"], "bytes": asset.get("size")} if asset else None}
 
 
+def _cache_file():
+    """The last answer from GitHub, beside the settings but not in them (the notes are long)."""
+    return config.settings_file().with_name("update.json")
+
+
+def _cached():
+    try:
+        return json.loads(_cache_file().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
 def check(force=False):
     """{current, latest, available, can_install, skipped, ...}; asks GitHub at most every CHECK_EVERY seconds."""
     st = config.read_settings()
-    cached = st.get("update_latest") or {}
-    if force or not cached or time.time() - st.get("update_checked", 0) > CHECK_EVERY:
+    c = _cached()
+    cached = c.get("latest") or {}
+    if force or not cached or time.time() - c.get("checked", 0) > CHECK_EVERY:
         try:
             cached = _fetch_latest()
-            config.write_settings(update_latest=cached, update_checked=time.time())
+            f = _cache_file()
+            f.parent.mkdir(parents=True, exist_ok=True)
+            tmp = f.with_name(f"update.{os.getpid()}.tmp")
+            tmp.write_text(json.dumps({"latest": cached, "checked": time.time()}), encoding="utf-8")
+            os.replace(tmp, f)
         except Exception as e:
             if not cached:
                 return {"current": __version__, "available": False, "error": f"could not reach GitHub: {e}"}
@@ -100,10 +118,11 @@ class Download:
         import urllib.request
         a = self.info["asset"]
         dest = _folder() / a["name"]
-        tmp = dest.with_name(dest.name + ".part")
+        tmp = dest.with_name(f"{dest.name}.{id(self)}.part")  # its own, should a second download ever start
         try:
             req = urllib.request.Request(a["url"], headers={"User-Agent": "STAnnotator-app"})
-            with urllib.request.urlopen(req, timeout=60) as r, open(tmp, "wb") as f:
+            from .osutil import https_context
+            with urllib.request.urlopen(req, timeout=60, context=https_context()) as r, open(tmp, "wb") as f:
                 self.total = int(r.headers.get("Content-Length") or self.total or 0)
                 while not self.stop:
                     chunk = r.read(1 << 20)
@@ -145,23 +164,34 @@ exec >>"$LOG" 2>&1
 echo "== update $(date)"
 case "$APP" in /*.app) ;; *) echo "not an app bundle: $APP"; open "$DMG"; exit 1;; esac
 for i in $(seq 1 120); do kill -0 "$PID" 2>/dev/null || break; sleep 0.5; done
+if kill -0 "$PID" 2>/dev/null; then echo "the app did not quit"; open "$DMG"; exit 1; fi
 MNT=$(mktemp -d /tmp/stannotator-update.XXXXXX)
 if ! hdiutil attach -nobrowse -noautoopen -mountpoint "$MNT" "$DMG"; then open "$DMG"; exit 1; fi
 NEW="$MNT/STAnnotator.app"
-if [ ! -d "$NEW" ]; then hdiutil detach "$MNT" -quiet; open "$DMG"; exit 1; fi
+[ -d "$NEW" ] || NEW=$(find "$MNT" -maxdepth 1 -name "*.app" -type d | head -1)
+[ -n "$NEW" ] && [ -d "$NEW" ] || { [ -f "$MNT/Contents/Info.plist" ] && NEW="$MNT"; }   # the bundle's contents at the volume's root
+if [ -z "$NEW" ] || [ ! -f "$NEW/Contents/Info.plist" ]; then hdiutil detach "$MNT" -quiet; open "$DMG"; exit 1; fi
+# the new app is copied beside the old one first; the old one is then moved aside in one step (a rename either
+# happens or not, unlike a deletion that macOS's App Management protection could stop half way) and deleted only
+# once the new one is in its place
 STAGE="$(dirname "$APP")/.STAnnotator-update.app"
-rm -rf "$STAGE"
-if ditto "$NEW" "$STAGE" && rm -rf "$APP" && mv "$STAGE" "$APP"; then
-  hdiutil detach "$MNT" -quiet; rmdir "$MNT" 2>/dev/null
-  rm -f "$DMG"
-  open "$APP"
-  echo "updated $APP"
-else
-  rm -rf "$STAGE"
-  hdiutil detach "$MNT" -quiet
-  open "$DMG"   # could not write there: the user drags the app over
-  echo "could not replace $APP; opened the DMG"
+OLD="$(dirname "$APP")/.STAnnotator-old.app"
+rm -rf "$STAGE" "$OLD"
+if ditto "$NEW" "$STAGE" && mv "$APP" "$OLD"; then
+  if mv "$STAGE" "$APP"; then
+    rm -rf "$OLD"
+    hdiutil detach "$MNT" -quiet; rmdir "$MNT" 2>/dev/null
+    rm -f "$DMG"
+    open "$APP"
+    echo "updated $APP"
+    exit 0
+  fi
+  mv "$OLD" "$APP"   # put the old app back
 fi
+rm -rf "$STAGE"
+hdiutil detach "$MNT" -quiet; rmdir "$MNT" 2>/dev/null
+open "$DMG"   # could not write there: the user drags the app over
+echo "could not replace $APP; opened the DMG"
 '''
 
 
@@ -187,11 +217,14 @@ def install(path):
         exe = Path(sys.executable).resolve()
         q = lambda x: "'" + str(x).replace("'", "''") + "'"
         # /SILENT shows only the progress; Inno Setup keeps the folder and the privileges of the installation it
-        # updates and closes this app (CloseApplications); then the app starts again. PowerShell gets the command
+        # updates and closes this app and what else runs from its folder (the agent's tools Claude Code started:
+        # /FORCECLOSEAPPLICATIONS), then the app starts again; the log path is quoted (a user folder with a space,
+        # which Windows PowerShell would otherwise split). PowerShell gets the command
         # as UTF-16, so folders with non-ASCII names (a Chinese user name) work, which a .cmd file in the code page
         # would not.
         ps = (f"Start-Process -FilePath {q(path)} -Wait -ArgumentList "
-              f"'/SILENT','/SP-','/SUPPRESSMSGBOXES','/NOCANCEL','/CLOSEAPPLICATIONS',{q(f'/LOG={log}')}; "
+              f"'/SILENT','/SP-','/SUPPRESSMSGBOXES','/NOCANCEL','/CLOSEAPPLICATIONS','/FORCECLOSEAPPLICATIONS',"
+              f"{q(f'/LOG={chr(34)}{log}{chr(34)}')}; "
               f"Start-Process -FilePath {q(exe)}")
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
         subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-EncodedCommand",

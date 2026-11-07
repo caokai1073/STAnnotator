@@ -83,13 +83,17 @@ def _claude_dir():
 
 def project_dir(folder):
     """Where Claude Code keeps the conversations it had in this working folder: the folder's path with every
-    character other than a letter or digit made '-' (long names are cut at 200 characters and given a hash)."""
-    name = re.sub(r"[^A-Za-z0-9]", "-", str(Path(folder).resolve()))
+    character other than a letter or digit made '-' (long names are cut at 200 characters and given a hash). The
+    path as given is tried first, then resolved (a mapped drive on Windows, a symbolic link)."""
     base = _claude_dir() / "projects"
-    if len(name) <= 200:
-        return base / name
-    hits = sorted(base.glob(name[:200] + "*")) if base.exists() else []
-    return hits[0] if hits else base / name
+    cands = []
+    for p in dict.fromkeys([str(Path(folder).absolute()), str(Path(folder).resolve())]):
+        name = re.sub(r"[^A-Za-z0-9]", "-", p)
+        if len(name) <= 200:
+            cands.append(base / name)
+        elif base.exists():
+            cands += sorted(base.glob(name[:200] + "*"))
+    return next((d for d in cands if d.is_dir()), cands[0] if cands else base / "none")
 
 
 def _agent_folders():
@@ -145,13 +149,22 @@ def _drop_images(o):
 
 
 def _clean_transcript(path):
+    """Line by line (a long conversation with many images can be hundreds of MB before they are left out)."""
     lines = []
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        try:
-            lines.append(json.dumps(_drop_images(json.loads(line)), ensure_ascii=False))
-        except ValueError:
-            lines.append(line)
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            line = line.rstrip("\n")
+            try:
+                lines.append(json.dumps(_drop_images(json.loads(line)), ensure_ascii=False))
+            except ValueError:
+                lines.append(line)
     return "\n".join(lines) + "\n"
+
+
+def _put(z, name, text):
+    """Text into the zip as UTF-8; a broken character (half an emoji cut off in a message) becomes '?' rather than
+    stopping the whole report."""
+    z.writestr(name, text.encode("utf-8", errors="replace") if isinstance(text, str) else text)
 
 
 # ---------------- the rest ----------------
@@ -253,12 +266,19 @@ def build(dest, about, days=7, parts=("conversations", "calls", "proposals", "an
     dest = Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_name(dest.name + ".part")
+    try:
+        return _build(tmp, dest, about, days, since, parts, sid, note, page_errors)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def _build(tmp, dest, about, days, since, parts, sid, note, page_errors):
     n = {"conversations": 0, "calls": 0, "proposals": 0, "annotation": 0, "app_log": 0, "page_errors": 0}
     skipped = []
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
         if note.strip():
-            z.writestr("note.txt", note.strip() + "\n")
-        z.writestr("about.json", json.dumps(about, indent=1, default=str, ensure_ascii=False))
+            _put(z, "note.txt", note.strip() + "\n")
+        _put(z, "about.json", json.dumps(about, indent=1, default=str, ensure_ascii=False))
         if "conversations" in parts:
             total = 0
             for p, name in transcripts(since):
@@ -270,12 +290,12 @@ def build(dest, about, days=7, parts=("conversations", "calls", "proposals", "an
                     skipped.append(name)
                     continue
                 total += len(text)
-                z.writestr(name, text)
+                _put(z, name, text)
                 n["conversations"] += "/subagents/" not in name
         if "calls" in parts:
             calls = _recent_calls(since)
             if calls:
-                z.writestr("agent_calls.jsonl", "\n".join(calls) + "\n")
+                _put(z, "agent_calls.jsonl", "\n".join(calls) + "\n")
             n["calls"] = len(calls)
         if "proposals" in parts:
             for p in _proposals(since):
@@ -292,15 +312,15 @@ def build(dest, about, days=7, parts=("conversations", "calls", "proposals", "an
         if "page_errors" in parts:
             errs = _page_errors(page_errors)
             if errs:
-                z.writestr("page_errors.json", json.dumps(errs, indent=1, ensure_ascii=False))
+                _put(z, "page_errors.json", json.dumps(errs, indent=1, ensure_ascii=False))
             n["page_errors"] = len(errs)
         if "app_log" in parts:
             for p, name in app_logs():
                 with open(p, "rb") as f:
                     f.seek(max(0, p.stat().st_size - LOG_TAIL))
-                    z.writestr(f"logs/{name}", f.read())
+                    _put(z, f"logs/{name}", f.read())
                 n["app_log"] += 1
-        z.writestr("README.txt", _readme(about, days, parts, sid if n["annotation"] else None))
+        _put(z, "README.txt", _readme(about, days, parts, sid if n["annotation"] else None))
     os.replace(tmp, dest)
     return {"saved": str(dest), "bytes": dest.stat().st_size, "included": n, "left_out": skipped}
 
@@ -322,19 +342,19 @@ def add_local(zip_path, days=7, parts=("conversations", "app_log")):
                 if total + len(text) > TRANSCRIPT_MAX:
                     continue
                 total += len(text)
-                z.writestr(name, text)
+                _put(z, name, text)
                 n["conversations"] += "/subagents/" not in name
         if "app_log" in parts:
             for p, name in app_logs():
                 with open(p, "rb") as f:
                     f.seek(max(0, p.stat().st_size - LOG_TAIL))
-                    z.writestr(f"local/logs/{name}", f.read())
+                    _put(z, f"local/logs/{name}", f.read())
                 n["app_log"] += 1
     return n
 
 
 # ---------------- upload to the developers (packaging/report_receiver.gs, a Google Apps Script web app) ----------------
-UPLOAD_MAX = 40 * 2 ** 20
+UPLOAD_MAX = 35 * 2 ** 20  # sent as base64 (x 4/3): Apps Script takes requests up to about 50 MB
 _URL = re.compile(r"https://script\.google(usercontent)?\.com/macros/s/[A-Za-z0-9_-]+/exec")
 
 
@@ -374,7 +394,8 @@ def _request(url, payload=None, timeout=120):
     import urllib.request
     data = None if payload is None else json.dumps(payload).encode()
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"} if data else {})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
+    from .osutil import https_context
+    with urllib.request.urlopen(req, timeout=timeout, context=https_context()) as r:
         text = r.read().decode("utf-8", errors="replace")
     try:
         return json.loads(text)
@@ -399,7 +420,7 @@ def upload(path, name, about=None, note="", sender="", url=None):
     path = Path(path)
     size = path.stat().st_size
     if size > UPLOAD_MAX:
-        raise ValueError(f"the report is {size / 2 ** 20:.0f} MB, more than the upload takes (40 MB): "
+        raise ValueError(f"the report is {size / 2 ** 20:.0f} MB, more than the upload takes (35 MB): "
                          "choose fewer days or leave the conversations out, or save it and send it")
     about = about or {}
     r = _request(url, {"name": name, "data": base64.b64encode(path.read_bytes()).decode(),

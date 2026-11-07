@@ -9,13 +9,13 @@
 // The receiver can only add files to the folder; a link that leaked is replaced by a new deployment.
 
 const FOLDER_ID = "PASTE_THE_FOLDER_ID_HERE";
-const MAX_BYTES = 40 * 1024 * 1024;  // Apps Script takes requests up to about 50 MB (the report is sent as base64)
+const MAX_BYTES = 35 * 1024 * 1024;  // Apps Script takes requests up to about 50 MB (the report is sent as base64)
 const MAX_PER_DAY = 100;             // reports a day (UTC), whoever sends them
 
 function doPost(e) {
   const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
   try {
+    lock.waitLock(20000);
     const props = PropertiesService.getScriptProperties();
     const key = "count_" + Utilities.formatDate(new Date(), "UTC", "yyyy-MM-dd");
     const n = Number(props.getProperty(key) || 0);
@@ -23,7 +23,7 @@ function doPost(e) {
     const body = JSON.parse(e.postData.contents);
     const bytes = Utilities.base64Decode(body.data || "");
     if (!bytes.length) return reply({ error: "the report is empty" });
-    if (bytes.length > MAX_BYTES) return reply({ error: "the report is larger than 40 MB" });
+    if (bytes.length > MAX_BYTES) return reply({ error: "the report is larger than 35 MB" });
     const name = String(body.name || "STAnnotator-report.zip").replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 120);
     const file = DriveApp.getFolderById(FOLDER_ID).createFile(Utilities.newBlob(bytes, "application/zip", name));
     file.setDescription([`STAnnotator ${body.version || "?"} · ${body.system || ""}`, body.from || "",

@@ -4159,7 +4159,7 @@ $("updSkip").onclick = async () => { if (UPD.info) await native().update_skip(UP
 $("updGo").onclick = async () => {
   const u = UPD.info; if (!u) return;
   if (!u.can_install) { native().open_url(u.page); return; }
-  $("updErr").textContent = "";
+  $("updErr").textContent = ""; $("updGo").disabled = true;  // at once: a second click must not start a second download
   const s = await native().update_state();
   if (s.ready && s.version === u.latest) {  // downloaded: install, the app closes and opens again
     $("updGo").disabled = true; $("updGo").textContent = "Installing…";
@@ -4169,7 +4169,7 @@ $("updGo").onclick = async () => {
     return;
   }
   const st0 = await native().update_download();
-  if (st0.error) { $("updErr").textContent = st0.error; return; }
+  if (st0.error) { $("updErr").textContent = st0.error; $("updGo").disabled = false; return; }
   $("updGo").disabled = true; $("updGo").textContent = "Downloading…"; $("updSkip").hidden = true; $("updLater").textContent = "Stop";
   updProgress(st0);
   UPD.timer = setInterval(async () => {
