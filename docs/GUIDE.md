@@ -384,7 +384,9 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
      Compare / Signal**); **show on map** colors the map by a gene or a signal.
    Advice changes nothing until you click; **dismiss** hides it.
    The **Priors** list under Regions shows the priors of the annotation (the user's words and how they were read);
-   **×** removes one (Undo brings it back). **?** (top of the toolbar on the right) explains every control (**How to use**), summarizes the algorithm of every
+   **×** removes one (Undo brings it back). **?** (top of the toolbar on the right) explains every control (**How to use**), what to ask the agent and what
+   comes back (**Agent**: start, data in, alignment, marker lists, priors and corrections, regions, analyses, review,
+   reports, with example requests), summarizes the algorithm of every
    analysis (**Methods**: data, registration, regions, annotation, embedding, niches, compare, signal, trajectory, review)
    and, under **About**, shows the
    build, the data folder, whether Claude Code was found and when Claude last used the tools, with a button that

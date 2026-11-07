@@ -1054,7 +1054,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
 </dialog>
 <dialog id="hpDlg" style="width:min(760px,95vw)">
   <div class="dh"><b>STAnnotator</b><span class="spacer"></span>
-    <button id="hpHow" class="on">How to use</button><button id="hpMethods">Methods</button><button id="hpAbout">About</button><button id="hpClose">Close</button></div>
+    <button id="hpHow" class="on">How to use</button><button id="hpAgent">Agent</button><button id="hpMethods">Methods</button><button id="hpAbout">About</button><button id="hpClose">Close</button></div>
   <div id="hpBody" class="hpbody"></div>
 </dialog>
 <div class="toast" id="toast"></div>
@@ -3781,6 +3781,105 @@ const HELP = `
     parts out);</li>
   <li><b>Upload to the developers</b> sends it to their Google Drive folder (run from source, the app asks once for the
     upload link they gave you), or <b>Save to file…</b> keeps it on this computer to send yourself.</li></ul></li></ul>`;
+const AGENT = `
+<p class="hint">The agent is your own Claude Code, connected to this app. It works through the app's tools: it reads
+the numbers they compute and the H&amp;E views they draw, and it never invents a cell type, a region or a number.
+Anything that would change your data opens here in a review window first and is applied only when you click
+<b>Accept</b>.</p>
+
+<h3>Start</h3><ul>
+<li><b>Ask Agent</b> (bar on the map) opens Claude Code in its own window, already on the sample and annotation you
+  are looking at. Type in plain words, in any language.</li>
+<li>Other doors to the agent:<ul>
+  <li><b>Ask Agent</b> in a result window (DE genes, top genes, signaling, trajectory) sends that result to it.</li>
+  <li><b>Agent Review</b> (bar on the map): the agent reviews one part of the analysis.</li>
+  <li><b>Report → Ask Agent to write it</b>; in <b>Markers…</b>, <b>Refine with the agent</b>.</li></ul></li>
+<li>What comes back:<ul>
+  <li>An answer in Claude Code, with the numbers the tools computed (cells, shares, genes, p-values).</li>
+  <li>Figures it looked at (H&amp;E crops, maps, UMAPs), which it describes and can show you.</li>
+  <li>A <b>review window</b> in the app for every change: what it does, how many cells, a preview on the map;
+    <b>Accept</b> applies it as a new version, <b>Dismiss</b> drops it. <b>Undo</b> takes back all the agent did for one
+    request.</li></ul></li></ul>
+
+<h3>Bring data in</h3><ul>
+<li>“Import the CosMx files in ~/data/run1”, “import this Visium HD outs folder”, “open this H&amp;E for drawing
+  regions”.<ul>
+  <li>It finds the files, checks them and proposes the import; after Accept the sample appears in the app.</li></ul></li></ul>
+
+<h3>Put the cells on the H&amp;E</h3><ul>
+<li>“Align the H&amp;E” (an image without a registration file; also <b>Align with Agent</b>).<ul>
+  <li>It searches where the tissue lies on the image (rotation, mirroring, scale), refines the best candidate on the
+    nuclei and shows you the fit; after Accept the cells sit on the image.</li></ul></li>
+<li>“Check the registration”, “do a local registration for slice 1”.<ul>
+  <li>It measures the offset of the cells from the nuclei window by window over the whole tissue and proposes a
+    correction where they drift (local shifts up to 100 µm).</li></ul></li>
+<li>“Move the torn piece back”.<ul>
+  <li>It fits a torn or folded piece of tissue to the H&amp;E and proposes moving its cells; <b>Undo</b> or “undo the
+    piece move” puts them back.</li></ul></li></ul>
+
+<h3>Marker lists and annotation</h3><ul>
+<li>“Draft a marker list for this panel; it is human colon”.<ul>
+  <li>It starts from the built-in list of the organ, keeps the genes of your panel, completes it from the literature,
+    checks it and saves it: load it in <b>Markers…</b> and click <b>Annotate</b> (or ask it to run the annotation).</li></ul></li>
+<li>“Annotate with my reference ~/ref/colon.h5ad, labels in cell_type”, “use the annotation in this CSV”.<ul>
+  <li>It inspects the file (shared genes, label columns) and proposes the annotation.</li></ul></li>
+<li>“Which markers do not hold?”, “add a missing cell type”, “why are there so many Unassigned cells?”.<ul>
+  <li>It checks every marker against the data, explains what fails and proposes a revised list.</li></ul></li></ul>
+
+<h3>Tell it what you know: priors and corrections</h3><ul>
+<li>“Epithelial cells are only in the mucosa”, “plasma cells are rare in the muscularis”.<ul>
+  <li>It turns the sentence into a prior, shows how it reads it and how many cells would change, and asks before
+    adding it. The <b>Priors</b> list shows it; <b>×</b> removes it.</li></ul></li>
+<li>“The cells in region Crypts_2 are goblet cells”, “cluster c27 is Tuft cells”.<ul>
+  <li>A hand correction of those cells, proposed for Accept.</li></ul></li>
+<li>“Split the fibroblasts”, “re-cluster the T cells finer”.<ul>
+  <li>It previews a re-clustering with the genes of each new cluster and proposes it.</li></ul></li>
+<li>“What changed since version 3?”, “go back to version 3”.<ul>
+  <li>It lists the versions and differences, and proposes restoring an earlier one (nothing is deleted).</li></ul></li></ul>
+
+<h3>Regions</h3><ul>
+<li>“Draw the mucosa”, “outline the muscularis from the H&amp;E”.<ul>
+  <li>From the cells where they are dense, or from the H&amp;E itself (also on a sample of an H&amp;E only), guided by
+    built-in descriptions of the tissue for 13 organs; each outline opens for Accept and becomes a region.</li></ul></li>
+<li>“Fill the gaps between my regions”: cells left between regions you drew, checked on the H&amp;E, proposed for
+  their region.</li>
+<li>“Export the regions for QuPath”: a GeoJSON file.</li></ul>
+
+<h3>Analyses and what they mean</h3><ul>
+<li>Niches: “find niches and name them”.<ul>
+  <li>It chooses the neighborhood size from the regions, runs the niches (for Accept), reads each niche's cells and
+    genes on the H&amp;E and proposes names for the legend.</li></ul></li>
+<li>Genes: “what sets mucosal fibroblasts apart from the others?”, “top genes of each niche”.<ul>
+  <li>DE genes or top genes with AUC, fold change and FDR, and what they suggest.</li></ul></li>
+<li>Composition: “which cell types make up niche N3?”, “how do the regions differ?”.</li>
+<li>Signaling: “which signals go from fibroblasts to the epithelium?”, “compare signaling between the slices”.<ul>
+  <li>Ligand-receptor pairs between neighboring cells with their scores, and the senders and receivers on the H&amp;E.</li></ul></li>
+<li>Trajectory: “order the epithelial cells from the crypt base to the surface; which genes rise?”.<ul>
+  <li>A spatial axis or pseudotime, with the rising, falling and transient genes.</li></ul></li>
+<li>Embedding: “what does the UMAP show?”, “do the slices mix?”.</li></ul>
+
+<h3>Review and quality</h3><ul>
+<li><b>Agent Review</b>, or “review my annotation”.<ul>
+  <li>It looks at the candidate problems the app computed (areas where a type sits out of place, markers that do not
+    hold), checks each on the H&amp;E, drafts advice and keeps only what survives its own check. The advice appears in
+    the <b>Review</b> panel; you solve or dismiss each item.</li></ul></li>
+<li>“Is the quality even over the tissue?”, “which types are hard to tell apart?”: per-area transcripts and density,
+  types the model confuses, and what to do about them.</li></ul>
+
+<h3>Reports and export</h3><ul>
+<li>“Write the annotation report”: under <b>Report</b>, to read or save as Markdown.</li>
+<li>“Export the cell table”, “export a notebook”: files in the data folder, as <b>Export</b> writes them.</li>
+<li>“Anything interesting in this tissue?”: hypotheses with the numbers behind them, and how to test them here.</li></ul>
+
+<h3>Good to know</h3><ul>
+<li>Name things as the app does: region names, cell type names, slice names; it asks when something is unclear.</li>
+<li>Large steps take time (an alignment or a review: a few minutes); <kbd>Esc</kbd> in Claude Code stops it.</li>
+<li>While Claude Code's window is open, <b>Ask Agent</b> goes back to the same conversation. After you close it, the
+  next <b>Ask Agent</b> starts a new one from what the app shows: your annotation, priors, regions and versions stay in
+  the app.</li>
+<li>The agent uses your own Claude account. Your images and expression data stay on your computer (or server); the
+  agent reads only what the tools return.</li></ul>
+`;
 const METHODS = `
 <p class="hint">How each analysis computes its result. Expression is log-normalized throughout: counts per cell scaled
 to 100, then log(1 + x). Random steps use a fixed seed, so a rerun on the same computer gives the same result.</p>
@@ -4195,8 +4294,9 @@ $("updGo").onclick = async () => {
 };
 function showHelp(tab) {
   $("hpHow").classList.toggle("on", tab === "how"); $("hpAbout").classList.toggle("on", tab === "about");
-  $("hpMethods").classList.toggle("on", tab === "methods");
+  $("hpMethods").classList.toggle("on", tab === "methods"); $("hpAgent").classList.toggle("on", tab === "agent");
   if (tab === "how") $("hpBody").innerHTML = HELP;
+  else if (tab === "agent") { $("hpBody").innerHTML = AGENT; $("hpBody").scrollTop = 0; }
   else if (tab === "methods") { $("hpBody").innerHTML = METHODS; $("hpBody").scrollTop = 0; }
   else showAbout().catch((e) => { $("hpBody").textContent = e.message; });
   if (!$("hpDlg").open) $("hpDlg").showModal();
@@ -4204,6 +4304,7 @@ function showHelp(tab) {
 $("helpBtn").onclick = () => showHelp("how");
 $("hpHow").onclick = () => showHelp("how");
 $("hpMethods").onclick = () => showHelp("methods");
+$("hpAgent").onclick = () => showHelp("agent");
 $("hpAbout").onclick = () => showHelp("about");
 $("hpClose").onclick = () => $("hpDlg").close();
 $("rmSample").onclick = async () => {
