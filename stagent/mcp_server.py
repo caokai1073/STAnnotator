@@ -214,8 +214,11 @@ def _log_calls(manager):
         try:
             out = await call(name, arguments, *a, **kw)
         except Exception as e:
+            import traceback
+            cause = e.__cause__ or e  # FastMCP wraps the tool's own exception in a ToolError
             report.log_call(name, arguments, time.time() - t0, error=f"{type(e).__name__}: {e}",
-                            session=s.id if s else None, via=_active.get("via"))
+                            session=s.id if s else None, via=_active.get("via"),
+                            trace="".join(traceback.format_exception(cause)))
             raise
         res = out[0] if isinstance(out, tuple) and len(out) == 2 and isinstance(out[0], (list, tuple)) else out
         if isinstance(res, (list, tuple)):  # content blocks: their text; images are left out

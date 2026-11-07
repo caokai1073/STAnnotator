@@ -1043,6 +1043,17 @@ T and NK cells: CD3E|NKG7+ EPCAM-
 </dialog>
 <div class="toast" id="toast"></div>
 <script>
+// ---------------- errors in this window, kept for Report bug (the last 100, also across reloads) ----------------
+const PAGE_ERRORS = (() => { try { return JSON.parse(localStorage.getItem("pageErrors") || "[]"); } catch (e) { return []; } })();
+function noteError(kind, msg, extra) {
+  PAGE_ERRORS.push({ time: new Date().toISOString(), kind, message: String(msg ?? "").slice(0, 2000), ...extra });
+  PAGE_ERRORS.splice(0, Math.max(0, PAGE_ERRORS.length - 100));
+  try { localStorage.setItem("pageErrors", JSON.stringify(PAGE_ERRORS)); } catch (e) {}
+}
+window.addEventListener("error", (e) => noteError("script", e.message,
+  { at: `${e.filename || ""}:${e.lineno || ""}:${e.colno || ""}`, stack: e.error && e.error.stack ? String(e.error.stack).slice(0, 4000) : "" }));
+window.addEventListener("unhandledrejection", (e) => noteError("unhandled", (e.reason && e.reason.message) || e.reason,
+  { stack: e.reason && e.reason.stack ? String(e.reason.stack).slice(0, 4000) : "" }));
 const $ = (id) => document.getElementById(id);
 // ---------------- icons: thin line icons from the sprite at the top of the page ----------------
 const icon = (name) => `<svg class="ic" aria-hidden="true"><use href="#ic-${name}"/></svg>`;
@@ -1081,9 +1092,15 @@ const st = { samples: [], sample: null, he: null, sid: null, version: null, mode
              openedThisVisit: {}, dotSize: 1.0,
              hidden: false, busy: false, legend: [], regions: null };
 const api = async (path, opts) => {
-  const r = await fetch(path, opts);
+  const method = (opts && opts.method) || "GET";
+  let r;
+  try { r = await fetch(path, opts); }
+  catch (e) { noteError("request", e.message, { method, path: String(path).slice(0, 300) }); throw e; }
   const body = await r.json().catch(() => ({}));
-  if (!r.ok) throw Object.assign(new Error(body.error || r.statusText), { status: r.status, body });
+  if (!r.ok) {
+    noteError("request", body.error || r.statusText, { method, path: String(path).slice(0, 300), status: r.status });
+    throw Object.assign(new Error(body.error || r.statusText), { status: r.status, body });
+  }
   return body;
 };
 const post = async (path, data) => localClaude(await api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data || {}) }));
@@ -3966,14 +3983,20 @@ const BUG_PARTS = [
   ["calls", "The agent's tool calls", (c) => c.calls.n ? `${c.calls.n} call${c.calls.n === 1 ? "" : "s"}` : "none in this time"],
   ["proposals", "Changes the agent proposed, and what became of them", (c) => c.proposals.n ? `${c.proposals.n}` : "none in this time"],
   ["annotation", "This annotation's history: versions, priors, corrections, analyses run", (c) => c.session ? "the annotation open now" : "no annotation open"],
-  ["app_log", "The app's log", (c) => c.app_log.files.length ? `the last ${Math.max(0.1, c.app_log.bytes / 2 ** 20).toFixed(1)} MB` : "none found"]];
+  ["page_errors", "Errors in the app's window (scripts, failed requests)", () => { const n = bugPageErrors().length; return n ? `${n}` : "none in this time"; }],
+  ["app_log", "The app's logs", (c) => c.app_log.files.length ? `the last ${Math.max(0.1, c.app_log.bytes / 2 ** 20).toFixed(1)} MB` : "none found"]];
+function bugPageErrors() {
+  const since = new Date(Date.now() - (+$("bugDays").value || 7) * 864e5).toISOString();
+  return PAGE_ERRORS.filter((e) => e.time >= since && !String(e.path || "").startsWith("/api/bug-report"));
+}
 const BUG = { link: "" };
 async function bugContents() {
   const q = new URLSearchParams({ days: $("bugDays").value, session: st.sid || "" });
   const c = await api(`/api/bug-report?${q}`);
   const keep = {}; $("bugParts").querySelectorAll("input").forEach((i) => { keep[i.value] = i.checked; });
   $("bugParts").innerHTML = BUG_PARTS.map(([k, label, info]) => {
-    const empty = (k === "annotation" && !c.session) || (k === "app_log" && !c.app_log.files.length);
+    const empty = (k === "annotation" && !c.session) || (k === "app_log" && !c.app_log.files.length) ||
+      (k === "page_errors" && !bugPageErrors().length);
     const on = !empty && (keep[k] ?? true);
     return `<label class="row" style="gap:8px;align-items:flex-start"><input type="checkbox" value="${k}"${on ? " checked" : ""}${empty ? " disabled" : ""}>` +
       `<span>${label}<span class="hint"> · ${info(c)}</span></span></label>`;
@@ -4014,7 +4037,7 @@ function bugRequest() {
   const note = (from ? `From: ${from}\n\n` : "") + $("bugNote").value.trim();
   if ($("bugParts").querySelector("input")) BUG.parts = [...$("bugParts").querySelectorAll("input:checked")].map((i) => i.value);
   return { name: `STAnnotator-report-${stamp}.zip`, from, note, days: +$("bugDays").value,
-           parts: BUG.parts || ["conversations", "calls", "proposals", "annotation", "app_log"] };
+           parts: BUG.parts || ["conversations", "calls", "proposals", "annotation", "page_errors", "app_log"] };
 }
 async function bugRun(label, fn) {
   if (!$("bugNote").value.trim() && !confirm("Send the report without describing the bug? A few words on what happened help a lot.")) { $("bugNote").focus(); return; }
@@ -4024,7 +4047,7 @@ async function bugRun(label, fn) {
   finally { $("bugSave").disabled = $("bugUpload").disabled = false; }
 }
 $("bugSave").onclick = () => bugRun("Saving…", async (q) => {
-  const body = { days: q.days, parts: q.parts, note: q.note, session: st.sid || "" };
+  const body = { days: q.days, parts: q.parts, note: q.note, session: st.sid || "", page_errors: bugPageErrors() };
   let saved = null;
   if (native() && !st.remote) {  // the desktop app on this computer: written where the user chooses
     const path = await native().save_path(q.name);
@@ -4049,7 +4072,7 @@ $("bugSave").onclick = () => bugRun("Saving…", async (q) => {
 $("bugUpload").onclick = () => {
   if (!BUG.link) { bugLinkShown(true); $("bugLink").focus(); $("bugMsg").textContent = "Paste the upload link the developers gave you, then Save link."; return; }
   bugRun("Uploading…", async (q) => {
-    const body = { days: q.days, parts: q.parts, note: q.note, session: st.sid || "" };
+    const body = { days: q.days, parts: q.parts, note: q.note, session: st.sid || "", page_errors: bugPageErrors() };
     const r = await post("/api/bug-report", body);
     let up;
     if (st.remote) {  // made on the server; this computer adds its conversations and sends it

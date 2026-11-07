@@ -37,13 +37,19 @@ def _short(v):
     return s if len(s) <= ARG_MAX else s[:ARG_MAX] + f"… ({len(s)} characters)"
 
 
-def log_call(tool, args, seconds, result=None, error=None, session=None, via=None):
-    """One line per call of an agent tool (mcp_server wraps every tool with it). Never raises."""
+TRACE_MAX = 12000
+
+
+def log_call(tool, args, seconds, result=None, error=None, session=None, via=None, trace=None):
+    """One line per call of an agent tool (mcp_server wraps every tool with it), with the traceback when it failed:
+    the tools run in the process Claude Code starts, whose own output reaches no log. Never raises."""
     try:
         rec = {"time": time.strftime("%Y-%m-%dT%H:%M:%S"), "tool": tool, "seconds": round(seconds, 2),
                "session": session, "via": via, "args": {k: _short(v) for k, v in (args or {}).items()}}
         if error is not None:
             rec["error"] = _short(error)
+            if trace:
+                rec["traceback"] = trace[-TRACE_MAX:]
         else:
             rec["result"] = _short(result)
         CALLS.parent.mkdir(parents=True, exist_ok=True)
@@ -150,10 +156,18 @@ def _clean_transcript(path):
 
 # ---------------- the rest ----------------
 def app_logs():
-    """app.log where it is written: the data folder (from source), else the app's own folder (the built app)."""
-    cands = [config.HOME / "app.log", Path.home() / "Library" / "Caches" / "STAnnotator" / "app.log",
-             Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / "STAnnotator" / "app.log"]
-    return [p for p in dict.fromkeys(cands) if p.is_file()]
+    """The logs and their names in the report: app.log (the data folder when run from source, else the built app's
+    own folder), viewer.log (the viewer in a browser, or started by the agent) and remote_viewer.log (the viewer this
+    computer serves to the desktop app as a server)."""
+    out = {}
+    for p in (config.HOME / "app.log", Path.home() / "Library" / "Caches" / "STAnnotator" / "app.log",
+              Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / "STAnnotator" / "app.log"):
+        if p.is_file() and "app.log" not in out.values():
+            out[p] = "app.log"
+    for n in ("viewer.log", "remote_viewer.log"):
+        if (config.HOME / n).is_file():
+            out[config.HOME / n] = n
+    return list(out.items())
 
 
 def _proposals(since):
@@ -179,7 +193,7 @@ def contents(days=7, sid=None):
     tr = transcripts(since)
     props = _proposals(since)
     sess = _session_files(sid)
-    logs = app_logs()
+    logs = [p for p, _ in app_logs()]
     return {"days": days, "session": sid if sess else None,
             "conversations": {"files": len([1 for _, n in tr if "/subagents/" not in n]), "bytes": sum(p.stat().st_size for p, _ in tr),
                               "folders": [str(project_dir(f)) for f in _agent_folders() if project_dir(f).is_dir()]},
@@ -196,24 +210,47 @@ def _readme(about, days, parts, sid):
              f"Covers the last {days} day(s){f'; annotation {sid}' if sid else ''}", "", "Holds:"]
     what = {"note": "note.txt: what the user wrote", "about": "about.json: the About information",
             "conversations": "agent/: the agent's Claude Code conversations (JSON lines; images left out)",
-            "calls": "agent_calls.jsonl: the app's agent tools called (arguments, results or errors, seconds)",
+            "calls": "agent_calls.jsonl: the app's agent tools called (arguments, results or errors with tracebacks, seconds)",
             "proposals": "proposals/: changes the agent proposed and what became of them",
-            "annotation": "annotation/: the annotation's history (versions, priors, corrections, analyses, chat)",
-            "app_log": "app.log: the end of the app's log"}
+            "annotation": "annotation/: the annotation's history (versions, priors, corrections, analyses, chat); "
+                          "sample/meta.json: its sample (platform, cells, genes, image, registration)",
+            "page_errors": "page_errors.json: errors in the app's window (scripts, failed requests)",
+            "app_log": "logs/: the end of the app's logs (app.log, viewer.log, remote_viewer.log)"}
     lines += [f"- {what[p]}" for p in what if p in parts]
     lines += ["", "No expression data, cell tables or images are included."]
     return "\n".join(lines) + "\n"
 
 
+def _sample_meta(sid):
+    """The open annotation's sample: platform, cells, genes, image and its scale, how it was registered (no data)."""
+    try:
+        sample = json.loads((config.SESSIONS / sid / "session.json").read_text(encoding="utf-8"))["sample_id"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    f = config.SAMPLES / str(sample) / "meta.json"
+    return f if re.fullmatch(r"[A-Za-z0-9_.-]+", str(sample)) and f.is_file() else None
+
+
+def _page_errors(errors):
+    """Errors the app's window noted (scripts, failed requests): a list of small records, kept as they came."""
+    if not isinstance(errors, list):
+        return []
+    out = []
+    for e in errors[-200:]:
+        if isinstance(e, dict):
+            out.append({str(k)[:40]: _short(v) for k, v in list(e.items())[:12]})
+    return out
+
+
 def build(dest, about, days=7, parts=("conversations", "calls", "proposals", "annotation", "app_log"), sid=None,
-          note=""):
+          note="", page_errors=None):
     """Write the report to dest (a .zip); returns what went in."""
     since = time.time() - days * 86400
     parts = set(parts) | {"about"} | ({"note"} if note.strip() else set())
     dest = Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_name(dest.name + ".part")
-    n = {"conversations": 0, "calls": 0, "proposals": 0, "annotation": 0, "app_log": 0}
+    n = {"conversations": 0, "calls": 0, "proposals": 0, "annotation": 0, "app_log": 0, "page_errors": 0}
     skipped = []
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
         if note.strip():
@@ -246,11 +283,19 @@ def build(dest, about, days=7, parts=("conversations", "calls", "proposals", "an
             for f in _session_files(sid):
                 z.write(f, f"annotation/{f.relative_to(d).as_posix()}")
                 n["annotation"] += 1
+            meta = _sample_meta(sid) if n["annotation"] else None
+            if meta:
+                z.write(meta, "sample/meta.json")
+        if "page_errors" in parts:
+            errs = _page_errors(page_errors)
+            if errs:
+                z.writestr("page_errors.json", json.dumps(errs, indent=1, ensure_ascii=False))
+            n["page_errors"] = len(errs)
         if "app_log" in parts:
-            for i, p in enumerate(app_logs()):
+            for p, name in app_logs():
                 with open(p, "rb") as f:
                     f.seek(max(0, p.stat().st_size - LOG_TAIL))
-                    z.writestr("app.log" if i == 0 else f"app{i + 1}.log", f.read())
+                    z.writestr(f"logs/{name}", f.read())
                 n["app_log"] += 1
         z.writestr("README.txt", _readme(about, days, parts, sid if n["annotation"] else None))
     os.replace(tmp, dest)
@@ -277,10 +322,10 @@ def add_local(zip_path, days=7, parts=("conversations", "app_log")):
                 z.writestr(name, text)
                 n["conversations"] += "/subagents/" not in name
         if "app_log" in parts:
-            for i, p in enumerate(app_logs()):
+            for p, name in app_logs():
                 with open(p, "rb") as f:
                     f.seek(max(0, p.stat().st_size - LOG_TAIL))
-                    z.writestr(f"local/app{'' if i == 0 else i + 1}.log", f.read())
+                    z.writestr(f"local/logs/{name}", f.read())
                 n["app_log"] += 1
     return n
 

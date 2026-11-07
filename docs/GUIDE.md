@@ -570,8 +570,10 @@ colors are immediate.
 - Something went wrong with the agent or the app: **Report bug…** (right of **Export…**). Describe the bug (what you
   did, what happened, what you expected) and optionally your name or email. The report adds your conversations with
   the agent (Claude Code's own records of them, images left out), every call of the app's tools by the agent
-  (arguments, results or errors), the changes it proposed and what became of them, the open annotation's history
-  (versions, priors, corrections, analyses run) and the end of the app's log, from the last 1 to 30 days; **What goes
+  (arguments, results, or errors with where in the code they happened), the changes it proposed and what became of
+  them, the open annotation's history (versions, priors, corrections, analyses run) and its sample's description
+  (platform, cells, genes, image, registration), errors in the app's window (scripts, failed requests) and the end of
+  the app's logs, from the last 1 to 30 days; **What goes
   in the report** lists each part and lets you leave it out. It holds no expression data, cell tables or images;
   conversations can include file paths, gene names and numbers the agent read. **Upload to the developers** sends it
   to the developers' Google Drive folder (the installed app knows where; run from source, it asks once for the

@@ -1937,7 +1937,9 @@ async def api_bug_save(req: Request):
     from . import report
     b = await req.json()
     days, sid = _report_args(b)
-    parts = [p for p in b.get("parts", []) if p in ("conversations", "calls", "proposals", "annotation", "app_log")]
+    parts = [p for p in b.get("parts", []) if p in ("conversations", "calls", "proposals", "annotation", "page_errors",
+                                                   "app_log")]
+    errors = b.get("page_errors")
     note = str(b.get("note", ""))[:20000]
     about = await asyncio.to_thread(_about)
     if b.get("path"):
@@ -1945,7 +1947,7 @@ async def api_bug_save(req: Request):
             return _json({"error": "only in the desktop app"}, 403)
         dest = Path(b["path"]).expanduser()
         try:
-            return _json(await asyncio.to_thread(report.build, dest, about, days, parts, sid, note))
+            return _json(await asyncio.to_thread(report.build, dest, about, days, parts, sid, note, errors))
         except OSError as e:
             return _json({"error": str(e)}, 400)
     REPORTS.mkdir(parents=True, exist_ok=True)
@@ -1953,7 +1955,7 @@ async def api_bug_save(req: Request):
         old.unlink(missing_ok=True)
     key = uuid.uuid4().hex[:12]
     try:
-        info = await asyncio.to_thread(report.build, REPORTS / f"{key}.zip", about, days, parts, sid, note)
+        info = await asyncio.to_thread(report.build, REPORTS / f"{key}.zip", about, days, parts, sid, note, errors)
     except OSError as e:
         return _json({"error": str(e)}, 400)
     return _json({"key": key, **info})
