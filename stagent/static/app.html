@@ -404,12 +404,11 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
   <div class="hrow r1">
     <div class="cap"><h1>STAnnotator</h1>
       <button id="helpBtn" title="How to use the app, and About (version, agent connection, data folder)" style="padding:4px 10px;font-weight:600;margin-left:auto">?</button>
+      <button id="bugBtn" title="Report a bug: your conversations with the agent, its tool calls and the app's log, as one file for the developers">Report a bug</button>
       <button id="hdrHide" title="Fold the toolbar to the right for a bigger map (t)" style="padding:4px 9px">›</button></div>
-    <div class="io"><button id="importBtn" title="Add a sample (Xenium files, h5ad or RDS), then its image and registration">Import…</button>
-    <button id="export" disabled title="Save the cell table (CSV), the registration, or the analysis as a Jupyter notebook">Export…</button>
-    <button id="bugBtn" title="Something went wrong? Save your conversations with the agent, its tool calls and the app's log as one file for the developers">Report bug…</button></div>
-    <span class="br"></span>
-    <button id="connBtn" hidden title="Work on this computer or on a server over SSH">This computer</button>
+    <div class="io"><button id="importBtn" title="Add a sample (Xenium files, h5ad or RDS), then its image and registration">Import</button>
+    <button id="export" disabled title="Save the cell table (CSV), the registration, or the analysis as a Jupyter notebook">Export</button>
+    <button id="connBtn" hidden title="Work on this computer or on a server over SSH">Local</button></div>
     <span class="folder">Data folder <span class="path" id="path">–</span></span>
   </div>
   <div class="tabs main" id="mainTabs" role="tablist">
@@ -1035,7 +1034,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <label class="f"><b>Describe the bug</b><span class="hint">What did you do, what happened, and what did you expect?</span>
       <textarea id="bugNote" rows="5" maxlength="20000"
       placeholder="e.g. I asked the agent to align the H&amp;E; it said the alignment was applied but the cells stayed where they were."></textarea></label>
-    <label class="f">Your name or email <span class="hint">(optional, so the developers can reply)</span><input type="text" id="bugFrom" maxlength="200" autocomplete="email"></label>
+    <label class="f">Your name or email <span class="hint">(optional: so the developers know who sent it and can reply)</span><input type="text" id="bugFrom" maxlength="200" autocomplete="email"></label>
     <details id="bugMore"><summary class="hint" style="cursor:pointer">What goes in the report</summary>
       <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
         <div class="hint">Text only: no expression data, cell tables or images. Conversations can include file paths,
@@ -1087,13 +1086,13 @@ function decorate(b, name, only) {  // icon + label, or the icon only (the label
   else { const t = document.createElement("span"); t.className = "bt"; t.textContent = text; b.append(t); }
   return b;
 }
-const ICON_ONLY = { sessDel: "x", hdrShow: "chev-left", hdrHide: "chev-right", helpBtn: "help", slPrev: "chev-left", slNext: "chev-right",
+const ICON_ONLY = { sessDel: "x", hdrShow: "chev-left", hdrHide: "chev-right", helpBtn: "help", bugBtn: "bug", slPrev: "chev-left", slNext: "chev-right",
   lgtoggle: "chev-up", rgtoggle: "chev-up", plclose: "x", emClose: "x", imClose: "x", rcClose: "x", clClose: "x", rpClose: "x",
   xpClose: "x", glClose: "x", anClose: "x", rvClose: "x", hpClose: "x", anCsv: "download", rpSave: "download", mkExport: "download",
   fbUp: "arrow-up", fbHome: "home", rsClose: "x", hide: "eye", hideHE: "image" };
 const ICON_TEXT = { qfBtn: "play", importBtn: "import", clearAll: "trash", rmSample: "trash", allSamples: "grid", connBtn: "monitor", 
   openMarkers: "list", openRef: "file", openEx: "file", annotate: "play", eRun: "play", eShow: "scatter", nRun: "play",
-  undo: "undo", refresh: "refresh", claudeBtn: "sparkle", plaus: "shield", report: "file", export: "share", bugBtn: "bug", reset: "trash",
+  undo: "undo", refresh: "refresh", claudeBtn: "sparkle", plaus: "shield", report: "file", export: "share", reset: "trash",
   draw: "pen", emLasso: "lasso", emClear: "x", emZoom: "target", send: "send",
   mkImport: "import", mkCheck: "check", mkSave: "save", mkDraft: "sparkle", mkOrganUse: "list", mkOrganAgent: "sparkle", mkClose: "check", imGo: "import",
   imNewAlign: "sparkle", alignNow: "sparkle", refPick: "folder", exPick: "folder", refClose: "check", exClose: "check", rcTest: "check",
@@ -1337,7 +1336,7 @@ async function loadSamples(select, project) {
   st.projects = await api("/api/projects").catch(() => []);
   const sel = $("sample"); sel.textContent = "";
   if (!st.samples.length) {  // a fresh install: nothing imported yet
-    $("empty").firstElementChild.textContent = "No samples yet. Click Import… to add Xenium files (cells.parquet and cell_feature_matrix.h5), h5ad or RDS files (with or without an image).";
+    $("empty").firstElementChild.textContent = "No samples yet. Click Import to add Xenium files (cells.parquet and cell_feature_matrix.h5), h5ad or RDS files (with or without an image).";
     $("empty").style.display = "flex"; $("annotate").disabled = true; $("sampleRename").disabled = true; $("qfBtn").disabled = true; $("rmSample").disabled = true; $("allSamples").disabled = true; $("pjBtn").disabled = true;
     return;
   }
@@ -3571,7 +3570,7 @@ $("importBtn").onclick = openImport;
 // ---------------- help and about ----------------
 const HELP = `
 <h3>Import</h3><ul>
-<li><b>Import…</b>: choose the kind of data, then give its files.<ul>
+<li><b>Import</b>: choose the kind of data, then give its files.<ul>
   <li><b>Xenium</b>: cells.parquet and cell_feature_matrix.h5; optionally experiment.xenium and the DAPI image.</li>
   <li><b>CosMx</b>: a slide's exprMat and metadata files.</li>
   <li><b>MERFISH</b> (MERSCOPE): a region's cell_by_gene.csv and cell_metadata.csv, without their instrument images.</li>
@@ -3620,7 +3619,7 @@ const HELP = `
   <li>The UMAP window shows this slice or all slices, and can be colored by slice.</li></ul></li></ul>
 
 <h3>Working on a server</h3><ul>
-<li><b>This computer</b> (top right): work on a server over SSH instead.<ul>
+<li><b>Local</b> (beside Export; <b>Remote</b> while on a server): work on a server over SSH instead.<ul>
   <li>The data and the computation stay on the server.</li>
   <li>Choose… browses the server's files; Save and Export download to this computer.</li>
   <li>The agent (Claude Code) opens here, with its tools on the server.</li>
@@ -3766,7 +3765,7 @@ const HELP = `
   <li>an outline of the agent added as a region (all its pieces);</li>
   <li>one prior;</li>
   <li>or everything the agent changed for one request (its changes less than 90 s apart).</li></ul></li>
-<li><b>Export…</b>:<ul>
+<li><b>Export</b>:<ul>
   <li>the cell table (CSV, with niche, Leiden and UMAP when computed);</li>
   <li>the registration in use (CSV): the affine, and the cell positions on the image with local corrections and moved
     pieces included;</li>
@@ -3775,7 +3774,7 @@ const HELP = `
     parameters, and its results; the last trajectory too).</li></ul></li>
 <li><b>Ask Agent</b> (bar on the map) opens your own Claude Code, connected to this app. <b>Undo</b> and
   <b>Report</b> are there too.</li>
-<li>Something went wrong? <b>Report bug…</b> (right of Export):<ul>
+<li>Something went wrong? The bug icon (top right, between <b>?</b> and <b>›</b>):<ul>
   <li>describe the bug in a few words;</li>
   <li>the report adds your conversations with the agent, its tool calls and proposals, this annotation's history and
     the app's log (text only: no expression data, cell tables or images; <i>What goes in the report</i> lets you leave
@@ -4016,6 +4015,7 @@ const BUG = { link: "" };
 async function bugContents() {
   const q = new URLSearchParams({ days: $("bugDays").value, session: st.sid || "" });
   const c = await api(`/api/bug-report?${q}`);
+  BUG.install = c.install_id || "";
   const keep = {}; $("bugParts").querySelectorAll("input").forEach((i) => { keep[i.value] = i.checked; });
   $("bugParts").innerHTML = BUG_PARTS.map(([k, label, info]) => {
     const empty = (k === "annotation" && !c.session) || (k === "app_log" && !c.app_log.files.length) ||
@@ -4059,7 +4059,11 @@ function bugRequest() {
   const from = $("bugFrom").value.trim(); store("bugFrom", from);
   const note = (from ? `From: ${from}\n\n` : "") + $("bugNote").value.trim();
   if ($("bugParts").querySelector("input")) BUG.parts = [...$("bugParts").querySelectorAll("input:checked")].map((i) => i.value);
-  return { name: `STAnnotator-report-${stamp}.zip`, from, note, days: +$("bugDays").value,
+  // the file name tells who sent it: this installation's random id, and the name or email given (letters and digits)
+  const email = from.match(/[A-Za-z0-9._%+-]+(?=@)/);  // an email: the part before @; else the name, words joined by -
+  const who = (email ? email[0] : from.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z0-9]+/g, "-")).replace(/^[-.]+|[-.]+$/g, "").slice(0, 30);
+  const name = ["STAnnotator-report", stamp, BUG.install, who].filter(Boolean).join("-") + ".zip";
+  return { name, from, note, days: +$("bugDays").value,
            parts: BUG.parts || ["conversations", "calls", "proposals", "annotation", "page_errors", "app_log"] };
 }
 async function bugRun(label, fn) {
@@ -6173,7 +6177,9 @@ async function initConnection(serverRemote) {  // in the app: is this page the s
   const c = await native().connection(); st.conn = c;
   st.remote = serverRemote && c.connected ? c : null;
   $("connBtn").hidden = false;
-  setLabel($("connBtn"), st.remote ? `Server: ${c.host}` : "This computer"); setIcon($("connBtn"), st.remote ? "server" : "monitor");
+  setLabel($("connBtn"), st.remote ? "Remote" : "Local"); setIcon($("connBtn"), st.remote ? "server" : "monitor");
+  $("connBtn").title = st.remote ? `Working on the server ${c.host} over SSH: click to switch or disconnect`
+                                 : "Working on this computer: click to work on a server over SSH";
   $("connBtn").classList.toggle("on", !!st.remote);
   if (st.remote && c.info && c.info.build !== c.local_build)
     toast(`The server runs STAnnotator ${c.info.build}, this app ${c.local_build}: install the same version on both.`, 8000);

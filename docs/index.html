@@ -681,7 +681,7 @@ footer a { color: var(--muted); }
             <ol>
               <li>Open the downloaded <code>.dmg</code> and drag STAnnotator to Applications.</li>
               <li>Install <a href="https://docs.claude.com/en/docs/claude-code/setup">Claude Code</a> and log in once, so that <code>claude</code> works in Terminal.</li>
-              <li>Start STAnnotator and click <b>Import…</b>. Data and annotations go to <code>~/stagent</code>.</li>
+              <li>Start STAnnotator and click <b>Import</b>. Data and annotations go to <code>~/stagent</code>.</li>
             </ol>
           </div>
           <div class="osc" data-os="win">
@@ -694,7 +694,7 @@ footer a { color: var(--muted); }
             <ol>
               <li>Run the downloaded installer (<code>.exe</code>). Choose where to install (any drive, no administrator rights needed) and where to keep the data.</li>
               <li>Install <a href="https://docs.claude.com/en/docs/claude-code/setup">Claude Code</a> and log in once, so that <code>claude</code> works in PowerShell.</li>
-              <li>Start STAnnotator from the Start menu and click <b>Import…</b>.</li>
+              <li>Start STAnnotator from the Start menu and click <b>Import</b>.</li>
             </ol>
             <p class="note">The installer is not signed yet. If Windows SmartScreen stops it, click <b>More info → Run anyway</b>.
               Uninstalling keeps your data.</p>
@@ -714,7 +714,7 @@ uv pip install --python .venv/bin/python -e ".[app]"
           <div class="other-col">
             <div>
               <h3>On a server</h3>
-              <p class="sub">Install the same version as the app on your computer, then click <b>This computer → A server over SSH</b> in the app.</p>
+              <p class="sub">Install the same version as the app on your computer, then click <b>Local → A server over SSH</b> in the app.</p>
             </div>
             <div class="code"><button class="copy" type="button">Copy</button><pre><code>git clone https://github.com/caokai1073/STAnnotator.git ~/STAnnotator && cd ~/STAnnotator
 uv venv .venv --python 3.12

@@ -100,7 +100,7 @@ folder when connecting.
 - Optional: a `Host` entry in `~/.ssh/config` (Windows: `%USERPROFILE%\.ssh\config`; user, port, jump host); the app
   uses it.
 
-**Connect**: in the app click **This computer** (right panel) → **A server over SSH**, and enter
+**Connect**: in the app click **Local** (right panel, beside **Export**) → **A server over SSH**, and enter
 1. the server (`user@server` or a `Host` of `~/.ssh/config`),
 2. the command on the server: `~/STAnnotator/.venv/bin/stagent`,
 3. optionally the data folder on the server,
@@ -115,7 +115,7 @@ After updating STAnnotator on the server, reconnect once so that the server's vi
 
 ## Getting started
 
-1. **Import…**: Xenium (`cells.parquet` and `cell_feature_matrix.h5`; optionally `experiment.xenium` and the DAPI
+1. **Import**: Xenium (`cells.parquet` and `cell_feature_matrix.h5`; optionally `experiment.xenium` and the DAPI
    image), or h5ad / RDS (Seurat, SpatialExperiment; read without R). Optionally the H&E and its registration;
    without a registration, **Align with Agent** aligns the H&E for you.
 2. **Annotate** tab: a marker list (**Markers…**: import a CSV, or **Start from an organ**: a built-in list for
@@ -142,7 +142,7 @@ stagent mcp                 # the agent's tools, for Claude Code without the app
 
 ## Troubleshooting
 
-- **Something went wrong**: **Report bug…** (right of **Export…**): describe the bug, and the app adds your
+- **Something went wrong**: the bug icon (top right, between **?** and **›**): describe the bug, and the app adds your
   conversations with the agent, its tool calls and the app's log (text only, no expression data). Upload it to the
   developers in one click, or save it and send it.
 - **The app does not open**: see `~/Library/Caches/STAnnotator/app.log` (Windows: `%LOCALAPPDATA%\STAnnotator\app.log`;

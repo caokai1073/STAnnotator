@@ -4,7 +4,7 @@ The full description of the app: import, the viewer, the agent, the analyses, an
 
 ## 1. Import a sample
 
-Click **Import…** in the app (or use the commands below): the cells, then **No H&E** or an **H&E file**, then a
+Click **Import** in the app (or use the commands below): the cells, then **No H&E** or an **H&E file**, then a
 **Registration file** or **No registration**:
 
 | part | what it takes |
@@ -63,7 +63,7 @@ cells), while the shipped registration file was 13 um off. A registration needs
 at least 90% of the cells on the image. Regions drawn before the cells move are moved along with them.
 
 **Regions drawn elsewhere** (e.g. QuPath annotations on the H&E, exported as GeoJSON in the image's full-resolution
-pixels): give the file under **Regions** in **Import…** (several slices: one per slice, in their order) and every
+pixels): give the file under **Regions** in **Import** (several slices: one per slice, in their order) and every
 new annotation of the sample starts with them, or click **Import** in the map's Regions panel to add them to the open
 annotation. A region's name is the object's classification (else its name), its color QuPath's; several outlines of
 one class form one region, holes stay out of it (drawn dashed), and points, lines and cell detections are skipped.
@@ -76,8 +76,8 @@ MRXS or CZI converted to OME-TIFF first; an image without zoom levels is copied 
 e.g. for a pathologist to draw and name regions before the expression data exist. The pixel size is read from the
 image (OME-TIFF, the SVS `MPP`, or the TIFF resolution tags) or typed in; without one the app shows no micrometers
 and gives areas in pixels. Such a sample has only the Data tab and the regions (the panel shows each outline's area,
-mm² with a pixel size); **Export…** writes the outlines as GeoJSON. Its regions go to the data: choose the sample
-under **Regions from** in **Import…** when importing the data registered to the same H&E (the same scan: the image
+mm² with a pixel size); **Export** writes the outlines as GeoJSON. Its regions go to the data: choose the sample
+under **Regions from** in **Import** when importing the data registered to the same H&E (the same scan: the image
 size is checked), and every annotation of the data starts with them; or give the exported GeoJSON as the import's
 **Regions** (QuPath opens it too: every outline is an annotation classified by its region, with its color). The
 agent can outline compartments on such an image when you ask (e.g. "draw the mucosa"): it reads the organ's priors
@@ -88,7 +88,7 @@ their texture, k-means; each class with its distance to the tissue edge), and pr
 a draft to edit. Agent tools: `import_he_only`, `export_regions`, `tissue_priors`, `segment_he`, `show_he`,
 `propose_he_region`.
 
-**CosMx** and **MERFISH** (Vizgen MERSCOPE) output: choose the kind in **Import…** and give its two files, each in its
+**CosMx** and **MERFISH** (Vizgen MERSCOPE) output: choose the kind in **Import** and give its two files, each in its
 field (Counts, Cell metadata); one slide or region per import (import several one after the other).
 CosMx: a slide's AtoMx flat files `<slide>_exprMat_file.csv` and `<slide>_metadata_file.csv`; a cell is
 `fov_cellID` (cell_ID 0, transcripts outside cells, is left out) and its position comes from
@@ -109,7 +109,7 @@ From the command line (`--he` and `--registration` are optional):
 
 ### Several slices (projects)
 
-Tick several sections of an h5ad in **Import…** (or give the Xenium files of several slices, one per line in each field): each slice becomes
+Tick several sections of an h5ad in **Import** (or give the Xenium files of several slices, one per line in each field): each slice becomes
 a sample `<project>_<section>` of one project, with the metadata that is constant within the slice (condition, day,
 mouse, …). Images: one file for all slices,
 one image per slice in the order of the slices (one per line), or a table (CSV/TSV: section, image path);
@@ -188,10 +188,10 @@ Claude answers in the language you write in.
 ### Working on a server (details)
 
 The app can work on a server over SSH: the data and every computation stay on the server, this computer shows the
-viewer and runs Claude Code. Click **This computer** (in the toolbar on the right) -> **A server over SSH**, enter the server (a `Host`
+viewer and runs Claude Code. Click **Local** (in the toolbar on the right, beside **Export**) -> **A server over SSH**, enter the server (a `Host`
 of `~/.ssh/config` or `user@server`), the full path of STAnnotator's `stagent` command there and, optionally,
 its data folder (default `~/stagent` on the server), then **Test** and **Connect**. The app remembers the
-server and connects again when it starts; **This computer** -> **Use this computer** goes back.
+server and connects again when it starts; **Remote** -> **Use this computer** goes back.
 
 On the server, install STAnnotator once (the same version as the app; no window needed):
 
@@ -202,7 +202,7 @@ uv venv .venv --python 3.12 && uv pip install --python .venv/bin/python -e .
 ```
 
 The SSH login must work without a password prompt (a key: `ssh-keygen`, then `ssh-copy-id <server>`; or ssh-agent).
-While connected, **Choose…** buttons browse the server's files, **Export…** and the other Save buttons download into
+While connected, **Choose…** buttons browse the server's files, **Export** and the other Save buttons download into
 files on this computer, and **Ask Agent** opens Claude Code here with its tools running on the server (through `ssh`), on the
 same data as the viewer. The viewer keeps running on the server between connections (`stagent remote-serve`
 starts it, on the server's own localhost only; its process id is in `<data folder>/remote_viewer.json`).
@@ -302,7 +302,7 @@ Claude learns the outcome by itself when you decide within about 45 seconds, oth
    back; it never undoes the undo). One action is one version made in the app (an outline of the agent added as a region is one
    version, however many pieces it has) or all the versions the agent made for one request (its changes less than 90 s
    apart): they go back together.
-5. **Export…** saves the **cells table** (CSV, one row per cell: `cell_id`, `region`, `cell_type`, `lineage`,
+5. **Export** saves the **cells table** (CSV, one row per cell: `cell_id`, `region`, `cell_type`, `lineage`,
    `level_1`… the full type path, `confidence`, `expression_label`, `marker_cluster`, `hand_labeled`, and when
    computed `niche`, `leiden`, `umap_1`, `umap_2`; then `x_um`, `y_um`), the **registration** (CSV: the affine
    a11..ty that places the cells on the image now, whether it came from the file, Claude's alignment or a
@@ -572,7 +572,7 @@ colors are immediate.
 
 ## Troubleshooting
 
-- Something went wrong with the agent or the app: **Report bug…** (right of **Export…**). Describe the bug (what you
+- Something went wrong with the agent or the app: the bug icon (top right, between **?** and **›**). Describe the bug (what you
   did, what happened, what you expected) and optionally your name or email. The report adds your conversations with
   the agent (Claude Code's own records of them, images left out), every call of the app's tools by the agent
   (arguments, results, or errors with where in the code they happened), the changes it proposed and what became of

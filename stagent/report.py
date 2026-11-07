@@ -255,6 +255,17 @@ def _session_left_out(sid):
     return [f"annotation/{f.relative_to(d).as_posix()}" for f in _capped(fs, ANNOTATION_MAX)[1]]
 
 
+def install_id():
+    """A random id of this installation, made at its first report and kept in the settings: it tells the reports of
+    one person apart from another's without saying who they are (the name or email is the user's choice)."""
+    st = config.read_settings()
+    if not re.fullmatch(r"[0-9a-f]{8}", str(st.get("install_id", ""))):
+        import uuid
+        st["install_id"] = uuid.uuid4().hex[:8]
+        config.write_settings(install_id=st["install_id"])
+    return st["install_id"]
+
+
 def contents(days=3, sid=None):
     """What a report with these settings would hold: counts and sizes per part, for the dialog."""
     since = time.time() - days * 86400
@@ -262,7 +273,7 @@ def contents(days=3, sid=None):
     props = _proposals(since)
     sess = _session_files(sid)
     logs = [p for p, _ in app_logs()]
-    return {"days": days, "session": sid if sess else None,
+    return {"days": days, "session": sid if sess else None, "install_id": install_id(),
             "conversations": {"files": len([1 for _, n in tr if "/subagents/" not in n]), "bytes": sum(p.stat().st_size for p, _ in tr),
                               "text_bytes": min(sum(_text_size(p) for p, _ in tr), TRANSCRIPT_MAX),
                               "folders": [str(project_dir(f)) for f in _agent_folders() if project_dir(f).is_dir()]},
@@ -276,6 +287,7 @@ def _readme(about, days, parts, sid, left_out=()):
     lines = ["STAnnotator problem report", "",
              f"Made {time.strftime('%Y-%m-%d %H:%M')} with STAnnotator {about.get('version')} (build {about.get('build')})",
              f"System: {platform.system()} {platform.release()} ({platform.machine()}), Python {platform.python_version()}",
+             f"Installation: {about.get('install_id', '?')} (a random id of the app that sent it)",
              f"Covers the last {days} day(s){f'; annotation {sid}' if sid else ''}", "", "Holds:"]
     what = {"note": "note.txt: what the user wrote", "about": "about.json: the About information",
             "conversations": "agent/: the agent's Claude Code conversations (JSON lines; images left out)",
@@ -317,6 +329,7 @@ def _page_errors(errors):
 def build(dest, about, days=3, parts=("conversations", "calls", "proposals", "annotation", "app_log"), sid=None,
           note="", page_errors=None):
     """Write the report to dest (a .zip); returns what went in."""
+    about = {**about, "install_id": install_id()}
     since = time.time() - days * 86400
     parts = set(parts) | {"about"} | ({"note"} if note.strip() else set())
     dest = Path(dest)
