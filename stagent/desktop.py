@@ -175,11 +175,22 @@ class Api:
         try:
             self._conn.download(path, str(tmp))
             report.add_local(tmp, int(days), parts)
-            return report.upload(tmp, name, {"version": config.build()}, note, sender, url)
+            return report.upload(tmp, name, {"version": config.build()}, note, sender, url or None)
         except Exception as e:
             return {"error": str(e)}
         finally:
             tmp.unlink(missing_ok=True)
+
+    def report_link(self, url=None):
+        """The upload link on this computer (with the app on a server the upload goes from here): its status, or with
+        url: check and keep it."""
+        from . import report
+        try:
+            if url:
+                report.set_upload_url(url)
+            return report.link_status()
+        except Exception as e:
+            return {"error": str(e)}
 
     def write_text(self, path, text):
         try:

@@ -32,3 +32,6 @@ packaging/windows/STAnnotator.ico
 # the media repository (tutorial video, github.com/caokai1073/STAnnotator-media), one commit replaced per video
 /media/
 /STAnnotator_tutorial_*
+
+# the upload link of Report bug (the developers' Apps Script), built into the app, never published
+stagent/data/report_upload_url.txt

@@ -290,8 +290,27 @@ UPLOAD_MAX = 40 * 2 ** 20
 _URL = re.compile(r"https://script\.google(usercontent)?\.com/macros/s/[A-Za-z0-9_-]+/exec")
 
 
+BUILT_IN = config.PACKAGE / "data" / "report_upload_url.txt"  # put there before building the app; not in git
+
+
+def _built_in():
+    try:
+        u = BUILT_IN.read_text(encoding="utf-8").strip()
+        return u if _URL.fullmatch(u) else ""
+    except OSError:
+        return ""
+
+
 def upload_url():
-    return config.read_settings().get("report_upload_url", "")
+    """The link the tester saved, else the one the app was built with."""
+    return config.read_settings().get("report_upload_url", "") or _built_in()
+
+
+def link_status():
+    """Whether uploading works without asking for a link (the link itself stays out of the page)."""
+    if config.read_settings().get("report_upload_url"):
+        return {"set": True, "source": "settings"}
+    return {"set": bool(_built_in()), "source": "built-in" if _built_in() else None}
 
 
 def _check_url(url):

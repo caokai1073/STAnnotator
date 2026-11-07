@@ -3,14 +3,23 @@
 //
 // Set up (once): create a Drive folder, put its id below (the part of the folder's URL after /folders/), paste this
 // file into a new project at script.google.com, then Deploy > New deployment > Web app, "Execute as: Me",
-// "Who has access: Anyone". Give the web app URL (https://script.google.com/macros/s/.../exec) to the testers; they
-// paste it once into the app. The URL is the only key: keep it out of public places.
+// "Who has access: Anyone". Put the web app URL (https://script.google.com/macros/s/.../exec) in
+// stagent/data/report_upload_url.txt before building the app (that file is not in git), so the built app uploads
+// without asking; a tester running from source pastes it once. The URL is the only key: keep it out of public places.
+// The receiver can only add files to the folder; a link that leaked is replaced by a new deployment.
 
 const FOLDER_ID = "PASTE_THE_FOLDER_ID_HERE";
 const MAX_BYTES = 40 * 1024 * 1024;  // Apps Script takes requests up to about 50 MB (the report is sent as base64)
+const MAX_PER_DAY = 100;             // reports a day (UTC), whoever sends them
 
 function doPost(e) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
   try {
+    const props = PropertiesService.getScriptProperties();
+    const key = "count_" + Utilities.formatDate(new Date(), "UTC", "yyyy-MM-dd");
+    const n = Number(props.getProperty(key) || 0);
+    if (n >= MAX_PER_DAY) return reply({ error: "too many reports today: save the report to a file and send it" });
     const body = JSON.parse(e.postData.contents);
     const bytes = Utilities.base64Decode(body.data || "");
     if (!bytes.length) return reply({ error: "the report is empty" });
@@ -19,9 +28,13 @@ function doPost(e) {
     const file = DriveApp.getFolderById(FOLDER_ID).createFile(Utilities.newBlob(bytes, "application/zip", name));
     file.setDescription([`STAnnotator ${body.version || "?"} · ${body.system || ""}`, body.from || "",
                          String(body.note || "").slice(0, 2000)].filter(String).join("\n"));
+    Object.keys(props.getProperties()).filter((k) => k.startsWith("count_") && k !== key).forEach((k) => props.deleteProperty(k));
+    props.setProperty(key, String(n + 1));
     return reply({ ok: true, name: file.getName() });
   } catch (err) {
     return reply({ error: String(err) });
+  } finally {
+    lock.releaseLock();
   }
 }
 

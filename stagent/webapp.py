@@ -1960,13 +1960,15 @@ async def api_bug_save(req: Request):
 
 
 async def api_bug_upload_url(req: Request):
-    """GET: the upload link kept in the settings; POST {url}: check it (the receiver answers) and keep it."""
+    """GET: whether an upload link is there (saved by the tester, or built into the app); POST {url}: check it (the
+    receiver answers) and keep it."""
     from . import report
     if req.method == "GET":
-        return _json({"url": report.upload_url()})
+        return _json(report.link_status())
     b = await req.json()
     try:
-        return _json({"url": await asyncio.to_thread(report.set_upload_url, b.get("url", ""))})
+        await asyncio.to_thread(report.set_upload_url, b.get("url", ""))
+        return _json(report.link_status())
     except (ValueError, OSError) as e:
         return _json({"error": str(e)}, 400)
 

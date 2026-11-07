@@ -9,6 +9,8 @@ from PyInstaller.utils.hooks import collect_all, copy_metadata
 
 ROOT = Path(SPECPATH).parent
 VERSION = __import__("re").search(r'__version__ = "([^"]+)"', (ROOT / "stagent" / "__init__.py").read_text()).group(1)
+if not (ROOT / "stagent" / "data" / "report_upload_url.txt").exists():
+    print("NOTE: no stagent/data/report_upload_url.txt: Report bug will ask testers for the upload link")
 datas = [(str(ROOT / "stagent" / "static"), "stagent/static"),
          (str(ROOT / "stagent" / "data"), "stagent/data")]
 # source of the modules an exported notebook carries (the bundle otherwise holds only compiled code)

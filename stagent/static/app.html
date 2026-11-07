@@ -3746,8 +3746,8 @@ const HELP = `
   <li>the report adds your conversations with the agent, its tool calls and proposals, this annotation's history and
     the app's log (text only: no expression data, cell tables or images; <i>What goes in the report</i> lets you leave
     parts out);</li>
-  <li><b>Upload to the developers</b> sends it to their Google Drive folder (the first time, paste the upload link
-    they gave you), or <b>Save to file…</b> keeps it on this computer to send yourself.</li></ul></li></ul>`;
+  <li><b>Upload to the developers</b> sends it to their Google Drive folder (run from source, the app asks once for the
+    upload link they gave you), or <b>Save to file…</b> keeps it on this computer to send yourself.</li></ul></li></ul>`;
 const METHODS = `
 <p class="hint">How each analysis computes its result. Expression is log-normalized throughout: counts per cell scaled
 to 100, then log(1 + x). Random steps use a fixed seed, so a rerun on the same computer gives the same result.</p>
@@ -3988,8 +3988,11 @@ async function openBugReport() {
   $("bugFrom").value = load("bugFrom");
   $("bugDlg").showModal(); $("bugNote").focus();
   $("bugParts").innerHTML = `<span class="hint">Checking…</span>`;
-  try { BUG.link = (await api("/api/bug-report/upload-url")).url || ""; } catch (e) { BUG.link = ""; }
-  $("bugLink").value = BUG.link; bugLinkShown(false);
+  try {  // with the app on a server the upload goes from this computer, with its link
+    const ls = st.remote ? await native().report_link() : await api("/api/bug-report/upload-url");
+    BUG.link = !!(ls && ls.set);
+  } catch (e) { BUG.link = false; }
+  $("bugLink").value = ""; bugLinkShown(false);
   try { await bugContents(); } catch (e) { $("bugErr").textContent = e.message; }
 }
 $("bugBtn").onclick = () => openBugReport();
@@ -3998,7 +4001,9 @@ $("bugCancel").onclick = () => $("bugDlg").close();
 $("bugLinkSave").onclick = async () => {
   $("bugErr").textContent = ""; $("bugMsg").textContent = "Checking the link…";
   try {
-    BUG.link = (await post("/api/bug-report/upload-url", { url: $("bugLink").value })).url;
+    const r = st.remote ? await native().report_link($("bugLink").value) : await post("/api/bug-report/upload-url", { url: $("bugLink").value });
+    if (r.error) throw new Error(r.error);
+    BUG.link = !!r.set;
     bugLinkShown(false); $("bugMsg").textContent = "Link saved. Click Upload to the developers.";
   } catch (e) { $("bugErr").textContent = e.message; $("bugMsg").textContent = ""; }
 };
@@ -4049,7 +4054,7 @@ $("bugUpload").onclick = () => {
     let up;
     if (st.remote) {  // made on the server; this computer adds its conversations and sends it
       up = await native().report_upload(`/api/bug-report/${r.key}?name=${encodeURIComponent(q.name)}`, q.name, q.days,
-        q.parts.filter((p) => p === "conversations" || p === "app_log"), q.note, q.from, BUG.link);
+        q.parts.filter((p) => p === "conversations" || p === "app_log"), q.note, q.from, "");
       if (up.error) throw new Error(up.error);
     } else up = await post("/api/bug-report/upload", { key: r.key, name: q.name, note: q.note, from: q.from });
     $("bugMsg").textContent = `Uploaded ${up.uploaded} (${(up.bytes / 2 ** 10).toFixed(0)} KB). Thank you: the developers will look at it.`;

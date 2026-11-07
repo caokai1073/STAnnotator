@@ -574,8 +574,8 @@ colors are immediate.
   (versions, priors, corrections, analyses run) and the end of the app's log, from the last 1 to 30 days; **What goes
   in the report** lists each part and lets you leave it out. It holds no expression data, cell tables or images;
   conversations can include file paths, gene names and numbers the agent read. **Upload to the developers** sends it
-  to the developers' Google Drive folder (the first time, paste the upload link they gave you; it is kept); **Save to
-  file…** keeps it on this computer to send yourself (privately: an issue on GitHub is public). With the app working
+  to the developers' Google Drive folder (the installed app knows where; run from source, it asks once for the
+  upload link the developers gave you); **Save to file…** keeps it on this computer to send yourself (privately: an issue on GitHub is public). With the app working
   on a server, the report is made there and this computer's conversations and log are added to it.
 - The app does not open: see `<data folder>/app.log`; run `.venv/bin/stagent app` in a terminal to see
   errors, or `--browser` to use the browser. The web viewer logs to `<data folder>/viewer.log`.
