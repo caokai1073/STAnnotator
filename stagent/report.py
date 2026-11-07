@@ -161,6 +161,29 @@ def _clean_transcript(path):
     return "\n".join(lines) + "\n"
 
 
+_TEXT_SIZE = {}
+
+
+def _text_size(path):
+    """Bytes a conversation takes in the report (images left out), without building it: only lines that hold an
+    image are parsed; kept per file until it changes."""
+    st = path.stat()
+    key = (str(path), st.st_mtime, st.st_size)
+    if key not in _TEXT_SIZE:
+        n = 0
+        with open(path, "rb") as f:
+            for line in f:
+                if b'"image"' in line:
+                    try:
+                        n += len(json.dumps(_drop_images(json.loads(line)), ensure_ascii=False).encode()) + 1
+                        continue
+                    except ValueError:
+                        pass
+                n += len(line)
+        _TEXT_SIZE[key] = n
+    return _TEXT_SIZE[key]
+
+
 def _put(z, name, text):
     """Text into the zip as UTF-8; a broken character (half an emoji cut off in a message) becomes '?' rather than
     stopping the whole report."""
@@ -212,6 +235,7 @@ def contents(days=7, sid=None):
     logs = [p for p, _ in app_logs()]
     return {"days": days, "session": sid if sess else None,
             "conversations": {"files": len([1 for _, n in tr if "/subagents/" not in n]), "bytes": sum(p.stat().st_size for p, _ in tr),
+                              "text_bytes": min(sum(_text_size(p) for p, _ in tr), TRANSCRIPT_MAX),
                               "folders": [str(project_dir(f)) for f in _agent_folders() if project_dir(f).is_dir()]},
             "calls": {"n": len(_recent_calls(since))},
             "proposals": {"n": len(props)},

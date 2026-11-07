@@ -3995,7 +3995,12 @@ async function showAbout() {
 }
 // ---------------- a bug report (report.py): what the user and the agent did, saved as a file or uploaded ----------------
 const BUG_PARTS = [
-  ["conversations", "Conversations with the agent", (c) => c.conversations.files ? `${c.conversations.files} conversation${c.conversations.files === 1 ? "" : "s"}, ${(c.conversations.bytes / 2 ** 20).toFixed(1)} MB with images (left out)` : "none in this time"],
+  ["conversations", "Conversations with the agent", (c) => {
+    const k = c.conversations, mb = (b) => `${Math.max(0.1, b / 2 ** 20).toFixed(1)} MB`;
+    if (!k.files) return "none in this time";
+    const text = k.text_bytes ?? k.bytes;  // the images the agent was shown are left out
+    return `${k.files} conversation${k.files === 1 ? "" : "s"}, ${mb(text)} of text` + (k.bytes > text * 1.2 ? ` (${mb(k.bytes - text)} of images left out)` : "");
+  }],
   ["calls", "The agent's tool calls", (c) => c.calls.n ? `${c.calls.n} call${c.calls.n === 1 ? "" : "s"}` : "none in this time"],
   ["proposals", "Changes the agent proposed, and what became of them", (c) => c.proposals.n ? `${c.proposals.n}` : "none in this time"],
   ["annotation", "This annotation's history: versions, priors, corrections, analyses run", (c) => c.session ? "the annotation open now" : "no annotation open"],
