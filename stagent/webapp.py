@@ -1083,7 +1083,7 @@ def api_samples(req):
                          "image_only": bool(meta.get("image_only")), "um_per_px_known": meta.get("um_per_px_known", True),
                          "filter": {"params": f["params"], "n_cells_removed": f["n_cells_removed"],
                                     "n_genes_removed": len(f["genes_removed"])} if (f := meta.get("filter")) else None,
-                         "sessions": mine.sort_values("created_at", ascending=False)[["session_id", "created_at", "n_versions", "method"]]
+                         "sessions": mine.sort_values("created_at", ascending=False)[["session_id", "created_at", "n_versions", "method", "loaded"]]
                          .to_dict("records") if len(mine) else []})
     return _json(rows)
 

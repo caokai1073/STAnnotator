@@ -1347,7 +1347,14 @@ async function loadSamples(select, project) {
   const url = new URLSearchParams(location.search);  // links from the agent: ?sample=...&session=...
   const want = select || url.get("sample") || load("sample");
   if (st.samples.some((s) => s.sample_id === want)) sel.value = want;
-  if (url.get("session") && url.get("sample") === sel.value) st.openedThisVisit[sel.value] = url.get("session");
+  // the annotation in the link counts once, when the page opens: Refresh, Load…, the agent's and the user's later
+  // choices must not be sent back to it; the link is then dropped from the address (a reload keeps what is open)
+  if (!st.linkUsed && url.get("session") && url.get("sample") === sel.value) st.openedThisVisit[sel.value] = url.get("session");
+  if (!st.linkUsed && url.has("session")) {
+    url.delete("session"); url.delete("sample");
+    try { history.replaceState(null, "", location.pathname + (url.toString() ? `?${url}` : "") + location.hash); } catch (e) {}
+  }
+  st.linkUsed = true;
   await selectSample(sel.value);
 }
 function fillSampleSelect() {  // the slices of each project, then the samples on their own
@@ -1408,7 +1415,8 @@ function fillModes(sm) {
 }
 const USER_METHODS = ["markers", "scref", "existing"];  // annotations made in the app (not the lab's benchmark ones)
 function sessionLabel(x) {
-  return `v${x.n_versions} · ${x.created_at.slice(5, 16).replace("T", " ")} · ${{ scref: "reference", existing: "loaded" }[x.method] || "markers"}`;
+  return `v${x.n_versions} · ${x.created_at.slice(5, 16).replace("T", " ")} · ${{ scref: "reference", existing: "loaded" }[x.method] || "markers"}` +
+    (x.loaded ? " · loaded copy" : "");  // from a .stannot file (Load…): its dates are the original's
 }
 function fillSessions(selected) {
   const sel = $("session"); sel.textContent = "";

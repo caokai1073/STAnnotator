@@ -86,7 +86,8 @@ def list_sessions():
             if (d / "session.json").exists():
                 s = json.load(open(d / "session.json"))
                 rows.append({k: s[k] for k in ("session_id", "sample_id", "created_at")}
-                            | {"method": s.get("method", "reference"), "n_versions": len(list((d / "versions").glob("v*.json")))})
+                            | {"method": s.get("method", "reference"), "n_versions": len(list((d / "versions").glob("v*.json"))),
+                               "loaded": bool(s.get("loaded_from"))})
     return pd.DataFrame(rows)
 
 
@@ -919,8 +920,8 @@ class Session:
         """Rename a region everywhere (all its polygons and every constraint that names it)."""
         new = regmod.validate_name(new)
         cols = self.region_colors()
-        if old in cols:  # the picked color follows the name
-            self.set_region_color(new, cols[old]); self.set_region_color(old, None)
+        if old in cols:  # the picked color follows the name, and stays with the old name too: colors are not
+            self.set_region_color(new, cols[old])  # versioned, so an Undo of the rename finds it again
         cur = self.state()
         ops = [dict(o, name=new) if o.get("name") == old else o for o in cur["regions"].get("ops", [])]
         if ops == cur["regions"].get("ops", []):
