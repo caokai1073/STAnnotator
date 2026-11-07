@@ -28,7 +28,7 @@ jobs:
     outputs:
       version: ${{ steps.v.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: v
         run: |
           version=$(sed -n 's/^__version__ = "\([^"]*\)".*/\1/p' stagent/__init__.py)
@@ -42,13 +42,13 @@ jobs:
 
   macos:
     needs: version
-    runs-on: macos-14   # Apple silicon
+    runs-on: macos-15   # Apple silicon (macos-14 is retired)
     timeout-minutes: 180
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 1
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v10
       - name: Build stamp and upload link
         env:
           REPORT_UPLOAD_URL: ${{ secrets.REPORT_UPLOAD_URL }}
@@ -80,7 +80,7 @@ jobs:
         env:
           DEVELOPER_ID: ${{ secrets.MACOS_DEVELOPER_ID }}
         run: bash packaging/macos/build_app.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: macos
           path: dist/STAnnotator.dmg
@@ -91,10 +91,10 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 1
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v10
       - name: Build stamp, upload link and Inno Setup
         shell: pwsh
         env:
@@ -111,7 +111,7 @@ jobs:
         run: |
           $v = "${{ needs.version.outputs.version }}"
           Copy-Item "dist\STAnnotator-Setup-$v.exe" "dist\STAnnotator-Setup.exe"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows
           path: dist/STAnnotator-Setup.exe
@@ -122,8 +122,8 @@ jobs:
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           path: assets
           merge-multiple: true
