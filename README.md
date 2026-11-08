@@ -142,9 +142,9 @@ stagent mcp                 # the agent's tools, for Claude Code without the app
 
 ## Troubleshooting
 
-- **Something went wrong**: the bug icon (top right, between **?** and **›**): describe the bug, and the app adds your
-  conversations with the agent, its tool calls and the app's log (text only, no expression data). Upload it to the
-  developers in one click, or save it and send it.
+- **Something went wrong**: the bug icon (top right, between **?** and **›**): describe the bug, add up to 3 screenshots if
+  they help, and the app adds your conversations with the agent, its tool calls and the app's log (no expression data).
+  Upload it to the developers in one click, or save it and send it.
 - **The app does not open**: see `~/Library/Caches/STAnnotator/app.log` (Windows: `%LOCALAPPDATA%\STAnnotator\app.log`;
   from source: `~/stagent/app.log`), or run
   `stagent app` in Terminal to see the error.

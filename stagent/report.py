@@ -1,7 +1,9 @@
 """A problem report: what the user did with the agent and what the app logged, as one zip the user chooses to send.
 
-Report bug... (right of Export in the toolbar) saves it. It holds text only, no expression data and no images:
+Report bug... (right of Export in the toolbar) saves it. It holds no expression data or cell tables, and no images but
+the screenshots the user adds:
 - README.txt: what the report holds, the version and the system; note.txt: what the user wrote;
+- screenshots/: up to 3 pictures the user added (chosen, dropped or pasted in the dialog);
 - about.json: the About information (version, build, data folder, Claude Code found / connected, libraries);
 - agent/<id>.jsonl: the Claude Code conversations of the agent (Ask Agent's workspace, the app's chat box) touched
   in the last days, with images left out;
@@ -296,9 +298,10 @@ def _readme(about, days, parts, sid, left_out=()):
             "annotation": "annotation/: the annotation's history (versions, priors, corrections, analyses, chat); "
                           "sample/meta.json: its sample (platform, cells, genes, image, registration)",
             "page_errors": "page_errors.json: errors in the app's window (scripts, failed requests)",
-            "app_log": "logs/: the end of the app's logs (app.log, viewer.log, remote_viewer.log)"}
+            "app_log": "logs/: the end of the app's logs (app.log, viewer.log, remote_viewer.log)",
+            "screenshots": "screenshots/: pictures the user added"}
     lines += [f"- {what[p]}" for p in what if p in parts]
-    lines += ["", "No expression data, cell tables or images are included."]
+    lines += ["", "No expression data or cell tables are included, and no images but the screenshots the user added."]
     if left_out:
         lines += ["", f"Left out to keep the report small ({len(left_out)}; the oldest first):"] + \
                  [f"- {n}" for n in left_out[:50]] + (["- ..."] if len(left_out) > 50 else [])
@@ -326,27 +329,68 @@ def _page_errors(errors):
     return out
 
 
+# ---------------- screenshots the user adds ----------------
+SHOTS_MAX = 3
+SHOT_DIR = "screenshots/"
+_IMAGE_TYPES = [(b"\x89PNG\r\n\x1a\n", ".png", "image/png"), (b"\xff\xd8\xff", ".jpg", "image/jpeg"),
+                (b"GIF87a", ".gif", "image/gif"), (b"GIF89a", ".gif", "image/gif"), (b"BM", ".bmp", "image/bmp"),
+                (b"II*\x00", ".tif", "image/tiff"), (b"MM\x00*", ".tif", "image/tiff")]
+
+
+def image_type(data):
+    """(extension, media type) of an image from its first bytes, or None: what the user adds must be a picture."""
+    head = bytes(data[:16])
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return ".webp", "image/webp"
+    if head[4:8] == b"ftyp" and head[8:12] in (b"heic", b"heix", b"mif1", b"msf1", b"heim", b"heis"):
+        return ".heic", "image/heic"
+    for magic, ext, mime in _IMAGE_TYPES:
+        if head.startswith(magic):
+            return ext, mime
+    return None
+
+
+def screenshots(items):
+    """The user's pictures as [(name in the report, bytes)]: at most SHOTS_MAX, each a picture (any size), named
+    1-<their name>.<ext>, 2-..., in the order given."""
+    out = []
+    for i, (name, data) in enumerate(items or [], 1):
+        if len(out) == SHOTS_MAX:
+            raise ValueError(f"at most {SHOTS_MAX} screenshots")
+        kind = image_type(data)
+        if not kind:
+            raise ValueError(f"{name or 'a file'} is not a picture (PNG, JPEG, GIF, WebP, BMP, TIFF or HEIC)")
+        stem = re.sub(r"[^A-Za-z0-9_-]+", "-", Path(str(name or "")).stem).strip("-")[:60] or "screenshot"
+        out.append((f"{SHOT_DIR}{i}-{stem}{kind[0]}", bytes(data)))
+    return out
+
+
 def build(dest, about, days=3, parts=("conversations", "calls", "proposals", "annotation", "app_log"), sid=None,
-          note="", page_errors=None):
-    """Write the report to dest (a .zip); returns what went in."""
+          note="", page_errors=None, shots=None):
+    """Write the report to dest (a .zip); returns what went in. shots: the user's screenshots, [(name, bytes)]."""
     about = {**about, "install_id": install_id()}
     since = time.time() - days * 86400
-    parts = set(parts) | {"about"} | ({"note"} if note.strip() else set())
+    shots = screenshots(shots)
+    parts = set(parts) | {"about"} | ({"note"} if note.strip() else set()) | ({"screenshots"} if shots else set())
     dest = Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_name(dest.name + ".part")
     try:
-        return _build(tmp, dest, about, days, since, parts, sid, note, page_errors)
+        return _build(tmp, dest, about, days, since, parts, sid, note, page_errors, shots)
     finally:
         tmp.unlink(missing_ok=True)
 
 
-def _build(tmp, dest, about, days, since, parts, sid, note, page_errors):
-    n = {"conversations": 0, "calls": 0, "proposals": 0, "annotation": 0, "app_log": 0, "page_errors": 0}
+def _build(tmp, dest, about, days, since, parts, sid, note, page_errors, shots=()):
+    n = {"conversations": 0, "calls": 0, "proposals": 0, "annotation": 0, "app_log": 0, "page_errors": 0,
+         "screenshots": 0}
     skipped = []
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
         if note.strip():
             _put(z, "note.txt", note.strip() + "\n")
+        for name, data in shots:  # pictures are compressed already
+            z.writestr(name, data, compress_type=zipfile.ZIP_STORED)
+            n["screenshots"] += 1
         _put(z, "about.json", json.dumps(about, indent=1, default=str, ensure_ascii=False))
         if "conversations" in parts:
             total = 0
@@ -424,7 +468,8 @@ def add_local(zip_path, days=3, parts=("conversations", "app_log")):
 
 
 # ---------------- upload to the developers (packaging/report_receiver.gs, a Google Apps Script web app) ----------------
-UPLOAD_MAX = 35 * 2 ** 20  # sent as base64 (x 4/3): Apps Script takes requests up to about 50 MB
+UPLOAD_MAX = 35 * 2 ** 20  # one request, sent as base64 (x 4/3): Apps Script takes requests up to about 50 MB. The
+# screenshots go as files of their own, one request each, so a report with pictures can be well over 100 MB in all.
 _URL = re.compile(r"https://script\.google(usercontent)?\.com/macros/s/[A-Za-z0-9_-]+/exec")
 
 
@@ -487,20 +532,57 @@ def set_upload_url(url):
     return url
 
 
+def _take_screenshots(path):
+    """The report without its screenshots (a temporary zip next to it, or path itself when it has none) and the
+    screenshots, [(name, bytes)]: they are uploaded as files of their own, so the developers see them in the folder."""
+    with zipfile.ZipFile(path) as z:
+        names = [i for i in z.infolist() if i.filename.startswith(SHOT_DIR) and not i.is_dir()]
+        if not names:
+            return path, []
+        shots = [(i.filename[len(SHOT_DIR):], z.read(i)) for i in names]
+        rest = path.with_name(path.name + ".text")
+        with zipfile.ZipFile(rest, "w", zipfile.ZIP_DEFLATED) as out:
+            for i in z.infolist():
+                if i not in names:
+                    out.writestr(i, z.read(i), compress_type=i.compress_type)
+    return rest, shots
+
+
 def upload(path, name, about=None, note="", sender="", url=None, extra=None):
-    """Send a saved report to the developers' Drive folder. extra: more fields for the receiver (an automatic report
-    sends {"auto": True, "install": <id>}, which it files under autosave/<id>/)."""
+    """Send a saved report to the developers' Drive folder: the zip in one request, then each screenshot in it as a
+    file of its own (<report name>-screenshot<i>.<ext>, one request each). extra: more fields for the receiver (an
+    automatic report sends {"auto": True, "install": <id>}, which it files under autosave/<id>/)."""
     import base64
     url = _check_url(url or upload_url())
     path = Path(path)
-    size = path.stat().st_size
-    if size > UPLOAD_MAX:
-        raise ValueError(f"the report is {size / 2 ** 20:.0f} MB, more than the upload takes (35 MB): "
-                         "choose fewer days or leave the conversations out, or save it and send it")
-    about = about or {}
-    r = _request(url, {"name": name, "data": base64.b64encode(path.read_bytes()).decode(),
-                       "version": about.get("version"), "system": about.get("system"),
-                       "from": sender[:200], "note": note[:2000], "install": install_id(), **(extra or {})})
-    if not r.get("ok"):
-        raise ValueError(r.get("error") or "the upload failed")
-    return {"uploaded": r.get("name", name), "bytes": size}
+    body, shots = _take_screenshots(path)
+    try:
+        size = body.stat().st_size
+        if size > UPLOAD_MAX:
+            raise ValueError(f"the report is {size / 2 ** 20:.0f} MB, more than the upload takes (35 MB): "
+                             "choose fewer days or leave the conversations out, or save it and send it")
+        for i, (n, data) in enumerate(shots, 1):  # checked before anything is sent: no report half uploaded
+            if len(data) > UPLOAD_MAX:
+                raise ValueError(f"screenshot {i} ({n}) is {len(data) / 2 ** 20:.0f} MB, more than one upload takes "
+                                 "(35 MB): leave it out or make it smaller, or save the report and send it")
+        about = about or {}
+        common = {"version": about.get("version"), "system": about.get("system"), "from": sender[:200],
+                  "install": install_id(), **(extra or {})}
+        r = _request(url, {"name": name, "data": base64.b64encode(body.read_bytes()).decode(), "note": note[:2000],
+                           **common})
+        if not r.get("ok"):
+            raise ValueError(r.get("error") or "the upload failed")
+        stem = name[:-4] if name.lower().endswith(".zip") else name
+        for i, (n, data) in enumerate(shots, 1):
+            ext, mime = image_type(data) or (Path(n).suffix or ".png", "application/octet-stream")
+            rs = _request(url, {"name": f"{stem}-screenshot{i}{ext}", "data": base64.b64encode(data).decode(),
+                                "type": mime, "attachment": True, "report": r.get("name", name), **common},
+                          timeout=300)
+            if not rs.get("ok"):
+                raise ValueError(f"the report was uploaded, but screenshot {i} was not: "
+                                 f"{rs.get('error') or 'the upload failed'}; save the report and send it")
+        return {"uploaded": r.get("name", name), "bytes": size + sum(len(d) for _, d in shots),
+                "screenshots": len(shots)}
+    finally:
+        if body != path:
+            body.unlink(missing_ok=True)

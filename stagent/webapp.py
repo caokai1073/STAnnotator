@@ -1939,8 +1939,10 @@ async def api_bug_contents(req: Request):
 
 
 async def api_bug_save(req: Request):
-    """{days, session, parts, note, path}: with a path (desktop app on this computer) the report is written there,
-    else kept for a download from /api/bug-report/<key>."""
+    """{days, session, parts, note, path, screenshots}: with a path (desktop app on this computer) the report is
+    written there, else kept for a download from /api/bug-report/<key>. screenshots: up to 3 [{name, data (base64)}]."""
+    import base64
+    import binascii
     from . import report
     b = await req.json()
     days, sid = _report_args(b)
@@ -1948,13 +1950,21 @@ async def api_bug_save(req: Request):
                                                    "app_log")]
     errors = b.get("page_errors")
     note = str(b.get("note", ""))[:20000]
+    raw = b.get("screenshots") or []
+    if not isinstance(raw, list) or len(raw) > report.SHOTS_MAX:
+        return _json({"error": f"at most {report.SHOTS_MAX} screenshots"}, 400)
+    try:
+        shots = [(str(x.get("name", "")), base64.b64decode(str(x.get("data", "")), validate=True)) for x in raw]
+        report.screenshots(shots)
+    except (AttributeError, binascii.Error, ValueError) as e:
+        return _json({"error": f"a screenshot could not be read: {e}"}, 400)
     about = await asyncio.to_thread(_about, False)
     if b.get("path"):
         if not desktop_mode():
             return _json({"error": "only in the desktop app"}, 403)
         dest = Path(b["path"]).expanduser()
         try:
-            return _json(await asyncio.to_thread(report.build, dest, about, days, parts, sid, note, errors))
+            return _json(await asyncio.to_thread(report.build, dest, about, days, parts, sid, note, errors, shots))
         except Exception as e:
             return _json({"error": f"the report could not be made: {e}"}, 400)
     REPORTS.mkdir(parents=True, exist_ok=True)
@@ -1962,7 +1972,8 @@ async def api_bug_save(req: Request):
         old.unlink(missing_ok=True)
     key = uuid.uuid4().hex[:12]
     try:
-        info = await asyncio.to_thread(report.build, REPORTS / f"{key}.zip", about, days, parts, sid, note, errors)
+        info = await asyncio.to_thread(report.build, REPORTS / f"{key}.zip", about, days, parts, sid, note, errors,
+                                       shots)
     except Exception as e:
         return _json({"error": f"the report could not be made: {e}"}, 400)
     return _json({"key": key, **info})

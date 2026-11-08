@@ -404,7 +404,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
   <div class="hrow r1">
     <div class="cap"><h1>STAnnotator</h1>
       <button id="helpBtn" title="How to use the app, and About (version, agent connection, data folder)" style="padding:4px 10px;font-weight:600;margin-left:auto">?</button>
-      <button id="bugBtn" title="Report a bug: your conversations with the agent, its tool calls and the app's log, as one file for the developers">Report a bug</button>
+      <button id="bugBtn" title="Report a bug: what happened (with screenshots if they help), your conversations with the agent, its tool calls and the app's log, for the developers">Report a bug</button>
       <button id="hdrHide" title="Fold the toolbar to the right for a bigger map (t)" style="padding:4px 9px">›</button></div>
     <div class="io"><button id="importBtn" title="Add a sample (Xenium files, h5ad or RDS), then its image and registration">Import</button>
     <button id="export" disabled title="Save the cell table (CSV), the registration, or the analysis as a Jupyter notebook">Export</button>
@@ -1050,11 +1050,14 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <label class="f"><b>Describe the bug</b><span class="hint">What did you do, what happened, and what did you expect?</span>
       <textarea id="bugNote" rows="5" maxlength="20000"
       placeholder="e.g. I asked the agent to align the H&amp;E; it said the alignment was applied but the cells stayed where they were."></textarea></label>
+    <div class="f" id="bugShotBox"><span>Screenshots <span class="hint">(optional, up to 3: choose, drop or paste them here)</span></span>
+      <div id="bugShots" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center"></div>
+      <input type="file" id="bugShotFile" accept="image/*" multiple hidden></div>
     <label class="f">Your name or email <span class="hint">(optional: so the developers know who sent it and can reply)</span><input type="text" id="bugFrom" maxlength="200" autocomplete="email"></label>
     <details id="bugMore"><summary class="hint" style="cursor:pointer">What goes in the report</summary>
       <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
-        <div class="hint">Text only: no expression data, cell tables or images. Conversations can include file paths,
-          gene names and numbers the agent read.</div>
+        <div class="hint">No expression data or cell tables, and no images but the screenshots you add. Conversations
+          can include file paths, gene names and numbers the agent read.</div>
         <label class="f">From<select id="bugDays"><option value="1">the last day</option><option value="3" selected>the last 3 days</option>
           <option value="7">the last 7 days</option><option value="30">the last 30 days</option></select></label>
         <div id="bugParts" style="display:flex;flex-direction:column;gap:6px"></div></div></details>
@@ -3799,10 +3802,10 @@ const HELP = `
 <li><b>Ask Agent</b> (bar on the map) opens your own Claude Code, connected to this app. <b>Undo</b> and
   <b>Report</b> are there too.</li>
 <li>Something went wrong? The bug icon (top right, between <b>?</b> and <b>›</b>):<ul>
-  <li>describe the bug in a few words;</li>
+  <li>describe the bug in a few words, and add up to 3 screenshots if they help (choose, drop or paste them);</li>
   <li>the report adds your conversations with the agent, its tool calls and proposals, this annotation's history and
-    the app's log (text only: no expression data, cell tables or images; <i>What goes in the report</i> lets you leave
-    parts out);</li>
+    the app's log (no expression data or cell tables, and no images but your screenshots; <i>What goes in the
+    report</i> lets you leave parts out);</li>
   <li><b>Upload to the developers</b> sends it to their Google Drive folder (run from source, the app asks once for the
     upload link they gave you), or <b>Save to file…</b> keeps it on this computer to send yourself.</li></ul></li></ul>`;
 const AGENT = `
@@ -4136,7 +4139,45 @@ function bugPageErrors() {
   const since = new Date(Date.now() - (+$("bugDays").value || 3) * 864e5).toISOString();
   return PAGE_ERRORS.filter((e) => e.time >= since && !String(e.path || "").startsWith("/api/bug-report"));
 }
-const BUG = { link: "" };
+const BUG = { link: "", shots: [] };  // shots: the user's screenshots, {name, data (base64), url, bytes}
+const BUG_SHOTS = 3;
+function bugShowShots() {
+  const esc = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+  $("bugShots").innerHTML = BUG.shots.map((s, i) =>
+    `<span style="position:relative;display:inline-flex;flex-direction:column;align-items:center;gap:2px" title="${esc(s.name)}">` +
+    `<img src="${s.url}" alt="" style="height:64px;max-width:110px;object-fit:cover;border:1px solid var(--line,#ccc);border-radius:4px">` +
+    `<span class="hint">${s.bytes >= 2 ** 20 ? `${(s.bytes / 2 ** 20).toFixed(1)} MB` : `${Math.max(1, Math.round(s.bytes / 2 ** 10))} KB`}</span>` +
+    `<button data-i="${i}" title="Remove this screenshot" style="position:absolute;top:-6px;right:-6px;padding:0 5px;line-height:16px;border-radius:9px">×</button></span>`).join("") +
+    (BUG.shots.length < BUG_SHOTS ? `<button id="bugShotAdd">Add screenshot…</button>` : "");
+  $("bugShots").querySelectorAll("button[data-i]").forEach((b) => b.onclick = () => {
+    const [s] = BUG.shots.splice(+b.dataset.i, 1); URL.revokeObjectURL(s.url); bugShowShots();
+  });
+  if ($("bugShotAdd")) $("bugShotAdd").onclick = () => $("bugShotFile").click();
+}
+async function bugAddShots(files) {
+  const imgs = [...files].filter((f) => f && (/^image\//.test(f.type || "") || /\.(png|jpe?g|gif|webp|bmp|tiff?|heic)$/i.test(f.name || "")));
+  if (!imgs.length) { $("bugErr").textContent = "Only pictures can be added (PNG, JPEG, …)."; return; }
+  $("bugErr").textContent = "";
+  for (const f of imgs) {
+    if (BUG.shots.length >= BUG_SHOTS) { $("bugErr").textContent = `At most ${BUG_SHOTS} screenshots.`; break; }
+    const data = await new Promise((ok, bad) => { const r = new FileReader(); r.onload = () => ok(String(r.result).replace(/^data:[^,]*,/, "")); r.onerror = () => bad(r.error); r.readAsDataURL(f); });
+    const name = f.name && f.name !== "image.png" ? f.name : `screenshot-${BUG.shots.length + 1}.png`;
+    BUG.shots.push({ name, data, url: URL.createObjectURL(f), bytes: f.size });
+  }
+  bugShowShots();
+}
+function bugClearShots() { BUG.shots.forEach((s) => URL.revokeObjectURL(s.url)); BUG.shots = []; bugShowShots(); }
+$("bugShotFile").onchange = (e) => { bugAddShots(e.target.files).catch((x) => { $("bugErr").textContent = x.message; }); e.target.value = ""; };
+$("bugDlg").addEventListener("paste", (e) => {  // a picture pasted anywhere in the dialog; pasted text goes on as usual
+  const files = [...(e.clipboardData?.items || [])].filter((i) => i.kind === "file" && /^image\//.test(i.type)).map((i) => i.getAsFile());
+  if (!files.length) return;
+  e.preventDefault(); bugAddShots(files).catch((x) => { $("bugErr").textContent = x.message; });
+});
+$("bugDlg").addEventListener("dragover", (e) => { if ([...(e.dataTransfer?.types || [])].includes("Files")) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; } });
+$("bugDlg").addEventListener("drop", (e) => {
+  if (!e.dataTransfer?.files?.length) return;
+  e.preventDefault(); bugAddShots(e.dataTransfer.files).catch((x) => { $("bugErr").textContent = x.message; });
+});
 async function bugContents() {
   const q = new URLSearchParams({ days: $("bugDays").value, session: st.sid || "" });
   const c = await api(`/api/bug-report?${q}`);
@@ -4156,7 +4197,7 @@ function bugLinkShown(show) {
 }
 async function openBugReport() {
   $("bugErr").textContent = ""; $("bugMsg").textContent = ""; $("bugSave").disabled = $("bugUpload").disabled = false;
-  $("bugFrom").value = load("bugFrom");
+  $("bugFrom").value = load("bugFrom"); bugShowShots();
   $("bugDlg").showModal(); $("bugNote").focus();
   $("bugParts").innerHTML = `<span class="hint">Checking…</span>`;
   try {  // with the app on a server the upload goes from this computer, with its link
@@ -4189,7 +4230,8 @@ function bugRequest() {
   const who = (email ? email[0] : from.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z0-9]+/g, "-")).replace(/^[-.]+|[-.]+$/g, "").slice(0, 30);
   const name = ["STAnnotator-report", stamp, BUG.install, who].filter(Boolean).join("-") + ".zip";
   return { name, from, note, days: +$("bugDays").value,
-           parts: BUG.parts || ["conversations", "calls", "proposals", "annotation", "page_errors", "app_log"] };
+           parts: BUG.parts || ["conversations", "calls", "proposals", "annotation", "page_errors", "app_log"],
+           screenshots: BUG.shots.map((s) => ({ name: s.name, data: s.data })) };
 }
 async function bugRun(label, fn) {
   if (!$("bugNote").value.trim() && !confirm("Send the report without describing the bug? A few words on what happened help a lot.")) { $("bugNote").focus(); return; }
@@ -4199,7 +4241,8 @@ async function bugRun(label, fn) {
   finally { $("bugSave").disabled = $("bugUpload").disabled = false; }
 }
 $("bugSave").onclick = () => bugRun("Saving…", async (q) => {
-  const body = { days: q.days, parts: q.parts, note: q.note, session: st.sid || "", page_errors: bugPageErrors() };
+  const body = { days: q.days, parts: q.parts, note: q.note, session: st.sid || "", page_errors: bugPageErrors(),
+                 screenshots: q.screenshots };
   let saved = null;
   if (native() && !st.remote) {  // the desktop app on this computer: written where the user chooses
     const path = await native().save_path(q.name);
@@ -4223,8 +4266,9 @@ $("bugSave").onclick = () => bugRun("Saving…", async (q) => {
 });
 $("bugUpload").onclick = () => {
   if (!BUG.link) { bugLinkShown(true); $("bugLink").focus(); $("bugMsg").textContent = "Paste the upload link the developers gave you, then Save link."; return; }
-  bugRun("Uploading…", async (q) => {
-    const body = { days: q.days, parts: q.parts, note: q.note, session: st.sid || "", page_errors: bugPageErrors() };
+  bugRun(BUG.shots.length ? "Uploading the report and the screenshots…" : "Uploading…", async (q) => {
+    const body = { days: q.days, parts: q.parts, note: q.note, session: st.sid || "", page_errors: bugPageErrors(),
+                   screenshots: q.screenshots };
     const r = await post("/api/bug-report", body);
     let up;
     if (st.remote) {  // made on the server; this computer adds its conversations and sends it
@@ -4232,8 +4276,10 @@ $("bugUpload").onclick = () => {
         q.parts.filter((p) => p === "conversations" || p === "app_log"), q.note, q.from, "");
       if (up.error) throw new Error(up.error);
     } else up = await post("/api/bug-report/upload", { key: r.key, name: q.name, note: q.note, from: q.from });
-    $("bugMsg").textContent = `Uploaded ${up.uploaded} (${(up.bytes / 2 ** 10).toFixed(0)} KB). Thank you: the developers will look at it.`;
-    $("bugNote").value = "";
+    const size = up.bytes > 2 ** 20 ? `${(up.bytes / 2 ** 20).toFixed(1)} MB` : `${(up.bytes / 2 ** 10).toFixed(0)} KB`;
+    $("bugMsg").textContent = `Uploaded ${up.uploaded}` + (up.screenshots ? ` and ${up.screenshots} screenshot${up.screenshots === 1 ? "" : "s"}` : "") +
+      ` (${size}). Thank you: the developers will look at it.`;
+    $("bugNote").value = ""; bugClearShots();
   });
 };
 // ---------------- usage sharing during testing (autoshare.py): asked once, changed in About ----------------

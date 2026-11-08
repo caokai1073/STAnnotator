@@ -932,6 +932,8 @@ to 98.6%.
 Something went wrong with the agent or the app: click the bug icon (top right, between **?** and **›**).
 
 1. Describe the bug (what you did, what happened, what you expected) and optionally give your name or email.
+   Screenshots help with anything you can see: add up to 3 with **Add screenshot…**, or drop or paste them into the
+   dialog (any size).
 2. **What goes in the report** lists each part and lets you leave it out. The report adds, from the last 1 to 30 days
    (3 by default):
    - your conversations with the agent (Claude Code's own records of them, images left out);
@@ -941,11 +943,12 @@ Something went wrong with the agent or the app: click the bug icon (top right, b
      sample's description (platform, cells, genes, image, registration);
    - errors in the app's window (scripts, failed requests) and the end of the app's logs.
 
-   It holds no expression data, cell tables or images; conversations can include file paths, gene names and numbers
-   the agent read.
+   It holds no expression data or cell tables, and no images but your screenshots; conversations can include file
+   paths, gene names and numbers the agent read.
 3. Send it:
    - **Upload to the developers** sends it to the developers' Google Drive folder (the installed app knows where; run
-     from source, it asks once for the upload link the developers gave you);
+     from source, it asks once for the upload link the developers gave you). Each screenshot goes as a file of its own
+     next to the report; one file can be up to 35 MB;
    - **Save to file…** keeps it on this computer to send yourself (privately: an issue on GitHub is public).
 
 With the app working on a server, the report is made there and this computer's conversations and log are added to it.
