@@ -477,9 +477,25 @@
     $("#time").textContent = `${fmt(t)} / ${fmt(S.total)}`;
   }
   (function tick() { progress(); requestAnimationFrame(tick); })();
+  // embedded in the website (?embed): the page's chapter buttons jump here, and show where the tutorial is
+  const host = () => (S.embed && window.parent !== window ? window.parent : null);
+  let lastPost = 0;
+  function postState(force) {
+    const h = host(), x = tl(S.ci, S.si);
+    if (!h || !x || (!force && performance.now() - lastPost < 250)) return;
+    lastPost = performance.now();
+    const c = CH[S.ci], t = x.t0 + Math.min(x.ms, S.stepElapsed + (S.playing ? (performance.now() - S.stepStart) * S.speed : 0));
+    try { h.postMessage({ source: "stannotator-tutorial", type: "state", chapter: c.id, progress: Math.max(0, Math.min(1, (t - c.t0) / c.ms)), playing: S.playing }, location.origin); } catch (e) { /* another site */ }
+  }
+  setInterval(() => postState(false), 300);
+  window.addEventListener("message", (e) => {
+    if (e.origin !== location.origin || !e.data || e.data.source !== "stannotator-site") return;
+    if (e.data.type === "chapter") { const ci = CH.findIndex((c) => c.id === e.data.chapter); if (ci >= 0) jump(ci, 0, true); }
+  });
 
   function setPlaying(p) {
     if (p && S.dirty) { S.dirty = false; S.playing = true; jump(S.ci, S.si, false); return; }  // the viewer changed the app: start this step again
+    if (p) $("#app").classList.add("started");
     if (p === S.playing) return;
     if (p) S.stepStart = performance.now(); else S.stepElapsed += (performance.now() - S.stepStart) * S.speed;
     S.playing = p;
@@ -609,10 +625,14 @@
   /* ---------------- start ---------------- */
   (async () => {
     S.debug = new URLSearchParams(location.search).has("debug");
+    S.embed = new URLSearchParams(location.search).has("embed");
+    if (S.embed) { $("#app").classList.add("embed", "noNav", "noNotes"); }
     if (innerWidth < 1600) { $("#app").classList.add("noNav"); $("#bNav").classList.remove("on"); }
     const [m, a] = await Promise.all([fetch(DATA + "manifest.json").then((r) => r.json()), fetch(DATA + "agent.json").then((r) => r.json())]);
     S.data = m; S.agent = a;
     buildTimeline(); buildNav(); fit();
+    $("#startSub").textContent = `${CH.length} chapters · ${Math.round(S.total / 60000)} min · pause anytime and try it yourself`;
+    $("#start").onclick = () => setPlaying(true);
     const q = new URLSearchParams(location.search), ci = Math.max(0, CH.findIndex((c) => c.id === q.get("chapter")));
     $("#app").classList.add("paused");
     if (q.has("check")) {  // the developers' self-check: play every chapter fast, collect failed steps and unrecorded requests
@@ -625,5 +645,5 @@
     }
     jump(ci, 0, false);
   })();
-  window.__player = { S, jump, find, setScene, match };  // for the developers' self-check (tools/tutorial/check.js)
+  window.__player = { S, jump, find, setScene, match, chapters: () => CH.map((c) => ({ id: c.id, title: c.title, ms: c.ms })) };  // for the developers' self-check (tools/tutorial/check.js)
 })();

@@ -61,8 +61,8 @@ mkdir -p work/tut/www && ln -sfn "$PWD/docs" work/tut/www/STAnnotator && ln -sfn
 cd work/tut/www && python3 -m http.server 8790
 ```
 
-The data lives in [STAnnotator-media](https://github.com/caokai1073/STAnnotator-media) (`tutorial/data/`), next to the
-tutorial video, so the source repository stays small; both are served from www.caokai.site, so the page reads it as
+The data lives in [STAnnotator-media](https://github.com/caokai1073/STAnnotator-media) (`tutorial/data/`), so the
+source repository stays small; both are served from www.caokai.site, so the page reads it as
 its own. Without `--data-out` the data goes next to the page (`docs/tutorial/data`, `--data-url data/`).
 
 `?check&speed=3` plays every chapter fast and lists the steps whose target was not found and the requests that were

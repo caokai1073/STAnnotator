@@ -128,9 +128,11 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 section.band { padding-block: clamp(64px, 9vw, 112px) 0; }
 .tutorial h2 { margin-top: 6px; font-size: var(--s-4); line-height: 1.15; }
 .tutorial .intro { color: var(--muted); max-width: 72ch; margin-top: 12px; font-size: var(--s-2); }
-.video { margin: 28px 0 0; border-radius: 10px; overflow: hidden; background: #000; box-shadow: var(--shadow); border: 1px solid var(--line); }
-.video video { display: block; width: 100%; height: auto; aspect-ratio: 1920 / 940; background: #000; }
-.chapters { list-style: none; margin: 14px 0 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.video { margin: 28px 0 0; border-radius: 10px; overflow: hidden; background: #f4f5f7; box-shadow: var(--shadow); border: 1px solid var(--line); }
+.video iframe { display: block; width: 100%; aspect-ratio: 4 / 3; border: 0; background: #f4f5f7; }
+.tutorial .intro.small { font-size: var(--s-1); margin-top: 14px; }
+.chapters { list-style: none; margin: 14px 0 0; padding: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 1100px) { .chapters { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @media (max-width: 860px) { .chapters { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 560px) { .chapters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .chapters button { position: relative; overflow: hidden; width: 100%; height: 100%; display: grid; gap: 2px; align-content: start;
@@ -341,30 +343,28 @@ footer a { color: var(--muted); }
     <div class="wrap">
       <p class="eyebrow">Tutorial</p>
       <h2>From import to results, step by step</h2>
-      <p class="intro">Two Xenium sections in the app with Claude, from importing them to exporting the results.
-        Click a chapter to jump to it.</p>
-      <p class="intro"><a class="btn btn-ghost" href="tutorial/">Try it yourself: the interactive tutorial →</a>
-        The real app on a recorded session, in your browser: pause at any step and click around.</p>
+      <p class="intro">The real app in your browser, replaying a session with Claude on two Xenium sections, from importing
+        them to exporting the results. Press play; pause at any step and the app is yours to click around. Click a
+        chapter to jump to it.</p>
       <figure class="video">
-        <video controls playsinline preload="metadata" poster="assets/tutorial-poster.jpg?v=4"
-               width="1920" height="940" aria-label="STAnnotator tutorial video">
-          <source src="https://www.caokai.site/STAnnotator-media/tutorial.mp4?v=4" type="video/mp4">
-          <track kind="chapters" src="assets/tutorial-chapters.vtt?v=4" srclang="en" label="Chapters" default>
-          Your browser cannot play this video: <a href="https://www.caokai.site/STAnnotator-media/tutorial.mp4">download it</a>.
-        </video>
+        <iframe src="tutorial/?embed" loading="lazy" title="STAnnotator interactive tutorial"
+                allow="fullscreen"></iframe>
       </figure>
       <ol class="chapters" aria-label="Chapters of the tutorial">
-          <li><button type="button" data-t="0" data-end="174.42"><time>0:00</time>Import &amp; align</button></li>
-          <li><button type="button" data-t="174.42" data-end="252.99"><time>2:54</time>Filter &amp; markers</button></li>
-          <li><button type="button" data-t="252.99" data-end="299.22"><time>4:12</time>Annotate</button></li>
-          <li><button type="button" data-t="299.22" data-end="412"><time>4:59</time>UMAP &amp; niches</button></li>
-          <li><button type="button" data-t="412" data-end="494.58"><time>6:52</time>Regions</button></li>
-          <li><button type="button" data-t="494.58" data-end="597.41"><time>8:14</time>Compare &amp; signaling</button></li>
-          <li><button type="button" data-t="597.41" data-end="616.43"><time>9:57</time>SSH &amp; help</button></li>
-          <li><button type="button" data-t="616.43" data-end="721.53"><time>10:16</time>Agent Review</button></li>
-          <li><button type="button" data-t="721.53" data-end="737.08"><time>12:01</time>Ask Claude</button></li>
-          <li><button type="button" data-t="737.08" data-end="749.685"><time>12:17</time>Export</button></li>
+          <li><button type="button" data-ch="import"><time>0:00</time>Import &amp; align</button></li>
+          <li><button type="button" data-ch="filter"><time>2:08</time>Filter &amp; markers</button></li>
+          <li><button type="button" data-ch="annotate"><time>3:26</time>Annotate</button></li>
+          <li><button type="button" data-ch="niches"><time>4:02</time>UMAP &amp; niches</button></li>
+          <li><button type="button" data-ch="regions"><time>5:18</time>Regions</button></li>
+          <li><button type="button" data-ch="compare"><time>6:13</time>Compare &amp; signaling</button></li>
+          <li><button type="button" data-ch="trajectory"><time>7:20</time>Trajectory</button></li>
+          <li><button type="button" data-ch="where"><time>8:04</time>SSH &amp; help</button></li>
+          <li><button type="button" data-ch="review"><time>8:27</time>Agent Review</button></li>
+          <li><button type="button" data-ch="ask"><time>10:52</time>Ask Claude</button></li>
+          <li><button type="button" data-ch="report"><time>11:31</time>Report an issue</button></li>
+          <li><button type="button" data-ch="export"><time>11:48</time>Export</button></li>
       </ol>
+      <p class="intro small"><a href="tutorial/">Open the tutorial on its own page</a>, with the chapter list and the notes of each step.</p>
     </div>
   </section>
 
@@ -760,29 +760,27 @@ fetch("https://api.github.com/repos/caokai1073/STAnnotator/releases/latest")
   })
   .catch(() => {});
 document.querySelectorAll("[data-releases]").forEach((a) => { a.href = REPO + "/releases"; });
-// tutorial chapters: a click jumps there; while it plays, the current chapter is marked with its progress
+// tutorial chapters: a click jumps there in the embedded tutorial; while it plays, the current chapter is marked with
+// its progress (the tutorial tells this page where it is, see docs/tutorial/engine.js)
 (() => {
-  const video = document.querySelector("#tutorial video");
+  const frame = document.querySelector("#tutorial iframe");
   const buttons = [...document.querySelectorAll(".chapters button")];
-  if (!video || !buttons.length) return;
-  const jump = (t) => {
-    video.currentTime = t;
-    video.play().catch(() => {});
-  };
+  if (!frame || !buttons.length) return;
+  let ready = false;
   buttons.forEach((b) => b.addEventListener("click", () => {
-    // before the player has read the video's length, seeking waits for it
-    if (video.readyState >= 1) jump(+b.dataset.t);
-    else { video.addEventListener("loadedmetadata", () => jump(+b.dataset.t), { once: true }); video.load(); }
+    frame.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (ready) frame.contentWindow.postMessage({ source: "stannotator-site", type: "chapter", chapter: b.dataset.ch }, location.origin);
+    else frame.src = "tutorial/?embed&chapter=" + encodeURIComponent(b.dataset.ch);
   }));
-  const mark = () => {
-    const t = video.currentTime;
+  window.addEventListener("message", (e) => {
+    if (e.origin !== location.origin || !e.data || e.data.source !== "stannotator-tutorial" || e.data.type !== "state") return;
+    ready = true;
     buttons.forEach((b) => {
-      const on = t >= +b.dataset.t && t < +b.dataset.end;
+      const on = b.dataset.ch === e.data.chapter;
       b.setAttribute("aria-current", on ? "true" : "false");
-      b.style.setProperty("--p", on ? ((t - b.dataset.t) / (b.dataset.end - b.dataset.t)).toFixed(3) : 0);
+      b.style.setProperty("--p", on ? e.data.progress.toFixed(3) : 0);
     });
-  };
-  ["timeupdate", "seeked"].forEach((e) => video.addEventListener(e, mark));
+  });
 })();
 // the visitor's own system first
 if (/Windows/i.test(navigator.userAgent)) document.documentElement.classList.add("on-win");

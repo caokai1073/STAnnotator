@@ -192,3 +192,21 @@ dialog#help button { border: 0; background: var(--ink); color: #fff; padding: 6p
 .t-table { border-collapse: collapse; margin: 4px 0 6px; font-size: 11px; line-height: 1.35; white-space: normal; }
 .t-table th, .t-table td { border: 1px solid #3a3e47; padding: 2px 5px; vertical-align: top; text-align: left; }
 .t-table th { color: #fff; }
+
+/* embedded in the website: the stage, captions and the bar only */
+#app.embed { grid-template-rows: 0 minmax(0, 1fr) 70px; grid-template-columns: 0 minmax(0, 1fr) 0 !important; }
+#app.embed #top, #app.embed #nav, #app.embed #notes { display: none; }
+#app.embed #stageWrap { padding: 10px 10px 4px; }
+#app.embed #caption { font-size: 15px; min-height: 52px; padding: 4px 18px 8px; }
+#full { display: none; text-decoration: none; color: var(--ink); border: 1px solid var(--line); border-radius: 999px; padding: 3px 11px; font-size: 12px; }
+#app.embed #full { display: inline-block; }
+
+/* before the first play: one clear button over the stage */
+#start { position: absolute; z-index: 20; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 16px;
+  padding: 18px 28px 18px 20px; border: 0; border-radius: 16px; background: rgba(18, 21, 28, .9); color: #fff; text-align: left;
+  box-shadow: 0 16px 50px rgba(0, 0, 0, .35); font-size: 20px; }
+#start:hover { background: #000; }
+#start .pl { width: 54px; height: 54px; border-radius: 50%; background: var(--accent); color: #1d1300; display: grid; place-items: center; font-size: 22px; }
+#start small { display: block; font-size: 13px; color: #c9cfda; margin-top: 3px; }
+#app.started #start { display: none; }
+#app:not(.started) #pill { display: none; }
