@@ -285,7 +285,10 @@ def contents(days=3, sid=None):
             "app_log": {"files": [str(p) for p in logs], "bytes": sum(min(p.stat().st_size, LOG_TAIL) for p in logs)}}
 
 
-def _readme(about, days, parts, sid, left_out=()):
+def _readme(about, days, parts, sid, left_out=(), included=None):
+    """What the report holds: only the parts that have something in it (included: the counts per part)."""
+    if included is not None:
+        parts = {p for p in parts if included.get(p, 1)}  # note, about and the sample have no count
     lines = ["STAnnotator problem report", "",
              f"Made {time.strftime('%Y-%m-%d %H:%M')} with STAnnotator {about.get('version')} (build {about.get('build')})",
              f"System: {platform.system()} {platform.release()} ({platform.machine()}), Python {platform.python_version()}",
@@ -301,7 +304,9 @@ def _readme(about, days, parts, sid, left_out=()):
             "app_log": "logs/: the end of the app's logs (app.log, viewer.log, remote_viewer.log)",
             "screenshots": "screenshots/: pictures the user added"}
     lines += [f"- {what[p]}" for p in what if p in parts]
-    lines += ["", "No expression data or cell tables are included, and no images but the screenshots the user added."]
+    lines += ["", "local/, when it is there: added on the user's own computer, where Claude Code runs, while the app",
+              "worked on a server (that computer's conversations with the agent and its app log); see local/README.txt.",
+              "", "No expression data or cell tables are included, and no images but the screenshots the user added."]
     if left_out:
         lines += ["", f"Left out to keep the report small ({len(left_out)}; the oldest first):"] + \
                  [f"- {n}" for n in left_out[:50]] + (["- ..."] if len(left_out) > 50 else [])
@@ -434,7 +439,7 @@ def _build(tmp, dest, about, days, since, parts, sid, note, page_errors, shots=(
                     f.seek(max(0, p.stat().st_size - LOG_TAIL))
                     _put(z, f"logs/{name}", f.read())
                 n["app_log"] += 1
-        _put(z, "README.txt", _readme(about, days, parts, sid if n["annotation"] else None, skipped))
+        _put(z, "README.txt", _readme(about, days, parts, sid if n["annotation"] else None, skipped, n))
     os.replace(tmp, dest)
     return {"saved": str(dest), "bytes": dest.stat().st_size, "included": n, "left_out": skipped}
 
@@ -464,6 +469,15 @@ def add_local(zip_path, days=3, parts=("conversations", "app_log")):
                     f.seek(max(0, p.stat().st_size - LOG_TAIL))
                     _put(z, f"local/logs/{name}", f.read())
                 n["app_log"] += 1
+        if "local/README.txt" not in have:
+            held = ([f"- agent/: the agent's Claude Code conversations on this computer ({n['conversations']}; JSON "
+                     "lines; images left out)"] if n["conversations"] else []) + \
+                   ([f"- logs/: the end of this computer's app logs"] if n["app_log"] else [])
+            _put(z, "local/README.txt", "\n".join(
+                ["Added on the user's own computer (the app worked on a server; Claude Code runs here)",
+                 f"Made {time.strftime('%Y-%m-%d %H:%M')} with STAnnotator {config.build()} on this computer, "
+                 f"{platform.system()} {platform.release()} ({platform.machine()}); covers the last {days} day(s)", "",
+                 "Holds:"] + (held or ["- nothing from these days"])) + "\n")
     return n
 
 
