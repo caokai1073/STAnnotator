@@ -336,7 +336,7 @@ The app remembers the server and connects again when it starts; **Remote** → *
 **On the server**, install STAnnotator once (the same version as the app; no window needed):
 
 ```bash
-cd ~ && unzip -oq STAnnotator-<version>.zip && cd STAnnotator
+git clone --branch v<version> https://github.com/caokai1073/STAnnotator.git ~/STAnnotator && cd ~/STAnnotator
 uv venv .venv --python 3.12 && uv pip install --python .venv/bin/python -e .
 # the command to enter in the app: ~/STAnnotator/.venv/bin/stagent
 ```

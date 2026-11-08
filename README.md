@@ -26,7 +26,7 @@ side.
 - **Agent Review**: the agent reviews one part of the analysis, checks its own advice against the data, and keeps
   only what holds up.
 
-The agent is your own [Claude Code](https://docs.claude.com/en/docs/claude-code/setup), with your own Claude account.
+The agent is your own [Claude Code](https://code.claude.com/docs/en/setup), with your own Claude account.
 Your images and expression data stay on your computer (or your server).
 
 Two ways to run it:
