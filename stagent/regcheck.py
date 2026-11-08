@@ -38,6 +38,10 @@ COARSE_STEP_UM = 2        # the image read at this many um per pixel,
 COARSE_SEARCH_UM = 100    # largest offset looked for,
 COARSE_MIN_UM = 20.0      # shorter shifts are left to the fine pass,
 UNIQUE = 0.9              # and a peak counts when the best other peak (10 um away or more) reaches at most this share of it
+CHECK_ROUNDS = 2          # the correction checked: the cells moved by it, their windows measured again. A window whose
+STAYED_SHARE = 0.6        # offset stays (still off, at least this share of it, pointing the same way) is a false reading
+STAYED_COS = 0.7          # (a repeating structure matched one period off): left alone, its cells stay, and the field is
+                          # made again without it. A reading that jumps elsewhere proves nothing: the prediction stands
 DEFAULT_FOCUS = {"crypts / epithelium": r"epith|crypt|colonocyte|enterocyte|goblet|stem|transit|paneth",
                  "vessels": r"endoth|vascul|vessel|pericyte",
                  "smooth muscle": r"smooth|muscle|myocyte"}
@@ -279,13 +283,15 @@ def summary(s, focus=None, version=None, progress=None):
                 "share_off": round(float((tot[sel] >= OFF_UM).mean()), 3)}
     b, big, _ = _large(w)
     fix = correction(s.sample_id, w)
+    fw = {tuple(x) for x in fix["false_windows"]}   # offsets that stayed with the cells moved: not a shift
+    false = np.array([(int(i), int(j)) in fw for i, j in a[:, :2]], bool)
     in_big = np.zeros(len(a), bool)   # fine windows inside a large shift: reported with it
     if big.any():
         c = w["coarse"]
         cid = ((a[:, 3] - c["origin_px"][1]) // c["tile_px"]).astype(int) * c["nx"] + ((a[:, 2] - c["origin_px"][0]) // c["tile_px"]).astype(int)
         in_big = np.isin(cid, (b[big, 0] * c["nx"] + b[big, 1]).astype(int))
     areas = []
-    for k, comp in enumerate(_areas(a, D, noise | in_big)):
+    for k, comp in enumerate(_areas(a, D, noise | in_big | false)):
         c = np.array(comp)
         tags = pd.Series([t for t in tag[c] if t]).value_counts()
         regs = pd.Series(top_region[c]).value_counts()
@@ -321,7 +327,7 @@ def summary(s, focus=None, version=None, progress=None):
               "max_offset_um": round(float(np.hypot(*aff.T).max()), 1)}
     after, ta = np.hypot(*fix["after_um"].T), fix["trusted_after"]
     trusted = ~noise
-    n_off = int(((tot >= OFF_UM) & trusted).sum()) + int(big.sum())
+    n_off = int(((tot >= OFF_UM) & trusted & ~false).sum()) + int(big.sum())
     loc = [x for x in areas if x["local_after_affine_um"] >= OFF_UM]
     verdict = ("fine" if not n_off else
                "global" if affine["max_offset_um"] >= OFF_UM and not loc else
@@ -334,6 +340,10 @@ def summary(s, focus=None, version=None, progress=None):
             "by_structure": {k: stats(tag == k) for k in masks},
             "by_region": {str(r): stats(top_region == r) for r in pd.unique(top_region)},
             "correction": {"moves_cells_um_median": fix["moved_um_median"], "moves_cells_um_max": fix["moved_um_max"],
+                           "checked_windows": fix["checked_windows"],
+                           "false_readings": {"windows": int(false.sum()),
+                                              "centers_px": [[round(float(x)), round(float(y))] for x, y in a[false, 2:4]],
+                                              "offsets_um": [[float(x), float(y)] for x, y in a[false, 4:6]]},
                            "windows_off_after": int(((after >= OFF_UM) & ta).sum()),
                            "median_offset_after_um": round(float(np.median(np.hypot(*fix["after_raw_um"][ta].T))), 1)
                            if ta.any() else None},
@@ -341,7 +351,10 @@ def summary(s, focus=None, version=None, progress=None):
                     f"offset is about 1 um when the cells sit on their nuclei; areas: neighboring windows off by >= {OFF_UM:g} um; "
                     f"large_shift areas: {COARSE_WINDOW_UM:g} um windows off by {COARSE_MIN_UM:g}-{COARSE_SEARCH_UM} um, beyond the "
                     f"{SEARCH_UM} um the fine windows look; "
-                    "beyond_search_share above ~0.3: the cells are far off everywhere, redo the registration instead"}
+                    "beyond_search_share above ~0.3: the cells are far off everywhere, redo the registration instead; correction: "
+                    "measured again with the cells moved by it (windows_off_after, median_offset_after_um); "
+                    "false_readings: windows whose offset stayed (as large, the same way) when their cells were moved onto the nuclei "
+                    "(a repeating structure matched one period off), left out of the areas and left alone"}
 
 
 def _spread(C, r, sig):
@@ -386,6 +399,19 @@ def _pre(w):
 _moved = {}  # (placement key, pre) -> the fine windows with the cells moved by pre, measured again
 
 
+def _rescan(w, p, q):
+    """The fine windows of w measured again with the cells at q instead of p, where they moved by more than 1 um:
+    the windows they left or entered (rows keyed (i, j); a window left with too few cells has no row)."""
+    (x0, y0), tile, nx = w["origin_px"], w["tile_px"], w["nx"]
+    wid = lambda z: ((z[:, 1] - y0) // tile).astype(int) * nx + ((z[:, 0] - x0) // tile).astype(int)
+    hit = np.hypot(*(q - p).T) * w["um_per_px"] > 1
+    if not hit.any():
+        return {}, set()
+    keys = set(wid(p[hit]).tolist()) | set(wid(q[hit]).tolist())
+    new = _scan(render.slide(w["image"]), w["kind"], q[:, 0], q[:, 1], w, keys=keys)
+    return {(int(r[0]), int(r[1])): r for r in new}, keys
+
+
 def _remeasure(sample_id, w, pre):
     """w with its fine windows measured again where the large shifts move the cells (by more than 1 um)."""
     k = (w["key"], json.dumps(pre))
@@ -393,26 +419,36 @@ def _remeasure(sample_id, w, pre):
         cells = pd.read_parquet(config.SAMPLES / sample_id / "cells.parquet", columns=["px", "py"])
         p = cells[["px", "py"]].to_numpy()
         q = p + _field(p, np.asarray(pre["points_px"]), np.asarray(pre["shift_px"]), pre["sigma_px"])
-        (x0, y0), tile, nx = w["origin_px"], w["tile_px"], w["nx"]
-        wid = lambda z: ((z[:, 1] - y0) // tile).astype(int) * nx + ((z[:, 0] - x0) // tile).astype(int)
-        hit = np.hypot(*(q - p).T) * w["um_per_px"] > 1
-        keys = set(wid(p[hit]).tolist()) | set(wid(q[hit]).tolist())
-        new = _scan(render.slide(w["image"]), w["kind"], q[:, 0], q[:, 1], w, keys=keys)
+        new, keys = _rescan(w, p, q)
+        nx = w["nx"]
         rows = {(r[0], r[1]): r for r in w["windows"] if r[0] * nx + r[1] not in keys}
-        rows.update({(r[0], r[1]): r for r in new})
+        rows.update(new)
         _moved.clear()
         _moved[k] = dict(w, windows=list(rows.values()))
     return _moved[k]
+
+
+_checked = {}  # (placement key, pre) -> the correction, checked by measuring again
 
 
 def correction(sample_id, w=None):
     """The correction of the current placement: "pre": the large shifts (or none), then {"origin", "A", "b"} (affine
     part, image pixels, as importer.apply_registration_fix takes it) and "local": the local shifts at the trusted
     windows (image pixels), spread with a Gaussian of one window and fading out away from them. Also how far it moves
-    the cells, and "after_um" / "trusted_after": the offsets it leaves at the fine windows (measured again where the
-    large shifts moved the cells); "after_raw_um": the same of the offsets as measured."""
+    the cells.
+
+    Checked before it is offered: the cells are moved by it and the windows they move in measured again. A real shift
+    shrinks; an offset that stays (as large, the same way) was a false reading, mostly a repeating structure (villi,
+    crypts) matched one period off: that window keeps its cells (a zero shift in the field) and the field is made
+    again without it (CHECK_ROUNDS times at most). A reading that jumps to another peak proves nothing either way:
+    there the prediction stands. "false_windows": those windows [i, j]; "checked_windows": how many were checked;
+    "after_um" / "after_raw_um": the offsets with the cells moved (that count / as measured; measured where the
+    measure is clear, else predicted; windows the correction does not move keep theirs); "trusted_after": the windows those count at (not noise, not false)."""
     w = w or windows(sample_id)
     pre = _pre(w)
+    k = (w["key"], json.dumps(pre))
+    if k in _checked:
+        return _checked[k]
     w2 = _remeasure(sample_id, w, pre) if pre else w
     a, mu, coef, aff, res, noise, D = _analyse(w2)
     upp = w["um_per_px"]
@@ -421,19 +457,49 @@ def correction(sample_id, w=None):
     r *= (np.maximum(n - FIELD_FLOOR_UM, 0) / np.maximum(n, 1e-9))[:, None]   # leave small shifts alone
     use = ~noise
     C, sig = a[use, 2:4], FIELD_SIGMA * w["tile_px"]
-    S = _spread(C, r[use] / upp, sig)
     origin = (mu * 1000 / upp).tolist()                      # px
     A = coef[:2].T / 1000                                    # um offset per um position
-    fix = {"origin": origin, "A": A.tolist(), "b": (coef[2] / upp).tolist(),
-           "local": {"points_px": C.round(1).tolist(), "shift_px": S.round(3).tolist(), "sigma_px": sig}}
-    at = displacement(a[:, 2:4], fix) * upp                  # at the windows as measured (after the large shifts)
-    if pre:
-        fix = {"pre": pre} | fix
     cells = pd.read_parquet(config.SAMPLES / sample_id / "cells.parquet", columns=["px", "py"])
-    mv = displacement(cells[["px", "py"]].to_numpy(), fix)
-    return fix | {"moved_um_median": round(float(np.median(np.hypot(*mv.T)) * upp), 1),
-                  "moved_um_max": round(float(np.hypot(*mv.T).max() * upp), 1),
-                  "after_um": D - at, "after_raw_um": a[:, 4:6] - at, "trusted_after": ~noise}
+    p = cells[["px", "py"]].to_numpy()
+    ij = [(int(i), int(j)) for i, j in a[:, :2]]
+    false, checked = np.zeros(len(a), bool), np.zeros(len(a), bool)
+    for rnd in range(CHECK_ROUNDS + 1):
+        rr = np.where(false[:, None], 0.0, r)                # a false reading: its cells stay where they are
+        S = _spread(C, rr[use] / upp, sig)
+        fix = {"origin": origin, "A": A.tolist(), "b": (coef[2] / upp).tolist(),
+               "local": {"points_px": C.round(1).tolist(), "shift_px": S.round(3).tolist(), "sigma_px": sig}}
+        at = displacement(a[:, 2:4], fix) * upp              # at the windows as measured (after the large shifts)
+        if pre:
+            fix = {"pre": pre} | fix
+        mv = displacement(p, fix)
+        new, _ = _rescan(w, p, p + mv)
+        pred_raw, pred = a[:, 4:6] - at, D - at              # as the field predicts
+        meas_raw, meas, got = pred_raw.copy(), pred.copy(), np.zeros(len(a), bool)
+        for m, key in enumerate(ij):
+            row = new.get(key)
+            if row is not None and row[6] >= MIN_CORR:
+                got[m] = True
+                meas_raw[m] = row[4:6]
+                meas[m] = (0.0, 0.0) if row[8] > GAIN * row[6] else row[4:6]
+        nm, nd = np.hypot(*meas.T), np.hypot(*D.T)
+        cos = (meas * D).sum(1) / np.maximum(nm * nd, 1e-9)
+        stayed = got & (nm >= OFF_UM) & (nm >= STAYED_SHARE * nd) & (cos >= STAYED_COS)
+        sure = got & ((nm < OFF_UM) | stayed)                # on its nuclei now, or the offset stayed: else it jumped
+        after, after_raw = np.where(sure[:, None], meas, pred), np.where(sure[:, None], meas_raw, pred_raw)
+        size = np.hypot(*rr.T)
+        judge = use & ~false & got & (size > 0) & (np.hypot(*at.T) >= 0.5 * size)   # moved most of the way
+        checked |= judge
+        bad = judge & stayed
+        if not bad.any() or rnd == CHECK_ROUNDS:
+            break
+        false |= bad
+    out = fix | {"moved_um_median": round(float(np.median(np.hypot(*mv.T)) * upp), 1),
+                 "moved_um_max": round(float(np.hypot(*mv.T).max() * upp), 1),
+                 "after_um": after, "after_raw_um": after_raw, "trusted_after": ~noise & ~false,
+                 "false_windows": [list(ij[m]) for m in np.where(false)[0]], "checked_windows": int(checked.sum())}
+    _checked.clear()
+    _checked[k] = out
+    return out
 
 
 FIX_KEYS = ("pre", "origin", "A", "b", "local")  # what a correction keeps (and importer.apply_registration_fix takes)
@@ -500,9 +566,13 @@ def figure(s, info, version=None):
         ax.add_patch(Rectangle((x0 - h, y0 - h), x1 - x0 + 2 * h, y1 - y0 + 2 * h, fill=False, ec="red", lw=1.2,
                                ls="--" if x.get("large_shift") else "-"))
         ax.text(x0 - h, y0 - h, x["id"], color="red", fontsize=8, va="bottom")
+    fr = ((info.get("correction") or {}).get("false_readings") or {}).get("centers_px") or []
+    for fx_, fy_ in fr:  # offsets that stayed with the cells moved: not a shift, left alone
+        ax.add_patch(Rectangle((fx_ - tile / 2, fy_ - tile / 2), tile, tile, fill=False, ec="0.35", lw=1.0, ls=":"))
     ax.set_xlim(bx0, bx1); ax.set_ylim(by1, by0); ax.set_xticks([]); ax.set_yticks([])
     ax.set_title(f"offset of the nuclei from the cells per {w['window_um']:g} um window; "
-                 f"{info['windows_off']} of {info['trusted_windows']} windows off; verdict: {info['verdict']}", fontsize=9)
+                 f"{info['windows_off']} of {info['trusted_windows']} windows off; verdict: {info['verdict']}"
+                 + (f"\n{len(fr)} false reading(s), dotted: the offset stayed with the cells moved" if fr else ""), fontsize=9)
     if areas:
         fix = correction(s.sample_id, w)
         for k, x in enumerate(areas):

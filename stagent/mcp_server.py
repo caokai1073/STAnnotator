@@ -1572,7 +1572,11 @@ def check_registration_map(focus: Optional[dict] = None) -> list:
     the staining), with the structures and regions in them; offsets by structure and by region; what the local
     correction would do. Shifts beyond the 25 um the 200 um windows look (up to 100 um) are found in 600 um windows
     (areas with "large_shift"; dashed in the figure; a crypt-sized shift there fits only where the match is
-    unique); the correction moves those first, then measures again and corrects the rest. Figure: windows off their nuclei on the section, close-ups of the largest areas (cells now
+    unique); the correction moves those first, then measures again and corrects the rest. The correction is checked
+    before it is offered: the cells are moved by it and their windows measured again ("correction": windows_off_after,
+    median_offset_after_um are measured, not predicted); a window whose offset stays is a false reading
+    (villi or crypts matched one period off): left out of the areas and left alone ("false_readings"; dotted in the
+    figure). Figure: windows off their nuclei on the section, close-ups of the largest areas (cells now
     cyan, corrected yellow: yellow should sit on the nuclei).
     focus: structures to check first, as {name: [types or lineages from get_vocabulary]}, e.g. {"crypts":
     ["Epithelial"], "vessels": ["Endothelial", "Pericytes"]}; by default epithelium, vessels and smooth muscle by
