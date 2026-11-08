@@ -166,5 +166,5 @@ STAnnotator, https://github.com/caokai1073/STAnnotator, and the version you used
 ## License
 
 [PolyForm Noncommercial 1.0.0](LICENSE): free for research, teaching and other noncommercial use, including the source
-code; for commercial use, contact us through the [issues](https://github.com/caokai1073/STAnnotator/issues).
+code; for commercial use, contact us by email at [cao@broadinstitute.org](mailto:cao@broadinstitute.org).
 Versions up to 0.2.42 remain under Apache 2.0.
