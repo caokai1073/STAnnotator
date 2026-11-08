@@ -281,6 +281,7 @@ footer { margin-top: clamp(72px, 10vw, 120px); border-top: 1px solid var(--line)
 footer .wrap { padding-block: 28px 40px; display: flex; flex-wrap: wrap; gap: 12px 28px; justify-content: space-between; color: var(--muted); font-size: var(--s-0); }
 footer nav { display: flex; gap: 20px; flex-wrap: wrap; }
 footer a { color: var(--muted); }
+footer .counted { flex-basis: 100%; margin: 0; }
 </style>
 </head>
 <body>
@@ -320,7 +321,7 @@ footer a { color: var(--muted); }
             </a>
             <a class="btn btn-ghost" href="#source">Install from source</a>
           </div>
-          <p class="hero-meta">Version <span data-version>0.2.48</span> · free for noncommercial use, source on GitHub · runs on your computer or your server · the agent is your own Claude Code</p>
+          <p class="hero-meta">Version <span data-version>0.2.49</span> · free for noncommercial use, source on GitHub · runs on your computer or your server · the agent is your own Claude Code</p>
         </div>
       </div>
       <p class="lede">STAnnotator takes spatial transcriptomics (Xenium, CosMx, MERSCOPE, Visium HD, Stereo-seq and more)
@@ -676,7 +677,7 @@ footer a { color: var(--muted); }
       <div class="side"><p class="eyebrow">Download</p></div>
       <div>
         <div class="get"><img src="assets/logo.png" width="64" height="64" alt="STAnnotator app icon"><h2>Get STAnnotator</h2></div>
-        <p class="intro">Version <span data-version>0.2.48</span>. Both apps contain everything they need; no Python to install.
+        <p class="intro">Version <span data-version>0.2.49</span>. Both apps contain everything they need; no Python to install.
           All releases and their notes are on the <a href="#" data-releases>releases page</a>. Once installed (0.2.46 and
           later), the app offers each new version itself and installs it with one click. Something not working? The bug
           icon at the top right of the app sends the developers a report.</p>
@@ -726,7 +727,7 @@ uv pip install --python .venv/bin/python -e ".[app]"
               <h3>On a server</h3>
               <p class="sub">Install the same version as the app on your computer (the tag below is the newest release), then click <b>Local → A server over SSH</b> in the app.</p>
             </div>
-            <div class="code"><button class="copy" type="button">Copy</button><pre><code>git clone --branch v<span data-version>0.2.48</span> https://github.com/caokai1073/STAnnotator.git ~/STAnnotator && cd ~/STAnnotator
+            <div class="code"><button class="copy" type="button">Copy</button><pre><code>git clone --branch v<span data-version>0.2.49</span> https://github.com/caokai1073/STAnnotator.git ~/STAnnotator && cd ~/STAnnotator
 uv venv .venv --python 3.12
 uv pip install --python .venv/bin/python -e .
 <span class="c"># the command to enter in the app: ~/STAnnotator/.venv/bin/stagent</span></code></pre></div>
@@ -748,13 +749,15 @@ uv pip install --python .venv/bin/python -e .
 
 <footer>
   <div class="wrap">
-    <span>STAnnotator <span data-version>0.2.48</span> · spatial transcriptomics on the tissue image · macOS and Windows</span>
+    <span>STAnnotator <span data-version>0.2.49</span> · spatial transcriptomics on the tissue image · macOS and Windows</span>
     <nav aria-label="Links">
       <a href="https://github.com/caokai1073/STAnnotator">Source code</a>
       <a href="https://github.com/caokai1073/STAnnotator/blob/main/docs/GUIDE.md">User guide</a>
       <a href="#" data-releases>Releases</a>
       <a href="#cite">License and citation</a>
     </nav>
+    <p class="counted" data-counted hidden>This site counts visits and downloads with
+      <a href="https://www.goatcounter.com">GoatCounter</a>: no cookies, and no IP addresses are kept.</p>
   </div>
 </footer>
 
@@ -777,6 +780,21 @@ fetch("https://api.github.com/repos/caokai1073/STAnnotator/releases/latest")
   })
   .catch(() => {});
 document.querySelectorAll("[data-releases]").forEach((a) => { a.href = REPO + "/releases"; });
+// Visits and downloads are counted with GoatCounter (no cookies; IP addresses are not kept). GOATCOUNTER is the
+// account's code (https://<code>.goatcounter.com); empty, nothing is counted. Pages and downloads are counted under
+// the site's host, so caokai.site and a fork's github.io (e.g. uhlerlab) are told apart. Not on localhost.
+const GOATCOUNTER = "";
+if (GOATCOUNTER) {
+  window.goatcounter = { path: (p) => location.host + p };
+  const gc = document.createElement("script");
+  gc.async = true; gc.src = "https://gc.zgo.at/count.js"; gc.dataset.goatcounter = `https://${GOATCOUNTER}.goatcounter.com/count`;
+  document.head.append(gc);
+  document.querySelectorAll("[data-dmg], [data-exe]").forEach((a) => a.addEventListener("click", () => {
+    const what = a.hasAttribute("data-dmg") ? "download-mac" : "download-windows";
+    if (window.goatcounter && window.goatcounter.count) window.goatcounter.count({ path: `${location.host}/${what}`, title: what, event: true });
+  }));
+  document.querySelectorAll("[data-counted]").forEach((e) => { e.hidden = false; });
+}
 // tutorial chapters: a click jumps there in the embedded tutorial; while it plays, the current chapter is marked with
 // its progress (the tutorial tells this page where it is, see docs/tutorial/engine.js)
 (() => {
