@@ -226,6 +226,13 @@
       e.dispatchEvent(new (W().Event)("change", { bubbles: true }));
       if (!instant) await sleep(300, run);
     },
+    async fill(run, instant, target, text) {  // a field filled at once (a pasted path), no typing to watch
+      const e = target instanceof Element ? target : find(target);
+      if (!e) throw new Error("target not found: " + JSON.stringify(target, (k, v) => (v instanceof RegExp ? String(v) : v)));
+      e.value = text;
+      e.dispatchEvent(new (W().Event)("input", { bubbles: true }));
+      e.dispatchEvent(new (W().Event)("change", { bubbles: true }));
+    },
     async hover(run, instant, target) { await pointAt(target, run, instant); },
     async move(run, instant, x, y) { await moveTo(x, y, run, instant); },
     async wait(run, instant, ms) { await sleep(ms, run, instant); },
@@ -356,14 +363,18 @@
     while (tscroll.children.length > 60) tscroll.children[1].remove();
     tscroll.scrollTop = tscroll.scrollHeight;
   }
+  // The agent's work (tool calls, its notes on the way) plays AGENT_FAST times faster than the rest; its answer, the
+  // last text, at the normal pace with time to read it.
+  const AGENT_FAST = 3;
+  const lastText = (ev) => [...ev].reverse().find((e) => e.k === "text");
   function agentMs(ev, opt) {  // estimated playing time of one conversation at 1x
     let ms = 0;
+    const last = lastText(ev);
     for (const e of ev) {
       if (e.k === "user") ms += opt.fromApp ? 900 : Math.min(3500, 28 * e.text.length) + 400;
-      else if (e.k === "tool") ms += 1500;
-      else if (e.k === "text") ms += Math.min(2600, 10 * e.text.length) + 900;
+      else if (e.k === "tool") ms += 1500 / AGENT_FAST;
+      else if (e.k === "text") ms += e === last ? Math.min(2600, 10 * e.text.length) : (Math.min(2600, 10 * e.text.length) + 900) / AGENT_FAST;
     }
-    const last = [...ev].reverse().find((e) => e.k === "text");
     return ms + (last ? Math.min(9000, 22 * last.text.length) : 0);
   }
   async function playAgent(id, opt, run, instant) {
@@ -373,6 +384,7 @@
     let spin = null;
     const spinOn = (label) => { if (instant) return; if (!spin) { spin = el("div", "t-spin"); add(spin); } spin.textContent = "✻ " + (label || "Working…"); tscroll.append(spin); };
     const spinOff = () => { if (spin) { spin.remove(); spin = null; } };
+    const last = lastText(ev);
     for (const e of ev) {
       check(run);
       if (e.k === "user") {
@@ -389,26 +401,26 @@
       } else if (e.k === "tool") {
         const nm = e.name.replace(/^mcp__stagent__/, "");
         const line = el("div", "t-line t-tool" + (e.error ? " err" : ""), `<span class="nm">stagent · ${esc(nm)}</span><span class="args">(${esc(shortArgs(e.input))})</span>`);
-        add(line); spinOn(); await sleep(750, run, instant);
+        add(line); spinOn(); await sleep(750 / AGENT_FAST, run, instant);
         add(el("div", "t-out", esc(outLines(e.out)))); spinOn(); tscroll.scrollTop = tscroll.scrollHeight;
         if (scenes[nm]) setScene(scenes[nm]);
-        await sleep(750, run, instant);
+        await sleep(750 / AGENT_FAST, run, instant);
       } else if (e.k === "text") {
         spinOff();
         const node = el("div", "t-line t-text"); add(node);
         if (instant) node.innerHTML = richMd(e.text);
         else {
-          const words = e.text.split(/(\s+)/), per = Math.max(8, Math.min(40, 2600 / words.length));
+          const words = e.text.split(/(\s+)/), k = e === last ? 1 : AGENT_FAST;
+          const per = Math.max(8 / k, Math.min(40, 2600 / words.length) / k);
           let acc = "";
           for (const w of words) { acc += w; node.innerHTML = rich(acc); tscroll.scrollTop = tscroll.scrollHeight; await sleep(per, run); }
           node.innerHTML = richMd(e.text); tscroll.scrollTop = tscroll.scrollHeight;
         }
-        if (e !== ev[ev.length - 2]) { spinOn(); await sleep(900, run, instant); }
+        if (e !== last) { spinOn(); await sleep(900 / AGENT_FAST, run, instant); }
       } else if (e.k === "done") {
         spinOff();
         add(el("div", "t-done", `✻ Worked for ${fmt(e.ms || 0)}`));
         if (scenes.$done) setScene(scenes.$done);
-        const last = [...ev].reverse().find((x) => x.k === "text");
         await sleep(last ? Math.min(9000, 22 * last.text.length) : 1500, run, instant);
       }
     }
