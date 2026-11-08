@@ -55,15 +55,15 @@ submucosa and muscle (cells and H&E; the crop keeps the H&E pixel size in its OM
 .venv/bin/python tools/tutorial/crawl_genes.py --rec work/tut/rec --genes EPCAM,MYH11,...
 # the page in docs/tutorial (0.8 MB); the recorded session (55 MB) in the media repository, cloned in media/
 .venv/bin/python tools/tutorial/build.py --rec work/tut/rec --agent work/tut/transcripts --out docs/tutorial \
-  --data-out media/tutorial/data --data-url /STAnnotator-media/tutorial/data/
+  --data-out media/tutorial/data --data-url https://www.caokai.site/STAnnotator-media/tutorial/data/
 # the website's layout, locally: http://localhost:8790/STAnnotator/tutorial/
 mkdir -p work/tut/www && ln -sfn "$PWD/docs" work/tut/www/STAnnotator && ln -sfn "$PWD/media" work/tut/www/STAnnotator-media
 cd work/tut/www && python3 -m http.server 8790
 ```
 
 The data lives in [STAnnotator-media](https://github.com/caokai1073/STAnnotator-media) (`tutorial/data/`), so the
-source repository stays small; both are served from www.caokai.site, so the page reads it as
-its own. Without `--data-out` the data goes next to the page (`docs/tutorial/data`, `--data-url data/`).
+source repository stays small. The page reads it at its full address, so the website works wherever it is served
+(www.caokai.site, or a fork's github.io: GitHub Pages lets any site read it). Without `--data-out` the data goes next to the page (`docs/tutorial/data`, `--data-url data/`).
 
 `?check&speed=3` plays every chapter fast and lists the steps whose target was not found and the requests that were
 not recorded (`?debug` logs every request). `check.py` does it in a headless browser and saves a screenshot of every
