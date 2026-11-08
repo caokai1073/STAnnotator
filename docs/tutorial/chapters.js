@@ -19,11 +19,6 @@
   const tab = (t) => ({ css: "button.tab[data-tab=" + t + "]" });
   const SHIFTED = { x: 1310, y: 880, w: 360, h: 280 };  // the patch pushed off in the Local registration chapter (H&E px)
   const seg = (t) => ({ text: t, css: "body > header button, body > header span, body > header label" });
-  // the marker list lives in the page (Markers…): a chapter that starts after it was built loads it again, silently
-  const loadList = [["click", { title: "Import, write, check or save the marker gene list" }], ["click", { id: "mkLib" }],
-    ["until", "[...document.querySelectorAll('*')].some(e => e.offsetParent && /^small_intestine_147328/.test(e.textContent.trim()) && e.children.length <= 2)", 4000],
-    ["click", { text: /^small_intestine_147328/ }], ["until", "document.querySelector('dialog[open] textarea').value.includes('Telocytes')", 4000],
-    ["click", { id: "mkClose" }]];
 
   window.TUTORIAL = { chapters: [
     {
@@ -60,8 +55,11 @@
           pts: ["Every change the agent proposes is reviewed like this", "Undo takes it back"],
           do: [["until", "[...document.querySelectorAll('dialog[open] button')].some(b => b.textContent.trim() === 'Accept')", 9000],
                ["scene", "c02-align1-accepted"], ["click", { css: "dialog[open] button", text: "Accept" }], ["wait", 2500]] },
-        { title: "Check the alignment on the H&E", say: "Zoom in: each dot is a cell, and the dots sit on the nuclei of the **crypts** and the **lamina propria**.",
-          do: [["zoom", { x: 1500, y: 600, w: 1400, h: 900 }, 2200], ["wait", 2000], ["zoom", { x: 2100, y: 900, w: 500, h: 330 }, 2200], ["wait", 2500],
+        { title: "Check the alignment on the H&E", say: "Zoom in: each gray circle is a cell (no cell types yet). **Hide H&E** shows the cells alone, **Hide cells** the nuclei under them: the dots sit on the nuclei of the **crypts** and the **lamina propria**.",
+          pts: ["**e** hides the H&E, **h** hides the cells"],
+          do: [["zoom", { x: 1500, y: 600, w: 1400, h: 900 }, 2200], ["wait", 1500], ["zoom", { x: 2100, y: 900, w: 500, h: 330 }, 2200], ["wait", 1500],
+               ["click", sel("hideHE")], ["wait", 2200], ["click", sel("hideHE")], ["wait", 1500],
+               ["click", sel("hide")], ["wait", 1800], ["click", sel("hide")], ["wait", 1800],
                ["zoom", "home", 1500]] },
         { title: "Align the second section", say: "The same for **167799**: the agent finds the orientation (rotated 180°), refines it to under a micron, and proposes it.",
           scene: "c02-align2-pre",
@@ -73,8 +71,8 @@
       ],
     },
     {
-      id: "filter", title: "Filter & markers", group: "Getting started", scene: "c03-start", sample: "147328",
-      summary: "Remove low-quality cells, put the two sections in one **project**, then build the **marker gene list** the annotation starts from: a built-in list for the organ, completed by the agent for this panel.",
+      id: "filter", title: "Filter & project", group: "Getting started", scene: "c03-start", sample: "147328",
+      summary: "Remove low-quality cells, then put the two sections in one **project**, so they are annotated and analyzed together.",
       pre: [["select", sel("sample"), "147328"], ["until", "st.sample && st.sample.sample_id === '147328' && !st.busy", 10000]],
       steps: [
         { title: "Filter cells and genes", say: "**Filter cells and genes** shows how many transcripts and genes each cell has, and in how many cells each gene is found.",
@@ -92,6 +90,13 @@
                ["click", btn("Add project")], ["select", { css: "dialog[open] select", nth: 0 }, "ileum_colon"], ["select", { css: "dialog[open] select", nth: 1 }, "ileum_colon"],
                ["scene", "c05-project"], ["click", { css: "dialog[open] button", text: "Save" }], ["until", "!document.querySelector('dialog[open]')", 8000], ["wait", 1500]],
           after: { css: "label,div", text: /^All slices together/ }, afterLabel: "Analyzed together" },
+      ],
+    },
+    {
+      id: "annotate", title: "Annotate", group: "Cell types", scene: "c04-markers-b", sample: "147328",
+      summary: "Build the **marker gene list** the annotation starts from (a built-in list for the organ, completed by the agent for this panel), assign a **cell type** to every cell of both sections, then look at the result on the tissue.",
+      pre: [["select", sel("sample"), "147328"], ["until", "st.sample && st.sample.sample_id === '147328' && !st.busy", 10000]],
+      steps: [
         { title: "Open the marker genes", say: "Annotation starts from a **marker gene list**. In **Analysis › Annotate**, open **Markers…**.",
           scene: "c04-markers-b", do: [["click", ttl("Annotate, Embed, Niche")], ["wait", 600], ["click", ttl("Import, write, check or save the marker gene list")], ["wait", 1200]],
           after: "dialog[open]", afterLabel: "Build a marker gene list" },
@@ -105,16 +110,9 @@
           scene: "c05-markers-load",
           do: [["click", sel("mkLib")], ["wait", 700], ["click", { text: /^small_intestine_147328/ }], ["wait", 1000], ["click", sel("mkCheck")], ["wait", 1500]],
           after: { css: "dialog[open] div,dialog[open] span", text: /^OK: 39 types/ }, afterLabel: "Checked" },
-      ],
-    },
-    {
-      id: "annotate", title: "Annotate", group: "Cell types", scene: "c05-markers-load", sample: "147328",
-      summary: "Assign a **cell type** to every cell of both sections from the marker list, then look at the result on the tissue.",
-      pre: [["click", ttl("Annotate, Embed, Niche")], ...loadList],
-      steps: [
         { title: "Annotate", say: "**Annotate** runs the marker step on all 98,650 cells of the two sections at once, then a model that refines every cell from its neighbors.",
           pts: ["Hierarchical: lineage first, then the type within it", "About a minute here; the progress shows in the panel"],
-          scene: "c05-annotate", do: [["click", sel("annotate")], ["until", "st.sid === '" + SID + "' && !st.busy", 90000], ["wait", 1200]],
+          scene: "c05-annotate", do: [["click", sel("mkClose")], ["wait", 500], ["click", sel("annotate")], ["until", "st.sid === '" + SID + "' && !st.busy", 90000], ["wait", 1200]],
           after: "#legend", afterLabel: "Cell types" },
         { title: "Color by lineage", say: "**Color by › lineage** groups the types: epithelium on top, then lamina propria, submucosa and the smooth muscle of the muscularis.",
           scene: "c05-explore", do: [["select", sel("mode"), "lineage"], ["wait", 1200], ["click", sel("hideHE")], ["wait", 2500]] },
@@ -294,8 +292,8 @@
                ["click", { css: "input[name=imImgMode][value=file]" }], ["fill", sel("imNewImg"), D + "scp2927_147328_shifted_HE.ome.tif"],
                ["click", { css: "input[name=imRegMode][value=file]" }], ["fill", sel("imNewReg"), D + "registration_shifted.csv"], ["fill", sel("imName"), "shifted_demo"], ["wait", 1500],
                ["click", sel("imGo")], ["until", "st.sample && st.sample.sample_id === 'shifted_demo' && st.sid && !st.busy", 30000], ["wait", 800]] },
-        { title: "Cells beside their nuclei", say: "Zoom in on the patch: the dots (the cells) sit beside the dark nuclei on the H&E, all of them to the lower left.",
-          do: [["zoom", SHIFTED, 2200], ["wait", 3000], ["zoom", "home", 1200]] },
+        { title: "Cells beside their nuclei", say: "Zoom in on the patch: the gray circles (the cells) sit beside the dark nuclei on the H&E. **Hide cells** and back: the nuclei are not where the dots are.",
+          do: [["zoom", SHIFTED, 2200], ["wait", 2000], ["click", sel("hide")], ["wait", 1800], ["click", sel("hide")], ["wait", 2200], ["zoom", "home", 1200]] },
         { title: "Ask for a local registration", say: "In Claude Code: **do local registration**. No area to name: the agent compares the cells with the nuclei in 200 µm windows over the whole tissue and finds the part that is off.",
           do: [["agent", "c18_local_registration", { scenes: { $done: "c18-shift-advice" } }], ["call", "loadPlaus", true], ["wait", 1500]] },
         { title: "Checked before it is offered", say: "The advice: area **L1**, 16 windows, up to 18 µm off. The correction was tested first: with the cells moved, no window is off any more. Offsets that stay when the cells move are left alone.",

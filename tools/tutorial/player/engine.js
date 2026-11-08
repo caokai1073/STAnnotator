@@ -423,12 +423,13 @@
   // last text, at the normal pace with time to read it.
   const AGENT_FAST = 3;
   const lastText = (ev) => [...ev].reverse().find((e) => e.k === "text");
+  const typePer = (t) => Math.max(30, Math.min(85, 3200 / t.length));  // ms per typed character: a short prompt types slowly enough to read
   const answerMs = (e) => Math.min(4500, 12 * e.text.length);  // after the answer, before the app moves on (pause to read it all)
   function agentMs(ev, opt) {  // estimated playing time of one conversation at 1x
     let ms = 0;
     const last = lastText(ev);
     for (const e of ev) {
-      if (e.k === "user") ms += opt.fromApp ? 900 : Math.min(3500, 28 * e.text.length) + 400;
+      if (e.k === "user") ms += opt.fromApp ? 900 : typePer(e.text) * e.text.length + 1100 + 600;
       else if (e.k === "tool") ms += 1500 / AGENT_FAST;
       else if (e.k === "text") ms += e === last ? Math.min(2600, 10 * e.text.length) : (Math.min(2600, 10 * e.text.length) + 900) / AGENT_FAST;
     }
@@ -447,9 +448,9 @@
       if (e.k === "user") {
         const typed = tprompt.querySelector(".typed");
         if (!instant && !opt.fromApp) {
-          const per = Math.max(12, Math.min(40, 3500 / e.text.length));
+          const per = typePer(e.text);
           for (const ch of e.text) { typed.textContent += ch; await sleep(per, run); }
-          await sleep(350, run);
+          await sleep(1100, run);  // the prompt stays a moment in the input line before it is sent
         }
         typed.textContent = "";
         add(el("div", "t-user" + (opt.fromApp ? " from-app" : ""), esc(opt.show || e.text)));
