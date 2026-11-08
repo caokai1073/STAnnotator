@@ -11,8 +11,8 @@
 </p>
 
 Spatial transcriptomics (Xenium, CosMx, MERSCOPE, Visium HD, Stereo-seq, …) on the tissue image, from registration
-and cell types to regions, niches, cell-cell communication, trajectories and pseudotime, and comparisons across
-slices, with an AI agent at your side.
+and cell types to regions, niches, composition and DE genes, cell-cell communication, trajectories and pseudotime,
+and comparisons across regions, slices and conditions, with an AI agent at your side.
 
 <p align="center">
   <img src="docs/assets/overview.png" width="900" alt="How STAnnotator works: the researcher gives input and decisions to the app and sees views and advice; the app's engine runs the method modules (registration, cell types, niches, regions, DE genes, signaling, trajectory) and offers them as MCP tools to the agent (Claude Code), which calls the tools, reads numbers and H&E views, and asks the language model for the next step and advice">
