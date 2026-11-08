@@ -68,6 +68,9 @@
       return { status: ans[0], ctype: ans[1], href: new URL(DATA + "b/" + ans[2], location.href).href };
     }
     const bare = key.split("?")[0];  // H&E tiles are stored without their revision: the same image file
+    const rev = /\/he\/\d+\//.test(bare) && new URL(url, "http://x").searchParams.get("r");
+    const blank = rev && (S.data.blank_tiles || {})[rev];  // an image waiting for its alignment: a blank canvas, not the H&E
+    if (blank) return { status: 200, ctype: "image/jpeg", href: new URL(DATA + "b/" + blank, location.href).href };
     for (const g of S.data.global || []) {  // answers for every scene: tiles, gene colors, the stand-ins for Terminal
       const list = E[g] && (E[g][key] || (/\/he\/\d+\//.test(bare) && E[g][bare]));
       if (list) { const a = list[list.length - 1]; return { status: a[0], ctype: a[1], href: new URL(DATA + "b/" + a[2], location.href).href }; }

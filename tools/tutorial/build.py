@@ -121,7 +121,17 @@ def main():
         name = hashlib.sha1(data).hexdigest()[:16] + ".json"
         (dout / "b" / name).write_bytes(data)
         entries["_synthetic"][key] = [[200, "application/json", name, ""]]
-    manifest = {"scenes": order, "global": ["_synthetic", "_tiles", "_genes", "_static"], "entries": entries}
+    # an image waiting for its alignment: the viewer shows a blank canvas (image_kind none) under its own revision.
+    # Its tiles are all the same blank one; the H&E tiles crawled later (same path, other revision) must not stand in.
+    blank_revs = {str(json.loads((rec / "blobs" / r["body"]).read_text()).get("rev")) for r in rows
+                  if r["path"].endswith("/he_info") and r["status"] == 200
+                  and json.loads((rec / "blobs" / r["body"]).read_text()).get("image_kind") == "none"}
+    blank = {}
+    for r in rows:
+        rev = dict(parse_qsl(r["query"])).get("r")
+        if rev in blank_revs and rev not in blank and r["status"] == 200 and "/he/" in r["path"]:
+            blank[rev] = store(r["body"], r["ctype"])
+    manifest = {"scenes": order, "global": ["_synthetic", "_tiles", "_genes", "_static"], "entries": entries, "blank_tiles": blank}
     (dout / "manifest.json").write_text(json.dumps(manifest, separators=(",", ":")))
 
     # ---------- the agent's conversations ----------
