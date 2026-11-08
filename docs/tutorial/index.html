@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>STAnnotator · Interactive tutorial</title>
+<meta name="description" content="Learn STAnnotator by watching the real app work on a real sample, and pause at any time to try it yourself.">
+<link rel="icon" href="../assets/favicon.png">
+<link rel="stylesheet" href="player.css">
+</head>
+<body>
+<div id="app">
+  <header id="top">
+    <div class="brand"><img src="../assets/logo.png" alt=""><b>STAnnotator</b><span>Interactive tutorial</span></div>
+    <div class="tag">Real app · recorded data · pause anytime and try it</div>
+    <div class="tools">
+      <button id="bNav" class="on" title="Show or hide the chapter list">Chapters</button>
+      <button id="bCap" class="on" title="Captions under the screen">Captions</button>
+      <button id="bNotes" class="on" title="Step notes on the right">Notes</button>
+      <button id="bHelp" title="Keyboard shortcuts">?</button>
+      <a id="bHome" href="../" title="Back to the STAnnotator website">Website</a>
+    </div>
+  </header>
+  <nav id="nav" aria-label="Chapters"></nav>
+  <main id="main">
+    <div id="stageWrap">
+      <div id="stage">
+        <section id="term" aria-label="Claude Code (replayed)">
+          <div class="tbar"><i></i><i></i><i></i><span>Claude Code — claude_workspace</span></div>
+          <div id="tbody"></div>
+        </section>
+        <section id="appwin">
+          <div id="appscale"><iframe id="frame" title="STAnnotator (live app on recorded data)"></iframe>
+          <div id="fx"><div id="spot"></div><div id="spotLabel"></div><div id="ripple"></div>
+            <svg id="cursor" viewBox="0 0 24 24" width="26" height="26"><path d="M4 2 L4 19 L8.6 14.9 L11.6 21.6 L14.4 20.4 L11.4 13.8 L17.6 13.6 Z" fill="#111" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg>
+          </div>
+          <div id="shield" title="The demo is playing: press Pause (space) to try the app yourself"></div></div>
+          <div id="pill">Paused · the app is yours: click, zoom, switch views · press ▶ to continue</div>
+          <div id="loading"><span>Loading…</span></div>
+        </section>
+      </div>
+    </div>
+    <div id="caption" aria-live="polite"></div>
+  </main>
+  <aside id="notes"></aside>
+  <footer id="bar">
+    <div id="track" title="Click or drag to jump"><div id="segs"></div><div id="fill"></div><div id="knob"></div><div id="hoverTip"></div></div>
+    <div class="ctl">
+      <button id="bPrevC" title="Previous chapter (Shift+←)">⏮</button>
+      <button id="bPrev" title="Previous step (←)">◀</button>
+      <button id="bPlay" class="play" title="Play / pause (space)">▶</button>
+      <button id="bNext" title="Next step (→)">▶▶</button>
+      <button id="bNextC" title="Next chapter (Shift+→)">⏭</button>
+      <span id="time">0:00 / 0:00</span>
+      <span id="where"></span>
+      <button id="bSpeed" title="Playback speed">1×</button>
+    </div>
+  </footer>
+</div>
+<div id="small"><p><b>STAnnotator · Interactive tutorial</b></p><p>The tutorial is the real app: open it on a computer
+  (a window at least 760 px wide). Meanwhile, <a href="../#tutorial">watch the video</a>.</p></div>
+<dialog id="help">
+  <h3>Using the tutorial</h3>
+  <ul>
+    <li><b>Space</b> play / pause. While paused the app is live: click, zoom the H&amp;E, switch colors and tabs.</li>
+    <li><b>← →</b> previous / next step, <b>Shift + ← →</b> previous / next chapter.</li>
+    <li>Click or drag the bar at the bottom, or a chapter on the left, to jump.</li>
+    <li>The left pane replays the agent (Claude Code) as it worked on this sample; the right pane is the real app on the recorded data.</li>
+    <li>Computations (new imports, analyses, the agent itself) need the installed app: the demo answers only what was recorded.</li>
+  </ul>
+  <form method="dialog"><button>Got it</button></form>
+</dialog>
+<script src="config.js"></script>
+<script src="chapters.js"></script>
+<script src="engine.js"></script>
+</body>
+</html>

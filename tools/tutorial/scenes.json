@@ -1,0 +1,287 @@
+{
+ "about": "Scenes of the recorded session, in order (build.py). until: drop requests recorded after this time (the agent was working). rewrite: local paths shown as generic ones. synthetic: answers for requests the recording could not make (the app would open a real Terminal).",
+ "rewrite": [
+  [
+   "/Users/caokai/Documents/STAnnotator-repo/work/tut/data/",
+   "/Users/me/Downloads/scp2927/"
+  ],
+  [
+   "/Users/caokai/Documents/STAnnotator-repo/work/tut/home",
+   "/Users/me/stagent"
+  ],
+  [
+   "/Users/caokai/.claude/projects/-Users-caokai-Documents-STAnnotator-repo-work-tut-home-claude-workspace",
+   "~/.claude/projects/stagent"
+  ],
+  [
+   "Kais-MacBook-Pro.local",
+   "my-mac"
+  ],
+  [
+   "/Users/caokai/.claude/projects/-Users-caokai-Documents-STAnnotator-repo",
+   "~/.claude/projects/STAnnotator"
+  ],
+  [
+   "/Users/caokai/",
+   "/Users/me/"
+  ]
+ ],
+ "synthetic": {
+  "POST /api/claude/align": {
+   "claude_code": {
+    "opened": true,
+    "reused": true
+   }
+  },
+  "POST /api/claude/code": {
+   "opened": true,
+   "reused": true
+  },
+  "GET /api/claude/status": {
+   "platform": "Darwin",
+   "claude_code": "/Users/me/.local/bin/claude"
+  },
+  "POST /api/claude/markers": {
+   "claude_code": {
+    "opened": true,
+    "reused": true
+   }
+  }
+ },
+ "scenes": [
+  {
+   "name": "s00-empty"
+  },
+  {
+   "name": "c01-import",
+   "until": 1794086567.0
+  },
+  {
+   "name": "c01-import2",
+   "source": "c01-import",
+   "from": 1794086567.0
+  },
+  {
+   "name": "c02-align1-pre"
+  },
+  {
+   "name": "c02-align1-proposal"
+  },
+  {
+   "name": "c02-align1-accepted",
+   "from": 1794086751.6
+  },
+  {
+   "name": "c02-align2-pre"
+  },
+  {
+   "name": "c02-align2-proposal"
+  },
+  {
+   "name": "c02-align2-accepted",
+   "from": 1794086998.6
+  },
+  {
+   "name": "c03-start"
+  },
+  {
+   "name": "c03-filtered-b",
+   "from": 1794087713.0
+  },
+  {
+   "name": "c03-filtered2-b",
+   "from": 1794087729.3
+  },
+  {
+   "name": "c05-project",
+   "from": 1794087774
+  },
+  {
+   "name": "c04-markers-b",
+   "skip": [
+    "GET /api/samples",
+    "GET /api/projects"
+   ]
+  },
+  {
+   "name": "c04-si-b",
+   "skip": [
+    "GET /api/samples",
+    "GET /api/projects"
+   ]
+  },
+  {
+   "name": "c04-refined-b",
+   "skip": [
+    "GET /api/samples",
+    "GET /api/projects"
+   ]
+  },
+  {
+   "name": "c05-markers-load"
+  },
+  {
+   "name": "c05-annotate",
+   "from": 1794087822.0
+  },
+  {
+   "name": "c05-explore"
+  },
+  {
+   "name": "c06-embed",
+   "from": 1794087912.5
+  },
+  {
+   "name": "c07-niches",
+   "from": 1794087954.4
+  },
+  {
+   "name": "c07-names-proposal"
+  },
+  {
+   "name": "c07-named",
+   "from": 1794088083.4
+  },
+  {
+   "name": "c07-explore"
+  },
+  {
+   "name": "c08-mucosa-proposal"
+  },
+  {
+   "name": "c08-mucosa",
+   "from": 1794088263.7
+  },
+  {
+   "name": "c08-edit"
+  },
+  {
+   "name": "c08-edited",
+   "from": 1794088390.3
+  },
+  {
+   "name": "c08-geojson"
+  },
+  {
+   "name": "c09-compare"
+  },
+  {
+   "name": "c09-de",
+   "from": 1794088474.3
+  },
+  {
+   "name": "c09-top",
+   "from": 1794088499.5
+  },
+  {
+   "name": "c09-comp",
+   "from": 1794088516.6
+  },
+  {
+   "name": "c10-signal",
+   "from": 1794088540.6
+  },
+  {
+   "name": "c10-map"
+  },
+  {
+   "name": "c11-traj",
+   "from": 1794088654.0
+  },
+  {
+   "name": "c11-traj-map"
+  },
+  {
+   "name": "c12-help"
+  },
+  {
+   "name": "c13-review",
+   "inject": {
+    "POST /api/claude/review": {
+     "needed": true,
+     "claude_code": {
+      "opened": true,
+      "reused": true
+     },
+     "asked": true,
+     "asked_at": "2026-11-07T16:59:03",
+     "unchecked": 34,
+     "checked": 0,
+     "checking": true,
+     "advice": {
+      "current": false,
+      "preparing": true,
+      "n_drafts": 0,
+      "n_open": 0,
+      "n_filtered": 0,
+      "last_run": null,
+      "asked_at": "2026-11-07T16:59:03",
+      "n_runs": 0
+     }
+    }
+   }
+  },
+  {
+   "name": "c13-reviewed"
+  },
+  {
+   "name": "c13-advice-map"
+  },
+  {
+   "name": "c14-review-sig",
+   "inject": {
+    "POST /api/claude/review": {
+     "needed": true,
+     "claude_code": {
+      "opened": true,
+      "reused": true
+     },
+     "asked": true,
+     "asked_at": "2026-11-07T16:59:03",
+     "unchecked": 0,
+     "checked": 34,
+     "checking": false,
+     "advice": {
+      "current": false,
+      "preparing": true,
+      "n_drafts": 0,
+      "n_open": 0,
+      "n_filtered": 0,
+      "last_run": null,
+      "asked_at": "2026-11-07T17:03:34",
+      "n_runs": 0
+     }
+    }
+   }
+  },
+  {
+   "name": "c14-sig-reviewed"
+  },
+  {
+   "name": "c15-ask"
+  },
+  {
+   "name": "c16-report"
+  },
+  {
+   "name": "c17-export"
+  }
+ ],
+ "dropped": [
+  "c03-filtered",
+  "c03-filtered2",
+  "c04-markers",
+  "c04-builtin",
+  "c04-si",
+  "c04-refined"
+ ],
+ "harvest": [
+  "GET /api/markers/organs",
+  "GET /api/markers/library",
+  "POST /api/analysis/options",
+  "GET /api/config",
+  "GET /api/sample/147328/genes",
+  "GET /api/sample/167799/genes",
+  "GET /api/claude/status"
+ ]
+}
