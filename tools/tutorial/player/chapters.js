@@ -17,6 +17,7 @@
   // a chapter that starts after the annotation opens it again, as the user does under Data › Annotation
   const openAnnot = [["select", { id: "session" }, SID], ["until", "st.sid === '" + SID + "' && !st.busy", 10000]];
   const tab = (t) => ({ css: "button.tab[data-tab=" + t + "]" });
+  const SHIFTED = { x: 1310, y: 880, w: 360, h: 280 };  // the patch pushed off in the Local registration chapter (H&E px)
   const seg = (t) => ({ text: t, css: "body > header button, body > header span, body > header label" });
   // the marker list lives in the page (Markers…): a chapter that starts after it was built loads it again, silently
   const loadList = [["click", { title: "Import, write, check or save the marker gene list" }], ["click", { id: "mkLib" }],
@@ -280,6 +281,31 @@
           scene: "c14-review-sig",
           do: [["click", ttl("Agent review of one part")], ["wait", 1000], ["click", (d) => [...d.querySelectorAll("#rvDlg input[type=radio]")].find((r) => /^Signaling/.test(r.closest("label,div").textContent.trim()))],
                ["click", sel("rvGo")], ["agent", "c14_review_signaling", { fromApp: true, scenes: { $done: "c14-sig-reviewed" } }], ["call", "loadPlaus", false], ["wait", 2500]] },
+      ],
+    },
+    {
+      id: "localreg", title: "Local registration", group: "The agent", scene: "c18-shift-start",
+      summary: "Where a section stretched or folded between the run and the staining, its cells sit off their nuclei in one place only. The agent finds such areas over the whole tissue and moves the cells there back, after checking that the move really helps.",
+      steps: [
+        { title: "A section shifted on purpose", say: "Both demo sections sit on their H&E. For this chapter we took a window of **147328** and pushed one patch of its cells up to 18 µm off, as a section stretched between the run and the staining would be. It comes in with a **registration file**.",
+          pts: ["The patch was moved on purpose, to show the correction", "A registration file places the cells at import: no alignment to run"],
+          scene: "c18-shift-import",
+          do: [["click", ttl("Add a sample")], ["click", { css: "label", text: /h5ad \/ RDS/ }], ["fill", sel("imH5"), D + "scp2927_147328_shifted.h5ad"], ["wait", 900],
+               ["click", { css: "input[name=imImgMode][value=file]" }], ["fill", sel("imNewImg"), D + "scp2927_147328_shifted_HE.ome.tif"],
+               ["click", { css: "input[name=imRegMode][value=file]" }], ["fill", sel("imNewReg"), D + "registration_shifted.csv"], ["fill", sel("imName"), "shifted_demo"], ["wait", 1500],
+               ["click", sel("imGo")], ["until", "st.sample && st.sample.sample_id === 'shifted_demo' && st.sid && !st.busy", 30000], ["wait", 800]] },
+        { title: "Cells beside their nuclei", say: "Zoom in on the patch: the dots (the cells) sit beside the dark nuclei on the H&E, all of them to the lower left.",
+          do: [["zoom", SHIFTED, 2200], ["wait", 3000], ["zoom", "home", 1200]] },
+        { title: "Ask for a local registration", say: "In Claude Code: **do local registration**. No area to name: the agent compares the cells with the nuclei in 200 µm windows over the whole tissue and finds the part that is off.",
+          do: [["agent", "c18_local_registration", { scenes: { $done: "c18-shift-advice" } }], ["call", "loadPlaus", true], ["wait", 1500]] },
+        { title: "Checked before it is offered", say: "The advice: area **L1**, 16 windows, up to 18 µm off. The correction was tested first: with the cells moved, no window is off any more. Offsets that stay when the cells move are left alone.",
+          pts: ["A repeating structure (crypts, villi) can match one period off: such windows are not moved", "Nothing changes until you correct"],
+          after: "#plpanel", afterLabel: "Local correction", ms: 7000 },
+        { title: "Show the area", say: "**show areas** outlines L1 on the map; the dots are back in their own color for the close-up.",
+          do: [["click", { css: "#plpanel button", text: "show areas" }], ["wait", 2000], ["select", sel("mode"), "type"], ["zoom", SHIFTED, 1800], ["wait", 1500]] },
+        { title: "Correct locally", say: "**correct locally…** moves the cells there onto their nuclei; everywhere else they stay. **undo correction** puts them back.",
+          scene: "c18-shift-fixed",
+          do: [["click", { css: "#plpanel button", text: "correct locally…" }], ["until", "!st.busy", 20000], ["wait", 1500], ["zoom", SHIFTED, 1800], ["wait", 3500], ["zoom", "home", 1500]] },
       ],
     },
     {

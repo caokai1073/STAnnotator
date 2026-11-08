@@ -18,6 +18,10 @@
   };
   try { Object.defineProperty(window, "localStorage", { configurable: true, get: () => storage }); } catch (e) { /* keep the real one */ }
 
+  // the browser's own confirm dialog (e.g. "Move the cells there onto their nuclei?") would stop the replay: the player
+  // draws it for a moment, and the answer is yes, as in the recording
+  window.confirm = (msg) => { T.confirm && T.confirm(String(msg || "")); return true; };
+
   const realFetch = window.fetch.bind(window);
   window.fetch = async (input, init) => {
     const url = new URL(typeof input === "string" ? input : input.url, location.href);

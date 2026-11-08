@@ -24,6 +24,10 @@
   [
    "/Users/caokai/",
    "/Users/me/"
+  ],
+  [
+   "work/tut/home",
+   "/Users/me/stagent"
   ]
  ],
  "synthetic": {
@@ -265,6 +269,18 @@
   },
   {
    "name": "c17-export"
+  },
+  {
+   "name": "c18-shift-start"
+  },
+  {
+   "name": "c18-shift-import"
+  },
+  {
+   "name": "c18-shift-advice"
+  },
+  {
+   "name": "c18-shift-fixed"
   }
  ],
  "dropped": [

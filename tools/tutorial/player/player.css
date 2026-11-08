@@ -212,3 +212,11 @@ dialog#help button { border: 0; background: var(--ink); color: #fff; padding: 6p
 #start small { display: block; font-size: 13px; color: #c9cfda; margin-top: 3px; }
 #app.started #start { display: none; }
 #app:not(.started) #pill { display: none; }
+/* the browser's confirm dialog, drawn while the replay answers it */
+.confirmBox { position: absolute; left: 50%; top: 30%; transform: translate(-50%, -50%); width: 420px; background: #fff; border-radius: 12px;
+  box-shadow: 0 18px 50px rgba(0,0,0,.3); padding: 18px 20px 14px; font: 13.5px/1.45 -apple-system, BlinkMacSystemFont, sans-serif; color: #1d2433; z-index: 6; }
+.confirmBox p { margin: 0 0 14px; }
+.confirmBox div { display: flex; justify-content: flex-end; gap: 8px; }
+.confirmBox button { border: 1px solid #d0d4db; background: #f6f7f9; border-radius: 7px; padding: 5px 16px; font-size: 13px; }
+.confirmBox button.ok { background: #1a73e8; border-color: #1a73e8; color: #fff; }
+.confirmBox.go button.ok { box-shadow: 0 0 0 3px rgba(26,115,232,.35); }

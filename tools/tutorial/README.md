@@ -46,7 +46,9 @@ Buttons that would open a Terminal (`/api/claude/...`) are not clicked while rec
 
 Demo data: two sections of SCP2927 (147328 terminal ileum, 167799 sigmoid colon), cropped to a window with mucosa,
 submucosa and muscle (cells and H&E; the crop keeps the H&E pixel size in its OME metadata): `demo_crop.py`, and
-`demo_geojson.py` for the QuPath-style outlines the Regions chapter imports.
+`demo_geojson.py` for the QuPath-style outlines the Regions chapter imports. Both sections sit on their H&E, so the
+Local registration chapter uses a third slice, `demo_shift.py`: a window of 147328 away from the luminal villi, with one
+patch of cells pushed up to 18 µm off on purpose (the chapter says so) and the registration the agent found for 147328.
 
 ## Build and check
 

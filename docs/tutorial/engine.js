@@ -92,6 +92,13 @@
   window.__TUT = {
     match, blank: BLANK,
     toast: (m) => toast(m),
+    confirm: (m) => {  // the app asked the browser's confirm(): shown over the app for a moment while playing
+      if (!S.playing || S.instant) return;
+      const box = el("div", "confirmBox", `<p>${esc(m)}</p><div><button>Cancel</button><button class="ok">OK</button></div>`);
+      $("#fx").append(box);
+      setTimeout(() => box.classList.add("go"), 1800 / S.speed);
+      setTimeout(() => box.remove(), 2600 / S.speed);
+    },
     download: () => toast("Downloads need the installed app: this demo replays a recorded session."),
     attach: (w) => { w.addEventListener("pointerdown", markDirty, true); w.addEventListener("keydown", markDirty, true); },
     log: (m, u, hit) => { if (S.debug) console.log("[tutorial]", hit ? "hit " : "MISS", m, u); },
@@ -586,6 +593,7 @@
   async function runActs(acts, run, instant) {
     for (const a of acts || []) {
       check(run);
+      S.instant = !!instant;  // fast-forwarding to a step: no dialogs drawn on the way
       try { await ACT[a[0]](run, instant, ...a.slice(1)); }
       catch (e) {
         if (e === CANCEL) throw e;
