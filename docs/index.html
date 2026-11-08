@@ -783,7 +783,7 @@ document.querySelectorAll("[data-releases]").forEach((a) => { a.href = REPO + "/
 // Visits and downloads are counted with GoatCounter (no cookies; IP addresses are not kept). GOATCOUNTER is the
 // account's code (https://<code>.goatcounter.com); empty, nothing is counted. Pages and downloads are counted under
 // the site's host, so caokai.site and a fork's github.io (e.g. uhlerlab) are told apart. Not on localhost.
-const GOATCOUNTER = "";
+const GOATCOUNTER = "stannotator";
 if (GOATCOUNTER) {
   window.goatcounter = { path: (p) => location.host + p };
   const gc = document.createElement("script");
