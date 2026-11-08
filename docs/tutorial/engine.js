@@ -52,6 +52,7 @@
     try { path = decodeURIComponent(path); } catch (e) { /* keep it */ }  // the server records decoded paths
     return method + " " + path + (q.length ? "?" + q.map(([k, v]) => k + "=" + v).join("&") : "");
   };
+  const hitOf = (a) => ({ status: a[0], ctype: a[1], href: new URL(DATA + "b/" + a[2], location.href).href, headers: (S.data.headers || {})[a[2]] });
   function match(method, url, body) {
     const key = keyOf(method, url), E = S.data.entries, names = S.data.scenes;
     for (let i = S.scene; i >= 0; i--) {
@@ -65,7 +66,7 @@
         ans = list[Math.min(c, list.length - 1)];
       } else ans = list[list.length - 1];  // anything else: what it was at the end of the scene
       counters.set(i + key, (counters.get(i + key) || 0) + 1);
-      return { status: ans[0], ctype: ans[1], href: new URL(DATA + "b/" + ans[2], location.href).href };
+      return hitOf(ans);
     }
     const bare = key.split("?")[0];  // H&E tiles are stored without their revision: the same image file
     const rev = /\/he\/\d+\//.test(bare) && new URL(url, "http://x").searchParams.get("r");
@@ -73,11 +74,11 @@
     if (blank) return { status: 200, ctype: "image/jpeg", href: new URL(DATA + "b/" + blank, location.href).href };
     for (const g of S.data.global || []) {  // answers for every scene: tiles, gene colors, the stand-ins for Terminal
       const list = E[g] && (E[g][key] || (/\/he\/\d+\//.test(bare) && E[g][bare]));
-      if (list) { const a = list[list.length - 1]; return { status: a[0], ctype: a[1], href: new URL(DATA + "b/" + a[2], location.href).href }; }
+      if (list) { const a = list[list.length - 1]; return hitOf(a); }
     }
     for (let i = S.scene + 1; i < names.length; i++) {  // recorded only later (option lists and the like): the nearest one
       const list = E[names[i]] && E[names[i]][key];
-      if (list) { const a = list[0]; return { status: a[0], ctype: a[1], href: new URL(DATA + "b/" + a[2], location.href).href }; }
+      if (list) { const a = list[0]; return hitOf(a); }
     }
     if (S.debug) console.warn("[tutorial] not recorded:", key);
     if (S.check) (S.misses = S.misses || []).push({ ch: CH[S.ci].id, step: S.si, key });
@@ -98,7 +99,8 @@
   function markDirty(e) { if (!S.playing && e.isTrusted) S.dirty = true; }
 
   /* ---------------- timing ---------------- */
-  const readMs = (s) => Math.min(15000, Math.max(3200, 900 + 52 * String(s || "").replace(/\*\*/g, "").length));
+  const readMs = (s) => Math.min(11000, Math.max(2400, 600 + 40 * String(s || "").replace(/\*\*/g, "").length));
+  const AFTER_MS = 800;  // after a step's actions, before the next step: the caption's reading time counts from the step's start
   function check(run) { if (run !== S.run) throw CANCEL; }
   async function sleep(ms, run, instant) {  // counts down only while playing; speed applies
     if (instant) return check(run);
@@ -286,6 +288,53 @@
         ev("pointerup", bx, by, w); await sleep(350, run);
       }
     },
+    async lasso(run, instant, type, opt) {  // draw around the cells of one type on the UMAP (as the user does with Select)
+      const w = W(), EM = w.eval("EM"), c = D().getElementById("emcanvas");
+      if (!EM || !EM.xy || !c) throw new Error("lasso: the UMAP is not open");
+      // the type's color in the legend, then its cells (colors.bin: RGBA per cell, as the UMAP draws them)
+      const row = [...D().querySelectorAll("#legend .it")].find((e) => e.children[1] && e.children[1].textContent.trim() === type);
+      const rgb = row && getComputedStyle(row.querySelector(".sw")).backgroundColor.match(/\d+/g).slice(0, 3).map(Number);
+      const col = EM.colors[EM.colKey];
+      if (!rgb || !col) throw new Error("lasso: no color for " + type);
+      const pts = [];
+      for (let i = 0; i < EM.n; i++) if (Math.abs(col[4 * i] - rgb[0]) + Math.abs(col[4 * i + 1] - rgb[1]) + Math.abs(col[4 * i + 2] - rgb[2]) < 6) pts.push([EM.xy[2 * i], EM.xy[2 * i + 1]]);
+      if (pts.length < 10) throw new Error("lasso: " + pts.length + " cells of " + type);
+      // its main island: the cells nearest the densest point, then their hull, a little wider
+      const med = (a) => a.slice().sort((x, y) => x - y)[a.length >> 1];
+      let cx = med(pts.map((p) => p[0])), cy = med(pts.map((p) => p[1]));
+      const near = pts.map((p) => [Math.hypot(p[0] - cx, p[1] - cy), p]).sort((a, b) => a[0] - b[0]).slice(0, Math.ceil(pts.length * ((opt && opt.share) || 0.7))).map((x) => x[1]);
+      cx = near.reduce((a, p) => a + p[0], 0) / near.length; cy = near.reduce((a, p) => a + p[1], 0) / near.length;
+      const hull = (P) => {  // monotone chain
+        P = P.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+        const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+        const lo = [], up = [];
+        for (const p of P) { while (lo.length > 1 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }
+        for (const p of P.reverse()) { while (up.length > 1 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }
+        return lo.slice(0, -1).concat(up.slice(0, -1));
+      };
+      const poly = hull(near).map(([x, y]) => w.emToCanvas(cx + (x - cx) * 1.12, cy + (y - cy) * 1.12));
+      // a smooth path along the hull, closed
+      const path = [];
+      for (let k = 0; k <= poly.length; k++) {
+        const a = poly[k % poly.length], b = poly[(k + 1) % poly.length], n = Math.max(1, Math.round(Math.hypot(b[0] - a[0], b[1] - a[1]) / 6));
+        if (k < poly.length) for (let j = 0; j < n; j++) path.push([a[0] + (b[0] - a[0]) * j / n, a[1] + (b[1] - a[1]) * j / n]);
+      }
+      path.push(path[0]);
+      if (instant) { w.lassoSelect(path); w.drawEM(); return; }
+      const r = c.getBoundingClientRect(), k = r.width / c.offsetWidth;
+      const at = (p) => [r.left + p[0] * k, r.top + p[1] * k];
+      const ev = (t, p) => c.dispatchEvent(new (w.PointerEvent)(t, { bubbles: true, cancelable: true, clientX: at(p)[0], clientY: at(p)[1], pointerId: 1, pointerType: "mouse", isPrimary: true, buttons: t === "pointerup" ? 0 : 1 }));
+      const cap = c.setPointerCapture; c.setPointerCapture = () => {};  // a synthetic pointer cannot be captured
+      try {
+        await moveTo(...at(path[0]), run);
+        clickFx(); ev("pointerdown", path[0]);
+        cur.style.transition = "none";
+        const per = Math.max(8, Math.min(30, 1800 / path.length));
+        for (const p of path.slice(1)) { const [x, y] = at(p); cur.style.left = x + "px"; cur.style.top = y + "px"; curPos = { x, y }; ev("pointermove", p); await sleep(per, run); }
+        ev("pointerup", path[path.length - 1]);
+      } finally { c.setPointerCapture = cap; }
+      await sleep(300, run);
+    },
     async picker(run, instant, opt) {  // the desktop app's file dialog (a native window): drawn here, for the viewer to see the file
       if (instant) return;
       const box = el("div", "picker");
@@ -367,6 +416,7 @@
   // last text, at the normal pace with time to read it.
   const AGENT_FAST = 3;
   const lastText = (ev) => [...ev].reverse().find((e) => e.k === "text");
+  const answerMs = (e) => Math.min(4500, 12 * e.text.length);  // after the answer, before the app moves on (pause to read it all)
   function agentMs(ev, opt) {  // estimated playing time of one conversation at 1x
     let ms = 0;
     const last = lastText(ev);
@@ -375,7 +425,7 @@
       else if (e.k === "tool") ms += 1500 / AGENT_FAST;
       else if (e.k === "text") ms += e === last ? Math.min(2600, 10 * e.text.length) : (Math.min(2600, 10 * e.text.length) + 900) / AGENT_FAST;
     }
-    return ms + (last ? Math.min(9000, 22 * last.text.length) : 0);
+    return ms + (last ? answerMs(last) : 0);
   }
   async function playAgent(id, opt, run, instant) {
     const ev = S.agent[id];
@@ -421,7 +471,7 @@
         spinOff();
         add(el("div", "t-done", `✻ Worked for ${fmt(e.ms || 0)}`));
         if (scenes.$done) setScene(scenes.$done);
-        await sleep(last ? Math.min(9000, 22 * last.text.length) : 1500, run, instant);
+        await sleep(last ? answerMs(last) : 1500, run, instant);
       }
     }
     spinOff();
@@ -438,9 +488,10 @@
       else if (a[0] === "type") act += 900 + Math.min(2400, 30 * String(a[2]).length);
       else if (a[0] === "wait") act += a[1];
       else if (a[0] === "zoom") act += a[2] || 1600;
+      else if (a[0] === "lasso") act += 2600;
       else if (a[0] === "agent") act += S.agent[a[1]] ? agentMs(S.agent[a[1]], a[2] || {}) : 0;
     }
-    return st.ms || Math.max(ms, act + 1200);
+    return st.ms ? Math.max(st.ms, act + AFTER_MS) : Math.max(ms, act + AFTER_MS);
   }
   let TL = [];  // [{ci, si, t0, ms}]
   function buildTimeline() {
@@ -577,7 +628,7 @@
       await runActs(st.do, run, false);
       if (st.after) showSpot(st.after, st.afterLabel);
       const used = (performance.now() - t0) * S.speed;
-      await sleep(Math.max(st.do && st.do.length ? 1400 : 0, readMs(st.say) - used), run);
+      await sleep(Math.max(st.do && st.do.length ? AFTER_MS : 0, (st.ms || readMs(st.say)) - used), run);
       hideSpot();
       check(run);
       if (S.si + 1 < c.steps.length) S.si++;

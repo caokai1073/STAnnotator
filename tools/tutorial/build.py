@@ -20,6 +20,9 @@ EXT = {"application/json": "json", "image/jpeg": "jpg", "image/png": "png", "app
 VOLATILE = {"t", "_"}  # cache busters: not part of the key
 
 
+CELL_RADIUS_UM = 3.45  # as stagent/webapp.py
+
+
 def norm(path, query):
     """The key of a request: path and decoded query pairs in order (the player builds the same key)."""
     q = sorted((k, v) for k, v in parse_qsl(query, keep_blank_values=True) if k not in VOLATILE)
@@ -131,7 +134,19 @@ def main():
         rev = dict(parse_qsl(r["query"])).get("r")
         if rev in blank_revs and rev not in blank and r["status"] == 200 and "/he/" in r["path"]:
             blank[rev] = store(r["body"], r["ctype"])
-    manifest = {"scenes": order, "global": ["_synthetic", "_tiles", "_genes", "_static"], "entries": entries, "blank_tiles": blank}
+    # response headers the app reads: cells.bin's X-Radius-Px (the dot radius in image pixels, webapp.api_cells_bin:
+    # CELL_RADIUS_UM / the image's um_per_px). Without it the dots stay 2 px at any zoom and any Dot size.
+    headers, um = {}, {}
+    for r in sorted(rows, key=lambda r: r["t"]):
+        parts = r["path"].split("/")
+        if r["status"] != 200 or len(parts) < 5 or parts[2] != "sample":
+            continue
+        if parts[4] == "he_info":
+            um[parts[3]] = json.loads((rec / "blobs" / r["body"]).read_text()).get("um_per_px")
+        elif parts[4] == "cells.bin" and um.get(parts[3]):
+            headers[store(r["body"], r["ctype"])] = {"X-Radius-Px": f"{CELL_RADIUS_UM / um[parts[3]]:.4f}"}
+    manifest = {"scenes": order, "global": ["_synthetic", "_tiles", "_genes", "_static"], "entries": entries, "blank_tiles": blank,
+                "headers": headers}
     (dout / "manifest.json").write_text(json.dumps(manifest, separators=(",", ":")))
 
     # ---------- the agent's conversations ----------

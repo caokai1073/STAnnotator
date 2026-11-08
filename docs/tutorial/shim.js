@@ -32,7 +32,7 @@
     }
     if (hit.delay) await new Promise((r) => setTimeout(r, hit.delay));
     const r = await realFetch(hit.href);
-    return new Response(await r.arrayBuffer(), { status: hit.status, headers: { "content-type": hit.ctype } });
+    return new Response(await r.arrayBuffer(), { status: hit.status, headers: { "content-type": hit.ctype, ...(hit.headers || {}) } });
   };
 
   // images (H&E tiles, figures): <img src="/api/..."> loads the recorded file instead
