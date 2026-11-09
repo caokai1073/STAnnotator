@@ -466,6 +466,10 @@ The methods themselves are described in [Annotation methods](#6-annotation-metho
    it.
 3. Close with **Finish**, Enter or a click on the first point, and name it.
 
+**Pen** (or the key p) draws freehand, as in QuPath: hold the mouse button and drag around the area; releasing closes
+the outline and asks for its name. Hold Space and drag to move the map; the wheel zooms while you draw. **Undo** takes
+back the whole stroke. The choice of Pen or points is remembered.
+
 The outline is saved as you draw, so **Pause** (or another sample, or a reload) keeps it and **Continue** picks it up
 later. Shift-click **Draw** starts a new one; Esc drops it.
 

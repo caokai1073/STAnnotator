@@ -661,11 +661,12 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <div class="items" id="rgitems"></div>
       <div class="hint" id="drawhint" hidden style="padding:6px 10px;border-top:1px solid var(--line)">
         <div class="row" style="gap:6px;margin-bottom:4px"><b id="drawinfo">0 points</b><span class="spacer"></span>
-          <button id="drawUndo" style="padding:1px 8px;font-size:12px" title="Take back the last point (Backspace)">Undo point</button>
+          <button id="drawPen" style="padding:1px 8px;font-size:12px" title="Pen (freehand): hold the mouse button and drag around the area; releasing closes the outline. Space + drag moves the map, the wheel zooms (p)">Pen</button>
+          <button id="drawUndo" style="padding:1px 8px;font-size:12px" title="Take back the last point, or the last pen stroke (Backspace)">Undo</button>
           <button id="drawPause" style="padding:1px 8px;font-size:12px" title="Stop drawing for now: the outline is kept (also after a reload) and Continue picks it up">Pause</button>
           <button id="drawDone" class="primary" style="padding:1px 8px;font-size:12px" title="Close the outline and name it (Enter)">Finish</button></div>
-        Click to add points · double-click a point to remove it · click the first point, Enter or Finish to close ·
-        Backspace undo point · Esc cancel · the outline is saved as you draw</div>
+        <span id="drawHow">Click to add points · double-click a point to remove it</span> · click the first point, Enter or
+        Finish to close · Backspace undo · Esc cancel · the outline is saved as you draw</div>
       <div class="hint" id="edithint" hidden style="padding:6px 10px;border-top:1px solid var(--line)">
         <div id="editinfo" style="margin-bottom:4px"></div>
         Drag a point to move it · drag a small ◦ between two points to add one · double-click a point to remove it
@@ -2091,7 +2092,7 @@ $("lgtoggle").classList.add("flip");
 function imgPointFromEvent(pos) { return heItem().viewerElementToImageCoordinates(pos); }
 viewer.addHandler("canvas-click", async (e) => {
   if (!e.quick || !st.sid) return;
-  if (st.drawing) { addPoint(e.position); return; }
+  if (st.drawing) { if (Date.now() - (st.penAt || 0) > 300) addPoint(e.position); return; }
   if (st.editing) return;
   const p = imgPointFromEvent(e.position);
   const q = imgPointFromEvent(new OpenSeadragon.Point(e.position.x + 10, e.position.y));
@@ -2236,9 +2237,13 @@ function drawRegions() {
   if (st.drawing && st.drawing.length) {
     const pts = st.drawing.map(([x, y]) => toScreen(x, y));
     svg.append(svgEl("polyline", { points: pts.map((q) => `${q.x},${q.y}`).join(" "), fill: "rgba(0,200,255,.08)",
-                                    stroke: "#00c8ff", "stroke-width": 2, "stroke-dasharray": "6 4" }));
-    pts.forEach((q, i) => svg.append(svgEl("circle", { cx: q.x, cy: q.y, r: i === 0 ? 6 : 4, fill: i === 0 ? "#00c8ff" : "#fff",
-                                                       stroke: "#00a0d0", "stroke-width": 2 })));
+                                    stroke: "#00c8ff", "stroke-width": 2, ...(st.pen ? {} : { "stroke-dasharray": "6 4" }) }));
+    let last = null;  // a dot where the points are apart (clicked points); a pen line's dense points show as the line
+    pts.forEach((q, i) => {
+      if (i && i < pts.length - 1 && last && Math.hypot(q.x - last.x, q.y - last.y) < 14) return;
+      last = q;
+      svg.append(svgEl("circle", { cx: q.x, cy: q.y, r: i === 0 ? 6 : 4, fill: i === 0 ? "#00c8ff" : "#fff", stroke: "#00a0d0", "stroke-width": 2 }));
+    });
   }
 }
 // "animation" and "update-viewport" both come on every frame of a move: one redraw for both, before the frame is painted
@@ -2514,6 +2519,55 @@ function saveDraft() {
   try { if (st.drawing && st.drawing.length) localStorage.setItem(k, JSON.stringify(st.drawing)); else localStorage.removeItem(k); } catch (e) {}
 }
 function loadDraft() { try { const d = JSON.parse(localStorage.getItem(draftKey()) || "null"); return Array.isArray(d) && d.length ? d : null; } catch (e) { return null; } }
+// Pen (freehand, as in QuPath): press and drag draws a continuous line (a point every few screen pixels); releasing
+// the mouse closes the outline and asks for its name. The wheel zooms while drawing; Space + drag moves the map.
+// Clicks still add single points (a stroke then goes on from them).
+const PEN_STEP_PX = 3;
+st.pen = (() => { try { return localStorage.getItem("drawPen") === "1"; } catch (e) { return false; } })();
+st.strokes = [];  // where each pen stroke began in st.drawing, for Undo
+function syncPen() {
+  $("drawPen").classList.toggle("on", st.pen);
+  $("drawHow").textContent = st.pen ? "Pen: hold and drag around the area, release to close · Space + drag moves the map"
+    : "Click to add points · double-click a point to remove it";
+  $("osd").style.cursor = st.drawing ? (st.spaceHeld ? "grab" : "crosshair") : "";
+}
+function setPen(on) {
+  st.pen = !!on; try { localStorage.setItem("drawPen", st.pen ? "1" : "0"); } catch (e) {}
+  syncPen();
+}
+viewer.addHandler("canvas-press", (e) => {
+  st.stroke = st.drawing && st.pen && !st.spaceHeld ? { from: e.position, started: false } : null;
+});
+viewer.addHandler("canvas-drag", (e) => {
+  const k = st.stroke;
+  if (!k || !st.drawing) return;
+  e.preventDefaultAction = true;  // the pen draws instead of moving the map
+  const pts = st.drawing;
+  if (!k.started) {
+    k.started = true; st.strokes.push(pts.length);
+    const p = imgPointFromEvent(k.from); pts.push([p.x, p.y]);
+  }
+  const [lx, ly] = pts[pts.length - 1], q = toScreen(lx, ly);
+  if (Math.hypot(q.x - e.position.x, q.y - e.position.y) < PEN_STEP_PX) return;
+  const p = imgPointFromEvent(e.position); pts.push([p.x, p.y]);
+  $("drawinfo").textContent = `${pts.length} points`;
+  drawRegionsOnce();
+});
+viewer.addHandler("canvas-release", (e) => {
+  const k = st.stroke; st.stroke = null;
+  if (!k || !k.started || !st.drawing) return;
+  st.penAt = Date.now();  // the click OpenSeadragon may send for a short stroke adds no point
+  saveDraft(); syncDrawBtn();
+  if (st.drawing.length >= 3) finishDraw();  // released: the outline closes (Cancel in the name dialog keeps it open)
+  else undoDraw();  // a stroke too short for an outline
+});
+function undoDraw() {
+  if (!st.drawing || !st.drawing.length) return;
+  const start = st.strokes.pop();  // where the last pen stroke began, -1 for a clicked point, none for a loaded draft
+  if (start != null && start >= 0 && start < st.drawing.length) st.drawing.length = start;
+  else st.drawing.pop();
+  saveDraft(); syncDrawBtn();
+}
 function syncDrawBtn() {  // Draw, Continue (a paused outline waits) or Cancel
   const paused = !st.drawing && st.sid && loadDraft();
   st.pausedDraft = paused || null;
@@ -2525,18 +2579,16 @@ function syncDrawBtn() {  // Draw, Continue (a paused outline waits) or Cancel
 }
 function startDraw(fresh) {
   if (!st.sid) return;
-  st.drawing = (!fresh && loadDraft()) || [];
+  st.drawing = (!fresh && loadDraft()) || []; st.strokes = [];
   viewer.gestureSettingsMouse.dblClickToZoom = false;
   $("draw").classList.add("on"); $("drawhint").hidden = false;
-  $("osd").style.cursor = "crosshair";
-  saveDraft(); syncDrawBtn();
+  saveDraft(); syncDrawBtn(); syncPen();
 }
 function stopDraw() {  // out of drawing mode; the draft stays as it is in storage
-  st.drawing = null;
+  st.drawing = null; st.strokes = []; st.stroke = null;
   viewer.gestureSettingsMouse.dblClickToZoom = true;
   $("draw").classList.remove("on"); $("drawhint").hidden = true;
-  $("osd").style.cursor = "";
-  syncDrawBtn();
+  syncPen(); syncDrawBtn();
 }
 function pauseDraw() {
   if (!st.drawing) return;
@@ -2558,7 +2610,7 @@ function addPoint(pos) {
   const hit = nearPoint(pos, pts);
   if (hit === 0 && pts.length >= 3) { finishDraw(); return; }  // clicking the first point closes the polygon
   if (hit >= 0) { drawRegions(); return; }  // on a point already there (the first click of a double-click): nothing
-  pts.push([p.x, p.y]);
+  pts.push([p.x, p.y]); st.strokes.push(-1);  // a single point: Undo takes just this one
   saveDraft(); syncDrawBtn();
 }
 function finishDraw() {
@@ -2581,7 +2633,8 @@ $("nameSave").onclick = async () => {
 $("regname").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("nameSave").click(); } });
 $("nameCancel").onclick = () => { $("nameDlg").close(); };  // keep the points so the user can continue or Esc
 $("draw").onclick = (e) => (st.drawing ? cancelDraw() : startDraw(e.shiftKey));
-$("drawUndo").onclick = () => { if (st.drawing && st.drawing.length) { st.drawing.pop(); saveDraft(); syncDrawBtn(); } };
+$("drawUndo").onclick = (e) => { undoDraw(); e.currentTarget.blur(); };  // (blur: Space must not press it again)
+$("drawPen").onclick = (e) => { setPen(!st.pen); e.currentTarget.blur(); };
 $("drawPause").onclick = pauseDraw;
 $("drawDone").onclick = finishDraw;
 $("outlines").onchange = drawRegions;
@@ -3673,6 +3726,9 @@ const HELP = `
 <h3>Regions</h3><ul>
 <li><b>Draw</b> (Regions panel): click points on the map.<ul>
   <li>Close it with <b>Finish</b>, <kbd>Enter</kbd>, or a click on the first point; then name it.</li>
+  <li><b>Pen</b> (<kbd>p</kbd>) draws freehand, as in QuPath: hold the mouse button and drag around the area; releasing
+    closes the outline. Hold <kbd>Space</kbd> and drag to move the map; the wheel zooms. <b>Undo</b> takes back the
+    whole stroke; Cancel in the name dialog keeps the outline to go on with.</li>
   <li><b>Undo point</b> (<kbd>Backspace</kbd>) removes the last point; a double-click on a point removes it;
     <kbd>Esc</kbd> cancels.</li>
   <li>The outline is saved as you draw: <b>Pause</b> (or another sample, or a reload) keeps it and <b>Continue</b>
@@ -6311,7 +6367,11 @@ document.addEventListener("keydown", (e) => {
   if (st.drawing && e.key === "Escape") cancelDraw();
   if (st.drawing && e.key === "Enter") { e.preventDefault(); finishDraw(); }
   if (st.drawing && e.key === "Backspace") { e.preventDefault(); $("drawUndo").click(); }
+  if (st.drawing && e.key === "p") setPen(!st.pen);
+  if (st.drawing && e.key === " ") { e.preventDefault(); if (!st.spaceHeld) { st.spaceHeld = true; syncPen(); } }
 });
+document.addEventListener("keyup", (e) => { if (e.key === " " && st.spaceHeld) { e.preventDefault(); st.spaceHeld = false; syncPen(); } });
+window.addEventListener("blur", () => { if (st.spaceHeld) { st.spaceHeld = false; syncPen(); } });
 // ---------------- where the app works: this computer, or a server over SSH (desktop app; remote.py) ----------------
 // On a server the window shows the server's viewer through an SSH tunnel: file choosers browse the server, exports are
 // downloaded into files on this computer, and the agent (Claude Code) opens here with its tools running on the server.
