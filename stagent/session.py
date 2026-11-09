@@ -830,6 +830,9 @@ class Session:
         keep_empty = bool(self.meta.get("image_only"))
         used = {o.get("id") for o in ops} - set(ids)
         new, n = [], 0
+        area = lambda r: abs(float(np.dot(np.asarray(r, float)[:, 0], np.roll(np.asarray(r, float)[:, 1], -1))
+                                   - np.dot(np.asarray(r, float)[:, 1], np.roll(np.asarray(r, float)[:, 0], -1)))) / 2
+        pieces = sorted(pieces, key=lambda pc: -area(pc["outer"]))  # the largest piece keeps the first id
         for k, pc in enumerate(pieces):
             outer = [[float(x), float(y)] for x, y in pc["outer"]]
             holes = [[[float(x), float(y)] for x, y in h] for h in pc.get("holes", []) if len(h) >= 3]

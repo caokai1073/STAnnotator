@@ -190,7 +190,7 @@ E.g. QuPath annotations on the H&E, exported as GeoJSON in the image's full-reso
   form one region; holes stay out of it (drawn dashed); points, lines and cell detections are skipped.
 - Outlines traced along the image's pixels (QuPath's brush and wand) are a staircase when zoomed in; they are made
   smooth curves at import (99% within about 2 pixels of the original, well under 1 um; a few cells in ten thousand
-  change side). Outlines with free points are kept point for point. Such curves are edited as curves.
+  change side). Outlines with free points are kept point for point.
 - The H&E must be the image the outlines were drawn on. Drawing before the registration is fine (the outlines are in
   the image's own pixels): they apply once the cells sit on it. An H&E still waiting for its alignment keeps the file,
   and new annotations start with the regions after the alignment (for an annotation made before: Regions panel,
@@ -462,30 +462,37 @@ The methods themselves are described in [Annotation methods](#6-annotation-metho
 
 **Regions are drawn by you**; they start empty.
 
-**Drawing**
+**Drawing** (the tools and keys of QuPath)
 
-1. In the Regions panel click **Draw**.
-2. Click points on the map. **Undo point** (Backspace) takes back the last point; a double-click on a point removes
-   it.
-3. Close with **Finish**, Enter or a click on the first point, and name it.
+The Regions panel has a row of tools:
 
-**Pen** (or the key p) draws freehand: hold the mouse button and drag. Letting go only pauses: the next stroke goes on
-from the end of the outline, so a long border can be drawn in pieces, with rests in between, until you close it with
-**Finish**, Enter or a click on the first point. Hold Space and drag to move the map; the wheel zooms while you draw.
-**Undo** takes back the whole last stroke. The choice of Pen or points is remembered.
+| Tool | Key | What it does |
+|---|---|---|
+| Move | M | Drag moves the map; a click on a region selects it (Shift-click selects more) |
+| Rectangle | R | Drag a rectangle (Shift: a square) |
+| Ellipse | O | Drag an ellipse (Shift: a circle) |
+| Polygon | P | Click points; or turn on the **Pen** (P again) and drag freehand |
+| Brush | B | Paint the area |
+| Wand | W | Paint, and the area follows the colors of the H&E under the brush (± sets how different a color may be) |
 
-The outline is saved as you draw, so **Pause** (or another sample, or a reload) keeps it and **Continue** picks it up
-later. Shift-click **Draw** starts a new one; Esc drops it.
+- The tools add to the **selected region**, or, with nothing selected, to a **new shape**. Hold **Alt** (or turn on
+  **−**) and they erase instead: select a region and brush with Alt to take a piece out of it.
+- Nothing is saved until **Save** (Enter); a new shape is named then (an existing name adds it to that region).
+  **Undo** (Backspace) takes back the last stroke, **Cancel** (Esc) drops the changes. Hold Space and drag to move
+  the map while drawing; the wheel zooms. The slider sets the brush size (in screen pixels, so zooming in makes it
+  finer).
+- With the Polygon tool, letting go of the Pen only pauses: the next stroke goes on from the end, until **Finish**,
+  Enter or a click on the first point closes it. The outline is kept while you draw, so **Pause** (or another sample,
+  or a reload) keeps it.
 
-**Editing**
+**Changing regions**
 
+- A selected region (click it on the map, or its row in the list) offers **Expand…** (grow, or shrink with a negative
+  distance, in µm), **Fill holes**, **Merge** (the selected polygons of one region into one) and **Delete**; then
+  **Save**.
+- A region keeps its name and priors when its outline changes; its cells are recomputed, and Undo (the toolbar's)
+  brings the old outline back. A shape cut in two keeps its id on the larger piece.
 - A name can have several polygons; regions can be renamed, deleted, zoomed to and outlined.
-- **edit** next to a polygon shows its points: drag a point to move it, drag a small circle between two points to add
-  one, double-click a point to remove it, then **Save** (Enter) or **Cancel** (Esc). The region keeps its name and
-  priors; its cells are recomputed, and Undo brings the old outline back.
-- A curve (drawn with the Pen, or imported from QuPath) is edited as a curve, with no points: press on the outline,
-  draw the new border and let go on the outline, and the shorter stretch between the two places is replaced.
-  **Undo** in the panel (Backspace) takes back the last change.
 - Click a region's color square to choose one of 15 colors; outlines, cells colored by region and the legend follow,
   and the color stays with the region when it is renamed.
 
