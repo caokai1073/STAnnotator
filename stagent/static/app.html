@@ -4349,7 +4349,14 @@ function showUpdate(u) {
   UPD.info = u;
   $("updTitle").textContent = `STAnnotator ${u.latest} is available`;
   $("updHave").textContent = `you have ${u.current}`;
-  $("updNotes").innerHTML = releaseNotes(u.notes) || `<p class="hint">No release notes.</p>`;
+  // every release since the one installed, newest first (an app several versions behind sees what each one changed)
+  const rels = u.releases && u.releases.length ? u.releases : [{ version: u.latest, notes: u.notes }];
+  $("updNotes").innerHTML = rels.map((r) => {
+    const md = /^\s*##\s/.test(r.notes || "") ? r.notes : `## STAnnotator ${r.version}\n\n${r.notes || "No release notes."}`;
+    return releaseNotes(md);
+  }).join("") || `<p class="hint">No release notes.</p>`;
+  if (rels.length > 1) $("updNotes").insertAdjacentHTML("afterbegin",
+    `<p class="hint">${rels.length} releases since ${String(u.current).replace(/[<&]/g, "")}; what each one changed:</p>`);
   $("updErr").textContent = ""; $("updProg").hidden = true; $("updSkip").hidden = false; $("updLater").textContent = "Later";
   const mac = u.platform ? u.platform === "mac" : /Mac/i.test(navigator.platform || navigator.userAgent);
   $("updHint").textContent = !u.can_install ? "Download it from the release page and install it as the first time." :

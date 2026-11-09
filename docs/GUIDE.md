@@ -624,7 +624,7 @@ Part of the Annotation and Spatial organization reviews.
 open, and offers one by itself at most once a day (**Later** waits until the next day). **Check for updates** in About
 asks now and always shows it. Without an internet connection nothing is shown.
 
-- The window shows the release notes; **Download and install** fetches the installer in the background.
+- The window shows the notes of every release since the installed one, newest first; **Download and install** fetches the installer in the background.
 - **Install and restart** closes the app, puts the new version in its place (macOS: the STAnnotator.app it runs from;
   Windows: the installer, silently, into the same folder) and opens it again. The data folder and the settings stay.
 - **Skip this version** stops offering it.

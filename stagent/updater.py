@@ -59,7 +59,33 @@ def _fetch_latest(timeout=15):
     asset = next((a for a in rel.get("assets", []) if want and a.get("name", "").lower().endswith(want)), None)
     return {"version": str(rel.get("tag_name", "")).lstrip("v"), "notes": rel.get("body") or "",
             "page": rel.get("html_url") or PAGE, "published": rel.get("published_at"),
-            "asset": {"name": asset["name"], "url": asset["browser_download_url"], "bytes": asset.get("size")} if asset else None}
+            "asset": {"name": asset["name"], "url": asset["browser_download_url"], "bytes": asset.get("size")} if asset else None,
+            "history": _fetch_history(timeout)}
+
+
+def _fetch_history(timeout=15):
+    """The notes of the recent releases, [{version, notes}], so that an app several versions behind shows what each
+    release in between changed; [] when GitHub does not answer (then only the latest release's notes)."""
+    import urllib.request
+    from .osutil import https_context
+    try:
+        req = urllib.request.Request(API.rsplit("/", 1)[0] + "?per_page=40",
+                                     headers={"Accept": "application/vnd.github+json", "User-Agent": "STAnnotator-app"})
+        with urllib.request.urlopen(req, timeout=timeout, context=https_context()) as r:
+            rels = json.loads(r.read().decode("utf-8"))
+        return [{"version": str(x.get("tag_name", "")).lstrip("v"), "notes": x.get("body") or ""}
+                for x in rels if not x.get("draft") and not x.get("prerelease")]
+    except Exception:
+        return []
+
+
+def releases_between(cached, current):
+    """The releases newer than current up to the latest, newest first, each with its notes."""
+    latest = cached.get("version", "")
+    out = [r for r in cached.get("history") or [] if newer(r["version"], current) and not newer(r["version"], latest)]
+    if not any(r["version"] == latest for r in out):
+        out.append({"version": latest, "notes": cached.get("notes", "")})
+    return sorted(out, key=lambda r: _num(r["version"]), reverse=True)
 
 
 def _cache_file():
@@ -96,7 +122,8 @@ def check(force=False):
     return {"current": __version__, "latest": latest, "available": available, "platform": _platform(),
             "skipped": st.get("update_skip") == latest, "shown_today": st.get("update_shown") == _today(),
             "can_install": can_install() and bool(cached.get("asset")),
-            "notes": cached.get("notes", ""), "page": cached.get("page", PAGE), "asset": cached.get("asset")}
+            "notes": cached.get("notes", ""), "releases": releases_between(cached, __version__) if available else [],
+            "page": cached.get("page", PAGE), "asset": cached.get("asset")}
 
 
 def skip(version):
