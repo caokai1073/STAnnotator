@@ -845,7 +845,8 @@ class Session:
         msg = (f"{len(ids)} outlines{f' from {source}' if source else ''} as {len(per)} region(s): "
                + ", ".join(k if keep_empty else f"{k} ({v} cells)" for k, v in per.items()) + (f"; {empty} without cells left out" if empty else ""))
         v = self._commit("import_regions", msg, regions=dict(cur["regions"], ops=ops), expected_parent=cur["version"])
-        return {"new_version": v, "regions": per, "n_outlines": len(ids), "n_empty": empty, "message": msg}
+        return {"new_version": v, "regions": per, "n_outlines": len(ids), "n_empty": empty, "message": msg,
+                "n_smoothed": sum(1 for p in pieces if p.get("smoothed"))}
 
     def assign_region_cells(self, moves, author=None, text="", message=None):
         """Put cells into regions without changing any outline: moves [{"to": region, "cells": [cell ids]}], each

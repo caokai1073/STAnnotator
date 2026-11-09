@@ -2254,20 +2254,29 @@ function drawRegionsOnce() { if (!regionsQueued) { regionsQueued = true; queueMi
 async function regionsImported(r) {
   await refreshVersion(true);
   toast(`Regions imported: ${Object.entries(r.regions).map(([k, v]) => `${k} (${v.toLocaleString()} cells)`).join(", ")}` +
-        (r.n_empty ? `; ${r.n_empty} outline(s) without cells left out` : "") + (r.skipped ? `; ${r.skipped} other object(s) skipped` : ""), 8000);
+        (r.n_empty ? `; ${r.n_empty} outline(s) without cells left out` : "") + (r.skipped ? `; ${r.skipped} other object(s) skipped` : "") +
+        (r.n_smoothed ? `. ${r.n_smoothed} outline(s) traced along pixels (QuPath brush or wand) made smooth curves` : ""), 9000);
+}
+async function importRegions(body, name) {  // the Import button shows the work while it lasts: reading, cells, map
+  const b = $("rgImport"), was = b.textContent;
+  b.disabled = true; b.textContent = "Importing…";
+  toast(`Importing regions from ${name}: reading the outlines and finding their cells…`, 120000);
+  try { await regionsImported(await post(`/api/s/${st.sid}/regions/import`, body)); }
+  catch (e) { toast(e.message, 9000); }
+  finally { b.disabled = false; b.textContent = was; }
 }
 $("rgImport").onclick = async () => {
   if (!st.sid) return;
   if (native()) {  // a file on this computer, or on the server when the app works on one
     const p = await pickFiles("geojson", false); if (!p.length) return;
-    try { await regionsImported(await post(`/api/s/${st.sid}/regions/import`, { path: p[0] })); } catch (e) { toast(e.message, 9000); }
+    await importRegions({ path: p[0] }, p[0].split(/[\\/]/).pop());
     return;
   }
   $("rgImportFile").value = ""; $("rgImportFile").click();
 };
 $("rgImportFile").onchange = async () => {
   const f = $("rgImportFile").files[0]; if (!f) return;
-  try { await regionsImported(await post(`/api/s/${st.sid}/regions/import`, { text: await f.text(), name: f.name })); } catch (e) { toast(e.message, 9000); }
+  await importRegions({ text: await f.text(), name: f.name }, f.name);
 };
 async function loadRegions() {
   if (!st.sid) return;

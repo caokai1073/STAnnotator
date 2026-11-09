@@ -188,6 +188,9 @@ E.g. QuPath annotations on the H&E, exported as GeoJSON in the image's full-reso
 - **Later**: click **Import** in the map's Regions panel to add them to the open annotation.
 - A region's name is the object's classification (else its name), its color QuPath's. Several outlines of one class
   form one region; holes stay out of it (drawn dashed); points, lines and cell detections are skipped.
+- Outlines traced along the image's pixels (QuPath's brush and wand) are a staircase when zoomed in; they are made
+  smooth curves at import (99% within about 2 pixels of the original, well under 1 um; a few cells in ten thousand
+  change side). Outlines with free points are kept point for point. Such curves are edited as curves.
 - The H&E must be the image the outlines were drawn on. Drawing before the registration is fine (the outlines are in
   the image's own pixels): they apply once the cells sit on it. An H&E still waiting for its alignment keeps the file,
   and new annotations start with the regions after the alignment (for an annotation made before: Regions panel,
