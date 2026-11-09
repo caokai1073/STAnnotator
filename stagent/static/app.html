@@ -4363,8 +4363,15 @@ async function checkForUpdate(force) {
   if (!native() || !native().update_check) return;
   const u = await native().update_check(!!force);
   if (u.error) { if (force) toast(u.error, 7000); return; }
-  if (u.available && (force || !u.skipped)) showUpdate(u);
-  else if (force) toast(u.available ? `${u.latest} was skipped; showing it again` : `STAnnotator ${u.current} is the latest version`, 5000);
+  if (!force) {  // by itself: at most once a day, never over an open update dialog or a download
+    if (u.available && !u.skipped && !u.shown_today && !$("updDlg").open && !UPD.timer) {
+      showUpdate(u);
+      if (native().update_shown) native().update_shown();
+    }
+    return;
+  }
+  if (u.available) showUpdate(u);
+  else toast(`STAnnotator ${u.current} is the latest version`, 5000);
 }
 function updProgress(s) {
   $("updProg").hidden = false;
@@ -6409,6 +6416,7 @@ api("/api/config").then((c) => {  // the desktop app (or no Claude Code CLI): th
   let tries = 0;
   const ready = () => (native() && native().connection
     ? (initConnection(c.remote).catch(() => {}), setTimeout(() => checkForUpdate(false).catch(() => {}), 4000),
+       setInterval(() => checkForUpdate(false).catch(() => {}), 6 * 3600 * 1000),  // while the app stays open
        setTimeout(() => askShare().catch(() => {}), 9000))
     : ++tries < 300 && setTimeout(ready, 100));
   if (window.pywebview) ready();

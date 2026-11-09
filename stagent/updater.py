@@ -3,6 +3,8 @@ in the background and installed with one click.
 
 - check(): the latest release (GitHub's API, at most every few hours; the answer is kept in the settings), its
   version, notes and the installer for this system (STAnnotator.dmg on macOS, STAnnotator-Setup.exe on Windows).
+  The app checks at start and every CHECK_EVERY while it is open, and offers a release by itself at most once a day
+  (shown(); "Later" waits for the next day, "Skip" for the next release); About > Check for updates always shows it.
 - Download: the installer goes to a folder of the app's own (not the data folder), with progress.
 - install(): macOS: a small script waits for the app to quit, puts the new STAnnotator.app from the DMG in the place
   of this one and opens it; where the app's folder cannot be written, the DMG opens in Finder to drag it over.
@@ -77,7 +79,7 @@ def check(force=False):
     st = config.read_settings()
     c = _cached()
     cached = c.get("latest") or {}
-    if force or not cached or time.time() - c.get("checked", 0) > CHECK_EVERY:
+    if force or not cached or time.time() - c.get("checked", 0) > CHECK_EVERY - 600:  # (the app's timer is CHECK_EVERY)
         try:
             cached = _fetch_latest()
             f = _cache_file()
@@ -92,12 +94,22 @@ def check(force=False):
     latest = cached.get("version", "")
     available = bool(latest) and newer(latest, __version__)
     return {"current": __version__, "latest": latest, "available": available, "platform": _platform(),
-            "skipped": st.get("update_skip") == latest, "can_install": can_install() and bool(cached.get("asset")),
+            "skipped": st.get("update_skip") == latest, "shown_today": st.get("update_shown") == _today(),
+            "can_install": can_install() and bool(cached.get("asset")),
             "notes": cached.get("notes", ""), "page": cached.get("page", PAGE), "asset": cached.get("asset")}
 
 
 def skip(version):
     config.write_settings(update_skip=version)
+
+
+def _today():
+    return time.strftime("%Y-%m-%d")  # the user's own day
+
+
+def shown():
+    """The app offered a release by itself today: not again before tomorrow."""
+    config.write_settings(update_shown=_today())
 
 
 # ---------------- download ----------------

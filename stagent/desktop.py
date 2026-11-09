@@ -252,6 +252,11 @@ class Api:
         updater.skip(str(version))
         return {"ok": True}
 
+    def update_shown(self):
+        from . import updater
+        updater.shown()
+        return {"ok": True}
+
     # ---- usage sharing during testing (autoshare.py) ----
     def share_status(self):
         from . import autoshare
