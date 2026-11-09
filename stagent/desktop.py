@@ -265,6 +265,14 @@ class Api:
         from . import autoshare, webapp
         return autoshare.send(webapp._about(False), force=True)
 
+    def checkin_status(self):
+        from . import autoshare
+        return autoshare.checkin_status()
+
+    def checkin_set(self, on):
+        from . import autoshare
+        return autoshare.checkin_set(bool(on))
+
     def _close(self):
         if self._conn:
             self._conn.stop()

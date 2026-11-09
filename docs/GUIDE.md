@@ -638,7 +638,7 @@ Part of the Annotation and Spatial organization reviews.
 - The choice is kept in `%APPDATA%\STAnnotator\settings.json` (macOS: `~/Library/Application Support/STAnnotator/`,
   Linux: `~/.config/stagent/`); the `STAGENT_HOME` environment variable, when set, takes precedence.
 
-**Usage sharing** (desktop app, during testing): see [Troubleshooting](#usage-sharing).
+**Usage sharing** and **Daily count** (desktop app): see [Troubleshooting](#usage-sharing).
 
 ### Storage, Reset and Remove all
 
@@ -961,6 +961,10 @@ During testing, the desktop app asks once whether it may send the developers a r
 - The reports carry a random id of the installation, not the user's name.
 - **?** → **About** → **Usage sharing** shows when the last one was sent, turns it off or on, and sends one now.
 
+**Daily count.** Once a day the desktop app sends the developers its random installation id, its version and the
+system (macOS or Windows), nothing else, so they know how many installations are in use. It does not depend on usage
+sharing; **?** → **About** → **Daily count** turns it off or on.
+
 ### Common problems
 
 - **The app does not open**: see its log, `~/Library/Caches/STAnnotator/app.log` on macOS and
@@ -1011,7 +1015,7 @@ stagent/     Python package
   markerqc.py      review of the markers: support per node, flags, top genes, marker list proposals
   mcp_server.py    MCP tools (Claude Code)
   webapp.py        viewer, review page, chat box
-  autoshare.py     usage sharing during testing (with the user's consent)
+  autoshare.py     usage sharing during testing (with the user's consent); the daily count
   report.py        bug reports: contents, upload
   updater.py       the desktop app's updates
   data/            app icon, built-in marker lists (organs/), ligand-receptor pairs

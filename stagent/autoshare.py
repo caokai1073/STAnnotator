@@ -6,6 +6,11 @@ The user is asked once (the app's first start with this version); About shows th
 one now. The receiver files these reports under autosave/<installation id>/ in the developers' Drive folder.
 Settings: share_usage ("yes" / "no"; absent: not asked yet), share_last (the last look, sent or with nothing to send),
 share_sent (the last report sent).
+
+The daily count (every user, unless turned off in About): once a day the app sends the receiver its random
+installation id, its version and the system (macOS / Windows / Linux), nothing else, so the developers know how many
+installations are in use. The receiver adds a row to a sheet in their Drive folder. Settings: checkin ("off" turns it
+off), checkin_day (the last day counted, UTC).
 """
 import tempfile
 import threading
@@ -89,11 +94,53 @@ def send(about, force=False):
         _lock.release()
 
 
+# ---------------- the daily count ----------------
+def _system():
+    import platform
+    return {"Darwin": "macOS", "Windows": "Windows", "Linux": "Linux"}.get(platform.system(), platform.system())
+
+
+def checkin_status():
+    st = config.read_settings()
+    return {"on": st.get("checkin") != "off", "last_day": st.get("checkin_day"), "install_id": report.install_id(),
+            "link": report.link_status().get("set", False)}
+
+
+def checkin_set(on):
+    config.write_settings(checkin="on" if on else "off")
+    return checkin_status()
+
+
+def checkin():
+    """Count this installation once a day (UTC): its random id, version and system. Never raises."""
+    from . import __version__
+    try:
+        st = config.read_settings()
+        if st.get("checkin") == "off":
+            return {"skipped": "turned off"}
+        url = report.upload_url()
+        if not url:
+            return {"skipped": "no upload link"}
+        day = time.strftime("%Y-%m-%d", time.gmtime())
+        if st.get("checkin_day") == day:
+            return {"skipped": "counted today"}
+        r = report._request(url, {"checkin": True, "install": report.install_id(), "version": __version__,
+                                  "system": _system(), "day": day}, timeout=30)
+        if not r.get("ok"):
+            return {"error": r.get("error") or "not counted"}
+        config.write_settings(checkin_day=day)
+        return {"counted": day}
+    except Exception as e:  # offline, the receiver away: again at the next look
+        return {"error": str(e)}
+
+
 def start(about_fn):
-    """The desktop app's background loop: a first look a minute after start, then every few hours."""
+    """The desktop app's background loop: a first look a minute after start, then every few hours (the daily count,
+    then a usage report when one is due and allowed)."""
     def loop():
         time.sleep(60)
         while True:
+            checkin()
             try:
                 r = send(about_fn())
                 if "sent" in r or "error" in r:

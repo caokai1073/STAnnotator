@@ -10,11 +10,15 @@
 // Automatic usage reports (the user allowed usage sharing) go into autosave/<installation id>/, made when missing;
 // reports the user sends with Report a bug go into the folder itself. The screenshots a user adds to a report come
 // as files of their own (one request each, "attachment": true), named <report name>-screenshot<i>.<ext>, next to it.
+// The daily count ("checkin": true; every installation once a day: its random id, version and system) adds one row to
+// the sheet STAnnotator-checkins in the folder, made by setup() (run it once in the editor: it asks for access to
+// Sheets, which the count needs; then deploy a new version).
 
 const FOLDER_ID = "PASTE_THE_FOLDER_ID_HERE";
 const MAX_BYTES = 35 * 1024 * 1024;  // one request: Apps Script takes up to about 50 MB (the data is sent as base64);
                                      // with its screenshots apart, a report can be well over 100 MB in all
 const MAX_PER_DAY = 100;             // reports a day (UTC), whoever sends them; screenshots are not counted
+const MAX_CHECKINS_PER_DAY = 5000;  // rows a day (UTC) in the count sheet, whoever sends them
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp", "image/tiff", "image/heic"];
 
 function doPost(e) {
@@ -25,6 +29,7 @@ function doPost(e) {
     const key = "count_" + Utilities.formatDate(new Date(), "UTC", "yyyy-MM-dd");
     const n = Number(props.getProperty(key) || 0);
     const body = JSON.parse(e.postData.contents);
+    if (body.checkin) return checkin(body, props);
     const shot = !!body.attachment && !body.auto;
     if (n >= MAX_PER_DAY + (shot ? 1 : 0)) return reply({ error: "too many reports today: save the report to a file and send it" });
     const bytes = Utilities.base64Decode(body.data || "");
@@ -47,6 +52,39 @@ function doPost(e) {
   } finally {
     lock.releaseLock();
   }
+}
+
+// The daily count: one row per installation and day (date, day the app counted, installation, version, system)
+function checkin(body, props) {
+  const key = "checkins_" + Utilities.formatDate(new Date(), "UTC", "yyyy-MM-dd");
+  const n = Number(props.getProperty(key) || 0);
+  if (n >= MAX_CHECKINS_PER_DAY) return reply({ error: "too many today" });
+  const clean = (v, k) => String(v || "").replace(/[^A-Za-z0-9_.+ -]/g, "").slice(0, k);
+  sheet(props).appendRow([new Date(), clean(body.day, 10), clean(body.install, 40), clean(body.version, 20), clean(body.system, 20)]);
+  Object.keys(props.getProperties()).filter((k) => k.startsWith("checkins_") && k !== key).forEach((k) => props.deleteProperty(k));
+  props.setProperty(key, String(n + 1));
+  return reply({ ok: true });
+}
+
+function sheet(props) {
+  const id = props.getProperty("checkin_sheet");
+  if (id) {
+    try { return SpreadsheetApp.openById(id).getSheets()[0]; } catch (err) { /* deleted: made again */ }
+  }
+  const ss = SpreadsheetApp.create("STAnnotator-checkins");
+  const sh = ss.getSheets()[0];
+  sh.appendRow(["received (UTC)", "day", "installation", "version", "system"]);
+  sh.setFrozenRows(1);
+  DriveApp.getFileById(ss.getId()).moveTo(DriveApp.getFolderById(FOLDER_ID));
+  props.setProperty("checkin_sheet", ss.getId());
+  return sh;
+}
+
+// Run once in the editor after pasting this file: it asks for the access the receiver needs (Drive, Sheets) and makes
+// the count sheet in the folder.
+function setup() {
+  const sh = sheet(PropertiesService.getScriptProperties());
+  Logger.log("count sheet: " + sh.getParent().getUrl());
 }
 
 function folderFor(body) {

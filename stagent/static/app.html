@@ -4094,6 +4094,7 @@ async function showAbout() {
     ["Agent workspace", esc(d.claude_workspace)],
     ["Libraries", Object.entries(d.libraries).map(([k, v]) => `${k} ${v || "–"}`).join(" · ")]];
   if (native() && native().share_status) rows.push(["Usage sharing", `<span id="hpShare">…</span>`]);
+  if (native() && native().checkin_status) rows.push(["Daily count", `<span id="hpCount">…</span>`]);
   const gb = (b) => `${(b / 1e9).toFixed(b < 1e8 ? 2 : 1)} GB`;
   const cache = await api("/api/cache").catch(() => null);
   if (cache) rows.splice(5, 0, ["Cache", `<span id="hpCacheUse">${gb(cache.bytes)}</span> of at most <input type="number" id="hpCacheGb" min="0.5" step="0.5" value="${cache.limit_gb}" style="width:64px"> GB
@@ -4106,6 +4107,7 @@ async function showAbout() {
     <button id="hpCopy">Copy for a bug report</button>${native() && native().update_check ? ` <button id="hpUpdate">Check for updates</button>` : ""}`;
   if ($("hpUpdate")) $("hpUpdate").onclick = () => checkForUpdate(true);
   if ($("hpShare")) fillShare().catch(() => {});
+  if ($("hpCount")) fillCount().catch(() => {});
   if ($("hpOpenData")) $("hpOpenData").onclick = () => post("/api/open_folder", { which: "data" }).catch((e) => toast(e.message, 6000));
   if ($("hpMoveData")) $("hpMoveData").onclick = () => changeDataFolder(d.data_folder);
   const cacheDo = async (body, what) => {
@@ -4282,6 +4284,15 @@ $("bugUpload").onclick = () => {
     $("bugNote").value = ""; bugClearShots();
   });
 };
+// ---------------- the daily count (autoshare.py): every user, turned off here ----------------
+async function fillCount() {
+  const c = await native().checkin_status(), el = $("hpCount"); if (!el) return;
+  el.innerHTML = (c.on ? `On (last counted: ${c.last_day || "not yet"})` : "Off") +
+    ` <button id="hpCountToggle">${c.on ? "Turn off" : "Turn on"}</button>` +
+    `<div class="hint">Once a day the app sends the developers its random installation id, its version and the system
+      (macOS or Windows), nothing else, so they know how many use it.</div>`;
+  $("hpCountToggle").onclick = async () => { await native().checkin_set(!c.on); fillCount(); };
+}
 // ---------------- usage sharing during testing (autoshare.py): asked once, changed in About ----------------
 async function fillShare() {
   const s = await native().share_status(), el = $("hpShare"); if (!el) return;
