@@ -661,7 +661,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <div class="items" id="rgitems"></div>
       <div class="hint" id="drawhint" hidden style="padding:6px 10px;border-top:1px solid var(--line)">
         <div class="row" style="gap:6px;margin-bottom:4px"><b id="drawinfo">0 points</b><span class="spacer"></span>
-          <button id="drawPen" style="padding:1px 8px;font-size:12px" title="Pen (freehand): hold the mouse button and drag around the area; releasing closes the outline. Space + drag moves the map, the wheel zooms (p)">Pen</button>
+          <button id="drawPen" style="padding:1px 8px;font-size:12px" title="Pen (freehand): hold the mouse button and drag to draw; letting go pauses, the next stroke goes on from the end. Space + drag moves the map, the wheel zooms (p)">Pen</button>
           <button id="drawUndo" style="padding:1px 8px;font-size:12px" title="Take back the last point, or the last pen stroke (Backspace)">Undo</button>
           <button id="drawPause" style="padding:1px 8px;font-size:12px" title="Stop drawing for now: the outline is kept (also after a reload) and Continue picks it up">Pause</button>
           <button id="drawDone" class="primary" style="padding:1px 8px;font-size:12px" title="Close the outline and name it (Enter)">Finish</button></div>
@@ -2519,15 +2519,16 @@ function saveDraft() {
   try { if (st.drawing && st.drawing.length) localStorage.setItem(k, JSON.stringify(st.drawing)); else localStorage.removeItem(k); } catch (e) {}
 }
 function loadDraft() { try { const d = JSON.parse(localStorage.getItem(draftKey()) || "null"); return Array.isArray(d) && d.length ? d : null; } catch (e) { return null; } }
-// Pen (freehand, as in QuPath): press and drag draws a continuous line (a point every few screen pixels); releasing
-// the mouse closes the outline and asks for its name. The wheel zooms while drawing; Space + drag moves the map.
-// Clicks still add single points (a stroke then goes on from them).
+// Pen (freehand): press and drag draws a continuous line (a point every few screen pixels). Releasing the mouse only
+// pauses: the next stroke goes on from the end of the outline, so a long border is drawn in pieces, with rests,
+// zooming (wheel) and moving (Space + drag) in between. Finish, Enter or a click on the first point closes it.
+// Clicks still add single points.
 const PEN_STEP_PX = 3;
 st.pen = (() => { try { return localStorage.getItem("drawPen") === "1"; } catch (e) { return false; } })();
 st.strokes = [];  // where each pen stroke began in st.drawing, for Undo
 function syncPen() {
   $("drawPen").classList.toggle("on", st.pen);
-  $("drawHow").textContent = st.pen ? "Pen: hold and drag around the area, release to close · Space + drag moves the map"
+  $("drawHow").textContent = st.pen ? "Pen: hold and drag to draw; let go to rest, the next stroke goes on from the end · Space + drag moves the map"
     : "Click to add points · double-click a point to remove it";
   $("osd").style.cursor = st.drawing ? (st.spaceHeld ? "grab" : "crosshair") : "";
 }
@@ -2557,9 +2558,7 @@ viewer.addHandler("canvas-release", (e) => {
   const k = st.stroke; st.stroke = null;
   if (!k || !k.started || !st.drawing) return;
   st.penAt = Date.now();  // the click OpenSeadragon may send for a short stroke adds no point
-  saveDraft(); syncDrawBtn();
-  if (st.drawing.length >= 3) finishDraw();  // released: the outline closes (Cancel in the name dialog keeps it open)
-  else undoDraw();  // a stroke too short for an outline
+  saveDraft(); syncDrawBtn();  // released: a pause, the outline stays open until Finish
 });
 function undoDraw() {
   if (!st.drawing || !st.drawing.length) return;
@@ -3726,9 +3725,10 @@ const HELP = `
 <h3>Regions</h3><ul>
 <li><b>Draw</b> (Regions panel): click points on the map.<ul>
   <li>Close it with <b>Finish</b>, <kbd>Enter</kbd>, or a click on the first point; then name it.</li>
-  <li><b>Pen</b> (<kbd>p</kbd>) draws freehand, as in QuPath: hold the mouse button and drag around the area; releasing
-    closes the outline. Hold <kbd>Space</kbd> and drag to move the map; the wheel zooms. <b>Undo</b> takes back the
-    whole stroke; Cancel in the name dialog keeps the outline to go on with.</li>
+  <li><b>Pen</b> (<kbd>p</kbd>) draws freehand: hold the mouse button and drag. Letting go only pauses: the next stroke
+    goes on from the end of the outline, until you close it with <b>Finish</b>, <kbd>Enter</kbd> or a click on the
+    first point. Hold <kbd>Space</kbd> and drag to move the map; the wheel zooms. <b>Undo</b> takes back the whole
+    last stroke.</li>
   <li><b>Undo point</b> (<kbd>Backspace</kbd>) removes the last point; a double-click on a point removes it;
     <kbd>Esc</kbd> cancels.</li>
   <li>The outline is saved as you draw: <b>Pause</b> (or another sample, or a reload) keeps it and <b>Continue</b>
