@@ -382,7 +382,7 @@ def _write_files(d, out, name, cells, X, genes, image, A, description, source, i
     """The files of a sample bundle, in d (meta.json names out, where the bundle goes)."""
     cells.to_parquet(d / "cells.parquet")
     sp.save_npz(d / "counts.npz", X)
-    (d / "genes.txt").write_text("\n".join(genes) + "\n")
+    config.write_genes(d / "genes.txt", genes)
     meta = {"sample_id": name, "description": description, "n_cells": int(len(cells)), "n_genes": len(genes),
             "he_path": str(Path(image).resolve()) if image else None, "he_um_per_px": um_per_px,
             "image_kind": image_kind, "bundle_dir": str(out), "has_pathologist_regions": has_regions,

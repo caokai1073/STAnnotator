@@ -24,7 +24,7 @@ def _pooled(pid):
     """Sample ids, row offsets and the pooled counts of a project's slices (they must share the gene panel)."""
     p = projects.load(pid)
     ids = [s for s in p["samples"] if (config.SAMPLES / s / "meta.json").exists()]
-    panels = [(config.SAMPLES / s / "genes.txt").read_text().split() for s in ids]
+    panels = [config.read_genes(config.SAMPLES / s / "genes.txt") for s in ids]
     if any(g != panels[0] for g in panels[1:]):
         raise ValueError("the slices of this project do not share one gene panel")
     counts = [sp.load_npz(config.SAMPLES / s / "counts.npz").tocsr() for s in ids]

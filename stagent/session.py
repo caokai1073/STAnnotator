@@ -47,7 +47,7 @@ def panel_genes(sample_id=None):
     if sample_id is None and config.SAMPLES.exists():
         sample_id = next((d.name for d in sorted(config.SAMPLES.iterdir()) if (d / "genes.txt").exists()), None)
     if sample_id is not None and (config.SAMPLES / str(sample_id) / "genes.txt").exists():
-        return (config.SAMPLES / str(sample_id) / "genes.txt").read_text().split()
+        return config.read_genes(config.SAMPLES / str(sample_id) / "genes.txt")
     return pd.read_csv(config.HOME / "genes.csv", header=None)[0].tolist()  # lab-server bundles
 
 

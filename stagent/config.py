@@ -86,6 +86,19 @@ def self_command(*args):
     return [str(exe), *args]
 
 
+def read_genes(path):
+    """A sample's genes.txt: one gene per line, exactly as written (write_genes). Names can hold spaces (CosMx's
+    "MHC I"), so the file is never split on whitespace: that read every gene after such a name one column off."""
+    text = Path(path).read_text(encoding="utf-8")
+    if text.endswith("\n"):
+        text = text[:-1]
+    return [g.rstrip("\r") for g in text.split("\n")] if text else []
+
+
+def write_genes(path, genes):
+    Path(path).write_text("".join(f"{g}\n" for g in genes), encoding="utf-8")
+
+
 def release_memory():
     """Hand memory Python has freed back to the system (the allocator keeps it otherwise, so the app looks as large
     as at its peak): malloc_zone_pressure_relief on macOS, malloc_trim on Linux."""

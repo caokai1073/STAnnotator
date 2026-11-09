@@ -128,9 +128,9 @@ def assign(groups):
         for sid in projs[pid]["samples"]:
             g = config.SAMPLES / sid / "genes.txt"
             if g.exists():
-                panels.setdefault(g.read_text(), []).append(sid)
+                panels.setdefault(tuple(config.read_genes(g)), []).append(sid)
         if len(panels) > 1:
-            sizes = "; ".join(f"{', '.join(v)}: {len(k.split())} genes" for k, v in panels.items())
+            sizes = "; ".join(f"{', '.join(v)}: {len(k)} genes" for k, v in panels.items())
             raise ValueError(f"the slices of project {projs[pid]['name']} must share one gene panel; their gene lists "
                              f"differ ({sizes})")
     PROJECTS.mkdir(parents=True, exist_ok=True)

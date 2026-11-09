@@ -34,7 +34,7 @@ def _load(sample_id):
             _data.pop(k)
         X = sp.load_npz(src / "counts.npz").tocsr()
         X.eliminate_zeros()
-        genes = (src / "genes.txt").read_text().split()
+        genes = config.read_genes(src / "genes.txt")
         mito = np.array([bool(MITO.match(g)) for g in genes])
         counts = np.asarray(X.sum(1)).ravel()
         _data[key] = {"X": X, "genes": genes, "mito": mito, "cells": pd.read_parquet(src / "cells.parquet"),
@@ -205,7 +205,7 @@ def apply(ids, p, progress=lambda *a: None):
             cells["depth_um"] = importer.epithelial_depth(X, g, cells[["x", "y"]].to_numpy(float))
         cells.to_parquet(d / "cells.parquet")
         sp.save_npz(d / "counts.npz", X)
-        (d / "genes.txt").write_text("\n".join(g) + "\n")
+        config.write_genes(d / "genes.txt", g)
         meta.update(n_cells=int(len(cells)), n_genes=len(g))
         if prm:
             sl = next(x for x in summary["slices"] if x["sample_id"] == s)
