@@ -480,6 +480,9 @@ later. Shift-click **Draw** starts a new one; Esc drops it.
 - **edit** next to a polygon shows its points: drag a point to move it, drag a small circle between two points to add
   one, double-click a point to remove it, then **Save** (Enter) or **Cancel** (Esc). The region keeps its name and
   priors; its cells are recomputed, and Undo brings the old outline back.
+- A curve (drawn with the Pen, or imported from QuPath) is edited as a curve, with no points: press on the outline,
+  draw the new border and let go on the outline, and the shorter stretch between the two places is replaced.
+  **Undo** in the panel (Backspace) takes back the last change.
 - Click a region's color square to choose one of 15 colors; outlines, cells colored by region and the legend follow,
   and the color stays with the region when it is renamed.
 
