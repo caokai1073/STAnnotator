@@ -1755,6 +1755,22 @@ async def api_region_add(req: Request):
     return _json({"new_version": ver, "message": s.state(ver)["message"]})
 
 
+async def api_region_shape(req: Request):
+    """A shape drawn or edited with the viewer's tools: {ids (the polygons it replaces; [] for a new region), name,
+    pieces: [{outer, holes}]} in viewer image coordinates."""
+    s = review_app._session(req.path_params["sid"])
+    b = await req.json()
+    v = view(s.sample_id)
+    mv = lambda ring: [[x + v.ox, y + v.oy] for x, y in ring]
+    try:
+        pieces = [{"outer": mv(p["outer"]), "holes": [mv(h) for h in p.get("holes", [])]} for p in b.get("pieces", [])]
+        ver = await asyncio.to_thread(s.set_region_shape, list(b.get("ids") or []), b.get("name", ""), pieces,
+                                      b.get("author") or "viewer")
+    except (ValueError, KeyError, TypeError) as e:
+        return _json({"error": str(e)}, 400)
+    return _json({"new_version": ver, "message": s.state(ver)["message"]})
+
+
 async def api_regions_import(req: Request):
     """Regions from a GeoJSON (QuPath annotations on the H&E): {path} (a file here) or {text, name} (its content)."""
     from . import regions as regmod
@@ -3038,6 +3054,7 @@ def build_app(port):
         Route("/api/s/{sid}/review/reopen", api_reopen, methods=["POST"]),
         Route("/api/s/{sid}/regions/add", api_region_add, methods=["POST"]),
         Route("/api/s/{sid}/regions/import", api_regions_import, methods=["POST"]),
+        Route("/api/s/{sid}/regions/shape", api_region_shape, methods=["POST"]),
         Route("/api/s/{sid}/regions/rename", api_region_rename, methods=["POST"]),
         Route("/api/s/{sid}/regions/color", api_region_color, methods=["POST"]),
         Route("/api/s/{sid}/constraint/{cid}/delete", api_constraint_delete, methods=["POST"]),

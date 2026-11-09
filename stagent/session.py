@@ -809,6 +809,62 @@ class Session:
         return self._commit("add_region", msg, regions=dict(cur["regions"], ops=ops),
                             expected_parent=expected_parent or cur["version"])
 
+    def set_region_shape(self, ids, name, pieces, author=None):
+        """Replace drawn polygons `ids` (none: a new region) by `pieces` [{"outer", "holes"}] (H&E level-0 pixels), in
+        one version: a shape drawn or edited with the viewer's tools (brush, wand, rectangle, ellipse, polygon; added
+        or subtracted), the polygons of one region merged, an outline expanded or its holes filled. The first piece
+        keeps the first id; the pieces go where the first replaced polygon was, so a later polygon still wins where
+        polygons overlap. Pieces without cells are left out (except on an image only)."""
+        cur = self.state()
+        ops = list(cur["regions"].get("ops", []))
+        old = [o for o in ops if o.get("op") == "polygon" and o.get("id") in set(ids)]
+        if len(old) != len(set(ids)):
+            raise ValueError(f"no region polygon {', '.join(sorted(set(ids) - {o['id'] for o in old}))}")
+        if old:
+            if len({o["name"] for o in old}) > 1:
+                raise vocab.VocabError("these polygons belong to different regions: rename one first, then merge")
+            name = old[0]["name"]
+        else:
+            name = regmod.validate_name(name)
+        px, py, cell_ids = self.cells.px.to_numpy(), self.cells.py.to_numpy(), self.cells.cell.to_numpy()
+        keep_empty = bool(self.meta.get("image_only"))
+        used = {o.get("id") for o in ops} - set(ids)
+        new, n = [], 0
+        for k, pc in enumerate(pieces):
+            outer = [[float(x), float(y)] for x, y in pc["outer"]]
+            holes = [[[float(x), float(y)] for x, y in h] for h in pc.get("holes", []) if len(h) >= 3]
+            rows = regmod.cells_in_polygon(px, py, outer)
+            for h in holes:
+                rows = np.setdiff1d(rows, regmod.cells_in_polygon(px, py, h))
+            if not len(rows) and not keep_empty:
+                continue
+            if old and not new:
+                rid = old[0]["id"]
+            else:
+                i = 1
+                while f"R{i}" in used:
+                    i += 1
+                rid = f"R{i}"
+            used.add(rid)
+            op = {"op": "polygon", "id": rid, "name": name, "polygon": outer, "cells": cell_ids[rows].tolist(),
+                  "author": author, "created_at": old[0].get("created_at", _now()) if old and rid == old[0]["id"] else _now()}
+            if old and rid == old[0]["id"]:
+                op.update(edited_by=author, edited_at=_now())
+            if holes:
+                op["holes"] = holes
+            new.append(op)
+            n += len(rows)
+        if not new:
+            raise vocab.VocabError("the shape contains no cells")
+        at = ops.index(old[0]) if old else len(ops)
+        rest = [o for o in ops if o not in old]
+        at = sum(1 for o in ops[:at] if o not in old)
+        ops = rest[:at] + new + rest[at:]
+        what = (f"{', '.join(o['id'] for o in old)} of region {name} " + ("merged and " if len(old) > 1 else "") + "reshaped"
+                if old else f"region {name} drawn")
+        msg = f"{what}: {n:,} cells in {len(new)} piece{'s' if len(new) > 1 else ''} ({', '.join(o['id'] for o in new)})"
+        return self._commit("region_shape", msg, regions=dict(cur["regions"], ops=ops), expected_parent=cur["version"])
+
     def import_regions(self, pieces, source="", author=None):
         """Regions from outlines drawn elsewhere (regions.parse_geojson: name, color, outer ring, holes; H&E level-0
         pixels), all in one version; the cells inside an outline and outside its holes. Pieces without cells are left
