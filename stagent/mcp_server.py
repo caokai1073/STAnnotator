@@ -59,6 +59,9 @@ Changes to the data are reviewed by the user
   "waiting for the user's review"). While waiting, tell the user in one or two sentences what you proposed and why;
   read the outcome later with pending_changes. The review window is the user's go-ahead: do not ask for it twice in
   the chat, and never propose a dismissed change again unchanged.
+- The user can switch the app to auto mode (Manual / Auto on the map's toolbar): then every change is applied as soon
+  as the app sees it, without a review window (status "applied automatically"). Propose as carefully as in manual
+  mode, one change at a time, and say what you changed and why; Undo in the app takes a change back.
 
 Cell types and markers
 - Cell types are the most specific entries of the marker tree; a type with subtypes is a lineage / group: it can be
@@ -338,18 +341,35 @@ def _proposal_outcome(rec):
             result = json.loads(rec["result"])
         except (TypeError, ValueError):
             result = rec.get("result")
+        if rec.get("auto"):
+            return _j({"status": "applied automatically (the app is in auto mode: no review window)", "proposal": rec["id"],
+                       "result": result, "note": "tell the user what you changed and why; Undo in the app takes it back"})
         return _j({"status": "accepted by the user and applied", "proposal": rec["id"], "result": result})
     if st == "dismissed":
         return _j({"status": "dismissed by the user", "proposal": rec["id"],
                    "note": "nothing was changed; ask the user what to do differently instead of proposing it again"})
     if st == "failed":
         return _j({"status": "accepted but failed", "proposal": rec["id"], "error": rec.get("error")})
+    auto = _review_mode() == "auto"
+    if auto:
+        return _j({"status": "waiting to be applied", "proposal": rec["id"], "app_open": claudelink.viewer_alive(),
+                   "next": "the app is in auto mode: it applies the change as soon as it sees it, without a review window"
+                           + ("" if claudelink.viewer_alive() else " (it is not open now: ask the user to open it)")
+                           + ". Tell the user what you changed and why; later call pending_changes to see the outcome."})
     return _j({"status": "waiting for the user's review", "proposal": rec["id"],
                "app_open": claudelink.viewer_alive(),
                "next": "the change is shown in a review window in the STAnnotator app and applies only when the user "
                        "clicks Accept (Dismiss drops it). Tell the user what you proposed and why; later call "
                        "pending_changes to see the outcome." + ("" if claudelink.viewer_alive() else
                        " The app is not open: ask the user to open it to review the change.")})
+
+
+def _review_mode():
+    from . import config
+    try:
+        return "auto" if config.read_settings().get("review_mode") == "auto" else "manual"
+    except Exception:
+        return "manual"
 
 
 def apply_proposal(rec, get_session=None):

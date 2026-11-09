@@ -2357,6 +2357,21 @@ def api_region_assigned_cells(req):
     return _json({"rows": np.where(np.isin(s.cells.cell.to_numpy(), op["cells"]))[0].tolist(), "name": op["name"]})
 
 
+async def api_review_mode(req: Request):
+    """How the agent's changes are taken: "manual" (the default: each waits for Accept in the review window) or "auto"
+    (the app accepts each as it arrives; Undo takes it back). GET reads it, POST {mode} sets it (kept in the settings)."""
+    if req.method == "POST":
+        mode = (await req.json()).get("mode")
+        if mode not in ("manual", "auto"):
+            return _json({"error": "mode is manual or auto"}, 400)
+        config.write_settings(review_mode=mode)
+    return _json({"mode": review_mode()})
+
+
+def review_mode():
+    return "auto" if config.read_settings().get("review_mode") == "auto" else "manual"
+
+
 async def api_proposal_decide(req: Request):
     """{accept: true}: run the proposal's tool in the background (status applying -> done | failed); else dismiss."""
     from . import proposals
@@ -2369,7 +2384,7 @@ async def api_proposal_decide(req: Request):
         return _json({"error": f"this change is already {rec['status']}"}, 409)
     if not b.get("accept"):
         return _json(proposals.update(pid, status="dismissed", decided=time.time()))
-    rec = proposals.update(pid, status="applying", decided=time.time())
+    rec = proposals.update(pid, status="applying", decided=time.time(), auto=bool(b.get("auto")))
 
     def work():
         with _apply_lock:
@@ -3055,6 +3070,7 @@ def build_app(port):
         Route("/api/s/{sid}/regions/add", api_region_add, methods=["POST"]),
         Route("/api/s/{sid}/regions/import", api_regions_import, methods=["POST"]),
         Route("/api/s/{sid}/regions/shape", api_region_shape, methods=["POST"]),
+        Route("/api/review_mode", api_review_mode, methods=["GET", "POST"]),
         Route("/api/s/{sid}/regions/rename", api_region_rename, methods=["POST"]),
         Route("/api/s/{sid}/regions/color", api_region_color, methods=["POST"]),
         Route("/api/s/{sid}/constraint/{cid}/delete", api_constraint_delete, methods=["POST"]),

@@ -158,6 +158,9 @@ header #sample, header #session { min-width: 0; }
 .seg button { flex: 1 1 0; border: 0; background: none; padding: 5px 4px; font-size: 12px; color: var(--muted); border-radius: 7px; }
 .seg button:hover:not(.on) { background: none; color: var(--ink); }
 .seg button.on { background: var(--panel); color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+#reviewMode { display: inline-flex; padding: 2px; }
+#reviewMode button { flex: none; padding: 3px 8px; }
+#reviewMode button.on[data-m="auto"] { color: #fff; background: #d97706; }  /* auto stands out: changes apply unreviewed */
 select.segsel { display: none; }
 .switch { display: flex; gap: 10px; align-items: flex-start; font-size: 12.5px; cursor: pointer; color: var(--ink); }
 .switch input { appearance: none; -webkit-appearance: none; width: 32px; height: 18px; margin: 1px 0 0; flex: none; border-radius: 9px;
@@ -631,6 +634,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <button id="undo" disabled title="Undo your last action (everything the agent changed for one request goes back at once)">Undo</button>
       <button id="refresh" title="Show the latest of everything: the server reads the sample, its image and annotations from disk again and the page reloads what it shows (the view, color mode and legend choice stay)">Refresh</button>
       <button id="claudeBtn" hidden title="Ask your own agent (Claude Code, in its own terminal window), connected to the sample open here">Ask Agent</button>
+      <div class="seg" id="reviewMode" title="How the agent's changes are taken. Manual: each waits for you in a review window (Accept or Dismiss). Auto: each is applied at once, without the window; Undo takes it back."><button data-m="manual">Manual</button><button data-m="auto">Auto</button></div>
       <button id="plaus" disabled title="Agent review of one part of the analysis (annotation, spatial organization, embedding, niches, compare, signaling): its advice, checked by the agent itself">Agent Review</button>
       <button id="report" disabled title="The annotation report the agent writes: method, composition, compartments, quality, open questions">Report</button>
       <span id="vinfo"></span>
@@ -4567,7 +4571,9 @@ Anything that would change your data opens here in a review window first and is 
   <li>Figures it looked at (H&amp;E crops, maps, UMAPs), which it describes and can show you.</li>
   <li>A <b>review window</b> in the app for every change: what it does, how many cells, a preview on the map;
     <b>Accept</b> applies it as a new version, <b>Dismiss</b> drops it. <b>Undo</b> takes back all the agent did for one
-    request.</li></ul></li></ul>
+    request.</li>
+  <li><b>Manual / Auto</b> (map toolbar): in <b>Auto</b> every change is applied at once, without the review window
+    (a note says what; <b>Undo</b> takes it back). <b>Manual</b> is the default.</li></ul></li></ul>
 
 <h3>Bring data in</h3><ul>
 <li>“Import the CosMx files in ~/data/run1”, “import this Visium HD outs folder”, “open this H&amp;E for drawing
@@ -5259,14 +5265,22 @@ function showProposal(r, n) {
   $("pcAccept").hidden = false; $("pcAccept").disabled = $("pcDismiss").disabled = false; $("pcDismiss").textContent = "Dismiss";
   if (!$("pcDlg").open) $("pcDlg").showModal();
 }
+async function autoAccept(r) {  // auto mode: the change is applied as it arrives, without the review window
+  try { await post(`/api/proposal/${r.id}/decide`, { accept: true, auto: true }); }
+  catch (e) { return; }  // (decided in another window meanwhile)
+  PC.applying = r.id; PC.autoTitle = r.title;
+  toast(`Auto mode: applying “${r.title}”…`, 60000);
+}
 async function proposalApplied(r) {
+  const auto = !!r.auto;
   PC.applying = null; PC.cur = null;
+  if (r.status === "failed" && !$("pcDlg").open) showProposal(r, 1);  // (auto mode: the window opens for the error)
   if (r.status === "failed") {  // keep the window open with the error
     $("pcStatus").textContent = ""; $("pcErr").textContent = `Could not apply it: ${r.error}`;
     $("pcAccept").hidden = true; $("pcDismiss").disabled = false; $("pcDismiss").textContent = "Close"; PC.failed = true; return;
   }
   $("pcDlg").close();
-  toast(`Applied: ${r.title}`, 5000);
+  toast(auto ? `Applied automatically: ${r.title} (Undo takes it back)` : `Applied: ${r.title}`, auto ? 7000 : 5000);
   if (r.tool === "start_session" && r.session_after) { st.openedThisVisit[r.sample_id] = r.session_after; await loadSamples(r.sample_id); return; }
   if (["import_sample", "import_visium", "import_stereoseq", "import_cosmx_merfish"].includes(r.tool)) { await loadSamples(st.sample ? st.sample.sample_id : r.sample_id); return; }
   if ((r.tool === "move_piece" || r.tool === "undo_piece_move") && st.sample && st.sample.sample_id === r.sample_id) {
@@ -5291,11 +5305,27 @@ async function pollProposals() {
     PC.peek = false; $("pcBack").hidden = true; st.paint = null; setSelection(null);
   }
   if (PC.cur && !open.some((x) => x.id === PC.cur.id)) { PC.cur = null; $("pcDlg").close(); }  // decided in another window
+  if (st.reviewMode === "auto" && !PC.cur && open.length) { await autoAccept(open[0]); return; }
   if (!PC.cur && open.length) showProposal(open[0], open.length);
   else if (PC.cur && !$("pcDlg").open) showProposal(PC.cur, open.length);  // closed some other way (e.g. Esc twice): back
   else if (PC.cur) $("pcPos").textContent = open.length > 1 ? `1 of ${open.length} waiting` : "";
 }
 setInterval(() => pollProposals().catch(() => {}), 2000);
+st.reviewMode = "manual";
+function showReviewMode() {
+  document.querySelectorAll("#reviewMode button").forEach((b) => b.classList.toggle("on", b.dataset.m === st.reviewMode));
+}
+document.querySelectorAll("#reviewMode button").forEach((b) => {
+  b.onclick = async () => {
+    if (b.dataset.m === st.reviewMode) return;
+    try { st.reviewMode = (await post("/api/review_mode", { mode: b.dataset.m })).mode; } catch (e) { toast(e.message, 5000); return; }
+    showReviewMode();
+    toast(st.reviewMode === "auto" ? "Auto mode: the agent's changes are applied at once, without the review window; Undo takes one back"
+                                   : "Manual mode: each change of the agent waits for your Accept", 6000);
+    pollProposals().catch(() => {});
+  };
+});
+api("/api/review_mode").then((r) => { st.reviewMode = r.mode; showReviewMode(); }).catch(() => showReviewMode());
 $("pcDlg").addEventListener("cancel", (e) => e.preventDefault());  // Esc does not decide
 function highlightRows(rows) {  // these cells stand out on the map (the others grayed), and the map zooms to them
   const sel = new Uint8Array(GL.n || (st.sample ? st.sample.n_cells : 0));

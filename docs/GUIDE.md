@@ -322,6 +322,11 @@ touches, their current labels, the predicted label changes where they can be com
 - Several waiting changes come one after the other.
 - Claude learns the outcome by itself when you decide within about 45 seconds, otherwise when it next checks.
 
+**Manual or Auto** (the switch on the map's toolbar, next to Agent Review). **Manual**, the default, is the above.
+**Auto** applies every change of Claude as soon as the app sees it, without the review window: a short note says
+what was applied, **Undo** takes it back, and Claude is told it was applied without a review. A change that fails
+still opens the window with the error. The choice is kept until you switch back.
+
 ### Working on a server
 
 The app can work on a server over SSH: the data and every computation stay on the server, this computer shows the
