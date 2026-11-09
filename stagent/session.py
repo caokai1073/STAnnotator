@@ -833,6 +833,7 @@ class Session:
         area = lambda r: abs(float(np.dot(np.asarray(r, float)[:, 0], np.roll(np.asarray(r, float)[:, 1], -1))
                                    - np.dot(np.asarray(r, float)[:, 1], np.roll(np.asarray(r, float)[:, 0], -1)))) / 2
         pieces = sorted(pieces, key=lambda pc: -area(pc["outer"]))  # the largest piece keeps the first id
+        free = list(old)
         for k, pc in enumerate(pieces):
             outer = [[float(x), float(y)] for x, y in pc["outer"]]
             holes = [[[float(x), float(y)] for x, y in h] for h in pc.get("holes", []) if len(h) >= 3]
@@ -841,8 +842,9 @@ class Session:
                 rows = np.setdiff1d(rows, regmod.cells_in_polygon(px, py, h))
             if not len(rows) and not keep_empty:
                 continue
-            if old and not new:
-                rid = old[0]["id"]
+            was = free.pop(0) if free else None  # the replaced polygons' ids first (largest piece: the first id)
+            if was:
+                rid = was["id"]
             else:
                 i = 1
                 while f"R{i}" in used:
@@ -850,8 +852,8 @@ class Session:
                 rid = f"R{i}"
             used.add(rid)
             op = {"op": "polygon", "id": rid, "name": name, "polygon": outer, "cells": cell_ids[rows].tolist(),
-                  "author": author, "created_at": old[0].get("created_at", _now()) if old and rid == old[0]["id"] else _now()}
-            if old and rid == old[0]["id"]:
+                  "author": author, "created_at": was.get("created_at", _now()) if was else _now()}
+            if was:
                 op.update(edited_by=author, edited_at=_now())
             if holes:
                 op["holes"] = holes

@@ -2903,6 +2903,7 @@ function treeToPieces(tree) {  // outer rings with their holes; crumbs (under a 
 }
 function clipShape(pieces, paths, sub) {  // pieces plus (or minus) the area of paths
   const c = new CL.Clipper();
+  c.StrictlySimple = true;  // no ring touching itself: QuPath (JTS) reads the exported outlines as valid polygons
   c.AddPaths(piecesToPaths(pieces), CL.PolyType.ptSubject, true);
   c.AddPaths(paths, CL.PolyType.ptClip, true);
   const t = new CL.PolyTree();
