@@ -3110,23 +3110,23 @@ viewer.addHandler("canvas-press", (e) => {
   st.toolDrag = { t, from: [p.x, p.y], to: [p.x, p.y], last: e.position, sub: subtracting(e.originalEvent), pending: [], started: false };
   if (t === "brush" || t === "wand") { toolDab([e.position]); }
 });
-function toolDab(positions) {  // one brush or wand step: the area under positions added to (or taken from) the shape
+function toolDab(positions) {  // a brush or wand stroke so far: its whole area added to (or taken from) the shape
   const k = st.toolDrag; if (!k) return;
-  if (!k.started) { const s = ensureShape(); s.hist.push(s.pieces); k.started = true; }
-  const s = st.shape;
-  let paths;
-  if (k.t === "brush") {
-    const r = toolSize() / 2 * imgPerScreen();
-    const pts = positions.map((q) => { const p = imgPointFromEvent(q); return [p.x, p.y]; });
-    if (k.lastImg) pts.unshift(k.lastImg);
-    k.lastImg = pts[pts.length - 1];
-    paths = bandPaths(pts, r);
-  } else {
-    paths = [];
-    for (const q of positions) { const w = wandPaths(q); if (w) paths.push(...w); }
-    if (!paths.length) return;
+  if (!k.started) {  // the shape as it was before the stroke; every step starts again from it
+    const s = ensureShape(); s.hist.push(s.pieces); k.base = s.pieces; k.started = true;
+    k.pts = []; k.blobs = []; k.r = toolSize() / 2 * imgPerScreen();
   }
-  s.pieces = clipShape(s.pieces, paths, k.sub); s.dirty = true;
+  const s = st.shape;
+  if (k.t === "brush") {
+    for (const q of positions) { const p = imgPointFromEvent(q); k.pts.push([p.x, p.y]); }
+    s.pieces = clipShape(k.base, bandPaths(k.pts, k.r), k.sub);  // one band along the whole stroke: no seams
+  } else {
+    let added = false;
+    for (const q of positions) { const w = wandPaths(q); if (w && w.length) { k.blobs.push(...w); added = true; } }
+    if (!added) return;
+    s.pieces = clipShape(k.base, k.blobs, k.sub);
+  }
+  s.dirty = true;
   syncShapeBar(); drawRegionsOnce();
 }
 viewer.addHandler("canvas-drag", (e) => {
@@ -3165,7 +3165,11 @@ function drawToolLayer(root) {
   if (!REG.sgKey || key.some((v, i) => v !== REG.sgKey[i])) {
     REG.sgKey = key; REG.sg.textContent = "";
     const tol = SHOW_TOL_PX * 4 ** Math.max(0, REG.level);
-    const d = (rings) => rings.map((r) => "M" + simplifyRing(r, tol).map(([x, y]) => `${x},${y}`).join("L") + "Z").join("");
+    const steady = (r) => {  // simplified from the same starting point each time, so unchanged parts do not shift
+      let m = 0; for (let i = 1; i < r.length; i++) if (r[i][0] < r[m][0] || (r[i][0] === r[m][0] && r[i][1] < r[m][1])) m = i;
+      return simplifyRing(r.slice(m).concat(r.slice(0, m)), tol);
+    };
+    const d = (rings, full) => rings.map((r) => "M" + (full ? r : steady(r)).map(([x, y]) => `${x},${y}`).join("L") + "Z").join("");
     const ns = { "vector-effect": "non-scaling-stroke", "stroke-linejoin": "round", "fill-rule": "evenodd" };
     [...st.rsel].filter((id) => !st.shape || !st.shape.ids.includes(id)).map(polyOf).filter(Boolean).forEach((p) => {
       const rings = [p.polygon, ...(p.holes || [])];
@@ -3174,8 +3178,10 @@ function drawToolLayer(root) {
     });
     if (st.shape && st.shape.pieces.length) {
       const rings = st.shape.pieces.flatMap((p) => [p.outer, ...p.holes]);
-      REG.sg.append(svgEl("path", { d: d(rings), fill: "rgba(0,230,255,.16)", stroke: "#000", "stroke-opacity": 0.6, "stroke-width": 5, ...ns }),
-                    svgEl("path", { d: d(rings), fill: "none", stroke: "#00e6ff", "stroke-width": 2.4, ...ns }));
+      const full = rings.reduce((t, r) => t + r.length, 0) < 60000;  // drawn point for point unless very large
+      const dd = d(rings, full);
+      REG.sg.append(svgEl("path", { d: dd, fill: "rgba(0,230,255,.16)", stroke: "#000", "stroke-opacity": 0.6, "stroke-width": 5, ...ns }),
+                    svgEl("path", { d: dd, fill: "none", stroke: "#00e6ff", "stroke-width": 2.4, ...ns }));
     }
   }
   const svg = REG.dyn, k = st.toolDrag;
