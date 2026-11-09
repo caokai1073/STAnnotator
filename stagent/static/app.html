@@ -142,6 +142,7 @@ header #pstage, header #estage, header #nstage, header #sstage { white-space: no
 header .progress:not(.show) { display: none; }
 .fld { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .fld > span:first-child { font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.unit { text-transform: none; letter-spacing: 0; }  /* "µm" in an upper-case label (it would read "ΜM") */
 .fld select, .fld input { width: 100%; min-width: 0; height: 32px; }
 .fld .inrow { display: flex; gap: 6px; } .fld .inrow > select { flex: 1; } .fld .inrow > button { flex: none; height: 32px; }
 header #sample, header #session { min-width: 0; }
@@ -544,8 +545,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
         <option value="all">CellChatDB + CellPhoneDB + OmniPath consensus</option><option value="CellChatDB">CellChatDB v2</option>
         <option value="CellPhoneDB">CellPhoneDB v5 (human)</option><option value="consensus">OmniPath consensus (LIANA)</option></select></label>
       <div class="fgrid" style="margin-top:10px">
-        <label class="fld" title="Contact signaling: cells whose centers are this close"><span>Contact µm</span><input type="number" id="sContact" min="5" max="50" step="1" value="15"></label>
-        <label class="fld" title="Secreted and ECM signaling: neighbors within this distance, weighted by distance"><span>Secreted µm</span><input type="number" id="sSecreted" min="10" max="200" step="5" value="50"></label>
+        <label class="fld" title="Contact signaling: cells whose centers are this close"><span>Contact <span class="unit">µm</span></span><input type="number" id="sContact" min="5" max="50" step="1" value="15"></label>
+        <label class="fld" title="Secreted and ECM signaling: neighbors within this distance, weighted by distance"><span>Secreted <span class="unit">µm</span></span><input type="number" id="sSecreted" min="10" max="200" step="5" value="50"></label>
         <label class="fld" title="The ligand must be detected in this share of the senders, the receptor in this share of the receivers"><span>Min. % detected</span><input type="number" id="sMinPct" min="0" max="100" step="1" value="10"></label>
       </div>
       <label class="switch" style="margin-top:10px" title="Signals by small molecules (e.g. glutamate, prostaglandins), represented by the enzymes that make them"><input type="checkbox" id="sNonprot">
