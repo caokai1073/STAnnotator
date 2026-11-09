@@ -2238,10 +2238,9 @@ function drawRegions() {
     const pts = st.drawing.map(([x, y]) => toScreen(x, y));
     svg.append(svgEl("polyline", { points: pts.map((q) => `${q.x},${q.y}`).join(" "), fill: "rgba(0,200,255,.08)",
                                     stroke: "#00c8ff", "stroke-width": 2, ...(st.pen ? {} : { "stroke-dasharray": "6 4" }) }));
-    let last = null;  // a dot where the points are apart (clicked points); a pen line's dense points show as the line
-    pts.forEach((q, i) => {
-      if (i && i < pts.length - 1 && last && Math.hypot(q.x - last.x, q.y - last.y) < 14) return;
-      last = q;
+    const far = (a, b) => !a || !b || Math.hypot(a.x - b.x, a.y - b.y) >= 14;
+    pts.forEach((q, i) => {  // a dot on the first point and on clicked points (far from both neighbors), none along a pen line
+      if (i && !(far(q, pts[i - 1]) && far(q, pts[i + 1]))) return;
       svg.append(svgEl("circle", { cx: q.x, cy: q.y, r: i === 0 ? 6 : 4, fill: i === 0 ? "#00c8ff" : "#fff", stroke: "#00a0d0", "stroke-width": 2 }));
     });
   }
@@ -2523,7 +2522,7 @@ function loadDraft() { try { const d = JSON.parse(localStorage.getItem(draftKey(
 // pauses: the next stroke goes on from the end of the outline, so a long border is drawn in pieces, with rests,
 // zooming (wheel) and moving (Space + drag) in between. Finish, Enter or a click on the first point closes it.
 // Clicks still add single points.
-const PEN_STEP_PX = 3;
+const PEN_STEP_PX = 2;
 st.pen = (() => { try { return localStorage.getItem("drawPen") === "1"; } catch (e) { return false; } })();
 st.strokes = [];  // where each pen stroke began in st.drawing, for Undo
 function syncPen() {
@@ -2548,16 +2547,49 @@ viewer.addHandler("canvas-drag", (e) => {
     k.started = true; st.strokes.push(pts.length);
     const p = imgPointFromEvent(k.from); pts.push([p.x, p.y]);
   }
-  const [lx, ly] = pts[pts.length - 1], q = toScreen(lx, ly);
-  if (Math.hypot(q.x - e.position.x, q.y - e.position.y) < PEN_STEP_PX) return;
-  const p = imgPointFromEvent(e.position); pts.push([p.x, p.y]);
+  // every position the browser saw since the last event (a fast stroke would otherwise get few, far apart)
+  const oe = e.originalEvent, r = $("osd").getBoundingClientRect();
+  const seen = oe && oe.getCoalescedEvents ? oe.getCoalescedEvents().map((c) => new OpenSeadragon.Point(c.clientX - r.left, c.clientY - r.top)) : [];
+  let added = false;
+  for (const pos of seen.length ? seen : [e.position]) {
+    const [lx, ly] = pts[pts.length - 1], q = toScreen(lx, ly);
+    if (Math.hypot(q.x - pos.x, q.y - pos.y) < PEN_STEP_PX) continue;
+    const p = imgPointFromEvent(pos); pts.push([p.x, p.y]); added = true;
+  }
+  if (!added) return;
   $("drawinfo").textContent = `${pts.length} points`;
   drawRegionsOnce();
 });
+function smoothStroke(pts, from) {
+  // the stroke pts[from..] as a smooth curve through the drawn points (centripetal Catmull-Rom), a point every
+  // ~1.5 screen pixels at this zoom, so that a fast stroke (few mouse positions) is a curve, not a polygon
+  const a = pts.slice(from);
+  if (a.length < 3) return;
+  const o = toScreen(0, 0), u = toScreen(1, 0), per = 1.5 / Math.max(1e-9, Math.hypot(u.x - o.x, u.y - o.y));  // image px
+  const d = (p, q) => Math.max(1e-9, Math.sqrt(Math.hypot(q[0] - p[0], q[1] - p[1])));  // centripetal: sqrt of the length
+  const out = [a[0]];
+  for (let i = 0; i < a.length - 1; i++) {
+    const p0 = a[Math.max(0, i - 1)], p1 = a[i], p2 = a[i + 1], p3 = a[Math.min(a.length - 1, i + 2)];
+    const t1 = d(p0, p1), t2 = t1 + d(p1, p2), t3 = t2 + d(p2, p3);
+    const n = Math.max(1, Math.ceil(Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) / per));
+    for (let k = 1; k <= n; k++) {
+      const t = t1 + (t2 - t1) * k / n, pt = [0, 1].map((j) => {
+        const A1 = ((t1 - t) * p0[j] + t * p1[j]) / t1;  // (t0 = 0)
+        const A2 = ((t2 - t) * p1[j] + (t - t1) * p2[j]) / (t2 - t1);
+        const A3 = ((t3 - t) * p2[j] + (t - t2) * p3[j]) / (t3 - t2);
+        const B1 = ((t2 - t) * A1 + t * A2) / t2, B2 = ((t3 - t) * A2 + (t - t1) * A3) / (t3 - t1);
+        return ((t2 - t) * B1 + (t - t1) * B2) / (t2 - t1);
+      });
+      out.push(pt.every(Number.isFinite) ? pt : (k === n ? p2 : out[out.length - 1]));
+    }
+  }
+  pts.length = from; pts.push(...out);
+}
 viewer.addHandler("canvas-release", (e) => {
   const k = st.stroke; st.stroke = null;
   if (!k || !k.started || !st.drawing) return;
   st.penAt = Date.now();  // the click OpenSeadragon may send for a short stroke adds no point
+  smoothStroke(st.drawing, st.strokes[st.strokes.length - 1]);
   saveDraft(); syncDrawBtn();  // released: a pause, the outline stays open until Finish
 });
 function undoDraw() {
