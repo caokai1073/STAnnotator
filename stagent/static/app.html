@@ -255,6 +255,8 @@ header .br { flex: 1 1 100%; height: 0; }
 #empty div { background: var(--panel); padding: 12px 18px; border-radius: 8px; border: 1px solid var(--line); }
 .cellmark { pointer-events: none; }  /* drags that start on it must still pan the viewer */
 #regsvg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; }
+#regwrap { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 3; }
+#regcanvas { position: absolute; left: 0; top: 0; transform-origin: 0 0; pointer-events: none; }
 #regsvg .hdl { pointer-events: all; cursor: grab; }
 #regsvg .hdl.mid { cursor: copy; }
 #regsvg text { font: 600 12px system-ui, sans-serif; paint-order: stroke; stroke: rgba(255,255,255,.85); stroke-width: 3px; }
@@ -647,6 +649,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <div class="hint" id="plnote"></div>
       <div class="items" id="plitems"></div>
     </div>
+    <div id="regwrap"><canvas id="regcanvas"></canvas></div>
     <svg id="regsvg"></svg>
     <div id="alignbar" hidden><span id="alignmsg"></span><button id="alignNow">Align with Agent</button></div>
     <div id="empanel" class="float" hidden>
@@ -2195,44 +2198,98 @@ function regionShape(p, k = 0) {  // the outline and holes of a polygon at level
   }
   return p.lod[k];
 }
+// The outlines are painted on a canvas (#regcanvas) a margin larger than the view, in image pixels under the view's
+// transform, simplified to the zoom (levels of detail), only those in view. While the map moves the painted canvas is
+// only shifted and scaled (a CSS transform: nearly free in every browser); it is painted again, sharp, once the map
+// rests, or at once when the view leaves the painted area, the zoom changes a lot or the outlines change. Large SVG
+// outlines (QuPath's run to tens of thousands of points) made moving the map slow; labels, the shape being drawn and
+// the selection stay SVG.
 function buildRegionLayer(svg) {
   const editing = (st.editing ? st.editing.id : "") + "|" + (st.shape ? st.shape.ids.join(",") : ""), on = $("outlines").checked;
   if (REG.g && REG.g.parentNode === svg && REG.regions === st.regions && REG.editing === editing && REG.on === on) return;
   svg.textContent = "";
   Object.assign(REG, { regions: st.regions, editing, on, level: -1, items: [] });
-  REG.g = svgEl("g", {}); REG.dyn = svgEl("g", {}); svg.append(REG.g, REG.dyn);
+  REG.g = svgEl("g", {}); REG.dyn = svgEl("g", {}); svg.append(REG.g, REG.dyn);  // (REG.g: the view's transform only)
   if (!st.regions || !on) return;
-  const ns = { "vector-effect": "non-scaling-stroke", "stroke-linejoin": "round" };  // line widths in screen pixels
   const hidden = new Set([st.editing && st.editing.id, ...(st.shape ? st.shape.ids : [])]);
   st.regions.polygons.filter((p) => !hidden.has(p.id)).forEach((p) => {
-    const col = rgb(p.color);
-    // a dark halo under the colored line keeps the outline visible over cells of a similar color
-    const halo = svgEl("polygon", { fill: col, "fill-opacity": 0.08, stroke: "#000", "stroke-opacity": 0.6, "stroke-width": 5, ...ns });
-    const line = svgEl("polygon", { fill: "none", stroke: col, "stroke-width": 2.6, ...ns });
-    const holes = (p.holes || []).map(() => svgEl("polygon", { fill: "none", stroke: col, "stroke-width": 1.8, "stroke-dasharray": "6 4", ...ns }));
-    REG.g.append(halo, line, ...holes);  // holes of an imported outline: their cells are not in the region
     regionShape(p);
-    REG.items.push({ p, halo, line, holes, col });
+    REG.items.push({ p, col: rgb(p.color), fill: `rgba(${p.color[0]},${p.color[1]},${p.color[2]},0.08)` });
   });
 }
-function setRegionLevel(k) {  // the points of every outline at level of detail k
-  if (k === REG.level) return;
-  REG.level = k;
-  const pts = (ring) => ring.map(([x, y]) => `${x},${y}`).join(" ");
-  REG.items.forEach((it) => {
-    const sh = regionShape(it.p, k), points = pts(sh.outer);
-    it.halo.setAttribute("points", points); it.line.setAttribute("points", points);
-    it.holes.forEach((e, i) => e.setAttribute("points", pts(sh.holes[i])));
-  });
+function setRegionLevel(k) { REG.level = k; }
+function regionPaths(p, k) {  // Path2D of a polygon at level of detail k: outline, holes, and both (for the fill)
+  p.p2d = p.p2d || [];
+  if (p.p2d[k]) return p.p2d[k];
+  const sh = regionShape(p, k), ring = (path, r) => { r.forEach(([x, y], i) => (i ? path.lineTo(x, y) : path.moveTo(x, y))); path.closePath(); };
+  const outer = new Path2D(), holes = new Path2D(), all = new Path2D();
+  ring(outer, sh.outer); ring(all, sh.outer);
+  sh.holes.forEach((h) => { ring(holes, h); ring(all, h); });
+  return (p.p2d[k] = { outer, holes, all, nh: sh.holes.length });
+}
+const RC = { m0: null, key: null, timer: 0, margin: 0, W: 0, H: 0 };
+const affInv = (m) => { const d = m[0] * m[3] - m[1] * m[2]; return [m[3] / d, -m[1] / d, -m[2] / d, m[0] / d, (m[2] * m[5] - m[3] * m[4]) / d, (m[1] * m[4] - m[0] * m[5]) / d]; };
+const affMul = (a, b) => [a[0] * b[0] + a[2] * b[1], a[1] * b[0] + a[3] * b[1], a[0] * b[2] + a[2] * b[3], a[1] * b[2] + a[3] * b[3],
+                          a[0] * b[4] + a[2] * b[5] + a[4], a[1] * b[4] + a[3] * b[5] + a[5]];
+function paintRegions(m) {  // m: image pixels -> screen pixels [a, b, c, d, e, f]; null: nothing to show
+  const cv = $("regcanvas"), box = $("regwrap"), W = box.clientWidth, H = box.clientHeight;
+  const key = [REG.items, REG.level, W, H];
+  if (!m || !REG.items.length) {
+    if (RC.m0) { cv.getContext("2d").clearRect(0, 0, cv.width, cv.height); RC.m0 = null; RC.key = null; }
+    return;
+  }
+  if (RC.m0 && RC.key && key.every((v, i) => v === RC.key[i])) {
+    const g = RC.margin, sh = (t) => [t[0], t[1], t[2], t[3], t[4] + g, t[5] + g];
+    const C = affMul(sh(m), affInv(sh(RC.m0)));  // the painted canvas -> where it belongs now
+    const back = affInv(C), inside = [[0, 0], [W, 0], [0, H], [W, H]].every(([x, y]) => {
+      const X = x + g, Y = y + g, u = back[0] * X + back[2] * Y + back[4], v = back[1] * X + back[3] * Y + back[5];
+      return u >= 0 && v >= 0 && u <= W + 2 * g && v <= H + 2 * g;
+    });
+    const zoom = Math.hypot(C[0], C[1]);
+    if (inside && zoom < 1.6 && zoom > 0.62) {
+      cv.style.transform = `translate(${-g}px,${-g}px) matrix(${C.join(",")})`;
+      clearTimeout(RC.timer); RC.timer = setTimeout(() => { RC.m0 = null; drawRegionsOnce(); }, 140);  // sharp again when it rests
+      return;
+    }
+  }
+  clearTimeout(RC.timer);
+  const dpr = window.devicePixelRatio || 1, g = Math.round(0.35 * Math.max(W, H));
+  const CW = W + 2 * g, CH = H + 2 * g;
+  if (cv.width !== Math.round(CW * dpr) || cv.height !== Math.round(CH * dpr)) {
+    cv.width = Math.round(CW * dpr); cv.height = Math.round(CH * dpr); cv.style.width = `${CW}px`; cv.style.height = `${CH}px`;
+  }
+  cv.style.transform = `translate(${-g}px,${-g}px)`;
+  Object.assign(RC, { m0: m, key, margin: g, W, H });
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height);
+  const corners = [[-g, -g], [W + g, -g], [-g, H + g], [W + g, H + g]].map(([x, y]) => imgPointFromEvent(new OpenSeadragon.Point(x, y)));
+  const vx0 = Math.min(...corners.map((q) => q.x)), vx1 = Math.max(...corners.map((q) => q.x));
+  const vy0 = Math.min(...corners.map((q) => q.y)), vy1 = Math.max(...corners.map((q) => q.y));
+  const u = 1 / Math.max(1e-9, Math.hypot(m[0], m[1]));  // one screen pixel, in image pixels
+  ctx.setTransform(dpr * m[0], dpr * m[1], dpr * m[2], dpr * m[3], dpr * (m[4] + g), dpr * (m[5] + g));
+  ctx.lineJoin = "round";
+  for (const it of REG.items) {
+    const b = it.p.bounds || (it.p.bounds = polyBounds(it.p.polygon));
+    if (b[2] < vx0 || b[0] > vx1 || b[3] < vy0 || b[1] > vy1) continue;  // out of view
+    const P = regionPaths(it.p, Math.max(0, REG.level));
+    ctx.fillStyle = it.fill; ctx.fill(P.all, "evenodd");
+    // a dark halo under the colored line keeps the outline visible over cells of a similar color
+    ctx.setLineDash([]); ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.lineWidth = 5 * u; ctx.stroke(P.outer);
+    ctx.strokeStyle = it.col; ctx.lineWidth = 2.6 * u; ctx.stroke(P.outer);
+    if (P.nh) { ctx.setLineDash([6 * u, 4 * u]); ctx.lineWidth = 1.8 * u; ctx.stroke(P.holes); }  // holes: their cells are not in the region
+  }
+  ctx.setLineDash([]);
 }
 function drawRegions() {
   const root = $("regsvg");
-  if (!heItem() || !st.he) { root.textContent = ""; REG.g = null; REG.sg = null; return; }
+  if (!heItem() || !st.he) { root.textContent = ""; REG.g = null; REG.sg = null; paintRegions(null); return; }
   buildRegionLayer(root);
   const a = toScreen(0, 0), bx = toScreen(1e4, 0), by = toScreen(0, 1e4);  // image pixels to screen pixels
   const scale = Math.hypot(bx.x - a.x, bx.y - a.y) / 1e4;  // half a screen pixel = 0.5 / scale image pixels
   setRegionLevel(Math.max(0, Math.min(SHOW_LEVELS - 1, Math.floor(Math.log(0.5 / scale / SHOW_TOL_PX) / Math.log(4)))));
-  REG.g.setAttribute("transform", `matrix(${(bx.x - a.x) / 1e4},${(bx.y - a.y) / 1e4},${(by.x - a.x) / 1e4},${(by.y - a.y) / 1e4},${a.x},${a.y})`);
+  const m = [(bx.x - a.x) / 1e4, (bx.y - a.y) / 1e4, (by.x - a.x) / 1e4, (by.y - a.y) / 1e4, a.x, a.y];
+  REG.g.setAttribute("transform", `matrix(${m.join(",")})`);
+  paintRegions(m);
   const svg = REG.dyn; svg.textContent = "";  // the rest has few points and is redrawn in screen pixels
   const W = root.clientWidth || 4000, H = root.clientHeight || 4000;
   REG.items.forEach(({ p, col }) => {
