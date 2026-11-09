@@ -2901,14 +2901,25 @@ function treeToPieces(tree) {  // outer rings with their holes; crumbs (under a 
   return CL.JS.PolyTreeToExPolygons(tree).map((e) => ({ outer: ring(e.outer), holes: e.holes.map(ring).filter((h) => Math.abs(ringArea(h)) > 4) }))
     .filter((pc) => Math.abs(ringArea(pc.outer)) > 4);
 }
-function clipShape(pieces, paths, sub) {  // pieces plus (or minus) the area of paths
+function clipShape(pieces, paths, sub, op, strict) {  // pieces plus (or minus; or op) the area of paths
   const c = new CL.Clipper();
-  c.StrictlySimple = true;  // no ring touching itself: QuPath (JTS) reads the exported outlines as valid polygons
+  c.StrictlySimple = !!strict;  // (slow on large outlines: only for a piece whose ring touches itself, see strictPieces)
   c.AddPaths(piecesToPaths(pieces), CL.PolyType.ptSubject, true);
   c.AddPaths(paths, CL.PolyType.ptClip, true);
   const t = new CL.PolyTree();
-  c.Execute(sub ? CL.ClipType.ctDifference : CL.ClipType.ctUnion, t, CL.PolyFillType.pftNonZero, CL.PolyFillType.pftNonZero);
+  c.Execute(op != null ? op : sub ? CL.ClipType.ctDifference : CL.ClipType.ctUnion, t, CL.PolyFillType.pftNonZero, CL.PolyFillType.pftNonZero);
   return treeToPieces(t);
+}
+function localPieces(pieces) {
+  // the part of a large shape in and around the view, simplified to a third of a screen pixel: what a stroke on it
+  // changes live (a few thousand points however large the outline); the full shape is changed when the stroke ends
+  const tol = imgPerScreen() / 3, el = $("osd"), W = el.clientWidth, H = el.clientHeight, g = 0.5 * Math.max(W, H);
+  const c = [[-g, -g], [W + g, -g], [W + g, H + g], [-g, H + g]].map(([x, y]) => { const q = imgPointFromEvent(new OpenSeadragon.Point(x, y)); return [q.x, q.y]; });
+  const b = polyBounds(c), box = [[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]];
+  const inBox = (r) => { const q = polyBounds(r); return !(q[2] < b[0] || q[0] > b[2] || q[3] < b[1] || q[1] > b[3]); };
+  const simple = pieces.filter((pc) => inBox(pc.outer)).map((pc) => ({ outer: simplifyRing(pc.outer, tol), holes: pc.holes.filter(inBox).map((h) => simplifyRing(h, tol)).filter((h) => h.length >= 3) }))
+    .filter((pc) => pc.outer.length >= 3);
+  return clipShape(simple, [toPath(box, true)], false, CL.ClipType.ctIntersection);
 }
 function offsetPieces(pieces, d) {  // grown (d > 0) or shrunk by d image pixels, round corners
   const co = new CL.ClipperOffset(2, Math.max(0.25, Math.abs(d) * 0.002) * CS);
@@ -2989,7 +3000,7 @@ function undoShape() {
 function cancelShape(ask = true) {
   const s = st.shape; if (!s) return;
   if (ask && s.dirty && !confirm(s.ids.length ? `Drop the changes to ${s.ids.join(", ")}?` : "Drop this shape?")) return;
-  st.shape = null; syncShapeBar(); drawRegions();
+  st.shape = null; st.shapeView = null; syncShapeBar(); drawRegions();
 }
 async function saveShape() {
   const s = st.shape; if (!s) return;
@@ -3009,10 +3020,16 @@ async function saveShape() {
   }
   await postShape(s.ids, s.name);
 }
+function strictPieces(pieces) {
+  // a ring that passes through one point twice (it touches itself) is valid for the app, not for QuPath (JTS): such a
+  // piece is made strictly simple before it is saved (rare; slow on large outlines, so only then)
+  const touches = (r) => { const seen = new Set(); for (const [x, y] of r) { const k = `${Math.round(x * CS)},${Math.round(y * CS)}`; if (seen.has(k)) return true; seen.add(k); } return false; };
+  return pieces.flatMap((pc) => [pc.outer, ...pc.holes].some(touches) ? clipShape([pc], [], false, CL.ClipType.ctUnion, true) : [pc]);
+}
 async function postShape(ids, name) {
   const s = st.shape;
   try {
-    const r = await post(`/api/s/${st.sid}/regions/shape`, { ids, name, pieces: s.pieces });
+    const r = await post(`/api/s/${st.sid}/regions/shape`, { ids, name, pieces: strictPieces(s.pieces) });
     st.shape = null; st.rsel = new Set(ids.slice(0, 1)); syncShapeBar(); await afterRegionChange(r);
     return true;
   } catch (e) { toast(e.message, 6000); return false; }
@@ -3195,7 +3212,7 @@ viewer.addHandler("canvas-press", (e) => {
   st.toolDrag = { t, from: [p.x, p.y], to: [p.x, p.y], last: e.position, sub: subtracting(e.originalEvent), pending: [], started: false };
   if (t === "brush" || t === "wand") { toolDab([e.position]); }
 });
-const LIVE_POINTS = 8000;  // a shape with more points than this is changed when the stroke ends (a band shows it meanwhile)
+const LIVE_POINTS = 8000;  // a larger shape is changed live in and around the view only; the whole of it when the stroke ends
 function toolDab(positions, final) {  // a brush or wand stroke so far: its whole area added to (or taken from) the shape
   const k = st.toolDrag; if (!k) return;
   if (!k.started) {  // the shape as it was before the stroke; every step starts again from it
@@ -3204,17 +3221,21 @@ function toolDab(positions, final) {  // a brush or wand stroke so far: its whol
     const s = ensureShape(q, k.r); s.hist.push(s.pieces); k.base = s.pieces; k.started = true;
     k.pts = []; k.blobs = [];
     k.live = s.pieces.reduce((t, p) => t + p.outer.length + p.holes.reduce((u, h) => u + h.length, 0), 0) < LIVE_POINTS;
+    if (!k.live) { k.local = localPieces(k.base); st.shapeView = k.local; }
   }
   if (k.t === "brush") {
     for (const q of positions) { const p = imgPointFromEvent(q); k.pts.push([p.x, p.y]); }
   } else {
     for (const q of positions) { const w = wandPaths(q); if (w && w.length) k.blobs.push(...w); }
   }
+  const s = st.shape;
+  const paths = k.t === "brush" ? bandPaths(k.pts, k.r) : k.blobs;  // one band along the whole stroke: no seams
   if (k.live || final) {
-    const s = st.shape;
-    const paths = k.t === "brush" ? bandPaths(k.pts, k.r) : k.blobs;  // one band along the whole stroke: no seams
     if (paths.length) { s.pieces = clipShape(k.base, paths, k.sub); s.dirty = true; }
+    if (final) st.shapeView = null;
     syncShapeBar();
+  } else if (paths.length) {
+    st.shapeView = clipShape(k.local, paths, k.sub);  // what is in view, at once
   }
   drawRegionsOnce();
 }
@@ -3239,6 +3260,7 @@ viewer.addHandler("canvas-release", (e) => {
   if ((k.t === "brush" || k.t === "wand") && (k.pending.length || (k.started && !k.live))) {
     st.toolDrag = k; toolDab(k.pending, true); st.toolDrag = null;
   }
+  st.shapeView = null;
   if (k.t === "rect" || k.t === "ellipse") {
     const a = toScreen(...k.from), b = toScreen(...k.to);
     if (Math.abs(a.x - b.x) < 4 || Math.abs(a.y - b.y) < 4) { drawRegions(); return; }
@@ -3253,7 +3275,7 @@ viewer.addHandler("canvas-release", (e) => {
 function drawToolLayer(root) {
   if (!REG.sg || REG.sg.parentNode !== root) { REG.sg = svgEl("g", {}); root.append(REG.sg); REG.sgKey = null; }
   REG.sg.setAttribute("transform", REG.g ? REG.g.getAttribute("transform") || "" : "");
-  const key = [st.shape && st.shape.pieces, [...st.rsel].join(","), REG.level, st.regions, st.shape && st.shape.ids.join(",")];
+  const key = [st.shapeView || (st.shape && st.shape.pieces), [...st.rsel].join(","), REG.level, st.regions, st.shape && st.shape.ids.join(",")];
   if (!REG.sgKey || key.some((v, i) => v !== REG.sgKey[i])) {
     REG.sgKey = key; REG.sg.textContent = "";
     const tol = SHOW_TOL_PX * 4 ** Math.max(0, REG.level);
@@ -3268,8 +3290,9 @@ function drawToolLayer(root) {
       REG.sg.append(svgEl("path", { d: d(rings), fill: "rgba(255,24,24,.10)", stroke: "#000", "stroke-opacity": 0.65, "stroke-width": 6.5, ...ns }),
                     svgEl("path", { d: d(rings), fill: "none", stroke: "#ff1818", "stroke-width": 3.4, ...ns }));
     });
-    if (st.shape && st.shape.pieces.length) {
-      const rings = st.shape.pieces.flatMap((p) => [p.outer, ...p.holes]);
+    const shown = st.shapeView || (st.shape && st.shape.pieces);
+    if (st.shape && shown && shown.length) {
+      const rings = shown.flatMap((p) => [p.outer, ...p.holes]);
       const full = rings.reduce((t, r) => t + r.length, 0) < 15000;  // drawn point for point unless large
       const dd = d(rings, full);
       REG.sg.append(svgEl("path", { d: dd, fill: "rgba(0,230,255,.16)", stroke: "#000", "stroke-opacity": 0.6, "stroke-width": 5, ...ns }),
@@ -3277,7 +3300,7 @@ function drawToolLayer(root) {
     }
   }
   const svg = REG.dyn, k = st.toolDrag;
-  if (k && k.started && !k.live) {
+  if (k && k.started && !k.live && !st.shapeView) {
     const col = k.sub ? "rgba(255,154,0,.35)" : "rgba(0,230,255,.30)";
     if (k.t === "brush" && k.pts.length) {
       const pts = k.pts.map(([x, y]) => toScreen(x, y)), w = 2 * k.r / imgPerScreen();
@@ -4394,7 +4417,7 @@ const HELP = `
     the H&amp;E under the brush (<b>±</b>: how different a color may be). The slider sets the brush size.</li>
   <li>A Brush or Wand stroke that starts on a region (or with the brush over its edge) changes that region, as in
     QuPath, also one imported from QuPath; elsewhere it starts a new shape. Hold <kbd>Alt</kbd> (or turn on <b>−</b>)
-    to erase instead. On a large outline the stroke shows as a band and is applied when you let go.</li>
+    to erase instead. On a large outline the part in view follows the brush; the whole of it is updated when you let go.</li>
   <li><b>Save</b> (<kbd>Enter</kbd>) keeps the shape (a new one is named first); <b>Undo</b> (<kbd>Backspace</kbd>)
     takes back the last stroke; <b>Cancel</b> (<kbd>Esc</kbd>) drops the changes. <kbd>Space</kbd> + drag moves the
     map while drawing; the wheel zooms.</li>
@@ -7034,7 +7057,7 @@ document.addEventListener("keydown", (e) => {
     if (t) setTool(t);
   }
   if (!st.drawing && !st.editing) {
-    if (e.key === "Escape") { if (st.toolDrag) { st.toolDrag = null; drawRegions(); } else if (st.shape) cancelShape(); else if (st.rsel.size) $("selClear").click(); }
+    if (e.key === "Escape") { if (st.toolDrag) { const k = st.toolDrag; st.toolDrag = null; st.shapeView = null; if (k.started && st.shape) undoShape(); drawRegions(); } else if (st.shape) cancelShape(); else if (st.rsel.size) $("selClear").click(); }
     if (st.shape && e.key === "Enter") { e.preventDefault(); saveShape(); }
     if (st.shape && e.key === "Backspace") { e.preventDefault(); undoShape(); }
   }

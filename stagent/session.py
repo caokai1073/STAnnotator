@@ -11,7 +11,7 @@ Session directory (work/sessions/<session_id>/):
   verdicts.jsonl      reviewer verdicts on conflict cells; suggestions.jsonl rule suggestions
   figures/, exports/
 """
-import hashlib, json, re, threading, time, uuid
+import hashlib, json, os, re, threading, time, uuid
 from datetime import datetime
 import numpy as np, pandas as pd, scipy.sparse as sp
 from scipy.spatial import cKDTree
@@ -287,7 +287,13 @@ class Session:
         return self.dir / "versions" / f"v{v:04d}.json"
 
     def _write(self, state):
-        json.dump(state, open(self._vpath(state["version"]), "w"), indent=1)
+        """Written whole, then moved into place: a reader (the viewer asks for the latest version while one is saved)
+        never sees half a file. The temporary name does not match v*.json."""
+        path = self._vpath(state["version"])
+        tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=1)
+        os.replace(tmp, path)
 
     def versions(self):
         return sorted(int(p.stem[1:]) for p in (self.dir / "versions").glob("v*.json"))
