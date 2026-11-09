@@ -499,6 +499,8 @@ The Regions panel has a row of tools:
 - A name can have several polygons; regions can be renamed, deleted, zoomed to and outlined.
 - Click a region's color square to choose one of 15 colors; outlines, cells colored by region and the legend follow,
   and the color stays with the region when it is renamed.
+- The selected region is outlined in bright red, so no region is red: a red color (e.g. QuPath's "Tumor" class in an
+  imported file) shows as orange or magenta.
 
 **Which cells a region holds**
 

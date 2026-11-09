@@ -32,7 +32,7 @@ def lineage_palette(lineages):
 
 
 REGION_COLORS = {"mucosa": "#e6862a", "submucosa": "#57a35a", "muscularis_propria": "#3d76b8",
-                 "lymphoid_aggregate": "#8e5bb5", "fibromuscular_hyperplasia": "#c9b63c", "granuloma": "#c4473f",
+                 "lymphoid_aggregate": "#8e5bb5", "fibromuscular_hyperplasia": "#c9b63c", "granuloma": "#b07aa1",
                  "unknown": "#cfcfcf"}
 class Slide:
     """A pyramidal TIFF / OME-TIFF: RGB (H&E) or a fluorescence channel (e.g. DAPI, shown in gray with its display
@@ -301,11 +301,30 @@ def region_colors(names, chosen=None):
         if n in REGION_COLORS:
             out[n] = REGION_COLORS[n]
         else:  # every user-drawn name takes its turn, so picking one color leaves the others as they were
-            r, g, b = colorsys.hls_to_rgb((0.07 + k * 0.618034) % 1.0, 0.5, 0.65)
+            h = (0.07 + k * 0.618034) % 1.0
+            if h > 0.93 or h < 0.065:  # no red: the viewer outlines the selected region in bright red
+                h = (h + 0.12) % 1.0
+            r, g, b = colorsys.hls_to_rgb(h, 0.5, 0.65)
             out[n] = "#%02x%02x%02x" % (int(255 * r), int(255 * g), int(255 * b))
             k += 1
-        out[n] = chosen.get(n, out[n])
+        out[n] = _not_red(chosen.get(n, out[n]))
     return out
+
+
+def _not_red(hexcol):
+    """A color kept clear of red (the viewer outlines the selected region in bright red): a reddish one, e.g. QuPath's
+    "Tumor" class or a color picked before, is turned toward orange or magenta, keeping its lightness."""
+    import colorsys
+    try:
+        r, g, b = (int(hexcol[i:i + 2], 16) / 255 for i in (1, 3, 5))
+    except (ValueError, TypeError, IndexError):
+        return hexcol
+    h, l, sat = colorsys.rgb_to_hls(r, g, b)
+    if sat < 0.35 or not (h > 0.93 or h < 0.065):
+        return hexcol
+    h = 0.08 if h < 0.5 else 0.88  # toward orange, or toward magenta
+    r, g, b = colorsys.hls_to_rgb(h, l, sat)
+    return "#%02x%02x%02x" % (int(255 * r), int(255 * g), int(255 * b))
 
 
 def region_map(cells, region, out, title="", highlight=None, highlight_label="conflicts", chosen=None):
