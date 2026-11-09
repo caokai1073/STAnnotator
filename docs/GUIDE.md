@@ -475,8 +475,12 @@ The Regions panel has a row of tools:
 | Brush | B | Paint the area |
 | Wand | W | Paint, and the area follows the colors of the H&E under the brush (± sets how different a color may be) |
 
-- The tools add to the **selected region**, or, with nothing selected, to a **new shape**. Hold **Alt** (or turn on
-  **−**) and they erase instead: select a region and brush with Alt to take a piece out of it.
+- A Brush or Wand stroke that starts on a region (inside it, or with the brush over its edge) changes **that
+  region**, as in QuPath, imported outlines included; elsewhere it starts a **new shape**. Rectangle, Ellipse and
+  Polygon add to the selected region, or start a new shape. Hold **Alt** (or turn on **−**) and the tools erase
+  instead: brush with Alt over a region to take a piece out of it.
+- On a large outline (thousands of points, e.g. from QuPath) a brush stroke shows as a band while you paint and is
+  applied when you let go.
 - Nothing is saved until **Save** (Enter); a new shape is named then (an existing name adds it to that region).
   **Undo** (Backspace) takes back the last stroke, **Cancel** (Esc) drops the changes. Hold Space and drag to move
   the map while drawing; the wheel zooms. The slider sets the brush size (in screen pixels, so zooming in makes it

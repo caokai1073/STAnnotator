@@ -2888,9 +2888,36 @@ function startShape(ids, pieces) {
   syncShapeBar(); drawRegions();
   return st.shape;
 }
-function ensureShape() {  // the shape the tools work on: the one open, else the selected polygon, else a new one
+function ensureShape(at, reach) {
+  // the shape the tools work on: the one open; else the region the stroke starts on (inside it, or with the brush over
+  // its edge: as in QuPath, brushing a region changes it), the selected one first; else the selected one; else new
   if (st.shape) return st.shape;
-  return startShape(st.rsel.size === 1 ? [...st.rsel] : []);
+  const target = at ? regionAt(at, reach || 0) : null;
+  if (target) { st.rsel = new Set([target.id]); return startShape([target.id]); }
+  return startShape(st.rsel.size === 1 && !at ? [...st.rsel] : []);
+}
+function edgeDist(x, y, ring) {  // distance from a point to the outline of a ring
+  let best = Infinity;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [ax, ay] = ring[j], [bx, by] = ring[i], dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy;
+    const t = L ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / L)) : 0;
+    const d = Math.hypot(x - ax - t * dx, y - ay - t * dy); if (d < best) best = d;
+  }
+  return best;
+}
+function regionAt(q, reach) {  // the selected polygon if the point is in it or near it, else the one under it, else the nearest edge within reach
+  const near = (p) => {
+    const b = p.bounds || (p.bounds = polyBounds(p.polygon));
+    if (q.x < b[0] - reach || q.x > b[2] + reach || q.y < b[1] - reach || q.y > b[3] + reach) return Infinity;
+    if (insideRing(q.x, q.y, p.polygon) && !(p.holes || []).some((h) => insideRing(q.x, q.y, h))) return 0;
+    return Math.min(edgeDist(q.x, q.y, p.polygon), ...(p.holes || []).map((h) => edgeDist(q.x, q.y, h)));
+  };
+  const polys = (st.regions && st.regions.polygons) || [];
+  for (const id of st.rsel) { const p = polyOf(id); if (p && near(p) <= reach) return p; }
+  const under = polygonAt(q.x, q.y); if (under) return under;
+  let best = null, bd = reach;
+  for (const p of polys) { const d = near(p); if (d <= bd) { bd = d; best = p; } }
+  return best;
 }
 function shapeStep(fn) {  // one step that Undo takes back
   const s = ensureShape();
@@ -3110,24 +3137,28 @@ viewer.addHandler("canvas-press", (e) => {
   st.toolDrag = { t, from: [p.x, p.y], to: [p.x, p.y], last: e.position, sub: subtracting(e.originalEvent), pending: [], started: false };
   if (t === "brush" || t === "wand") { toolDab([e.position]); }
 });
-function toolDab(positions) {  // a brush or wand stroke so far: its whole area added to (or taken from) the shape
+const LIVE_POINTS = 8000;  // a shape with more points than this is changed when the stroke ends (a band shows it meanwhile)
+function toolDab(positions, final) {  // a brush or wand stroke so far: its whole area added to (or taken from) the shape
   const k = st.toolDrag; if (!k) return;
   if (!k.started) {  // the shape as it was before the stroke; every step starts again from it
-    const s = ensureShape(); s.hist.push(s.pieces); k.base = s.pieces; k.started = true;
-    k.pts = []; k.blobs = []; k.r = toolSize() / 2 * imgPerScreen();
+    k.r = toolSize() / 2 * imgPerScreen();
+    const q = imgPointFromEvent(positions[0] || k.last);
+    const s = ensureShape(q, k.r); s.hist.push(s.pieces); k.base = s.pieces; k.started = true;
+    k.pts = []; k.blobs = [];
+    k.live = s.pieces.reduce((t, p) => t + p.outer.length + p.holes.reduce((u, h) => u + h.length, 0), 0) < LIVE_POINTS;
   }
-  const s = st.shape;
   if (k.t === "brush") {
     for (const q of positions) { const p = imgPointFromEvent(q); k.pts.push([p.x, p.y]); }
-    s.pieces = clipShape(k.base, bandPaths(k.pts, k.r), k.sub);  // one band along the whole stroke: no seams
   } else {
-    let added = false;
-    for (const q of positions) { const w = wandPaths(q); if (w && w.length) { k.blobs.push(...w); added = true; } }
-    if (!added) return;
-    s.pieces = clipShape(k.base, k.blobs, k.sub);
+    for (const q of positions) { const w = wandPaths(q); if (w && w.length) k.blobs.push(...w); }
   }
-  s.dirty = true;
-  syncShapeBar(); drawRegionsOnce();
+  if (k.live || final) {
+    const s = st.shape;
+    const paths = k.t === "brush" ? bandPaths(k.pts, k.r) : k.blobs;  // one band along the whole stroke: no seams
+    if (paths.length) { s.pieces = clipShape(k.base, paths, k.sub); s.dirty = true; }
+    syncShapeBar();
+  }
+  drawRegionsOnce();
 }
 viewer.addHandler("canvas-drag", (e) => {
   const k = st.toolDrag; if (!k) return;
@@ -3147,11 +3178,14 @@ viewer.addHandler("canvas-release", (e) => {
   if (!k) return;
   st.penAt = Date.now();
   if (k.raf) { cancelAnimationFrame(k.raf); k.raf = 0; }
-  if ((k.t === "brush" || k.t === "wand") && k.pending.length) { st.toolDrag = k; toolDab(k.pending); st.toolDrag = null; }
+  if ((k.t === "brush" || k.t === "wand") && (k.pending.length || (k.started && !k.live))) {
+    st.toolDrag = k; toolDab(k.pending, true); st.toolDrag = null;
+  }
   if (k.t === "rect" || k.t === "ellipse") {
     const a = toScreen(...k.from), b = toScreen(...k.to);
     if (Math.abs(a.x - b.x) < 4 || Math.abs(a.y - b.y) < 4) { drawRegions(); return; }
     const ring = (k.t === "rect" ? rectRing : ellipseRing)(k.from, k.to, k.shift);
+    if (k.sub && !st.shape) ensureShape({ x: (k.from[0] + k.to[0]) / 2, y: (k.from[1] + k.to[1]) / 2 }, 0);
     shapeStep((pcs) => clipShape(pcs, [toPath(ring, true)], k.sub));
   }
   drawRegions();
@@ -3178,13 +3212,22 @@ function drawToolLayer(root) {
     });
     if (st.shape && st.shape.pieces.length) {
       const rings = st.shape.pieces.flatMap((p) => [p.outer, ...p.holes]);
-      const full = rings.reduce((t, r) => t + r.length, 0) < 60000;  // drawn point for point unless very large
+      const full = rings.reduce((t, r) => t + r.length, 0) < 15000;  // drawn point for point unless large
       const dd = d(rings, full);
       REG.sg.append(svgEl("path", { d: dd, fill: "rgba(0,230,255,.16)", stroke: "#000", "stroke-opacity": 0.6, "stroke-width": 5, ...ns }),
                     svgEl("path", { d: dd, fill: "none", stroke: "#00e6ff", "stroke-width": 2.4, ...ns }));
     }
   }
   const svg = REG.dyn, k = st.toolDrag;
+  if (k && k.started && !k.live) {
+    const col = k.sub ? "rgba(255,90,60,.35)" : "rgba(0,230,255,.30)";
+    if (k.t === "brush" && k.pts.length) {
+      const pts = k.pts.map(([x, y]) => toScreen(x, y)), w = 2 * k.r / imgPerScreen();
+      svg.append(svgEl("polyline", { points: pts.map((q) => `${q.x},${q.y}`).join(" "), fill: "none", stroke: col, "stroke-width": w,
+                                     "stroke-linecap": "round", "stroke-linejoin": "round" }));
+    }
+    k.blobs.forEach((b) => svg.append(svgEl("polygon", { points: b.map((q) => { const s = toScreen(q.X / CS, q.Y / CS); return `${s.x},${s.y}`; }).join(" "), fill: col, stroke: "none" })));
+  }
   if (k && (k.t === "rect" || k.t === "ellipse")) {
     const ring = (k.t === "rect" ? rectRing : ellipseRing)(k.from, k.to, k.shift).map(([x, y]) => toScreen(x, y));
     svg.append(svgEl("polygon", { points: ring.map((q) => `${q.x},${q.y}`).join(" "), fill: k.sub ? "rgba(255,80,60,.10)" : "rgba(0,230,255,.10)",
@@ -4290,8 +4333,9 @@ const HELP = `
     letting go only pauses. <b>Finish</b>, <kbd>Enter</kbd> or a click on the first point closes it.</li>
   <li><b>Brush</b> <kbd>B</kbd>: paint the area. <b>Wand</b> <kbd>W</kbd>: paint, and the area follows the colors of
     the H&amp;E under the brush (<b>±</b>: how different a color may be). The slider sets the brush size.</li>
-  <li>The tools add to the selected region, or to the new shape being drawn. Hold <kbd>Alt</kbd> (or turn on
-    <b>−</b>) to erase instead.</li>
+  <li>A Brush or Wand stroke that starts on a region (or with the brush over its edge) changes that region, as in
+    QuPath, also one imported from QuPath; elsewhere it starts a new shape. Hold <kbd>Alt</kbd> (or turn on <b>−</b>)
+    to erase instead. On a large outline the stroke shows as a band and is applied when you let go.</li>
   <li><b>Save</b> (<kbd>Enter</kbd>) keeps the shape (a new one is named first); <b>Undo</b> (<kbd>Backspace</kbd>)
     takes back the last stroke; <b>Cancel</b> (<kbd>Esc</kbd>) drops the changes. <kbd>Space</kbd> + drag moves the
     map while drawing; the wheel zooms.</li>
