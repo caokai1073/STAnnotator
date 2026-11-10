@@ -417,6 +417,8 @@ The app's window, or the web viewer (`.venv/bin/stagent viewer`, then http://loc
 - **Pick a sample**; earlier annotations are under **Annotation**.
 - **Rename** changes the name the app shows (a slice: its name in the project); the id, files
   and annotations stay.
+- **Rename** beside **Annotation** names the annotation chosen there (shown before its version and date, in the
+  list and in Export); its id, versions and results stay. Leave the name empty for none.
 - **Overview of all samples** shows every sample side by side, each over its image (the **image** box) and colored the
   same way: cell type, lineage, Leiden clusters, niche or region (from the annotation open, else each sample's latest
   one), with one legend for all.
@@ -621,7 +623,8 @@ the notebook need an annotation.
 **The analysis notebook** runs without this app.
 
 - It needs the data files and `numpy pandas scipy scikit-learn python-igraph pynndescent umap-learn h5py matplotlib`
-  (and `pillow` for Visium HD cells built from outlines).
+  (and `pillow` for Visium HD cells built from outlines). Its first code cell installs them with pip into the
+  notebook's Python, with pynndescent, numba and igraph at the app's versions (they change the clusters).
 - It reads the cells from the original files of every platform as the import did (Xenium, h5ad, CosMx, MERSCOPE,
   Visium HD cells or bins, Stereo-seq cells or bins) and applies the sample's filter when it has one.
 - Standard steps are plain code: reading the cells, the registration affine and the corrections made in the app
@@ -633,7 +636,7 @@ the notebook need an annotation.
   same: identical on any computer for annotations made with exact neighbors; with approximate neighbors, identical
   with the pynndescent and numba versions named in the notebook; annotations made before v0.2.22 (no choice of
   neighbors) only on the same kind of machine. UMAP coordinates differ slightly (all cores).
-- **Notebook of all slices** (under **Save notebook…**, when a project was annotated with **All slices together**):
+- **Save project…** (under **Save notebook…**, when a project was annotated with **All slices together**):
   choose the **Project** and when its slices were **Annotated together**; each slice's annotation from that run goes
   in (a slice annotated again on its own later does not change it), listed under the choice. One notebook of every
   slice. It reads and places each slice as above, runs the joint marker step and expression model

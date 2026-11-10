@@ -429,6 +429,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .imreplace { display: flex; gap: 6px; align-items: flex-start; } .imreplace input { margin-top: 2px; }
 .xpchoose { flex-wrap: wrap; gap: 6px 10px; } .xpchoose label { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
 .xpchoose select { max-width: 240px; }
+.xpchoose > button { margin-left: auto; }   /* stays on the right when the row wraps */
 .alrow .alname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .clcard { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 6px 0; display: flex; flex-direction: column; gap: 6px; }
 .clcard pre { font: 11.5px ui-monospace, Menlo, monospace; white-space: pre-wrap; margin: 0; color: var(--muted); }
@@ -508,6 +509,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
         <span>All slices together<small>one annotation, embedding and set of niches for the project</small></span></label>
     </div>
     <div class="fld" id="sessWrap"><span>Annotation</span><div class="inrow"><select id="session" title="Earlier annotations of this sample"></select>
+      <button id="sessRename" disabled title="Rename the annotation chosen in the box (only the name shown changes)">Rename</button>
       <button id="sessDel" disabled title="Delete this annotation (it goes to the data folder's trash with its chat)">Delete</button></div></div>
     <div class="act2"><button id="anSave" disabled title="Save the open annotation as one file: cell types with every version, regions, priors, corrections, niches, the PCA / UMAP, the last results of the analyses, and the sample's filter and registration">Save…</button>
       <button id="anLoad" disabled title="Load a saved annotation (.stannot) for the same sample: imported again from the same files is enough; its filter and registration are made as saved (you are asked first)">Load…</button></div>
@@ -1104,18 +1106,18 @@ T and NK cells: CD3E|NKG7+ EPCAM-
           the PCA / UMAP and the niches of all slices, checked slice by slice.</div>
         <div class="row xpchoose"><label>Project <select id="xpProj"></select></label>
           <label>Annotated together <select id="xpRun" title="When the slices were annotated together: each slice's annotation from that run"></select></label>
-          <span class="spacer"></span><button id="xpNbAll" title="One notebook for every slice of the project: the joint annotation, embedding and niches">Notebook of all slices…</button></div>
+          <span class="spacer"></span><button id="xpNbAll" class="primary" title="One notebook for every slice of the project: the joint annotation, embedding and niches">Save project…</button></div>
         <div class="hint" id="xpRunInfo"></div></div></div>
     <div class="clcard" id="xpRegCard"><b>Registration (CSV)</b>
       <div class="hint" id="xpRegInfo"></div>
       <div class="hint" id="xpPosInfo" style="margin-top:4px"></div>
-      <div class="row"><span class="spacer"></span><button id="xpPos" title="Every cell's place on the image, local corrections and moved pieces included">Save cell positions…</button>
+      <div class="row"><span class="spacer"></span><button id="xpPos" class="primary" title="Every cell's place on the image, local corrections and moved pieces included">Save cell positions…</button>
         <button id="xpReg" class="primary">Save registration…</button></div></div>
     <div class="clcard"><b>Regions (GeoJSON)</b>
       <div class="hint" id="xpGeoInfo">The outlines of this version's regions in the image's full-resolution pixels, named by their region, as
         QuPath writes its annotations (QuPath opens it). Import it with the data registered to the same image, or
         use it in other tools. Cells moved into a region without an outline are not in it.</div>
-      <div class="row"><span class="spacer"></span><button id="xpGeo">Save regions…</button></div></div>
+      <div class="row"><span class="spacer"></span><button id="xpGeo" class="primary">Save regions…</button></div></div>
     <div class="hint" id="xpStatus"></div>
   </div>
 </dialog>
@@ -1574,7 +1576,7 @@ function fillModes(sm) {
 }
 const USER_METHODS = ["markers", "scref", "existing"];  // annotations made in the app (not the lab's benchmark ones)
 function sessionLabel(x) {
-  return `v${x.n_versions} · ${x.created_at.slice(5, 16).replace("T", " ")} · ${{ scref: "reference", existing: "loaded" }[x.method] || "markers"}` +
+  return (x.name ? `${x.name} · ` : "") + `v${x.n_versions} · ${x.created_at.slice(5, 16).replace("T", " ")} · ${{ scref: "reference", existing: "loaded" }[x.method] || "markers"}` +
     (x.loaded ? " · loaded copy" : "");  // from a .stannot file (Load…): its dates are the original's
 }
 function fillSessions(selected) {
@@ -1585,7 +1587,7 @@ function fillSessions(selected) {
   sel.disabled = !st.sample.sessions.length;  // always shown, so the header does not move
   if (!st.sample.sessions.length) ph.textContent = "no annotation yet";
   sel.value = selected || "";
-  $("sessDel").disabled = !sel.value;
+  $("sessDel").disabled = $("sessRename").disabled = !sel.value;
 }
 
 async function selectSample(id) {
@@ -1785,7 +1787,7 @@ function imageOnlyUI() {
   if (!on) $("tools").hidden = false;
   $("session").disabled = on;
   if (on) {
-    ["qfBtn", "sessDel", "anSave", "anLoad", "report", "plaus"].forEach((b) => ($(b).disabled = true));
+    ["qfBtn", "sessDel", "sessRename", "anSave", "anLoad", "report", "plaus"].forEach((b) => ($(b).disabled = true));
     $("export").disabled = !st.sid;
   }
   $("composerhint").textContent = on ? "Tip: ask the agent about the tissue or to outline an area; regions you draw are named by you."
@@ -5768,7 +5770,7 @@ $("sample").onchange = (e) => {  // another slice of the same project: like ◀ 
   return p && p.samples.includes(e.target.value) ? gotoSlice(e.target.value) : selectSample(e.target.value);
 };
 $("annotate").onclick = () => (projectMode() && $("method").value === "markers" ? annotateProject() : startAnnotation("new"));
-$("session").onchange = (e) => { closeSession(); $("sessDel").disabled = !e.target.value; if (e.target.value) startAnnotation("continue", e.target.value); };
+$("session").onchange = (e) => { closeSession(); $("sessDel").disabled = $("sessRename").disabled = !e.target.value; if (e.target.value) startAnnotation("continue", e.target.value); };
 $("sessDel").onclick = async () => {  // delete the annotation chosen in the box; the next most recent one opens
   const sel = $("session"), sid = sel.value; if (!sid) return;
   if (st.busy) { toast("Wait until the assistant has answered"); return; }
@@ -5834,6 +5836,7 @@ function sampleName(s) {  // as the app shows it: a slice by its name in the pro
 }
 $("sampleRename").onclick = () => {
   const s = st.sample; if (!s) return;
+  st.renaming = null;  // the sample (sessRename sets the annotation)
   const p = projectOf(s.sample_id);
   $("rnTitle").textContent = p ? "Rename slice" : "Rename sample";
   $("rnLabel").textContent = p ? "Slice name" : "Sample name";
@@ -5843,7 +5846,26 @@ $("sampleRename").onclick = () => {
   $("rnErr").textContent = "";
   $("rnDlg").showModal(); $("rnName").focus(); $("rnName").select();
 };
+$("sessRename").onclick = () => {  // the annotation chosen in the box, in the sample's rename dialog
+  const x = st.sample && st.sample.sessions.find((r) => r.session_id === $("session").value); if (!x) return;
+  st.renaming = x;
+  $("rnTitle").textContent = "Rename annotation"; $("rnLabel").textContent = "Annotation name";
+  $("rnName").value = x.name || ""; $("rnName").placeholder = "e.g. markers v2, after the filter";
+  $("rnId").textContent = `id ${x.session_id.slice(st.sample.sample_id.length + 1)}`;
+  $("rnHint").textContent = "Only the name shown changes: the id, its versions and results stay. Leave it empty for no name.";
+  $("rnErr").textContent = "";
+  $("rnDlg").showModal(); $("rnName").focus(); $("rnName").select();
+};
 $("rnSave").onclick = async () => {
+  if (st.renaming) {
+    const x = st.renaming;
+    let r; try { r = await post(`/api/session/${encodeURIComponent(x.session_id)}/rename`, { name: $("rnName").value }); } catch (e) { $("rnErr").textContent = e.message; return; }
+    $("rnDlg").close(); st.renaming = null;
+    for (const list of [st.sample.sessions, st.sample.allSessions || []]) { const y = list.find((z) => z.session_id === x.session_id); if (y) y.name = r.name; }
+    x.name = r.name;
+    fillSessions($("session").value);
+    toast("Renamed"); return;
+  }
   const s = st.sample;
   const body = { name: $("rnName").value.trim() };
   try { await post(`/api/sample/${s.sample_id}/rename`, body); } catch (e) { $("rnErr").textContent = e.message; return; }

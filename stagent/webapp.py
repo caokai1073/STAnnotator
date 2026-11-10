@@ -1125,7 +1125,7 @@ def api_samples(req):
                          "image_only": bool(meta.get("image_only")), "um_per_px_known": meta.get("um_per_px_known", True),
                          "filter": {"params": f["params"], "n_cells_removed": f["n_cells_removed"],
                                     "n_genes_removed": len(f["genes_removed"])} if (f := meta.get("filter")) else None,
-                         "sessions": mine.sort_values("created_at", ascending=False)[["session_id", "created_at", "n_versions", "method", "loaded"]]
+                         "sessions": mine.sort_values("created_at", ascending=False)[["session_id", "created_at", "n_versions", "method", "loaded", "name"]]
                          .to_dict("records") if len(mine) else []})
     return _json(rows)
 
@@ -2361,6 +2361,16 @@ async def api_sample_registration(req: Request):
     return _json(r)
 
 
+async def api_session_rename(req: Request):
+    """{name}: the annotation's name in the app's lists ("" for none)."""
+    from .session import rename_session
+    b = await req.json()
+    try:
+        return _json(rename_session(req.path_params["sid"], b.get("name")))
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+
+
 async def api_sample_rename(req: Request):
     b = await req.json()
     try:
@@ -3441,6 +3451,7 @@ def build_app(port):
         Route("/api/samples/restore", api_sample_restore, methods=["POST"]),
         Route("/api/refresh", api_refresh, methods=["POST"]),
         Route("/api/session/{sid}/delete", api_session_delete, methods=["POST"]),
+        Route("/api/session/{sid}/rename", api_session_rename, methods=["POST"]),
         Route("/api/projects/assign", api_projects_assign, methods=["POST"]),
         Route("/api/sample/{sample}/image_state", api_sample_image_state, methods=["POST"]),
         Route("/api/samples/clear", api_samples_clear, methods=["POST"]),

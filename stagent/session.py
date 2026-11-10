@@ -109,8 +109,25 @@ def list_sessions():
                 s = json.load(open(d / "session.json"))
                 rows.append({k: s[k] for k in ("session_id", "sample_id", "created_at")}
                             | {"method": s.get("method", "reference"), "n_versions": len(list((d / "versions").glob("v*.json"))),
-                               "loaded": bool(s.get("loaded_from"))})
+                               "loaded": bool(s.get("loaded_from")), "name": s.get("name") or ""})
     return pd.DataFrame(rows)
+
+
+def rename_session(session_id, name):
+    """Name an annotation as the app lists it ("" for no name); its id, folder and versions stay."""
+    f = config.SESSIONS / str(session_id) / "session.json"
+    if "/" in str(session_id) or ".." in str(session_id) or not f.exists():
+        raise ValueError(f"no annotation {session_id!r}")
+    name = " ".join(str(name or "").split())
+    if len(name) > 80:
+        raise ValueError("the name is longer than 80 characters")
+    info = json.load(open(f))
+    if name:
+        info["name"] = name
+    else:
+        info.pop("name", None)
+    dump_json(info, f, indent=1)
+    return {"session_id": session_id, "name": name}
 
 
 def placeholder(sample_id):

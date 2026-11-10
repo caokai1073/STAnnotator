@@ -158,13 +158,13 @@ versions the notebook gives the same clusters and labels; other versions can cha
 
 Exported {time.strftime('%Y-%m-%d %H:%M')} (STAnnotator build `{config.build()}`). This notebook needs only the
 data files and common Python packages: `numpy pandas scipy scikit-learn python-igraph pynndescent umap-learn h5py
-matplotlib{" pillow" if (meta.get("source") or {}).get("segmentation") else ""}`. The outputs below are the results at export time, so it can be read without running it; running it
+matplotlib{" pillow" if (meta.get("source") or {}).get("segmentation") else ""}`, installed by the first code cell. The outputs below are the results at export time, so it can be read without running it; running it
 from the top repeats the analysis and checks that the labels, Leiden clusters and niches come out the same.
 The annotation algorithm of the app is carried as source code in the folded cell of section 1.
 
 {knn_text}
 """))
-    nb += _package_cells(sec)
+    nb += _package_cells(sec, ["pillow"] if (meta.get("source") or {}).get("segmentation") else [])
     nb += _data_cells(s, sec)
 
     # ---- 4. annotation
@@ -279,7 +279,7 @@ pd.Series(labels).value_counts().rename_axis("cell type").to_frame("cells").head
         nb.insert(len(nb) - 1, _md(f"*This annotation was made on all {sch['joint'].get('slices', 'the')} slices of project "
                                    f"`{sch['joint'].get('project')}` together (one marker step and one model). The cell below "
                                    "replays it on this slice alone, so its clusters and some labels differ from the app's; "
-                                   "**Export > Notebook of all slices** replays it exactly.*"))
+                                   "**Export > Save project…** replays it exactly.*"))
 
     # ---- 5. spatial map
     px, py = s.cells.px.to_numpy(), s.cells.py.to_numpy()
@@ -474,8 +474,26 @@ The pseudotime uses approximate neighbors for large samples, so it can differ sl
     nb.append(_code(code, [_text(out)]))
 
 
-def _package_cells(sec):
-    """The cells that import the packages and run the app's carried modules as the small package `sa`."""
+PINNED = ("pynndescent", "numba", "igraph")   # their versions change the clusters (pinned in the app too)
+
+
+def _install_cell(extra=()):
+    """A cell that installs the packages into the notebook's Python: the app's versions of those that change results."""
+    from importlib import metadata
+    def spec(name):
+        try:
+            return f"{name}=={metadata.version(name)}" if name in PINNED else name
+        except metadata.PackageNotFoundError:
+            return name
+    pkgs = ["numpy", "pandas", "scipy", "scikit-learn", "igraph", "pynndescent", "numba", "umap-learn", "h5py",
+            "matplotlib"] + list(extra)
+    return _code("# installs the packages this notebook needs into its Python (once; nothing to do when they are there);\n"
+                 "# pynndescent, numba and igraph at the app's versions, so the clusters and labels come out the same\n"
+                 "%pip install -q " + " ".join(spec(x) for x in pkgs))
+
+
+def _package_cells(sec, extra=()):
+    """The cells that install and import the packages and run the app's carried modules as the small package `sa`."""
     out = []
     # ---- 1. code carried from the app
     srcs = _sources()
@@ -487,9 +505,11 @@ for name in ["config"] + ''' + _py(CARRIED) + ''':
     exec(compile(SOURCES[name], f"sa/{name}.py", "exec"), mod.__dict__)
     setattr(sa, name, mod)
 print("algorithm modules:", ", ".join(SOURCES))''')
-    out.append(_md(f"## {sec()}. Packages and the app's annotation algorithm\nThe folded cell holds the source of the app's "
+    out.append(_md(f"## {sec()}. Packages and the app's annotation algorithm\nThe first cell installs the Python packages "
+                  "(with pip, into the notebook's Python). The folded cell holds the source of the app's "
                   "modules used here (marker clustering, expression model, priors, regions, data readers), run as a "
                   "small package `sa`; click it to read the code."))
+    out.append(_install_cell(extra))
     out.append(_code('''
 import os
 # the approximate neighbor search runs on 8 threads, as in the app (its result depends on the thread count): numba must
@@ -825,9 +845,11 @@ places it on its image, runs the app's joint annotation on all cells together (o
 then each slice's own regions, priors, hand corrections and re-clusterings, and checks the labels slice by slice;
 then the PCA / UMAP and the niches of all slices when they were made for the project. It needs the data files and
 common Python packages (`numpy pandas scipy scikit-learn python-igraph pynndescent umap-learn h5py matplotlib`, and
-`harmonypy` when the embedding used Harmony); the app's own algorithm is carried in the folded cell of section 1.
+`harmonypy` when the embedding used Harmony), installed by the first code cell; the app's own algorithm is carried in the folded cell of section 1.
 The outputs below are the results at export time."""))
-    nb += _package_cells(sec)
+    extra = (["pillow"] if any((S[x].meta.get("source") or {}).get("segmentation") for x in order) else []) + (
+        ["harmonypy"] if os.name != "nt" and any((embedding.current(x) or {}).get("harmony") for x in order) else [])
+    nb += _package_cells(sec, extra)
     nb.append(_code("SLICES = {}   # every slice's cells, counts and results, by sample"))
     for x in order:
         k = sec()
