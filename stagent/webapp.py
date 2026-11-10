@@ -2610,8 +2610,20 @@ def steps_of(s, sample=None):
         have.append({"de": "DE genes", "deseq2": "DESeq2", "markers": "top genes", "composition": "composition",
                      "run": "signaling", "compare": "signaling"}.get(f_.stem, "trajectory" if f_.stem.startswith("trajectory") else f_.stem))
     have = list(dict.fromkeys(have))
+    # each analysis of its own (the Analyze step unfolds into them): done when its result is kept
+    done_of = {"embed": "embedding" in have, "niches": "niches" in have,
+               "compare": any(x in have for x in ("DE genes", "DESeq2", "top genes", "composition")),
+               "signal": "signaling" in have, "traj": "trajectory" in have}
+    what = {"embed": "PCA, UMAP and Leiden clusters", "niches": "places where cells of similar make-up live together",
+            "compare": "DE genes, DESeq2, top genes, composition", "signal": "ligand-receptor signaling between neighbors",
+            "traj": "spatial axes and pseudotime"}
+    got = {"compare": ", ".join(x for x in have if x in ("DE genes", "DESeq2", "top genes", "composition"))}
+    children = [{"key": k, "state": "done" if done_of[k] else "optional" if annotated else "blocked",
+                 "detail": (got.get(k) or "done") if done_of[k] else what[k] if annotated else "after annotating"}
+                for k in ("embed", "niches", "compare", "signal", "traj")]
     steps.append({"key": "analyze", "state": "done" if have else "optional" if annotated else "blocked",
-                  "detail": ", ".join(have) if have else "optional: embed, niches, compare, signal, trajectory" if annotated else "after annotating"})
+                  "detail": ", ".join(have) if have else "optional: embed, niches, compare, signal, trajectory" if annotated else "after annotating",
+                  "children": children})
     nxt = next((x["key"] for x in steps if x["state"] == "todo"), None)
     return {"sample_id": sid, "steps": steps, "next": nxt}
 

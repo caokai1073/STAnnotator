@@ -447,6 +447,11 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 #stepsList li .nm { font-weight: 600; }
 #stepsList li .dt { grid-column: 2 / 4; color: var(--muted); font-size: 12px; line-height: 1.35; }
 #stepsList li button { padding: 2px 10px; font-size: 12.5px; }
+#stepsList li .fold { display: inline-block; width: 12px; color: var(--muted); font-size: 11px; }
+#stepsList li.sub { margin-left: 22px; padding-top: 1px; padding-bottom: 1px; }
+#stepsList li.sub .nm { font-weight: 500; }
+#stepsList li.sub .mk { width: 14px; height: 14px; font-size: 9px; border: 1.5px solid var(--line); }
+#stepsList li.sub.done .mk { border: 0; }
 #stepsList li .mk { width: 18px; height: 18px; font-size: 11px; }
 #stepsList li.done .mk { background: #2e9e5b; color: #fff; }
 #stepsList li.todo .mk { border: 1.5px solid var(--accent); color: var(--accent); }
@@ -5373,8 +5378,16 @@ const STEPS = {
   annotate: ["Annotate", "Cell types from a marker list (or a reference, or a CSV of labels): Annotate tab → Markers… → Annotate. A few minutes.", ["Annotate", () => showTab("annotate")]],
   regions: ["Regions and priors", "Optional: outline tissue regions on the map (brush, polygon…), then tell the agent what holds there, e.g. “epithelial cells are only in the mucosa”.", ["Draw", () => { $("regpanel").hidden = false; $("regpanel").classList.remove("collapsed"); setTool("brush"); toast("Brush: paint a region on the map (or pick another tool in the Regions panel), then Save", 6000); }]],
   review: ["Review", "Optional: the agent checks the annotation (areas and marker genes that look wrong) and gives advice.", ["Review", () => { st.rvScope = "annotation"; openReviewChooser().catch((e) => toast(e.message, 6000)); }]],
-  analyze: ["Analyze", "Optional: embedding (PCA, UMAP), niches, DE genes and DESeq2, composition, signaling, trajectories.", ["Analyze", () => showTab("embed")]],
+  analyze: ["Analyze", "Optional: embedding (PCA, UMAP), niches, DE genes and DESeq2, composition, signaling, trajectories. Click to unfold them.", null],
+  // the analyses, under Analyze (their tab opens, as a click on it does)
+  embed: ["Embed", "PCA, UMAP and Leiden clusters of the cells (Analysis → Embed).", ["Embed", () => anTab("embed")]],
+  niches: ["Niche", "Niches: places where cells of similar make-up live together (Analysis → Niche).", ["Niche", () => anTab("niches")]],
+  compare: ["Compare", "DE genes, DESeq2 between slices or donors, top genes per group, composition (Analysis → Compare).", ["Compare", () => anTab("compare")]],
+  signal: ["Signal", "Cell-cell communication: ligand-receptor signaling between neighboring cells (Analysis → Signal).", ["Signal", () => anTab("signal")]],
+  traj: ["Trajectory", "Spatial axes and pseudotime, and the genes that change along them (Analysis → Trajectory).", ["Trajectory", () => anTab("traj")]],
 };
+const anTab = (t) => document.querySelector(`#tabs .tab[data-tab="${t}"]`).click();
+st.stepsAnalyze = (() => { try { return localStorage.getItem("stepsAnalyze") === "1"; } catch (e) { return false; } })();
 const STEP_MARK = { done: "✓", todo: "", optional: "", skipped: "–", blocked: "!", "not needed": "–" };
 let stepsTimer = 0;
 function loadStepsSoon() { clearTimeout(stepsTimer); stepsTimer = setTimeout(() => loadSteps().catch(() => {}), 300); }
@@ -5408,6 +5421,26 @@ async function loadSteps() {
     }
     const dt = Object.assign(document.createElement("span"), { className: "dt", textContent: x.detail });
     li.append(mk, nm, right, dt); box.append(li);
+    if (x.children && x.children.length) {  // Analyze: unfolds into each analysis
+      li.classList.add("group");
+      const fold = Object.assign(document.createElement("span"), { className: "fold", textContent: st.stepsAnalyze ? "▾" : "▸" });
+      nm.prepend(fold); li.title = help; li.style.cursor = "pointer";
+      li.onclick = (e) => { e.stopPropagation(); st.stepsAnalyze = !st.stepsAnalyze; try { localStorage.setItem("stepsAnalyze", st.stepsAnalyze ? "1" : "0"); } catch (err) {} loadSteps().catch(() => {}); };
+      if (st.stepsAnalyze) x.children.forEach((c) => {
+        const [cn, ch, ca] = STEPS[c.key] || [c.key, "", null];
+        const sl = document.createElement("li");
+        sl.className = `sub ${c.state === "not needed" ? "na" : c.state}`; sl.title = ch;
+        const smk = Object.assign(document.createElement("span"), { className: "mk", textContent: c.state === "done" ? "✓" : "" });
+        const snm = Object.assign(document.createElement("span"), { className: "nm", textContent: cn });
+        const sr = document.createElement("span");
+        if (ca && c.state !== "blocked") {
+          const b = Object.assign(document.createElement("button"), { textContent: c.state === "done" ? "Open" : ca[0], title: ch });
+          b.onclick = (e) => { e.stopPropagation(); ca[1](); };
+          sr.append(b);
+        }
+        sl.append(smk, snm, sr, Object.assign(document.createElement("span"), { className: "dt", textContent: c.detail })); box.append(sl);
+      });
+    }
   });
   const nd = r.steps.filter((x) => x.state === "done").length, nx = r.steps.find((x) => x.key === r.next);
   $("stepsSum").textContent = nx ? `next: ${STEPS[nx.key][0]}` : `${nd} done · the rest is optional`;

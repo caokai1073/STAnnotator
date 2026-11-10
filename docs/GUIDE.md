@@ -396,7 +396,8 @@ The app's window, or the web viewer (`.venv/bin/stagent viewer`, then http://loc
   - **Import**, **Export** and **Local** / **Remote** (where the data is: this computer or a server);
   - **Steps** (a panel at the map's top right; the panels opened there go under it): the usual flow for the open
     sample, and where it stands: 1 Import, 2 Check registration, 3 Filter
-    cells and genes, 4 Annotate, 5 Regions and priors, 6 Review, 7 Analyze. Each step shows what was done
+    cells and genes, 4 Annotate, 5 Regions and priors, 6 Review, 7 Analyze (a click unfolds it into Embed, Niche, Compare,
+    Signal and Trajectory, each done or not with a button to its tab). Each step shows what was done
     (✓ and a line such as "5,799 cells removed" or "checked 2026-11-09"), or a button that goes where it is done; the
     next step stands out. Steps 5–7 are optional; a step the sample does not need is grayed (no image: no
     registration; Visium and Stereo-seq are placed by their software). An H&E only (no cells) shows no steps. A
