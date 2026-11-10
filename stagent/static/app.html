@@ -943,7 +943,6 @@ T and NK cells: CD3E|NKG7+ EPCAM-
   <div class="dh"><b id="rnTitle">Rename sample</b><span class="spacer"></span><span class="hint" id="rnId"></span></div>
   <div style="padding:12px 14px;display:flex;flex-direction:column;gap:10px">
     <label class="f"><span id="rnLabel">Sample name</span><input type="text" id="rnName" maxlength="80" autocomplete="off"></label>
-    <label class="f" id="rnProjWrap" hidden>Project name<input type="text" id="rnProject" maxlength="80" autocomplete="off"></label>
     <div class="hint" id="rnHint"></div>
     <div class="row"><span class="err" id="rnErr"></span><span class="spacer"></span>
       <button id="rnCancel">Cancel</button><button id="rnSave" class="primary">Save</button></div>
@@ -6119,16 +6118,14 @@ $("sampleRename").onclick = () => {
   $("rnTitle").textContent = p ? "Rename slice" : "Rename sample";
   $("rnLabel").textContent = p ? "Slice name" : "Sample name";
   $("rnName").value = sampleName(s); $("rnName").placeholder = p ? "" : s.sample_id;
-  $("rnProjWrap").hidden = !p; if (p) $("rnProject").value = p.name;
   $("rnId").textContent = `id ${s.sample_id}`;
   $("rnHint").textContent = "Only the name shown changes: the id, the files and the annotations stay." + (p ? "" : " Leave it empty for the id.");
   $("rnErr").textContent = "";
   $("rnDlg").showModal(); $("rnName").focus(); $("rnName").select();
 };
 $("rnSave").onclick = async () => {
-  const s = st.sample, p = projectOf(s.sample_id);
+  const s = st.sample;
   const body = { name: $("rnName").value.trim() };
-  if (p) body.project_name = $("rnProject").value.trim();
   try { await post(`/api/sample/${s.sample_id}/rename`, body); } catch (e) { $("rnErr").textContent = e.message; return; }
   $("rnDlg").close();
   st.samples = await api("/api/samples"); st.projects = await api("/api/projects").catch(() => []);
@@ -6137,7 +6134,7 @@ $("rnSave").onclick = async () => {
   toast("Renamed");
 };
 $("rnCancel").onclick = () => $("rnDlg").close();
-["rnName", "rnProject"].forEach((id) => $(id).addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("rnSave").click(); } }));
+["rnName"].forEach((id) => $(id).addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("rnSave").click(); } }));
 // ---------------- an annotation as one file: save and load (bundle.py) ----------------
 $("anSave").onclick = async () => {
   if (!st.sid) return;

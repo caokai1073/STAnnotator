@@ -431,7 +431,7 @@ The app's window, or the web viewer (`.venv/bin/stagent viewer`, then http://loc
 ### Samples (Data tab)
 
 - **Pick a sample**; earlier annotations are under **Annotation**.
-- **Rename** changes the name the app shows (a slice: its name in the project, and the project's name); the id, files
+- **Rename** changes the name the app shows (a slice: its name in the project); the id, files
   and annotations stay.
 - **Overview of all samples** shows every sample side by side, each over its image (the **image** box) and colored the
   same way: cell type, lineage, Leiden clusters, niche or region (from the annotation open, else each sample's latest
