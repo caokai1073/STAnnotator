@@ -355,7 +355,7 @@ def load(organ):
     import pickle, sklearn
     f = _path(organ)
     if not f.exists():
-        raise ValueError(f"no model for {organ}: train one (Outline with Agent > Train a model) or load a model file")
+        raise ValueError(f"no model for {organ}: train one (Outline regions > Train a model) or load a model file")
     mt = f.stat().st_mtime_ns
     if f in _loaded and _loaded[f][0] == mt:
         return _loaded[f][1], _loaded[f][2]
@@ -462,7 +462,7 @@ def predict(sample_id, organ, progress=None):
     if kind != "H&E":
         raise ValueError("the image is not an H&E")
     f = _cache(sample_id, organ)
-    busy = f.with_suffix(".computing")  # the app may have started it (Outline with Agent) for the agent's call
+    busy = f.with_suffix(".computing")  # the app may have started it (Outline regions > Ask the agent) for the agent's call
     end = time.time() + 900
     while busy.exists() and time.time() - busy.stat().st_mtime < 900 and time.time() < end and not f.exists():
         time.sleep(1)

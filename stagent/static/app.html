@@ -762,7 +762,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
         <label id="toolSizeBox" title="Brush and wand size, in screen pixels (the area it covers follows the zoom)"><input type="range" id="toolSize" min="6" max="240" value="40"><span id="toolSizeV">40</span></label>
         <label id="wandTolBox" title="Wand: how different a color may be from the one under the center of the brush">± <input type="range" id="wandTol" min="4" max="90" value="28"></label>
       </div>
-      <div id="heAskRow" hidden><button id="heAsk" class="primary" title="Tell the agent the organ and the regions to outline on this H&amp;E">Outline with Agent…</button></div>
+      <div id="heAskRow" hidden><button id="heAsk" class="primary" title="Outline tissue regions on this H&amp;E: ask the agent, or train and manage organ models">Outline regions…</button></div>
       <div class="hint" id="shapebar" hidden><span id="shapeinfo"></span>
         <div class="row"><button id="shapeSave" class="primary" title="Save the shape (Enter); a new one is named first">Save</button>
           <button id="shapeUndo" title="Take back the last stroke or step (Backspace)">Undo</button>
@@ -872,8 +872,8 @@ T and NK cells: CD3E|NKG7+ EPCAM-
   </div>
 </dialog>
 <dialog id="heDlg" style="width:min(640px,95vw)">
-  <div class="dh"><svg class="ic" aria-hidden="true"><use href="#ic-sparkle"/></svg><b>Outline with Agent</b><span class="spacer"></span>
-    <div class="seg" id="heTabs"><button data-t="outline" class="on">Outline regions</button><button data-t="train">Train a model</button><button data-t="models">Models</button></div></div>
+  <div class="dh"><svg class="ic" aria-hidden="true"><use href="#ic-sparkle"/></svg><b>Outline regions</b><span class="spacer"></span>
+    <div class="seg" id="heTabs"><button data-t="outline" class="on">Ask the agent</button><button data-t="train">Train a model</button><button data-t="models">Models</button></div></div>
   <div class="imbody" style="gap:10px">
     <div id="heOrganRow">
       <label class="herow"><b>Organ</b><select id="heOrgan"></select></label>
@@ -1790,7 +1790,7 @@ function imageOnlyUI() {
   ["tools", "legend"].forEach((id) => { if (on) $(id).hidden = true; });
   if (!on) $("tools").hidden = false;
   $("session").disabled = on;
-  heAskSync();  // Outline with Agent… (every sample whose H&E is shown)
+  heAskSync();  // Outline regions… (every sample whose H&E is shown)
   if (on) {
     ["qfBtn", "sessDel", "anSave", "anLoad", "report", "plaus"].forEach((b) => ($(b).disabled = true));
     $("export").disabled = !st.sid;
@@ -4426,7 +4426,7 @@ async function alignWith(ids) {
   } catch (e) { toast(e.message, 6000); }
 }
 $("alignNow").onclick = askAlign;
-// ---- Outline with Agent: the organ and the regions to outline (the request is written for Claude Code); the organ
+// ---- Outline regions: the organ and the regions to outline (the request is written for Claude Code); the organ
 // models trained from H&E + GeoJSON pairs (organmodel.py), kept in the data folder with all organs together ----
 const HE = { organs: [], other: [], tab: "outline", pairs: [], models: [] };
 function heAskSync() {  // for every sample whose H&E is shown (an H&E only too)
@@ -4768,8 +4768,8 @@ const HELP = `
     draw and name regions before the expression data exist.<ul>
     <li>The pixel size is read from the image, or typed in; without it no µm are shown (areas in pixels).</li>
     <li>Only the Data tab and the regions apply; the regions panel shows each outline's area.</li>
-    <li><b>Outline with Agent…</b> (Regions panel, every sample with an H&amp;E): choose the organ and tick the regions
-      to draw (or type others); the request goes to the agent.</li>
+    <li><b>Outline regions…</b> (Regions panel, every sample with an H&amp;E), <b>Ask the agent</b>: choose the organ and
+      tick the regions to draw (or type others); the request goes to the agent.</li>
     <li><b>Train a model</b> (same window): H&amp;E + GeoJSON pairs a pathologist outlined teach the app an organ's
       regions; the model is kept in the data folder's organ_models (all organs, kept across updates) and the agent uses
       it for that organ. <b>Models</b>: export, load or delete them.</li>

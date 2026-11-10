@@ -2679,8 +2679,8 @@ async def api_claude_align(req: Request):
     return _json({"claude_code": claudelink.open_claude_code(sample, b.get("session"), text, send_if_open=True)})
 
 
-HE_REGIONS = ("Outline these regions on the H&E of sample {sample} (an H&E only, no cells; I chose them in 'Outline with "
-              "Agent'): {regions}. The organ is {organ}. Call segment_he(organ={organ_arg}) once, match its classes to each "
+HE_REGIONS = ("Outline these regions on the H&E of sample {sample} (I chose them in 'Outline regions'): "
+              "{regions}. The organ is {organ}. Call segment_he(organ={organ_arg}) once, match its classes to each "
               "region's description in the organ's 'Compartments to draw', and propose each region with propose_he_region "
               "(within a box for one section when the slide holds several; check the outline on show_he before you "
               "propose it). Each comes to me for review. Do not add regions I did not list.{notes} Then tell me in one line "
@@ -2688,7 +2688,7 @@ HE_REGIONS = ("Outline these regions on the H&E of sample {sample} (an H&E only,
 
 
 def api_he_organs(req):
-    """The organs of the tissue priors with the compartments each can draw (for 'Outline with Agent'), and the organ
+    """The organs of the tissue priors with the compartments each can draw (for 'Outline regions'), and the organ
     given for this sample before."""
     from . import hetissue
     organs = hetissue.tissue_priors()["organs"]
