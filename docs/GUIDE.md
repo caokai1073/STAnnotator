@@ -370,7 +370,8 @@ The app's window, or the web viewer (`.venv/bin/stagent viewer`, then http://loc
   - at the top: **?** (help), the bug icon (report a bug) and **›** (folds the panel to the right edge for a bigger
     map; also `t`; **‹** brings it back);
   - **Import**, **Export** and **Local** / **Remote** (where the data is: this computer or a server);
-  - **Steps**: the usual flow for the open sample, and where it stands: 1 Import, 2 Check registration, 3 Filter
+  - **Steps** (a panel at the map's top right; the panels opened there go under it): the usual flow for the open
+    sample, and where it stands: 1 Import, 2 Check registration, 3 Filter
     cells and genes, 4 Annotate, 5 Regions and priors, 6 Agent review, 7 Analyze. Each step shows what was done
     (✓ and a line such as "5,799 cells removed" or "checked 2026-11-09"), or a button that goes where it is done; the
     next step stands out. Steps 5–7 are optional; a step the sample does not need is grayed (no image: no
@@ -712,7 +713,7 @@ The steps of the **Analysis** tab after Annotate. Each has **Ask Agent** to inte
 - **Run PCA + UMAP** computes a PCA, a UMAP and Leiden clusters of the sample from expression only (shared by all its
   annotations). About 40–50 s for 356,629 cells: the kNN graph comes from the fast GPU / pynndescent search and is
   handed to UMAP, which starts from PC1/PC2 and runs on all cores.
-- **Show UMAP** opens a window on the right (UMAP or PC1/PC2, colored as the map, by cell type, Leiden cluster or
+- **Show UMAP** shows it under the button, in the panel (UMAP or PC1/PC2, colored as the map, by cell type, Leiden cluster or
   niche).
 - **Select** (or Shift-drag) draws around cells: they light up on the spatial map and the rest turn gray; **Show on
   map** zooms there.

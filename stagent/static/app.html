@@ -226,7 +226,7 @@ body.desktop #side { display: none; }
 #maptop { position: absolute; top: 10px; left: 10px; right: 10px; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px;
           align-items: flex-start; pointer-events: none; }
 #maptop > .float { position: static; pointer-events: auto; }
-#viewerwrap.em #maptop { right: 540px; } #viewerwrap.pl #maptop { right: 360px; }
+#viewerwrap.pl #maptop { right: 360px !important; }
 #tools, #acts { padding: 6px 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 #tools input[type=range] { width: 80px; }
 #tools #mode { width: 132px; }
@@ -352,16 +352,17 @@ header .br { flex: 1 1 100%; height: 0; }
 .pla .l3 { display: flex; gap: 4px; margin-top: 3px; flex-wrap: wrap; }
 .pla .l3 button { padding: 1px 7px; font-size: 11.5px; }
 #viewerwrap.pl #cellcard { right: 360px; }
-#empanel { top: 10px; right: 10px; width: 520px; display: flex; flex-direction: column; }
-#empanel .lh { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 12px; }
+#empanel { position: relative; margin-top: 10px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  display: flex; flex-direction: column; background: var(--panel); }
+#empanel[hidden] { display: none; }
+#empanel .lh { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--line); font-size: 12px; flex-wrap: wrap; }
 #empanel .lh select { padding: 2px 6px; font-size: 12px; flex: 0 1 auto; min-width: 0; }  /* natural width, shrinking if needed; × stays inside */
 #empanel .lh > * { flex-shrink: 0; }
 .emtools { display: flex; align-items: center; gap: 6px; padding: 6px 10px; font-size: 12px; }
 .emtools button { padding: 2px 9px; font-size: 12px; }
-#emcanvas { width: 520px; height: 380px; display: block; background: var(--panel); cursor: grab; touch-action: none; }
+#emcanvas { width: 100%; display: block; background: var(--panel); cursor: grab; touch-action: none; }  /* size: emResize() */
 #emcanvas.lasso { cursor: crosshair; }
-#viewerwrap.em #plpanel { top: 520px; max-height: calc(100% - 530px); }
-#viewerwrap.em #cellcard { right: 540px; }
+
 .cellmark { width: 26px; height: 26px; border: 3px solid #00e6ff; border-radius: 50%; box-shadow: 0 0 0 2px rgba(0,0,0,.5); }
 #side { border-left: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
 #side .sh { padding: 10px 14px; border-bottom: 1px solid var(--line); font-weight: 600; display: flex; align-items: center; }
@@ -412,7 +413,11 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .clcard pre { font: 11.5px ui-monospace, Menlo, monospace; white-space: pre-wrap; margin: 0; color: var(--muted); }
 .claudebox { display: flex; flex-direction: column; gap: 8px; padding: 4px 2px; }
 /* the steps of the usual flow, at the top of the panel: where the sample stands, and the next thing to do */
-#steps { margin: 6px 0 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); font-size: 12px; }
+#steps { top: 10px; right: 10px; width: 300px; z-index: 6; font-size: 12px; max-height: calc(100% - 210px); overflow: auto; }
+/* the panels at the map's top right go under the steps; the map's toolbar leaves them room */
+#viewerwrap.st #maptop { right: 320px; }
+#viewerwrap.st #plpanel { top: calc(10px + var(--stepsH, 0px)); max-height: calc(100% - 210px - var(--stepsH, 0px)); }
+#viewerwrap.st #cellcard { top: calc(10px + var(--stepsH, 0px)); }
 #steps .sh { display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; user-select: none; }
 #steps .sh #stepsSum { color: var(--muted); }
 #steps.folded #stepsList { display: none; }
@@ -450,10 +455,6 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <button id="export" disabled title="Save the cell table (CSV), the registration, or the analysis as a Jupyter notebook">Export</button>
     <button id="connBtn" hidden title="Work on this computer or on a server over SSH">Local</button></div>
     <span class="folder">Data folder <span class="path" id="path">–</span></span>
-  </div>
-  <div id="steps" hidden>
-    <div class="sh" id="stepsHead" title="Click to fold or unfold the steps"><b>Steps</b><span id="stepsSum"></span><span class="spacer"></span><span id="stepsFold">▾</span></div>
-    <ol id="stepsList"></ol>
   </div>
   <div class="tabs main" id="mainTabs" role="tablist">
     <button class="tab" data-main="data" role="tab" title="The sample: import, its cells and image, its annotations">Data</button><button class="tab" data-main="analysis" role="tab" title="Annotate, Embed, Niche, Compare, Signal, Trajectory">Analysis</button></div>
@@ -513,8 +514,23 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     </div></details>
     <label class="switch" id="eHarmonyWrap" hidden title="With all slices together: remove slice-to-slice differences (Harmony) from the PCA before neighbors, Leiden and UMAP"><input type="checkbox" id="eHarmony" checked>
       <span>Harmony<small>remove slice-to-slice differences before the clusters and UMAP</small></span></label>
-    <div class="act2"><button id="eShow" disabled title="Show the embedding in a window on the right">Show UMAP</button></div>
+    <div class="act2"><button id="eShow" disabled title="Show the embedding under this button">Show UMAP</button></div>
     <button id="eRun" class="primary main" disabled title="Compute PCA, UMAP and Leiden clusters of this sample (expression only; about a minute)">Run PCA + UMAP</button>
+      <div id="empanel" hidden>
+        <div class="lh"><b>Embedding</b>
+          <select id="emKind" title="Which embedding"><option value="umap">UMAP</option><option value="pca">PCA (PC1, PC2)</option></select>
+          <select id="emScope" hidden title="Cells of this slice, or of all slices of the project"><option value="slice">this slice</option><option value="all">all slices</option></select>
+          <select id="emColor" title="Colors of the points"><option value="map">as the map</option><option value="type">cell type</option>
+            <option value="leiden">Leiden clusters</option><option value="niche">niche</option><option value="slice">slice</option></select>
+          <span class="spacer"></span><button id="emClose" style="padding:1px 7px;font-size:11px" title="Close">×</button></div>
+        <div class="emtools">
+          <button id="emLasso" title="Draw around cells to select them (or hold Shift and drag); they light up on the map">Select</button>
+          <button id="emClear" disabled title="Clear the selection">Clear</button>
+          <button id="emZoom" disabled title="Zoom the map to the selected cells">Show on map</button>
+          <span id="emInfo" class="hint"></span></div>
+        <canvas id="emcanvas"></canvas>
+        <div class="hint" style="padding:4px 10px 6px">Scroll to zoom, drag to move; double-click to reset.</div>
+      </div>
   </div>
   <div class="pane" data-pane="niches">
     <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-grid"/></svg><div><div id="nicheinfo">No niches yet</div>
@@ -674,6 +690,10 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <div class="items" id="lgitems"></div>
     </div>
     <div id="cellcard" class="float"></div>
+    <div id="steps" class="float" hidden>
+      <div class="sh" id="stepsHead" title="Click to fold or unfold the steps"><b>Steps</b><span id="stepsSum"></span><span class="spacer"></span><span id="stepsFold">▾</span></div>
+      <ol id="stepsList"></ol>
+    </div>
     <div id="plpanel" class="float" hidden>
       <div class="lh"><b id="pltitle">Review</b><select id="plScope" title="Which part of the analysis the panel shows"></select><span class="spacer"></span>
         <button id="plclose" style="padding:1px 7px;font-size:11px" title="Close">×</button></div>
@@ -683,21 +703,6 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <div id="regwrap"><canvas id="regcanvas"></canvas></div>
     <svg id="regsvg"></svg>
     <div id="alignbar" hidden><span id="alignmsg"></span><button id="alignNow">Align with Agent</button></div>
-    <div id="empanel" class="float" hidden>
-      <div class="lh"><b>Embedding</b>
-        <select id="emKind" title="Which embedding"><option value="umap">UMAP</option><option value="pca">PCA (PC1, PC2)</option></select>
-        <select id="emScope" hidden title="Cells of this slice, or of all slices of the project"><option value="slice">this slice</option><option value="all">all slices</option></select>
-        <select id="emColor" title="Colors of the points"><option value="map">as the map</option><option value="type">cell type</option>
-          <option value="leiden">Leiden clusters</option><option value="niche">niche</option><option value="slice">slice</option></select>
-        <span class="spacer"></span><button id="emClose" style="padding:1px 7px;font-size:11px" title="Close">×</button></div>
-      <div class="emtools">
-        <button id="emLasso" title="Draw around cells to select them (or hold Shift and drag); they light up on the map">Select</button>
-        <button id="emClear" disabled title="Clear the selection">Clear</button>
-        <button id="emZoom" disabled title="Zoom the map to the selected cells">Show on map</button>
-        <span id="emInfo" class="hint"></span></div>
-      <canvas id="emcanvas"></canvas>
-      <div class="hint" style="padding:4px 10px 6px">Scroll to zoom, drag to move; double-click to reset.</div>
-    </div>
     <div id="regpanel" class="float" hidden>
       <div class="lh"><b>Regions</b><span class="spacer"></span>
         <label class="hint" title="Show region outlines"><input type="checkbox" id="outlines" checked> outlines</label>
@@ -1727,7 +1732,18 @@ async function restoreView() {
 }
 
 // ---------------- embedding (PCA, UMAP, Leiden) and selecting cells on it ----------------
-const EMW = 520, EMH = 380;  // the embedding canvas, CSS pixels (as #emcanvas)
+let EMW = 380, EMH = 300;  // the embedding canvas, CSS pixels: as wide as the panel (emResize)
+function emResize() {  // the canvas follows the panel's width (the Embed pane); redrawn at the new size
+  const w = Math.floor($("empanel").clientWidth);
+  if (!w || $("empanel").hidden) return false;
+  const h = Math.round(w * 0.78), c = $("emcanvas"), dpr = window.devicePixelRatio || 1;
+  if (w === EMW && h === EMH && c.width === Math.round(w * dpr)) return false;
+  EMW = w; EMH = h;
+  c.style.height = `${h}px`; c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+  if (EM.overlay) { EM.overlay.remove(); EM.overlay = null; }  // made again at the new size
+  return true;
+}
+window.addEventListener("resize", () => { if (emResize()) drawEM(); });
 const EM = { gl: null, n: 0, xy: null, colors: {}, colKey: null, view: { z: 1, x: 0, y: 0 }, lasso: false, path: null };
 function withSelection(arr) {  // plus st.paint: cells drawn in a color of their own (e.g. the region they would join)
   let out = withSel(arr, st.sel);
@@ -1813,7 +1829,7 @@ $("eRun").onclick = async () => {
 $("eShow").onclick = () => ($("empanel").hidden ? openEmbedding() : closeEmbedding());
 function initEM() {
   const c = $("emcanvas"), dpr = window.devicePixelRatio || 1;
-  c.width = EMW * dpr; c.height = EMH * dpr;
+  c.width = Math.round(EMW * dpr); c.height = Math.round(EMH * dpr);
   const gl = c.getContext("webgl", { premultipliedAlpha: false, antialias: false });
   if (!gl) return false;
   const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
@@ -1832,11 +1848,12 @@ function initEM() {
 async function openEmbedding() {
   if (!st.emb) return;
   if (!EM.gl && !initEM()) { toast("WebGL is not available for the embedding window", 5000); return; }
-  $("empanel").hidden = false; $("viewerwrap").classList.add("em"); setLabel($("eShow"), "Hide UMAP");
+  $("empanel").hidden = false; setLabel($("eShow"), "Hide UMAP");
+  emResize();
   await loadEMData(); drawEM();
 }
 function closeEmbedding() {
-  $("empanel").hidden = true; $("viewerwrap").classList.remove("em"); setLabel($("eShow"), "Show UMAP");
+  $("empanel").hidden = true; setLabel($("eShow"), "Show UMAP");
 }
 $("emClose").onclick = closeEmbedding;
 const PALETTE = ["#f58231", "#4363d8", "#3cb44b", "#f032e6", "#42d4f4", "#9a6324", "#911eb4", "#e6194b", "#469990",
@@ -4371,7 +4388,7 @@ $("importBtn").onclick = openImport;
 // ---------------- help and about ----------------
 const HELP = `
 <h3>Steps</h3><ul>
-<li>The list at the top of the panel is the usual flow for the open sample: <b>Import</b> → <b>Check registration</b>
+<li>The list at the map's top right is the usual flow for the open sample: <b>Import</b> → <b>Check registration</b>
   → <b>Filter cells and genes</b> → <b>Annotate</b> → (optional) <b>Regions and priors</b>, <b>Agent review</b>,
   <b>Analyze</b>.</li>
 <li>✓ marks what is done (with what came of it); the next step stands out, with a button that goes where it is done.
@@ -4495,7 +4512,7 @@ const HELP = `
 <h3>Embedding</h3><ul>
 <li><b>Run PCA + UMAP</b> computes PCA, UMAP and Leiden clusters from the expression.<ul>
   <li>About a minute; shared by all annotations of the sample.</li></ul></li>
-<li><b>Show UMAP</b> opens the window on the right.<ul>
+<li><b>Show UMAP</b> shows it under the button, in the panel.<ul>
   <li>UMAP or PCA, colored as the map, by cell type, Leiden cluster or niche.</li>
   <li>Scroll to zoom, drag to move, double-click to reset.</li></ul></li>
 <li><b>Select</b> (or hold <kbd>Shift</kbd> and drag) and draw around cells:<ul>
@@ -5303,10 +5320,10 @@ const STEP_MARK = { done: "✓", todo: "", optional: "", skipped: "–", blocked
 let stepsTimer = 0;
 function loadStepsSoon() { clearTimeout(stepsTimer); stepsTimer = setTimeout(() => loadSteps().catch(() => {}), 300); }
 async function loadSteps() {
-  if (!st.sid) { $("steps").hidden = true; return; }
+  if (!st.sid) { $("steps").hidden = true; stepsRoom(); return; }
   const sid = st.sid, r = await api(`/api/s/${sid}/steps`);
   if (sid !== st.sid) return;
-  $("steps").hidden = false;
+  $("steps").hidden = false; stepsRoom();
   const box = $("stepsList"); box.textContent = "";
   r.steps.forEach((x, i) => {
     const [name, help, act] = STEPS[x.key] || [x.key, "", null];
@@ -5329,6 +5346,12 @@ async function loadSteps() {
   const nd = r.steps.filter((x) => x.state === "done").length, nx = r.steps.find((x) => x.key === r.next);
   $("stepsSum").textContent = nx ? `next: ${STEPS[nx.key][0]}` : `${nd} done · the rest is optional`;
 }
+function stepsRoom() {  // how much of the map's top right the steps take, for the panels placed under them
+  const el = $("steps"), on = !el.hidden;
+  $("viewerwrap").classList.toggle("st", on);
+  $("viewerwrap").style.setProperty("--stepsH", on ? `${el.offsetHeight + 8}px` : "0px");
+}
+if (window.ResizeObserver) new ResizeObserver(stepsRoom).observe($("steps"));
 $("stepsHead").onclick = () => { $("steps").classList.toggle("folded"); try { localStorage.setItem("stepsFolded", $("steps").classList.contains("folded") ? "1" : "0"); } catch (e) {} };
 try { if (localStorage.getItem("stepsFolded") === "1") $("steps").classList.add("folded"); } catch (e) {}
 setInterval(() => { if (st.sid && !document.hidden) loadSteps().catch(() => {}); }, 20000);  // reviews and checks end in the background
@@ -7063,6 +7086,7 @@ function sampleInfo() {  // the Data tab's card: what the open sample is
 // step last used there
 const ANALYSIS_TABS = ["annotate", "embed", "niches", "compare", "signal", "traj"];
 function showTab(name) {
+  if (name === "embed") setTimeout(() => { if (emResize()) drawEM(); }, 0);
   document.querySelectorAll("#tabs .tab").forEach((t) => { t.classList.toggle("on", t.dataset.tab === name); t.setAttribute("aria-selected", t.dataset.tab === name); });
   document.querySelectorAll("header .pane").forEach((p) => p.classList.toggle("on", p.dataset.pane === name));
   const main = name === "data" ? "data" : "analysis";
