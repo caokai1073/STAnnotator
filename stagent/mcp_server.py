@@ -136,14 +136,18 @@ Reviewing an annotation ("does this make sense?", "check my annotation", "review
 
 Reviewing (Review: the user picks one part of the analysis; or when asked what you think of it)
 - Review only the part asked for, as a pathologist and a single-cell analyst together. Gather the evidence:
-  annotation: sample_context, type_confusion, type_structure (large or suspicious types), review_markers,
-    qc_overview, check_registration; categories taxonomy (types to merge, split or add, citing sub-cluster sizes),
+  annotation and organization both start with sample_context and tissue_priors(organ) (the app's literature priors;
+    organ: sample_context's organ; none: the organ the cell types make clear, said so, or no priors, said so): weigh
+    the findings against its rules and their exceptions and name the rule (e.g. COL-01) in the advice it supports;
+  annotation: type_confusion, type_structure (large or suspicious types), review_markers, spatial_profile (where
+    each type lies, against the rules), qc_overview, check_registration; categories taxonomy (types to merge, split or add, citing sub-cluster sizes),
     context (site and disease and what they imply: inflamed IBD neutrophils, CXCL1+ colonocytes, plasma cell shifts;
     ileum vs colon Paneth cells), qc (registration, low-quality tiles, spillover, segmentation; only real issues);
   organization: show_tissue_overview, preview_compartment, spatial_profile, list_regions, composition(rows="region"),
     check_registration_map (crypts, vessels and similar structures first; judge each area on its close-up);
     compartments (outlines that fit the H&E, proposed as regions with the prior that would use them; check every
-    outline on the H&E), organization (expected gradients and neighbors: stem cells at the crypt base, B cells in
+    outline on the H&E; the drawn regions against the priors' Compartments to draw: missing ones, and names other
+    than those the rules use, since a region rule applies only to a region of its name), organization (expected gradients and neighbors: stem cells at the crypt base, B cells in
     follicles, ICC between muscle layers, found or contradicted), registration (areas whose cells really sit off
     their nuclei: the local correction, action {"kind": "registration", "mode": "local"});
   embedding: embedding_facts, show_embedding (by cell type, leiden, slice); clusters (mixed clusters, types split
@@ -1251,7 +1255,9 @@ def record_review(areas: Optional[list[dict]] = None, marker_checks: Optional[li
 @mcp.tool()
 def sample_context() -> str:
     """What the sample is (description, panel size, image), the annotation method, and its lineage and type
-    composition: the start of a high-level review (is this composition plausible for the tissue, site and disease?)."""
+    composition: the start of a high-level review (is this composition plausible for the tissue, site and disease?).
+    organ: the tissue's organ for tissue_priors (given earlier, from the built-in marker list the cell types come
+    from, or named in the sample's name or description), with the evidence; None when nothing names it."""
     from . import insights
     return _j(insights.sample_context(_s()))
 
@@ -1327,8 +1333,9 @@ def tissue_priors(organ: Optional[str] = None) -> str:
     """The app's literature-based tissue priors (data/priors/tissue_priors.md) of an organ: its compartments to draw
     with how each looks on the H&E, and spatial priors (where each cell type lives, as rules of the constraint
     language, with exceptions and references). Without organ: the organs covered and how to read a rule. Use it to
-    outline compartments on the H&E (segment_he, propose_he_region) and to suggest priors (preview_constraint),
-    always with the user's agreement."""
+    outline compartments on the H&E (segment_he, propose_he_region), to review an annotation and its regions
+    against the rules (name the rule, e.g. COL-01, in the advice) and to suggest priors (preview_constraint),
+    always with the user's agreement. sample_context gives the sample's organ when something names it."""
     from . import hetissue
     return _j(hetissue.tissue_priors(organ))
 

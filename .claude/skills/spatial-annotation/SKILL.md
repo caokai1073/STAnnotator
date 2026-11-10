@@ -107,8 +107,11 @@ apply here, the region assignment is wrong, a technical artifact, or a cell stat
   `preview_recluster`. Once a suggested region exists, preview an exclude prior on it (or `label_cells` with
   `only_types` when the user names the target type) and apply it after a go-ahead.
 - Agent Review (the user picks one part; or when asked what you think of it): review only that part.
-  annotation: `sample_context`, `type_confusion`, `type_structure`, `review_markers`, `qc_overview`,
-  `check_registration`; organization: `show_tissue_overview`, `preview_compartment` (check outlines on the H&E),
+  annotation: `sample_context`, `tissue_priors(organ)` (organ from `sample_context`), `type_confusion`,
+  `type_structure`, `review_markers`, `qc_overview`, `spatial_profile`, `check_registration`: check where types lie
+  against the priors' rules, weigh their exceptions, name the rule (e.g. COL-01) in the advice; organization:
+  `sample_context`, `tissue_priors(organ)` (drawn regions against its Compartments to draw, region names as the
+  rules use them), `show_tissue_overview`, `preview_compartment` (check outlines on the H&E),
   `spatial_profile`, `composition(rows="region")`; embedding: `embedding_facts`, `show_embedding`; niches:
   `niche_summary`, `show_niches`, `group_markers(by="niche")`; compare / signaling: `recent_analyses`, then rerun them.
 - Review your own advice before the user sees it: `draft_advice(scope, items)`, then check every draft as a skeptical

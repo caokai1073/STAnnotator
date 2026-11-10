@@ -622,13 +622,23 @@ def api_claude_status(req):
 REVIEW_REQUEST = ("Check the review candidates of version {v} (I clicked Review: Annotation): look at every "
                   "candidate area on the H&E with show_area and judge every marker check, then record each verdict "
                   "with record_review, keeping only real annotation problems.")
+PRIORS_READ = ("tissue_priors(organ) (the app's literature priors of the tissue; organ: sample_context's organ, "
+               "and when it gives none but the cell types make the tissue clear, that organ, said so; else no priors, "
+               "said so)")
 SCOPE_REQUEST = {
-    "annotation": ("review the cell types of version {v}: gather sample_context, type_confusion, type_structure, "
-                   "review_markers, qc_overview and check_registration; advice in the categories taxonomy, context, qc"),
-    "organization": ("review the spatial organization of version {v}: gather show_tissue_overview, preview_compartment, "
+    "annotation": ("review the cell types of version {v}: gather sample_context, " + PRIORS_READ + ", type_confusion, "
+                   "type_structure, review_markers, qc_overview, spatial_profile and check_registration; check where "
+                   "the cell types lie against the priors' rules (e.g. epithelial cells outside the mucosa or deep in "
+                   "the muscle), weigh each rule's exceptions (disease, the site) and name the rule (e.g. COL-01) in "
+                   "the advice it supports; advice in the categories taxonomy, context, qc"),
+    "organization": ("review the spatial organization of version {v}: gather sample_context, " + PRIORS_READ + ", "
+                     "show_tissue_overview, preview_compartment, "
                      "spatial_profile, list_regions and composition(rows='region'), and check_registration_map (the cells "
                      "on their nuclei over all the tissue, crypts, vessels and similar structures first: look at its "
-                     "close-ups); advice in the categories compartments (outlines checked on the H&E), organization, and "
+                     "close-ups); compare the drawn regions with the priors' Compartments to draw (one missing, an "
+                     "outline that does not match how the compartment looks on the H&E, a name other than the one the "
+                     "rules use: a region rule applies only to a region of its name) and the region make-up with the "
+                     "priors' rules (name the rule); advice in the categories compartments (outlines checked on the H&E), organization, and "
                      "registration (only when areas really sit off their nuclei: the local correction)"),
     "embedding": ("review the PCA + UMAP and its Leiden clusters: gather embedding_facts and show_embedding (by cell "
                   "type, leiden and, with several slices, slice); advice in the categories clusters, integration, "

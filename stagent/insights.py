@@ -17,7 +17,7 @@ import re
 import numpy as np, pandas as pd
 from scipy import ndimage
 from scipy.spatial import cKDTree
-from . import plausibility, markers, model, render
+from . import plausibility, markers, model, render, hetissue
 
 FINE_UM = 10.0   # raster of compartment outlines
 CLOSE_UM = 40.0  # gaps between a compartment's cells up to about this wide are closed
@@ -215,7 +215,8 @@ def sample_context(s, version=None):
             "lineages": pd.Series(lin).value_counts(normalize=True).round(3).to_dict(),
             "top_types": pd.Series(types).value_counts(normalize=True).head(15).round(3).to_dict(),
             "regions_drawn": s.region_names(version),
-            "source": s.meta.get("source", {}).get("kind")}
+            "source": s.meta.get("source", {}).get("kind"),
+            "organ": hetissue.guess_organ(s)}   # for tissue_priors(organ)
 
 
 # ---------------- QC ----------------

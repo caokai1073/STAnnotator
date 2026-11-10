@@ -179,6 +179,59 @@ def sample_organ(sample_id):
         return None
 
 
+# words that name an organ in a sample's name or description, by built-in marker list
+ORGAN_WORDS = {"colon": ["colon", "colorectal", "rectum", "rectal", "large intestine", "sigmoid", "cecum", "caecum"],
+               "small_intestine": ["small intestine", "small bowel", "ileum", "ileal", "jejunum", "jejunal", "duodenum",
+                                   "duodenal"],
+               "stomach": ["stomach", "gastric", "antrum", "fundus"], "liver": ["liver", "hepatic", "hepatocellular"],
+               "pancreas": ["pancreas", "pancreatic"], "kidney": ["kidney", "renal", "nephron"],
+               "lung": ["lung", "pulmonary", "alveolar", "bronch"], "heart": ["heart", "cardiac", "myocard", "ventric"],
+               "breast": ["breast", "mammary"], "skin": ["skin", "cutaneous", "epidermis", "dermis"],
+               "brain": ["brain", "cortex", "cortical", "cerebr", "hippocamp"],
+               "lymph_node": ["lymph node", "lymph-node", "tonsil"]}
+
+
+GENERIC_TYPES = {"T cells", "Endothelial cells", "Stromal", "Proliferating cells", "Endocrine", "Exocrine", "Vascular EC",
+                 "VSMCs"}   # names other lists may use too: no evidence of an organ
+
+
+def _distinct_types():
+    """Per built-in organ list, the cell types no other organ's list has (its organ's own evidence)."""
+    from . import organs
+    names = {o["organ"]: {n["name"] for n in organs.tree(o["organ"])} for o in organs.organs() if o["organ"] != "other"}
+    return {o: v - set().union(*[w for k, w in names.items() if k != o]) - GENERIC_TYPES for o, v in names.items()}
+
+
+def guess_organ(s):
+    """The organ of the sample's tissue for its priors: {"organ" (a section of tissue_priors, or None), "from",
+    "evidence"}. In order: the organ given earlier (segment_he), the built-in marker list the annotation's cell types
+    come from, words in the sample's name or description."""
+    evidence = []
+    given = sample_organ(s.sample_id)
+    if given and given != "other":
+        evidence.append(f"given for this sample: {given}")
+    names = set(getattr(s, "node_names", None) or []) | set(s.types)
+    hits = {o: sorted(d & names) for o, d in _distinct_types().items() if d & names}
+    by_list = None
+    if hits:
+        best = sorted(hits.items(), key=lambda kv: -len(kv[1]))
+        if len(best) == 1 or len(best[0][1]) > len(best[1][1]):
+            by_list = best[0][0]
+            evidence.append(f"the marker list has cell types only the built-in {by_list} list has: {', '.join(best[0][1][:6])}")
+        else:
+            evidence.append("the marker list matches several organs: " + ", ".join(f"{k} ({', '.join(v[:3])})" for k, v in best[:3]))
+    meta = s.meta
+    text = " ".join(str(x) for x in [s.sample_id, meta.get("name"), meta.get("description"),
+                                     *(meta.get("metadata") or {}).values()] if x).lower().replace("_", " ")
+    by_text = [o for o, words in ORGAN_WORDS.items() if any(w in text for w in words)]
+    if by_text:
+        evidence.append("the sample's name or description: " + ", ".join(by_text))
+    pick, src = ((given, "given") if given and given != "other" else (by_list, "marker list") if by_list else
+                 (by_text[0], "name or description") if len(by_text) == 1 else (None, None))
+    hit = tissue_priors(pick).get("organ") if pick else None
+    return {"organ": hit, "from": src if hit else None, "evidence": evidence or ["nothing names the organ"]}
+
+
 def _remember_organ(sample_id, organ):
     import os
     f = config.SAMPLES / sample_id / "meta.json"
@@ -333,7 +386,7 @@ def tissue_priors(organ=None):
     if not organ:
         return {"organs": organs, "how_to_read": secs.get("How to read a rule", ""),
                 "care": secs.get("Using priors with care", "")}
-    q = organ.lower().strip()
+    q = organ.lower().replace("_", " ").strip()   # also the built-in lists' names (small_intestine, lymph_node)
     hit = next((k for k in organs if k.lower() == q), None) or next((k for k in organs if q in k.lower()), None) \
         or next((k for k in organs if any(w in k.lower() for w in q.split())), None)
     if hit is None:

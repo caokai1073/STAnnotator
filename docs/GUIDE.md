@@ -654,7 +654,13 @@ been run; Compare and Signaling review the analyses you ran in those tabs, which
 
 **How the agent reviews**
 
-1. It looks only at that part and drafts its advice (`draft_advice`).
+1. It looks only at that part and drafts its advice (`draft_advice`). For **Annotation** and **Spatial organization**
+   it first reads the app's tissue priors of the organ (`tissue_priors`, from
+   [tissue_priors.md](../stagent/data/priors/tissue_priors.md)): where each cell type lies, with its exceptions, and
+   the compartments to draw. It checks the cell types and the drawn regions against them and names the rule (e.g.
+   COL-01) in its advice. The organ is the one given for the sample, else that of the built-in marker list the cell
+   types come from, else the one the sample's name or description names; with none, the agent says which organ it
+   assumed from the cell types, or that it reviewed without the priors.
 2. It checks every draft as a skeptical reviewer: it reruns the tool that would confirm or refute it, looks at the
    figure on the H&E and weighs other explanations (spillover, segmentation, batch, too few cells, panel limits), and
    records `check_advice`.
