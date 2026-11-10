@@ -577,7 +577,7 @@ def _xenium_cells(src):
     if f.endswith(".parquet"):
         c = pd.read_parquet(f, columns=["cell_id", "x_centroid", "y_centroid"])
     else:
-        c = pd.read_csv(f, usecols=["cell_id", "x_centroid", "y_centroid"])
+        c = read_csv(f, usecols=["cell_id", "x_centroid", "y_centroid"])
     c["cell_id"] = [x.decode() if isinstance(x, bytes) else str(x) for x in c.cell_id]
     return c
 
@@ -883,9 +883,23 @@ def _cosmx_id(df):
     raise ValueError("a CosMx file needs the columns fov and cell_ID")
 
 
+def read_csv(path, **kw):
+    """pandas.read_csv with the compression read from the file's first bytes, not only from its name: AtoMx (and
+    copies of it) can hand out gzip files named .csv, which pandas would read as text (\"'utf-8' codec can't decode
+    byte 0x8b\")."""
+    try:
+        with open(path, "rb") as fh:
+            magic = fh.read(4)
+    except (OSError, TypeError):
+        magic = b""
+    comp = ("gzip" if magic[:2] == b"\x1f\x8b" else "zip" if magic[:4] == b"PK\x03\x04" else "bz2" if magic[:3] == b"BZh"
+            else "zstd" if magic[:4] == b"\x28\xb5\x2f\xfd" else "xz" if magic[:4] == b"\xfd7zX" else None)
+    return pd.read_csv(path, compression=comp, **kw) if comp else pd.read_csv(path, **kw)
+
+
 def _flat_counts(kind, path, progress=print):
     """(cell ids, genes, cells x genes CSR) of a counts file, read in chunks (a CosMx 6K matrix is large)."""
-    head = pd.read_csv(path, nrows=0).columns.tolist()
+    head = read_csv(path, nrows=0).columns.tolist()
     if kind == "cosmx":
         ids_cols = [c for c in head if c.lower() in COSMX_IDS]
     else:
@@ -895,7 +909,7 @@ def _flat_counts(kind, path, progress=print):
     if not genes:
         raise ValueError(f"{Path(path).name}: no gene columns")
     ids, parts, n = [], [], 0
-    for ch in pd.read_csv(path, usecols=ids_cols + genes, chunksize=20000, dtype={g: np.float32 for g in genes}):
+    for ch in read_csv(path, usecols=ids_cols + genes, chunksize=20000, dtype={g: np.float32 for g in genes}):
         if kind == "cosmx":
             cid, ok = _cosmx_id(ch)
             ch, cid = ch[ok.to_numpy()], cid[ok.to_numpy()]
@@ -913,7 +927,7 @@ def _flat_counts(kind, path, progress=print):
 
 def _flat_cells(kind, path):
     """(cell ids, x / y in um) of a cell metadata file."""
-    head = pd.read_csv(path, nrows=0).columns.tolist()
+    head = read_csv(path, nrows=0).columns.tolist()
     low = {c.lower(): c for c in head}
     if kind == "cosmx":
         use = [low[c] for c in ("fov", "cell_id") if c in low]
@@ -923,25 +937,25 @@ def _flat_cells(kind, path):
             xy_cols, scale = [low["x_slide_mm"], low["y_slide_mm"]], 1000.0
         else:
             raise ValueError(f"{Path(path).name}: no cell positions (CenterX_global_px / CenterY_global_px or x_slide_mm / y_slide_mm)")
-        c = pd.read_csv(path, usecols=use + xy_cols)
+        c = read_csv(path, usecols=use + xy_cols)
         cid, ok = _cosmx_id(c)
         c, cid = c[ok.to_numpy()], cid[ok.to_numpy()]
     else:
         if "center_x" not in low or "center_y" not in low:
             raise ValueError(f"{Path(path).name}: no cell positions (center_x, center_y)")
         xy_cols, scale = [low["center_x"], low["center_y"]], 1.0
-        c = pd.read_csv(path, usecols=[head[0]] + xy_cols)
+        c = read_csv(path, usecols=[head[0]] + xy_cols)
         cid = c[head[0]].astype(str)
     return cid.to_numpy(str), c[xy_cols].to_numpy(float) * scale
 
 
 def inspect_flat(kind, src):
     s = _flat_source(kind, src)
-    head = pd.read_csv(s["files"]["counts"], nrows=0).columns.tolist()
+    head = read_csv(s["files"]["counts"], nrows=0).columns.tolist()
     ids_cols = [c for c in head if c.lower() in COSMX_IDS] if kind == "cosmx" else head[:1]
     genes = [c for c in head if c not in ids_cols and not CONTROLS.match(str(c))]
-    meta = pd.read_csv(s["files"]["cells"], nrows=0).columns.str.lower().tolist()
-    n_cells = sum(len(ch) for ch in pd.read_csv(s["files"]["cells"], usecols=[0], chunksize=500000))
+    meta = read_csv(s["files"]["cells"], nrows=0).columns.str.lower().tolist()
+    n_cells = sum(len(ch) for ch in read_csv(s["files"]["cells"], usecols=[0], chunksize=500000))
     return {"folder": s["folder"], "key": s["key"], "files": s["files"], "n_cells": int(n_cells), "n_genes": len(genes),
             "n_controls": len(head) - len(ids_cols) - len(genes),
             "positions": ("pixels x %.5f um" % COSMX_PX_UM if "centerx_global_px" in meta else "mm" if "x_slide_mm" in meta

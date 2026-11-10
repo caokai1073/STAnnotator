@@ -159,7 +159,8 @@ Command line: `stagent import-stereoseq --name brain --path saw_outs/ [--unit bi
 Choose the kind in **Import** and give its two files, each in its field (Counts, Cell metadata); one slide or region
 per import (import several one after the other).
 
-- **CosMx**: a slide's AtoMx flat files `<slide>_exprMat_file.csv` and `<slide>_metadata_file.csv`. A cell is
+- **CosMx**: a slide's AtoMx flat files `<slide>_exprMat_file.csv` and `<slide>_metadata_file.csv` (plain or
+  compressed: gzip is recognized from the file's content, also when it is named `.csv`). A cell is
   `fov_cellID` (cell_ID 0, transcripts outside cells, is left out); its position comes from `CenterX/Y_global_px` at
   0.12028 um per pixel (or `x/y_slide_mm`).
 - **MERSCOPE**: a region's `cell_by_gene.csv` and `cell_metadata.csv` (`center_x`, `center_y` in um).
