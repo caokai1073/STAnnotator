@@ -412,17 +412,21 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .imkind { display: flex; gap: 16px; margin-bottom: 6px; }
 .choice { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font-size: 13px; }
 .choice button { padding: 2px 10px; font-size: 12.5px; }
-#alignbar { position: absolute; top: calc(var(--maptop, 44px) + 18px); left: 50%; transform: translateX(-50%); z-index: 6; display: flex; gap: 10px;
+/* in the bars on top of the map, as a row of its own: the panels below follow the bars' height, so on a small
+   screen nothing lies on top of it (the text wraps) */
+#alignbar { flex: 1 1 100%; pointer-events: auto; display: flex; flex-wrap: wrap; gap: 6px 10px;
             align-items: center; padding: 6px 12px; font-size: 12.5px; background: #fff5e0; color: #6b4a00;
             border: 1px solid #f0c674; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+#alignbar[hidden] { display: none; }
+#alignbar #alignmsg { flex: 1 1 200px; min-width: 0; }
 #alignbar button { padding: 2px 9px; font-size: 12px; }
 .clcard { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 6px 0; display: flex; flex-direction: column; gap: 6px; }
 .clcard pre { font: 11.5px ui-monospace, Menlo, monospace; white-space: pre-wrap; margin: 0; color: var(--muted); }
 .claudebox { display: flex; flex-direction: column; gap: 8px; padding: 4px 2px; }
 /* the steps of the usual flow, at the top of the panel: where the sample stands, and the next thing to do */
-#steps { top: 10px; right: 10px; width: 340px; z-index: 6; font-size: 13px; max-height: calc(100% - 210px); overflow: auto; }
+#steps { top: 10px; right: 10px; width: min(340px, calc(45% - 10px)); z-index: 6; font-size: 13px; max-height: calc(100% - 210px); overflow: auto; }
 /* the panels at the map's top right go under the steps; the map's toolbar leaves them room */
-#viewerwrap.st #maptop { right: 360px; }
+#viewerwrap.st #maptop { right: calc(min(340px, calc(45% - 10px)) + 20px); }
 #viewerwrap.st #plpanel { top: calc(10px + var(--stepsH, 0px)); max-height: calc(100% - 210px - var(--stepsH, 0px)); }
 #viewerwrap.st #cellcard { top: calc(10px + var(--stepsH, 0px)); }
 #steps .sh { display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; user-select: none; }
@@ -691,6 +695,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <div class="seg" id="reviewMode" title="How the agent's changes are taken. Manual: each waits for you in a review window (Accept or Dismiss). Auto: each is applied at once, without the window; Undo takes it back."><button data-m="manual">Manual</button><button data-m="auto">Auto</button></div>
       <span id="vinfo" hidden></span>
     </div>
+    <div id="alignbar" hidden><span id="alignmsg"></span><button id="alignNow">Align with Agent</button></div>
     </div>
     <div id="legend" class="float" hidden>
       <div class="lh"><b id="lgtitle">Cell types</b><span class="spacer"></span>
@@ -711,7 +716,6 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     </div>
     <div id="regwrap"><canvas id="regcanvas"></canvas></div>
     <svg id="regsvg"></svg>
-    <div id="alignbar" hidden><span id="alignmsg"></span><button id="alignNow">Align with Agent</button></div>
     <div id="regpanel" class="float" hidden>
       <div class="lh"><b>Regions</b><span class="spacer"></span>
         <label class="hint" title="Show region outlines"><input type="checkbox" id="outlines" checked> outlines</label>
@@ -5347,8 +5351,10 @@ async function loadSteps() {
     const mk = Object.assign(document.createElement("span"), { className: "mk", textContent: STEP_MARK[x.state] || String(i + 1) });  // done ✓, else its number
     const nm = Object.assign(document.createElement("span"), { className: "nm", textContent: name });
     const right = document.createElement("span");
-    const a = x.open ? ["Open", () => { showTab("data"); $("session").focus(); toast("Choose an annotation in the Annotation box", 4000); }] : act;
-    if (a && ["todo", "optional", "skipped"].includes(x.state)) {
+    const align = x.key === "registration" && x.state === "blocked" && !$("alignbar").hidden;  // the image waits for its alignment
+    const a = x.open ? ["Open", () => { showTab("data"); $("session").focus(); toast("Choose an annotation in the Annotation box", 4000); }]
+      : align ? ["Align", () => $("alignNow").click()] : act;
+    if (a && (["todo", "optional", "skipped"].includes(x.state) || align)) {
       const b = Object.assign(document.createElement("button"), { textContent: a[0], title: x.open ? "Open one of this sample's annotations (Data → Annotation)" : help });
       if (x.key === r.next) b.classList.add("primary");
       b.onclick = (e) => { e.stopPropagation(); a[1](); };
