@@ -2397,6 +2397,7 @@ def _priors_view(sample, sid=None, organ=None):
     organ = (organ or "").strip() or g["organ"]
     covered = [o for o in hetissue.default_priors()["organs"] if not o.startswith("General")]
     out = {"organ": organ, "guess": g, "organs": covered + [o for o in hetissue.user_organs() if o not in covered],
+           "how_to_read": hetissue.tissue_priors()["how_to_read"],
            "edited_organs": [o for o in covered if hetissue._user_file(o).exists()]}
     if organ:
         r = hetissue.tissue_priors(organ)

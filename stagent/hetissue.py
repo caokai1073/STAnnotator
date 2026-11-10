@@ -244,6 +244,9 @@ def _remember_organ(sample_id, organ):
     os.replace(tmp, f)
 
 
+NEXT_HEADINGS = ("Priors", "References", "Depth rule", "Verification note", "The depth rule", "How to read the depth")
+
+
 def compartments(organ):
     """The organ's "Compartments to draw" from the priors (how each compartment looks on the H&E), to match the classes
     of segment() to; organ "other": the organ-independent ones. {"organ", "compartments_to_draw"} or {"error", ...}."""
@@ -251,13 +254,20 @@ def compartments(organ):
     r = tissue_priors("General cross-organ priors" if q.lower() in ("other", "none", "unknown") else q)
     if r.get("error"):
         return r | {"hint": "use one of the organs, or organ='other' for a tissue none of them covers"}
-    text = r["text"]
+    text = r["text"]   # plain text: "=== Organ ===" sections, a "Compartments to draw" line with its "- " items
     blocks = []
-    for sec in re.split(r"(?m)^## ", text):
-        m = re.search(r"\*\*Compartments to draw\*\*:?(.*?)(?=\n\*\*[A-Z][^*\n]*\*\*|\Z)", sec, re.S)
-        if m:
-            blocks.append(("## " + sec.split("\n", 1)[0].strip() + "\n" if len(blocks) or "shared" in sec[:80] else "")
-                          + m.group(1).strip())
+    parts = re.split(r"(?m)^=== (.+?) ===[ \t]*$", text)
+    for title, body in zip(parts[1::2], parts[2::2]):
+        lines = body.splitlines()
+        i = next((k for k, l in enumerate(lines) if l.lower().startswith("compartments to draw")), None)
+        if i is None:
+            continue
+        items = [lines[i][len("compartments to draw"):].lstrip(":").strip()]
+        for line in lines[i + 1:]:
+            if line.startswith(NEXT_HEADINGS):
+                break   # the section's next part (its priors, references, depth notes)
+            items.append(line)
+        blocks.append((f"=== {title} ===\n" if blocks or "shared" in title.lower() else "") + "\n".join(items).strip())
     return {"organ": r["organ"], "compartments_to_draw": "\n\n".join(blocks) or text[:4000],
             "note": "match each class (hematoxylin, eosin, texture, place) to these descriptions; one compartment is "
                     "often 2-3 classes; a class that fits none is left out"}
@@ -378,7 +388,22 @@ def outline(sample_id, classes=None, box_px=None, within_px=None, min_area_um2=M
 
 
 def _user_dir():
-    return config.HOME / "priors"   # the user's versions of the priors, one Markdown file per organ
+    return config.HOME / "priors"   # the user's versions of the priors, one plain-text file per organ
+
+
+def to_txt(md):
+    """The priors as plain text for people to read and write: "=== Title ===" headings, no ** or ` marks (the rules,
+    lists, evidence numbers and references stay)."""
+    out = []
+    for line in md.splitlines():
+        if line.strip() == "---":
+            out.append("")
+            continue
+        m = re.match(r"^#{1,3} (.+)$", line)
+        if m:
+            line = f"=== {m.group(1).strip()} ==="
+        out.append(line.replace("**", "").replace("`", "").rstrip())
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip() + "\n"
 
 
 def _slug(organ):
@@ -386,15 +411,15 @@ def _slug(organ):
 
 
 def _user_file(organ):
-    return _user_dir() / f"{_slug(organ)}.md"
+    return _user_dir() / f"{_slug(organ)}.txt"
 
 
 def user_organs():
     """Organs the user wrote priors for that the app's document does not cover (their name: the file's first heading)."""
     out = []
-    for f in sorted(_user_dir().glob("*.md")) if _user_dir().exists() else []:
-        first = next((l for l in f.read_text(encoding="utf-8").splitlines() if l.startswith("## ")), "")
-        out.append(first[3:].strip() or f.stem.replace("_", " "))
+    for f in sorted(_user_dir().glob("*.txt")) if _user_dir().exists() else []:
+        first = next((l for l in f.read_text(encoding="utf-8").splitlines() if re.match(r"^=== .+ ===\s*$", l)), "")
+        out.append(first.strip()[4:-4].strip() or f.stem.replace("_", " "))
     return out
 
 
@@ -403,7 +428,8 @@ def tissue_priors(organ=None):
     section of the app's priors document (with the shared notes of its group); without organ, the list of organs."""
     if not organ:
         r = default_priors()
-        return r | {"organs": r["organs"] + [o for o in user_organs() if default_priors(o).get("error")]}
+        return {"organs": r["organs"] + [o for o in user_organs() if default_priors(o).get("error")],
+                "how_to_read": to_txt(r["how_to_read"]), "care": to_txt(r["care"])}
     r = default_priors(organ)
     q = str(organ).strip()
     name = r.get("organ") or next((o for o in user_organs() if _slug(o) == _slug(q)), q)
@@ -411,7 +437,7 @@ def tissue_priors(organ=None):
     if f.exists():
         return {"organ": name, "text": f.read_text(encoding="utf-8"), "edited": True,
                 "note": "the user's version of these priors (edited in the app): follow it, not the app's default"}
-    return r if r.get("error") else r | {"edited": False}
+    return r if r.get("error") else r | {"text": to_txt(r["text"]), "edited": False}
 
 
 def save_user_priors(organ, text):
@@ -423,14 +449,14 @@ def save_user_priors(organ, text):
     name = d.get("organ") or name
     text = str(text or "").replace("\r\n", "\n")
     f = _user_file(name)
-    if not text.strip() or (not d.get("error") and text.strip() == d["text"].strip()):
+    if not text.strip() or (not d.get("error") and text.strip() == to_txt(d["text"]).strip()):
         f.unlink(missing_ok=True)
         return tissue_priors(name)
     if len(text) > 400_000:
         raise ValueError("the priors are longer than 400,000 characters")
     f.parent.mkdir(parents=True, exist_ok=True)
-    if not text.lstrip().startswith("## "):
-        text = f"## {name}\n\n" + text
+    if not re.match(r"^=== .+ ===", text.lstrip()):
+        text = f"=== {name} ===\n\n" + text
     f.write_text(text, encoding="utf-8")
     return tissue_priors(name)
 

@@ -662,8 +662,9 @@ been run; Compare and Signaling review the analyses you ran in those tabs, which
    types come from, else the one the sample's name or description names; with none, the agent says which organ it
    assumed from the cell types, or that it reviewed without the priors.
    **Prior** (beside Review) shows the organ chosen and its priors: choose another organ (or **another organ…** to
-   write the priors of one the app does not cover), edit the text (Markdown) and **Save**. The organ is kept for the
-   sample, and your version of an organ's priors for every sample of that organ in this data folder (in
+   write the priors of one the app does not cover), edit the text (plain text; each rule's Evidence numbers are the
+   references at the end; **How to write a rule** explains the rule line) and **Save**. The organ is kept for the
+   sample, and your version of an organ's priors for every sample of that organ in this data folder (a text file in
    `priors/` of the data folder); the agent's reviews and its H&E outlines use it from then on. **Restore default**
    goes back to the app's priors.
 2. It checks every draft as a skeptical reviewer: it reruns the tool that would confirm or refute it, looks at the

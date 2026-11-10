@@ -884,16 +884,19 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <div class="row"><span class="err" id="pjErr"></span><span class="spacer"></span><button id="pjCancel">Cancel</button><button id="pjSave" class="primary">Save</button></div>
   </div>
 </dialog>
-<dialog id="prDlg" style="width:min(860px,95vw)">
+<dialog id="prDlg" style="width:min(980px,95vw)">
   <div class="dh"><b>Tissue priors</b><span class="hint" id="prInfo" style="margin-left:8px"></span><span class="spacer"></span>
     <button id="prClose">Close</button></div>
-  <div style="padding:12px 14px;display:flex;flex-direction:column;gap:8px">
+  <div style="padding:12px 14px;display:flex;flex-direction:column;gap:8px;height:min(82vh,860px);box-sizing:border-box">
     <div class="row"><label class="f" style="flex-direction:row;align-items:center;gap:8px">Organ <select id="prOrgan"></select></label>
       <span class="hint" id="prWhy" style="flex:1"></span></div>
     <div class="hint">Where each cell type lies, the compartments to draw and their exceptions, from the literature
-      (<code>tissue_priors.md</code>). The agent's Review checks the annotation and the regions against these;
-      edit them (Markdown) and it follows your version, for every sample of this organ in this data folder.</div>
-    <textarea id="prText" spellcheck="false" style="height:52vh;font:12px ui-monospace,Menlo,monospace;resize:vertical"></textarea>
+      (the numbers after Evidence are the references at the end). The agent's Review checks the annotation and the
+      regions against these; edit the text and it follows your version, for every sample of this organ in this data
+      folder (kept as a text file in its priors folder).</div>
+    <details id="prHow"><summary class="hint" style="cursor:pointer">How to write a rule</summary>
+      <pre id="prHowText" style="white-space:pre-wrap;font:12px ui-monospace,Menlo,monospace;max-height:24vh;overflow:auto;margin:6px 0 0"></pre></details>
+    <textarea id="prText" spellcheck="false" wrap="off" style="flex:1 1 auto;min-height:120px;font:12px/1.45 ui-monospace,Menlo,monospace;resize:none;white-space:pre;overflow:auto"></textarea>
     <div class="row"><span class="hint" id="prState"></span><span class="err" id="prErr"></span><span class="spacer"></span>
       <button id="prDefault" title="Back to the app's priors of this organ (your version is removed)">Restore default</button>
       <button id="prSave" class="primary" title="Use this organ for the sample, and this text for its priors">Save</button></div>
@@ -3860,6 +3863,7 @@ function prShow(v) {
   sel.value = v.organ || "";
   $("prWhy").textContent = prWhy(v);
   $("prText").value = v.text || ""; $("prText").disabled = !v.organ;
+  $("prHowText").textContent = v.how_to_read || "";
   $("prState").textContent = !v.organ ? "" : v.edited ? "Your version: the Review uses it." : v.has_default ? "The app's priors (default)." : "";
   $("prDefault").disabled = !v.edited || !v.has_default; $("prSave").disabled = !v.organ; $("prErr").textContent = "";
 }
@@ -3882,7 +3886,7 @@ $("prOrgan").onchange = async (e) => {
   if ($("prText").value !== PR.loaded && !confirm("Leave your unsaved changes?")) { e.target.value = PR.view.organ || ""; return; }
   try { await prLoad(organ); } catch (err) { $("prErr").textContent = err.message; return; }
   if (!PR.view.text) {  // an organ the app's priors do not cover: a skeleton to fill in
-    $("prText").value = `## ${PR.view.organ}\n\n**Compartments to draw**\n- **compartment**: how it looks on the H&E.\n\n**Priors**\n\n- **Cell type lies in compartment.**\n  - Rule: \`kind=region, types=[...], regions=[...], mode=only, strength=moderate\`\n`;
+    $("prText").value = `=== ${PR.view.organ} ===\n\nCompartments to draw\n- compartment: how it looks on the H&E.\n\nPriors\n\n- XXX-01. A cell type lies in a compartment.\n  - Rule: kind=region, types=[...], regions=[...], mode=only, strength=moderate\n  - Exceptions and caveats: ...\n  - Evidence: [1]\n\nReferences\n- [1] ...\n`;
     $("prState").textContent = "Not in the app's priors: write them, then Save.";
   }
 };

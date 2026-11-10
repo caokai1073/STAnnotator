@@ -1330,7 +1330,7 @@ def propose_region(name: str, compartment: Optional[str] = None, area: Optional[
 # ---------------- regions from the H&E itself (also a sample of an H&E only) ----------------
 @mcp.tool()
 def tissue_priors(organ: Optional[str] = None) -> str:
-    """The app's literature-based tissue priors (data/priors/tissue_priors.md) of an organ: its compartments to draw
+    """The app's literature-based tissue priors (data/priors/tissue_priors.md, given as plain text) of an organ: its compartments to draw
     with how each looks on the H&E, and spatial priors (where each cell type lives, as rules of the constraint
     language, with exceptions and references). Without organ: the organs covered and how to read a rule. Use it to
     outline compartments on the H&E (segment_he, propose_he_region), to review an annotation and its regions
