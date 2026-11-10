@@ -750,12 +750,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
         <div class="row"><button id="shapeSave" class="primary" title="Save the shape (Enter); a new one is named first">Save</button>
           <button id="shapeUndo" title="Take back the last stroke or step (Backspace)">Undo</button>
           <button id="shapeCancel" title="Drop the changes (Esc)">Cancel</button></div></div>
-      <div class="hint" id="selbar" hidden><span id="selinfo"></span><div id="selhow"></div>
-        <div class="row"><button id="selExpand" title="Grow (or, with a negative distance, shrink) the outline by a distance in µm">Expand…</button>
-          <button id="selFill" title="Fill the holes of the outline">Fill holes</button>
-          <button id="selMerge" title="Merge the selected polygons of one region into one shape">Merge</button>
-          <button id="selDelete" title="Delete the selected polygons (Undo brings them back)">Delete</button>
-          <button id="selClear" title="Clear the selection (Esc)">✕</button></div></div>
+      <div class="hint" id="selbar" hidden><div class="row"><span id="selinfo"></span><span class="spacer"></span>
+          <button id="selClear" title="Clear the selection (Esc)">✕</button></div><div id="selhow"></div></div>
       <div class="items" id="rgitems"></div>
       <div class="hint" id="drawhint" hidden style="padding:6px 10px;border-top:1px solid var(--line)">
         <div class="row" style="gap:6px;margin-bottom:4px"><b id="drawinfo">0 points</b><span class="spacer"></span>
@@ -2425,8 +2421,8 @@ function drawRegions() {
     svg.append(svgEl("polyline", { points: pts.map((q) => `${q.x},${q.y}`).join(" "), fill: "rgba(0,200,255,.08)",
                                     stroke: "#00c8ff", "stroke-width": 2, ...(st.pen ? {} : { "stroke-dasharray": "6 4" }) }));
     const far = (a, b) => !a || !b || Math.hypot(a.x - b.x, a.y - b.y) >= 14;
-    pts.forEach((q, i) => {  // a dot on the first point and on clicked points (far from both neighbors), none along a pen line
-      if (i && !(far(q, pts[i - 1]) && far(q, pts[i + 1]))) return;
+    pts.forEach((q, i) => {  // a dot on the first point and on clicked points (far from both neighbors); with the Pen only the first
+      if (i && (st.pen || !(far(q, pts[i - 1]) && far(q, pts[i + 1])))) return;
       svg.append(svgEl("circle", { cx: q.x, cy: q.y, r: i === 0 ? 6 : 4, fill: i === 0 ? "#00c8ff" : "#fff", stroke: "#00a0d0", "stroke-width": 2 }));
     });
   }
@@ -3019,12 +3015,6 @@ function localPieces(pieces) {
     .filter((pc) => pc.outer.length >= 3);
   return clipShape(simple, [toPath(box, true)], false, CL.ClipType.ctIntersection);
 }
-function offsetPieces(pieces, d) {  // grown (d > 0) or shrunk by d image pixels, round corners
-  const co = new CL.ClipperOffset(2, Math.max(0.25, Math.abs(d) * 0.002) * CS);
-  co.AddPaths(piecesToPaths(pieces), CL.JoinType.jtRound, CL.EndType.etClosedPolygon);
-  const t = new CL.PolyTree(); co.Execute(t, d * CS);
-  return treeToPieces(t);
-}
 function bandPaths(pts, r) {  // the area a brush of radius r (image pixels) covers along pts: round ends and joins
   const co = new CL.ClipperOffset(2, Math.max(0.2, r * 0.01) * CS);
   co.AddPath(pts.map(([x, y]) => ({ X: Math.round(x * CS), Y: Math.round(y * CS) })), CL.JoinType.jtRound, CL.EndType.etOpenRound);
@@ -3177,39 +3167,10 @@ function syncSelBar() {
   if (!ids.length) { document.querySelectorAll("#rgitems .pg.on").forEach((r) => r.classList.remove("on")); return; }
   const names = [...new Set(ids.map((id) => polyOf(id).name))];
   $("selinfo").textContent = `Selected ${ids.join(", ")} (${names.join(", ")})`;
-  $("selMerge").disabled = ids.length < 2 || names.length > 1;
-  $("selMerge").title = names.length > 1 ? "Only polygons of one region merge: rename one first" : "Merge the selected polygons into one shape";
   document.querySelectorAll("#rgitems .pg[data-id]").forEach((r) => r.classList.toggle("on", st.rsel.has(r.dataset.id)));
   $("selhow").textContent = ids.length === 1 ? "Brush or Wand: paint over it to add, hold Alt (or −) to erase; then Save" : "";
 }
 $("selClear").onclick = () => { st.rsel.clear(); syncSelBar(); drawRegions(); };
-$("selFill").onclick = () => {
-  const ids = [...st.rsel]; if (!ids.length) return;
-  const pcs = piecesOf(ids);
-  if (!pcs.some((p) => p.holes.length)) { toast("No holes to fill"); return; }
-  startShape(ids, pcs.map((p) => ({ outer: p.outer, holes: [] })));
-  if (ids.length > 1) st.shape.pieces = clipShape(st.shape.pieces, [], false);
-  syncShapeBar(); drawRegions();
-};
-$("selMerge").onclick = () => {
-  const ids = [...st.rsel]; if (ids.length < 2) return;
-  startShape(ids, clipShape(piecesOf(ids), [], false)); toast("Merged: Save keeps it, Cancel drops it", 4000);
-};
-$("selExpand").onclick = () => {
-  const ids = [...st.rsel]; if (!ids.length) return;
-  const um = st.he && st.he.um_per_px && st.he.um_per_px_known !== false ? st.he.um_per_px : null;
-  const v = prompt(um ? "Expand the outline by how many µm? (A negative number shrinks it.)" : "Expand the outline by how many pixels? (A negative number shrinks it.)", "10");
-  if (v === null) return;
-  const d = parseFloat(v); if (!isFinite(d) || !d) return;
-  const pcs = offsetPieces(piecesOf(ids), um ? d / um : d);
-  startShape(ids, pcs); syncShapeBar(); drawRegions();
-};
-$("selDelete").onclick = async () => {
-  const ids = [...st.rsel]; if (!ids.length) return;
-  if (!confirm(`Delete ${ids.join(", ")}? Priors that use a region keep applying to its cells. (Undo brings it back.)`)) return;
-  try { let r; for (const id of ids) r = await post(`/api/s/${st.sid}/regions/${id}/delete`); st.rsel.clear(); syncSelBar(); if (r) await afterRegionChange(r); }
-  catch (e) { toast(e.message, 6000); }
-};
 $("shapeSave").onclick = saveShape;
 $("shapeUndo").onclick = (e) => { undoShape(); e.currentTarget.blur(); };
 $("shapeCancel").onclick = () => cancelShape();
@@ -3235,7 +3196,9 @@ function toolCursor() {
     : t === "brush" || t === "wand" ? "none" : "";
 }
 document.querySelectorAll("#rgtools button[data-icon]").forEach((b) => decorate(b, b.dataset.icon, true));
-document.querySelectorAll("#rgtools [data-tool]").forEach((b) => { b.onclick = (e) => { setTool(b.dataset.tool); e.currentTarget.blur(); }; });
+document.querySelectorAll("#rgtools [data-tool]").forEach((b) => { b.onclick = (e) => {  // a second click lets go of the tool
+  setTool(b.dataset.tool === st.tool && b.dataset.tool !== "move" ? "move" : b.dataset.tool); e.currentTarget.blur();
+}; });
 $("toolSub").onclick = (e) => { st.subtract = !st.subtract; $("toolSub").classList.toggle("on", st.subtract); e.currentTarget.blur(); drawRegionsOnce(); };
 $("toolSize").oninput = () => { $("toolSizeV").textContent = $("toolSize").value; try { localStorage.setItem("toolSize", $("toolSize").value); } catch (e) {} drawRegionsOnce(); };
 $("wandTol").oninput = () => { try { localStorage.setItem("wandTol", $("wandTol").value); } catch (e) {} };

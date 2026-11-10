@@ -528,6 +528,8 @@ The Regions panel has a row of tools:
 | Brush | B | Paint the area |
 | Wand | W | Paint, and the area follows the colors of the H&E under the brush (± sets how different a color may be) |
 
+A second click on the chosen tool lets go of it (back to Move). The chosen tool has a gray background.
+
 - A Brush or Wand stroke that starts on a region (inside it, or with the brush over its edge) changes **that
   region**, as in QuPath, imported outlines included; elsewhere it starts a **new shape**. Rectangle, Ellipse,
   Polygon and Pen add to the selected region, or start a new shape. Hold **Alt** (or turn on **−**) and the tools erase
@@ -544,9 +546,9 @@ The Regions panel has a row of tools:
 
 **Changing regions**
 
-- A selected region (click it on the map, or its row in the list) offers **Expand…** (grow, or shrink with a negative
-  distance, in µm), **Fill holes**, **Merge** (the selected polygons of one region into one) and **Delete**; then
-  **Save**.
+- A selected region (click it on the map, or its row in the list) is named above the list (Selected R3 (submucosa));
+  paint over it with the Brush or Wand to add, hold Alt (or −) to erase, then **Save**. ✕ (or Esc) clears the
+  selection. To delete a polygon or a whole region, use the trash on its row in the list.
 - A region keeps its name and priors when its outline changes; its cells are recomputed, and Undo (the toolbar's)
   brings the old outline back. A shape cut in two keeps its id on the larger piece.
 - A name can have several polygons; regions can be renamed, deleted, zoomed to and outlined. The trash on a
