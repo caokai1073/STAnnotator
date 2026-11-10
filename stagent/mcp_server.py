@@ -43,7 +43,9 @@ Getting started
   and the tissue's priors: segment_he(organ) gives the classes of the tissue (hematoxylin, eosin, texture, distance
   to the edge) with the organ's "Compartments to draw" (how each looks on the H&E; ask the user the organ when you
   do not know it), then propose_he_region with the classes that match (within a box for one section), or with points
-  read on show_he; say it is a draft from the image for the user to check and reshape with the Regions tools. The tools about cells do not apply. Its regions go to the data registered to the same
+  read on show_he; say it is a draft from the image for the user to check and reshape with the Regions tools. When
+  segment_he reports a trained organ model (outlines a pathologist drew, learned in the app), use its classes
+  (propose_he_region model_class=...) for the regions it has. The tools about cells do not apply. Its regions go to the data registered to the same
   image: the app's Import dialog ("Regions from"), or export_regions and the regions file of the import.
 - A new gene panel needs its own marker list: start from organ_marker_draft (built-in lists of common organs pruned
   to the panel; search the literature for types it lacks), or draft one from get_panel_genes; validate it with check_marker_list,
@@ -1218,7 +1220,14 @@ def segment_he(organ: Optional[str] = None, n_classes: int = 6) -> list:
         return [_j(comp)]
     meta = hetissue.segment(s.sample_id, n_classes, organ=comp["organ"])
     png = hetissue.fig_classes(s.sample_id, s)
-    return [_j({k: meta[k] for k in ("n_classes", "um_per_px", "classes", "pixel_size_known")} | comp | {"path": png}),
+    from . import organmodel
+    om = organmodel.model_of(comp["organ"])
+    extra = {"organ_model": {"classes": om["classes"], "slides": len(om["slides"]), "trained": om["trained"],
+                             "held_out_recall": {c["class"]: c["recall"] for c in om["held_out"].get("classes", [])},
+                             "use": "a model trained on outlines a pathologist drew: for the regions it has a class for, "
+                                    "propose_he_region(name, model_class=<its class>) instead of the classes below "
+                                    "(finer: 2 um; the first call reads the whole H&E, 2-4 minutes)"}} if om else {}
+    return [_j({k: meta[k] for k in ("n_classes", "um_per_px", "classes", "pixel_size_known")} | comp | extra | {"path": png}),
             Image(path=png)]
 
 
@@ -1244,8 +1253,18 @@ def _he_outline(s, a):
         if len(outer) < 3:
             raise ValueError("polygon_px needs at least 3 points")
         return [{"outer": outer, "holes": []}], "points read on the H&E"
+    if a.get("model_class"):
+        from . import organmodel
+        organ = a.get("organ") or hetissue.sample_organ(s.sample_id)
+        om = organmodel.model_of(organ) if organ else None
+        if not om:
+            raise ValueError("no trained model for this sample's organ: call segment_he(organ=...) and use its classes")
+        polys = organmodel.outline(s.sample_id, om["organ"], a["model_class"], a.get("box_px"), a.get("within_px"),
+                                   float(a.get("min_area_um2") or organmodel.MIN_AREA_UM2))
+        return polys, (f"the {om['organ']} model's class {a['model_class']} (trained on {len(om['slides'])} annotated "
+                       f"slide{'s' if len(om['slides']) != 1 else ''})") + (" within a box" if a.get("box_px") else "")
     if not a.get("classes"):
-        raise ValueError("give classes (from segment_he) or polygon_px")
+        raise ValueError("give classes (from segment_he), model_class (a trained organ model) or polygon_px")
     polys = hetissue.outline(s.sample_id, a["classes"], a.get("box_px"), a.get("within_px"),
                              float(a.get("min_area_um2") or hetissue.MIN_AREA_UM2))
     return polys, f"H&E classes {', '.join(map(str, a['classes']))}" + (" within a box" if a.get("box_px") else "")
@@ -1255,7 +1274,9 @@ def _d_propose_he_region(a):
     from . import hetissue, regions as regmod
     s = _s()
     organ = None
-    if not a.get("resolved") and not a.get("polygon_px"):
+    if not a.get("resolved") and a.get("model_class"):
+        organ = a.get("organ") or hetissue.sample_organ(s.sample_id)
+    elif not a.get("resolved") and not a.get("polygon_px"):
         organ = (hetissue.load(s.sample_id)[0].get("organ") if hetissue.segmented(s.sample_id) else None)
         if not organ:
             raise ValueError("call segment_he with the organ first (its 'Compartments to draw' tell which classes make "
@@ -1272,8 +1293,9 @@ def _d_propose_he_region(a):
     return {"title": f"Add region {name}" + (f" ({len(polys)} pieces)" if len(polys) > 1 else "") + " outlined on the H&E",
             "version": s.state()["version"],
             "args": dict(a, name=name, resolved=polys, how=how, organ=organ),  # applied exactly as reviewed
-            "details": [*_words(a), f"Outlined by the agent from the image alone ({how})" + (
-                        f", guided by the {organ} priors (how each compartment looks on the H&E)" if organ else "") +
+            "details": [*_words(a), (f"Outlined from the image by {how}, learned from outlines a pathologist drew"
+                        if a.get("model_class") else f"Outlined by the agent from the image alone ({how})" + (
+                        f", guided by the {organ} priors (how each compartment looks on the H&E)" if organ else "")) +
                         ": check it against the H&E; it is a draft to correct.",
                         f"Adds {len(polys)} polygon(s) " + (f"to the existing region {name}" if exists else
                         f"as region {name}") + "; reshape it afterwards with the Regions tools (Brush adds, Alt+Brush erases), "
@@ -1283,12 +1305,14 @@ def _d_propose_he_region(a):
 
 @mcp.tool()
 @_reviewed(_d_propose_he_region)
-def propose_he_region(name: str, classes: Optional[list[int]] = None, box_px: Optional[list[float]] = None,
+def propose_he_region(name: str, classes: Optional[list[int]] = None, model_class: Optional[str] = None,
+                      box_px: Optional[list[float]] = None,
                       within_px: Optional[list[list[float]]] = None, polygon_px: Optional[list[list[float]]] = None,
                       min_area_um2: float = 20000.0, text: str = "", resolved: Optional[list] = None,
                       how: Optional[str] = None, organ: Optional[str] = None) -> str:
     """Propose a region outlined on the H&E (works without cells, e.g. a sample of an H&E only): the pixels of
-    classes (from segment_he; e.g. the classes of the mucosa), optionally only within box_px [x0, y0, x1, y1] or the
+    model_class (a class of the organ's trained model, which segment_he lists when there is one: preferred where it
+    has the region), or of classes (from segment_he; e.g. the classes of the mucosa), optionally only within box_px [x0, y0, x1, y1] or the
     polygon within_px (full-resolution pixels; one section of a slide, one side of the tissue), gaps closed, holes
     filled, pieces under min_area_um2 dropped; or polygon_px, points you read on show_he. The user sees the outline
     on the H&E in the review window and Accept adds it as region `name` (saved as the Regions tools save a shape, and

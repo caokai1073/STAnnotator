@@ -184,9 +184,24 @@ An image without any cells, e.g. for a pathologist to draw and name regions befo
     same scan: the image size is checked); every annotation of the data starts with them;
   - or give the exported GeoJSON as the import's **Regions** (QuPath opens it too: every outline is an annotation
     classified by its region, with its color).
-- **Outline with Agent…** (in the Regions panel of an H&E only): choose the organ (or type one) and tick the
-  regions to draw (the organ's compartments from its priors; others can be typed), add notes if needed (e.g.
-  "only the upper section"); the request goes to the agent (Claude Code) as written for it.
+- **Outline with Agent…** (in the Regions panel of every sample whose H&E is shown): choose the organ (or type one)
+  and tick the regions to draw (the organ's compartments from its priors, and the classes of its trained model;
+  others can be typed), add notes if needed (e.g. "only the upper section"); the request goes to the agent (Claude
+  Code) as written for it. With a trained model for the organ, the agent outlines the regions it has with it.
+- **Organ models** (the same window, **Train a model**): teach the app an organ's regions from outlines a
+  pathologist drew. Add each H&E with its GeoJSON (in the image's full-resolution pixels, e.g. QuPath annotations
+  exported as GeoJSON; the pixel size is read from the image, or typed), tick the classes to learn and name them
+  (the same name merges several), then **Train**. The image is read at 2 µm per pixel (hematoxylin, eosin, pale
+  areas, nuclear texture and the orientation of fibers at 2-32 µm), a gradient-boosted tree classifier learns the
+  pixels inside the outlines, and its accuracy is measured on data it did not see (each slide held out in turn;
+  with one slide, each half of the annotated area). About a minute per slide on a desktop computer.
+  - The model is kept in the data folder's `organ_models/`, one file per organ, all organs together; the app finds
+    them at every start, also after an update (a model is fitted again from its stored pixels when the app's
+    scikit-learn changed). New slides can be added to an organ's model.
+  - **Models**: every organ's model with its held-out accuracy; **Export…** saves a copy (to share), **Load a
+    model…** adds one (it replaces that organ's model), the trash deletes one (to the data folder's trash).
+  - On a new slide the model reads the whole H&E once (2-4 minutes, kept for the slide); each region is then one
+    class's pixels, small gaps closed and small holes filled, traced, and comes to you for review as usual.
 - **The agent can outline compartments** on such an image when you ask (e.g. "draw the mucosa"):
   1. it needs the organ (it asks you when it does not know it; remembered for the sample): the organ's priors
      (`tissue_priors`: literature-based priors of 13 organs) say how each compartment looks on the H&E ("Compartments

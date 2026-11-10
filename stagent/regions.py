@@ -370,15 +370,21 @@ def _retrace(pieces, max_side=4000):
         for hl in pc["holes"]:
             inn &= ~points_in(gx, gy, hl)
         m |= inn
-    m = m.reshape(h, w)
+    return _trace_mask(m.reshape(h, w), step, x0, y0)
 
-    def trace(mask):  # the longest boundary of a mask, between its pixels, in image pixels
+
+def _trace_mask(m, step, x0=0.0, y0=0.0):
+    """The pieces of a mask (pixel i covering x0 + [i, i + 1] * step image pixels) traced between its pixels: outlines
+    with their holes, apart, rings neither crossing nor touching; crumbs of 4 square pixels or less dropped."""
+    import contourpy
+    from scipy import ndimage as ndi
+
+    def trace(mask):  # the longest boundary of a mask, between its pixels
         z = ndi.gaussian_filter(np.pad(mask, 3).astype(np.float32), 0.7)
         lines = contourpy.contour_generator(z=z).lines(0.5)
         if not lines:  # (a hole of a pixel or so: gone with the blur)
             return np.zeros((0, 2))
-        p = max((np.asarray(ln, float) for ln in lines), key=len)[:-1] - 3
-        return np.c_[x0 + (p[:, 0] + 0.5) * step, y0 + (p[:, 1] + 0.5) * step]
+        return max((np.asarray(ln, float) for ln in lines), key=len)[:-1] - 3
     out = []
     comp, n = ndi.label(m)
     for k, sl in enumerate(ndi.find_objects(comp), 1):
@@ -387,12 +393,14 @@ def _retrace(pieces, max_side=4000):
             continue
         filled = ndi.binary_fill_holes(c)
         oy, ox = sl[0].start, sl[1].start
-        outer = trace(filled) + [ox * step, oy * step]
-        if len(outer) < 3:
+        to_img = lambda p: np.c_[x0 + (p[:, 0] + ox + 0.5) * step, y0 + (p[:, 1] + oy + 0.5) * step]
+        o = trace(filled)
+        if len(o) < 3:
             continue
         hl, nh = ndi.label(filled & ~c)
-        holes = [trace(hl == j) + [ox * step, oy * step] for j in range(1, nh + 1)]
-        out.append({"outer": outer, "holes": [x for x in holes if len(x) >= 3 and abs(ring_area(x)) > 4]})
+        holes = [to_img(h) for h in (trace(hl[s2] == j) + [s2[1].start, s2[0].start] if s2 is not None else np.zeros((0, 2))
+                                     for j, s2 in enumerate(ndi.find_objects(hl), 1)) if len(h) >= 3]
+        out.append({"outer": to_img(o), "holes": [x for x in holes if abs(ring_area(x)) > 4]})
     return out
 
 

@@ -561,7 +561,7 @@ FS_KINDS = {"h5ad": (".h5ad", ".rds", ".rda", ".rdata"),
             "xcells": (".parquet", ".csv.gz"), "xcounts": (".h5", ".mtx.gz", ".tsv.gz"), "xexp": (".xenium",),
             "ximage": (".ome.tif", ".tif", ".tiff"), "image": (".tif", ".tiff", ".btf"), "csv": (".csv", ".tsv", ".txt"),
             "markers": (".csv", ".tsv", ".txt"), "flat": (".csv", ".csv.gz"), "geojson": (".geojson", ".json"),
-            "heonly": importer.IMAGE_ONLY_SUFFIXES}
+            "heonly": importer.IMAGE_ONLY_SUFFIXES, "stmodel": (".stmodel",)}
 
 
 def api_fs_list(req):
@@ -2694,7 +2694,12 @@ def api_he_organs(req):
     organs = hetissue.tissue_priors()["organs"]
     sample = req.query_params.get("sample") or ""
     known = hetissue.sample_organ(sample) if sample and "/" not in sample and sample not in (".", "..") else None
-    return _json({"organs": [{"organ": o, "regions": hetissue.compartment_names(o)} for o in organs],
+    from . import organmodel
+    models = {m["organ"]: m for m in organmodel.list_models()}
+    extra = [m for m in models if m not in organs]  # a model of an organ the priors do not cover
+    return _json({"organs": [{"organ": o, "regions": hetissue.compartment_names(o),
+                              "model": {k: models[o][k] for k in ("classes", "slides", "trained")} if o in models else None}
+                             for o in organs + extra],
                   "other": hetissue.compartment_names("other"), "organ": known})
 
 
@@ -2713,14 +2718,109 @@ async def api_claude_he_regions(req: Request):
     if covered:
         hetissue._remember_organ(sample, hetissue.compartments(organ)["organ"])  # segment_he finds it without asking
     notes = re.sub(r"\s+", " ", str(b.get("notes") or "")).strip()[:600]
+    from . import organmodel
+    om = organmodel.model_of(organ) if covered or organ else None
+    if om:  # the model reads the H&E now, so its outlines are ready when the agent asks for them
+        def warm(sample=sample, organ=om["organ"]):
+            try:
+                organmodel.predict(sample, organ)
+            except Exception as e:
+                print(f"organ model on {sample}: {e}")
+        threading.Thread(target=warm, daemon=True).start()
     text = HE_REGIONS.format(sample=sample, regions="; ".join(regions), organ=organ,
                              organ_arg=repr(organ if covered else "other"),
                              notes=(f" My notes: {notes}" + ("" if notes[-1] in ".!?" else ".") if notes else "") +
                              ("" if covered else f" ({organ} has no priors of its own: use the organ-independent ones and "
-                                                 "the regions' usual look on an H&E.)"))
+                                                 "the regions' usual look on an H&E.)") +
+                             (f" A trained {om['organ']} model is available (outlines a pathologist drew; classes: "
+                              f"{', '.join(om['classes'])}): for each region it has a class for, use propose_he_region(name, "
+                              "model_class=<that class>) instead of the H&E classes." if om else ""))
     if not desktop_mode():
         return _json({"message": text})
     return _json({"claude_code": claudelink.open_claude_code(sample, b.get("session"), text, send_if_open=True)})
+
+
+# ---------------- organ models (organmodel.py): trained from H&E + GeoJSON pairs, kept in the data folder ----------------
+def api_organ_models(req):
+    from . import organmodel
+    return _json({"models": organmodel.list_models(), "folder": str(organmodel.models_dir()), "workers": organmodel.WORKERS})
+
+
+async def api_organ_model_inspect(req: Request):
+    """What a training pair holds (classes, area, whether the outlines lie on the image, the pixel size)."""
+    from . import organmodel
+    b = await req.json()
+    try:
+        return _json(await asyncio.to_thread(organmodel.inspect_pair, b["image"], b["geojson"], b.get("um_per_px")))
+    except (OSError, ValueError, KeyError) as e:
+        return _json({"error": str(e)}, 400)
+
+
+async def api_organ_model_train(req: Request):
+    """Train (or extend) an organ's model in the background: {organ, pairs: [{image, geojson, um_per_px?}], classes:
+    {GeoJSON class: model class}, add}; progress under /api/job/organtrain:<organ>."""
+    from . import organmodel
+    b = await req.json()
+    organ = re.sub(r"\s+", " ", str(b.get("organ") or "")).strip()[:80]
+    pairs = [p for p in (b.get("pairs") or []) if isinstance(p, dict) and p.get("image") and p.get("geojson")]
+    classes = {str(k): re.sub(r"\s+", " ", str(v)).strip()[:60] for k, v in (b.get("classes") or {}).items() if str(v).strip()}
+    if not organ or not pairs or len(set(classes.values())) < 2:
+        return _json({"error": "choose the organ, at least one H&E with its GeoJSON, and at least two classes"}, 400)
+    job = f"organtrain:{organmodel.slug(organ)}"
+    if job in JOBS and not JOBS[job]["done"]:
+        return _json({"error": "this organ's model is being trained"}, 409)
+    JOBS[job] = {"stage": "starting", "progress": 0.0, "done": False, "error": None}
+
+    def work():
+        try:
+            meta = organmodel.train(organ, pairs, classes, add=bool(b.get("add")), app_version=__import__("stagent").__version__,
+                                    progress=lambda f, m: JOBS[job].update(progress=round(f, 3), stage=m))
+            JOBS[job].update(progress=1.0, stage="done", done=True, result=meta)
+        except Exception as e:
+            JOBS[job].update(error=f"{type(e).__name__}: {e}", done=True)
+    return await _spawn(job, work) or _json({"job": job})
+
+
+async def api_organ_model_import(req: Request):
+    from . import organmodel
+    b = await req.json()
+    try:
+        return _json({"model": organmodel.import_model(b["path"])})
+    except (OSError, ValueError, KeyError) as e:
+        return _json({"error": str(e)}, 400)
+
+
+async def api_organ_model_export(req: Request):
+    """Desktop app: copy an organ's model to a path the user chose."""
+    from . import organmodel
+    b = await req.json()
+    try:
+        src = organmodel._path(b["organ"])
+        if not src.exists():
+            raise ValueError(f"no model for {b['organ']}")
+        shutil.copyfile(src, Path(b["path"]).expanduser())
+    except (OSError, ValueError, KeyError) as e:
+        return _json({"error": str(e)}, 400)
+    return _json({"saved": b["path"]})
+
+
+def api_organ_model_file(req):
+    """An organ's model file, downloaded (browser, or the server viewer)."""
+    from . import organmodel
+    f = organmodel._path(req.path_params["organ"])
+    if not f.exists():
+        return _json({"error": "no such model"}, 404)
+    return FileResponse(f, media_type="application/zip", filename=f.name)
+
+
+async def api_organ_model_delete(req: Request):
+    from . import organmodel
+    b = await req.json()
+    try:
+        organmodel.delete_model(b["organ"])
+    except (ValueError, KeyError) as e:
+        return _json({"error": str(e)}, 400)
+    return _json({"deleted": b["organ"]})
 
 
 def api_samples_clear(req):
@@ -3348,6 +3448,13 @@ def build_app(port):
         Route("/api/claude/align", api_claude_align, methods=["POST"]),
         Route("/api/claude/he_regions", api_claude_he_regions, methods=["POST"]),
         Route("/api/he_organs", api_he_organs),
+        Route("/api/organ_models", api_organ_models),
+        Route("/api/organ_models/inspect", api_organ_model_inspect, methods=["POST"]),
+        Route("/api/organ_models/train", api_organ_model_train, methods=["POST"]),
+        Route("/api/organ_models/import", api_organ_model_import, methods=["POST"]),
+        Route("/api/organ_models/export", api_organ_model_export, methods=["POST"]),
+        Route("/api/organ_models/delete", api_organ_model_delete, methods=["POST"]),
+        Route("/api/organ_models/{organ}/file", api_organ_model_file),
         Route("/api/s/{sid}/export", api_export, methods=["POST"]),
         Route("/api/s/{sid}/export.csv", api_export_csv),
         Route("/api/s/{sid}/export.ipynb", api_export_notebook),
