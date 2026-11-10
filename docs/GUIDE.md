@@ -10,7 +10,7 @@ and the local / server setups are in the [README](../README.md).
 2. [Marker lists](#2-marker-lists)
 3. [Work with the agent](#3-work-with-the-agent): asking, reviewing Claude's changes, working on a server
 4. [The viewer](#4-the-viewer): the window, samples, annotating, the map, regions, corrections and Undo, Export,
-   Agent Review, Help and About, storage
+   Review, Help and About, storage
 5. [Analyses](#5-analyses): Embedding, Niche, Compare, Signal, Trajectory, Report
 6. [Annotation methods](#6-annotation-methods)
 7. [Performance](#7-performance)
@@ -113,7 +113,7 @@ none); without it the output's `tissue_hires_image.png` (about 1 um per pixel) i
 
 **Whole transcriptome** (some 19,000 genes): the PCA uses the 3,000 most variable genes, the expression model those
 and the marker list's genes (a panel keeps all its genes, Xenium 5K included). The marker annotation of the 282k cells
-took 118 s (5.3 GB of memory). The nuclei-based registration check of Agent Review does not apply.
+took 118 s (5.3 GB of memory). The nuclei-based registration check of Review does not apply.
 
 Command line: `stagent import-visium --name si --path outs/ [--segmentation cells.geojson] [--unit bins] [--he image.btf]`.
 
@@ -293,7 +293,7 @@ text format and how the list is used are in [Annotation methods](#6-annotation-m
 ### Asking
 
 Claude runs in your own Claude Code, with your own Claude account; the app connects it and shows every change. Click
-**Ask Agent** (the bar on the map): Terminal opens with Claude Code connected to the app and to the sample you are
+**Agent** (the bar on the map): Terminal opens with Claude Code connected to the app and to the sample you are
 looking at. Install Claude Code and log in once beforehand.
 
 Claude loads what you are looking at (`use_viewer_session`), and when it starts a new annotation (for example with a
@@ -322,7 +322,7 @@ touches, their current labels, the predicted label changes where they can be com
 - Several waiting changes come one after the other.
 - Claude learns the outcome by itself when you decide within about 45 seconds, otherwise when it next checks.
 
-**Manual or Auto** (the switch on the map's toolbar, next to Agent Review). **Manual**, the default, is the above.
+**Manual or Auto** (the switch on the map's toolbar, next to Review). **Manual**, the default, is the above.
 **Auto** applies every change of Claude as soon as the app sees it, without the review window: a short note says
 what was applied, **Undo** takes it back, and Claude is told it was applied without a review. A change that fails
 still opens the window with the error. The choice is kept until you switch back.
@@ -355,7 +355,7 @@ The SSH login must work without a password prompt (a key: `ssh-keygen`, then `ss
 
 - **Choose…** buttons browse the server's files.
 - **Export** and the other Save buttons download into files on this computer.
-- **Ask Agent** opens Claude Code here with its tools running on the server (through `ssh`), on the same data as the
+- **Agent** opens Claude Code here with its tools running on the server (through `ssh`), on the same data as the
   viewer.
 - The viewer keeps running on the server between connections (`stagent remote-serve` starts it, on the server's own
   localhost only; its process id is in `<data folder>/remote_viewer.json`).
@@ -372,7 +372,7 @@ The app's window, or the web viewer (`.venv/bin/stagent viewer`, then http://loc
   - **Import**, **Export** and **Local** / **Remote** (where the data is: this computer or a server);
   - **Steps** (a panel at the map's top right; the panels opened there go under it): the usual flow for the open
     sample, and where it stands: 1 Import, 2 Check registration, 3 Filter
-    cells and genes, 4 Annotate, 5 Regions and priors, 6 Agent review, 7 Analyze. Each step shows what was done
+    cells and genes, 4 Annotate, 5 Regions and priors, 6 Review, 7 Analyze. Each step shows what was done
     (✓ and a line such as "5,799 cells removed" or "checked 2026-11-09"), or a button that goes where it is done; the
     next step stands out. Steps 5–7 are optional; a step the sample does not need is grayed (no image: no
     registration; Visium and Stereo-seq are placed by their software). A click on the title folds the list;
@@ -380,8 +380,9 @@ The app's window, or the web viewer (`.venv/bin/stagent viewer`, then http://loc
     **Signal** and **Trajectory** as a second row and reopens the one last used (a dot on a tab whose analysis is
     running);
   - at the bottom, **Reset**, **Remove sample** and **Remove all**.
-- **On the map**: the **Color by** bar (with opacity, dot size, hide cells, hide H&E), and a bar with **Undo**,
-  **Refresh**, **Ask Agent** (Claude Code), **Agent Review** and **Report**.
+- **On the map**: the **Color by** bar (with opacity, dot size, hide cells, hide H&E: struck through while hidden;
+  then **Undo** and **Refresh**), and a bar with **Agent** (Claude Code), **Review**, **Report** and **Manual** /
+  **Auto**.
 - **Panels on the map**: Regions (with the Priors list) at the top left, the cell type legend at the bottom left, the
   overview of the whole sample at the bottom right.
 
@@ -540,7 +541,7 @@ then **edit** adjusts it. This needs the sample annotated (the outline follows w
 before that, Claude can offer tiles of the grid.
 
 **Before the first annotation.** A sample not annotated yet opens with its cells gray ("Not annotated"). Regions can
-already be drawn, edited and imported there, and **Agent Review** offers the registration (Spatial organization: the
+already be drawn, edited and imported there, and **Review** offers the registration (Spatial organization: the
 cells on their nuclei, the local correction, torn pieces). The first annotation of the sample starts with these
 regions.
 
@@ -589,9 +590,9 @@ read); **×** removes one (Undo brings it back).
   with the pynndescent and numba versions named in the notebook; annotations made before v0.2.22 (no choice of
   neighbors) only on the same kind of machine. UMAP coordinates differ slightly (all cores).
 
-### Agent Review
+### Review
 
-**Agent Review** (the bar on the map) asks which part of the analysis the agent should review: **Annotation**,
+**Review** (the bar on the map) asks which part of the analysis the agent should review: **Annotation**,
 **Spatial organization**, **Embedding**, **Niches**, **Compare** or **Signaling**. The last four appear once they have
 been run; Compare and Signaling review the analyses you ran in those tabs, which the app logs for the agent.
 
@@ -1050,7 +1051,7 @@ sharing; **?** → **About** → **Daily count** turns it off or on.
 ## On Windows
 
 - The installer and the app are not signed yet: Windows asks once (**More info → Run anyway**).
-- **Ask Agent** opens Claude Code in its own console window. A request sent while it is open reopens it with the
+- **Agent** opens Claude Code in its own console window. A request sent while it is open reopens it with the
   request (`claude --continue`, the same conversation), since text cannot be typed into another console.
 - Sample names are limited to 100 characters (Windows' 260-character paths).
 - Harmony in a project's **Run PCA + UMAP** uses `stagent/harmony.py`, a NumPy version of harmonypy 2.1.0 (which has

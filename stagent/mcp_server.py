@@ -131,7 +131,7 @@ Reviewing an annotation ("does this make sense?", "check my annotation", "review
   - priors or cluster labels.
   Change nothing without the user's agreement.
 
-Reviewing (Agent Review: the user picks one part of the analysis; or when asked what you think of it)
+Reviewing (Review: the user picks one part of the analysis; or when asked what you think of it)
 - Review only the part asked for, as a pathologist and a single-cell analyst together. Gather the evidence:
   annotation: sample_context, type_confusion, type_structure (large or suspicious types), review_markers,
     qc_overview, check_registration; categories taxonomy (types to merge, split or add, citing sub-cluster sizes),
@@ -1606,7 +1606,7 @@ def check_registration() -> str:
 
 @mcp.tool()
 def check_registration_map(focus: Optional[dict] = None) -> list:
-    """The cells on their nuclei over all the tissue (Agent Review: Spatial organization): the nuclei on the H&E (or
+    """The cells on their nuclei over all the tissue (Review: Spatial organization): the nuclei on the H&E (or
     DAPI) against the cell centroids in 200 um windows everywhere, the part one registration fixes (affine: scale,
     rotation, shift) and areas off their nuclei (L1, L2, ...: tissue stretched, folded or torn between the run and
     the staining), with the structures and regions in them; offsets by structure and by region; what the local

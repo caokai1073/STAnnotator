@@ -231,6 +231,11 @@ body.desktop #side { display: none; }
 #tools input[type=range] { width: 80px; }
 #tools #mode { width: 132px; }
 #maptop button { padding: 5px 9px; }
+#tools .vsep { width: 1px; align-self: stretch; background: var(--line); margin: 2px 2px; }
+/* Hide cells / Hide H&E: while hidden, the icon is struck through (instead of a filled button) */
+#hide.on, #hideHE.on { background: var(--panel); color: var(--ink); border-color: var(--line); position: relative; }
+#hide.on::after, #hideHE.on::after { content: ""; position: absolute; left: 50%; top: 50%; width: 22px; height: 2px;
+  background: #d63b3b; border-radius: 1px; transform: translate(-50%, -50%) rotate(-45deg); box-shadow: 0 0 0 1px var(--panel); }
 #maptop button.ib { padding: 5px; }
 #tools, #acts { gap: 6px; }
 #acts #vinfo { font-size: 11.5px; color: var(--muted); padding: 0 2px; }
@@ -355,9 +360,11 @@ header .br { flex: 1 1 100%; height: 0; }
 #empanel { position: relative; margin-top: 10px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
   display: flex; flex-direction: column; background: var(--panel); }
 #empanel[hidden] { display: none; }
-#empanel .lh { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--line); font-size: 12px; flex-wrap: wrap; }
-#empanel .lh select { padding: 2px 6px; font-size: 12px; flex: 0 1 auto; min-width: 0; }  /* natural width, shrinking if needed; × stays inside */
-#empanel .lh > * { flex-shrink: 0; }
+#empanel .lh { display: flex; align-items: center; gap: 5px; padding: 6px 8px; border-bottom: 1px solid var(--line); font-size: 12px; }
+#empanel .lh select { padding: 2px 4px; font-size: 12px; min-width: 0; }  /* one line: the narrow choices narrow, colors wider */
+#emKind { flex: 0 1 78px; } #emScope { flex: 0 1 92px; } #emColor { flex: 1 1 116px; max-width: 150px; }
+#empanel .lh select[hidden] { display: none; }
+#empanel .lh button { flex: none; }
 .emtools { display: flex; align-items: center; gap: 6px; padding: 6px 10px; font-size: 12px; }
 .emtools button { padding: 2px 9px; font-size: 12px; }
 #emcanvas { width: 100%; display: block; background: var(--panel); cursor: grab; touch-action: none; }  /* size: emResize() */
@@ -413,9 +420,9 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .clcard pre { font: 11.5px ui-monospace, Menlo, monospace; white-space: pre-wrap; margin: 0; color: var(--muted); }
 .claudebox { display: flex; flex-direction: column; gap: 8px; padding: 4px 2px; }
 /* the steps of the usual flow, at the top of the panel: where the sample stands, and the next thing to do */
-#steps { top: 10px; right: 10px; width: 300px; z-index: 6; font-size: 12px; max-height: calc(100% - 210px); overflow: auto; }
+#steps { top: 10px; right: 10px; width: 340px; z-index: 6; font-size: 13px; max-height: calc(100% - 210px); overflow: auto; }
 /* the panels at the map's top right go under the steps; the map's toolbar leaves them room */
-#viewerwrap.st #maptop { right: 320px; }
+#viewerwrap.st #maptop { right: 360px; }
 #viewerwrap.st #plpanel { top: calc(10px + var(--stepsH, 0px)); max-height: calc(100% - 210px - var(--stepsH, 0px)); }
 #viewerwrap.st #cellcard { top: calc(10px + var(--stepsH, 0px)); }
 #steps .sh { display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; user-select: none; }
@@ -426,8 +433,9 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 #stepsList li { display: grid; grid-template-columns: 18px 1fr auto; gap: 2px 6px; align-items: center; padding: 3px 4px; border-radius: 6px; }
 #stepsList li .mk { width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; font-size: 10px; font-weight: 700; }
 #stepsList li .nm { font-weight: 600; }
-#stepsList li .dt { grid-column: 2 / 4; color: var(--muted); font-size: 11px; line-height: 1.3; }
-#stepsList li button { padding: 1px 9px; font-size: 11.5px; }
+#stepsList li .dt { grid-column: 2 / 4; color: var(--muted); font-size: 12px; line-height: 1.35; }
+#stepsList li button { padding: 2px 10px; font-size: 12.5px; }
+#stepsList li .mk { width: 18px; height: 18px; font-size: 11px; }
 #stepsList li.done .mk { background: #2e9e5b; color: #fff; }
 #stepsList li.todo .mk { border: 1.5px solid var(--accent); color: var(--accent); }
 #stepsList li.next { background: color-mix(in srgb, var(--accent) 12%, transparent); }
@@ -441,7 +449,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 </style>
 </head>
 <body>
-<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="ic-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol><symbol id="ic-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></symbol><symbol id="ic-upload" viewBox="0 0 24 24"><path d="M12 16V5M7 9l5-5 5 5M5 20h14"/></symbol><symbol id="ic-import" viewBox="0 0 24 24"><path d="M12 3v11M7.5 9.5L12 14l4.5-4.5M4 14v6h16v-6"/></symbol><symbol id="ic-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5zM8 4v5h7V4M8 20v-6h8v6"/></symbol><symbol id="ic-help" viewBox="0 0 24 24"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.6 9.4a2.5 2.5 0 1 1 3.6 2.3c-.7.3-1.2 1-1.2 1.8v.4M12 17.2v.1"/></symbol><symbol id="ic-chev-left" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol><symbol id="ic-chev-right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol><symbol id="ic-chev-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol><symbol id="ic-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol><symbol id="ic-grid" viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></symbol><symbol id="ic-chart" viewBox="0 0 24 24"><path d="M4 20h16M7 16v-5M12 16V6M17 16V9"/></symbol><symbol id="ic-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></symbol><symbol id="ic-play" viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></symbol><symbol id="ic-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 15.5l.8 1.7 1.7.8-1.7.8-.8 1.7-.8-1.7-1.7-.8 1.7-.8z"/></symbol><symbol id="ic-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3"/></symbol><symbol id="ic-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7M20 4v5h-5"/></symbol><symbol id="ic-terminal" viewBox="0 0 24 24"><path d="M3 5h18v14H3zM7 10l3 2-3 2M12.5 15h4.5"/></symbol><symbol id="ic-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM8.6 12.2l2.4 2.4 4.4-4.8"/></symbol><symbol id="ic-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h6"/></symbol><symbol id="ic-share" viewBox="0 0 24 24"><path d="M12 15V4M8 8l4-4 4 4M5 12v8h14v-8"/></symbol><symbol id="ic-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol><symbol id="ic-server" viewBox="0 0 24 24"><path d="M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01"/></symbol><symbol id="ic-monitor" viewBox="0 0 24 24"><path d="M3 4h18v12H3zM8 20h8M12 16v4"/></symbol><symbol id="ic-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></symbol><symbol id="ic-image" viewBox="0 0 24 24"><path d="M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15.5 8.5h.01"/></symbol><symbol id="ic-pen" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"/></symbol><symbol id="ic-lasso" viewBox="0 0 24 24"><path d="M7 15.5C4.6 14.4 3 12.6 3 10.5 3 6.9 7 4 12 4s9 2.9 9 6.5S17 17 12 17c-1 0-2-.1-2.9-.3M7 15.5c-1 .8-1.5 1.7-1.5 2.6C5.5 19.7 7 21 9 21M7 15.5a1.6 1.6 0 1 0 2.3 1"/></symbol><symbol id="ic-target" viewBox="0 0 24 24"><path d="M12 19a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM12 2v4M12 18v4M2 12h4M18 12h4"/></symbol><symbol id="ic-scatter" viewBox="0 0 24 24"><path d="M4 4v16h16M8 15h.01M10 10h.01M14 13h.01M16 8h.01M18 15h.01"/></symbol><symbol id="ic-folder" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v11H3z"/></symbol><symbol id="ic-send" viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-3-7z"/></symbol><symbol id="ic-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></symbol><symbol id="ic-home" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9H4zM10 20v-6h4v6"/></symbol><symbol id="ic-move" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3L9.5 5.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5M3 12l2.5-2.5M3 12l2.5 2.5M21 12l-2.5-2.5M21 12l-2.5 2.5"/></symbol><symbol id="ic-copy" viewBox="0 0 24 24"><path d="M8 8h12v12H8zM4 16V4h12"/></symbol><symbol id="ic-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5zM3 13l9 5 9-5"/></symbol><symbol id="ic-rect" viewBox="0 0 24 24"><path d="M4 6h16v12H4z"/></symbol><symbol id="ic-ellipse" viewBox="0 0 24 24"><path d="M12 18.5c4.7 0 8.5-2.9 8.5-6.5S16.7 5.5 12 5.5 3.5 8.4 3.5 12s3.8 6.5 8.5 6.5z"/></symbol><symbol id="ic-polygon" viewBox="0 0 24 24"><path d="M5 9l7-5 7 4-2 10-9 2z"/></symbol><symbol id="ic-brush" viewBox="0 0 24 24"><path d="M20 4l-8.5 8.5M11.5 12.5l-1.5 1.5M9.5 13.5c-2 0-3.5 1.6-3.5 3.5 0 1-.5 2-2 2.5 1 .7 2.3 1 3.5 1 2.5 0 4.5-2 4.5-4.5 0-1.4-1.1-2.5-2.5-2.5z"/></symbol><symbol id="ic-wand" viewBox="0 0 24 24"><path d="M4 20L15 9M13 7l4 4M18 3v3M16.5 4.5h3M20 8v2M19 9h2M10 3v2M9 4h2"/></symbol><symbol id="ic-minus" viewBox="0 0 24 24"><path d="M6 12h12"/></symbol><symbol id="ic-hand" viewBox="0 0 24 24"><path d="M8 13V6.5a1.5 1.5 0 0 1 3 0V12M11 11V5a1.5 1.5 0 0 1 3 0v6M14 11V6.5a1.5 1.5 0 0 1 3 0V14c0 3.9-2.5 7-6.5 7-2.6 0-4-1.2-5.3-3.2L3.6 15a1.5 1.5 0 0 1 2.4-1.8L8 15"/></symbol><symbol id="ic-bug" viewBox="0 0 24 24"><path d="M8 9h8v6a4 4 0 0 1-8 0zM9 9V7a3 3 0 0 1 6 0v2M12 11v8M4 12h4M16 12h4M5 7l3 2M19 7l-3 2M5 18l3-2M19 18l-3-2"/></symbol></svg>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="ic-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol><symbol id="ic-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></symbol><symbol id="ic-upload" viewBox="0 0 24 24"><path d="M12 16V5M7 9l5-5 5 5M5 20h14"/></symbol><symbol id="ic-import" viewBox="0 0 24 24"><path d="M12 3v11M7.5 9.5L12 14l4.5-4.5M4 14v6h16v-6"/></symbol><symbol id="ic-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5zM8 4v5h7V4M8 20v-6h8v6"/></symbol><symbol id="ic-help" viewBox="0 0 24 24"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.6 9.4a2.5 2.5 0 1 1 3.6 2.3c-.7.3-1.2 1-1.2 1.8v.4M12 17.2v.1"/></symbol><symbol id="ic-chev-left" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol><symbol id="ic-chev-right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol><symbol id="ic-chev-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol><symbol id="ic-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol><symbol id="ic-grid" viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></symbol><symbol id="ic-chart" viewBox="0 0 24 24"><path d="M4 20h16M7 16v-5M12 16V6M17 16V9"/></symbol><symbol id="ic-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></symbol><symbol id="ic-play" viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></symbol><symbol id="ic-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 15.5l.8 1.7 1.7.8-1.7.8-.8 1.7-.8-1.7-1.7-.8 1.7-.8z"/></symbol><symbol id="ic-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3"/></symbol><symbol id="ic-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7M20 4v5h-5"/></symbol><symbol id="ic-terminal" viewBox="0 0 24 24"><path d="M3 5h18v14H3zM7 10l3 2-3 2M12.5 15h4.5"/></symbol><symbol id="ic-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM8.6 12.2l2.4 2.4 4.4-4.8"/></symbol><symbol id="ic-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h6"/></symbol><symbol id="ic-share" viewBox="0 0 24 24"><path d="M12 15V4M8 8l4-4 4 4M5 12v8h14v-8"/></symbol><symbol id="ic-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol><symbol id="ic-server" viewBox="0 0 24 24"><path d="M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01"/></symbol><symbol id="ic-monitor" viewBox="0 0 24 24"><path d="M3 4h18v12H3zM8 20h8M12 16v4"/></symbol><symbol id="ic-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></symbol><symbol id="ic-image" viewBox="0 0 24 24"><path d="M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15.5 8.5h.01"/></symbol><symbol id="ic-pen" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"/></symbol><symbol id="ic-lasso" viewBox="0 0 24 24"><path d="M7 15.5C4.6 14.4 3 12.6 3 10.5 3 6.9 7 4 12 4s9 2.9 9 6.5S17 17 12 17c-1 0-2-.1-2.9-.3M7 15.5c-1 .8-1.5 1.7-1.5 2.6C5.5 19.7 7 21 9 21M7 15.5a1.6 1.6 0 1 0 2.3 1"/></symbol><symbol id="ic-target" viewBox="0 0 24 24"><path d="M12 19a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM12 2v4M12 18v4M2 12h4M18 12h4"/></symbol><symbol id="ic-scatter" viewBox="0 0 24 24"><path d="M4 4v16h16M8 15h.01M10 10h.01M14 13h.01M16 8h.01M18 15h.01"/></symbol><symbol id="ic-folder" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v11H3z"/></symbol><symbol id="ic-send" viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-3-7z"/></symbol><symbol id="ic-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></symbol><symbol id="ic-home" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9H4zM10 20v-6h4v6"/></symbol><symbol id="ic-move" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3L9.5 5.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5M3 12l2.5-2.5M3 12l2.5 2.5M21 12l-2.5-2.5M21 12l-2.5 2.5"/></symbol><symbol id="ic-copy" viewBox="0 0 24 24"><path d="M8 8h12v12H8zM4 16V4h12"/></symbol><symbol id="ic-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5zM3 13l9 5 9-5"/></symbol><symbol id="ic-rect" viewBox="0 0 24 24"><path d="M4 6h16v12H4z"/></symbol><symbol id="ic-ellipse" viewBox="0 0 24 24"><path d="M12 18.5c4.7 0 8.5-2.9 8.5-6.5S16.7 5.5 12 5.5 3.5 8.4 3.5 12s3.8 6.5 8.5 6.5z"/></symbol><symbol id="ic-polygon" viewBox="0 0 24 24"><path d="M5 9l7-5 7 4-2 10-9 2z"/></symbol><symbol id="ic-brush" viewBox="0 0 24 24"><path d="M20 4l-8.5 8.5M11.5 12.5l-1.5 1.5M9.5 13.5c-2 0-3.5 1.6-3.5 3.5 0 1-.5 2-2 2.5 1 .7 2.3 1 3.5 1 2.5 0 4.5-2 4.5-4.5 0-1.4-1.1-2.5-2.5-2.5z"/></symbol><symbol id="ic-wand" viewBox="0 0 24 24"><path d="M4 20L15 9M13 7l4 4M18 3v3M16.5 4.5h3M20 8v2M19 9h2M10 3v2M9 4h2"/></symbol><symbol id="ic-minus" viewBox="0 0 24 24"><path d="M6 12h12"/></symbol><symbol id="ic-hand" viewBox="0 0 24 24"><path d="M8 13V6.5a1.5 1.5 0 0 1 3 0V12M11 11V5a1.5 1.5 0 0 1 3 0v6M14 11V6.5a1.5 1.5 0 0 1 3 0V14c0 3.9-2.5 7-6.5 7-2.6 0-4-1.2-5.3-3.2L3.6 15a1.5 1.5 0 0 1 2.4-1.8L8 15"/></symbol><symbol id="ic-cell" viewBox="0 0 24 24"><path d="M12 20.5c4.4 0 8-3.6 8-8.2 0-4.5-3.4-8.8-8.3-8.8C7 3.5 4 7.4 4 11.8c0 4.8 3.6 8.7 8 8.7zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></symbol><symbol id="ic-bug" viewBox="0 0 24 24"><path d="M8 9h8v6a4 4 0 0 1-8 0zM9 9V7a3 3 0 0 1 6 0v2M12 11v8M4 12h4M16 12h4M5 7l3 2M19 7l-3 2M5 18l3-2M19 18l-3-2"/></symbol></svg>
 <header>
   <div class="hmini"><button id="hdrShow" title="Show the toolbar (t)">‹</button><b>STAnnotator</b><span id="miniInfo"></span></div>
   <!-- the toolbar: a panel on the right of the map: the app, then the tabs Data and Analysis (its steps as a second row),
@@ -517,7 +525,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <div class="act2"><button id="eShow" disabled title="Show the embedding under this button">Show UMAP</button></div>
     <button id="eRun" class="primary main" disabled title="Compute PCA, UMAP and Leiden clusters of this sample (expression only; about a minute)">Run PCA + UMAP</button>
       <div id="empanel" hidden>
-        <div class="lh"><b>Embedding</b>
+        <div class="lh">
           <select id="emKind" title="Which embedding"><option value="umap">UMAP</option><option value="pca">PCA (PC1, PC2)</option></select>
           <select id="emScope" hidden title="Cells of this slice, or of all slices of the project"><option value="slice">this slice</option><option value="all">all slices</option></select>
           <select id="emColor" title="Colors of the points"><option value="map">as the map</option><option value="type">cell type</option>
@@ -672,15 +680,16 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
         <span id="dotsizeVal" style="min-width:34px">1.0×</span></label>
       <button id="hide" title="Hide the cells: the H&amp;E only (h)">Hide cells</button>
       <button id="hideHE" title="Hide the H&amp;E: the cells only (e)">Hide H&amp;E</button>
-    </div>
-    <div id="acts" class="float">
+      <span class="vsep"></span>
       <button id="undo" disabled title="Undo your last action (everything the agent changed for one request goes back at once)">Undo</button>
       <button id="refresh" title="Show the latest of everything: the server reads the sample, its image and annotations from disk again and the page reloads what it shows (the view, color mode and legend choice stay)">Refresh</button>
-      <button id="claudeBtn" hidden title="Ask your own agent (Claude Code, in its own terminal window), connected to the sample open here">Ask Agent</button>
-      <div class="seg" id="reviewMode" title="How the agent's changes are taken. Manual: each waits for you in a review window (Accept or Dismiss). Auto: each is applied at once, without the window; Undo takes it back."><button data-m="manual">Manual</button><button data-m="auto">Auto</button></div>
-      <button id="plaus" disabled title="Agent review of one part of the analysis (annotation, spatial organization, embedding, niches, compare, signaling): its advice, checked by the agent itself">Agent Review</button>
+    </div>
+    <div id="acts" class="float">
+      <button id="claudeBtn" hidden title="Ask your own agent (Claude Code, in its own terminal window), connected to the sample open here">Agent</button>
+      <button id="plaus" disabled title="The agent reviews one part of the analysis (annotation, spatial organization, embedding, niches, compare, signaling): its advice, checked by the agent itself">Review</button>
       <button id="report" disabled title="The annotation report the agent writes: method, composition, compartments, quality, open questions">Report</button>
-      <span id="vinfo"></span>
+      <div class="seg" id="reviewMode" title="How the agent's changes are taken. Manual: each waits for you in a review window (Accept or Dismiss). Auto: each is applied at once, without the window; Undo takes it back."><button data-m="manual">Manual</button><button data-m="auto">Auto</button></div>
+      <span id="vinfo" hidden></span>
     </div>
     </div>
     <div id="legend" class="float" hidden>
@@ -807,7 +816,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
         <button id="mkDraft" class="primary">Draft</button></div>
       <div id="mkDraftMsg" class="hint"></div>
       </div>
-      <div id="mkClaudeHint" class="hint" hidden>To draft or revise a list, ask the agent (Ask Agent): “Draft a marker list for this panel”. Lists the agent saves appear under “load a list…”.</div>
+      <div id="mkClaudeHint" class="hint" hidden>To draft or revise a list, ask the agent (Agent): “Draft a marker list for this panel”. Lists the agent saves appear under “load a list…”.</div>
     </div>
   </div>
 </dialog>
@@ -1012,7 +1021,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
   </div>
 </dialog>
 <dialog id="rvDlg" style="width:min(600px,95vw)">
-  <div class="dh"><b>Agent Review</b><span class="spacer"></span><button id="rvClose">Close</button></div>
+  <div class="dh"><b>Review</b><span class="spacer"></span><button id="rvClose">Close</button></div>
   <div class="imbody">
     <div class="hint" style="margin-bottom:8px">Choose what the agent reviews. It looks only at that part, drafts its advice, then checks
       every draft against the data and keeps only what holds up; what it drops stays folded away with its reason.</div>
@@ -1186,7 +1195,7 @@ function decorate(b, name, only) {  // icon + label, or the icon only (the label
 const ICON_ONLY = { sessDel: "x", hdrShow: "chev-left", hdrHide: "chev-right", helpBtn: "help", bugBtn: "bug", slPrev: "chev-left", slNext: "chev-right",
   lgtoggle: "chev-up", rgtoggle: "chev-up", plclose: "x", emClose: "x", imClose: "x", rcClose: "x", clClose: "x", rpClose: "x",
   xpClose: "x", glClose: "x", anClose: "x", rvClose: "x", hpClose: "x", anCsv: "download", rpSave: "download", mkExport: "download",
-  fbUp: "arrow-up", fbHome: "home", rsClose: "x", hide: "eye", hideHE: "image" };
+  fbUp: "arrow-up", fbHome: "home", rsClose: "x", hide: "cell", hideHE: "image" };
 const ICON_TEXT = { qfBtn: "play", importBtn: "import", clearAll: "trash", rmSample: "trash", allSamples: "grid", connBtn: "monitor", 
   openMarkers: "list", openRef: "file", openEx: "file", annotate: "play", eRun: "play", eShow: "scatter", nRun: "play",
   undo: "undo", refresh: "refresh", claudeBtn: "sparkle", plaus: "shield", report: "file", export: "share", reset: "trash",
@@ -2098,7 +2107,7 @@ function syncKMode() {  // "Agent chooses" needs an agent (the app's Claude Code
   const ok = st.desktop || st.chatAvailable, agent = $("nKMode").value === "agent" && ok;
   if (!ok) $("nKMode").value = "fixed";
   const ab = document.querySelector('.seg[data-for="nKMode"] button[data-v="agent"]');
-  if (ab) { ab.disabled = !ok; ab.title = ok ? "The agent chooses k per region" : "Needs the agent (the app's Ask Agent)"; }
+  if (ab) { ab.disabled = !ok; ab.title = ok ? "The agent chooses k per region" : "Needs the agent (the app's Agent button)"; }
   syncSeg("nKMode");
   $("nKWrap").hidden = agent; $("nKHint").hidden = !agent;
   setLabel($("nRun"), agent ? "Ask the agent to run niches" : "Run niches"); setIcon($("nRun"), agent ? "sparkle" : "play");
@@ -2116,7 +2125,7 @@ async function refreshVersion(force) {
   st.lastSummary = sm;
   const how = { markers: "Marker genes", scref: "Single-cell reference", existing: "Loaded annotation" }[st.vocab && st.vocab.method] || "Annotation";
   if (st.placeholder) $("ainfo").textContent = st.sample && st.sample.spaceranger ? "Not annotated yet: draw regions; they stay when you Annotate"
-    : "Not annotated yet: draw regions and check the registration (Agent Review); they stay when you Annotate";
+    : "Not annotated yet: draw regions and check the registration (Review); they stay when you Annotate";
   else $("ainfo").textContent = [`${how} · version ${v}`, sm.constraints.length ? `${sm.constraints.length} priors` : "",
     sm.corrections.length ? `${sm.corrections.length} corrections` : "", sm.n_conflicts ? `${sm.n_conflicts} conflicts` : ""].filter(Boolean).join(" · ");
   fillModes(sm);
@@ -3643,7 +3652,7 @@ function renderScope(scope) {  // the Review panel for one part other than the a
   $("plnote").textContent = s.preparing ? `The agent is reviewing the ${sc.label.toLowerCase()}` + (s.n_drafts ? ` and checking its ${s.n_drafts} draft suggestion(s)` : "") + ". Only what holds up will be listed here."
     : sc.unavailable && !s.n_runs ? `Nothing to review yet: ${sc.unavailable}.`
     : when ? `Reviewed by the agent at ${when}: ${s.n_open} suggestion(s) kept after its own check` + (s.n_filtered ? `, ${s.n_filtered} dropped` : "") + "."
-    : "Not reviewed yet: click Agent Review and choose this part.";
+    : "Not reviewed yet: click Review and choose this part.";
   const btn = (text, title, fn) => { const b = document.createElement("button"); b.textContent = text; b.title = title; b.onclick = fn; return b; };
   const head = (text) => { const h = document.createElement("div"); h.className = "plh"; h.textContent = text; box.append(h); };
   renderAdvice(adv, btn, head, null, scope);
@@ -4294,7 +4303,7 @@ async function askAlign() {
     const r = await post("/api/claude/align", { sample: st.sample.sample_id, session: st.sid });
     if (r.message && st.chatAvailable) { $("imDlg").close(); $("input").value = r.message; send(); }
     else if (r.claude_code) toast(r.claude_code.reused ? "The agent is aligning the image; the cells move onto it when done" : "The agent is opening to align the image", 7000);
-    else toast("Open the agent first (Ask Agent)", 5000);
+    else toast("Open the agent first (Agent)", 5000);
   } catch (e) { toast(e.message, 6000); }
 }
 $("alignNow").onclick = askAlign;
@@ -4389,7 +4398,7 @@ $("importBtn").onclick = openImport;
 const HELP = `
 <h3>Steps</h3><ul>
 <li>The list at the map's top right is the usual flow for the open sample: <b>Import</b> → <b>Check registration</b>
-  → <b>Filter cells and genes</b> → <b>Annotate</b> → (optional) <b>Regions and priors</b>, <b>Agent review</b>,
+  → <b>Filter cells and genes</b> → <b>Annotate</b> → (optional) <b>Regions and priors</b>, <b>Review</b>,
   <b>Analyze</b>.</li>
 <li>✓ marks what is done (with what came of it); the next step stands out, with a button that goes where it is done.
   Hover a step for what it does and why. A click on <b>Steps</b> folds the list.</li></ul>
@@ -4492,7 +4501,7 @@ const HELP = `
 <li>Ask the agent to draw one (“draw the mucosa”): it appears in the Review panel; click <b>add region</b>.</li></ul>
 
 <h3>Priors and corrections</h3><ul>
-<li>Tell the agent (Ask Agent), e.g. “epithelial cells are only in the mucosa”, “the cells in region X are goblet cells”.<ul>
+<li>Tell the agent (Agent), e.g. “epithelial cells are only in the mucosa”, “the cells in region X are goblet cells”.<ul>
   <li>It previews the change and asks before adding a prior.</li></ul></li>
 <li>The <b>Priors</b> list under Regions shows them; <b>×</b> removes one.</li></ul>
 
@@ -4520,8 +4529,8 @@ const HELP = `
   <li><b>Show on map</b> zooms the map to them; <b>Clear</b> ends the selection.</li></ul></li>
 <li>Color by <b>Leiden clusters</b> shows the clusters on the map.</li></ul>
 
-<h3>Agent Review and Report</h3><ul>
-<li><b>Agent Review</b> (bar on the map): choose what the agent reviews.<ul>
+<h3>Review and Report</h3><ul>
+<li><b>Review</b> (bar on the map): choose what the agent reviews.<ul>
   <li><b>Annotation</b>: the computed checks of markers and out-of-place cells, judged on the H&amp;E, and advice on
     the cell types.</li>
   <li><b>Spatial organization</b>: compartments proposed as regions, gradients and neighbors.</li>
@@ -4605,7 +4614,7 @@ const HELP = `
   <li>the regions as GeoJSON (the image's pixels, as QuPath writes annotations);</li>
   <li>or the whole analysis as a Jupyter notebook that runs without this app (code with this annotation's
     parameters, and its results; the last trajectory too).</li></ul></li>
-<li><b>Ask Agent</b> (bar on the map) opens your own Claude Code, connected to this app. <b>Undo</b> and
+<li><b>Agent</b> (bar on the map) opens your own Claude Code, connected to this app. <b>Undo</b> and
   <b>Report</b> are there too.</li>
 <li>Something went wrong? The bug icon (top right, between <b>?</b> and <b>›</b>):<ul>
   <li>describe the bug in a few words, and add up to 3 screenshots if they help (choose, drop or paste them);</li>
@@ -4621,11 +4630,11 @@ Anything that would change your data opens here in a review window first and is 
 <b>Accept</b>.</p>
 
 <h3>Start</h3><ul>
-<li><b>Ask Agent</b> (bar on the map) opens Claude Code in its own window, already on the sample and annotation you
+<li><b>Agent</b> (bar on the map) opens Claude Code in its own window, already on the sample and annotation you
   are looking at. Type in plain words, in any language.</li>
 <li>Other doors to the agent:<ul>
   <li><b>Ask Agent</b> in a result window (DE genes, top genes, signaling, trajectory) sends that result to it.</li>
-  <li><b>Agent Review</b> (bar on the map): the agent reviews one part of the analysis.</li>
+  <li><b>Review</b> (bar on the map): the agent reviews one part of the analysis.</li>
   <li><b>Report → Ask Agent to write it</b>; in <b>Markers…</b>, <b>Refine with the agent</b>.</li></ul></li>
 <li>What comes back:<ul>
   <li>An answer in Claude Code, with the numbers the tools computed (cells, shares, genes, p-values).</li>
@@ -4694,7 +4703,7 @@ Anything that would change your data opens here in a review window first and is 
 <li>Embedding: “what does the UMAP show?”, “do the slices mix?”.</li></ul>
 
 <h3>Review and quality</h3><ul>
-<li><b>Agent Review</b>, or “review my annotation”.<ul>
+<li><b>Review</b>, or “review my annotation”.<ul>
   <li>It looks at the candidate problems the app computed (areas where a type sits out of place, markers that do not
     hold), checks each on the H&amp;E, drafts advice and keeps only what survives its own check. The advice appears in
     the <b>Review</b> panel; you solve or dismiss each item.</li></ul></li>
@@ -4709,8 +4718,8 @@ Anything that would change your data opens here in a review window first and is 
 <h3>Good to know</h3><ul>
 <li>Name things as the app does: region names, cell type names, slice names; it asks when something is unclear.</li>
 <li>Large steps take time (an alignment or a review: a few minutes); <kbd>Esc</kbd> in Claude Code stops it.</li>
-<li>While Claude Code's window is open, <b>Ask Agent</b> goes back to the same conversation. After you close it, the
-  next <b>Ask Agent</b> starts a new one from what the app shows: your annotation, priors, regions and versions stay in
+<li>While Claude Code's window is open, <b>Agent</b> goes back to the same conversation. After you close it, the
+  next <b>Agent</b> starts a new one from what the app shows: your annotation, priors, regions and versions stay in
   the app.</li>
 <li>The agent uses your own Claude account. Your images and expression data stay on your computer (or server); the
   agent reads only what the tools return.</li></ul>
@@ -4746,7 +4755,7 @@ checksums of its steps (PCA, neighbors, first clusters, labels) to compare runs.
   <li>Choice: the agent looks at the candidates' figures and picks the section and orientation.</li>
   <li>Refinement: nuclei on the image (hematoxylin, or DAPI) cross-correlated with the cell centroids in windows over
     the tissue; an affine fit of the windows' offsets; three rounds with a shrinking search.</li></ul></li>
-<li><b>Registration check and local correction</b> (Agent Review: Spatial organization)<ul>
+<li><b>Registration check and local correction</b> (Review: Spatial organization)<ul>
   <li>Windows of 200 µm: the offset of the nuclei from the cells, searched up to 25 µm; an offset counts when its
     correlation is clear (at least 0.2, and the one at zero at most 85% of it).</li>
   <li>A robust affine fit of the offsets is the global part; what is left are local shifts (tissue stretched, folded
@@ -4856,7 +4865,7 @@ checksums of its steps (PCA, neighbors, first clusters, labels) to compare runs.
   cell numbers; η² = the share of its variance between bins; transient genes peak in the middle bins and fall again
   on both sides.</li></ul>
 
-<h3>Agent Review</h3><ul>
+<h3>Review</h3><ul>
 <li>Out-of-place cells: cells of types that form sheets (epithelium, smooth muscle) with few cells of their lineage
   among their 15 nearest cells; tiles holding many more of them than expected form candidate areas.</li>
 <li>The agent reads these facts (marker detection per type, confusion between types, spatial profiles, quality per
@@ -4903,8 +4912,8 @@ async function showAbout() {
       (d.data_folder_source === "environment" ? `<div class="hint">Set by the STAGENT_HOME environment variable.</div>` : "") +
       (d.data_folder_next && d.data_folder_next !== d.data_folder ? `<div class="hint">From the next start: <code>${esc(d.data_folder_next)}</code> (close and reopen the app).</div>` : "") +
       `<div class="hint" id="hpDataMsg"></div>`], ["Samples / annotations", `${d.n_samples} / ${d.n_annotations} · ${d.data_size_mb} MB`],
-    ["Claude Code", d.claude_code ? `<span class="ok">found</span> · ${esc(d.claude_code)}` : `<span class="bad">not found</span>: install Claude Code, then click Ask Agent`],
-    ["Agent connection", cc.seen ? `<span class="${cc.running ? "ok" : ""}">last used the tools ${esc(cc.last)}</span>` + (cc.running ? " (still open)" : " (closed since)") : `<span class="bad">not yet</span>: click Ask Agent and ask something`],
+    ["Claude Code", d.claude_code ? `<span class="ok">found</span> · ${esc(d.claude_code)}` : `<span class="bad">not found</span>: install Claude Code, then click Agent`],
+    ["Agent connection", cc.seen ? `<span class="${cc.running ? "ok" : ""}">last used the tools ${esc(cc.last)}</span>` + (cc.running ? " (still open)" : " (closed since)") : `<span class="bad">not yet</span>: click Agent and ask something`],
     ["Agent workspace", esc(d.claude_workspace)],
     ["Libraries", Object.entries(d.libraries).map(([k, v]) => `${k} ${v || "–"}`).join(" · ")]];
   if (native() && native().share_status) rows.push(["Usage sharing", `<span id="hpShare">…</span>`]);
@@ -5278,7 +5287,7 @@ async function openClaudeCode() {
   try {
     const s = st.remote ? await native().claude_status() : await api("/api/claude/status");
     if (s.platform === "Darwin" && !s.claude_code) {
-      $("clMsg").textContent = "Claude Code was not found on this computer. Install it (docs.claude.com → Claude Code → Setup), log in once with your own Claude account in a terminal, then click Ask Agent again.";
+      $("clMsg").textContent = "Claude Code was not found on this computer. Install it (docs.claude.com → Claude Code → Setup), log in once with your own Claude account in a terminal, then click Agent again.";
       $("clCmd").hidden = true; $("clDlg").showModal(); return;
     }
     const r = await post("/api/claude/code", { sample: st.sample && st.sample.sample_id, session: st.sid });
@@ -5309,11 +5318,11 @@ setInterval(() => { if (!st.busy) followAgent().catch(() => {}); }, 4000);
 // stands (from /api/s/<sid>/steps), and a button that goes where each step is done. The next step stands out.
 const STEPS = {
   import: ["Import", "The sample: its cells and genes, and its image and registration if it has them.", null],
-  registration: ["Check registration", "Are the cells on their nuclei everywhere? The agent measures the offsets over the whole tissue and offers a correction where the tissue shifted (Agent Review → Spatial organization). About a minute.", ["Check", () => { st.rvScope = "organization"; openReviewChooser().catch((e) => toast(e.message, 6000)); }]],
+  registration: ["Check registration", "Are the cells on their nuclei everywhere? The agent measures the offsets over the whole tissue and offers a correction where the tissue shifted (Review → Spatial organization). About a minute.", ["Check", () => { st.rvScope = "organization"; openReviewChooser().catch((e) => toast(e.message, 6000)); }]],
   filter: ["Filter cells and genes", "Leave out cells with few transcripts or genes and genes detected in few cells, before annotating. Seconds to a minute.", ["Filter", () => $("qfBtn").click()]],
   annotate: ["Annotate", "Cell types from a marker list (or a reference, or a CSV of labels): Annotate tab → Markers… → Annotate. A few minutes.", ["Annotate", () => showTab("annotate")]],
   regions: ["Regions and priors", "Optional: outline tissue regions on the map (brush, polygon…), then tell the agent what holds there, e.g. “epithelial cells are only in the mucosa”.", ["Draw", () => { $("regpanel").hidden = false; $("regpanel").classList.remove("collapsed"); setTool("brush"); toast("Brush: paint a region on the map (or pick another tool in the Regions panel), then Save", 6000); }]],
-  review: ["Agent review", "Optional: the agent checks the annotation (areas and marker genes that look wrong) and gives advice.", ["Review", () => { st.rvScope = "annotation"; openReviewChooser().catch((e) => toast(e.message, 6000)); }]],
+  review: ["Review", "Optional: the agent checks the annotation (areas and marker genes that look wrong) and gives advice.", ["Review", () => { st.rvScope = "annotation"; openReviewChooser().catch((e) => toast(e.message, 6000)); }]],
   analyze: ["Analyze", "Optional: embedding (PCA, UMAP), niches, DE genes and DESeq2, composition, signaling, trajectories.", ["Analyze", () => showTab("embed")]],
 };
 const STEP_MARK = { done: "✓", todo: "", optional: "", skipped: "–", blocked: "!", "not needed": "–" };
@@ -5352,8 +5361,7 @@ function stepsRoom() {  // how much of the map's top right the steps take, for t
   $("viewerwrap").style.setProperty("--stepsH", on ? `${el.offsetHeight + 8}px` : "0px");
 }
 if (window.ResizeObserver) new ResizeObserver(stepsRoom).observe($("steps"));
-$("stepsHead").onclick = () => { $("steps").classList.toggle("folded"); try { localStorage.setItem("stepsFolded", $("steps").classList.contains("folded") ? "1" : "0"); } catch (e) {} };
-try { if (localStorage.getItem("stepsFolded") === "1") $("steps").classList.add("folded"); } catch (e) {}
+$("stepsHead").onclick = () => $("steps").classList.toggle("folded");  // unfolded whenever the app starts
 setInterval(() => { if (st.sid && !document.hidden) loadSteps().catch(() => {}); }, 20000);  // reviews and checks end in the background
 
 // ---------------- the agent's changes wait for the user's Accept (proposals.py) ----------------
@@ -6518,7 +6526,7 @@ $("anAsk").onclick = async () => {
     const r = await post("/api/claude/analysis", { session: st.sid, request: AN.req });
     if (r.message && st.chatAvailable) { $("anDlg").close(); $("input").value = r.message; send(); }
     else if (r.claude_code) toast(r.claude_code.reused ? "Asked the agent; its answer appears in Claude Code" : "The agent is opening to look at this result", 5000);
-    else toast("Open the agent first (Ask Agent)", 5000);
+    else toast("Open the agent first (Agent)", 5000);
   } catch (e) { toast(e.message, 6000); }
 };
 syncAnKind();
@@ -7189,7 +7197,7 @@ $("rpAsk").onclick = async () => {
     const r = await post("/api/claude/report", { session: st.sid });
     if (r.message && st.chatAvailable) { $("rpDlg").close(); $("input").value = r.message; send(); }
     else if (r.claude_code) toast(r.claude_code.reused ? "The agent is writing the report; it appears here when done" : "The agent is opening to write the report", 5000);
-    else toast("Open the agent first (Ask Agent)", 5000);
+    else toast("Open the agent first (Agent)", 5000);
   } catch (e) { toast(e.message, 6000); }
 };
 $("rpSave").onclick = async () => {

@@ -23,7 +23,7 @@ and comparisons across regions, slices and conditions, with an AI agent at your 
   Every change is a version you can undo.
 - **Analyze**: regions you draw (with QuPath's tools: brush, wand, polygon, rectangle, ellipse), PCA / UMAP / Leiden, niches, DE genes, composition, cell-cell communication; one
   slice or several slices together.
-- **Agent Review**: the agent reviews one part of the analysis, checks its own advice against the data, and keeps
+- **Review**: the agent reviews one part of the analysis, checks its own advice against the data, and keeps
   only what holds up.
 
 The agent is your own [Claude Code](https://code.claude.com/docs/en/setup), with your own Claude account.
@@ -55,7 +55,7 @@ and run it. It contains everything; no Python needed.
 - Choose where to install (any drive; for your user without administrator rights, or for all users) and, the first
   time, where to keep the data (samples and annotations; **Change data folder** in About moves it later).
 - The installer is not signed yet: if Windows SmartScreen stops it, click **More info → Run anyway**.
-- Start **STAnnotator** from the Start menu or the desktop shortcut. **Ask Agent** opens Claude Code in its own
+- Start **STAnnotator** from the Start menu or the desktop shortcut. **Agent** opens Claude Code in its own
   console window.
 - Uninstalling removes the program only; the data and the settings stay.
 
@@ -108,7 +108,7 @@ folder when connecting.
 then **Test** and **Connect**. The app reconnects by itself at the next start; **Use this computer** switches back.
 
 While connected, **Choose…** browses the server's files, **Export** and **Save** download to your computer, and
-**Ask Agent** opens Claude Code here with its tools running on the server. No port is opened on the server: the
+**Agent** opens Claude Code here with its tools running on the server. No port is opened on the server: the
 window reaches it through an SSH tunnel.
 
 After updating STAnnotator on the server, reconnect once so that the server's viewer restarts with the new version.
@@ -120,9 +120,9 @@ After updating STAnnotator on the server, reconnect once so that the server's vi
    without a registration, **Align with Agent** aligns the H&E for you.
 2. **Annotate** tab: a marker list (**Markers…**: import a CSV, or **Start from an organ**: a built-in list for
    12 common organs pruned to your gene panel, which the agent can complete) or a reference, then **Annotate**.
-3. Draw regions on the map; ask the agent with **Ask Agent**, e.g. "epithelial cells are only in the mucosa".
+3. Draw regions on the map; ask the agent with **Agent**, e.g. "epithelial cells are only in the mucosa".
 4. **Embed**, **Niche**, **Compare**, **Signal** and **Trajectory** (spatial axes, pseudotime) tabs for the
-   analyses; **Agent Review** for a second opinion; **Export** for the cell table, the registration, the regions
+   analyses; **Review** for a second opinion; **Export** for the cell table, the registration, the regions
    (GeoJSON) or a Jupyter notebook that reproduces the analysis.
 
 An **H&E only** import lets a pathologist draw and name regions before the expression data exist; they go to the
@@ -148,7 +148,7 @@ stagent mcp                 # the agent's tools, for Claude Code without the app
 - **The app does not open**: see `~/Library/Caches/STAnnotator/app.log` (Windows: `%LOCALAPPDATA%\STAnnotator\app.log`;
   from source: `~/stagent/app.log`), or run
   `stagent app` in Terminal to see the error.
-- **Ask Agent does nothing**: Claude Code must be installed and logged in (`claude` works in Terminal or PowerShell).
+- **Agent does nothing**: Claude Code must be installed and logged in (`claude` works in Terminal or PowerShell).
 - **Server: Test fails**: `ssh user@server` must log in without a password, and the command path must be right
   (`ssh user@server ~/STAnnotator/.venv/bin/stagent remote-serve --check` prints JSON).
 - **Few cells on the H&E**: check the registration file and that cell coordinates are in micrometers.

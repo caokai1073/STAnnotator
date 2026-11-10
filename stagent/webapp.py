@@ -612,7 +612,7 @@ def api_claude_status(req):
     return _json(claudelink.status())
 
 
-REVIEW_REQUEST = ("Check the review candidates of version {v} (I clicked Agent Review: Annotation): look at every "
+REVIEW_REQUEST = ("Check the review candidates of version {v} (I clicked Review: Annotation): look at every "
                   "candidate area on the H&E with show_area and judge every marker check, then record each verdict "
                   "with record_review, keeping only real annotation problems.")
 SCOPE_REQUEST = {
@@ -641,7 +641,7 @@ REGISTRATION_ONLY = ("the cells on the H&E before annotation (version {v} of the
                      "registration: the local correction where areas really sit off their nuclei, and for a torn or "
                      "folded piece of tissue the user outlined as a region, fit_piece (propose move_piece only when it "
                      "fits)")
-SCOPE_LEAD = "I clicked Agent Review: {label}. Review only this part: {what}. "
+SCOPE_LEAD = "I clicked Review: {label}. Review only this part: {what}. "
 SCOPE_CHECK = ("Draft your advice with draft_advice(scope='{scope}'), then check every draft as a skeptical reviewer "
                "(rerun the tool that would confirm or refute it, look at the figure, weigh other explanations) and "
                "record check_advice: keep only what holds up, with the evidence; drop the rest with the reason.")
@@ -688,7 +688,7 @@ def review_scopes(s):
 
 
 async def api_claude_review(req: Request):
-    """Agent Review of one part of the analysis (scope). Annotation: the candidates the agent has not judged yet and,
+    """Review of one part of the analysis (scope). Annotation: the candidates the agent has not judged yet and,
     when the labels changed since its last advice, advice on the cell types. Other scopes: always asked."""
     b = await req.json()
     s = review_app._session(b["session"])
