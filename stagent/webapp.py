@@ -525,7 +525,12 @@ def api_colors_bin(req):
             col = colors_for(s, v, mode, only)
     except (KeyError, ValueError) as e:
         return _json({"error": str(e)}, 400)
-    return Response(np.ascontiguousarray(col).tobytes(), media_type="application/octet-stream")
+    data = np.ascontiguousarray(col).tobytes()
+    if len(data) > 64_000 and "gzip" in req.headers.get("accept-encoding", ""):  # a few dozen colors: 4x smaller in
+        import gzip                                                             # a few ms (a server over SSH)
+        return Response(gzip.compress(data, compresslevel=1), media_type="application/octet-stream",
+                        headers={"Content-Encoding": "gzip", "Vary": "Accept-Encoding"})
+    return Response(data, media_type="application/octet-stream")
 
 
 REST_GRAY = (205, 205, 205, 150)
