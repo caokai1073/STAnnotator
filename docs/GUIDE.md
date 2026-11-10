@@ -67,8 +67,11 @@ normalized and scaled data, graphs, reductions and commands are skipped while re
 
 ### No registration file: Align with Agent
 
-Until the image is registered, the cells are shown on a blank background (or the DAPI) with a yellow bar over the
-map. **Align with Agent** (next to No registration, or on the bar) asks the agent (your Claude Code) to align it:
+Until the image is registered, the cells are shown on a blank background (or the DAPI) with a yellow notice
+("H&E image not aligned yet") among the map's top bars. **Align with Agent** (next to No registration, on the notice,
+or on the Check registration step) asks the agent (your Claude Code) to align it. When several samples wait for
+their alignment, a dialog lists them: tick the ones to align (**All samples** for all of them) and the agent aligns
+them one after the other, each coming to you for review (applied at once in Auto mode). For each sample:
 
 1. the tissue on the image is matched with the cells' footprint over 4 rotations, mirroring and a range of pixel
    sizes (around the size stored in an OME-TIFF);

@@ -1071,7 +1071,8 @@ def api_samples(req):
         mine = ss[ss.sample_id == r["sample_id"]] if len(ss) else ss
         rows.append(r | {"bundle_dir": meta.get("bundle_dir"), "source_dir": meta.get("source_dir"),
                          "he_path": meta.get("he_path"), "image_kind": meta.get("image_kind"),
-                         "image_pending": meta.get("image_pending"), "registration_by": meta.get("registration_by"),
+                         "image_pending": meta.get("image_pending"), "image_pending_kind": meta.get("image_pending_kind"),
+                         "registration_by": meta.get("registration_by"),
                          "has_registration": bool(meta.get("registration_affine")),
                          "can_undo_placement": bool(meta.get("placement_previous")),
                          "project": meta.get("project"), "name": meta.get("name"), "metadata": meta.get("metadata") or {},
@@ -2639,10 +2640,20 @@ ALIGN_REQUEST = ("Align the cells of sample {sample} to its image (I clicked 'Al
                  "apply_alignment. Do not change the annotation. Then tell me in three lines what you chose and why.")
 
 
+ALIGN_MANY = ("Align the cells of these samples to their images, one after the other (I chose them in 'Align with Agent'; "
+              "they have no registration file): {samples}. For each: alignment_status, search_alignment, compare the "
+              "best candidates on their figures (show_alignment), refine_alignment the right one, check the close-ups and "
+              "numbers, then apply_alignment, before going on to the next. Do not change any annotation. When all are "
+              "done, tell me in one or two lines per sample what you chose and why, and which (if any) need my look.")
+
+
 async def api_claude_align(req: Request):
+    """Ask the agent to align the cells of one sample ({sample}) or of several ({samples}: one after the other) to
+    their images."""
     b = await req.json()
-    sample = b["sample"]
-    text = ALIGN_REQUEST.format(sample=sample)
+    many = [x for x in (b.get("samples") or []) if isinstance(x, str)]
+    sample = many[0] if many else b["sample"]
+    text = ALIGN_MANY.format(samples=", ".join(many)) if len(many) > 1 else ALIGN_REQUEST.format(sample=sample)
     if not desktop_mode():
         return _json({"message": text})
     return _json({"claude_code": claudelink.open_claude_code(sample, b.get("session"), text, send_if_open=True)})

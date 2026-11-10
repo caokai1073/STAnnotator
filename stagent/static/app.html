@@ -415,11 +415,16 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 /* one of the bars on top of the map, as small as its text: beside the others on a wide map, on a row of its own
    on a narrow one (the panels below follow the bars' height, so nothing lies on top of it) */
 #alignbar { flex: 0 1 auto; max-width: 100%; pointer-events: auto; display: flex; flex-wrap: wrap; gap: 6px 10px;
-            align-items: center; padding: 7px 10px 7px 12px; font-size: 12.5px; background: #fff5e0; color: #6b4a00;
-            border: 1px solid #f0c674; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+            align-items: center; padding: 6px 8px 6px 12px; font-size: 12.5px; background: #fff5e0; color: #6b4a00;
+            border: 1px solid #f0c674; border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,.08), 0 1px 3px rgba(0,0,0,.06); }
 #alignbar[hidden] { display: none; }
 #alignbar #alignmsg { min-width: 0; }
-#alignbar button { padding: 2px 9px; font-size: 12px; }
+#alignbar button { background: var(--panel); }  /* (the bars' button size: #maptop button) */
+#tools, #acts, #alignbar { box-sizing: border-box; min-height: 44px; }  /* the notice as tall as the bars */
+.alrow { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 5px 4px; border-radius: 6px; font-size: 13px; cursor: pointer; }
+.alrow:hover { background: var(--bg); } .alrow.alall { border-bottom: 1px solid var(--line); border-radius: 0; }
+#alList { max-height: 50vh; overflow-y: auto; overflow-x: hidden; }
+.alrow .alname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .clcard { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 6px 0; display: flex; flex-direction: column; gap: 6px; }
 .clcard pre { font: 11.5px ui-monospace, Menlo, monospace; white-space: pre-wrap; margin: 0; color: var(--muted); }
 .claudebox { display: flex; flex-direction: column; gap: 8px; padding: 4px 2px; }
@@ -832,6 +837,16 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <datalist id="regnames"></datalist>
     <div class="row"><span class="err" id="nameErr"></span><span class="spacer"></span>
       <button id="nameCancel">Cancel</button><button id="nameSave" class="primary">Save</button></div>
+  </div>
+</dialog>
+<dialog id="alDlg" style="width:min(520px,95vw)">
+  <div class="dh"><svg class="ic" aria-hidden="true"><use href="#ic-sparkle"/></svg><b>Align with Agent</b></div>
+  <div class="imbody" style="gap:8px">
+    <div class="hint">The images of these samples are not aligned yet. The agent aligns the ones you choose, one after the
+      other; each alignment comes to you for review (or is applied at once in Auto mode).</div>
+    <label class="alrow alall"><input type="checkbox" id="alAll"><b>All samples</b></label>
+    <div id="alList"></div>
+    <div class="row" style="margin-top:4px"><span class="spacer"></span><button id="alCancel">Cancel</button><button id="alGo" class="primary">Align</button></div>
   </div>
 </dialog>
 <dialog id="pcDlg" style="width:min(620px,95vw)">
@@ -4303,11 +4318,35 @@ async function afterPlacement(msg) {  // the sample's image or cell positions ch
   alignBar();
   if (msg) toast(msg, 6000);
 }
-async function askAlign() {
+function askAlign() {  // choose the samples whose image waits for its alignment: the agent aligns them one after the other
+  const waiting = (st.samples || []).filter((x) => x.image_pending);
+  if (st.sample && st.sample.image_pending && !waiting.some((x) => x.sample_id === st.sample.sample_id)) waiting.unshift(st.sample);
+  if (waiting.length <= 1) return alignWith(waiting.length ? [waiting[0].sample_id] : [st.sample.sample_id]);
+  const box = $("alList"); box.textContent = "";
+  waiting.forEach((x) => {
+    const lab = document.createElement("label"); lab.className = "alrow";
+    const cb = Object.assign(document.createElement("input"), { type: "checkbox", value: x.sample_id, checked: x.sample_id === (st.sample && st.sample.sample_id) });
+    cb.onchange = syncAl;
+    lab.append(cb, Object.assign(document.createElement("span"), { className: "alname", textContent: sampleName(x), title: sampleName(x) }),
+      Object.assign(document.createElement("span"), { className: "hint", textContent: `${(x.n_cells || 0).toLocaleString()} cells · ${x.image_pending_kind || "H&E"}` }));
+    box.append(lab);
+  });
+  syncAl(); $("alDlg").showModal();
+}
+function syncAl() {
+  const cbs = [...document.querySelectorAll("#alList input")], n = cbs.filter((c) => c.checked).length;
+  $("alAll").checked = n === cbs.length; $("alAll").indeterminate = n > 0 && n < cbs.length;
+  $("alGo").disabled = !n; setLabel($("alGo"), n > 1 ? `Align ${n} samples` : "Align");
+}
+$("alAll").onchange = () => { document.querySelectorAll("#alList input").forEach((c) => (c.checked = $("alAll").checked)); syncAl(); };
+$("alCancel").onclick = () => $("alDlg").close();
+$("alGo").onclick = () => { const ids = [...document.querySelectorAll("#alList input")].filter((c) => c.checked).map((c) => c.value); $("alDlg").close(); alignWith(ids); };
+async function alignWith(ids) {
   try {
-    const r = await post("/api/claude/align", { sample: st.sample.sample_id, session: st.sid });
+    const r = await post("/api/claude/align", { sample: ids[0], samples: ids, session: st.sid });
     if (r.message && st.chatAvailable) { $("imDlg").close(); $("input").value = r.message; send(); }
-    else if (r.claude_code) toast(r.claude_code.reused ? "The agent is aligning the image; the cells move onto it when done" : "The agent is opening to align the image", 7000);
+    else if (r.claude_code) toast((ids.length > 1 ? `The agent aligns ${ids.length} samples, one after the other` : r.claude_code.reused ? "The agent is aligning the image" : "The agent is opening to align the image") +
+      (st.reviewMode === "auto" ? "; each alignment is applied when done" : "; you accept each alignment in its review window"), 8000);
     else toast("Open the agent first (Agent)", 5000);
   } catch (e) { toast(e.message, 6000); }
 }
@@ -4315,7 +4354,7 @@ $("alignNow").onclick = askAlign;
 function alignBar() {  // an image waits for its alignment
   const s = st.sample;
   $("alignbar").hidden = !(s && s.image_pending);
-  if (s && s.image_pending) { $("alignmsg").textContent = "Image not aligned yet";
+  if (s && s.image_pending) { $("alignmsg").textContent = `${s.image_pending_kind || "H&E"} image not aligned yet`;
     $("alignbar").title = "This sample's image is not aligned yet: the cells are shown on a blank background until the agent aligns them (or a registration file is given)"; }
   $("alignNow").hidden = !st.desktop && !st.chatAvailable;
 }
@@ -4435,7 +4474,9 @@ const HELP = `
   <li><b>Regions</b> (optional): a GeoJSON of outlines drawn on this H&amp;E (e.g. QuPath annotations); they become
     regions of every new annotation.</li></ul></li>
 <li>An image without a registration file: <b>Align with Agent</b>.<ul>
-  <li>It is next to No registration, or in the yellow bar over the map.</li>
+  <li>It is next to No registration, or on the yellow notice among the map's bars.</li>
+  <li>When several samples wait for their alignment, choose the ones to align (or All samples): the agent aligns
+    them one after the other.</li>
   <li>It imports, then the agent finds the section and its orientation on the image and refines it until the cells
     sit on their nuclei.</li></ul></li>
 <li>Another image or registration for a sample: import it again with them (same name).</li></ul>
@@ -7271,7 +7312,7 @@ $("xpReg").onclick = () => exportAs("registration");
 $("xpPos").onclick = () => exportAs("positions");
 $("xpGeo").onclick = () => exportAs("regions");
 document.addEventListener("keydown", (e) => {
-  if ($("mkDlg").open || $("rpDlg").open || $("bugDlg").open || $("updDlg").open || $("shareDlg").open || $("hpDlg").open || $("xpDlg").open || $("glDlg").open || $("anDlg").open || $("rvDlg").open || $("nameDlg").open || $("rnDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
+  if ($("mkDlg").open || $("alDlg").open || $("rpDlg").open || $("bugDlg").open || $("updDlg").open || $("shareDlg").open || $("hpDlg").open || $("xpDlg").open || $("glDlg").open || $("anDlg").open || $("rvDlg").open || $("nameDlg").open || $("rnDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
   if (e.key === "h") $("hide").click();
   if (e.key === "e") $("hideHE").click();
   if (e.key === "[") stepSlice(-1);
