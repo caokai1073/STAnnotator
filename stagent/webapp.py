@@ -2364,6 +2364,83 @@ def api_region_assigned_cells(req):
     return _json({"rows": np.where(np.isin(s.cells.cell.to_numpy(), op["cells"]))[0].tolist(), "name": op["name"]})
 
 
+def api_steps(req):
+    """Where the open annotation's sample stands in the usual flow, for the steps list at the top of the panel:
+    import, registration (checked at the cells' present place?), filter, annotate, regions and priors, agent review,
+    analyses. Each: state "done" / "todo" / "optional" / "skipped" / "not needed" / "blocked", and a short detail."""
+    from . import advice, embedding
+    s = review_app._session(req.path_params["sid"])
+    sid = s.sample_id
+    meta = json.load(open(config.SAMPLES / sid / "meta.json"))
+    src = (meta.get("source") or {}).get("kind", "")
+    image_only = bool(meta.get("image_only"))
+    steps = [{"key": "import", "state": "done",
+              "detail": "an image without cells" if image_only else f"{len(s.cells):,} cells · {len(s.panel):,} genes"}]
+    # registration: the cells on their image
+    img = importer.image_of(sid)
+    if image_only or not (meta.get("he_path") or meta.get("image_pending")):
+        reg = {"state": "not needed", "detail": "no image" if not image_only else "the image itself"}
+    elif src.startswith("visium") or src == "stereoseq":
+        reg = {"state": "not needed", "detail": f"placed by {meta.get('registration_by') or 'the instrument software'}"}
+    elif meta.get("image_pending") or not importer.on_image(meta):
+        reg = {"state": "blocked", "detail": "the cells are not on the image yet: align them"}
+    else:
+        checked = None
+        try:
+            w = json.load(open(regcheck._file(sid)))
+            if img and w.get("key") == regcheck._key(sid, img):
+                checked = time.strftime("%Y-%m-%d", time.localtime(regcheck._file(sid).stat().st_mtime))
+        except (OSError, ValueError):
+            pass
+        org = advice.status(s, "organization")
+        fixed = " (corrected)" if "local" in (meta.get("registration_by") or "") or "piece" in (meta.get("registration_by") or "") else ""
+        if checked:
+            reg = {"state": "done", "detail": f"checked {checked}{fixed}"}
+        elif org["n_runs"]:
+            reg = {"state": "done", "detail": f"reviewed {org['last_run']['time'][:10]}{fixed}"}
+        else:
+            reg = {"state": "todo", "detail": "not checked: are the cells on their nuclei everywhere?"}
+    steps.append({"key": "registration", **reg})
+    f = meta.get("filter")
+    annotated = s.scheme.get("kind") not in (None, "none")
+    steps.append({"key": "filter", "state": "not needed" if image_only else "done" if f else "skipped" if annotated else "todo",
+                  "detail": "" if image_only else
+                  f"{f['n_cells_removed']:,} cells, {len(f.get('genes_removed') or [])} genes removed" if f else
+                  "not filtered (to filter now, filter, then annotate again)" if annotated else
+                  "not filtered yet (recommended before annotating)"})
+    t = list_sessions()
+    n_ann = int(((t.sample_id == sid) & (t.method != "none")).sum()) if len(t) else 0
+    steps.append({"key": "annotate", "state": "not needed" if image_only else "done" if annotated else "todo",
+                  "detail": "" if image_only else (f"{s.scheme.get('kind')} annotation open" + (f" · {n_ann} in all" if n_ann > 1 else ""))
+                  if annotated else "no annotation yet"})
+    st = s.state()
+    n_poly = sum(1 for o in st["regions"].get("ops", []) if o.get("op") == "polygon")
+    n_pri = len(st.get("constraints", []))
+    steps.append({"key": "regions", "state": "done" if n_poly or n_pri else "optional",
+                  "detail": ", ".join(x for x in [f"{n_poly} region outline(s)" if n_poly else "", f"{n_pri} prior(s)" if n_pri else ""] if x)
+                  or "optional: draw tissue regions, add priors"})
+    if annotated:
+        runs = [(sc, advice.status(s, sc)) for sc in advice.SCOPES]
+        done = [advice.SCOPES[sc]["label"] for sc, x in runs if x["n_runs"]]
+        steps.append({"key": "review", "state": "done" if done else "optional",
+                      "detail": ("reviewed: " + ", ".join(done)) if done else "optional: the agent checks the annotation"})
+    else:
+        steps.append({"key": "review", "state": "blocked" if not image_only else "not needed", "detail": "after annotating"})
+    have = []
+    if embedding.current(sid):
+        have.append("embedding")
+    if (s.dir / "niches" / "run.json").exists():
+        have.append("niches")
+    for f_ in sorted((s.dir / "results").glob("*.json")) if (s.dir / "results").exists() else []:
+        have.append({"de": "DE genes", "deseq2": "DESeq2", "markers": "top genes", "composition": "composition",
+                     "run": "signaling", "compare": "signaling"}.get(f_.stem, "trajectory" if f_.stem.startswith("trajectory") else f_.stem))
+    have = list(dict.fromkeys(have))
+    steps.append({"key": "analyze", "state": "done" if have else "optional" if annotated else "blocked",
+                  "detail": ", ".join(have) if have else "optional: embed, niches, compare, signal, trajectory" if annotated else "after annotating"})
+    nxt = next((x["key"] for x in steps if x["state"] == "todo"), None)
+    return _json({"sample_id": sid, "steps": steps, "next": nxt})
+
+
 async def api_review_mode(req: Request):
     """How the agent's changes are taken: "manual" (the default: each waits for Accept in the review window) or "auto"
     (the app accepts each as it arrives; Undo takes it back). GET reads it, POST {mode} sets it (kept in the settings)."""
@@ -3078,6 +3155,7 @@ def build_app(port):
         Route("/api/s/{sid}/regions/import", api_regions_import, methods=["POST"]),
         Route("/api/s/{sid}/regions/shape", api_region_shape, methods=["POST"]),
         Route("/api/review_mode", api_review_mode, methods=["GET", "POST"]),
+        Route("/api/s/{sid}/steps", api_steps),
         Route("/api/s/{sid}/regions/rename", api_region_rename, methods=["POST"]),
         Route("/api/s/{sid}/regions/color", api_region_color, methods=["POST"]),
         Route("/api/s/{sid}/constraint/{cid}/delete", api_constraint_delete, methods=["POST"]),

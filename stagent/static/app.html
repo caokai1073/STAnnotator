@@ -411,6 +411,27 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .clcard { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 6px 0; display: flex; flex-direction: column; gap: 6px; }
 .clcard pre { font: 11.5px ui-monospace, Menlo, monospace; white-space: pre-wrap; margin: 0; color: var(--muted); }
 .claudebox { display: flex; flex-direction: column; gap: 8px; padding: 4px 2px; }
+/* the steps of the usual flow, at the top of the panel: where the sample stands, and the next thing to do */
+#steps { margin: 6px 0 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); font-size: 12px; }
+#steps .sh { display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; user-select: none; }
+#steps .sh #stepsSum { color: var(--muted); }
+#steps.folded #stepsList { display: none; }
+#steps.folded #stepsFold { transform: rotate(-90deg); }
+#stepsList { list-style: none; margin: 0; padding: 0 6px 6px; }
+#stepsList li { display: grid; grid-template-columns: 18px 1fr auto; gap: 2px 6px; align-items: center; padding: 3px 4px; border-radius: 6px; }
+#stepsList li .mk { width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; font-size: 10px; font-weight: 700; }
+#stepsList li .nm { font-weight: 600; }
+#stepsList li .dt { grid-column: 2 / 4; color: var(--muted); font-size: 11px; line-height: 1.3; }
+#stepsList li button { padding: 1px 9px; font-size: 11.5px; }
+#stepsList li.done .mk { background: #2e9e5b; color: #fff; }
+#stepsList li.todo .mk { border: 1.5px solid var(--accent); color: var(--accent); }
+#stepsList li.next { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+#stepsList li.next .mk { background: var(--accent); color: #fff; border: 0; }
+#stepsList li.optional .mk, #stepsList li.skipped .mk { border: 1.5px dashed var(--muted); color: var(--muted); }
+#stepsList li.blocked .mk { border: 1.5px solid #d97706; color: #d97706; }
+#stepsList li.blocked .nm { color: var(--muted); }
+#stepsList li.na { opacity: .55; }
+#stepsList li.na .mk { color: var(--muted); }
 @media (max-width: 1000px) { main { grid-template-columns: 1fr; grid-template-rows: 60vh auto; } #side { border-left: 0; border-top: 1px solid var(--line); } }
 </style>
 </head>
@@ -429,6 +450,10 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <button id="export" disabled title="Save the cell table (CSV), the registration, or the analysis as a Jupyter notebook">Export</button>
     <button id="connBtn" hidden title="Work on this computer or on a server over SSH">Local</button></div>
     <span class="folder">Data folder <span class="path" id="path">–</span></span>
+  </div>
+  <div id="steps" hidden>
+    <div class="sh" id="stepsHead" title="Click to fold or unfold the steps"><b>Steps</b><span id="stepsSum"></span><span class="spacer"></span><span id="stepsFold">▾</span></div>
+    <ol id="stepsList"></ol>
   </div>
   <div class="tabs main" id="mainTabs" role="tablist">
     <button class="tab" data-main="data" role="tab" title="The sample: import, its cells and image, its annotations">Data</button><button class="tab" data-main="analysis" role="tab" title="Annotate, Embed, Niche, Compare, Signal, Trajectory">Analysis</button></div>
@@ -2441,6 +2466,7 @@ async function loadRegions() {
   st.regions.regions.forEach((r) => { const o = document.createElement("option"); o.value = r.name; $("regnames").append(o); });
   syncSelBar();
   drawRegions();
+  loadStepsSoon();
 }
 function areaText(polys) {  // the area of outlines (holes left out): mm² when the pixel size is known, else pixels²
   let a = 0;
@@ -4339,6 +4365,12 @@ onPress($("imNewAlign"), async () => { if (await exclusive("An import", importSa
 $("importBtn").onclick = openImport;
 // ---------------- help and about ----------------
 const HELP = `
+<h3>Steps</h3><ul>
+<li>The list at the top of the panel is the usual flow for the open sample: <b>Import</b> → <b>Check registration</b>
+  → <b>Filter cells and genes</b> → <b>Annotate</b> → (optional) <b>Regions and priors</b>, <b>Agent review</b>,
+  <b>Analyze</b>.</li>
+<li>✓ marks what is done (with what came of it); the next step stands out, with a button that goes where it is done.
+  Hover a step for what it does and why. A click on <b>Steps</b> folds the list.</li></ul>
 <h3>Import</h3><ul>
 <li><b>Import</b>: choose the kind of data, then give its files.<ul>
   <li><b>Xenium</b>: cells.parquet and cell_feature_matrix.h5; optionally experiment.xenium and the DAPI image.</li>
@@ -5246,6 +5278,52 @@ async function followAgent() {
 }
 setInterval(() => { if (!st.busy) followAgent().catch(() => {}); }, 4000);
 
+// ---------------- the steps of the usual flow (top of the panel) ----------------
+// Import, check the registration, filter, annotate, regions and priors, agent review, analyses: where the open sample
+// stands (from /api/s/<sid>/steps), and a button that goes where each step is done. The next step stands out.
+const STEPS = {
+  import: ["Import", "The sample: its cells and genes, and its image and registration if it has them.", null],
+  registration: ["Check registration", "Are the cells on their nuclei everywhere? The agent measures the offsets over the whole tissue and offers a correction where the tissue shifted (Agent Review → Spatial organization). About a minute.", ["Check", () => { st.rvScope = "organization"; openReviewChooser().catch((e) => toast(e.message, 6000)); }]],
+  filter: ["Filter cells and genes", "Leave out cells with few transcripts or genes and genes detected in few cells, before annotating. Seconds to a minute.", ["Filter", () => $("qfBtn").click()]],
+  annotate: ["Annotate", "Cell types from a marker list (or a reference, or a CSV of labels): Annotate tab → Markers… → Annotate. A few minutes.", ["Annotate", () => showTab("annotate")]],
+  regions: ["Regions and priors", "Optional: outline tissue regions on the map (brush, polygon…), then tell the agent what holds there, e.g. “epithelial cells are only in the mucosa”.", ["Draw", () => { $("regpanel").hidden = false; $("regpanel").classList.remove("collapsed"); setTool("brush"); toast("Brush: paint a region on the map (or pick another tool in the Regions panel), then Save", 6000); }]],
+  review: ["Agent review", "Optional: the agent checks the annotation (areas and marker genes that look wrong) and gives advice.", ["Review", () => { st.rvScope = "annotation"; openReviewChooser().catch((e) => toast(e.message, 6000)); }]],
+  analyze: ["Analyze", "Optional: embedding (PCA, UMAP), niches, DE genes and DESeq2, composition, signaling, trajectories.", ["Analyze", () => showTab("embed")]],
+};
+const STEP_MARK = { done: "✓", todo: "", optional: "", skipped: "–", blocked: "!", "not needed": "–" };
+let stepsTimer = 0;
+function loadStepsSoon() { clearTimeout(stepsTimer); stepsTimer = setTimeout(() => loadSteps().catch(() => {}), 300); }
+async function loadSteps() {
+  if (!st.sid) { $("steps").hidden = true; return; }
+  const sid = st.sid, r = await api(`/api/s/${sid}/steps`);
+  if (sid !== st.sid) return;
+  $("steps").hidden = false;
+  const box = $("stepsList"); box.textContent = "";
+  r.steps.forEach((x, i) => {
+    const [name, help, act] = STEPS[x.key] || [x.key, "", null];
+    const li = document.createElement("li");
+    li.className = x.state === "not needed" ? "na" : x.state;
+    if (x.key === r.next) li.classList.add("next");
+    li.title = help;
+    const mk = Object.assign(document.createElement("span"), { className: "mk", textContent: STEP_MARK[x.state] || String(i + 1) });  // done ✓, else its number
+    const nm = Object.assign(document.createElement("span"), { className: "nm", textContent: name });
+    const right = document.createElement("span");
+    if (act && ["todo", "optional", "skipped"].includes(x.state)) {
+      const b = Object.assign(document.createElement("button"), { textContent: act[0], title: help });
+      if (x.key === r.next) b.classList.add("primary");
+      b.onclick = (e) => { e.stopPropagation(); act[1](); };
+      right.append(b);
+    }
+    const dt = Object.assign(document.createElement("span"), { className: "dt", textContent: x.detail });
+    li.append(mk, nm, right, dt); box.append(li);
+  });
+  const nd = r.steps.filter((x) => x.state === "done").length, nx = r.steps.find((x) => x.key === r.next);
+  $("stepsSum").textContent = nx ? `next: ${STEPS[nx.key][0]}` : `${nd} done · the rest is optional`;
+}
+$("stepsHead").onclick = () => { $("steps").classList.toggle("folded"); try { localStorage.setItem("stepsFolded", $("steps").classList.contains("folded") ? "1" : "0"); } catch (e) {} };
+try { if (localStorage.getItem("stepsFolded") === "1") $("steps").classList.add("folded"); } catch (e) {}
+setInterval(() => { if (st.sid && !document.hidden) loadSteps().catch(() => {}); }, 20000);  // reviews and checks end in the background
+
 // ---------------- the agent's changes wait for the user's Accept (proposals.py) ----------------
 const PC = { cur: null, applying: null };
 const pcEsc = (x) => String(x ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -6151,7 +6229,7 @@ async function loadResults(sid) {  // the last result of each analysis, kept wit
     if (kind === "trajectory") kind = `trajectory_${x.request.method || "spatial"}`;  // kept before each method had its own
     AN.by[kind] = { last: x.result, req: x.request, sel: x.selection || undefined };
   });
-  syncLast();
+  syncLast(); loadStepsSoon();
 }
 function openLast(kind) { const x = AN.by[kind]; if (!x) return; AN.last = x.last; AN.req = x.req; AN.sel = x.sel; AN.view = ""; showAnalysis(); }
 function syncLast() {  // Last result shows the last result of the analysis chosen in the tab
