@@ -849,7 +849,8 @@ async def api_advice_act(req: Request):
         step = b.get("step")
         if step == "region":
             name = str(b.get("name") or a["name"]).strip()
-            ver = s.add_region_pieces(name, a["polygons_px"], author="Claude advice")
+            from . import regions as regmod
+            ver = s.set_region_shape([], name, regmod.normalize_pieces(a["polygons_px"]), author="Claude advice")
             if not a.get("prior"):
                 advice.set_status(s, x["id"], "done", f"region {name}")
             return _json({"new_version": ver, "message": s.state(ver)["message"], "prior": bool(a.get("prior"))})

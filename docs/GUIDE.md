@@ -185,12 +185,16 @@ An image without any cells, e.g. for a pathologist to draw and name regions befo
   - or give the exported GeoJSON as the import's **Regions** (QuPath opens it too: every outline is an annotation
     classified by its region, with its color).
 - **The agent can outline compartments** on such an image when you ask (e.g. "draw the mucosa"):
-  1. it reads the organ's priors (`tissue_priors`: literature-based priors of 13 organs, with how each compartment
-     looks on the H&E);
+  1. it needs the organ (it asks you when it does not know it; remembered for the sample): the organ's priors
+     (`tissue_priors`: literature-based priors of 13 organs) say how each compartment looks on the H&E ("Compartments
+     to draw"); a tissue none of them covers takes the organ-independent ones;
   2. it splits the tissue into classes by its stains (`segment_he`: hematoxylin and eosin by color deconvolution and
-     their texture, k-means; each class with its distance to the tissue edge);
-  3. it proposes the classes that match as a region (`propose_he_region`, or points read on `show_he`). You see the
-     outline in the review window, and **Accept** adds it as a draft to edit.
+     their texture, k-means; each class with its distance to the tissue edge), returned together with those
+     descriptions, and matches the classes to the compartments;
+  3. it proposes the classes that match as a region (`propose_he_region`, or points read on `show_he`). The outline is
+     made valid as the Regions tools save a shape (rings that neither cross nor touch, holes inside, pieces apart:
+     QuPath reads it). You see it in the review window; **Accept** adds it as a draft, which you reshape with the
+     Regions tools (Brush adds, Alt+Brush erases).
 
 Agent tools: `import_he_only`, `export_regions`, `tissue_priors`, `segment_he`, `show_he`, `propose_he_region`.
 

@@ -253,3 +253,166 @@ def smooth_pixel_outline(ring, tol=1.5, iters=3):
         q = np.stack([0.75 * q + 0.25 * r, 0.25 * q + 0.75 * r], axis=1).reshape(-1, 2)
     q = _dp_closed(q, 0.2)
     return [[round(float(x), 3), round(float(y), 3)] for x, y in q]
+
+
+# ---------------- outlines made by the agent: valid as the viewer's tools save them ----------------
+def _clean_ring(r):
+    """A ring without its closing point and repeated consecutive points."""
+    p = np.asarray(r, float).reshape(-1, 2)
+    if len(p) > 1 and np.allclose(p[0], p[-1]):
+        p = p[:-1]
+    if len(p) > 1:
+        p = p[np.r_[True, np.hypot(*np.diff(p, axis=0).T) > 1e-6]]
+    if len(p) > 1 and np.hypot(*(p[0] - p[-1])) <= 1e-6:
+        p = p[:-1]
+    return p
+
+
+def ring_area(p):
+    x, y = np.asarray(p, float).T
+    return 0.5 * float(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1)))
+
+
+def _edges_meet(rings):
+    """Whether two edges of the rings cross or touch (apart from neighbors in one ring), or a point repeats (rounded
+    to 1/16 pixel, as the viewer checks): such a shape is not valid for QuPath. Edges are bucketed in a grid, so the
+    work grows with the edges, not with their square."""
+    k = np.round(np.concatenate(rings) * 16).astype(np.int64)
+    if len(np.unique(k, axis=0)) < len(k):
+        return True
+    A = np.concatenate(rings)
+    B = np.concatenate([np.roll(r, -1, 0) for r in rings])
+    ring = np.concatenate([np.full(len(r), i) for i, r in enumerate(rings)])
+    pos = np.concatenate([np.arange(len(r)) for r in rings])
+    size = np.array([len(r) for r in rings])[ring]
+    lo, hi = np.minimum(A, B), np.maximum(A, B)
+    cell = max(4 * float(np.median(np.hypot(*(B - A).T))), 1e-3)
+    c0, c1 = np.floor(lo / cell).astype(np.int64), np.floor(hi / cell).astype(np.int64)
+    nx, ny = c1[:, 0] - c0[:, 0] + 1, c1[:, 1] - c0[:, 1] + 1
+    cnt = nx * ny
+    e = np.repeat(np.arange(len(A)), cnt)
+    off = np.arange(int(cnt.sum())) - np.repeat(np.cumsum(cnt) - cnt, cnt)
+    cx, cy = c0[e, 0] + off % nx[e], c0[e, 1] + off // nx[e]
+    key = (cx - cx.min()) * (int(cy.max() - cy.min()) + 1) + (cy - cy.min())
+    o = np.argsort(key, kind="stable")
+    key, e = key[o], e[o]
+    starts = np.r_[0, np.nonzero(np.diff(key))[0] + 1]
+    lens = np.diff(np.r_[starts, len(key)])
+    pi, pj = [], []
+    for m in np.unique(lens[lens > 1]):  # all pairs within each cell, cells of the same size together
+        idx = e[starts[lens == m][:, None] + np.arange(m)]
+        a, b = np.triu_indices(m, 1)
+        pi.append(idx[:, a].ravel()); pj.append(idx[:, b].ravel())
+    if not pi:
+        return False
+    i, j = np.concatenate(pi), np.concatenate(pj)
+    ij = np.unique(np.c_[np.minimum(i, j), np.maximum(i, j)], axis=0)
+    i, j = ij[:, 0], ij[:, 1]
+    same = ring[i] == ring[j]
+    d = np.abs(pos[i] - pos[j])
+    nb = same & ((d == 1) | (d == size[i] - 1))  # neighbors share a point by construction
+    i, j = i[~nb], j[~nb]
+    box = (lo[i] <= hi[j]).all(1) & (lo[j] <= hi[i]).all(1)
+    i, j = i[box], j[box]
+    if not len(i):
+        return False
+    p, r, q, s = A[i], B[i] - A[i], A[j], B[j] - A[j]
+    cr = lambda u, v: u[:, 0] * v[:, 1] - u[:, 1] * v[:, 0]
+    d1, d2 = cr(r, q - p), cr(r, q + s - p)
+    d3, d4 = cr(s, p - q), cr(s, p + r - q)
+    proper = (np.sign(d1) * np.sign(d2) <= 0) & (np.sign(d3) * np.sign(d4) <= 0)
+    collinear = (d1 == 0) & (d2 == 0)
+    if collinear.any():  # on one line: they meet only where their spans overlap
+        t = np.abs(r).argmax(1)
+        a0, a1 = np.minimum(p[np.arange(len(t)), t], (p + r)[np.arange(len(t)), t]), np.maximum(p[np.arange(len(t)), t], (p + r)[np.arange(len(t)), t])
+        b0, b1 = np.minimum(q[np.arange(len(t)), t], (q + s)[np.arange(len(t)), t]), np.maximum(q[np.arange(len(t)), t], (q + s)[np.arange(len(t)), t])
+        proper = np.where(collinear, (a0 <= b1) & (b0 <= a1), proper)
+    return bool(proper.any())
+
+
+def _inside(pt, ring):
+    return bool(points_in(np.array([pt[0]]), np.array([pt[1]]), np.asarray(ring, float))[0])
+
+
+def _valid(pieces):
+    """Pieces that the viewer's tools would save as they are: simple rings, holes inside their outline and apart,
+    no piece inside another (other than in its hole)."""
+    rings = [r for pc in pieces for r in [pc["outer"], *pc["holes"]]]
+    if _edges_meet(rings):
+        return False
+    for pc in pieces:
+        if not all(_inside(h[0], pc["outer"]) for h in pc["holes"]):
+            return False
+        if any(_inside(a[0], b) for a in pc["holes"] for b in pc["holes"] if a is not b):
+            return False
+    for a in pieces:
+        for b in pieces:
+            if a is not b and _inside(a["outer"][0], b["outer"]) and not any(_inside(a["outer"][0], h) for h in b["holes"]):
+                return False
+    return True
+
+
+def _retrace(pieces, max_side=4000):
+    """The area of the pieces (each its outline minus its holes, all together) drawn into a mask and traced again:
+    pieces that do not overlap, rings that neither cross nor touch."""
+    import contourpy
+    from scipy import ndimage as ndi
+    allp = np.concatenate([pc["outer"] for pc in pieces])
+    x0, y0 = allp.min(0) - 2
+    x1, y1 = allp.max(0) + 2
+    step = max(1.0, max(x1 - x0, y1 - y0) / max_side)  # image pixels per mask pixel
+    w, h = int(np.ceil((x1 - x0) / step)) + 1, int(np.ceil((y1 - y0) / step)) + 1
+    gx, gy = np.meshgrid(x0 + (np.arange(w) + 0.5) * step, y0 + (np.arange(h) + 0.5) * step)
+    gx, gy = gx.ravel(), gy.ravel()
+    m = np.zeros(w * h, bool)
+    for pc in pieces:
+        inn = points_in(gx, gy, pc["outer"])
+        for hl in pc["holes"]:
+            inn &= ~points_in(gx, gy, hl)
+        m |= inn
+    m = m.reshape(h, w)
+
+    def trace(mask):  # the longest boundary of a mask, between its pixels, in image pixels
+        z = ndi.gaussian_filter(np.pad(mask, 3).astype(np.float32), 0.7)
+        lines = contourpy.contour_generator(z=z).lines(0.5)
+        if not lines:  # (a hole of a pixel or so: gone with the blur)
+            return np.zeros((0, 2))
+        p = max((np.asarray(ln, float) for ln in lines), key=len)[:-1] - 3
+        return np.c_[x0 + (p[:, 0] + 0.5) * step, y0 + (p[:, 1] + 0.5) * step]
+    out = []
+    comp, n = ndi.label(m)
+    for k, sl in enumerate(ndi.find_objects(comp), 1):
+        c = comp[sl] == k
+        if c.sum() * step * step <= 4:
+            continue
+        filled = ndi.binary_fill_holes(c)
+        oy, ox = sl[0].start, sl[1].start
+        outer = trace(filled) + [ox * step, oy * step]
+        if len(outer) < 3:
+            continue
+        hl, nh = ndi.label(filled & ~c)
+        holes = [trace(hl == j) + [ox * step, oy * step] for j in range(1, nh + 1)]
+        out.append({"outer": outer, "holes": [x for x in holes if len(x) >= 3 and abs(ring_area(x)) > 4]})
+    return out
+
+
+def normalize_pieces(pieces):
+    """Outlines made by the agent (from the H&E, a compartment or tiles), made as the viewer's tools save a shape:
+    rings without repeated points, crumbs (4 square pixels or less) dropped, holes inside their outline; when rings
+    cross or touch, or pieces overlap, the area is traced again (as one shape: pieces apart, rings strictly simple,
+    as QuPath needs them). pieces: [{"outer", "holes"}] or bare rings, in the image's full-resolution pixels."""
+    clean = []
+    for pc in pieces:
+        pc = pc if isinstance(pc, dict) else {"outer": pc, "holes": []}
+        outer = _clean_ring(pc["outer"])
+        crumb = lambda q: np.prod(q.max(0) - q.min(0)) <= 4  # (by its box: a ring crossing itself has no area of its own)
+        if len(outer) < 3 or crumb(outer):
+            continue
+        holes = [h for h in (_clean_ring(x) for x in pc.get("holes") or []) if len(h) >= 3 and not crumb(h)]
+        clean.append({"outer": outer, "holes": holes})
+    if not clean:
+        raise ValueError("no outline left (pieces of 4 square pixels or less)")
+    if not _valid(clean):
+        clean = _retrace(clean)
+    r = lambda p: [[round(float(x), 2), round(float(y), 2)] for x, y in p]
+    return [{"outer": r(pc["outer"]), "holes": [r(h) for h in pc["holes"]]} for pc in clean]

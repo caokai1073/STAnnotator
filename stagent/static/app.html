@@ -4462,8 +4462,9 @@ const HELP = `
     draw and name regions before the expression data exist.<ul>
     <li>The pixel size is read from the image, or typed in; without it no µm are shown (areas in pixels).</li>
     <li>Only the Data tab and the regions apply; the regions panel shows each outline's area.</li>
-    <li>Ask the agent to outline a compartment (“draw the mucosa”): it reads the organ's priors and the stains of the
-      image and proposes an outline for you to accept and edit.</li>
+    <li>Ask the agent to outline a compartment (“draw the mucosa”): it asks the organ if needed, reads how each
+      compartment looks on the H&amp;E in the organ's priors and the stains of the image, and proposes an outline for
+      you to accept and reshape with the Regions tools (Brush adds, Alt+Brush erases).</li>
     <li>The regions go to the data later: <b>Regions from</b> when importing the data registered to the same image,
       or Export → Regions (GeoJSON).</li></ul></li></ul></li>
 <li>Then the image and its registration:<ul>

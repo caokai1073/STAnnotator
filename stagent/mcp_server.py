@@ -40,10 +40,10 @@ Getting started
   cell types do not. A new annotation of the sample (start_session) starts with the placeholder's regions.
 - A sample of an H&E only (list_samples: image_only; import_he_only) has no cells: the user (e.g. a pathologist)
   draws and names regions on it. Asked to outline a compartment there (e.g. "draw the mucosa"), do it from the image
-  and the tissue's priors: tissue_priors(organ) for how each compartment looks on the H&E, segment_he for the
-  classes of the tissue (hematoxylin, eosin, texture, distance to the edge), then propose_he_region with the classes
-  that match (within a box for one section), or with points read on show_he; say it is a draft from the image for the
-  user to check and edit. The tools about cells do not apply. Its regions go to the data registered to the same
+  and the tissue's priors: segment_he(organ) gives the classes of the tissue (hematoxylin, eosin, texture, distance
+  to the edge) with the organ's "Compartments to draw" (how each looks on the H&E; ask the user the organ when you
+  do not know it), then propose_he_region with the classes that match (within a box for one section), or with points
+  read on show_he; say it is a draft from the image for the user to check and reshape with the Regions tools. The tools about cells do not apply. Its regions go to the data registered to the same
   image: the app's Import dialog ("Regions from"), or export_regions and the regions file of the import.
 - A new gene panel needs its own marker list: start from organ_marker_draft (built-in lists of common organs pruned
   to the panel; search the literature for types it lacks), or draft one from get_panel_genes; validate it with check_marker_list,
@@ -84,7 +84,8 @@ Priors and corrections
 - Regions are the user's. When the user asks you to draw or outline one ("draw the mucosa", "outline the follicles",
   "make a region of tiles F3:H6"): compute it with preview_compartment (tissue a lineage forms) or take tiles / a
   candidate area, check the figure against the H&E, then propose_region: the user sees the outline on the H&E in the
-  app's review window and Accept adds the region; the user can then edit its points.
+  app's review window and Accept adds the region; the user can then reshape it with the Regions tools (Brush adds,
+  Alt+Brush erases, polygon / rectangle / ellipse add or cut).
   Never add regions the user did not ask for, and never offer region or cell type columns stored with the data
   (they are kept only for offline evaluation).
 - When the user asks to put the cells between their regions (gaps, ragged boundaries) into the region they belong
@@ -1150,6 +1151,7 @@ def _d_propose_region(a):
     s = _s()
     name = regmod.validate_name(re.sub(r"\s+", "_", str(a["name"]).strip()))
     polys, n = (a["resolved"], a.get("n_cells", 0)) if a.get("resolved") else _region_outline(s, a.get("compartment"), a.get("area"))
+    polys = regmod.normalize_pieces(polys)  # as the viewer's tools save a shape (what is shown is what is saved)
     exists = name in s.region_names()
     return {"title": f"Add region {name}" + (f" ({len(polys)} pieces)" if len(polys) > 1 else "") + f": {n:,} cells",
             "version": s.state()["version"],
@@ -1158,8 +1160,9 @@ def _d_propose_region(a):
                         "lineages form tissue)" if a.get("compartment") else f"tiles {a['area']}") + "; the figure "
                         "shows the outline on the H&E.",
                         f"Adds {len(polys)} polygon(s) " + (f"to the existing region {name}" if exists else
-                        f"as region {name}") + "; you can edit its points afterwards, and Undo takes it back."],
-            "preview": {"kind": "image", "path": insights.fig_compartment(s, {"polygons_px": polys}, name)}}
+                        f"as region {name}") + "; reshape it afterwards with the Regions tools (Brush adds, Alt+Brush erases), "
+                        "and Undo takes it back."],
+            "preview": {"kind": "image", "path": insights.fig_compartment(s, {"polygons_px": [p["outer"] for p in polys]}, name)}}
 
 
 @mcp.tool()
@@ -1172,7 +1175,9 @@ def propose_region(name: str, compartment: Optional[str] = None, area: Optional[
     region: propose it with add_constraint once the region exists. resolved, n_cells: filled in by the app (leave
     them out). Only when the user asked for the region."""
     s = _s()
-    v = s.add_region_pieces(name, resolved, author="agent (accepted by the user)")
+    from . import regions as regmod
+    pieces = regmod.normalize_pieces(resolved)  # (already normalized when reviewed; older proposals: rings)
+    v = s.set_region_shape([], name, pieces, author="agent (accepted by the user)")
     return _j({"new_version": v, "message": s.state(v)["message"], "regions": s.regions_info(v)["regions"]})
 
 
@@ -1189,7 +1194,7 @@ def tissue_priors(organ: Optional[str] = None) -> str:
 
 
 @mcp.tool()
-def segment_he(n_classes: int = 6) -> list:
+def segment_he(organ: Optional[str] = None, n_classes: int = 6) -> list:
     """Classes of the tissue read from the H&E itself (no cells needed: works on a sample of an H&E only): color
     deconvolution into hematoxylin and eosin and their texture, k-means into
     n_classes (1 = the most hematoxylin). Returns each class's area, hematoxylin, eosin, texture, distance from the
@@ -1197,12 +1202,23 @@ def segment_he(n_classes: int = 6) -> list:
     Match classes to the compartments of tissue_priors(organ) (e.g. colon: mucosa = dense purple crypts at the
     luminal edge, often 2-3 classes with high hematoxylin; lymphoid follicles = the darkest round blue spots;
     submucosa = pale, loose, low stain; muscularis propria = thick bands of the highest eosin and no texture), then
-    propose_he_region. Changes nothing; the classes are kept for propose_he_region."""
+    propose_he_region. organ: the tissue (an organ of tissue_priors, e.g. "colon"; "other" for one not covered): its
+    "Compartments to draw" come back with the classes, to match them; remembered for the sample, so later calls may
+    leave it out. Without an organ known, ask the user which organ it is. Changes nothing; the classes are kept for
+    propose_he_region."""
     from . import hetissue
     s = _s()
-    meta = hetissue.segment(s.sample_id, n_classes)
+    organ = organ or hetissue.sample_organ(s.sample_id)
+    if not organ:
+        return [_j({"error": "which organ is this tissue? Ask the user (tissue_priors() lists the organs covered; "
+                             "organ='other' when it is none of them), then call segment_he(organ=...) again",
+                    "organs": hetissue.tissue_priors()["organs"]})]
+    comp = hetissue.compartments(organ)
+    if comp.get("error"):
+        return [_j(comp)]
+    meta = hetissue.segment(s.sample_id, n_classes, organ=comp["organ"])
     png = hetissue.fig_classes(s.sample_id, s)
-    return [_j({k: meta[k] for k in ("n_classes", "um_per_px", "classes", "pixel_size_known")} | {"path": png}),
+    return [_j({k: meta[k] for k in ("n_classes", "um_per_px", "classes", "pixel_size_known")} | comp | {"path": png}),
             Image(path=png)]
 
 
@@ -1238,19 +1254,30 @@ def _he_outline(s, a):
 def _d_propose_he_region(a):
     from . import hetissue, regions as regmod
     s = _s()
+    organ = None
+    if not a.get("resolved") and not a.get("polygon_px"):
+        organ = (hetissue.load(s.sample_id)[0].get("organ") if hetissue.segmented(s.sample_id) else None)
+        if not organ:
+            raise ValueError("call segment_he with the organ first (its 'Compartments to draw' tell which classes make "
+                             "the region); ask the user which organ when you do not know it")
+    else:
+        organ = a.get("organ")
     name = regmod.validate_name(re.sub(r"\s+", "_", str(a["name"]).strip()))
     if a.get("resolved"):
         polys, how = a["resolved"], a.get("how") or "the H&E"
     else:
         polys, how = _he_outline(s, a)
+    polys = regmod.normalize_pieces(polys)  # as the viewer's tools save a shape (what is shown is what is saved)
     exists = name in s.region_names()
     return {"title": f"Add region {name}" + (f" ({len(polys)} pieces)" if len(polys) > 1 else "") + " outlined on the H&E",
             "version": s.state()["version"],
-            "args": dict(a, name=name, resolved=polys, how=how),  # applied exactly as reviewed
-            "details": [*_words(a), f"Outlined by the agent from the image alone ({how}), guided by the tissue's "
-                        "priors: check it against the H&E; it is a draft to correct.",
+            "args": dict(a, name=name, resolved=polys, how=how, organ=organ),  # applied exactly as reviewed
+            "details": [*_words(a), f"Outlined by the agent from the image alone ({how})" + (
+                        f", guided by the {organ} priors (how each compartment looks on the H&E)" if organ else "") +
+                        ": check it against the H&E; it is a draft to correct.",
                         f"Adds {len(polys)} polygon(s) " + (f"to the existing region {name}" if exists else
-                        f"as region {name}") + "; you can edit its points afterwards, and Undo takes it back."],
+                        f"as region {name}") + "; reshape it afterwards with the Regions tools (Brush adds, Alt+Brush erases), "
+                        "and Undo takes it back."],
             "preview": {"kind": "image", "path": hetissue.fig_outline(s.sample_id, polys, name, s)}}
 
 
@@ -1259,19 +1286,21 @@ def _d_propose_he_region(a):
 def propose_he_region(name: str, classes: Optional[list[int]] = None, box_px: Optional[list[float]] = None,
                       within_px: Optional[list[list[float]]] = None, polygon_px: Optional[list[list[float]]] = None,
                       min_area_um2: float = 20000.0, text: str = "", resolved: Optional[list] = None,
-                      how: Optional[str] = None) -> str:
+                      how: Optional[str] = None, organ: Optional[str] = None) -> str:
     """Propose a region outlined on the H&E (works without cells, e.g. a sample of an H&E only): the pixels of
     classes (from segment_he; e.g. the classes of the mucosa), optionally only within box_px [x0, y0, x1, y1] or the
     polygon within_px (full-resolution pixels; one section of a slide, one side of the tissue), gaps closed, holes
     filled, pieces under min_area_um2 dropped; or polygon_px, points you read on show_he. The user sees the outline
-    on the H&E in the review window and Accept adds it as region `name` (editable afterwards). text: the user's
-    words. resolved, how: filled in by the app (leave them out). Only when the user asked for the region; say it is a
-    draft from the image."""
+    on the H&E in the review window and Accept adds it as region `name` (saved as the Regions tools save a shape, and
+    reshaped with them afterwards). Classes need segment_he with the organ first (its priors guide the choice). text: the user's
+    words. resolved, how, organ: filled in by the app (leave them out). Only when the user asked for the region; say it
+    is a draft from the image."""
     s = _s()
     from . import regions as regmod
-    pieces = [dict(p, name=regmod.validate_name(re.sub(r"\s+", "_", str(name).strip()))) for p in resolved]
-    r = s.import_regions(pieces, source="the H&E", author="agent from the H&E (accepted by the user)")
-    return _j({"new_version": r["new_version"], "message": r["message"], "regions": s.regions_info(r["new_version"])["regions"]})
+    pieces = regmod.normalize_pieces(resolved)  # (already normalized when reviewed)
+    v = s.set_region_shape([], re.sub(r"\s+", "_", str(name).strip()), pieces,
+                           author="agent from the H&E (accepted by the user)")
+    return _j({"new_version": v, "message": s.state(v)["message"], "regions": s.regions_info(v)["regions"]})
 
 
 # ---------------- aligning cells to an image without a registration file ----------------

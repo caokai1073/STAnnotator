@@ -96,8 +96,9 @@ def _tissue(rgb, odsum, step):
     return t
 
 
-def segment(sample_id, n_classes=6, progress=None):
-    """Classes of the tissue on the image (see the module). Returns the stats; the label image is kept."""
+def segment(sample_id, n_classes=6, progress=None, organ=None):
+    """Classes of the tissue on the image (see the module). Returns the stats; the label image is kept. organ: the
+    tissue whose priors guide the choice of classes (kept with them, and remembered for the sample)."""
     from scipy import ndimage as ndi
     from sklearn.cluster import KMeans
     say = progress or (lambda m: None)
@@ -157,10 +158,55 @@ def segment(sample_id, n_classes=6, progress=None):
     d = _dir(sample_id)
     np.save(d / "labels.npy", lab)
     meta = {"time": time.strftime("%Y-%m-%dT%H:%M:%S"), "n_classes": n_classes, "scale_px": scale, "um_per_px": step,
-            "image": str(path), "shape": list(lab.shape), "classes": classes, "pixel_size_known": known}
+            "image": str(path), "shape": list(lab.shape), "classes": classes, "pixel_size_known": known, "organ": organ}
     json.dump(meta, open(d / "meta.json", "w"), indent=1)
+    if organ:
+        _remember_organ(sample_id, organ)
     say(f"done in {time.time() - t0:.1f} s")
     return meta
+
+
+def segmented(sample_id):
+    return (config.SAMPLES / sample_id / "he_segment" / "meta.json").exists()
+
+
+def sample_organ(sample_id):
+    """The organ given for the sample's tissue earlier (segment_he), or None."""
+    try:
+        return json.load(open(config.SAMPLES / sample_id / "meta.json")).get("organ")
+    except (OSError, ValueError):
+        return None
+
+
+def _remember_organ(sample_id, organ):
+    import os
+    f = config.SAMPLES / sample_id / "meta.json"
+    m = json.load(open(f))
+    if m.get("organ") == organ:
+        return
+    m["organ"] = organ
+    tmp = f.with_name(f".meta.{os.getpid()}.tmp")
+    json.dump(m, open(tmp, "w"), indent=1)
+    os.replace(tmp, f)
+
+
+def compartments(organ):
+    """The organ's "Compartments to draw" from the priors (how each compartment looks on the H&E), to match the classes
+    of segment() to; organ "other": the organ-independent ones. {"organ", "compartments_to_draw"} or {"error", ...}."""
+    q = str(organ).strip()
+    r = tissue_priors("General cross-organ priors" if q.lower() in ("other", "none", "unknown") else q)
+    if r.get("error"):
+        return r | {"hint": "use one of the organs, or organ='other' for a tissue none of them covers"}
+    text = r["text"]
+    blocks = []
+    for sec in re.split(r"(?m)^## ", text):
+        m = re.search(r"\*\*Compartments to draw\*\*:?(.*?)(?=\n\*\*[A-Z][^*\n]*\*\*|\Z)", sec, re.S)
+        if m:
+            blocks.append(("## " + sec.split("\n", 1)[0].strip() + "\n" if len(blocks) or "shared" in sec[:80] else "")
+                          + m.group(1).strip())
+    return {"organ": r["organ"], "compartments_to_draw": "\n\n".join(blocks) or text[:4000],
+            "note": "match each class (hematoxylin, eosin, texture, place) to these descriptions; one compartment is "
+                    "often 2-3 classes; a class that fits none is left out"}
 
 
 def load(sample_id):
