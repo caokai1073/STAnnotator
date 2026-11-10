@@ -78,8 +78,9 @@ def self_command(*args):
     """Command line that runs one of this installation's subcommands (mcp, viewer, ...). The Windows app is two
     programs: STAnnotator.exe (the window, no console) and stagent.exe beside it (a console program: Claude Code talks
     to its MCP server over stdin / stdout)."""
-    if not FROZEN:
-        return [sys.executable, "-m", "stagent.cli", *args]
+    if not FROZEN:  # -P: the working directory is not searched first, so a folder named "stagent" there (the server's
+        # default data folder ~/stagent, with the viewer started from ~) cannot hide the installed package
+        return [sys.executable, "-P", "-m", "stagent.cli", *args]
     exe = Path(sys.executable)
     if os.name == "nt" and (exe.parent / "stagent.exe").exists():
         exe = exe.parent / "stagent.exe"

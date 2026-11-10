@@ -36,7 +36,7 @@ def make_app(dest=None):
     exe = app / "Contents" / "MacOS" / "STAnnotator"
     exe.write_text("#!/bin/sh\n"
                    f'export STAGENT_HOME="{config.HOME}"\n'
-                   f'exec "{sys.executable}" -m stagent.desktop "$@" >> "{config.HOME / "app.log"}" 2>&1\n')
+                   f'exec "{sys.executable}" -P -m stagent.desktop "$@" >> "{config.HOME / "app.log"}" 2>&1\n')
     exe.chmod(0o755)
     icon = config.PACKAGE / "data" / "app_icon.png"
     try:  # .icns from the PNG with the system's iconutil
@@ -56,7 +56,19 @@ def make_app(dest=None):
     return app
 
 
+def _check_package():
+    """A folder named "stagent" in the working directory (e.g. the data folder ~/stagent, run from ~ with python -m)
+    hides the installed package: Python takes it for an empty namespace package and nothing of stagent/__init__.py
+    runs. Say so instead of failing later in odd ways."""
+    import stagent
+    if getattr(stagent, "__file__", None) is None:
+        hidden = list(getattr(stagent, "__path__", []))
+        sys.exit(f"stagent: the folder {hidden[0] if hidden else 'stagent'} in the working directory hides the installed "
+                 "package. Run from another directory, or use the stagent command (or python -P -m stagent.cli).")
+
+
 def main(argv=None):
+    _check_package()
     ap = argparse.ArgumentParser(prog="stagent", description="Spatial cell type annotation with Claude.")
     sub = ap.add_subparsers(dest="cmd", required=True)
     im = sub.add_parser("import", help="import one sample from h5ad / RDS + registered H&E + registration file")
