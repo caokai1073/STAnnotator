@@ -733,7 +733,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
         <input type="file" id="rgImportFile" accept=".geojson,.json" hidden>
         <button id="rgtoggle" style="padding:1px 7px;font-size:11px">−</button></div>
       <div class="rgtools" id="rgtools">
-        <button data-tool="move" data-icon="hand" title="Move and select (M): drag moves the map; a click on a region selects it, Shift-click adds more">Move</button>
+        <button data-tool="move" data-icon="hand" title="Move (M): drag moves the map; a click shows the cell; Alt (Option) + click selects the region under it, Shift + click adds more">Move</button>
         <span class="sep"></span>
         <button data-tool="rect" data-icon="rect" title="Rectangle (R): drag a rectangle; Shift: a square">Rectangle</button>
         <button data-tool="ellipse" data-icon="ellipse" title="Ellipse (O): drag an ellipse; Shift: a circle">Ellipse</button>
@@ -2214,7 +2214,14 @@ viewer.addHandler("canvas-click", async (e) => {
   if (st.drawing) { if (Date.now() - (st.penAt || 0) > 300) addPoint(e.position); return; }
   if (st.editing) return;
   if (st.tool !== "move" || Date.now() - (st.penAt || 0) < 300) return;
-  if (st.regions && !st.shape) selectAt(e.position, !!(e.originalEvent && e.originalEvent.shiftKey));
+  // a plain click shows the cell; Alt (Option), Ctrl or Cmd + click selects the region under it, Shift + click adds or
+  // takes one away. With no cells to show (an H&E only, or the cells hidden) a plain click selects the region.
+  const oe = e.originalEvent || {}, regionClick = oe.altKey || oe.ctrlKey || oe.metaKey || oe.shiftKey;
+  const noCells = st.imageOnly || st.hidden;
+  if (regionClick || noCells) {
+    if (st.regions && !st.shape) selectAt(e.position, !!oe.shiftKey);
+    return;
+  }
   const p = imgPointFromEvent(e.position);
   const q = imgPointFromEvent(new OpenSeadragon.Point(e.position.x + 10, e.position.y));
   const g = st.mode.startsWith("gene:") ? `&gene=${encodeURIComponent(st.mode.slice(5))}` : "";
@@ -2489,7 +2496,7 @@ async function loadRegions() {
       const go = mk("target", "Zoom to this polygon"); go.onclick = () => zoomTo(p);
       const del = mk("trash", "Delete this polygon"); del.onclick = (e) => { e.stopPropagation(); deleteRegion(p.id); };
       go.onclick = (e) => { e.stopPropagation(); zoomTo(p); };
-      pr.title = "Click to select it: then paint with the Brush or Wand to add, hold Alt to erase; Shift-click selects more";
+      pr.title = "Click to select it (on the map: Alt + click): then paint with the Brush or Wand to add, hold Alt to erase; Shift-click selects more";
       pr.style.cursor = "pointer"; pr.dataset.id = p.id; pr.classList.toggle("on", st.rsel.has(p.id));
       pr.onclick = (e) => {  // select it, as a click on the map does
         if (st.shape) return;
@@ -4525,11 +4532,13 @@ const HELP = `
 
 <h3>Regions</h3><ul>
 <li><b>Drawing tools</b> (Regions panel; the keys as in QuPath):<ul>
-  <li><b>Move</b> <kbd>M</kbd>: drag moves the map; a click on a region selects it (Shift-click: more). The selected
-    region is outlined in bright red (no region color is red).</li>
+  <li><b>Move</b> <kbd>M</kbd>: drag moves the map; a click shows the cell; <kbd>Alt</kbd> (Option) + click selects the
+    region under it (<kbd>Shift</kbd> + click: more; on an H&amp;E only or with the cells hidden a plain click). The
+    selected region is outlined in bright red (no region color is red).</li>
   <li><b>Rectangle</b> <kbd>R</kbd>, <b>Ellipse</b> <kbd>O</kbd>: drag one (<kbd>Shift</kbd>: a square or circle).</li>
-  <li><b>Polygon</b> <kbd>P</kbd>: click points, or turn on the <b>Pen</b> (<kbd>P</kbd> again) and drag freehand;
-    letting go only pauses. <b>Finish</b>, <kbd>Enter</kbd> or a click on the first point closes it.</li>
+  <li><b>Polygon</b> <kbd>P</kbd>: click points. <b>Pen</b> <kbd>F</kbd>: hold the mouse button and drag freehand;
+    letting go only pauses. <b>Finish</b>, <kbd>Enter</kbd> or a click on the first point closes it. A second click on
+    the chosen tool lets go of it.</li>
   <li><b>Brush</b> <kbd>B</kbd>: paint the area. <b>Wand</b> <kbd>W</kbd>: paint, and the area follows the colors of
     the H&amp;E under the brush (<b>±</b>: how different a color may be). The slider sets the brush size.</li>
   <li>A Brush or Wand stroke that starts on a region (or with the brush over its edge) changes that region, as in

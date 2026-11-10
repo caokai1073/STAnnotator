@@ -520,7 +520,7 @@ The Regions panel has a row of tools:
 
 | Tool | Key | What it does |
 |---|---|---|
-| Move | M | Drag moves the map; a click on a region selects it (Shift-click selects more) |
+| Move | M | Drag moves the map; a click shows the cell; **Alt** (Option) + click selects the region under it, Shift + click adds more |
 | Rectangle | R | Drag a rectangle (Shift: a square) |
 | Ellipse | O | Drag an ellipse (Shift: a circle) |
 | Polygon | P | Click points |
@@ -546,7 +546,8 @@ A second click on the chosen tool lets go of it (back to Move). The chosen tool 
 
 **Changing regions**
 
-- A selected region (click it on the map, or its row in the list) is named above the list (Selected R3 (submucosa));
+- A selected region (Alt + click on the map, or its row in the list; on an H&E only or with the cells hidden a plain
+  click) is named above the list (Selected R3 (submucosa));
   paint over it with the Brush or Wand to add, hold Alt (or −) to erase, then **Save**. ✕ (or Esc) clears the
   selection. To delete a polygon or a whole region, use the trash on its row in the list.
 - A region keeps its name and priors when its outline changes; its cells are recomputed, and Undo (the toolbar's)
