@@ -1592,10 +1592,11 @@ async function selectSample(id) {
   if (token !== st.switchToken) return;
   // reopen the session last used on this sample, else its most recent one
   const ids = st.sample.sessions.map((x) => x.session_id);
-  // reopen an annotation only if it was open on this sample earlier in this visit; a fresh page shows none
-  const remembered = st.openedThisVisit[id];
-  let sid = ids.includes(remembered) ? remembered : null;
-  if (!sid && st.sliceSwitch && ids.length) sid = ids[0];  // stepping through a project: its latest annotation
+  // the annotation open on this sample last (this visit, else before a reload or reconnect), else its most recent
+  // one: a sample with annotations always opens one, so its regions and cell types show (a fresh page used to open
+  // none, and the panels stayed away until another slice was opened and this one again)
+  const remembered = st.openedThisVisit[id] || load(`ann:${id}`);
+  let sid = ids.includes(remembered) ? remembered : (ids.length ? ids[0] : null);
   st.sliceSwitch = false;
   fillSessions(sid);
   setMarkers("", "");  // no default list: import or load one for this sample
@@ -1624,6 +1625,10 @@ async function openPlaceholder(token) {  // the sample's "not annotated yet" ses
 function reportState() {  // so Claude (use_viewer_session) knows what the user is looking at
   post("/api/viewer/state", { sample: st.sample && st.sample.sample_id, session: st.sid, version: st.version }).catch(() => {});
   miniInfo(); anRefresh();
+}
+function forgetOpened(sample) {  // the next opening of this sample takes its latest annotation (e.g. a new joint one)
+  delete st.openedThisVisit[sample];
+  try { localStorage.removeItem(`ann:${sample}`); } catch (e) {}
 }
 function closeSession() {
   st.sid = null; st.placeholder = false; st.version = null; st.filters = {}; st.regions = null; st.advice = null; st.advicePollSig = undefined; st.adviceSeen = null;
@@ -1698,6 +1703,7 @@ async function startAnnotation(mode, sid, token = st.switchToken) {
 async function openSession(sid) {
   if (sid !== st.sid) { st.advicePollSig = undefined; st.adviceSeen = null; }  // another annotation: its advice so far is not new
   st.sid = sid;
+  if (st.sample && st.sample.sessions && st.sample.sessions.some((x) => x.session_id === sid)) store(`ann:${st.sample.sample_id}`, sid);  // reopened after a reload
   st.imageOnly = !!(st.sample && st.sample.image_only);  // before the legend and regions are drawn
   $("empty").style.display = "none";
   ["undo", "export", "send", "plaus", "report", "nRun", "eRun"].forEach((b) => ($(b).disabled = false));
@@ -2201,9 +2207,12 @@ async function refreshVersion(force, infoPromise, infoSid) {  // infoPromise: /i
   if (st.plaus) await loadPlaus(false);  // groups belong to a version: recompute for the new one
   reportState();
   refreshOverlay();
-  await Promise.all([loadLegend(), loadRegions()]);  // (independent: the legend and the regions load together)
+  // (independent: the legend and the regions load together; one that failed, e.g. while a server connection comes
+  // back, is loaded again by the next tick instead of leaving its panel away)
+  const got = await Promise.allSettled([loadLegend(), loadRegions()]);
+  st.panelsMissing = got.some((x) => x.status === "rejected");
 }
-setInterval(() => { if (!st.busy) refreshVersion(false).catch(() => {}); }, 4000);
+setInterval(() => { if (!st.busy) refreshVersion(!!st.panelsMissing).catch(() => {}); }, 4000);
 
 // ---------------- legend ----------------
 const MODE_TITLES = { type: "Cell types", lineage: "Lineages", region: "Regions", changed: "Changes", conflicts: "Conflicts", plausibility: "Out-of-place cells", confidence: "Confidence", cluster: "Clusters (marker step)", niche: "Niches", leiden: "Leiden clusters", trajectory: "Trajectory" };
@@ -5302,7 +5311,7 @@ $("rmSample").onclick = async () => {
                `(not shown in the app).${p ? " The project keeps its other slices." : ""} The image and source files stay where they are.`)) return;
   try {
     const r = await post(`/api/sample/${s.sample_id}/remove`, {});
-    delete st.openedThisVisit[s.sample_id]; store("sample", "");
+    forgetOpened(s.sample_id); store("sample", "");
     const rest = st.samples.filter((x) => x.sample_id !== s.sample_id);
     const next = p ? (p.samples.find((id) => id !== s.sample_id && rest.some((x) => x.sample_id === id)) || null) : null;
     await loadSamples(next || (rest[0] && rest[0].sample_id) || null);
@@ -5461,7 +5470,7 @@ async function proposalApplied(r) {
   if (r.tool === "start_session" && r.session_after) { st.openedThisVisit[r.sample_id] = r.session_after; await loadSamples(r.sample_id); return; }
   if (["import_sample", "import_visium", "import_stereoseq", "import_cosmx_merfish", "import_he_only"].includes(r.tool)) { await loadSamples(st.sample ? st.sample.sample_id : r.sample_id); return; }
   if (r.tool === "remove_sample") {  // (the agent's; the open sample may be the one removed)
-    delete st.openedThisVisit[r.sample_id];
+    forgetOpened(r.sample_id);
     const keep = st.sample && st.sample.sample_id !== r.sample_id ? st.sample.sample_id : null;
     await loadSamples(keep || ((st.samples || []).find((x) => x.sample_id !== r.sample_id) || {}).sample_id || null); return;
   }
@@ -5717,7 +5726,7 @@ $("sessDel").onclick = async () => {  // delete the annotation chosen in the box
   try {
     await post(`/api/session/${encodeURIComponent(sid)}/delete`);
     const rest = st.sample.sessions.map((x) => x.session_id).filter((x) => x !== sid);
-    if (rest.length) st.openedThisVisit[id] = rest[0]; else delete st.openedThisVisit[id];
+    if (rest.length) st.openedThisVisit[id] = rest[0]; else forgetOpened(id);
     await selectSample(id);
     toast(`Annotation deleted${rest.length ? "; the next most recent one is open" : ""}`, 5000);
   } catch (e) { toast(e.message, 6000); }
@@ -6010,7 +6019,7 @@ async function qfRun(params) {
   try {
     const r = await post(`/api/sample/${id}/filter`, { params });
     $("qfDlg").close();
-    (p ? p.samples : [id]).forEach((x) => delete st.openedThisVisit[x]);
+    (p ? p.samples : [id]).forEach((x) => forgetOpened(x));
     GL.sample = null;  // the cells' positions are read again
     await loadSamples(id);
     toast((Object.keys(params).length ? `Filtered: ${(r.n_cells - r.n_cells_kept).toLocaleString()} cells and ${r.genes_removed.length} genes removed` : "All cells and genes restored") +
@@ -6092,7 +6101,7 @@ async function resumeRunning() {
       try {
         await pollJob(j.job, prog, fill, stage, btn, 1000, true);
         if (j.kind === "annotate") {
-          if (j.project) { const p = projectOf(s.sample_id); if (p) p.samples.forEach((id) => delete st.openedThisVisit[id]); st.sliceSwitch = true; }
+          if (j.project) { const p = projectOf(s.sample_id); if (p) p.samples.forEach((id) => forgetOpened(id)); st.sliceSwitch = true; }
           else if (j.session) st.openedThisVisit[s.sample_id] = j.session;
           await loadSamples(st.sample ? st.sample.sample_id : s.sample_id);
         } else if (j.kind === "embed") { setSelection(null); await loadEmbedding(true); }
@@ -6116,7 +6125,7 @@ async function annotateProject() {  // one marker annotation of all slices; then
                                    knn: $("knn").value, estimate_s: EST.last ? EST.last[$("knn").value].seconds : null,
                                    carry: !!st.sid && $("carry").checked }, $("pfill"), $("pstage"), $("annotate"));
     st.wantMode = st.mode !== "cells" ? st.mode : null; st.sliceSwitch = true; st.keepView = viewState();
-    projectOf(st.sample.sample_id).samples.forEach((id) => delete st.openedThisVisit[id]);  // open the new joint annotations
+    projectOf(st.sample.sample_id).samples.forEach((id) => forgetOpened(id));  // open the new joint annotations
     await loadSamples(st.sample.sample_id);
     setTimeout(() => $("progress").classList.remove("show"), 800);
     toast("All slices of the project annotated together", 5000);
@@ -7251,7 +7260,7 @@ $("rsGo").onclick = async () => {
       $("rsStatus").textContent = `Resetting ${i + 1} of ${ids.length}…`;
       const r = await post(`/api/sample/${sid}/reset`, { embedding: $("rsEmb").checked });
       n += r.deleted_sessions; chats += r.deleted_conversations; emb += r.deleted_embedding ? 1 : 0;
-      delete st.openedThisVisit[sid];
+      forgetOpened(sid);
     }
     $("rsDlg").close();
     await selectSample(id);
