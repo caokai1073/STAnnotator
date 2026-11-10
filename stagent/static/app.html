@@ -1087,7 +1087,10 @@ T and NK cells: CD3E|NKG7+ EPCAM-
         with its regions, priors and corrections, PCA / UMAP / Leiden, niches) and its results (tables, figures).
         It runs without this app, with the data files and common Python packages, and checks that the labels,
         clusters and niches come out the same.</div>
-      <div class="row"><span class="spacer"></span><button id="xpNb" class="primary">Save notebook…</button></div></div>
+      <div class="hint" id="xpNbAllInfo" hidden>A project annotated with all slices together: one notebook can hold every slice, the
+        joint annotation, the PCA / UMAP and the niches of all slices, checked slice by slice.</div>
+      <div class="row"><span class="spacer"></span><button id="xpNbAll" hidden title="One notebook for every slice of the project: the joint annotation, embedding and niches">Notebook of all slices…</button>
+        <button id="xpNb" class="primary">Save notebook…</button></div></div>
     <div class="clcard" id="xpRegCard"><b>Registration (CSV)</b>
       <div class="hint" id="xpRegInfo"></div>
       <div class="hint" id="xpPosInfo" style="margin-top:4px"></div>
@@ -1218,7 +1221,7 @@ const ICON_TEXT = { qfBtn: "play", importBtn: "import", clearAll: "trash", allSa
   draw: "pen", emLasso: "lasso", emClear: "x", emZoom: "target", send: "send",
   mkImport: "import", mkCheck: "check", mkSave: "save", mkDraft: "sparkle", mkOrganUse: "list", mkOrganAgent: "sparkle", mkClose: "check", imGo: "import",
   imNewAlign: "sparkle", alignNow: "sparkle", refPick: "folder", exPick: "folder", refClose: "check", exClose: "check", rcTest: "check",
-  rcGo: "server", fbOk: "check", rpAsk: "sparkle", xpCsv: "download", xpNb: "download", xpReg: "download", xpPos: "download", xpGeo: "download",
+  rcGo: "server", fbOk: "check", rpAsk: "sparkle", xpCsv: "download", xpNb: "download", xpReg: "download", xpPos: "download", xpGeo: "download", xpNbAll: "download",
   hpCopy: "copy", editSave: "check", nameSave: "check", rsGo: "trash", anFig: "download", aRun: "play", aLast: "list", anAsk: "sparkle", sRun: "play", sLast: "list", tRun: "play", tLast: "list", rvGo: "sparkle", rvShow: "list" };
 const ICON_TITLES = { lgtoggle: "Fold or unfold", rgtoggle: "Fold or unfold", stepsFold: "Fold or unfold", anCsv: "Save as CSV…", rpSave: "Save as Markdown…",
   mkExport: "Save the list as CSV…", fbHome: "Home folder", fbUp: "Parent folder", plclose: "Close", emClose: "Close" };
@@ -7337,6 +7340,8 @@ $("export").onclick = () => {
   $("xpInfo").textContent = st.sid && st.version != null ? `${st.sample.sample_id} · version ${st.version}` : st.sample.sample_id; $("xpStatus").textContent = "";
   $("xpCsv").disabled = $("xpNb").disabled = !annotated;  // these need the cell types
   $("xpCsv").title = $("xpNb").title = annotated ? "" : "Annotate the sample first";
+  const joint = annotated && projectOf(st.sample.sample_id) && st.vocab && st.vocab.joint;  // annotated with all slices together
+  $("xpNbAll").hidden = $("xpNbAllInfo").hidden = !joint;
   const placed = cellsPlaced();
   const by = st.sample.registration_by || "file", local = /local correction|piece moves|nuclei correction/.test(by);
   $("xpReg").disabled = $("xpPos").disabled = !placed;
@@ -7354,6 +7359,7 @@ $("export").onclick = () => {
 };
 $("xpClose").onclick = () => $("xpDlg").close();
 async function exportAs(kind) {  // the cell table or the notebook of the current version
+  if (kind === "project_notebook") return exportProjectNotebook();
   const ext = kind === "notebook" ? "ipynb" : "csv";
   const sampleFile = { registration: "registration.csv", positions: "cell_positions.csv" }[kind];  // of the sample, not the version
   const name = sampleFile ? `${st.sample.sample_id}_${sampleFile}` : kind === "regions" ? `${st.sample.sample_id}_v${st.version}_regions.geojson`
@@ -7380,6 +7386,25 @@ async function exportAs(kind) {  // the cell table or the notebook of the curren
 }
 $("xpCsv").onclick = () => exportAs("csv");
 $("xpNb").onclick = () => exportAs("notebook");
+$("xpNbAll").onclick = () => exportAs("project_notebook");
+async function exportProjectNotebook() {  // every slice of the project in one notebook (a joint annotation)
+  const p = projectOf(st.sample.sample_id); if (!p) return;
+  const sessions = projectSessions(), name = `${p.name || p.project_id}_all_slices_analysis.ipynb`.replace(/[^A-Za-z0-9_.-]+/g, "_");
+  const url = `/api/project/${encodeURIComponent(p.project_id)}/export.ipynb?sessions=${encodeURIComponent(JSON.stringify(sessions))}`;
+  $("xpStatus").textContent = "Writing the notebook of all slices…";
+  if (st.remote) { const path = await saveDownload(name, url); $("xpStatus").textContent = path ? `Saved ${path}` : ""; return; }
+  if (native()) {
+    const path = await native().save_path(name); if (!path) { $("xpStatus").textContent = ""; return; }
+    try { await post(`/api/s/${st.sid}/export_to`, { path, kind: "project_notebook", sessions }); $("xpStatus").textContent = `Saved ${path}`; }
+    catch (e) { $("xpStatus").textContent = e.message; }
+    return;
+  }
+  try {  // a browser: the error (not a joint annotation) shows here instead of a broken download
+    const r = await fetch(url); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+    const a = document.createElement("a"); a.href = URL.createObjectURL(await r.blob()); a.download = name;
+    document.body.append(a); a.click(); a.remove(); $("xpStatus").textContent = `Downloaded ${name}`;
+  } catch (e) { $("xpStatus").textContent = e.message; }
+}
 $("xpReg").onclick = () => exportAs("registration");
 $("xpPos").onclick = () => exportAs("positions");
 $("xpGeo").onclick = () => exportAs("regions");

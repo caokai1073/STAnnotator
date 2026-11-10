@@ -2284,11 +2284,19 @@ def export_regions(version: Optional[int] = None) -> str:
 
 
 @mcp.tool()
-def export_notebook(version: Optional[int] = None) -> str:
+def export_notebook(version: Optional[int] = None, scope: str = "slice") -> str:
     """Write the analysis as a Jupyter notebook: the code of every step with this annotation's parameters (data,
     placement on the image, annotation replayed with its regions, priors and corrections, PCA / UMAP / Leiden,
-    niches) and its results; running it repeats the analysis and checks the labels. Returns its path."""
-    from . import notebook
+    niches) and its results; running it repeats the analysis and checks the labels. scope "project": one notebook of
+    every slice of the project annotated with all slices together (the joint annotation, then each slice's own
+    regions, priors and corrections, the joint PCA / UMAP with Harmony and the joint niches, checked slice by slice).
+    Returns its path."""
+    from . import notebook, projects
+    if scope == "project":
+        pid = projects.project_of(_s().sample_id)
+        if not pid:
+            raise ValueError("this sample is not part of a project")
+        return _j({"notebook": notebook.build_project(pid)})
     return _j({"notebook": notebook.build(_s(), version)})
 
 

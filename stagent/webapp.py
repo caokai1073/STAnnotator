@@ -2864,6 +2864,18 @@ def api_regions_geojson(req):
                     headers={"Content-Disposition": attachment(f"{s.sample_id}_v{v}_regions.geojson")})
 
 
+async def api_project_notebook(req):
+    """Download the notebook of a whole project annotated jointly (sessions: the annotation of each slice, as JSON)."""
+    from . import notebook
+    pid = req.path_params["pid"]
+    try:
+        sess = json.loads(req.query_params.get("sessions") or "null")
+        path = await asyncio.to_thread(notebook.build_project, pid, sess)
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+    return FileResponse(path, media_type="application/x-ipynb+json", filename=f"{pid}_all_slices_analysis.ipynb")
+
+
 def api_export_notebook(req):
     """Download the analysis notebook of a version (default: latest)."""
     from . import notebook
@@ -3095,10 +3107,15 @@ async def api_export_to(req: Request):
             Path(b["path"]).expanduser().write_text(notebook.positions_csv(s.sample_id), encoding="utf-8")
         elif b.get("kind") == "regions":
             Path(b["path"]).expanduser().write_text(_regions_geojson(s, v)[0], encoding="utf-8")
+        elif b.get("kind") == "project_notebook":  # all slices of the sample's project, annotated together
+            pid = projects.project_of(s.sample_id)
+            if not pid:
+                raise ValueError("this sample is not part of a project")
+            shutil.copy(await asyncio.to_thread(notebook.build_project, pid, b.get("sessions")), Path(b["path"]).expanduser())
         else:
             src = notebook.build(s, v) if b.get("kind") == "notebook" else Path(s.export(v)) / "cells.csv"
             shutil.copy(src, Path(b["path"]).expanduser())
-    except (OSError, KeyError) as e:
+    except (OSError, KeyError, ValueError) as e:
         return _json({"error": str(e)}, 400)
     except Exception as e:  # shown in the export dialog instead of "Internal Server Error"
         import traceback
@@ -3416,6 +3433,7 @@ def build_app(port):
         Route("/api/s/{sid}/export", api_export, methods=["POST"]),
         Route("/api/s/{sid}/export.csv", api_export_csv),
         Route("/api/s/{sid}/export.ipynb", api_export_notebook),
+        Route("/api/project/{pid}/export.ipynb", api_project_notebook),
         Route("/api/sample/{sample}/registration.csv", api_registration_csv),
         Route("/api/sample/{sample}/cell_positions.csv", api_positions_csv),
         Route("/api/sample/{sample}/export_to", api_sample_export_to, methods=["POST"]),

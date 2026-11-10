@@ -673,7 +673,7 @@ class Session:
                 "lineages": self.lineages, "lineage_of_type": self.lineage_of_type,
                 "marker_list": self.scheme.get("text"), "reference": self.scheme.get("reference"),
                 "knn": self.knn_mode() if self.scheme["kind"] == "markers" else None,
-                "existing": self.scheme.get("existing"),
+                "existing": self.scheme.get("existing"), "joint": self.scheme.get("joint"),
                 "regions": self.region_names(), "free_regions": vocab.FREE_REGIONS, "kinds": cmod.KINDS,
                 "modes": cmod.MODES, "strengths": cmod.STRENGTH, "verdicts": vocab.VERDICTS,
                 "depth_note": "depth = distance to the mucosa core (epithelial-marker density); 0 inside crypts",
