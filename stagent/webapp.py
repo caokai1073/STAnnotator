@@ -2679,16 +2679,9 @@ async def api_claude_align(req: Request):
     return _json({"claude_code": claudelink.open_claude_code(sample, b.get("session"), text, send_if_open=True)})
 
 
-HE_REGIONS = ("Outline these regions on the H&E of sample {sample} (I chose them in 'Outline regions'): "
-              "{regions}. The organ is {organ}. Call segment_he(organ={organ_arg}) once, match its classes to each "
-              "region's description in the organ's 'Compartments to draw', and propose each region with propose_he_region "
-              "(within a box for one section when the slide holds several; check the outline on show_he before you "
-              "propose it). Each comes to me for review. Do not add regions I did not list.{notes} Then tell me in one line "
-              "per region what you outlined and what I should check.")
-
-
 def api_he_organs(req):
-    """The organs of the tissue priors with the compartments each can draw (for 'Outline regions'), and the organ
+    """The organs of the tissue priors with the compartments each can draw, and their trained models (for the organ
+    model window: Train / Predict), and the organ
     given for this sample before."""
     from . import hetissue
     organs = hetissue.tissue_priors()["organs"]
@@ -2701,43 +2694,6 @@ def api_he_organs(req):
                               "model": {k: models[o][k] for k in ("classes", "slides", "trained")} if o in models else None}
                              for o in organs + extra],
                   "other": hetissue.compartment_names("other"), "organ": known})
-
-
-async def api_claude_he_regions(req: Request):
-    """Ask the agent to outline the chosen regions on an H&E only: {sample, organ, regions, notes, session}."""
-    from . import hetissue
-    b = await req.json()
-    sample = str(b.get("sample") or "")
-    if not sample or "/" in sample or sample in (".", "..") or not (config.SAMPLES / sample / "meta.json").exists():
-        return _json({"error": "no such sample"}, 404)
-    organ = re.sub(r"\s+", " ", str(b.get("organ") or "")).strip()[:80]
-    regions = [re.sub(r"\s+", " ", str(x)).strip()[:80] for x in (b.get("regions") or []) if str(x).strip()][:30]
-    if not organ or not regions:
-        return _json({"error": "choose the organ and at least one region"}, 400)
-    covered = not hetissue.compartments(organ).get("error")
-    if covered:
-        hetissue._remember_organ(sample, hetissue.compartments(organ)["organ"])  # segment_he finds it without asking
-    notes = re.sub(r"\s+", " ", str(b.get("notes") or "")).strip()[:600]
-    from . import organmodel
-    om = organmodel.model_of(organ) if covered or organ else None
-    if om:  # the model reads the H&E now, so its outlines are ready when the agent asks for them
-        def warm(sample=sample, organ=om["organ"]):
-            try:
-                organmodel.predict(sample, organ)
-            except Exception as e:
-                print(f"organ model on {sample}: {e}")
-        threading.Thread(target=warm, daemon=True).start()
-    text = HE_REGIONS.format(sample=sample, regions="; ".join(regions), organ=organ,
-                             organ_arg=repr(organ if covered else "other"),
-                             notes=(f" My notes: {notes}" + ("" if notes[-1] in ".!?" else ".") if notes else "") +
-                             ("" if covered else f" ({organ} has no priors of its own: use the organ-independent ones and "
-                                                 "the regions' usual look on an H&E.)") +
-                             (f" A trained {om['organ']} model is available (outlines a pathologist drew; classes: "
-                              f"{', '.join(om['classes'])}): for each region it has a class for, use propose_he_region(name, "
-                              "model_class=<that class>) instead of the H&E classes." if om else ""))
-    if not desktop_mode():
-        return _json({"message": text})
-    return _json({"claude_code": claudelink.open_claude_code(sample, b.get("session"), text, send_if_open=True)})
 
 
 # ---------------- organ models (organmodel.py): trained from H&E + GeoJSON pairs, kept in the data folder ----------------
@@ -2776,6 +2732,51 @@ async def api_organ_model_train(req: Request):
             meta = organmodel.train(organ, pairs, classes, add=bool(b.get("add")), app_version=__import__("stagent").__version__,
                                     progress=lambda f, m: JOBS[job].update(progress=round(f, 3), stage=m))
             JOBS[job].update(progress=1.0, stage="done", done=True, result=meta)
+        except Exception as e:
+            JOBS[job].update(error=f"{type(e).__name__}: {e}", done=True)
+    return await _spawn(job, work) or _json({"job": job})
+
+
+async def api_organ_model_predict(req: Request):
+    """Outline the chosen classes of an organ's model on the annotation's H&E, without the agent: {organ, classes};
+    in the background (progress under /api/job/organpredict:<session>); all of them are added as regions in one
+    version (one Undo takes them back)."""
+    from . import organmodel, regions as regmod
+    s = review_app._session(req.path_params["sid"])
+    b = await req.json()
+    organ, classes = str(b.get("organ") or ""), [str(c) for c in (b.get("classes") or []) if str(c).strip()]
+    om = organmodel.model_of(organ) if organ else None
+    if not om:
+        return _json({"error": f"no trained model for {organ or 'this organ'}"}, 400)
+    if not classes:
+        return _json({"error": "choose at least one class"}, 400)
+    job = f"organpredict:{s.id}"
+    if job in JOBS and not JOBS[job]["done"]:
+        return _json({"error": "already outlining"}, 409)
+    JOBS[job] = {"stage": "starting", "progress": 0.0, "done": False, "error": None}
+
+    def work():
+        try:
+            say = lambda f, m: JOBS[job].update(progress=round(f, 3), stage=m)
+            organmodel.predict(s.sample_id, om["organ"], progress=lambda f, m: say(0.9 * f, m))
+            pieces, made, none = [], {}, []
+            for i, c in enumerate(classes):
+                say(0.9 + 0.08 * i / len(classes), f"outlining {c}")
+                try:
+                    pcs = regmod.normalize_pieces(organmodel.outline(s.sample_id, om["organ"], c))
+                except ValueError:
+                    none.append(c)
+                    continue
+                name = regmod.validate_name(re.sub(r"\s+", "_", c.strip()))
+                pieces += [dict(p, name=name) for p in pcs]
+                made[name] = len(pcs)
+            if not pieces:
+                raise ValueError(f"the {om['organ']} model found none of {', '.join(classes)} here")
+            with jobs.critical():
+                r = s.import_regions(pieces, source=f"the {om['organ']} model",
+                                     author=f"{om['organ']} model ({len(om['slides'])} annotated slides, {om['trained'][:10]})")
+            JOBS[job].update(progress=1.0, stage="done", done=True,
+                             result={"new_version": r["new_version"], "message": r["message"], "regions": made, "not_found": none})
         except Exception as e:
             JOBS[job].update(error=f"{type(e).__name__}: {e}", done=True)
     return await _spawn(job, work) or _json({"job": job})
@@ -3446,11 +3447,11 @@ def build_app(port):
         Route("/api/sample/{sample}/filter", api_sample_filter, methods=["POST"]),
         Route("/api/sample/{sample}/placement/undo", api_sample_placement_undo, methods=["POST"]),
         Route("/api/claude/align", api_claude_align, methods=["POST"]),
-        Route("/api/claude/he_regions", api_claude_he_regions, methods=["POST"]),
         Route("/api/he_organs", api_he_organs),
         Route("/api/organ_models", api_organ_models),
         Route("/api/organ_models/inspect", api_organ_model_inspect, methods=["POST"]),
         Route("/api/organ_models/train", api_organ_model_train, methods=["POST"]),
+        Route("/api/s/{sid}/organ_models/predict", api_organ_model_predict, methods=["POST"]),
         Route("/api/organ_models/import", api_organ_model_import, methods=["POST"]),
         Route("/api/organ_models/export", api_organ_model_export, methods=["POST"]),
         Route("/api/organ_models/delete", api_organ_model_delete, methods=["POST"]),

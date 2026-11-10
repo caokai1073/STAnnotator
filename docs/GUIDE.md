@@ -185,12 +185,12 @@ An image without any cells, e.g. for a pathologist to draw and name regions befo
     same scan: the image size is checked); every annotation of the data starts with them;
   - or give the exported GeoJSON as the import's **Regions** (QuPath opens it too: every outline is an annotation
     classified by its region, with its color).
-- **Train a model** (in the Regions toolbar, right of the Wand; every sample whose H&E is shown) opens the Outline regions
-  window; its **Ask the agent** tab: choose the organ (or type one)
-  and tick the regions to draw (the organ's compartments from its priors, and the classes of its trained model;
-  others can be typed), add notes if needed (e.g. "only the upper section"); the request goes to the agent (Claude
-  Code) as written for it. With a trained model for the organ, the agent outlines the regions it has with it.
-- **Organ models** (the same window, **Train a model**, its first tab): teach the app an organ's regions from outlines a
+- **Train / Predict** (in the Regions toolbar, right of the Wand; every sample whose H&E is shown) opens the organ
+  model window. **Predict**: choose the organ and tick the regions its trained model has; the model outlines them
+  on this H&E without the agent (it reads the whole image once, a few minutes, kept for the sample) and they are
+  added as regions in one step (Undo takes them back; a region of the same name gets them as further polygons).
+  The agent can also use a trained model when you ask it in the chat to outline a region.
+- **Organ models** (the same window, **Train**): teach the app an organ's regions from outlines a
   pathologist drew. Add each H&E with its GeoJSON (in the image's full-resolution pixels, e.g. QuPath annotations
   exported as GeoJSON; the pixel size is read from the image, or typed), tick the classes to learn and name them
   (the same name merges several), then **Train**. The image is read at 2 µm per pixel (hematoxylin, eosin, pale

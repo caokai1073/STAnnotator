@@ -427,7 +427,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 #alList { max-height: 50vh; overflow-y: auto; overflow-x: hidden; }
 #heDlg .imbody { overflow-x: hidden; }
 .herow { display: flex; align-items: center; gap: 10px; min-width: 0; } .herow select { flex: 1; min-width: 0; }
-#heOrganOther, #heMore, #heNotes { width: 100%; box-sizing: border-box; }
+#heOrganOther { width: 100%; box-sizing: border-box; }
 .hechips { display: flex; flex-wrap: wrap; gap: 6px; max-height: 32vh; overflow: auto; }
 .hechips label { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border: 1px solid var(--line);
   border-radius: 14px; font-size: 12.5px; cursor: pointer; user-select: none; }
@@ -759,7 +759,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
         <button data-tool="brush" data-icon="brush" title="Brush (B): paint the area; it adds to the selected region or the shape being drawn; Alt: erase">Brush</button>
         <button data-tool="wand" data-icon="wand" title="Wand (W): paint, and the area follows the colors of the H&amp;E under the brush; Alt: erase">Wand</button>
         <span class="sep"></span>
-        <button id="heAsk" class="heask" hidden title="Train an organ model from H&amp;E outlines a pathologist drew (GeoJSON), or ask the agent to outline regions on this H&amp;E">Train a model</button>
+        <button id="heAsk" class="heask" hidden title="Organ model: train one from H&amp;E outlines a pathologist drew (GeoJSON), or let it outline regions on this H&amp;E">Train / Predict</button>
         <button id="toolSub" data-icon="minus" title="Subtract: the tools take away from the shape instead of adding (or hold Alt)">Subtract</button>
         <label id="toolSizeBox" title="Brush and wand size, in screen pixels (the area it covers follows the zoom)"><input type="range" id="toolSize" min="6" max="240" value="40"><span id="toolSizeV">40</span></label>
         <label id="wandTolBox" title="Wand: how different a color may be from the one under the center of the brush">± <input type="range" id="wandTol" min="4" max="90" value="28"></label>
@@ -873,23 +873,13 @@ T and NK cells: CD3E|NKG7+ EPCAM-
   </div>
 </dialog>
 <dialog id="heDlg" style="width:min(640px,95vw)">
-  <div class="dh"><svg class="ic" aria-hidden="true"><use href="#ic-sparkle"/></svg><b>Outline regions</b><span class="spacer"></span>
-    <div class="seg" id="heTabs"><button data-t="train" class="on">Train a model</button><button data-t="outline">Ask the agent</button></div></div>
+  <div class="dh"><b>Organ model</b><span class="spacer"></span>
+    <div class="seg" id="heTabs"><button data-t="train" class="on">Train</button><button data-t="predict">Predict</button></div></div>
   <div class="imbody" style="gap:10px">
     <div id="heOrganRow">
       <label class="herow"><b>Organ</b><select id="heOrgan"></select></label>
       <input type="text" id="heOrganOther" placeholder="Organ (type it)" hidden style="margin-top:6px">
       <div class="hint" id="heModelNote" style="margin-top:4px"></div>
-    </div>
-    <div id="heOutline" class="hepane">
-      <div class="hint">The agent outlines the regions you choose on this sample's H&amp;E: with the organ's trained model when
-        there is one, else from how each region looks in the organ's priors. Each outline comes to you for review.</div>
-      <div><b>Regions to draw</b> <span class="hint" id="heHint"></span></div>
-      <div id="heRegions" class="hechips"></div>
-      <input type="text" id="heMore" placeholder="Other regions, separated by commas (e.g. ulcer, granulation tissue)">
-      <textarea id="heNotes" rows="2" placeholder="Notes for the agent (optional), e.g. only the upper section; leave out the folded edge"></textarea>
-      <div class="hint" id="heErr"></div>
-      <div class="row"><span class="spacer"></span><button id="heCancel">Cancel</button><button id="heGo" class="primary" disabled>Ask the agent</button></div>
     </div>
     <div id="heTrain" class="hepane" hidden>
       <div class="hint">Teach the app this organ's regions from outlines a pathologist drew: each H&amp;E with its GeoJSON
@@ -908,6 +898,17 @@ T and NK cells: CD3E|NKG7+ EPCAM-
         <div id="mdList" class="tnlist"></div>
         <div class="hint" id="mdFolder"></div></div>
       <div class="row"><span class="spacer"></span><button id="tnClose">Close</button></div>
+    </div>
+    <div id="hePredict" class="hepane" hidden>
+      <div class="hint">The organ's model outlines the regions you tick on this sample's H&amp;E: it reads the whole image
+        once (a few minutes; kept for the sample), then each region is one class of the model, small gaps closed and
+        small holes filled. They are added as regions in one step (Undo takes them back) and can be reshaped with the
+        Regions tools; a region of the same name gets them as further polygons.</div>
+      <div><b>Regions to outline</b> <span class="hint" id="pdHint"></span></div>
+      <div id="pdClasses" class="hechips"></div>
+      <div class="progress" id="pdProg"><div class="pbar"><i id="pdFill"></i></div><span id="pdStage"></span></div>
+      <div class="hint" id="pdErr"></div>
+      <div class="row"><span class="spacer"></span><button id="pdClose">Close</button><button id="pdGo" class="primary" disabled>Predict</button></div>
     </div>
   </div>
 </dialog>
@@ -1277,7 +1278,7 @@ const ICON_ONLY = { sessDel: "x", hdrShow: "chev-left", hdrHide: "chev-right", h
   lgtoggle: "chev-up", rgtoggle: "chev-up", stepsFold: "chev-up", plclose: "x", emClose: "x", imClose: "x", rcClose: "x", clClose: "x", rpClose: "x",
   xpClose: "x", glClose: "x", anClose: "x", rvClose: "x", hpClose: "x", anCsv: "download", rpSave: "download", mkExport: "download",
   fbUp: "arrow-up", fbHome: "home", rsClose: "x", hide: "cell", hideHE: "image" };
-const ICON_TEXT = { heGo: "sparkle", qfBtn: "play", importBtn: "import", clearAll: "trash", rmSample: "trash", allSamples: "grid", connBtn: "monitor", 
+const ICON_TEXT = { pdGo: "play", qfBtn: "play", importBtn: "import", clearAll: "trash", rmSample: "trash", allSamples: "grid", connBtn: "monitor", 
   openMarkers: "list", openRef: "file", openEx: "file", annotate: "play", eRun: "play", eShow: "scatter", nRun: "play",
   undo: "undo", refresh: "refresh", claudeBtn: "sparkle", plaus: "shield", report: "file", export: "share", reset: "trash",
   draw: "pen", emLasso: "lasso", emClear: "x", emZoom: "target", send: "send",
@@ -1790,7 +1791,7 @@ function imageOnlyUI() {
   ["tools", "legend"].forEach((id) => { if (on) $(id).hidden = true; });
   if (!on) $("tools").hidden = false;
   $("session").disabled = on;
-  heAskSync();  // Outline regions (every sample whose H&E is shown)
+  heAskSync();  // Train / Predict (every sample whose H&E is shown)
   if (on) {
     ["qfBtn", "sessDel", "anSave", "anLoad", "report", "plaus"].forEach((b) => ($(b).disabled = true));
     $("export").disabled = !st.sid;
@@ -4426,55 +4427,30 @@ async function alignWith(ids) {
   } catch (e) { toast(e.message, 6000); }
 }
 $("alignNow").onclick = askAlign;
-// ---- Outline regions: the organ and the regions to outline (the request is written for Claude Code); the organ
+// ---- The organ model window (Train / Predict): the organ, its regions; the organ
 // models trained from H&E + GeoJSON pairs (organmodel.py), kept in the data folder with all organs together ----
 const HE = { organs: [], other: [], tab: "train", pairs: [], models: [] };
 function heAskSync() {  // for every sample whose H&E is shown (an H&E only too)
   const s = st.sample;
   $("heAsk").hidden = !(s && (s.image_only || (s.image_kind === "H&E" && !s.image_pending)));
 }
-function heChips(names, keep) {
-  const box = $("heRegions"); box.textContent = "";
-  names.forEach((n) => {
-    const lab = document.createElement("label");
-    const cb = Object.assign(document.createElement("input"), { type: "checkbox", value: n, checked: keep.has(n.toLowerCase()) });
-    lab.classList.toggle("on", cb.checked);
-    cb.onchange = () => { lab.classList.toggle("on", cb.checked); heSync(); };
-    lab.append(cb, document.createTextNode(n)); box.append(lab);
-  });
-  $("heHint").textContent = names.length ? "" : "(no list for this organ: type them below)";
-}
-function heRegionsChosen() {
-  const picked = [...document.querySelectorAll("#heRegions input:checked")].map((c) => c.value);
-  const more = $("heMore").value.split(/[,;\n]/).map((x) => x.trim()).filter(Boolean);
-  return [...new Set([...picked, ...more])];
-}
 function heOrganChosen() { return $("heOrgan").value === "__other" ? $("heOrganOther").value.trim() : $("heOrgan").value; }
 function heModel(organ) { const o = HE.organs.find((x) => x.organ.toLowerCase() === String(organ || "").toLowerCase()); return o && o.model; }
 function heSync() {
-  const n = heRegionsChosen().length;
-  $("heGo").disabled = !heOrganChosen() || !n;
-  $("heGo").textContent = n > 1 ? `Ask the agent (${n} regions)` : "Ask the agent";
-  const m = heModel(heOrganChosen());
-  $("heModelNote").textContent = m ? `Trained ${heOrganChosen()} model: ${m.classes.join(", ")} (${m.slides.length} annotated slide${m.slides.length === 1 ? "" : "s"}, ${m.trained.slice(0, 10)})`
-    : heOrganChosen() ? "No trained model for this organ yet (Train a model)" : "";
-  tnSync();
+  const organ = heOrganChosen(), m = heModel(organ);
+  $("heModelNote").textContent = m ? `Trained ${organ} model: ${m.classes.join(", ")} (${m.slides.length} annotated slide${m.slides.length === 1 ? "" : "s"}, ${m.trained.slice(0, 10)})`
+    : organ ? "No trained model for this organ yet" : "";
+  pdRender(); tnSync();
 }
 $("heOrgan").onchange = () => {
-  const other = $("heOrgan").value === "__other";
-  $("heOrganOther").hidden = !other;
-  const keep = new Set([...document.querySelectorAll("#heRegions input:checked")].map((c) => c.value.toLowerCase()));
-  const o = HE.organs.find((x) => x.organ === $("heOrgan").value);
-  const base = other ? HE.other : (o ? [...o.regions, ...((o.model && o.model.classes) || []).filter((c) => !o.regions.some((r) => r.toLowerCase() === c.toLowerCase()))] : []);
-  const carried = [...document.querySelectorAll("#heRegions input:checked")].map((c) => c.value).filter((n) => !base.some((b) => b.toLowerCase() === n.toLowerCase()));
-  heChips([...base, ...carried], keep);  // (regions ticked before stay, also when the new organ lacks them)
-  heSync(); tnDefaults(); if (other) $("heOrganOther").focus();
+  $("heOrganOther").hidden = $("heOrgan").value !== "__other";
+  heSync(); tnDefaults(); if (!$("heOrganOther").hidden) $("heOrganOther").focus();
 };
-["heOrganOther", "heMore"].forEach((id) => ($(id).oninput = heSync));
+$("heOrganOther").oninput = heSync;
 function heTab(tab) {
   HE.tab = tab;
   document.querySelectorAll("#heTabs button").forEach((b) => b.classList.toggle("on", b.dataset.t === tab));
-  $("heOutline").hidden = tab !== "outline"; $("heTrain").hidden = tab !== "train";
+  $("hePredict").hidden = tab !== "predict"; $("heTrain").hidden = tab !== "train";
   if (tab === "train") mdLoadList().catch((e) => toast(e.message, 6000));
 }
 document.querySelectorAll("#heTabs button").forEach((b) => (b.onclick = () => heTab(b.dataset.t)));
@@ -4491,23 +4467,48 @@ async function heOpen() {
   if (!st.sample) return;
   try {
     await heLoadOrgans(false);
-    $("heOrganOther").value = ""; $("heMore").value = ""; $("heNotes").value = ""; $("heErr").textContent = "";
-    $("heOrgan").onchange(); heTab("train");  // (the button is Train a model)
+    $("heOrganOther").value = ""; $("pdErr").textContent = "";
+    $("heOrgan").onchange(); heTab(heModel(heOrganChosen()) ? HE.tab : "train");  // (no model yet: Train)
     $("heDlg").showModal();
   } catch (e) { toast(e.message, 6000); }
 }
 $("heAsk").onclick = heOpen;
-$("heCancel").onclick = $("tnClose").onclick = () => $("heDlg").close();
-$("heGo").onclick = async () => {
-  const regions = heRegionsChosen(), organ = heOrganChosen();
+$("pdClose").onclick = $("tnClose").onclick = () => $("heDlg").close();
+// ---- Predict: the organ's model outlines the ticked classes on this sample (no agent) ----
+function pdRender() {
+  const m = heModel(heOrganChosen()), box = $("pdClasses");
+  const was = new Set([...box.querySelectorAll("input:checked")].map((c) => c.value));
+  box.textContent = "";
+  (m ? m.classes : []).forEach((n) => {
+    const lab = document.createElement("label");
+    const cb = Object.assign(document.createElement("input"), { type: "checkbox", value: n, checked: was.has(n) });
+    lab.classList.toggle("on", cb.checked);
+    cb.onchange = () => { lab.classList.toggle("on", cb.checked); pdSync(); };
+    lab.append(cb, document.createTextNode(n)); box.append(lab);
+  });
+  $("pdHint").textContent = m ? "" : "(this organ has no trained model: train one first)";
+  pdSync();
+}
+function pdSync() {
+  const n = $("pdClasses").querySelectorAll("input:checked").length;
+  $("pdGo").disabled = !n || !st.sid || HE.predicting;
+  $("pdGo").textContent = n > 1 ? `Predict ${n} regions` : "Predict";
+}
+$("pdGo").onclick = async () => {
+  const classes = [...$("pdClasses").querySelectorAll("input:checked")].map((c) => c.value), organ = heOrganChosen();
+  $("pdErr").textContent = ""; HE.predicting = true; pdSync(); $("pdProg").classList.add("show");
   try {
-    const r = await post("/api/claude/he_regions", { sample: st.sample.sample_id, organ, regions, notes: $("heNotes").value, session: st.sid });
+    const { job, error } = await post(`/api/s/${st.sid}/organ_models/predict`, { organ, classes });
+    if (error) throw new Error(error);
+    const j = await pollJob(job, $("pdProg"), $("pdFill"), $("pdStage"), $("pdGo"), 1000, true);
+    const r = j.result;
     $("heDlg").close();
-    if (r.message && st.chatAvailable) { $("input").value = r.message; send(); }
-    else if (r.claude_code) toast(`The agent outlines ${regions.length > 1 ? `${regions.length} regions` : regions[0]} on the H&E` +
-      (st.reviewMode === "auto" ? "; each outline is added when done" : "; you accept each outline in its review window"), 8000);
-    else if (r.message) { try { await navigator.clipboard.writeText(r.message); } catch (e) { /* (no clipboard) */ } toast("Request copied: paste it to the agent", 6000); }
-  } catch (e) { $("heErr").textContent = e.message; }
+    toast(`Added: ${Object.entries(r.regions).map(([k, v]) => `${k} (${v} piece${v === 1 ? "" : "s"})`).join(", ")}` +
+      (r.not_found.length ? `; not found: ${r.not_found.join(", ")}` : "") + ". Undo takes them back.", 9000);
+    await refreshVersion(true);
+  } catch (e) {
+    if (e instanceof StoppedError) stopped($("pdProg"), "Predict"); else $("pdErr").textContent = e.message;
+  } finally { HE.predicting = false; pdSync(); setTimeout(() => $("pdProg").classList.remove("show"), 800); }
 };
 // ---- Train a model ----
 const pickAny = (kind, multi) => (st.remote || !native()) ? browseServer(kind, multi) : native().pick(kind, !!multi);
@@ -4767,12 +4768,11 @@ const HELP = `
     draw and name regions before the expression data exist.<ul>
     <li>The pixel size is read from the image, or typed in; without it no µm are shown (areas in pixels).</li>
     <li>Only the Data tab and the regions apply; the regions panel shows each outline's area.</li>
-    <li><b>Train a model</b> (Regions toolbar, right of the Wand; every sample with an H&amp;E; the Outline regions window):
-      H&amp;E + GeoJSON pairs a pathologist outlined teach the app an organ's regions; the model is kept in the data
-      folder's organ_models (all organs, kept across updates); the saved models below it can be exported, loaded or
-      deleted.</li>
-    <li><b>Ask the agent</b> (same window): choose the organ and tick the regions to draw (or type others); the request
-      goes to the agent, which uses the organ's trained model when there is one.</li>
+    <li><b>Train / Predict</b> (Regions toolbar, right of the Wand; every sample with an H&amp;E), the organ model window.
+      <b>Train</b>: H&amp;E + GeoJSON pairs a pathologist outlined teach the app an organ's regions; the model is kept in
+      the data folder's organ_models (all organs, kept across updates); the saved models below can be exported, loaded
+      or deleted. <b>Predict</b>: the model outlines the regions you tick on this H&amp;E, added in one step (Undo takes
+      them back). The agent can also use a trained model when you ask it to outline a region.</li>
     <li>Ask the agent to outline a compartment (“draw the mucosa”): it asks the organ if needed, reads how each
       compartment looks on the H&amp;E in the organ's priors and the stains of the image, and proposes an outline for
       you to accept and reshape with the Regions tools (Brush adds, Alt+Brush erases).</li>
