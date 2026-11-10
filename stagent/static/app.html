@@ -43,7 +43,7 @@ header.collapsed .hrow, header.collapsed .tabs, header.collapsed .pane { display
 .tabs .tab.busy::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 header .pane:not(.on) { display: none; }
 header .hrow.bottom { margin-top: auto; padding-bottom: 0; }
-header .hrow.bottom { flex-wrap: nowrap; gap: 6px; }  /* Reset, Remove sample, Remove all on one row */
+header .hrow.bottom { flex-wrap: nowrap; gap: 6px; }  /* Reset, Remove all on one row */
 #pcBack { left: 50%; transform: translateX(-50%); top: calc(var(--maptop, 44px) + 12px); display: flex; gap: 10px; align-items: center;
   padding: 8px 12px; font-size: 13px; z-index: 30; }
 /* one analysis at a time: while one runs, the buttons that start another or change the data are grayed out */
@@ -426,6 +426,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .alrow:hover { background: var(--bg); } .alrow.alall { border-bottom: 1px solid var(--line); border-radius: 0; }
 #alList { max-height: 50vh; overflow-y: auto; overflow-x: hidden; }
 #heDlg .imbody { overflow-x: hidden; }
+.inrow button.rmsample { color: #c0392b; } .inrow button.rmsample:hover:not(:disabled) { border-color: #c0392b; }
+.imreplace { display: flex; gap: 6px; align-items: flex-start; } .imreplace input { margin-top: 2px; }
 .herow { display: flex; align-items: center; gap: 10px; min-width: 0; } .herow select { flex: 1; min-width: 0; }
 #heOrganOther { width: 100%; box-sizing: border-box; }
 .hechips { display: flex; flex-wrap: wrap; gap: 6px; max-height: 32vh; overflow: auto; }
@@ -504,7 +506,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <button class="tab" data-tab="traj" role="tab" title="Spatial axes and pseudotime: the order of cells in the tissue or along a differentiation, and the genes that change along it">Trajectory</button></div>
   <div class="pane" data-pane="data">
     <div class="fld" id="sampleWrap"><span>Sample</span><div class="inrow"><select id="sample" aria-label="Sample"></select>
-      <button id="sampleRename" disabled title="Rename the sample as the app shows it (a slice: its name in the project)">Rename</button></div></div>
+      <button id="sampleRename" disabled title="Rename the sample as the app shows it (a slice: its name in the project)">Rename</button>
+      <button id="rmSample" class="rmsample" disabled title="Remove this sample only: its cells, annotations and chats go to the data folder's trash (to import it again under its name: Import, Replace the existing sample)">Remove</button></div></div>
     <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-layers"/></svg><div id="sampleInfo">No sample yet</div></div>
     <div class="act2"><button id="allSamples" disabled title="Every sample at a glance, colored the same way (cell type, lineage, Leiden, niche, region)">Overview of all samples</button>
       <button id="pjBtn" disabled title="Choose which samples form which project (slices analyzed together)">Projects</button></div>
@@ -693,7 +696,6 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
   </div>
   <div class="hrow bottom">
     <button id="reset" class="danger" disabled title="Remove every annotation and chat of this sample">Reset</button>
-    <button id="rmSample" class="danger" disabled title="Remove this sample only: its cells, annotations and chats go to the data folder's trash">Remove sample</button>
     <button id="clearAll" class="danger" hidden title="Delete every sample with all its annotations and chats for good, to import from scratch">Remove all</button>
   </div>
 </header>
@@ -1045,6 +1047,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <div class="frow" id="imGeoFromRow" hidden><span>Regions from<small class="opt">optional</small></span><select id="imGeoFrom" title="Regions drawn on a sample of the H&amp;E only: the same image file (scan) as the one this data is registered to"><option value="">none</option></select><span></span></div>
     <div class="frow" id="imGeoRow"><span>Regions<small class="opt">optional</small></span><textarea id="imNewGeo" rows="1" placeholder="GeoJSON of outlines drawn on this H&amp;E (e.g. QuPath annotations): they become regions of every new annotation; several slices: one per slice, in their order"></textarea><button data-pick="geojson" data-multi="1" data-target="imNewGeo">Choose…</button></div>
     <div class="frow"><span><span id="imNameLabel">Sample name</span><small class="opt">optional</small></span><input type="text" id="imName" placeholder="short id without spaces; by default from the file names"><span></span></div>
+    <div class="frow" id="imReplaceRow" hidden><span></span><label class="hint imreplace"><input type="checkbox" id="imReplace"> <span id="imReplaceText"></span></label><span></span></div>
     <div class="hint" id="imProjectHint" hidden></div>
     <div class="hint" id="imPairs" hidden style="margin-left:138px;white-space:pre-line"></div>
     <div class="frow"><span>Description<small class="opt">optional</small></span><input type="text" id="imDesc" placeholder="e.g. tissue and condition"><span></span></div>
@@ -1274,11 +1277,11 @@ function decorate(b, name, only) {  // icon + label, or the icon only (the label
   else { const t = document.createElement("span"); t.className = "bt"; t.textContent = text; b.append(t); }
   return b;
 }
-const ICON_ONLY = { sessDel: "x", hdrShow: "chev-left", hdrHide: "chev-right", helpBtn: "help", bugBtn: "bug", slPrev: "chev-left", slNext: "chev-right",
+const ICON_ONLY = { rmSample: "trash", sessDel: "x", hdrShow: "chev-left", hdrHide: "chev-right", helpBtn: "help", bugBtn: "bug", slPrev: "chev-left", slNext: "chev-right",
   lgtoggle: "chev-up", rgtoggle: "chev-up", stepsFold: "chev-up", plclose: "x", emClose: "x", imClose: "x", rcClose: "x", clClose: "x", rpClose: "x",
   xpClose: "x", glClose: "x", anClose: "x", rvClose: "x", hpClose: "x", anCsv: "download", rpSave: "download", mkExport: "download",
   fbUp: "arrow-up", fbHome: "home", rsClose: "x", hide: "cell", hideHE: "image" };
-const ICON_TEXT = { pdGo: "play", qfBtn: "play", importBtn: "import", clearAll: "trash", rmSample: "trash", allSamples: "grid", connBtn: "monitor", 
+const ICON_TEXT = { pdGo: "play", qfBtn: "play", importBtn: "import", clearAll: "trash", allSamples: "grid", connBtn: "monitor", 
   openMarkers: "list", openRef: "file", openEx: "file", annotate: "play", eRun: "play", eShow: "scatter", nRun: "play",
   undo: "undo", refresh: "refresh", claudeBtn: "sparkle", plaus: "shield", report: "file", export: "share", reset: "trash",
   draw: "pen", emLasso: "lasso", emClear: "x", emZoom: "target", send: "send",
@@ -4350,6 +4353,7 @@ function imPairs(secs) {  // several slices: which image and registration file e
 function imDefaultName(n) {  // the name used when the field is left empty, shown in it (made unique: cells, cells_2, ...)
   if (n) { const used = new Set((st.samples || []).map((s) => s.sample_id)); let i = 2; const b = n; while (used.has(n)) n = `${b}_${i++}`; }
   st.imDefault = n; $("imName").placeholder = n ? `${n} (from the file names)` : "short id without spaces; by default from the file names";
+  imReplaceSync();
 }
 const imgMode = () => document.querySelector("input[name=imImgMode]:checked").value;
 const regMode = () => document.querySelector("input[name=imRegMode]:checked").value;
@@ -4672,6 +4676,8 @@ async function importSample() {  // returns true when the sample was imported
   if (imKind() === "stereoseq" && st.imSPending) await st.imSPending;
   if (imKind() === "h5ad" && st.imHPending) await st.imHPending;
   const kind = imKind(), name = $("imName").value.trim() || st.imDefault || "";
+  imReplaceSync();
+  if (!$("imReplaceRow").hidden && !$("imReplace").checked) { $("imStatus").textContent = `A sample named ${name} exists: tick Replace, or give another name`; return false; }
   if (kind === "image") return importImageOnly(name);
   const images = imgMode() === "file" ? $("imNewImg").value.split("\n").map((s) => s.trim()).filter(Boolean) : [];
   const image = images.length > 1 ? images : (images[0] || "");
@@ -4689,7 +4695,8 @@ async function importSample() {  // returns true when the sample was imported
         region_column: $("imRegCol").value, description: $("imDesc").value };
   if (kind === "h5ad" && $("imSecCol").value && !body.sections.length) { $("imStatus").textContent = "Tick the section(s) to import"; return false; }
   const geo = $("imNewGeo").value.split("\n").map((x) => x.trim()).filter(Boolean);
-  Object.assign(body, { he: image, he_kind: $("imNewImgKind").value, registration, registration_section: $("imNewRegSec").value.trim(),
+  Object.assign(body, { replace: !$("imReplaceRow").hidden && $("imReplace").checked,
+                        he: image, he_kind: $("imNewImgKind").value, registration, registration_section: $("imNewRegSec").value.trim(),
                         regions_geojson: geo, regions_from: $("imGeoFromRow").hidden ? "" : $("imGeoFrom").value });
   if (body.regions_from && !images.length) { $("imStatus").textContent = `Regions from ${body.regions_from} need the H&E file they were drawn on (H&E file above, registered)`; return false; }
   if (!name) { $("imStatus").textContent = "Give a name (none could be taken from the files)"; return false; }
@@ -4718,6 +4725,18 @@ async function importSample() {  // returns true when the sample was imported
   } catch (e) { $("imStatus").textContent = isStop(e) ? "Import stopped: nothing of it was kept" : e.message; return false; }
   finally { $("imGo").disabled = false; imForm(); }
 }
+function imReplaceSync() {  // the name of an existing sample: Replace it (it goes to the trash with its annotations)
+  const nm = ($("imName").value.trim() || st.imDefault || "").trim();
+  const s = (st.samples || []).find((x) => x.sample_id === nm);
+  if ($("imReplaceRow").dataset.name !== nm) $("imReplace").checked = false;
+  $("imReplaceRow").dataset.name = nm; $("imReplaceRow").hidden = !s;
+  if (s) {
+    const n = (s.sessions || []).length;
+    $("imReplaceText").textContent = `Replace the existing sample ${nm}: it and its ${n} annotation${n === 1 ? "" : "s"} go to the data folder's trash` +
+      (projectOf(nm) ? "; the new import takes its place in its project" : "") + " (if the import fails, it comes back)";
+  }
+}
+$("imName").addEventListener("input", imReplaceSync);
 async function importImageOnly(name) {  // H&E only: the image, its pixel size, no cells
   const he = $("imIImg").value.trim(), upp = parseFloat($("imIUpp").value);
   if (!he) { $("imStatus").textContent = "Choose the image"; return false; }
@@ -4726,7 +4745,8 @@ async function importImageOnly(name) {  // H&E only: the image, its pixel size, 
   $("imGo").disabled = true; $("imStatus").textContent = "importing…";
   try {
     const { job } = await post("/api/import", { kind: "image", name, he, um_per_px: upp > 0 ? upp : null,
-                                                he_kind: $("imIKind").value, description: $("imDesc").value });
+                                                he_kind: $("imIKind").value, description: $("imDesc").value,
+                                                replace: !$("imReplaceRow").hidden && $("imReplace").checked });
     await pollJob(job, $("imStatus").parentElement, null, $("imStatus"), $("imGo"), 700);
     $("imDlg").close();
     toast(`Imported ${name}: draw and name regions on the image`, 5000);
@@ -4795,7 +4815,9 @@ const HELP = `
     registration after accepting (Steps → Check registration).</li>
   <li>It imports, then the agent finds the section and its orientation on the image and refines it until the cells
     sit on their nuclei.</li></ul></li>
-<li>Another image or registration for a sample: import it again with them (same name).</li></ul>
+<li>Another image or registration for a sample: import it again with them under the same name and tick <b>Replace the
+  existing sample</b> (its annotations go to the trash with it).</li>
+<li>Remove one sample: the trash beside Rename (Data tab).</li></ul>
 
 <h3>Several slices</h3><ul>
 <li>Import several slices at once; each becomes a sample of one project, with its metadata (condition, day, …).<ul>
@@ -5288,7 +5310,7 @@ async function showAbout() {
       <div class="hint">Files made again when needed: figures, exports, the expression model of earlier versions, converted R files; the oldest go first past the limit.</div>`],
     ["Trash", `<span id="hpTrashUse">${gb(cache.trash_bytes)}</span> of at most <input type="number" id="hpTrashGb" min="0.5" step="0.5" value="${cache.trash_limit_gb}" style="width:64px"> GB
       <button id="hpTrashSet">Set</button> <button id="hpTrashEmpty" class="danger">Empty trash</button>
-      <div class="hint">What Reset, Remove sample and the cell filter moved away (${cache.trash_entries} removal${cache.trash_entries === 1 ? "" : "s"}), in <code>${esc(cache.trash_path)}</code>; past the limit the oldest are deleted for good.</div>`]);
+      <div class="hint">What Reset, Remove, a replacing import and the cell filter moved away (${cache.trash_entries} removal${cache.trash_entries === 1 ? "" : "s"}), in <code>${esc(cache.trash_path)}</code>; past the limit the oldest are deleted for good.</div>`]);
   $("hpBody").innerHTML = `<dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>
     <button id="hpCopy">Copy for a bug report</button>${native() && native().update_check ? ` <button id="hpUpdate">Check for updates</button>` : ""}`;
   if ($("hpUpdate")) $("hpUpdate").onclick = () => checkForUpdate(true);
@@ -5784,7 +5806,12 @@ async function proposalApplied(r) {
     loadSteps().catch(() => {});
   } else toast(auto ? `Applied automatically: ${r.title} (Undo takes it back)` : `Applied: ${r.title}`, auto ? 7000 : 5000);
   if (r.tool === "start_session" && r.session_after) { st.openedThisVisit[r.sample_id] = r.session_after; await loadSamples(r.sample_id); return; }
-  if (["import_sample", "import_visium", "import_stereoseq", "import_cosmx_merfish"].includes(r.tool)) { await loadSamples(st.sample ? st.sample.sample_id : r.sample_id); return; }
+  if (["import_sample", "import_visium", "import_stereoseq", "import_cosmx_merfish", "import_he_only"].includes(r.tool)) { await loadSamples(st.sample ? st.sample.sample_id : r.sample_id); return; }
+  if (r.tool === "remove_sample") {  // (the agent's; the open sample may be the one removed)
+    delete st.openedThisVisit[r.sample_id];
+    const keep = st.sample && st.sample.sample_id !== r.sample_id ? st.sample.sample_id : null;
+    await loadSamples(keep || ((st.samples || []).find((x) => x.sample_id !== r.sample_id) || {}).sample_id || null); return;
+  }
   if ((r.tool === "move_piece" || r.tool === "undo_piece_move") && st.sample && st.sample.sample_id === r.sample_id) {
     await afterPlacement(); return;  // the piece's cells moved on the image
   }

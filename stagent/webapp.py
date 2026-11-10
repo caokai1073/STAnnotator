@@ -988,6 +988,22 @@ async def api_import(req: Request):
     folders = [f for f in (b.get("folders") or []) if f]  # Xenium: folders and / or files
 
     def work():
+        from . import samplestore
+        replaced = None
+        if b.get("replace") and (config.SAMPLES / name / "meta.json").exists():  # the old sample to the trash first
+            if len(sections) > 1 or len(folders) > 1:
+                JOBS[job].update(error="Replace works for one sample, not for several slices at once", done=True)
+                return
+            if _busy(name, skip=job):
+                JOBS[job].update(error="an annotation or analysis of this sample is still running", done=True)
+                return
+            replaced = _remove_sample(name, keep_project=True, why="replaced")
+            say(f"the old {name} went to the trash ({len(replaced['sessions'])} annotations with it)")
+
+            def put_back(info=replaced):  # (stopped: after the import's own undo)
+                samplestore.restore(info)
+                _forget_sample(name)
+            jobs.on_stop(put_back)
         had = {d.name for d in config.SAMPLES.iterdir()} if config.SAMPLES.exists() else set()
         had_project = (projects.PROJECTS / f"{name}.json").exists()
 
@@ -1056,9 +1072,18 @@ async def api_import(req: Request):
                     say(f"regions of {sid} from {b['regions_from']}: " + (
                         ", ".join(f"{k} ({v} cells)" for k, v in per.items()) if per is not None
                         else "kept until the H&E is aligned (new annotations start with them from then on)"))
+            if replaced:
+                samplestore.finish_replace(replaced)
+                _forget_sample(name)
             JOBS[job].update(progress=1.0, stage="done", done=True)
         except Exception as e:  # shown in the dialog
             undo()
+            if replaced:  # the old sample comes back as it was
+                try:
+                    samplestore.restore(replaced)
+                    _forget_sample(name)
+                except Exception as e2:
+                    e = RuntimeError(f"{e}; the old sample could not be put back ({e2}): it is in {replaced['trash']}")
             JOBS[job].update(error=f"{type(e).__name__}: {e}", done=True)
     return await _spawn(job, work) or _json({"job": job})
 
@@ -2091,11 +2116,46 @@ CLAUDE_PROJECT = Path.home() / ".claude" / "projects" / str(config.ROOT).replace
 
 
 def _sample_sessions(sample):
-    out = []
-    for d in sorted(config.SESSIONS.iterdir()) if config.SESSIONS.exists() else []:
-        if (d / "session.json").exists() and json.load(open(d / "session.json")).get("sample_id") == sample:
-            out.append(d)
-    return out
+    from . import samplestore
+    return samplestore.sessions_of(sample)
+
+
+def _forget_sessions(names):
+    """Drop what the viewer keeps in memory of these annotations."""
+    for n in names:
+        review_app._sessions.pop(n, None)
+        JOBS.pop(n, None)
+        if mcp_server._active.get("session") is not None and mcp_server._active["session"].id == n:
+            mcp_server._active.pop("session")
+        for cache in (_overlays, _colors):
+            for k in [k for k in cache if k[0] == n]:
+                cache.pop(k)
+
+
+def _forget_sample(sample):
+    """Drop what the viewer keeps in memory of a sample (removed, or replaced by a new import)."""
+    _views.pop(sample, None)
+    for cache in (_tiles, _overlays):
+        for k in [k for k in cache if k[0] == sample or (len(k) > 8 and k[8] == sample)]:
+            cache.pop(k)
+    _cell_tables.clear()
+
+
+def _busy(sample, skip=None):
+    """An import, annotation or analysis of the sample is running (skip: the asking job itself)."""
+    sess = _sample_sessions(sample)
+    pid = projects.project_of(sample)
+    mine = {x.name for x in sess} | {f"embed:{sample}", f"import:{sample}", f"project:{pid}"}
+    return any(k != skip and not j["done"] and (k in mine or k.split(":", 1)[-1] in mine) for k, j in JOBS.items())
+
+
+def _remove_sample(sample, keep_project=False, why="removed"):
+    from . import samplestore
+    names = [x.name for x in _sample_sessions(sample)]
+    info = samplestore.remove(sample, keep_project=keep_project, why=why)
+    _forget_sessions(names)
+    _forget_sample(sample)
+    return info
 
 
 async def api_sample_reset(req: Request):
@@ -2185,57 +2245,40 @@ async def api_projects_assign(req: Request):
 
 async def api_sample_remove(req: Request):
     """Remove one sample: its folder (cells, counts, image placement, PCA / UMAP), its annotations and their chats are
-    moved to trash/<time>_<sample>_removed/ (recoverable by hand); a project keeps its other slices."""
+    moved to trash/<time>_<sample>_removed/ (recoverable by hand); a project keeps its other slices. {keep_project,
+    why}: for a replacement (the agent's import with replace)."""
     sample = req.path_params["sample"]
-    d = config.SAMPLES / sample
-    if not (d / "meta.json").exists():
+    try:
+        b = await req.json()
+    except ValueError:
+        b = {}
+    if not (config.SAMPLES / sample / "meta.json").exists():
         return _json({"error": f"no sample {sample!r}"}, 404)
-    sess = _sample_sessions(sample)
-    pid = projects.project_of(sample)
-    mine = {x.name for x in sess} | {f"embed:{sample}", f"import:{sample}", f"project:{pid}"}
-    if any(not j["done"] and (k in mine or k.split(":", 1)[-1] in mine) for k, j in JOBS.items()):
+    if _busy(sample):
         return _json({"error": "an import, annotation or analysis of this sample is still running; wait until it finishes"}, 409)
-    trash = config.TRASH / f"{time.strftime('%Y%m%d-%H%M%S')}_{sample}_removed"
-    trash.mkdir(parents=True)
-    n_chats = _trash_sessions(sess, trash)
-    proj = projects.drop_sample(sample, trash)
-    render.forget(d)  # its image is open in the viewer (Windows cannot move an open file)
-    shutil.move(str(d), str(trash / "sample"))
-    _views.pop(sample, None)
-    for cache in (_tiles, _overlays):
-        for k in [k for k in cache if k[0] == sample or (len(k) > 8 and k[8] == sample)]:
-            cache.pop(k)
-    _cell_tables.clear()
-    return _json({"removed": sample, "deleted_sessions": len(sess), "deleted_conversations": n_chats,
-                  "project": proj, "trash": str(trash)})
+    info = _remove_sample(sample, keep_project=bool(b.get("keep_project")), why="replaced" if b.get("keep_project") else "removed")
+    return _json({"removed": sample, "deleted_sessions": len(info["sessions"]), "deleted_conversations": info["n_chats"],
+                  "project": info["project"], "trash": info["trash"], "info": info})
+
+
+async def api_sample_restore(req: Request):
+    """Put back a sample removed for a replacement whose import failed: {info} as remove gave it."""
+    from . import samplestore
+    b = await req.json()
+    try:
+        r = samplestore.restore(b["info"])
+    except (OSError, ValueError, KeyError) as e:
+        return _json({"error": str(e)}, 400)
+    _forget_sample(b["info"]["sample"])
+    return _json(r)
 
 
 def _trash_sessions(sess, trash):
     """Move sessions and their Claude Code transcripts into trash (None: delete them for good); forget them in
     memory. Returns the number of transcripts moved or deleted."""
-    n_chats = 0
-    for d in sess:
-        ids = set()
-        for f in [d / "chat_meta.json", *(d / "chat_archive").glob("*_chat_meta.json")]:
-            if f.exists():
-                ids.add(json.load(open(f)).get("claude_session"))
-        for cid in filter(None, ids):
-            for t in (CLAUDE_PROJECT / f"{cid}.jsonl", CLAUDE_PROJECT / cid):
-                if t.exists():
-                    n_chats += t.suffix == ".jsonl"
-                    if trash is None:
-                        shutil.rmtree(t) if t.is_dir() else t.unlink()
-                        continue
-                    (trash / "claude_transcripts").mkdir(exist_ok=True)
-                    shutil.move(str(t), str(trash / "claude_transcripts" / t.name))
-        shutil.rmtree(d) if trash is None else shutil.move(str(d), str(trash / d.name))
-        review_app._sessions.pop(d.name, None)
-        JOBS.pop(d.name, None)
-        if mcp_server._active.get("session") is not None and mcp_server._active["session"].id == d.name:
-            mcp_server._active.pop("session")
-        for cache in (_overlays, _colors):
-            for k in [k for k in cache if k[0] == d.name]:
-                cache.pop(k)
+    from . import samplestore
+    n_chats, _ = samplestore.trash_sessions(sess, trash)
+    _forget_sessions([d.name for d in sess])
     return n_chats
 
 
@@ -3420,6 +3463,7 @@ def build_app(port):
         Route("/api/s/{sid}/undo", api_undo, methods=["POST"]),
         Route("/api/sample/{sample}/reset", api_sample_reset, methods=["POST"]),
         Route("/api/sample/{sample}/remove", api_sample_remove, methods=["POST"]),
+        Route("/api/samples/restore", api_sample_restore, methods=["POST"]),
         Route("/api/refresh", api_refresh, methods=["POST"]),
         Route("/api/session/{sid}/delete", api_session_delete, methods=["POST"]),
         Route("/api/projects/assign", api_projects_assign, methods=["POST"]),

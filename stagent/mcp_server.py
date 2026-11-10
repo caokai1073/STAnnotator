@@ -397,6 +397,81 @@ def _names(xs, n=6):
     return ", ".join(map(str, xs[:n])) + (f" and {len(xs) - n} more" if len(xs) > n else "")
 
 
+def _sample_exists(name):
+    from . import config
+    return bool(name) and "/" not in str(name) and (config.SAMPLES / str(name) / "meta.json").exists()
+
+
+def _replace_lines(a, what="the new import"):
+    """Review lines of an import's name: refuses an existing name unless replace; with replace, what goes to the
+    trash. Returns (title prefix, lines)."""
+    from . import samplestore
+    name = a.get("name")
+    if not _sample_exists(name):
+        return "Import a new sample", ["Adds a sample; nothing that exists now changes."]
+    if not a.get("replace"):
+        raise ValueError(f"a sample named {name!r} exists: ask the user whether to replace it (replace=True: the old "
+                         "sample and its annotations go to the data folder's trash) or choose another name")
+    n = len(samplestore.sessions_of(name))
+    return "Replace sample", [f"Replaces the existing sample {name}: it and its {n} annotation{'s' if n != 1 else ''} "
+                              f"(with their chats) go to the data folder's trash (recoverable); {what} takes its name "
+                              "(and its place in its project). If the import fails, the old sample comes back."]
+
+
+class _replacing:
+    """with _replacing(name, replace): the old sample goes to the trash first (in the app, which runs accepted
+    changes: it forgets what it keeps of it); back again when the import fails."""
+    def __init__(self, name, replace):
+        self.name, self.replace, self.info = name, replace, None
+
+    def __enter__(self):
+        if self.replace and _sample_exists(self.name):
+            from . import webapp
+            if webapp._busy(self.name):
+                raise ValueError("an annotation or analysis of this sample is still running: wait until it finishes")
+            self.info = webapp._remove_sample(self.name, keep_project=True, why="replaced")
+        return self
+
+    def __exit__(self, kind, err, tb):
+        if self.info is None:
+            return False
+        from . import samplestore, webapp
+        if kind is None:
+            samplestore.finish_replace(self.info)
+        else:
+            from . import importer
+            importer.remove_samples([self.name]) if _sample_exists(self.name) else None
+            samplestore.restore(self.info)
+        webapp._forget_sample(self.name)
+        return False
+
+
+def _d_remove_sample(a):
+    from . import samplestore, projects
+    sid = a["sample_id"]
+    if not _sample_exists(sid):
+        raise ValueError(f"no sample {sid!r} (list_samples)")
+    n = len(samplestore.sessions_of(sid))
+    pid = projects.project_of(sid)
+    return {"title": f"Remove sample {sid}", "session_id": None, "sample_id": sid,
+            "details": [*_words(a), f"The sample (cells, counts, image placement, PCA / UMAP) and its {n} annotation"
+                        f"{'s' if n != 1 else ''} with their chats go to the data folder's trash (recoverable by hand).",
+                        f"It leaves project {pid}; the other slices stay." if pid else "No other sample changes."]}
+
+
+@mcp.tool()
+@_reviewed(_d_remove_sample)
+def remove_sample(sample_id: str, text: str = "") -> str:
+    """Remove one sample (e.g. to import a corrected version under its name, or a sample the user no longer needs):
+    it and its annotations go to the data folder's trash. Only when the user asked; the user reviews it. To replace a
+    sample by a new import of the same name in one step, give the import replace=True instead. text: the user's words."""
+    from . import webapp
+    if webapp._busy(sample_id):
+        raise ValueError("an annotation or analysis of this sample is still running: wait until it finishes")
+    info = webapp._remove_sample(sample_id)
+    return _j({"removed": sample_id, "annotations": len(info["sessions"]), "project": info["project"], "trash": info["trash"]})
+
+
 def _transitions(rows, n=8):
     return [{"from": r["from"], "to": r["to"], "region": None if r.get("region") in (None, "unknown", "none") else r["region"],
              "cells": int(r.get("count", r.get(0, 0)))}
@@ -404,14 +479,16 @@ def _transitions(rows, n=8):
 
 
 def _d_import_sample(a):
-    return {"title": f"Import a new sample {a['name']}", "session_id": None, "sample_id": a["name"],
+    pre, rep = _replace_lines(a)
+    return {"title": f"{pre} {a['name']}", "session_id": None, "sample_id": a["name"],
             "details": [f"Expression and cell positions from {_names(a['h5ad'])}",
                         f"Image: {a['he'] or 'none'}; registration: {a['registration'] or 'none'}",
                         *([f"Section {a['section']} of column {a['section_column']}"] if a.get("section") else []),
-                        "Adds a sample; nothing that exists now changes."]}
+                        *rep]}
 
 
 def _d_import_cosmx_merfish(a):
+    pre, rep = _replace_lines(a)
     from . import importer
     sl = importer.inspect_flat_many(a["kind"], a["paths"])["slices"]
     det = [f"{x['key']}: {x['n_cells']:,} cells, {x['n_genes']} genes ({x['n_controls']} control probes left out), "
@@ -419,8 +496,8 @@ def _d_import_cosmx_merfish(a):
     if len(sl) > 1:
         raise ValueError(f"these paths hold {len(sl)} slides or regions: import one at a time")
     det += [f"Image: {a['he'] or 'none (cells on a blank background)'}; registration: {a['registration'] or 'none'}",
-            "Adds a sample; nothing that exists now changes."]
-    return {"title": f"Import {importer.FLAT_NAMES[a['kind']]} output as sample {a['name']}",
+            *rep]
+    return {"title": f"{pre if pre.startswith('Replace') else 'Import'} {importer.FLAT_NAMES[a['kind']]} output as sample {a['name']}",
             "session_id": None, "sample_id": a["name"], "details": det}
 
 
@@ -610,6 +687,7 @@ def _d_resolve_rule_suggestion(a):
 
 
 def _d_import_visium(a):
+    pre, rep = _replace_lines(a)
     from . import importer
     x = importer.inspect_visium(a["path"], a.get("segmentation"))
     cells = a.get("unit", "auto") != "bins" and x.get("segmentation") and x.get("fine_bins")
@@ -618,16 +696,16 @@ def _d_import_visium(a):
            "between them by area" if cells else
            f"pooled into {x['analysis_um']:g} um bins (about {x.get('n_analysis_bins_about') or 0:,})"
            if x["analysis_um"] != x["bin_um"] else "used as they are")
-    return {"title": f"Import a new sample {a['name']} (Visium HD)", "session_id": None, "sample_id": a["name"],
+    return {"title": f"{pre} {a['name']} (Visium HD)", "session_id": None, "sample_id": a["name"],
             "details": [f"{x['folder']}: {x.get('n_bins', 0):,} {what} under the tissue, {x.get('n_genes', 0):,} genes; {how}",
                         f"Image: {a['he'] or 'the output tissue_hires_image.png'} (placed by Space Ranger's alignment)",
-                        "Adds a sample; nothing that exists now changes."]}
+                        *rep]}
 
 
 @mcp.tool()
 @_reviewed(_d_import_visium)
 def import_visium(name: str, path: str, he: Optional[str] = None, description: str = "",
-                  segmentation: Optional[str] = None, unit: str = "auto") -> str:
+                  segmentation: Optional[str] = None, unit: str = "auto", replace: bool = False) -> str:
     """Import a Visium HD (or Visium) Space Ranger output: path = outs/, binned_outputs/ or one square_XXXum folder.
     With cell outlines (Space Ranger 4's segmented_outputs/cell_segmentations.geojson, found by itself, or
     segmentation = a GeoJSON of outlines in full-resolution pixels) the cells are the unit (unit "auto" or "cells"):
@@ -635,63 +713,72 @@ def import_visium(name: str, path: str, he: Optional[str] = None, description: s
     bins pooled into 8 um, bins of 8 um or more (16 um, Visium spots) used as they are. he: the
     full-resolution image Space Ranger was given (no registration needed); without it, the output's
     tissue_hires_image.png. Whole-transcriptome data: the PCA and the expression model use the 3,000 most variable
-    genes (plus the marker list's). The nuclei-based registration check does not apply to bins."""
+    genes (plus the marker list's). The nuclei-based registration check does not apply to bins. replace: an existing sample of this name goes to the trash first (only when the user asked to
+    replace it; the review window says what goes)."""
     from . import importer
     log = []
-    meta = importer.import_visium(name, path, he=he, description=description, progress=log.append,
-                                  segmentation=segmentation, unit=unit)
+    with _replacing(name, replace):
+        meta = importer.import_visium(name, path, he=he, description=description, progress=log.append,
+                                      segmentation=segmentation, unit=unit)
     return _j({"imported": meta["sample_id"], "unit": meta["source"]["unit"], "n": meta["n_cells"],
                "n_genes": meta["n_genes"], "bin_um": meta["source"]["bin_um"], "log": log[-12:]})
 
 
 def _d_import_he_only(a):
+    pre, rep = _replace_lines(a)
     from . import importer
     upp = a.get("um_per_px") or importer.image_pixel_size(a["image"])
-    return {"title": f"Import a new sample {a['name']} (H&E only)", "session_id": None, "sample_id": a["name"],
+    return {"title": f"{pre} {a['name']} (H&E only)", "session_id": None, "sample_id": a["name"],
             "details": [f"Image: {a['image']}, " + (f"{upp:.4f} um per pixel" if upp else "pixel size unknown"),
                         "No cells: regions are drawn and named on it, exported as GeoJSON, or given to the import of the "
                         "data registered to the same image (import_sample / import_xenium ... regions_from).",
-                        "Adds a sample; nothing that exists now changes."]}
+                        *rep]}
 
 
 @mcp.tool()
 @_reviewed(_d_import_he_only)
-def import_he_only(name: str, image: str, um_per_px: Optional[float] = None, description: str = "") -> str:
+def import_he_only(name: str, image: str, um_per_px: Optional[float] = None, description: str = "",
+                   replace: bool = False) -> str:
     """Import an H&E (TIFF / OME-TIFF, SVS, NDPI, PNG, JPEG) without any cells, e.g. for a pathologist to draw and
     name regions before the expression data exist. um_per_px: the pixel size, read from the image when not given (else
     unknown: no micrometers are shown). The regions drawn on it go to the data later: in the app's Import dialog
     ("Regions from"), or exported as GeoJSON (export_regions) and given as the import's regions file. Tools about cells
-    do not apply to such a sample."""
+    do not apply to such a sample. replace: an existing sample of this name goes to the trash first (only when the user asked to
+    replace it; the review window says what goes)."""
     from . import importer
     log = []
-    m = importer.import_image(name, image, um_per_px=um_per_px, description=description, progress=log.append)
+    with _replacing(name, replace):
+        m = importer.import_image(name, image, um_per_px=um_per_px, description=description, progress=log.append)
     return _j({"imported": m["sample_id"], "image_only": True, "um_per_px": m["he_um_per_px"] if m.get("um_per_px_known") else None,
                "log": log[-6:]})
 
 
 def _d_import_stereoseq(a):
+    pre, rep = _replace_lines(a)
     from . import importer
     x = importer.inspect_stereoseq(a["paths"])
     cells = a.get("unit", "auto") != "bins" and (x["cellbin_gef"] or x["cell_gem"])
-    return {"title": f"Import a new sample {a['name']} (Stereo-seq)", "session_id": None, "sample_id": a["name"],
+    return {"title": f"{pre} {a['name']} (Stereo-seq)", "session_id": None, "sample_id": a["name"],
             "details": [("Cells from " + (x["cellbin_gef"] or x["cell_gem"]) + (f" ({x['n_cells']:,} cells)" if x.get("n_cells") else ""))
                         if cells else f"8 um bins pooled from the DNBs of {x['gem']}",
                         f"Image: {a.get('image') or x['image'] or 'none (a blank background)'}" + (" (in the DNBs' coordinates)"
                         if a.get("image") or x["image_registered"] else " (not SAW's registered image: it waits for an alignment)"),
-                        "Adds a sample; nothing that exists now changes."]}
+                        *rep]}
 
 
 @mcp.tool()
 @_reviewed(_d_import_stereoseq)
 def import_stereoseq(name: str, paths: list[str], image: Optional[str] = None, description: str = "",
-                     unit: str = "auto") -> str:
+                     unit: str = "auto", replace: bool = False) -> str:
     """Import a Stereo-seq (STOmics SAW) output: paths = its folder, or its files (<SN>.cellbin.gef, <SN>.tissue.gem.gz,
     <SN>_HE_regist.tif or the ssDNA _regist.tif). The cells are the unit when SAW segmented them (a cell-bin GEF, or a
     GEM with a CellID column; unit "auto" or "cells"), else (or unit "bins") the DNBs (0.5 um) are pooled into 8 um
-    bins. The registered image is in the DNBs' coordinates (no registration needed); image: another such image."""
+    bins. The registered image is in the DNBs' coordinates (no registration needed); image: another such image. replace: an existing sample of this name goes to the trash first (only when the user asked to
+    replace it; the review window says what goes)."""
     from . import importer
     log = []
-    meta = importer.import_stereoseq(name, paths, image=image, description=description, progress=log.append, unit=unit)
+    with _replacing(name, replace):
+        meta = importer.import_stereoseq(name, paths, image=image, description=description, progress=log.append, unit=unit)
     return _j({"imported": meta["sample_id"], "unit": meta["source"]["unit"], "n": meta["n_cells"],
                "n_genes": meta["n_genes"], "image": meta["image_kind"], "log": log[-12:]})
 
@@ -700,13 +787,14 @@ def import_stereoseq(name: str, paths: list[str], image: Optional[str] = None, d
 @mcp.tool()
 @_reviewed(_d_import_cosmx_merfish)
 def import_cosmx_merfish(kind: str, name: str, paths: list[str], he: Optional[str] = None,
-                         registration: Optional[str] = None, description: str = "") -> str:
+                         registration: Optional[str] = None, description: str = "", replace: bool = False) -> str:
     """Import one CosMx slide (kind "cosmx": its AtoMx flat files <slide>_exprMat_file.csv and
     <slide>_metadata_file.csv) or one MERFISH region (kind "merfish": a MERSCOPE region's cell_by_gene.csv and
     cell_metadata.csv): paths = those two files or their folder; several slides or regions are imported one after the
     other. The instruments' own images are not used: the cells are shown on a blank background, or on the H&E given
     with a registration file (affine CSV a11,a12,a21,a22,tx,ty from cell um to H&E pixels); an H&E without
-    registration waits for Align with Claude."""
+    registration waits for Align with Claude. replace: an existing sample of this name goes to the trash first (only when the user asked to
+    replace it; the review window says what goes)."""
     from . import importer
     if kind not in importer.FLAT_FILES:
         raise ValueError("kind is 'cosmx' or 'merfish'")
@@ -714,8 +802,9 @@ def import_cosmx_merfish(kind: str, name: str, paths: list[str], he: Optional[st
     src = importer.flat_sources(kind, paths)
     if len(src) > 1:
         raise ValueError(f"these paths hold {len(src)} slides or regions ({', '.join(x['key'] for x in src)}): import one at a time")
-    meta = importer.import_flat(kind, name, src[0], he=he, registration=registration, description=description,
-                                progress=log.append)
+    with _replacing(name, replace):
+        meta = importer.import_flat(kind, name, src[0], he=he, registration=registration, description=description,
+                                    progress=log.append)
     return _j({"imported": meta["sample_id"], "n_cells": meta["n_cells"], "n_genes": meta["n_genes"],
                "image": meta["image_kind"], "log": log[-12:]})
 
@@ -724,16 +813,18 @@ def import_cosmx_merfish(kind: str, name: str, paths: list[str], he: Optional[st
 @_reviewed(_d_import_sample)
 def import_sample(name: str, h5ad: list[str], he: str, registration: str, section_column: Optional[str] = None,
                   section: Optional[str] = None, region_column: Optional[str] = None, counts_layer: Optional[str] = None,
-                  description: str = "") -> str:
+                  description: str = "", replace: bool = False) -> str:
     """Import one tissue section from files on this computer: h5ad file(s) with raw counts and cell coordinates in
     um (several files are merged; an .rds / .rda with a Seurat or SpatialExperiment object works too, read without R), the registered H&E image (pyramidal TIFF / OME-TIFF), and the registration file
     (affine CSV a11,a12,a21,a22,tx,ty from cell um to H&E pixels, or a Xenium Explorer 3x3 matrix). For an h5ad with
     several sections give section_column and section. region_column optionally imports region annotations.
-    Cell type annotations in the h5ad are ignored. Takes from seconds to a few minutes for large files."""
+    Cell type annotations in the h5ad are ignored. Takes from seconds to a few minutes for large files. replace: an existing sample of this name goes to the trash first (only when the user asked to
+    replace it; the review window says what goes)."""
     from .importer import import_sample as imp
     log = []
-    meta = imp(name, h5ad, he, registration, section_column, section, None, None, counts_layer, region_column,
-               description=description, progress=log.append)
+    with _replacing(name, replace):
+        meta = imp(name, h5ad, he, registration, section_column, section, None, None, counts_layer, region_column,
+                   description=description, progress=log.append)
     return _j({"imported": meta["sample_id"], "n_cells": meta["n_cells"], "n_genes": meta["n_genes"],
                "he_um_per_px": round(meta["he_um_per_px"], 4), "log": log})
 

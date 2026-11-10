@@ -318,8 +318,9 @@ def _check_name(name, overwrite):
     if len(name) > MAX_NAME:
         raise ValueError(f"the sample name {name[:40]}... is {len(name)} characters long: at most {MAX_NAME}")
     if (config.SAMPLES / name).exists() and not overwrite:
-        raise ValueError(f"a sample named {name!r} already exists: choose another name, or remove all samples "
-                         "(Remove all... next to Import) to start over")
+        raise ValueError(f"a sample named {name!r} already exists: choose another name, tick 'Replace the existing "
+                         "sample' in the Import dialog (the agent: replace=True), or remove that sample first (Data tab: "
+                         "Remove, next to Rename)")
     return name
 
 

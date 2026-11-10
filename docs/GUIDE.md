@@ -26,7 +26,8 @@ Click **Import** in the app (or use the [commands](#from-the-command-line) below
 3. a **Registration file** or **No registration**.
 
 The file fields of Import grow with what they hold, so long paths and several lines need no scrolling. To give a
-sample another image or registration file, import it again with them under the same name.
+sample another image or registration file, import it again with them under the same name and tick **Replace the
+existing sample** (its annotations go to the trash with it).
 
 ### Xenium
 
@@ -420,7 +421,7 @@ The app's window, or the web viewer (`.venv/bin/stagent viewer`, then http://loc
   - two tabs, **Data** and **Analysis**. Analysis has the steps **Annotate**, **Embed**, **Niche**, **Compare**,
     **Signal** and **Trajectory** as a second row and reopens the one last used (a dot on a tab whose analysis is
     running);
-  - at the bottom, **Reset**, **Remove sample** and **Remove all**.
+  - at the bottom, **Reset** and **Remove all**.
 - **On the map**: the **Color by** bar (with opacity, dot size, hide cells, hide H&E: struck through while hidden;
   then **Undo** and **Refresh**), and a bar with **Agent** (Claude Code), **Review**, **Report** and **Manual** /
   **Auto**.
@@ -446,9 +447,14 @@ The app's window, or the web viewer (`.venv/bin/stagent viewer`, then http://loc
   counts, model and results: a few hundred MB for 350k cells). The app keeps only the last 3 annotations and 4
   samples' cell positions in memory and reads older ones again from disk when they are opened
   (`STAGENT_OPEN_ANNOTATIONS` sets the number of annotations).
-- **Remove sample** (bottom of the toolbar) removes only the open sample: its cells, annotations with their chats,
-  regions, niches and PCA / UMAP go to the data folder's `trash/`. A project keeps its other slices, and the image and
-  source files stay where they are.
+- **Remove** (the trash beside the sample's Rename, Data tab) removes only the open sample: its cells, annotations
+  with their chats, regions, niches and PCA / UMAP go to the data folder's `trash/`. A project keeps its other
+  slices, and the image and source files stay where they are.
+- **Replace a sample** with a new import (e.g. a corrected export of the same slide): import it under the same name
+  and tick **Replace the existing sample** (it appears under the name when a sample of that name exists). The old
+  sample and its annotations go to the trash first; the new one takes its name, its place in its project and its
+  display name; if the import fails or is stopped, the old sample comes back as it was. The agent does the same
+  (`remove_sample`, or an import with `replace`), each change through the review window.
 
 ### Saving and loading an annotation (Data tab)
 
@@ -741,7 +747,7 @@ asks now and always shows it. Without an internet connection nothing is shown.
   their download, converted R files, alignment figures: all made again when needed) stay under a limit, 5 GB by
   default: past it the oldest go first (checked every 10 minutes). About shows their size, sets the limit and clears
   them.
-- **Trash** (`trash/` of the data folder: what Reset, Remove sample and the cell filter moved away, one folder per
+- **Trash** (`trash/` of the data folder: what Reset, Remove, a replacing import and the cell filter moved away, one folder per
   removal) has a limit of its own, 10 GB by default: past it the oldest removals are deleted for good. About shows its
   size, sets the limit and empties it.
 - **Reset** removes every annotation and chat of the selected sample (moved to `<data folder>/trash/`); in a project,
