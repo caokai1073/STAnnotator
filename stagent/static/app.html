@@ -493,8 +493,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <button id="openEx" hidden title="A CSV with an existing cell type annotation (one row per cell)">Annotation file…</button>
     </div>
     <div class="fld" id="knnWrap"><span>Neighbors</span><select id="knn" class="segsel" title="Neighbor search of the marker step">
-      <option value="approx" data-short="Approximate" selected>Approximate (pynndescent, the default): fast on any computer; the same result only with the same pynndescent and numba versions</option>
-      <option value="exact" data-short="Exact">Exact: the same result on every computer, with or without a GPU; slow without a GPU for large samples</option></select>
+      <option value="approx" data-short="Approximate" selected>Approximate (pynndescent, the default): fast on any computer; runs on 8 threads everywhere, so a rerun gives the same labels, on this computer or another</option>
+      <option value="exact" data-short="Exact">Exact: the true neighbors; slow without a GPU for large samples (a GPU and a CPU may differ for a few cells)</option></select>
       <div class="seg" data-for="knn"></div><div class="hint" id="annEst"></div></div>
     <label class="switch" id="carryWrap" style="visibility:hidden" title="Start the new annotation with the regions (and their colors), priors and hand corrections of the one that is open; priors and corrections naming cell types the new annotation does not have are dropped"><input type="checkbox" id="carry" checked>
       <span>Keep my regions, priors &amp; corrections<small>carried into the new annotation</small></span></label>
@@ -4486,8 +4486,9 @@ const HELP = `
   <li>or an existing annotation (<b>Annotation file…</b>).</li></ul></li>
 <li><b>Annotate</b> makes a new annotation; <b>keep my regions, priors &amp; corrections</b> carries them over.</li>
 <li><b>Neighbors</b> (marker genes):<ul>
-  <li><i>Exact</i> gives the same result on every computer, with or without a GPU.</li>
-  <li><i>Approximate</i> is much faster without a GPU, and gives the same result only with the same package versions.</li>
+  <li><i>Approximate</i> (default) is much faster without a GPU. It runs on 8 threads on every computer (its result
+    depends on the thread count), so a rerun gives the same labels, here or on another computer with this version.</li>
+  <li><i>Exact</i> finds the true neighbors; slow without a GPU for large samples.</li>
   <li>The line under it estimates how long the whole annotation takes on this computer for both (hover for the
     steps); it learns from every run here.</li></ul></li></ul>
 
@@ -4699,7 +4700,10 @@ Anything that would change your data opens here in a review window first and is 
 `;
 const METHODS = `
 <p class="hint">How each analysis computes its result. Expression is log-normalized throughout: counts per cell scaled
-to 100, then log(1 + x). Random steps use a fixed seed, so a rerun on the same computer gives the same result.</p>
+to 100, then log(1 + x). Random steps use a fixed seed, and the approximate neighbor search (pynndescent) always runs
+on 8 threads, because its result depends on the thread count: a rerun gives the same annotation, on this computer or
+another with the same app version (Intel / AMD and Apple silicon may still differ slightly). Every annotation keeps
+checksums of its steps (PCA, neighbors, first clusters, labels) to compare runs.</p>
 
 <h3>Data</h3><ul>
 <li><b>Cells and bins</b><ul>

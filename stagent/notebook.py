@@ -178,6 +178,10 @@ print("algorithm modules:", ", ".join(SOURCES))''')
                   "modules used here (marker clustering, expression model, priors, regions, data readers), run as a "
                   "small package `sa`; click it to read the code."))
     nb.append(_code('''
+import os
+# the approximate neighbor search runs on 8 threads, as in the app (its result depends on the thread count): numba must
+# allow 8 threads even with fewer cores. Set before numba is imported.
+os.environ["NUMBA_NUM_THREADS"] = str(max(int(os.environ.get("NUMBA_NUM_THREADS") or 0), os.cpu_count() or 1, 8))
 import json, base64, zlib
 import numpy as np, pandas as pd, scipy.sparse as sp
 import matplotlib.pyplot as plt

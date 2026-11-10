@@ -166,8 +166,8 @@ class Session:
                carry_from=None, reference=None, existing=None, knn=None):
         """method 'markers' (default): hierarchical marker annotation (Leiden + marker scores) of this sample; the data
         is treated as having no cell type labels. markers_text: the marker list (indented text or CSV); required.
-        knn: the marker step's neighbor search, "approx" (default; pynndescent: fast on any computer) or "exact"
-        (the same result on every computer; slow without a GPU for large samples).
+        knn: the marker step's neighbor search, "approx" (default; pynndescent on 8 threads: fast, and the same result
+        on any computer) or "exact" (the true neighbors; slow without a GPU for large samples).
         method 'scref': a single-cell reference h5ad (reference = {"path", "label_column", optional "group_column",
         "majority_voting"}) trains a CellTypist-like classifier on the genes it shares with the panel.
         method 'existing': an annotation loaded from a CSV (existing = {"path", "id_column", "label_column",
@@ -502,6 +502,10 @@ class Session:
                                        knn=self.knn_mode())
                 self._save_mres("init", res)
                 self._mres["init"] = res
+                if res.get("fingerprints"):  # checksums of this run, for telling whether two runs agree (bug reports carry it)
+                    fp = {"session_id": self.id, "sample_id": self.sample_id, "time": _now(), **res["fingerprints"]}
+                    (self.dir / "base" / "fingerprints.json").write_text(json.dumps(fp, indent=1), encoding="utf-8")
+                    print(f"annotation {self.id}: " + json.dumps({k: fp[k] for k in fp if k != "versions"}), flush=True)
                 i = 0
             for j in range(i, len(ops)):
                 res = self._apply_recluster(res, ops[j], ops[:j + 1], progress)

@@ -267,6 +267,7 @@ def pca(Xn, n_pcs=None):
 
 
 KNN = "approx"  # neighbor search of the marker step: "approx" (default) or "exact" (see knn)
+KNN_THREADS = 8  # the approximate search always runs on this many threads (its result depends on the count)
 KNN_EXTRA = 8  # candidates beyond k that the exact search re-ranks in float64
 
 
@@ -328,7 +329,8 @@ def _exact(Z, k):
 def knn(Z, k, mode="auto"):
     """k nearest neighbors of every row (itself excluded): (distances, indices).
     mode "exact": the true neighbors, the same on every computer whatever it computes with (see _exact).
-    "approx": pynndescent, fast on a CPU; the same result for the same pynndescent and numba versions.
+    "approx": pynndescent, fast on a CPU, on KNN_THREADS threads (its result depends on the thread count): the same
+    result on every computer for the same pynndescent and numba versions (x86 and ARM may still differ slightly).
     "auto" (embeddings): exact on a GPU and for small sets, else pynndescent."""
     from .config import device
     from . import timing
@@ -338,10 +340,32 @@ def knn(Z, k, mode="auto"):
         return _exact(Z, k)
     if mode == "auto" and (device() != "cpu" or n <= 20000):
         return _exact(Z, k)
-    from pynndescent import NNDescent
     with timing.step("knn_approx", n / 1e6, warmup="approx_compile"):
-        nbr, dist = NNDescent(Z, n_neighbors=k + 1, random_state=0).neighbor_graph
+        nbr, dist = _nndescent(Z, k + 1)
     return dist[:, 1:], nbr[:, 1:]
+
+
+def knn_threads():
+    """The threads the approximate search runs on: KNN_THREADS (stagent/__init__.py lets numba have that many on any
+    computer); fewer only if numba was loaded with fewer allowed (then other computers may differ)."""
+    import numba
+    return min(KNN_THREADS, int(numba.config.NUMBA_NUM_THREADS))
+
+
+def _nndescent(Z, k):
+    """pynndescent's neighbors on a fixed number of threads (its result depends on how many), whatever the number of
+    cores; the thread count of the calling thread is put back afterwards (UMAP and the rest keep theirs)."""
+    import numba
+    from pynndescent import NNDescent
+    before = numba.get_num_threads()
+    try:
+        try:
+            return NNDescent(Z, n_neighbors=k, random_state=0, n_jobs=knn_threads()).neighbor_graph
+        except ValueError as e:  # a thread setting numba refuses: the default, rather than no result
+            print(f"approximate neighbors: {e}; using numba's default threads")
+            return NNDescent(Z, n_neighbors=k, random_state=0).neighbor_graph
+    finally:
+        numba.set_num_threads(before)
 
 
 def knn_graph(dist, nbr):
@@ -357,13 +381,26 @@ def knn_graph(dist, nbr):
     return g
 
 
-def _graph(Xn, knn_mode="auto"):
-    """PCA on standardized genes and a kNN graph with adaptive Gaussian weights; built once per level."""
+def fingerprint(a):
+    """A short checksum of an array (or a list of strings): two runs that give the same have the same."""
+    import hashlib
+    if isinstance(a, np.ndarray) and a.dtype != object:
+        b = np.ascontiguousarray(a).tobytes()
+    else:
+        b = "\n".join(map(str, a)).encode("utf-8")
+    return hashlib.sha256(b).hexdigest()[:12]
+
+
+def _graph(Xn, knn_mode="auto", fp=None):
+    """PCA on standardized genes and a kNN graph with adaptive Gaussian weights; built once per level. fp: a dict
+    that gets the checksums of the PCA and of the neighbors (the root level, for checking that runs agree)."""
     from . import timing
     m = Xn.shape[0]
     with timing.step("pca", m * Xn.shape[1] / 1e9):
         Z = pca(Xn)
     dist, nbr = knn(Z, N_NEIGHBORS, knn_mode)
+    if fp is not None:
+        fp.update(pca=fingerprint(Z), neighbors=fingerprint(np.asarray(nbr, np.int64)))
     with timing.step("graph", m / 1e6):
         g = knn_graph(dist, nbr)
     return g, nbr
@@ -405,6 +442,7 @@ class _Annotator:
         self.say = progress or (lambda f, m: None)
         self.seed, self.n = seed, counts.shape[0]
         self.done, self.total = 0, 1
+        self.fp = {}  # checksums of the root level (see annotate)
 
     def score(self, children, frac):
         S = np.zeros((frac.shape[0], len(children)))
@@ -435,7 +473,8 @@ class _Annotator:
         label = parent or "all cells"
         self.say(self.done / self.total, f"building the neighbor graph of {label} ({len(idx):,} cells)")
         from . import timing
-        g, nbr = _graph(self.Xn[idx], self.knn_mode)
+        root = parent is None and len(idx) == self.n
+        g, nbr = _graph(self.Xn[idx], self.knn_mode, self.fp if root else None)
         cands = RESOLUTIONS if resolution == AUTO else (float(resolution),)
         best, tried = None, {}
         for r in cands:
@@ -446,6 +485,8 @@ class _Annotator:
             tried[f"{r:g}"] = round(ev["assigned_frac"], 3)
             if best is None or ev["assigned_frac"] > best[1]["assigned_frac"] + 0.01:
                 best = (r, ev, lab)
+        if root:
+            self.fp.update(root_resolution=best[0], root_clusters=fingerprint(np.asarray(best[2], np.int64)))
         return best[0], best[1], best[2], tried
 
     def run(self, res, parent, idx, children, resolution, prefix=""):
@@ -487,8 +528,24 @@ def annotate(counts, panel, tree, progress=None, seed=0, resolution=AUTO, knn=KN
            "members": {}, "records": [], "nodes": []}
     A.run(res, None, np.arange(A.n), tree, resolution)
     res["knn"] = knn_backend(knn)[1] if knn != "auto" else "automatic"
+    res["fingerprints"] = run_fingerprints(A.fp, res["labels"], knn)
     A.say(1.0, "marker annotation done")
     return res
+
+
+def run_fingerprints(fp, labels, knn):
+    """What an annotation run computed, as checksums, and what it ran with: two runs of the same data and marker list
+    should agree step by step; where they part shows which step differed (PCA, neighbors, root clusters, labels)."""
+    import importlib.metadata as md, platform
+    ver = {}
+    for p in ("numpy", "scipy", "pynndescent", "numba", "igraph"):
+        try:
+            ver[p] = md.version(p)
+        except md.PackageNotFoundError:
+            pass
+    return {**fp, "labels": fingerprint(labels), "knn": knn,
+            "knn_threads": knn_threads() if knn in ("approx", "auto") else None,
+            "machine": f"{platform.system()} {platform.machine()}", "cores": __import__("os").cpu_count(), "versions": ver}
 
 
 def rerun(res, counts, panel, tree, target, resolution=AUTO, prefix="", progress=None, seed=0, knn=KNN):

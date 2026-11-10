@@ -439,10 +439,13 @@ Histograms show where each threshold cuts and the dialog counts what goes; empty
    - *Single-cell reference*: a labeled reference h5ad (**Reference…**);
    - *Load existing*: a CSV with one cell type per cell (**Annotation file…**).
 2. With marker genes, choose **Neighbors**, the neighbor search of the marker step:
-   - *Approximate* (pynndescent, the default) is fast on any computer and gives the same result only with the same
-     pynndescent and numba versions;
-   - *Exact* gives the same neighbors, hence the same clusters and labels, on every computer, GPU or not, but is slow
-     without a GPU for large samples.
+   - *Approximate* (pynndescent, the default) is fast on any computer. Its result depends on the number of threads,
+     so it always runs on 8 (also with fewer cores): a rerun gives the same labels, on this computer or another with
+     the same app version (Intel / AMD and Apple silicon may still differ slightly);
+   - *Exact*: the true neighbors, slow without a GPU for large samples. A GPU and a CPU can still give slightly
+     different neighbors for some cells.
+   - Every annotation keeps checksums of its steps (PCA, neighbors, first clusters, labels) in `base/fingerprints.json`
+     and in the app's log, so that two runs can be compared step by step (a bug report carries them).
 3. Click **Annotate**.
 
 **Time estimate.** Under Neighbors the app estimates how long the whole annotation will take here, for both choices

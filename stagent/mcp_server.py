@@ -441,7 +441,7 @@ def _d_start_session(a):
         n = json.load(open(config.SAMPLES / a["sample_id"] / "meta.json")).get("n_cells") or 0
         est = timing.estimate(n, len(panel_genes(a["sample_id"])), p["tree"], "auto", knn, len(p["leaves"]))
         det.append(f"Neighbor search: {est['backend']}"
-                   + (" (the same result on every computer)" if knn == "exact" else "")
+                   + (" (the true neighbors)" if knn == "exact" else " on 8 threads (the same result on any computer)")
                    + f". Estimated time for {n:,} cells: {timing.words(est['seconds'])} ({est['basis']}).")
     cur = _active.get("session")
     if a.get("carry_from_current") and cur:
@@ -801,9 +801,9 @@ def start_session(sample_id: str, markers_text: Optional[str] = None,
     carry_from_current: copy the regions, priors and corrections of the active session of the same sample (use it
     when re-annotating with a revised marker list). The first call to any tool that needs labels runs the annotation
     (the review window shows how long it should take here). Give the user a new viewer link afterwards (open_viewer).
-    knn (marker list only): the neighbor search of the marker step, "approx" (default; pynndescent: fast on any
-    computer, the same result only with the same pynndescent / numba versions) or "exact" (the same result on every
-    computer, GPU or not; slow without a GPU for large samples). Use "exact" only when the user asks for it.
+    knn (marker list only): the neighbor search of the marker step, "approx" (default; pynndescent on 8 threads on
+    every computer: fast, and the same result with the same app version) or "exact" (the true neighbors; slow
+    without a GPU for large samples; GPU and CPU may differ for a few cells). Use "exact" only when the user asks.
     """
     carry = _active["session"].id if carry_from_current and _active.get("session") else None
     ref = ex = None
