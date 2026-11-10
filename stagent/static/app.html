@@ -433,8 +433,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
   border-radius: 14px; font-size: 12.5px; cursor: pointer; user-select: none; }
 .hechips label.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .hechips input { margin: 0; }
-.rgtools button.heask { font-size: 11px; padding: 1px 5px; gap: 3px; white-space: nowrap; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
-.rgtools button.heask .ic { width: 12px; height: 12px; }
+.rgtools button.heask { font-size: 11px; padding: 1px 6px; white-space: nowrap; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
 #heTabs { flex: none; } #heTabs button { padding: 4px 10px; flex: none; }
 .tnsaved { border-top: 1px solid var(--line); padding-top: 10px; display: flex; flex-direction: column; gap: 6px; }
 .tnlist { display: flex; flex-direction: column; gap: 4px; max-height: 30vh; overflow: auto; }
@@ -760,7 +759,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
         <button data-tool="brush" data-icon="brush" title="Brush (B): paint the area; it adds to the selected region or the shape being drawn; Alt: erase">Brush</button>
         <button data-tool="wand" data-icon="wand" title="Wand (W): paint, and the area follows the colors of the H&amp;E under the brush; Alt: erase">Wand</button>
         <span class="sep"></span>
-        <button id="heAsk" class="heask" hidden title="Outline regions on this H&amp;E: train an organ model from outlines a pathologist drew, or ask the agent">Outline regions</button>
+        <button id="heAsk" class="heask" hidden title="Train an organ model from H&amp;E outlines a pathologist drew (GeoJSON), or ask the agent to outline regions on this H&amp;E">Train a model</button>
         <button id="toolSub" data-icon="minus" title="Subtract: the tools take away from the shape instead of adding (or hold Alt)">Subtract</button>
         <label id="toolSizeBox" title="Brush and wand size, in screen pixels (the area it covers follows the zoom)"><input type="range" id="toolSize" min="6" max="240" value="40"><span id="toolSizeV">40</span></label>
         <label id="wandTolBox" title="Wand: how different a color may be from the one under the center of the brush">± <input type="range" id="wandTol" min="4" max="90" value="28"></label>
@@ -1278,7 +1277,7 @@ const ICON_ONLY = { sessDel: "x", hdrShow: "chev-left", hdrHide: "chev-right", h
   lgtoggle: "chev-up", rgtoggle: "chev-up", stepsFold: "chev-up", plclose: "x", emClose: "x", imClose: "x", rcClose: "x", clClose: "x", rpClose: "x",
   xpClose: "x", glClose: "x", anClose: "x", rvClose: "x", hpClose: "x", anCsv: "download", rpSave: "download", mkExport: "download",
   fbUp: "arrow-up", fbHome: "home", rsClose: "x", hide: "cell", hideHE: "image" };
-const ICON_TEXT = { heAsk: "sparkle", heGo: "sparkle", qfBtn: "play", importBtn: "import", clearAll: "trash", rmSample: "trash", allSamples: "grid", connBtn: "monitor", 
+const ICON_TEXT = { heGo: "sparkle", qfBtn: "play", importBtn: "import", clearAll: "trash", rmSample: "trash", allSamples: "grid", connBtn: "monitor", 
   openMarkers: "list", openRef: "file", openEx: "file", annotate: "play", eRun: "play", eShow: "scatter", nRun: "play",
   undo: "undo", refresh: "refresh", claudeBtn: "sparkle", plaus: "shield", report: "file", export: "share", reset: "trash",
   draw: "pen", emLasso: "lasso", emClear: "x", emZoom: "target", send: "send",
@@ -4429,7 +4428,7 @@ async function alignWith(ids) {
 $("alignNow").onclick = askAlign;
 // ---- Outline regions: the organ and the regions to outline (the request is written for Claude Code); the organ
 // models trained from H&E + GeoJSON pairs (organmodel.py), kept in the data folder with all organs together ----
-const HE = { organs: [], other: [], tab: "train", pairs: [], models: [] };  // (the window opens on the tab used last)
+const HE = { organs: [], other: [], tab: "train", pairs: [], models: [] };
 function heAskSync() {  // for every sample whose H&E is shown (an H&E only too)
   const s = st.sample;
   $("heAsk").hidden = !(s && (s.image_only || (s.image_kind === "H&E" && !s.image_pending)));
@@ -4493,7 +4492,7 @@ async function heOpen() {
   try {
     await heLoadOrgans(false);
     $("heOrganOther").value = ""; $("heMore").value = ""; $("heNotes").value = ""; $("heErr").textContent = "";
-    $("heOrgan").onchange(); heTab(HE.tab);
+    $("heOrgan").onchange(); heTab("train");  // (the button is Train a model)
     $("heDlg").showModal();
   } catch (e) { toast(e.message, 6000); }
 }
@@ -4768,7 +4767,7 @@ const HELP = `
     draw and name regions before the expression data exist.<ul>
     <li>The pixel size is read from the image, or typed in; without it no µm are shown (areas in pixels).</li>
     <li>Only the Data tab and the regions apply; the regions panel shows each outline's area.</li>
-    <li><b>Outline regions</b> (Regions toolbar, right of the Wand; every sample with an H&amp;E), <b>Train a model</b>:
+    <li><b>Train a model</b> (Regions toolbar, right of the Wand; every sample with an H&amp;E; the Outline regions window):
       H&amp;E + GeoJSON pairs a pathologist outlined teach the app an organ's regions; the model is kept in the data
       folder's organ_models (all organs, kept across updates); the saved models below it can be exported, loaded or
       deleted.</li>
