@@ -308,7 +308,8 @@ header .br { flex: 1 1 100%; height: 0; }
 .rg button, .pg button { border: 0; background: none; padding: 2px 3px; color: var(--muted); }
 .rg button .ic, .pg button .ic, .prior button .ic { width: 14px; height: 14px; }
 .rg button:hover, .pg button:hover { color: var(--accent); }
-.pg { display: flex; gap: 6px; padding: 0 4px 2px 21px; color: var(--muted); font-size: 11px; }
+.pg { display: flex; align-items: center; gap: 6px; padding: 0 4px 2px 21px; color: var(--muted); font-size: 11px; }
+.pg > span:first-child { flex: 1; min-width: 0; }  /* the buttons line up on the right, under the region's own */
 .prior { display: flex; align-items: flex-start; gap: 6px; padding: 3px 4px; border-left: 3px solid var(--accent); margin: 3px 0; }
 .prior .pt { font-size: 12px; } .prior .pr { font-size: 11px; color: var(--muted); }
 .prior button { border: 0; background: none; padding: 0 4px; color: var(--muted); }
@@ -2479,7 +2480,9 @@ async function loadRegions() {
     n.textContent = st.imageOnly ? areaText(st.regions.polygons.filter((p) => p.name === r.name)) : r.n_cells.toLocaleString();
     const ren = decorate(Object.assign(document.createElement("button"), { title: "Rename this region" }), "pen", true);
     ren.onclick = () => renameRegion(r.name);
-    row.append(sw, t, n, ren); box.append(row);
+    const rm = decorate(Object.assign(document.createElement("button"), { title: "Delete this region (all its polygons)" }), "trash", true);
+    rm.onclick = (e) => { e.stopPropagation(); deleteRegionNamed(r.name); };
+    row.append(sw, t, n, ren, rm); box.append(row);
     st.regions.polygons.filter((p) => p.name === r.name).forEach((p) => {
       const pr = document.createElement("div"); pr.className = "pg";
       const lab = document.createElement("span"); lab.textContent = st.imageOnly ? `${p.id} · ${areaText([p])}` : `${p.id} · ${p.n_cells_drawn.toLocaleString()} cells when drawn`;
@@ -2595,6 +2598,15 @@ async function renameRegion(old) {
   const name = prompt(`Rename region “${old}” to:`, old);
   if (!name || name === old) return;
   try { await afterRegionChange(await post(`/api/s/${st.sid}/regions/rename`, { old, new: name })); } catch (e) { toast(e.message, 5000); }
+}
+async function deleteRegionNamed(name) {  // the whole region: all its polygons (and cells assigned to it)
+  const np = ((st.regions && st.regions.polygons) || []).filter((p) => p.name === name).length;
+  if (!confirm(`Delete region ${name}${np > 1 ? ` (all ${np} polygons)` : ""}? Priors that use it keep applying to its cells. (Undo brings it back.)`)) return;
+  try {
+    const r = await post(`/api/s/${st.sid}/regions/delete_region`, { name });
+    [...st.rsel].forEach((id) => { if (!(st.regions.polygons || []).some((p) => p.id === id && p.name !== name)) st.rsel.delete(id); });
+    toast(r.message, 5000); await refreshVersion(true);
+  } catch (e) { toast(e.message, 6000); }
 }
 async function deleteRegion(rid) {
   if (!confirm(rid.startsWith("O") ? `Take the cells of ${rid} out of the region again? (Undo brings them back.)`

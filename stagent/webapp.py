@@ -2075,6 +2075,17 @@ async def api_region_delete(req: Request):
     return _json({"new_version": ver, "message": s.state(ver)["message"]})
 
 
+async def api_region_delete_named(req: Request):
+    """Delete a whole region (all its polygons and assigned cells) by name."""
+    s = review_app._session(req.path_params["sid"])
+    b = await req.json()
+    try:
+        ver = s.delete_region_named(str(b.get("name", "")))
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+    return _json({"new_version": ver, "message": s.state(ver)["message"]})
+
+
 # Claude Code keeps chat transcripts per project directory; only those listed in a session's chat metadata are touched
 CLAUDE_PROJECT = Path.home() / ".claude" / "projects" / str(config.ROOT).replace("/", "-")
 
@@ -3254,6 +3265,7 @@ def build_app(port):
         Route("/api/s/{sid}/steps", api_steps),
         Route("/api/sample/{sample}/steps", api_sample_steps),
         Route("/api/s/{sid}/regions/rename", api_region_rename, methods=["POST"]),
+        Route("/api/s/{sid}/regions/delete_region", api_region_delete_named, methods=["POST"]),
         Route("/api/s/{sid}/regions/color", api_region_color, methods=["POST"]),
         Route("/api/s/{sid}/constraint/{cid}/delete", api_constraint_delete, methods=["POST"]),
         Route("/api/sample/{sample}/genes", api_genes),

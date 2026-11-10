@@ -541,7 +541,9 @@ The Regions panel has a row of tools:
   **Save**.
 - A region keeps its name and priors when its outline changes; its cells are recomputed, and Undo (the toolbar's)
   brings the old outline back. A shape cut in two keeps its id on the larger piece.
-- A name can have several polygons; regions can be renamed, deleted, zoomed to and outlined.
+- A name can have several polygons; regions can be renamed, deleted, zoomed to and outlined. The trash on a
+  region's row deletes the whole region (all its polygons) at once; the trash on a polygon's row only that polygon.
+  Priors that use a deleted region keep applying to its cells, and Undo brings it back.
 - Click a region's color square to choose one of 15 colors; outlines, cells colored by region and the legend follow,
   and the color stays with the region when it is renamed.
 - The selected region is outlined in bright red, so no region is red: a red color (e.g. QuPath's "Tumor" class in an

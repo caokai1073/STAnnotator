@@ -1040,6 +1040,35 @@ class Session:
                             regions=dict(cur["regions"], ops=[o for o in cur["regions"]["ops"] if o.get("id") != rid]),
                             constraints=cons, expected_parent=cur["version"])
 
+    def delete_region_named(self, name, message=None):
+        """Delete a whole region: all its drawn polygons and the cells put into it without an outline, in one version
+        (one Undo brings it back). Priors that use it keep applying to its cells (frozen into the prior), as when its
+        last polygon is deleted."""
+        cur = self.state()
+        ops = cur["regions"].get("ops", [])
+        mine = [o for o in ops if o.get("name") == name and o.get("op") in ("polygon", "cells_override")]
+        if not mine:
+            raise ValueError(f"no drawn region named {name!r}")
+        rest = [o for o in ops if o not in mine]
+        still = name in regmod.assign(self.cells, dict(cur["regions"], ops=[])).tolist()  # (from the data itself)
+        users = [] if still else [c for c in cur["constraints"] if name in c.get("regions_resolved", [])]
+        keep = {}
+        if users:
+            reg = regmod.assign(self.cells, cur["regions"])
+            keep = {name: self.cells.cell.to_numpy()[reg == name].tolist()}
+        ids = {c["id"] for c in users}
+        cons = [c if c["id"] not in ids else
+                dict(c, regions=[r for r in c.get("regions", []) if r != name],
+                     regions_resolved=[r for r in c.get("regions_resolved", []) if r != name],
+                     cells_of={**c.get("cells_of", {}), **keep})
+                for c in cur["constraints"]]
+        n_poly = sum(o["op"] == "polygon" for o in mine)
+        msg = f"delete region {name} ({n_poly} polygon{'s' if n_poly != 1 else ''}" + (
+            f", {len(mine) - n_poly} assignment{'s' if len(mine) - n_poly != 1 else ''}" if len(mine) > n_poly else "") + ")" + (
+            f"; {', '.join(sorted(ids))} keep applying to its {len(keep[name]):,} cells" if ids else "")
+        return self._commit("delete_region", message or msg, regions=dict(cur["regions"], ops=rest), constraints=cons,
+                            expected_parent=cur["version"])
+
     def regions_info(self, version=None):
         """Drawn polygons, cells put into regions without an outline (assigned), and per-region cell counts."""
         r = self.result(version)
