@@ -31,10 +31,13 @@ def _load(sample_id):
     src = _src(sample_id)
     key = (sample_id, (src / "counts.npz").stat().st_mtime)
     if key not in _data:
-        for k in [k for k in _data if k[0] == sample_id or len(_data) > 6]:
+        for k in [k for k in _data if k[0] == sample_id or len(_data) > 2]:
             _data.pop(k)
-        X = sp.load_npz(src / "counts.npz").tocsr()
-        X.eliminate_zeros()
+        from .session import shared_counts
+        X = shared_counts(src)  # the copy the open annotations use (a CosMx 6K matrix is gigabytes)
+        if X.nnz and not X.data.all():  # stored zeros: dropped on a copy (the shared matrix is never changed)
+            X = X.copy()
+            X.eliminate_zeros()
         genes = config.read_genes(src / "genes.txt")
         mito = np.array([bool(MITO.match(g)) for g in genes])
         counts = np.asarray(X.sum(1)).ravel()

@@ -145,7 +145,7 @@ def _fit(X, y, T, pi_target, extra_X=None, extra_y=None, progress=None, seed=0, 
     pi_target = np.asarray(pi_target, float) + 1.0
     prior_shift = np.log(pi_target / pi_target.sum()) - np.log(pi_train / pi_train.sum())
 
-    G = Xtr.toarray().astype(np.float32)
+    G = Xtr.toarray().astype(np.float32, copy=False)  # toarray() is float32 already: no second dense copy
     mu = G.mean(0)
     sd = G.std(0, ddof=1) + 1e-3
     G -= mu

@@ -28,7 +28,8 @@ def _pooled(pid):
     panels = [config.read_genes(config.SAMPLES / s / "genes.txt") for s in ids]
     if any(g != panels[0] for g in panels[1:]):
         raise ValueError("the slices of this project do not share one gene panel")
-    counts = [sp.load_npz(config.SAMPLES / s / "counts.npz").tocsr() for s in ids]
+    from .session import shared_counts
+    counts = [shared_counts(config.SAMPLES / s) for s in ids]  # the copies the slices' open annotations hold
     off = np.cumsum([0] + [c.shape[0] for c in counts])
     return ids, off, sp.vstack(counts).tocsr(), panels[0]
 
@@ -181,7 +182,7 @@ def niches(pid, k=15, n_niches=8, identity="nmf", n_programs=20, progress=None, 
     if identity == "nmf":
         from sklearn.decomposition import NMF
         say(0.05, f"NMF: {n_programs} programs fitted on the pooled cells")
-        X = model.lognorm(counts).astype(np.float32).tocsr()
+        X = model.lognorm(counts).astype(np.float32, copy=False).tocsr()  # float32 already: no second copy
         fit = np.sort(np.random.default_rng(0).choice(X.shape[0], min(60000, X.shape[0]), replace=False))
         nmf = NMF(n_components=n_programs, init="nndsvda", max_iter=300, random_state=0, tol=1e-4).fit(X[fit])
         W = np.vstack([nmf.transform(X[i:i + 50000]) for i in range(0, X.shape[0], 50000)]).astype(np.float32)

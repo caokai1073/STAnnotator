@@ -139,7 +139,9 @@ def read_cellbin_gef(f, progress=print):
     indptr = np.r_[cell["offset"].astype(np.int64), cell["offset"][-1].astype(np.int64) + cell["geneCount"][-1]]
     if not np.array_equal(np.diff(indptr), cell["geneCount"].astype(np.int64)):
         raise ValueError(f"{f}: the cells' expression offsets are not in order")
-    X = sp.csr_matrix((exp["count"].astype(np.float32), col[exp["geneID"]], indptr), shape=(len(cell), len(genes)))
+    it = np.int32 if len(genes) < 2 ** 31 else np.int64  # column numbers in 4 bytes (8 doubled the matrix's size)
+    X = sp.csr_matrix((exp["count"].astype(np.float32), col.astype(it)[exp["geneID"]], indptr), shape=(len(cell), len(genes)))
+    del exp
     X.sum_duplicates()
     progress(f"{len(cell):,} cells, {len(genes):,} genes (cell-bin GEF)")
     ids = np.array([f"cell{int(i)}" for i in cell["id"]], dtype=object)
@@ -159,7 +161,8 @@ def read_gem(f, cells, progress=print):
     use = [low["geneid"]] + ([low["genename"]] if "genename" in low else []) + [low["x"], low["y"], cnt] + \
         ([cell_col] if cells else [])
     gene_ix, gene_ids, gene_names = {}, [], []
-    keys, X, sx, sy, nrow = {}, None, [], [], []
+    keys, X = {}, None
+    tx, ty, tn = np.zeros(0), np.zeros(0), np.zeros(0, np.int64)  # running sums per cell or bin (x, y, rows)
     rows = 0
     for ch in pd.read_csv(f, sep="\t", skiprows=n_head, usecols=use, chunksize=CHUNK, dtype={low["geneid"]: str}):
         gid = ch[low["geneid"]].astype(str).to_numpy()
@@ -188,15 +191,18 @@ def read_gem(f, cells, progress=print):
         else:
             X.resize(part.shape)
             X = X + part
-        sx.append(np.bincount(kid, x.astype(float))); sy.append(np.bincount(kid, y.astype(float)))
-        nrow.append(np.bincount(kid))
+        # added up as read (a list of every chunk's sums held chunks x bins numbers: gigabytes for a large GEM),
+        # in the same order as before, so the positions are the same to the last digit
+        grow = lambda a, b: np.pad(a, (0, len(b) - len(a))) + b if len(b) >= len(a) else a + np.pad(b, (0, len(a) - len(b)))
+        tx, ty = grow(tx, np.bincount(kid, x.astype(float))), grow(ty, np.bincount(kid, y.astype(float)))
+        tn = grow(tn, np.bincount(kid))
         rows += len(ch)
         progress(f"  {rows:,} rows read")
     n, G = len(keys), len(gene_ids)
     X = sp.csr_matrix((n, G), dtype=np.float32) if X is None else X
     X.resize((n, G))
     pad = lambda a: np.pad(a, (0, n - len(a)))
-    tx, ty, tn = (sum(pad(a) for a in z) for z in (sx, sy, nrow))
+    tx, ty, tn = pad(tx), pad(ty), pad(tn)
     order = np.empty(n, dtype=object)
     for u, i in keys.items():
         order[i] = u

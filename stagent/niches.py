@@ -34,7 +34,7 @@ def programs(s, n_programs=20, progress=None):
         z = np.load(f)
         return z["W"], z["H"]
     from sklearn.decomposition import NMF
-    X = model.lognorm(s.counts).astype(np.float32).tocsr()
+    X = model.lognorm(s.counts).astype(np.float32, copy=False).tocsr()  # float32 already: no second copy
     rng = np.random.default_rng(0)
     fit = np.sort(rng.choice(X.shape[0], min(NMF_FIT_CELLS, X.shape[0]), replace=False))
     say(0.1, f"NMF: fitting {n_programs} programs on {len(fit):,} cells")

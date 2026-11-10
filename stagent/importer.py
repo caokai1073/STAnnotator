@@ -32,7 +32,7 @@ import hashlib, json, os, re, shutil, time
 from pathlib import Path
 import h5py, numpy as np, pandas as pd, scipy.sparse as sp
 from scipy.spatial import cKDTree
-from . import config, stereoseq, visium
+from . import config, csrutil, stereoseq, visium
 from .osutil import dump_json
 
 COORD_COLUMNS = [("x_centroid", "y_centroid"), ("x", "y"), ("center_x", "center_y"), ("x_location", "y_location")]
@@ -657,7 +657,7 @@ def _xenium_matrix(src):
     keep = np.where(ftype == "Gene Expression")[0]
     if not len(keep):
         raise ValueError("the matrix has no 'Gene Expression' features")
-    return bc, [str(g) for g in names[keep]], X[:, keep].astype(np.float32).tocsr()
+    return bc, [str(g) for g in names[keep]], csrutil.columns_f32(X, keep)
 
 
 def inspect_xenium(src):
@@ -961,21 +961,50 @@ def _flat_counts(kind, path, progress=print):
     n_ctrl = len(head) - len(ids_cols) - len(genes)
     if not genes:
         raise ValueError(f"{Path(path).name}: no gene columns")
-    ids, parts, n = [], [], 0
-    for ch in read_csv(path, usecols=ids_cols + genes, chunksize=20000, dtype={g: np.float32 for g in genes}):
-        if kind == "cosmx":
-            cid, ok = _cosmx_id(ch)
-            ch, cid = ch[ok.to_numpy()], cid[ok.to_numpy()]
-        else:
-            cid = ch[ids_cols[0]].astype(str)
-        ids.append(cid.to_numpy(str))
-        parts.append(sp.csr_matrix(ch[genes].to_numpy(np.float32)))
-        n += len(ch)
-        progress(f"  read {n:,} cells")
-    X = sp.vstack(parts).tocsr()
+    # rows per chunk: about 60 million values (a 6K panel: ~10,000 rows; parsing a chunk takes several times its size)
+    rows = int(min(20000, max(500, 6e7 // max(len(head), 1))))
+    ids, n = [], 0
+    blocks = csrutil.RowBlocks(len(genes), config.HOME / "importing")  # on disk until the matrix is complete
+    try:
+        for ch in read_csv(path, usecols=ids_cols + genes, chunksize=rows, dtype={g: np.float32 for g in genes}):
+            if kind == "cosmx":
+                cid, ok = _cosmx_id(ch)
+                ok = ok.to_numpy()
+                cid, A = cid[ok], ch[genes].to_numpy(np.float32)[ok]
+            else:
+                cid, A = ch[ids_cols[0]].astype(str), ch[genes].to_numpy(np.float32)
+            del ch
+            blocks.add(sp.csr_matrix(A))
+            del A
+            ids.append(cid.to_numpy(str))
+            n += len(cid)
+            progress(f"  read {n:,} cells")
+        X = blocks.matrix()
+    finally:
+        blocks.close()
     if n_ctrl:
         progress(f"  {n_ctrl} control probes left out")
-    return np.concatenate(ids), [str(g) for g in genes], X
+    return np.concatenate(ids) if ids else np.zeros(0, str), [str(g) for g in genes], X
+
+
+def flat_cells_counts(kind, files, progress=print):
+    """(cell ids, x / y in um, genes, cells x genes CSR) of a CosMx or MERSCOPE slice, in the order of its cell
+    metadata file, the cells without counts left out."""
+    ids, genes, X = _flat_counts(kind, files["counts"], progress)
+    cid, xy = _flat_cells(kind, files["cells"])
+    pos = pd.Series(np.arange(len(ids)), index=ids)
+    if pos.index.has_duplicates:
+        raise ValueError("cell ids repeat in the counts file")
+    have = pd.Index(cid).isin(pos.index)
+    if not have.all():
+        progress(f"  {int((~have).sum()):,} cells of the metadata have no counts and are left out")
+    cid, xy = cid[have], xy[have]
+    if not len(cid):
+        raise ValueError("no cell of the metadata file is in the counts file: are they of the same slide?")
+    rows = pos[cid].to_numpy()
+    if not (len(rows) == X.shape[0] and (rows == np.arange(len(rows))).all()):  # the files list the cells in one
+        X = X[rows]                                                              # order (usual): no copy of the matrix
+    return cid, xy, genes, X
 
 
 def _flat_cells(kind, path):
@@ -1026,18 +1055,7 @@ def import_flat(kind, name, src, he=None, registration=None, description="", ove
     name = _check_name(name, overwrite)
     s = _flat_source(kind, src)
     progress(f"reading {s['key']} ({FLAT_NAMES[kind]})")
-    ids, genes, X = _flat_counts(kind, s["files"]["counts"], progress)
-    cid, xy = _flat_cells(kind, s["files"]["cells"])
-    pos = pd.Series(np.arange(len(ids)), index=ids)
-    if pos.index.has_duplicates:
-        raise ValueError("cell ids repeat in the counts file")
-    have = pd.Index(cid).isin(pos.index)
-    if not have.all():
-        progress(f"  {int((~have).sum()):,} cells of the metadata have no counts and are left out")
-    cid, xy = cid[have], xy[have]
-    if not len(cid):
-        raise ValueError("no cell of the metadata file is in the counts file: are they of the same slide?")
-    X = X[pos[cid].to_numpy()]
+    cid, xy, genes, X = flat_cells_counts(kind, s["files"], progress)
     progress(f"{len(cid):,} cells, {len(genes)} genes")
     R = load_registration(registration, registration_section, progress=progress) if registration else None
     if he and R is None:

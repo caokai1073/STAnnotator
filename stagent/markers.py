@@ -451,6 +451,21 @@ def _marker_z(det_frac, gene_idx):
     return np.clip((f - f.mean(0)) / (f.std(0) + 0.02), -3, 3)
 
 
+def _detected(counts):
+    """Cells x genes, 1.0 where the gene is detected (count > 0), float32. A counts matrix in canonical form without
+    stored zeros (as samples are read) shares its index arrays (no copy of them: a CosMx 6K or Visium HD matrix is
+    gigabytes); else the same matrix computed from the comparison."""
+    if counts.has_canonical_format and (counts.data > 0).all():
+        return sp.csr_matrix((np.ones(counts.nnz, np.float32), counts.indices, counts.indptr), shape=counts.shape)
+    return (counts > 0).astype(np.float32).tocsr()
+
+
+def _all_rows(idx, n):
+    """idx is every row in order (the root level): the matrix itself serves, without a copy of it."""
+    idx = np.asarray(idx)
+    return len(idx) == n and (n == 0 or (idx[0] == 0 and idx[-1] == n - 1 and bool((np.diff(idx) == 1).all())))
+
+
 class _Annotator:
     """Top-down marker annotation over one sample; also re-runs single levels or clusters in place."""
 
@@ -459,7 +474,7 @@ class _Annotator:
         from . import timing
         with timing.step("prepare", counts.shape[0] / 1e6):
             counts = sp.csr_matrix(counts)
-            self.Xn, self.det = lognorm(counts), (counts > 0).astype(np.float32).tocsr()
+            self.Xn, self.det = lognorm(counts), _detected(counts)
         self.knn_mode = knn_mode
         self.gi = {g: i for i, g in enumerate(panel)}
         self.say = progress or (lambda f, m: None)
@@ -484,7 +499,7 @@ class _Annotator:
         k = int(lab.max()) + 1
         onehot = sp.csr_matrix((np.ones(len(idx)), (lab, np.arange(len(idx)))), shape=(k, len(idx)))
         size = np.asarray(onehot.sum(1)).ravel()
-        frac = np.asarray((onehot @ self.det[idx]).todense()) / np.maximum(size, 1)[:, None]
+        frac = np.asarray((onehot @ (self.det if _all_rows(idx, self.n) else self.det[idx])).todense()) / np.maximum(size, 1)[:, None]
         S = self.score(children, frac if context is None or not len(context) else np.vstack([frac, context]))[:k]
         order = np.argsort(-S, 1)
         best = S[np.arange(k), order[:, 0]]
@@ -500,7 +515,7 @@ class _Annotator:
         self.say(self.done / self.total, f"building the neighbor graph of {label} ({len(idx):,} cells)")
         from . import timing
         root = parent is None and len(idx) == self.n
-        g, nbr = _graph(self.Xn[idx], self.knn_mode, self.fp if root else None)
+        g, nbr = _graph(self.Xn if _all_rows(idx, self.n) else self.Xn[idx], self.knn_mode, self.fp if root else None)
         cands = RESOLUTIONS if resolution == AUTO else (float(resolution),)
         best, tried = None, {}
         for r in cands:

@@ -13,10 +13,31 @@ Session directory (work/sessions/<session_id>/):
 """
 import hashlib, json, os, re, threading, time, uuid
 from datetime import datetime
+from pathlib import Path
 import numpy as np, pandas as pd, scipy.sparse as sp
 from scipy.spatial import cKDTree
 from . import config, osutil, vocab, markers, regions as regmod, constraints as cmod, conflicts as confmod, render
 from .osutil import dump_json
+
+import weakref
+_COUNTS, _COUNTS_LOCK = weakref.WeakValueDictionary(), threading.Lock()
+
+
+def shared_counts(sample_dir):
+    """The counts matrix of a sample, one copy in memory for every annotation open on it (the app keeps a few open,
+    and the agent its own: a CosMx 6K or Visium HD matrix is gigabytes). Kept while an annotation holds it; a
+    replaced counts file (re-import) is read again. Never changed in place: the annotations share it."""
+    f = Path(sample_dir) / "counts.npz"
+    st = f.stat()
+    key = (str(f.resolve()), st.st_mtime_ns, st.st_size)
+    with _COUNTS_LOCK:
+        X = _COUNTS.get(key)
+        if X is None:
+            X = sp.load_npz(f).tocsr()
+            if not X.has_canonical_format:  # sorted, no duplicates: no later operation reorders it in place
+                X.sum_duplicates()
+            _COUNTS[key] = X
+        return X
 
 AGENT_GAP_S = 90  # the agent's changes this close together belong to one request (one Undo)
 NOT_ANNOTATED = "Not annotated"  # the one label of a sample's placeholder (method "none", see Session.create)
@@ -158,7 +179,7 @@ class Session:
     @property
     def counts(self):
         if self._counts is None:
-            self._counts = sp.load_npz(self.sample_dir / "counts.npz").tocsr()
+            self._counts = shared_counts(self.sample_dir)
         return self._counts
 
     # ---------- creation / persistence ----------

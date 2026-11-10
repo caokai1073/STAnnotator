@@ -15,6 +15,7 @@ so that image needs no registration; without it the output's tissue_hires_image.
 import json, re
 from pathlib import Path
 import h5py, numpy as np, pandas as pd, scipy.sparse as sp
+from . import csrutil
 
 BIN_UM = 8          # the analyses work on bins of this size (finer bins are pooled into it)
 SPOT_UM = 55.0      # a Visium spot's diameter
@@ -183,7 +184,7 @@ def read(d, s, progress=print):
         gene_of = np.full(n_feat, -1, np.int64)
         gene_of[keep] = np.arange(len(keep))
         if f == 1:
-            X = sp.csr_matrix((g["data"][:].astype(np.float32), g["indices"][:], indptr), shape=(n_bc, n_feat))[:, keep]
+            X = csrutil.columns_f32(sp.csr_matrix((g["data"][:], g["indices"][:], indptr), shape=(n_bc, n_feat)), keep)
             ids = bc
         else:
             # pooled bin of every fine bin, by grid position
@@ -209,7 +210,7 @@ def read(d, s, progress=print):
     ok = tot > 0
     if not ok.all():
         progress(f"  {int((~ok).sum()):,} bins without counts left out")
-    return ids[ok], np.c_[px, py][ok], [str(x) for x in names[keep]], X[ok], want, mpp
+    return ids[ok], np.c_[px, py][ok], [str(x) for x in names[keep]], csrutil.rows(X, ok), want, mpp
 
 
 def _read_mtx(d, pos, f, want, mpp, progress):
@@ -224,11 +225,11 @@ def _read_mtx(d, pos, f, want, mpp, progress):
     at = pos.index.get_indexer(bc)
     if (at < 0).any():
         raise ValueError(f"{int((at < 0).sum()):,} spots of the matrix are not in the tissue positions file")
-    X = X[:, keep].tocsr()
+    X = csrutil.columns_f32(X, keep)
     xy = np.c_[pos.pxl_col_in_fullres.to_numpy(float)[at], pos.pxl_row_in_fullres.to_numpy(float)[at]]
     progress(f"{len(bc):,} spots under the tissue, {len(keep):,} genes")
     ok = np.asarray(X.sum(1)).ravel() > 0
-    return bc[ok], xy[ok], [str(x) for x in ft[1].astype(str).to_numpy()[keep]], X[ok], want, mpp
+    return bc[ok], xy[ok], [str(x) for x in ft[1].astype(str).to_numpy()[keep]], csrutil.rows(X, ok), want, mpp
 
 
 # ---------------- background images: a pyramidal copy the viewer can read at every zoom ----------------
@@ -492,4 +493,4 @@ def read_cells(d, s, seg, progress=print, seed=0):
             "median_counts": float(np.median(tot[ok])) if ok.any() else 0.0}
     progress(f"{info['n_cells']:,} cells with counts (of {n_cells:,} outlines); {n_split:,} bins split between "
              f"cells; {info['counts_in_cells']:.0%} of the counts fall in a cell")
-    return np.array(ids, dtype=object)[ok], geo[ok, 1:], [str(x) for x in names[keep]], X[ok], info
+    return np.array(ids, dtype=object)[ok], geo[ok, 1:], [str(x) for x in names[keep]], csrutil.rows(X, ok), info

@@ -14,7 +14,7 @@ from . import config, embedding, niches, render
 
 # app modules carried into the notebook, in import order (relative imports resolve inside the notebook)
 # visium and stereoseq before importer, which imports them
-CARRIED = ["osutil", "harmony", "timing", "vocab", "markers", "model", "constraints", "regions", "existing", "visium", "stereoseq", "importer", "scref",
+CARRIED = ["osutil", "csrutil", "harmony", "timing", "vocab", "markers", "model", "constraints", "regions", "existing", "visium", "stereoseq", "importer", "scref",
            "trajectory"]
 CONFIG_STUB = '''"""Stand-in for the app's settings: only what the carried modules use."""
 from pathlib import Path
@@ -545,12 +545,7 @@ cell_ids = np.concatenate([q["cell_id"] for q in parts])'''
     elif src.get("kind") in ("cosmx", "merfish"):
         read = f'''
 KIND, FILES = {_py(src["kind"])}, {_py(src.get("files"))}
-ids, genes, X = sa.importer._flat_counts(KIND, FILES["counts"])
-cell_ids, xy = sa.importer._flat_cells(KIND, FILES["cells"])
-pos = pd.Series(np.arange(len(ids)), index=ids)
-have = pd.Index(cell_ids).isin(pos.index)   # cells of the metadata with counts
-cell_ids, xy = cell_ids[have], xy[have]
-counts = X[pos[cell_ids].to_numpy()].tocsr()'''
+cell_ids, xy, genes, counts = sa.importer.flat_cells_counts(KIND, FILES)   # metadata order, cells with counts'''
     elif src.get("kind") in ("visium_hd", "visium"):
         read = f'''
 FOLDER = {_py(src.get("folder"))}            # the square_XXXum folder (Visium HD) or outs/ (Visium)
