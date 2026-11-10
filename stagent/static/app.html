@@ -1547,6 +1547,7 @@ async function selectSample(id) {
   $("reset").disabled = !st.sample.allSessions.length && !projectOf(id);  // in a project: also to reset the other slices
   imageOnlyUI();  // now, not only when an annotation opens: a sample whose annotations are not opened yet opens none
   store("sample", id);
+  loadStepsSoon();  // its steps also while none of its annotations is open
   $("path").textContent = st.sample.bundle_dir;
   $("path").title = `bundle: ${st.sample.bundle_dir}\nsource: ${st.sample.source_dir}\nH&E: ${st.sample.he_path}`;
   closeSession();
@@ -5329,9 +5330,12 @@ const STEP_MARK = { done: "✓", todo: "", optional: "", skipped: "–", blocked
 let stepsTimer = 0;
 function loadStepsSoon() { clearTimeout(stepsTimer); stepsTimer = setTimeout(() => loadSteps().catch(() => {}), 300); }
 async function loadSteps() {
-  if (!st.sid) { $("steps").hidden = true; stepsRoom(); return; }
-  const sid = st.sid, r = await api(`/api/s/${sid}/steps`);
-  if (sid !== st.sid) return;
+  // the open annotation's steps; with none open (e.g. after a reconnect the sample waits for one to be chosen), the
+  // sample's own
+  const smp = st.sample && st.sample.sample_id;
+  if (!st.sid && !smp) { $("steps").hidden = true; stepsRoom(); return; }
+  const sid = st.sid, r = await api(sid ? `/api/s/${sid}/steps` : `/api/sample/${encodeURIComponent(smp)}/steps`);
+  if (sid !== st.sid || smp !== (st.sample && st.sample.sample_id)) return;
   $("steps").hidden = false; stepsRoom();
   const box = $("stepsList"); box.textContent = "";
   r.steps.forEach((x, i) => {
@@ -5343,10 +5347,11 @@ async function loadSteps() {
     const mk = Object.assign(document.createElement("span"), { className: "mk", textContent: STEP_MARK[x.state] || String(i + 1) });  // done ✓, else its number
     const nm = Object.assign(document.createElement("span"), { className: "nm", textContent: name });
     const right = document.createElement("span");
-    if (act && ["todo", "optional", "skipped"].includes(x.state)) {
-      const b = Object.assign(document.createElement("button"), { textContent: act[0], title: help });
+    const a = x.open ? ["Open", () => { showTab("data"); $("session").focus(); toast("Choose an annotation in the Annotation box", 4000); }] : act;
+    if (a && ["todo", "optional", "skipped"].includes(x.state)) {
+      const b = Object.assign(document.createElement("button"), { textContent: a[0], title: x.open ? "Open one of this sample's annotations (Data → Annotation)" : help });
       if (x.key === r.next) b.classList.add("primary");
-      b.onclick = (e) => { e.stopPropagation(); act[1](); };
+      b.onclick = (e) => { e.stopPropagation(); a[1](); };
       right.append(b);
     }
     const dt = Object.assign(document.createElement("span"), { className: "dt", textContent: x.detail });
@@ -5362,7 +5367,7 @@ function stepsRoom() {  // how much of the map's top right the steps take, for t
 }
 if (window.ResizeObserver) new ResizeObserver(stepsRoom).observe($("steps"));
 $("stepsHead").onclick = () => $("steps").classList.toggle("folded");  // unfolded whenever the app starts
-setInterval(() => { if (st.sid && !document.hidden) loadSteps().catch(() => {}); }, 20000);  // reviews and checks end in the background
+setInterval(() => { if ((st.sid || st.sample) && !document.hidden) loadSteps().catch(() => {}); }, 20000);  // reviews and checks end in the background
 
 // ---------------- the agent's changes wait for the user's Accept (proposals.py) ----------------
 const PC = { cur: null, applying: null };
