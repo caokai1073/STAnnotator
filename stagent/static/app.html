@@ -437,7 +437,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 #steps .sh { display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; user-select: none; }
 #steps .sh #stepsSum { color: var(--muted); }
 #steps.folded #stepsList { display: none; }
-#steps.folded #stepsFold { transform: rotate(-90deg); }
+#steps .sh #stepsFold { flex: none; }
 #stepsList { list-style: none; margin: 0; padding: 0 6px 6px; }
 #stepsList li { display: grid; grid-template-columns: 18px 1fr auto; gap: 2px 6px; align-items: center; padding: 3px 4px; border-radius: 6px; }
 #stepsList li .mk { width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; font-size: 10px; font-weight: 700; }
@@ -710,7 +710,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     </div>
     <div id="cellcard" class="float"></div>
     <div id="steps" class="float" hidden>
-      <div class="sh" id="stepsHead" title="Click to fold or unfold the steps"><b>Steps</b><span id="stepsSum"></span><span class="spacer"></span><span id="stepsFold">▾</span></div>
+      <div class="sh" id="stepsHead" title="Click to fold or unfold the steps"><b>Steps</b><span id="stepsSum"></span><span class="spacer"></span><button id="stepsFold" style="padding:1px 7px;font-size:11px">−</button></div>
       <ol id="stepsList"></ol>
     </div>
     <div id="plpanel" class="float" hidden>
@@ -1212,7 +1212,7 @@ function decorate(b, name, only) {  // icon + label, or the icon only (the label
   return b;
 }
 const ICON_ONLY = { sessDel: "x", hdrShow: "chev-left", hdrHide: "chev-right", helpBtn: "help", bugBtn: "bug", slPrev: "chev-left", slNext: "chev-right",
-  lgtoggle: "chev-up", rgtoggle: "chev-up", plclose: "x", emClose: "x", imClose: "x", rcClose: "x", clClose: "x", rpClose: "x",
+  lgtoggle: "chev-up", rgtoggle: "chev-up", stepsFold: "chev-up", plclose: "x", emClose: "x", imClose: "x", rcClose: "x", clClose: "x", rpClose: "x",
   xpClose: "x", glClose: "x", anClose: "x", rvClose: "x", hpClose: "x", anCsv: "download", rpSave: "download", mkExport: "download",
   fbUp: "arrow-up", fbHome: "home", rsClose: "x", hide: "cell", hideHE: "image" };
 const ICON_TEXT = { qfBtn: "play", importBtn: "import", clearAll: "trash", rmSample: "trash", allSamples: "grid", connBtn: "monitor", 
@@ -1223,7 +1223,7 @@ const ICON_TEXT = { qfBtn: "play", importBtn: "import", clearAll: "trash", rmSam
   imNewAlign: "sparkle", alignNow: "sparkle", refPick: "folder", exPick: "folder", refClose: "check", exClose: "check", rcTest: "check",
   rcGo: "server", fbOk: "check", rpAsk: "sparkle", xpCsv: "download", xpNb: "download", xpReg: "download", xpPos: "download", xpGeo: "download",
   hpCopy: "copy", editSave: "check", nameSave: "check", rsGo: "trash", anFig: "download", aRun: "play", aLast: "list", anAsk: "sparkle", sRun: "play", sLast: "list", tRun: "play", tLast: "list", rvGo: "sparkle", rvShow: "list" };
-const ICON_TITLES = { lgtoggle: "Fold or unfold", rgtoggle: "Fold or unfold", anCsv: "Save as CSV…", rpSave: "Save as Markdown…",
+const ICON_TITLES = { lgtoggle: "Fold or unfold", rgtoggle: "Fold or unfold", stepsFold: "Fold or unfold", anCsv: "Save as CSV…", rpSave: "Save as Markdown…",
   mkExport: "Save the list as CSV…", fbHome: "Home folder", fbUp: "Parent folder", plclose: "Close", emClose: "Close" };
 Object.entries(ICON_TITLES).forEach(([id, t]) => $(id) && ($(id).title = t));
 Object.entries(ICON_ONLY).forEach(([id, n]) => $(id) && decorate($(id), n, true));
@@ -5419,7 +5419,9 @@ function stepsRoom() {  // how much of the map's top right the steps take, for t
   $("viewerwrap").style.setProperty("--stepsH", on ? `${el.offsetHeight + 8}px` : "0px");
 }
 if (window.ResizeObserver) new ResizeObserver(stepsRoom).observe($("steps"));
-$("stepsHead").onclick = () => $("steps").classList.toggle("folded");  // unfolded whenever the app starts
+$("stepsHead").onclick = () => {  // unfolded whenever the app starts; the arrow as on Regions (up: open, down: folded)
+  $("stepsFold").classList.toggle("flip", $("steps").classList.toggle("folded"));
+};
 setInterval(() => { if ((st.sid || st.sample) && !document.hidden) loadSteps().catch(() => {}); }, 20000);  // reviews and checks end in the background
 
 // ---------------- the agent's changes wait for the user's Accept (proposals.py) ----------------
