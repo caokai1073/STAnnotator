@@ -615,7 +615,8 @@ the notebook need an annotation.
   are not part of the affine.
 - **Regions** (GeoJSON): the outlines of the version in the image's full-resolution pixels, named by region with their
   colors, as QuPath writes annotations. Cells moved into a region without an outline are not in it.
-- **Analysis notebook** (Jupyter), described below.
+- **Analysis notebook** (Jupyter), described below. **Annotation** chooses which of the sample's annotations it
+  replays (the open one at the version shown, another at its latest version).
 
 **The analysis notebook** runs without this app.
 
@@ -632,8 +633,10 @@ the notebook need an annotation.
   same: identical on any computer for annotations made with exact neighbors; with approximate neighbors, identical
   with the pynndescent and numba versions named in the notebook; annotations made before v0.2.22 (no choice of
   neighbors) only on the same kind of machine. UMAP coordinates differ slightly (all cores).
-- **Notebook of all slices** (beside **Save notebook…**, for a project annotated with **All slices together**): one
-  notebook of every slice. It reads and places each slice as above, runs the joint marker step and expression model
+- **Notebook of all slices** (under **Save notebook…**, when a project was annotated with **All slices together**):
+  choose the **Project** and when its slices were **Annotated together**; each slice's annotation from that run goes
+  in (a slice annotated again on its own later does not change it), listed under the choice. One notebook of every
+  slice. It reads and places each slice as above, runs the joint marker step and expression model
   on all cells together, then each slice's own regions, priors, corrections and re-clusterings, and checks the labels
   slice by slice; then the joint PCA / UMAP (with Harmony when it was used: `harmonypy`, or the app's NumPy Harmony
   for an analysis made on Windows) and the joint niches, checked against the app. A slice's own notebook of a joint

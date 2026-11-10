@@ -2876,6 +2876,29 @@ def api_regions_geojson(req):
                     headers={"Content-Disposition": attachment(f"{s.sample_id}_v{v}_regions.geojson")})
 
 
+def api_projects_joint_runs(req):
+    """The projects and the times their slices were annotated together (each joint run with the annotation of each
+    slice it made), for choosing what the notebook of all slices holds: [{project_id, name, samples, runs: [{run,
+    label, sessions: {sample: session}, complete}]}], the latest run first."""
+    out = []
+    for p in projects.list_projects():
+        runs = {}
+        for smp in p["samples"]:
+            for d in _sample_sessions(smp):
+                try:
+                    j = (json.load(open(d / "session.json")).get("scheme") or {}).get("joint") or {}
+                except (OSError, ValueError):
+                    continue
+                if j.get("project") == p["project_id"] and j.get("run"):
+                    runs.setdefault(j["run"], {})[smp] = d.name
+        rows = []
+        for run, sess in sorted(runs.items(), reverse=True):
+            label = re.sub(r"^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})\d*$", r"\1-\2-\3 \4:\5", run)
+            rows.append({"run": run, "label": label, "sessions": sess, "complete": set(sess) >= set(p["samples"])})
+        out.append({"project_id": p["project_id"], "name": p.get("name") or p["project_id"], "samples": p["samples"], "runs": rows})
+    return _json({"projects": out})
+
+
 async def api_project_notebook(req):
     """Download the notebook of a whole project annotated jointly (sessions: the annotation of each slice, as JSON)."""
     from . import notebook
@@ -3119,10 +3142,11 @@ async def api_export_to(req: Request):
             Path(b["path"]).expanduser().write_text(notebook.positions_csv(s.sample_id), encoding="utf-8")
         elif b.get("kind") == "regions":
             Path(b["path"]).expanduser().write_text(_regions_geojson(s, v)[0], encoding="utf-8")
-        elif b.get("kind") == "project_notebook":  # all slices of the sample's project, annotated together
-            pid = projects.project_of(s.sample_id)
+        elif b.get("kind") == "project_notebook":  # all slices of a project (default the sample's), annotated together
+            pid = str(b.get("project") or "") or projects.project_of(s.sample_id)
             if not pid:
                 raise ValueError("this sample is not part of a project")
+            projects.load(pid)  # (a project that exists)
             shutil.copy(await asyncio.to_thread(notebook.build_project, pid, b.get("sessions")), Path(b["path"]).expanduser())
         else:
             src = notebook.build(s, v) if b.get("kind") == "notebook" else Path(s.export(v)) / "cells.csv"
@@ -3446,6 +3470,7 @@ def build_app(port):
         Route("/api/s/{sid}/export.csv", api_export_csv),
         Route("/api/s/{sid}/export.ipynb", api_export_notebook),
         Route("/api/project/{pid}/export.ipynb", api_project_notebook),
+        Route("/api/projects/joint_runs", api_projects_joint_runs),
         Route("/api/sample/{sample}/registration.csv", api_registration_csv),
         Route("/api/sample/{sample}/cell_positions.csv", api_positions_csv),
         Route("/api/sample/{sample}/export_to", api_sample_export_to, methods=["POST"]),

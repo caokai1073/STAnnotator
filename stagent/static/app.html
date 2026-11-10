@@ -427,6 +427,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 #alList { max-height: 50vh; overflow-y: auto; overflow-x: hidden; }
 .inrow button.rmsample { color: #c0392b; } .inrow button.rmsample:hover:not(:disabled) { border-color: #c0392b; }
 .imreplace { display: flex; gap: 6px; align-items: flex-start; } .imreplace input { margin-top: 2px; }
+.xpchoose { flex-wrap: wrap; gap: 6px 10px; } .xpchoose label { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
+.xpchoose select { max-width: 240px; }
 .alrow .alname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .clcard { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 6px 0; display: flex; flex-direction: column; gap: 6px; }
 .clcard pre { font: 11.5px ui-monospace, Menlo, monospace; white-space: pre-wrap; margin: 0; color: var(--muted); }
@@ -1095,10 +1097,15 @@ T and NK cells: CD3E|NKG7+ EPCAM-
         with its regions, priors and corrections, PCA / UMAP / Leiden, niches) and its results (tables, figures).
         It runs without this app, with the data files and common Python packages, and checks that the labels,
         clusters and niches come out the same.</div>
-      <div class="hint" id="xpNbAllInfo" hidden>A project annotated with all slices together: one notebook can hold every slice, the
-        joint annotation, the PCA / UMAP and the niches of all slices, checked slice by slice.</div>
-      <div class="row"><span class="spacer"></span><button id="xpNbAll" hidden title="One notebook for every slice of the project: the joint annotation, embedding and niches">Notebook of all slices…</button>
-        <button id="xpNb" class="primary">Save notebook…</button></div></div>
+      <div class="row xpchoose"><label>Annotation <select id="xpNbSess" title="The annotation of this sample the notebook replays (its latest version; the open one: the version shown)"></select></label>
+        <span class="spacer"></span><button id="xpNb" class="primary">Save notebook…</button></div>
+      <div id="xpNbAllBox" hidden>
+        <div class="hint">A project annotated with all slices together: one notebook can hold every slice, the joint annotation,
+          the PCA / UMAP and the niches of all slices, checked slice by slice.</div>
+        <div class="row xpchoose"><label>Project <select id="xpProj"></select></label>
+          <label>Annotated together <select id="xpRun" title="When the slices were annotated together: each slice's annotation from that run"></select></label>
+          <span class="spacer"></span><button id="xpNbAll" title="One notebook for every slice of the project: the joint annotation, embedding and niches">Notebook of all slices…</button></div>
+        <div class="hint" id="xpRunInfo"></div></div></div>
     <div class="clcard" id="xpRegCard"><b>Registration (CSV)</b>
       <div class="hint" id="xpRegInfo"></div>
       <div class="hint" id="xpPosInfo" style="margin-top:4px"></div>
@@ -7381,8 +7388,7 @@ $("export").onclick = () => {
   $("xpInfo").textContent = st.sid && st.version != null ? `${st.sample.sample_id} · version ${st.version}` : st.sample.sample_id; $("xpStatus").textContent = "";
   $("xpCsv").disabled = $("xpNb").disabled = !annotated;  // these need the cell types
   $("xpCsv").title = $("xpNb").title = annotated ? "" : "Annotate the sample first";
-  const joint = annotated && projectOf(st.sample.sample_id) && st.vocab && st.vocab.joint;  // annotated with all slices together
-  $("xpNbAll").hidden = $("xpNbAllInfo").hidden = !joint;
+  xpFillNotebooks(annotated);
   const placed = cellsPlaced();
   const by = st.sample.registration_by || "file", local = /local correction|piece moves|nuclei correction/.test(by);
   $("xpReg").disabled = $("xpPos").disabled = !placed;
@@ -7399,8 +7405,51 @@ $("export").onclick = () => {
   $("xpDlg").showModal();
 };
 $("xpClose").onclick = () => $("xpDlg").close();
+// the notebook of this sample: of the annotation chosen (the open one at its version shown, another at its latest);
+// the notebook of all slices: of a project and a time its slices were annotated together (each slice's annotation then)
+const XP = { projects: [] };
+function xpFillNotebooks(annotated) {
+  const sel = $("xpNbSess"); sel.textContent = "";
+  const sess = (st.sample.sessions || []).filter((x) => USER_METHODS.includes(x.method));
+  sess.forEach((x) => sel.append(Object.assign(document.createElement("option"), { value: x.session_id,
+    textContent: (x.session_id === st.sid ? `open${st.version !== x.n_versions ? ` at v${st.version}` : ""} · ` : "") + sessionLabel(x) })));
+  if (sess.some((x) => x.session_id === st.sid)) sel.value = st.sid;
+  sel.disabled = !sess.length; $("xpNb").disabled = !sess.length;
+  $("xpNb").title = sess.length ? "" : "Annotate the sample first";
+  $("xpNbAllBox").hidden = true;
+  api("/api/projects/joint_runs").then((r) => {
+    XP.projects = r.projects.filter((p) => p.runs.some((x) => x.complete));
+    $("xpNbAllBox").hidden = !XP.projects.length;
+    if (!XP.projects.length) return;
+    const ps = $("xpProj"); ps.textContent = "";
+    XP.projects.forEach((p) => ps.append(Object.assign(document.createElement("option"), { value: p.project_id, textContent: `${p.name} (${p.samples.length} slices)` })));
+    const mine = projectOf(st.sample.sample_id);
+    if (mine && XP.projects.some((p) => p.project_id === mine.project_id)) ps.value = mine.project_id;
+    xpFillRuns();
+  }).catch(() => {});
+}
+function xpFillRuns() {
+  const p = XP.projects.find((x) => x.project_id === $("xpProj").value); if (!p) return;
+  const rs = $("xpRun"); rs.textContent = "";
+  p.runs.forEach((x) => rs.append(Object.assign(document.createElement("option"), { value: x.run, disabled: !x.complete,
+    textContent: x.label + (x.complete ? "" : ` (only ${Object.keys(x.sessions).length} of ${p.samples.length} slices)`) })));
+  const openRun = st.vocab && st.vocab.joint && st.vocab.joint.project === p.project_id ? st.vocab.joint.run : null;
+  const first = p.runs.find((x) => x.complete);
+  rs.value = openRun && p.runs.some((x) => x.run === openRun && x.complete) ? openRun : first ? first.run : "";
+  xpRunInfo();
+}
+function xpRunInfo() {
+  const p = XP.projects.find((x) => x.project_id === $("xpProj").value), run = p && p.runs.find((x) => x.run === $("xpRun").value);
+  $("xpNbAll").disabled = !run || !run.complete;
+  $("xpRunInfo").textContent = !run ? "" : "Each slice's annotation from that run: " + p.samples.map((smp) => {
+    const s = st.samples.find((x) => x.sample_id === smp), rec = s && (s.allSessions || s.sessions || []).find((x) => x.session_id === run.sessions[smp]);
+    return `${s ? sampleName(s) : smp}${rec ? ` (v${rec.n_versions})` : ""}`;
+  }).join(", ") + ". Annotations of a slice made later on their own are not in it.";
+}
+$("xpProj").onchange = xpFillRuns; $("xpRun").onchange = xpRunInfo;
 async function exportAs(kind) {  // the cell table or the notebook of the current version
   if (kind === "project_notebook") return exportProjectNotebook();
+  if (kind === "notebook" && $("xpNbSess").value && $("xpNbSess").value !== st.sid) return exportNotebookOf($("xpNbSess").value);
   const ext = kind === "notebook" ? "ipynb" : "csv";
   const sampleFile = { registration: "registration.csv", positions: "cell_positions.csv" }[kind];  // of the sample, not the version
   const name = sampleFile ? `${st.sample.sample_id}_${sampleFile}` : kind === "regions" ? `${st.sample.sample_id}_v${st.version}_regions.geojson`
@@ -7410,7 +7459,7 @@ async function exportAs(kind) {  // the cell table or the notebook of the curren
   if (st.remote) {  // on a server: downloaded through the SSH tunnel into a file on this computer
     $("xpStatus").textContent = kind === "notebook" ? "Writing the notebook (figures included) and downloading it…" : "Downloading…";
     const path = await saveDownload(name, url);
-    $("xpStatus").textContent = path ? `Saved ${path}` : ""; return;
+    $("xpStatus").textContent = path ? `Saved ${path}` : st.dlError ? `Not saved: ${st.dlError}` : ""; return;
   }
   if (native()) {  // the desktop app saves through a Save dialog
     const path = await native().save_path(name); if (!path) return;
@@ -7428,15 +7477,30 @@ async function exportAs(kind) {  // the cell table or the notebook of the curren
 $("xpCsv").onclick = () => exportAs("csv");
 $("xpNb").onclick = () => exportAs("notebook");
 $("xpNbAll").onclick = () => exportAs("project_notebook");
-async function exportProjectNotebook() {  // every slice of the project in one notebook (a joint annotation)
-  const p = projectOf(st.sample.sample_id); if (!p) return;
-  const sessions = projectSessions(), name = `${p.name || p.project_id}_all_slices_analysis.ipynb`.replace(/[^A-Za-z0-9_.-]+/g, "_");
-  const url = `/api/project/${encodeURIComponent(p.project_id)}/export.ipynb?sessions=${encodeURIComponent(JSON.stringify(sessions))}`;
-  $("xpStatus").textContent = "Writing the notebook of all slices…";
-  if (st.remote) { const path = await saveDownload(name, url); $("xpStatus").textContent = path ? `Saved ${path}` : ""; return; }
+async function exportNotebookOf(sid) {  // the notebook of another annotation of this sample (its latest version)
+  const rec = (st.sample.sessions || []).find((x) => x.session_id === sid); if (!rec) return;
+  const v = rec.n_versions, name = `${st.sample.sample_id}_v${v}_analysis.ipynb`, url = `/api/s/${sid}/export.ipynb?version=${v}`;
+  $("xpStatus").textContent = "Writing the notebook (figures included)…";
+  if (st.remote) { const path = await saveDownload(name, url); $("xpStatus").textContent = path ? `Saved ${path}` : st.dlError ? `Not saved: ${st.dlError}` : ""; return; }
   if (native()) {
     const path = await native().save_path(name); if (!path) { $("xpStatus").textContent = ""; return; }
-    try { await post(`/api/s/${st.sid}/export_to`, { path, kind: "project_notebook", sessions }); $("xpStatus").textContent = `Saved ${path}`; }
+    try { await post(`/api/s/${sid}/export_to`, { path, version: v, kind: "notebook" }); $("xpStatus").textContent = `Saved ${path}`; }
+    catch (e) { $("xpStatus").textContent = e.message; }
+    return;
+  }
+  const a = document.createElement("a"); a.href = url; a.download = name; document.body.append(a); a.click(); a.remove();
+  $("xpStatus").textContent = `Downloading ${name}…`;
+}
+async function exportProjectNotebook() {  // every slice of a project in one notebook (a joint annotation): as chosen
+  const p = XP.projects.find((x) => x.project_id === $("xpProj").value), run = p && p.runs.find((x) => x.run === $("xpRun").value);
+  if (!p || !run || !run.complete) return;
+  const sessions = run.sessions, name = `${p.name || p.project_id}_all_slices_analysis.ipynb`.replace(/[^A-Za-z0-9_.-]+/g, "_");
+  const url = `/api/project/${encodeURIComponent(p.project_id)}/export.ipynb?sessions=${encodeURIComponent(JSON.stringify(sessions))}`;
+  $("xpStatus").textContent = "Writing the notebook of all slices…";
+  if (st.remote) { const path = await saveDownload(name, url); $("xpStatus").textContent = path ? `Saved ${path}` : st.dlError ? `Not saved: ${st.dlError}` : ""; return; }
+  if (native()) {
+    const path = await native().save_path(name); if (!path) { $("xpStatus").textContent = ""; return; }
+    try { await post(`/api/s/${st.sid}/export_to`, { path, kind: "project_notebook", sessions, project: p.project_id }); $("xpStatus").textContent = `Saved ${path}`; }
     catch (e) { $("xpStatus").textContent = e.message; }
     return;
   }
@@ -7491,9 +7555,10 @@ async function pickFiles(kind, multi) {
   return st.remote ? browseServer(kind, multi) : native().pick(kind, !!multi);
 }
 async function saveDownload(name, url) {  // an export of the server's viewer into a file on this computer
+  st.dlError = null;
   const path = await native().save_path(name); if (!path) return null;
   const r = await native().download(url, path);
-  if (r.error) { toast(r.error, 7000); return null; }
+  if (r.error) { st.dlError = r.error; toast(r.error, 7000); return null; }
   toast(`Saved ${path}`, 4000); return path;
 }
 const FB = { resolve: null, kind: "", multi: false, sel: new Set() };
