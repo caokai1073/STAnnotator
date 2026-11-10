@@ -7293,10 +7293,13 @@ document.addEventListener("keydown", (e) => {
     if (t) setTool(t);
   }
   if (!st.drawing && !st.editing) {
-    if (e.key === "Escape") {  // a stroke being dragged; else the shape not saved (asked) and the tool; else the selection
+    if (e.key === "Escape") {  // a stroke being dragged; else the shape not saved (asked) and the tool; else the selections
       if (st.toolDrag) { const k = st.toolDrag; st.toolDrag = null; st.shapeView = null; if (k.started && st.shape) undoShape(); drawRegions(); }
       else if (st.shape || st.tool !== "move") { if (st.shape) cancelShape(); if (!st.shape && st.tool !== "move") setTool("move"); }
-      else if (st.rsel.size) $("selClear").click();
+      else {  // the clicked cell (its card and mark) and the selected regions
+        if ($("cellcard").classList.contains("show")) { $("cellcard").classList.remove("show"); viewer.removeOverlay("cellmark"); }
+        if (st.rsel.size) $("selClear").click();
+      }
     }
     if (st.shape && e.key === "Enter") { e.preventDefault(); saveShape(); }
     if (st.shape && e.key === "Backspace") { e.preventDefault(); undoShape(); }

@@ -3235,6 +3235,11 @@ def build_app(port):
     async def lifespan(app):
         from . import cachemgr
         cachemgr.start()  # the caches stay under their limit while the app runs
+        if not os.environ.get("STAGENT_NO_PREWARM"):  # pynndescent compiled ahead, a few seconds after the start
+            def prewarm():
+                time.sleep(5)
+                markers.prewarm_approx()
+            threading.Thread(target=prewarm, daemon=True, name="prewarm-approx").start()
         async with mcp_server.mcp.session_manager.run():
             yield
 

@@ -480,7 +480,10 @@ Histograms show where each threshold cuts and the dialog counts what goes; empty
 2. With marker genes, choose **Neighbors**, the neighbor search of the marker step:
    - *Approximate* (pynndescent, the default) is fast on any computer. Its result depends on the number of threads,
      so it always runs on 8 (also with fewer cores): a rerun gives the same labels, on this computer or another with
-     the same app version (Intel / AMD and Apple silicon may still differ slightly);
+     the same app version (Intel / AMD and Apple silicon may still differ slightly). Its code is compiled once per
+     app start; the app does it in the background a few seconds after it starts (one core, about 10 s; longer the
+     first time on a Mac), so the first annotation does not wait for it. On a computer with a GPU, *Exact* can be
+     as fast or faster for samples up to a few hundred thousand cells: the time estimate shows both;
    - *Exact*: the true neighbors, slow without a GPU for large samples. A GPU and a CPU can still give slightly
      different neighbors for some cells.
    - Every annotation keeps checksums of its steps (PCA, neighbors, first clusters, labels) in `base/fingerprints.json`
@@ -528,7 +531,8 @@ The Regions panel has a row of tools:
 | Brush | B | Paint the area |
 
 A second click on the chosen tool, or **Esc**, lets go of it (back to Move; Esc first drops a shape not saved yet, after
-asking). The chosen tool has a gray background.
+asking). With Move, Esc closes the clicked cell's card and clears the selected regions. The chosen tool has a gray
+background.
 
 - A Brush stroke that starts on a region (inside it, or with the brush over its edge) changes **that
   region**, as in QuPath, imported outlines included; elsewhere it starts a **new shape**. Rectangle, Ellipse,

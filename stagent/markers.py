@@ -345,6 +345,25 @@ def knn(Z, k, mode="auto"):
     return dist[:, 1:], nbr[:, 1:]
 
 
+def prewarm_approx():
+    """Compile pynndescent's numba code now (a small search in this process: about 10 s here, longer the first time
+    on a Mac), so that the first approximate annotation of this app session does not wait for it; from then on the
+    time estimates leave the compile out. Run in a background thread when the app starts (one core, briefly more)."""
+    import time
+    from . import timing
+    if "approx_compile" in timing._warm:
+        return
+    t = time.perf_counter()
+    try:
+        Z = np.random.default_rng(0).standard_normal((3000, 20)).astype(np.float32)
+        _nndescent(Z, 16)
+    except Exception as e:  # the first real run compiles instead
+        print(f"approximate neighbors: could not compile ahead ({type(e).__name__}: {e})")
+        return
+    timing._warm.add("approx_compile")
+    print(f"approximate neighbors: compiled ahead in {time.perf_counter() - t:.1f} s")
+
+
 def knn_threads():
     """The threads the approximate search runs on: KNN_THREADS (stagent/__init__.py lets numba have that many on any
     computer); fewer only if numba was loaded with fewer allowed (then other computers may differ)."""
