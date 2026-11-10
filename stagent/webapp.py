@@ -2679,6 +2679,50 @@ async def api_claude_align(req: Request):
     return _json({"claude_code": claudelink.open_claude_code(sample, b.get("session"), text, send_if_open=True)})
 
 
+HE_REGIONS = ("Outline these regions on the H&E of sample {sample} (an H&E only, no cells; I chose them in 'Outline with "
+              "Agent'): {regions}. The organ is {organ}. Call segment_he(organ={organ_arg}) once, match its classes to each "
+              "region's description in the organ's 'Compartments to draw', and propose each region with propose_he_region "
+              "(within a box for one section when the slide holds several; check the outline on show_he before you "
+              "propose it). Each comes to me for review. Do not add regions I did not list.{notes} Then tell me in one line "
+              "per region what you outlined and what I should check.")
+
+
+def api_he_organs(req):
+    """The organs of the tissue priors with the compartments each can draw (for 'Outline with Agent'), and the organ
+    given for this sample before."""
+    from . import hetissue
+    organs = hetissue.tissue_priors()["organs"]
+    sample = req.query_params.get("sample") or ""
+    known = hetissue.sample_organ(sample) if sample and "/" not in sample and sample not in (".", "..") else None
+    return _json({"organs": [{"organ": o, "regions": hetissue.compartment_names(o)} for o in organs],
+                  "other": hetissue.compartment_names("other"), "organ": known})
+
+
+async def api_claude_he_regions(req: Request):
+    """Ask the agent to outline the chosen regions on an H&E only: {sample, organ, regions, notes, session}."""
+    from . import hetissue
+    b = await req.json()
+    sample = str(b.get("sample") or "")
+    if not sample or "/" in sample or sample in (".", "..") or not (config.SAMPLES / sample / "meta.json").exists():
+        return _json({"error": "no such sample"}, 404)
+    organ = re.sub(r"\s+", " ", str(b.get("organ") or "")).strip()[:80]
+    regions = [re.sub(r"\s+", " ", str(x)).strip()[:80] for x in (b.get("regions") or []) if str(x).strip()][:30]
+    if not organ or not regions:
+        return _json({"error": "choose the organ and at least one region"}, 400)
+    covered = not hetissue.compartments(organ).get("error")
+    if covered:
+        hetissue._remember_organ(sample, hetissue.compartments(organ)["organ"])  # segment_he finds it without asking
+    notes = re.sub(r"\s+", " ", str(b.get("notes") or "")).strip()[:600]
+    text = HE_REGIONS.format(sample=sample, regions="; ".join(regions), organ=organ,
+                             organ_arg=repr(organ if covered else "other"),
+                             notes=(f" My notes: {notes}" + ("" if notes[-1] in ".!?" else ".") if notes else "") +
+                             ("" if covered else f" ({organ} has no priors of its own: use the organ-independent ones and "
+                                                 "the regions' usual look on an H&E.)"))
+    if not desktop_mode():
+        return _json({"message": text})
+    return _json({"claude_code": claudelink.open_claude_code(sample, b.get("session"), text, send_if_open=True)})
+
+
 def api_samples_clear(req):
     """Desktop app: delete every sample with all its annotations and chats for good, to import from scratch (and the
     *_all_samples folders an earlier version of this button left in the trash); marker lists are kept."""
@@ -3302,6 +3346,8 @@ def build_app(port):
         Route("/api/sample/{sample}/filter", api_sample_filter, methods=["POST"]),
         Route("/api/sample/{sample}/placement/undo", api_sample_placement_undo, methods=["POST"]),
         Route("/api/claude/align", api_claude_align, methods=["POST"]),
+        Route("/api/claude/he_regions", api_claude_he_regions, methods=["POST"]),
+        Route("/api/he_organs", api_he_organs),
         Route("/api/s/{sid}/export", api_export, methods=["POST"]),
         Route("/api/s/{sid}/export.csv", api_export_csv),
         Route("/api/s/{sid}/export.ipynb", api_export_notebook),

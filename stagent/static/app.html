@@ -425,6 +425,15 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .alrow { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 5px 4px; border-radius: 6px; font-size: 13px; cursor: pointer; }
 .alrow:hover { background: var(--bg); } .alrow.alall { border-bottom: 1px solid var(--line); border-radius: 0; }
 #alList { max-height: 50vh; overflow-y: auto; overflow-x: hidden; }
+#heDlg .imbody { overflow-x: hidden; }
+.herow { display: flex; align-items: center; gap: 10px; min-width: 0; } .herow select { flex: 1; min-width: 0; }
+#heOrganOther, #heMore, #heNotes { width: 100%; box-sizing: border-box; }
+.hechips { display: flex; flex-wrap: wrap; gap: 6px; max-height: 32vh; overflow: auto; }
+.hechips label { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border: 1px solid var(--line);
+  border-radius: 14px; font-size: 12.5px; cursor: pointer; user-select: none; }
+.hechips label.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.hechips input { margin: 0; }
+#heAskRow { padding: 6px 8px 2px; } #heAskRow button { width: 100%; justify-content: center; }
 .alrow .alname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .clcard { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 6px 0; display: flex; flex-direction: column; gap: 6px; }
 .clcard pre { font: 11.5px ui-monospace, Menlo, monospace; white-space: pre-wrap; margin: 0; color: var(--muted); }
@@ -742,6 +751,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
         <label id="toolSizeBox" title="Brush and wand size, in screen pixels (the area it covers follows the zoom)"><input type="range" id="toolSize" min="6" max="240" value="40"><span id="toolSizeV">40</span></label>
         <label id="wandTolBox" title="Wand: how different a color may be from the one under the center of the brush">± <input type="range" id="wandTol" min="4" max="90" value="28"></label>
       </div>
+      <div id="heAskRow" hidden><button id="heAsk" class="primary" title="Tell the agent the organ and the regions to outline on this H&amp;E">Outline with Agent…</button></div>
       <div class="hint" id="shapebar" hidden><span id="shapeinfo"></span>
         <div class="row"><button id="shapeSave" class="primary" title="Save the shape (Enter); a new one is named first">Save</button>
           <button id="shapeUndo" title="Take back the last stroke or step (Backspace)">Undo</button>
@@ -848,6 +858,21 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <label class="alrow alall"><input type="checkbox" id="alAll"><b>All samples</b></label>
     <div id="alList"></div>
     <div class="row" style="margin-top:4px"><span class="spacer"></span><button id="alCancel">Cancel</button><button id="alGo" class="primary">Align</button></div>
+  </div>
+</dialog>
+<dialog id="heDlg" style="width:min(560px,95vw)">
+  <div class="dh"><svg class="ic" aria-hidden="true"><use href="#ic-sparkle"/></svg><b>Outline with Agent</b></div>
+  <div class="imbody" style="gap:10px">
+    <div class="hint">Tell the agent the organ and the regions to draw. It reads how each region looks on the H&amp;E in the
+      organ's priors, outlines it from the image, and each outline comes to you for review.</div>
+    <label class="herow"><b>Organ</b><select id="heOrgan"></select></label>
+    <input type="text" id="heOrganOther" placeholder="Organ (type it)" hidden>
+    <div><b>Regions to draw</b> <span class="hint" id="heHint"></span></div>
+    <div id="heRegions" class="hechips"></div>
+    <input type="text" id="heMore" placeholder="Other regions, separated by commas (e.g. ulcer, granulation tissue)">
+    <textarea id="heNotes" rows="2" placeholder="Notes for the agent (optional), e.g. only the upper section; leave out the folded edge"></textarea>
+    <div class="hint" id="heErr"></div>
+    <div class="row"><span class="spacer"></span><button id="heCancel">Cancel</button><button id="heGo" class="primary" disabled>Ask the agent</button></div>
   </div>
 </dialog>
 <dialog id="pcDlg" style="width:min(620px,95vw)">
@@ -1216,7 +1241,7 @@ const ICON_ONLY = { sessDel: "x", hdrShow: "chev-left", hdrHide: "chev-right", h
   lgtoggle: "chev-up", rgtoggle: "chev-up", stepsFold: "chev-up", plclose: "x", emClose: "x", imClose: "x", rcClose: "x", clClose: "x", rpClose: "x",
   xpClose: "x", glClose: "x", anClose: "x", rvClose: "x", hpClose: "x", anCsv: "download", rpSave: "download", mkExport: "download",
   fbUp: "arrow-up", fbHome: "home", rsClose: "x", hide: "cell", hideHE: "image" };
-const ICON_TEXT = { qfBtn: "play", importBtn: "import", clearAll: "trash", rmSample: "trash", allSamples: "grid", connBtn: "monitor", 
+const ICON_TEXT = { heAsk: "sparkle", heGo: "sparkle", qfBtn: "play", importBtn: "import", clearAll: "trash", rmSample: "trash", allSamples: "grid", connBtn: "monitor", 
   openMarkers: "list", openRef: "file", openEx: "file", annotate: "play", eRun: "play", eShow: "scatter", nRun: "play",
   undo: "undo", refresh: "refresh", claudeBtn: "sparkle", plaus: "shield", report: "file", export: "share", reset: "trash",
   draw: "pen", emLasso: "lasso", emClear: "x", emZoom: "target", send: "send",
@@ -1729,6 +1754,7 @@ function imageOnlyUI() {
   ["tools", "legend"].forEach((id) => { if (on) $(id).hidden = true; });
   if (!on) $("tools").hidden = false;
   $("session").disabled = on;
+  $("heAskRow").hidden = !on;  // Outline with Agent…
   if (on) {
     ["qfBtn", "sessDel", "anSave", "anLoad", "report", "plaus"].forEach((b) => ($(b).disabled = true));
     $("export").disabled = !st.sid;
@@ -4364,6 +4390,69 @@ async function alignWith(ids) {
   } catch (e) { toast(e.message, 6000); }
 }
 $("alignNow").onclick = askAlign;
+// ---- an H&E only: tell the agent the organ and the regions to outline (it writes the request to Claude Code) ----
+const HE = { organs: [], other: [] };
+function heChips(names, keep) {
+  const box = $("heRegions"); box.textContent = "";
+  names.forEach((n) => {
+    const lab = document.createElement("label");
+    const cb = Object.assign(document.createElement("input"), { type: "checkbox", value: n, checked: keep.has(n.toLowerCase()) });
+    lab.classList.toggle("on", cb.checked);
+    cb.onchange = () => { lab.classList.toggle("on", cb.checked); heSync(); };
+    lab.append(cb, document.createTextNode(n)); box.append(lab);
+  });
+  $("heHint").textContent = names.length ? "" : "(no list for this organ: type them below)";
+}
+function heRegionsChosen() {
+  const picked = [...document.querySelectorAll("#heRegions input:checked")].map((c) => c.value);
+  const more = $("heMore").value.split(/[,;\n]/).map((x) => x.trim()).filter(Boolean);
+  return [...new Set([...picked, ...more])];
+}
+function heOrganChosen() { return $("heOrgan").value === "__other" ? $("heOrganOther").value.trim() : $("heOrgan").value; }
+function heSync() {
+  const n = heRegionsChosen().length;
+  $("heGo").disabled = !heOrganChosen() || !n;
+  $("heGo").textContent = n > 1 ? `Ask the agent (${n} regions)` : "Ask the agent";
+}
+$("heOrgan").onchange = () => {
+  const other = $("heOrgan").value === "__other";
+  $("heOrganOther").hidden = !other;
+  const keep = new Set([...document.querySelectorAll("#heRegions input:checked")].map((c) => c.value.toLowerCase()));
+  const o = HE.organs.find((x) => x.organ === $("heOrgan").value);
+  const base = other ? HE.other : (o ? o.regions : []);  // (regions ticked before stay, also when the new organ lacks them)
+  const carried = [...document.querySelectorAll("#heRegions input:checked")].map((c) => c.value).filter((n) => !base.some((b) => b.toLowerCase() === n.toLowerCase()));
+  heChips([...base, ...carried], keep);
+  heSync(); if (other) $("heOrganOther").focus();
+};
+["heOrganOther", "heMore"].forEach((id) => ($(id).oninput = heSync));
+async function heOpen() {
+  if (!st.sample) return;
+  try {
+    const r = await api(`/api/he_organs?sample=${encodeURIComponent(st.sample.sample_id)}`);
+    HE.organs = r.organs; HE.other = r.other || [];
+    const sel = $("heOrgan"); sel.textContent = "";
+    sel.append(Object.assign(document.createElement("option"), { value: "", textContent: "Choose the organ…" }));
+    r.organs.forEach((o) => sel.append(Object.assign(document.createElement("option"), { value: o.organ, textContent: o.organ })));
+    sel.append(Object.assign(document.createElement("option"), { value: "__other", textContent: "Other (type it)…" }));
+    sel.value = r.organ && r.organs.some((o) => o.organ === r.organ) ? r.organ : "";
+    $("heOrganOther").value = ""; $("heMore").value = ""; $("heNotes").value = ""; $("heErr").textContent = "";
+    $("heOrgan").onchange();
+    $("heDlg").showModal();
+  } catch (e) { toast(e.message, 6000); }
+}
+$("heAsk").onclick = heOpen;
+$("heCancel").onclick = () => $("heDlg").close();
+$("heGo").onclick = async () => {
+  const regions = heRegionsChosen(), organ = heOrganChosen();
+  try {
+    const r = await post("/api/claude/he_regions", { sample: st.sample.sample_id, organ, regions, notes: $("heNotes").value, session: st.sid });
+    $("heDlg").close();
+    if (r.message && st.chatAvailable) { $("input").value = r.message; send(); }
+    else if (r.claude_code) toast(`The agent outlines ${regions.length > 1 ? `${regions.length} regions` : regions[0]} on the H&E` +
+      (st.reviewMode === "auto" ? "; each outline is added when done" : "; you accept each outline in its review window"), 8000);
+    else if (r.message) { try { await navigator.clipboard.writeText(r.message); } catch (e) { /* (no clipboard) */ } toast("Request copied: paste it to the agent", 6000); }
+  } catch (e) { $("heErr").textContent = e.message; }
+};
 function alignBar() {  // an image waits for its alignment
   const s = st.sample;
   $("alignbar").hidden = !(s && s.image_pending);
@@ -4474,6 +4563,8 @@ const HELP = `
     draw and name regions before the expression data exist.<ul>
     <li>The pixel size is read from the image, or typed in; without it no µm are shown (areas in pixels).</li>
     <li>Only the Data tab and the regions apply; the regions panel shows each outline's area.</li>
+    <li><b>Outline with Agent…</b> (Regions panel): choose the organ and tick the regions to draw (or type others);
+      the request goes to the agent.</li>
     <li>Ask the agent to outline a compartment (“draw the mucosa”): it asks the organ if needed, reads how each
       compartment looks on the H&amp;E in the organ's priors and the stains of the image, and proposes an outline for
       you to accept and reshape with the Regions tools (Brush adds, Alt+Brush erases).</li>
@@ -7344,7 +7435,7 @@ $("xpReg").onclick = () => exportAs("registration");
 $("xpPos").onclick = () => exportAs("positions");
 $("xpGeo").onclick = () => exportAs("regions");
 document.addEventListener("keydown", (e) => {
-  if ($("mkDlg").open || $("alDlg").open || $("rpDlg").open || $("bugDlg").open || $("updDlg").open || $("shareDlg").open || $("hpDlg").open || $("xpDlg").open || $("glDlg").open || $("anDlg").open || $("rvDlg").open || $("nameDlg").open || $("rnDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
+  if ($("mkDlg").open || $("alDlg").open || $("heDlg").open || $("rpDlg").open || $("bugDlg").open || $("updDlg").open || $("shareDlg").open || $("hpDlg").open || $("xpDlg").open || $("glDlg").open || $("anDlg").open || $("rvDlg").open || $("nameDlg").open || $("rnDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
   if (e.key === "h") $("hide").click();
   if (e.key === "e") $("hideHE").click();
   if (e.key === "[") stepSlice(-1);

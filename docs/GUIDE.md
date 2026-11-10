@@ -184,6 +184,9 @@ An image without any cells, e.g. for a pathologist to draw and name regions befo
     same scan: the image size is checked); every annotation of the data starts with them;
   - or give the exported GeoJSON as the import's **Regions** (QuPath opens it too: every outline is an annotation
     classified by its region, with its color).
+- **Outline with Agent…** (in the Regions panel of an H&E only): choose the organ (or type one) and tick the
+  regions to draw (the organ's compartments from its priors; others can be typed), add notes if needed (e.g.
+  "only the upper section"); the request goes to the agent (Claude Code) as written for it.
 - **The agent can outline compartments** on such an image when you ask (e.g. "draw the mucosa"):
   1. it needs the organ (it asks you when it does not know it; remembered for the sample): the organ's priors
      (`tissue_priors`: literature-based priors of 13 organs) say how each compartment looks on the H&E ("Compartments
