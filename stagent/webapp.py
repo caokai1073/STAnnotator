@@ -622,7 +622,8 @@ def api_claude_status(req):
 REVIEW_REQUEST = ("Check the review candidates of version {v} (I clicked Review: Annotation): look at every "
                   "candidate area on the H&E with show_area and judge every marker check, then record each verdict "
                   "with record_review, keeping only real annotation problems.")
-PRIORS_READ = ("tissue_priors(organ) (the app's literature priors of the tissue; organ: sample_context's organ, "
+PRIORS_READ = ("tissue_priors(organ) (the tissue's priors: the user's version when they edited them, else the app's "
+               "literature priors; organ: sample_context's organ, "
                "and when it gives none but the cell types make the tissue clear, that organ, said so; else no priors, "
                "said so)")
 SCOPE_REQUEST = {
@@ -2381,6 +2382,53 @@ async def api_session_rename(req: Request):
         return _json({"error": str(e)}, 400)
 
 
+def _priors_view(sample, sid=None, organ=None):
+    """The priors the agent uses for a sample: the organ (asked, chosen for the sample, or guessed from the
+    annotation), its text (the user's version when edited) and the organs to choose from."""
+    from types import SimpleNamespace
+    from . import hetissue
+    if not (config.SAMPLES / sample / "meta.json").exists():
+        raise ValueError(f"no sample {sample!r}")
+    s = review_app._session(sid) if sid else None
+    if s is None:
+        meta = json.load(open(config.SAMPLES / sample / "meta.json"))
+        s = SimpleNamespace(sample_id=sample, meta=meta, types=[], node_names=[])
+    g = hetissue.guess_organ(s)
+    organ = (organ or "").strip() or g["organ"]
+    covered = [o for o in hetissue.default_priors()["organs"] if not o.startswith("General")]
+    out = {"organ": organ, "guess": g, "organs": covered + [o for o in hetissue.user_organs() if o not in covered],
+           "edited_organs": [o for o in covered if hetissue._user_file(o).exists()]}
+    if organ:
+        r = hetissue.tissue_priors(organ)
+        out |= {"organ": r.get("organ", organ), "text": r.get("text", ""), "edited": bool(r.get("edited")),
+                "has_default": not hetissue.default_priors(organ).get("error")}
+    return out
+
+
+def api_sample_priors(req):
+    q = req.query_params
+    try:
+        return _json(_priors_view(req.path_params["sample"], q.get("session") or None, q.get("organ")))
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+
+
+async def api_sample_priors_save(req: Request):
+    """{organ, text}: the organ of the sample's tissue and the user's version of its priors (the default text, or
+    reset: true, goes back to the app's priors). The agent's reviews use them from then on."""
+    from . import hetissue
+    sample, b = req.path_params["sample"], await req.json()
+    try:
+        if not (config.SAMPLES / sample / "meta.json").exists():
+            raise ValueError(f"no sample {sample!r}")
+        organ = str(b.get("organ") or "").strip()
+        r = hetissue.save_user_priors(organ, "" if b.get("reset") else b.get("text"))
+        hetissue._remember_organ(sample, r.get("organ", organ))
+        return _json(_priors_view(sample, b.get("session") or None, r.get("organ", organ)))
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+
+
 async def api_sample_rename(req: Request):
     b = await req.json()
     try:
@@ -3468,6 +3516,8 @@ def build_app(port):
         Route("/api/sample/{sample}/image", api_sample_image, methods=["POST"]),
         Route("/api/sample/{sample}/registration", api_sample_registration, methods=["POST"]),
         Route("/api/sample/{sample}/rename", api_sample_rename, methods=["POST"]),
+        Route("/api/sample/{sample}/priors", api_sample_priors),
+        Route("/api/sample/{sample}/priors", api_sample_priors_save, methods=["POST"]),
         Route("/api/sample/{sample}/qc", api_sample_qc),
         Route("/api/proposals", api_proposals),
         Route("/api/cache", api_cache, methods=["GET", "POST"]),

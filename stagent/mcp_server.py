@@ -1335,7 +1335,8 @@ def tissue_priors(organ: Optional[str] = None) -> str:
     language, with exceptions and references). Without organ: the organs covered and how to read a rule. Use it to
     outline compartments on the H&E (segment_he, propose_he_region), to review an annotation and its regions
     against the rules (name the rule, e.g. COL-01, in the advice) and to suggest priors (preview_constraint),
-    always with the user's agreement. sample_context gives the sample's organ when something names it."""
+    always with the user's agreement. sample_context gives the sample's organ when something names it. When the
+    user edited an organ's priors (Prior in the app), this returns their version ("edited": true): follow it."""
     from . import hetissue
     return _j(hetissue.tissue_priors(organ))
 

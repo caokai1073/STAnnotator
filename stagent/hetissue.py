@@ -377,8 +377,66 @@ def outline(sample_id, classes=None, box_px=None, within_px=None, min_area_um2=M
     return pieces
 
 
+def _user_dir():
+    return config.HOME / "priors"   # the user's versions of the priors, one Markdown file per organ
+
+
+def _slug(organ):
+    return re.sub(r"[^a-z0-9]+", "_", str(organ).lower()).strip("_") or "organ"
+
+
+def _user_file(organ):
+    return _user_dir() / f"{_slug(organ)}.md"
+
+
+def user_organs():
+    """Organs the user wrote priors for that the app's document does not cover (their name: the file's first heading)."""
+    out = []
+    for f in sorted(_user_dir().glob("*.md")) if _user_dir().exists() else []:
+        first = next((l for l in f.read_text(encoding="utf-8").splitlines() if l.startswith("## ")), "")
+        out.append(first[3:].strip() or f.stem.replace("_", " "))
+    return out
+
+
 def tissue_priors(organ=None):
-    """The organ's section of the priors document (with the shared notes of its group), or the list of organs."""
+    """The organ's priors: the user's version when they edited them (Prior in the app; "edited": true), else the
+    section of the app's priors document (with the shared notes of its group); without organ, the list of organs."""
+    if not organ:
+        r = default_priors()
+        return r | {"organs": r["organs"] + [o for o in user_organs() if default_priors(o).get("error")]}
+    r = default_priors(organ)
+    q = str(organ).strip()
+    name = r.get("organ") or next((o for o in user_organs() if _slug(o) == _slug(q)), q)
+    f = _user_file(name)
+    if f.exists():
+        return {"organ": name, "text": f.read_text(encoding="utf-8"), "edited": True,
+                "note": "the user's version of these priors (edited in the app): follow it, not the app's default"}
+    return r if r.get("error") else r | {"edited": False}
+
+
+def save_user_priors(organ, text):
+    """Keep the user's version of an organ's priors; the default text (or an empty one) removes it."""
+    name = str(organ or "").strip()
+    if not name or len(name) > 80:
+        raise ValueError("name the organ (at most 80 characters)")
+    d = default_priors(name)
+    name = d.get("organ") or name
+    text = str(text or "").replace("\r\n", "\n")
+    f = _user_file(name)
+    if not text.strip() or (not d.get("error") and text.strip() == d["text"].strip()):
+        f.unlink(missing_ok=True)
+        return tissue_priors(name)
+    if len(text) > 400_000:
+        raise ValueError("the priors are longer than 400,000 characters")
+    f.parent.mkdir(parents=True, exist_ok=True)
+    if not text.lstrip().startswith("## "):
+        text = f"## {name}\n\n" + text
+    f.write_text(text, encoding="utf-8")
+    return tissue_priors(name)
+
+
+def default_priors(organ=None):
+    """The organ's section of the app's priors document (with the shared notes of its group), or the list of organs."""
     text = (config.PACKAGE / "data" / "priors" / "tissue_priors.md").read_text(encoding="utf-8")
     parts = re.split(r"(?m)^## ", text)
     head, secs = parts[0], {p.split("\n", 1)[0].strip(): "## " + p for p in parts[1:]}

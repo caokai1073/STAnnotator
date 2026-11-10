@@ -710,6 +710,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     </div>
     <div id="acts" class="float">
       <button id="claudeBtn" hidden title="Ask your own agent (Claude Code, in its own terminal window), connected to the sample open here">Agent</button>
+      <button id="priorBtn" disabled title="The tissue priors the agent's Review uses: the organ chosen from your annotation and its literature priors; edit them and the Review follows your version">Prior</button>
       <button id="plaus" disabled title="The agent reviews one part of the analysis (annotation, spatial organization, embedding, niches, compare, signaling): its advice, checked by the agent itself">Review</button>
       <button id="report" disabled title="The annotation report the agent writes: method, composition, compartments, quality, open questions">Report</button>
       <div class="seg" id="reviewMode" title="How the agent's changes are taken. Manual: each waits for you in a review window (Accept or Dismiss). Auto: each is applied at once, without the window; Undo takes it back."><button data-m="manual">Manual</button><button data-m="auto">Auto</button></div>
@@ -881,6 +882,21 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <div class="row"><input type="text" id="pjNewName" placeholder="name of a new project" style="flex:1"><button id="pjNew">Add project</button></div>
     <div style="max-height:52vh;overflow:auto"><table class="pjtab" id="pjTab"></table></div>
     <div class="row"><span class="err" id="pjErr"></span><span class="spacer"></span><button id="pjCancel">Cancel</button><button id="pjSave" class="primary">Save</button></div>
+  </div>
+</dialog>
+<dialog id="prDlg" style="width:min(860px,95vw)">
+  <div class="dh"><b>Tissue priors</b><span class="hint" id="prInfo" style="margin-left:8px"></span><span class="spacer"></span>
+    <button id="prClose">Close</button></div>
+  <div style="padding:12px 14px;display:flex;flex-direction:column;gap:8px">
+    <div class="row"><label class="f" style="flex-direction:row;align-items:center;gap:8px">Organ <select id="prOrgan"></select></label>
+      <span class="hint" id="prWhy" style="flex:1"></span></div>
+    <div class="hint">Where each cell type lies, the compartments to draw and their exceptions, from the literature
+      (<code>tissue_priors.md</code>). The agent's Review checks the annotation and the regions against these;
+      edit them (Markdown) and it follows your version, for every sample of this organ in this data folder.</div>
+    <textarea id="prText" spellcheck="false" style="height:52vh;font:12px ui-monospace,Menlo,monospace;resize:vertical"></textarea>
+    <div class="row"><span class="hint" id="prState"></span><span class="err" id="prErr"></span><span class="spacer"></span>
+      <button id="prDefault" title="Back to the app's priors of this organ (your version is removed)">Restore default</button>
+      <button id="prSave" class="primary" title="Use this organ for the sample, and this text for its priors">Save</button></div>
   </div>
 </dialog>
 <dialog id="rnDlg" style="width:min(420px,92vw)">
@@ -1234,7 +1250,7 @@ const ICON_ONLY = { rmSample: "trash", sessDel: "x", hdrShow: "chev-left", hdrHi
   fbUp: "arrow-up", fbHome: "home", rsClose: "x", hide: "cell", hideHE: "image" };
 const ICON_TEXT = { qfBtn: "play", importBtn: "import", clearAll: "trash", allSamples: "grid", connBtn: "monitor", 
   openMarkers: "list", openRef: "file", openEx: "file", annotate: "play", eRun: "play", eShow: "scatter", nRun: "play",
-  undo: "undo", refresh: "refresh", claudeBtn: "sparkle", plaus: "shield", report: "file", export: "share", reset: "trash",
+  undo: "undo", refresh: "refresh", claudeBtn: "sparkle", priorBtn: "list", plaus: "shield", report: "file", export: "share", reset: "trash",
   draw: "pen", emLasso: "lasso", emClear: "x", emZoom: "target", send: "send",
   mkImport: "import", mkCheck: "check", mkSave: "save", mkDraft: "sparkle", mkOrganUse: "list", mkOrganAgent: "sparkle", mkClose: "check", imGo: "import",
   imNewAlign: "sparkle", alignNow: "sparkle", refPick: "folder", exPick: "folder", refClose: "check", exClose: "check", rcTest: "check",
@@ -1498,7 +1514,7 @@ async function loadSamples(select, project) {
   const sel = $("sample"); sel.textContent = "";
   if (!st.samples.length) {  // a fresh install: nothing imported yet
     $("empty").firstElementChild.textContent = "No samples yet. Click Import to add Xenium files (cells.parquet and cell_feature_matrix.h5), h5ad or RDS files (with or without an image).";
-    $("empty").style.display = "flex"; $("annotate").disabled = true; $("sampleRename").disabled = true; $("qfBtn").disabled = true; $("rmSample").disabled = true; $("allSamples").disabled = true; $("pjBtn").disabled = true;
+    $("empty").style.display = "flex"; $("annotate").disabled = true; $("sampleRename").disabled = true; $("priorBtn").disabled = true; $("qfBtn").disabled = true; $("rmSample").disabled = true; $("allSamples").disabled = true; $("pjBtn").disabled = true;
     return;
   }
   $("annotate").disabled = false;
@@ -1597,7 +1613,7 @@ async function selectSample(id) {
   // only annotations made in the app (marker genes or a single-cell reference); the lab's benchmark ones are not shown
   st.sample.allSessions = st.sample.sessions;
   st.sample.sessions = st.sample.sessions.filter((x) => USER_METHODS.includes(x.method));
-  $("sampleRename").disabled = false;
+  $("sampleRename").disabled = false; $("priorBtn").disabled = false;
   $("qfBtn").disabled = false; $("anLoad").disabled = false; $("rmSample").disabled = false; $("allSamples").disabled = false; $("pjBtn").disabled = false;
   $("reset").disabled = !st.sample.allSessions.length && !projectOf(id);  // in a project: also to reset the other slices
   imageOnlyUI();  // now, not only when an annotation opens: a sample whose annotations are not opened yet opens none
@@ -3825,6 +3841,66 @@ async function adviceArrived() {  // new advice from Claude Code: open the Revie
     toast(`The agent outlined “${reg.action.name}”: check it, then click “add region” in the Review panel`, 7000);
   } else if (fresh.length) toast("The agent's advice is in the Review panel", 4000);
 }
+// ---------------- tissue priors: the organ from the annotation, the app's priors or the user's version ----------------
+const PR = { view: null, loaded: "" };
+function prWhy(v) {
+  const g = v.guess || {};
+  if (!v.organ) return "No organ found from the annotation or the sample: choose one.";
+  if (g.organ !== v.organ) return "";
+  return { given: "Chosen for this sample.", "marker list": "From your annotation: " + (g.evidence || []).join("; ").replace(/^the marker list has /, ""),
+           "name or description": "From the sample's name or description." }[g.from] || "";
+}
+function prShow(v) {
+  PR.view = v; PR.loaded = v.text || "";
+  const sel = $("prOrgan"); sel.textContent = "";
+  if (!v.organ) sel.append(new Option("choose the organ…", ""));
+  const organs = v.organ && !v.organs.includes(v.organ) ? [...v.organs, v.organ] : v.organs;  // a new one being written
+  organs.forEach((o) => sel.append(new Option(o + ((v.edited_organs || []).includes(o) ? " (your version)" : ""), o)));
+  sel.append(new Option("another organ…", "__new"));
+  sel.value = v.organ || "";
+  $("prWhy").textContent = prWhy(v);
+  $("prText").value = v.text || ""; $("prText").disabled = !v.organ;
+  $("prState").textContent = !v.organ ? "" : v.edited ? "Your version: the Review uses it." : v.has_default ? "The app's priors (default)." : "";
+  $("prDefault").disabled = !v.edited || !v.has_default; $("prSave").disabled = !v.organ; $("prErr").textContent = "";
+}
+async function prLoad(organ) {
+  const q = new URLSearchParams(); if (st.sid) q.set("session", st.sid); if (organ) q.set("organ", organ);
+  prShow(await api(`/api/sample/${encodeURIComponent(st.sample.sample_id)}/priors?${q}`));
+}
+$("priorBtn").onclick = async () => {
+  if (!st.sample) return;
+  $("prInfo").textContent = sampleName(st.sample);
+  try { await prLoad(""); } catch (e) { toast(e.message, 6000); return; }
+  $("prDlg").showModal();
+};
+$("prOrgan").onchange = async (e) => {
+  let organ = e.target.value;
+  if (organ === "__new") {
+    organ = (prompt("Name of the organ (you write its priors):", "") || "").trim();
+    if (!organ) { e.target.value = PR.view.organ || ""; return; }
+  }
+  if ($("prText").value !== PR.loaded && !confirm("Leave your unsaved changes?")) { e.target.value = PR.view.organ || ""; return; }
+  try { await prLoad(organ); } catch (err) { $("prErr").textContent = err.message; return; }
+  if (!PR.view.text) {  // an organ the app's priors do not cover: a skeleton to fill in
+    $("prText").value = `## ${PR.view.organ}\n\n**Compartments to draw**\n- **compartment**: how it looks on the H&E.\n\n**Priors**\n\n- **Cell type lies in compartment.**\n  - Rule: \`kind=region, types=[...], regions=[...], mode=only, strength=moderate\`\n`;
+    $("prState").textContent = "Not in the app's priors: write them, then Save.";
+  }
+};
+async function prPost(body) {
+  try { prShow(await post(`/api/sample/${encodeURIComponent(st.sample.sample_id)}/priors`, { session: st.sid || null, ...body })); }
+  catch (e) { $("prErr").textContent = e.message; return false; }
+  return true;
+}
+$("prSave").onclick = async () => {
+  const organ = $("prOrgan").value; if (!organ || organ === "__new") return;
+  if (await prPost({ organ, text: $("prText").value })) toast(PR.view.edited ? "Saved: the Review uses your priors" : "Saved: the Review uses the app's priors", 3500);
+};
+$("prDefault").onclick = async () => {
+  if (!confirm(`Remove your version of the ${PR.view.organ} priors and use the app's?`)) return;
+  if (await prPost({ organ: PR.view.organ, reset: true })) toast("The app's priors again", 2500);
+};
+$("prClose").onclick = () => { if ($("prText").value !== PR.loaded && !confirm("Close without saving your changes?")) return; $("prDlg").close(); };
+$("prDlg").addEventListener("cancel", (e) => { if ($("prText").value !== PR.loaded && !confirm("Close without saving your changes?")) e.preventDefault(); });
 $("plaus").onclick = () => openReviewChooser().catch((e) => toast(e.message, 6000));
 async function openReviewChooser() {  // what the agent reviews: one part of the analysis
   const adv = await api(`/api/s/${st.sid}/advice`); st.advice = adv;
@@ -7536,7 +7612,7 @@ $("xpReg").onclick = () => exportAs("registration");
 $("xpPos").onclick = () => exportAs("positions");
 $("xpGeo").onclick = () => exportAs("regions");
 document.addEventListener("keydown", (e) => {
-  if ($("mkDlg").open || $("alDlg").open || $("rpDlg").open || $("bugDlg").open || $("updDlg").open || $("shareDlg").open || $("hpDlg").open || $("xpDlg").open || $("glDlg").open || $("anDlg").open || $("rvDlg").open || $("nameDlg").open || $("rnDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
+  if ($("mkDlg").open || $("alDlg").open || $("rpDlg").open || $("bugDlg").open || $("updDlg").open || $("shareDlg").open || $("hpDlg").open || $("xpDlg").open || $("glDlg").open || $("anDlg").open || $("rvDlg").open || $("nameDlg").open || $("rnDlg").open || $("prDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
   if (e.key === "h") $("hide").click();
   if (e.key === "e") $("hideHE").click();
   if (e.key === "[") stepSlice(-1);

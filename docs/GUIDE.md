@@ -661,6 +661,11 @@ been run; Compare and Signaling review the analyses you ran in those tabs, which
    COL-01) in its advice. The organ is the one given for the sample, else that of the built-in marker list the cell
    types come from, else the one the sample's name or description names; with none, the agent says which organ it
    assumed from the cell types, or that it reviewed without the priors.
+   **Prior** (beside Review) shows the organ chosen and its priors: choose another organ (or **another organ…** to
+   write the priors of one the app does not cover), edit the text (Markdown) and **Save**. The organ is kept for the
+   sample, and your version of an organ's priors for every sample of that organ in this data folder (in
+   `priors/` of the data folder); the agent's reviews and its H&E outlines use it from then on. **Restore default**
+   goes back to the app's priors.
 2. It checks every draft as a skeptical reviewer: it reruns the tool that would confirm or refute it, looks at the
    figure on the H&E and weighs other explanations (spillover, segmentation, batch, too few cells, panel limits), and
    records `check_advice`.
