@@ -451,6 +451,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 #stepsList li button.stfold:hover { color: var(--ink); background-color: var(--accent-soft); }
 #stepsList li button.stfold .ic { width: 13px; height: 13px; }
 #stepsList li.sub { margin-left: 22px; padding-top: 1px; padding-bottom: 1px; }
+#stepsList.anfold li.sub { display: none; }  /* Analyze folded */
 #stepsList li.sub .nm { font-weight: 500; }
 #stepsList li.sub .mk { width: 14px; height: 14px; font-size: 9px; border: 1.5px solid var(--line); }
 #stepsList li.sub.done .mk { border: 0; }
@@ -5402,7 +5403,7 @@ async function loadSteps() {
   if (sid !== st.sid || smp !== (st.sample && st.sample.sample_id)) return;
   if (st.sample && st.sample.image_only) return;  // (switched to an H&E only meanwhile)
   $("steps").hidden = false; stepsRoom();
-  const box = $("stepsList"); box.textContent = "";
+  const box = $("stepsList"); box.textContent = ""; box.classList.toggle("anfold", !st.stepsAnalyze);
   r.steps.forEach((x, i) => {
     const [name, help, act] = STEPS[x.key] || [x.key, "", null];
     const li = document.createElement("li");
@@ -5428,8 +5429,12 @@ async function loadSteps() {
       const fold = decorate(Object.assign(document.createElement("button"), { className: "stfold", title: "Fold or unfold the analyses" }), "chev-up", true);
       fold.classList.toggle("flip", !st.stepsAnalyze);
       right.append(fold); li.title = help; li.style.cursor = "pointer";
-      li.onclick = (e) => { e.stopPropagation(); st.stepsAnalyze = !st.stepsAnalyze; try { localStorage.setItem("stepsAnalyze", st.stepsAnalyze ? "1" : "0"); } catch (err) {} loadSteps().catch(() => {}); };
-      if (st.stepsAnalyze) x.children.forEach((c) => {
+      li.onclick = (e) => {  // shown or hidden on the page (the analyses are listed already: nothing to ask the server)
+        e.stopPropagation(); st.stepsAnalyze = !st.stepsAnalyze;
+        try { localStorage.setItem("stepsAnalyze", st.stepsAnalyze ? "1" : "0"); } catch (err) {}
+        box.classList.toggle("anfold", !st.stepsAnalyze); fold.classList.toggle("flip", !st.stepsAnalyze);
+      };
+      x.children.forEach((c) => {
         const [cn, ch, ca] = STEPS[c.key] || [c.key, "", null];
         const sl = document.createElement("li");
         sl.className = `sub ${c.state === "not needed" ? "na" : c.state}`; sl.title = ch;
