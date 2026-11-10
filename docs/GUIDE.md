@@ -523,13 +523,14 @@ The Regions panel has a row of tools:
 | Move | M | Drag moves the map; a click on a region selects it (Shift-click selects more) |
 | Rectangle | R | Drag a rectangle (Shift: a square) |
 | Ellipse | O | Drag an ellipse (Shift: a circle) |
-| Polygon | P | Click points; or turn on the **Pen** (P again) and drag freehand |
+| Polygon | P | Click points |
+| Pen | F | Hold the mouse button and drag to draw freehand |
 | Brush | B | Paint the area |
 | Wand | W | Paint, and the area follows the colors of the H&E under the brush (± sets how different a color may be) |
 
 - A Brush or Wand stroke that starts on a region (inside it, or with the brush over its edge) changes **that
-  region**, as in QuPath, imported outlines included; elsewhere it starts a **new shape**. Rectangle, Ellipse and
-  Polygon add to the selected region, or start a new shape. Hold **Alt** (or turn on **−**) and the tools erase
+  region**, as in QuPath, imported outlines included; elsewhere it starts a **new shape**. Rectangle, Ellipse,
+  Polygon and Pen add to the selected region, or start a new shape. Hold **Alt** (or turn on **−**) and the tools erase
   instead: brush with Alt over a region to take a piece out of it.
 - On a large outline (thousands of points, e.g. from QuPath) the part in view follows the brush while you paint; the
   whole outline is updated when you let go (a fraction of a second).
@@ -537,7 +538,7 @@ The Regions panel has a row of tools:
   **Undo** (Backspace) takes back the last stroke, **Cancel** (Esc) drops the changes. Hold Space and drag to move
   the map while drawing; the wheel zooms. The slider sets the brush size (in screen pixels, so zooming in makes it
   finer).
-- With the Polygon tool, letting go of the Pen only pauses: the next stroke goes on from the end, until **Finish**,
+- With the Pen, letting go of the mouse only pauses: the next stroke goes on from the end, until **Finish**,
   Enter or a click on the first point closes it. The outline is kept while you draw, so **Pause** (or another sample,
   or a reload) keeps it.
 

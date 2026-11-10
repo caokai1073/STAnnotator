@@ -277,6 +277,7 @@ header .br { flex: 1 1 100%; height: 0; }
 .rgtools { display: flex; align-items: center; gap: 3px; padding: 5px 8px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .rgtools button { padding: 2px 5px; }
 .rgtools .ic { width: 16px; height: 16px; }
+.rgtools button.on { background: color-mix(in srgb, var(--ink) 16%, var(--panel)); color: var(--ink); border-color: color-mix(in srgb, var(--ink) 24%, var(--panel)); }
 .rgtools .sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 3px; }
 .rgtools label { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--muted); }
 .rgtools input[type=range] { width: 56px; }
@@ -736,7 +737,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
         <span class="sep"></span>
         <button data-tool="rect" data-icon="rect" title="Rectangle (R): drag a rectangle; Shift: a square">Rectangle</button>
         <button data-tool="ellipse" data-icon="ellipse" title="Ellipse (O): drag an ellipse; Shift: a circle">Ellipse</button>
-        <button data-tool="polygon" data-icon="polygon" title="Polygon (P): click points, or turn on the Pen and drag; Finish, Enter or a click on the first point closes it. P again: Pen on or off">Polygon</button>
+        <button data-tool="polygon" data-icon="polygon" title="Polygon (P): click points; Finish, Enter or a click on the first point closes it">Polygon</button>
+        <button data-tool="pen" data-icon="pen" title="Pen (F): hold the mouse button and drag to draw freehand; letting go pauses, the next stroke goes on from the end; Finish, Enter or a click on the first point closes it. Space + drag moves the map, the wheel zooms">Pen</button>
         <button data-tool="brush" data-icon="brush" title="Brush (B): paint the area; it adds to the selected region or the shape being drawn; Alt: erase">Brush</button>
         <button data-tool="wand" data-icon="wand" title="Wand (W): paint, and the area follows the colors of the H&amp;E under the brush; Alt: erase">Wand</button>
         <span class="sep"></span>
@@ -757,7 +759,6 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <div class="items" id="rgitems"></div>
       <div class="hint" id="drawhint" hidden style="padding:6px 10px;border-top:1px solid var(--line)">
         <div class="row" style="gap:6px;margin-bottom:4px"><b id="drawinfo">0 points</b><span class="spacer"></span>
-          <button id="drawPen" style="padding:1px 8px;font-size:12px" title="Pen (freehand): hold the mouse button and drag to draw; letting go pauses, the next stroke goes on from the end. Space + drag moves the map, the wheel zooms (p)">Pen</button>
           <button id="drawUndo" style="padding:1px 8px;font-size:12px" title="Take back the last point, or the last pen stroke (Backspace)">Undo</button>
           <button id="drawPause" style="padding:1px 8px;font-size:12px" title="Stop drawing for now: the outline is kept (also after a reload) and Continue picks it up">Pause</button>
           <button id="drawDone" class="primary" style="padding:1px 8px;font-size:12px" title="Close the outline and name it (Enter)">Finish</button></div>
@@ -2812,18 +2813,18 @@ function loadDraft() { try { const d = JSON.parse(localStorage.getItem(draftKey(
 // zooming (wheel) and moving (Space + drag) in between. Finish, Enter or a click on the first point closes it.
 // Clicks still add single points.
 const PEN_STEP_PX = 2;
-st.pen = (() => { try { return localStorage.getItem("drawPen") === "1"; } catch (e) { return false; } })();
+st.pen = false;  // the Pen tool (freehand); the Polygon tool clicks points
 st.strokes = [];  // where each pen stroke began in st.drawing, for Undo
 function syncPen() {
-  $("drawPen").classList.toggle("on", st.pen);
   $("drawHow").textContent = st.pen ? "Pen: hold and drag to draw; let go to rest, the next stroke goes on from the end · Space + drag moves the map"
     : "Click to add points · double-click a point to remove it";
   toolCursor();
 }
 function setPen(on) {
-  st.pen = !!on; try { localStorage.setItem("drawPen", st.pen ? "1" : "0"); } catch (e) {}
+  st.pen = !!on;
   syncPen();
 }
+const drawTool = (t) => t === "polygon" || t === "pen";  // the tools that draw an outline point by point or freehand
 viewer.addHandler("canvas-press", (e) => {
   st.stroke = st.drawing && st.pen && !st.spaceHeld ? { from: e.position, started: false } : null;
 });
@@ -2918,7 +2919,7 @@ function pauseDraw() {
 function cancelDraw() {
   if (st.drawing && st.drawing.length > 4 && !confirm(`Drop this outline of ${st.drawing.length} points? (Pause keeps it.)`)) return;
   st.drawing = []; saveDraft(); stopDraw();
-  if (st.tool === "polygon") setTool("move");
+  if (drawTool(st.tool)) setTool("move");
 }
 function nearPoint(pos, pts, px = 8) {  // the point of the outline under the mouse, or -1
   let best = -1, bd = px;
@@ -2961,15 +2962,14 @@ $("nameSave").onclick = async () => {
   try {
     const r = await post(`/api/s/${st.sid}/regions/add`, { name: $("regname").value, polygon: st.drawing });
     $("nameDlg").close(); st.drawing = []; saveDraft(); stopDraw(); await afterRegionChange(r);
-    if (st.tool === "polygon") startDraw(true);
+    if (drawTool(st.tool)) startDraw(true);
   } catch (e) { $("nameErr").textContent = e.message; }
 };
 $("regname").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("nameSave").click(); } });
 $("nameCancel").onclick = () => { st.namingShape = false; $("nameDlg").close(); };  // keep the points so the user can continue or Esc
 $("draw").onclick = (e) => (st.drawing ? cancelDraw() : startDraw(e.shiftKey));
 $("drawUndo").onclick = (e) => { undoDraw(); e.currentTarget.blur(); };  // (blur: Space must not press it again)
-$("drawPen").onclick = (e) => { setPen(!st.pen); e.currentTarget.blur(); };
-$("drawPause").onclick = () => { pauseDraw(); if (st.tool === "polygon") setTool("move"); };
+$("drawPause").onclick = () => { pauseDraw(); if (drawTool(st.tool)) setTool("move"); };
 $("drawDone").onclick = finishDraw;
 $("outlines").onchange = drawRegions;
 $("rgtoggle").onclick = () => { $("regpanel").classList.toggle("collapsed"); $("rgtoggle").classList.toggle("flip", $("regpanel").classList.contains("collapsed")); };
@@ -3217,15 +3217,15 @@ $("shapeCancel").onclick = () => cancelShape();
 // ---- tools ----
 function setTool(t) {
   if (!st.sid) return;
-  if (t === "polygon" && st.tool === "polygon" && st.drawing) { setPen(!st.pen); return; }  // P again: the Pen
   if (st.editing && t !== "move") stopEdit();
-  if (st.drawing && t !== "polygon") pauseDraw();
+  if (st.drawing && !drawTool(t)) pauseDraw();
   st.tool = t;
+  if (drawTool(t)) setPen(t === "pen");  // (between Polygon and Pen the outline being drawn goes on)
   document.querySelectorAll("#rgtools [data-tool]").forEach((b) => b.classList.toggle("on", b.dataset.tool === t));
   $("toolSizeBox").hidden = !["brush", "wand"].includes(t);
   $("wandTolBox").hidden = t !== "wand";
   $("toolSub").hidden = t === "move";
-  if (t === "polygon" && !st.drawing) startDraw(false);
+  if (drawTool(t) && !st.drawing) startDraw(false);
   toolCursor(); drawRegions();
 }
 function toolCursor() {
@@ -7381,7 +7381,7 @@ document.addEventListener("keydown", (e) => {
   if (st.drawing && e.key === "Enter") { e.preventDefault(); finishDraw(); }
   if (st.drawing && e.key === "Backspace") { e.preventDefault(); $("drawUndo").click(); }
   if (st.sid && !e.ctrlKey && !e.metaKey && !e.altKey) {  // the drawing tools, with QuPath's keys
-    const t = { m: "move", r: "rect", o: "ellipse", p: "polygon", b: "brush", w: "wand" }[e.key.toLowerCase()];
+    const t = { m: "move", r: "rect", o: "ellipse", p: "polygon", f: "pen", b: "brush", w: "wand" }[e.key.toLowerCase()];
     if (t) setTool(t);
   }
   if (!st.drawing && !st.editing) {
