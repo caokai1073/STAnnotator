@@ -2265,8 +2265,13 @@ const affMul = (a, b) => [a[0] * b[0] + a[2] * b[1], a[1] * b[0] + a[3] * b[1], 
 function paintRegions(m) {  // m: image pixels -> screen pixels [a, b, c, d, e, f]; null: nothing to show
   const cv = $("regcanvas"), box = $("regwrap"), W = box.clientWidth, H = box.clientHeight;
   const key = [REG.items, REG.level, W, H];
-  if (!m || !REG.items.length) {
-    if (RC.m0) { cv.getContext("2d").clearRect(0, 0, cv.width, cv.height); RC.m0 = null; RC.key = null; }
+  if (!m || !REG.items.length) {  // nothing to show (another sample, outlines off, no regions): a blank canvas
+    clearTimeout(RC.timer);
+    const ctx = cv.getContext("2d");
+    ctx.setTransform(1, 0, 0, 1, 0, 0);  // (the last paint left the view's transform on the context)
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    cv.style.transform = "";
+    RC.m0 = null; RC.key = null;
     return;
   }
   if (RC.m0 && RC.key && key.every((v, i) => v === RC.key[i])) {
