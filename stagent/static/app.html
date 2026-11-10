@@ -433,8 +433,10 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
   border-radius: 14px; font-size: 12.5px; cursor: pointer; user-select: none; }
 .hechips label.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .hechips input { margin: 0; }
-#heAskRow { padding: 6px 8px 2px; } #heAskRow button { width: 100%; justify-content: center; }
+.rgtools button.heask { font-size: 11px; padding: 1px 5px; gap: 3px; white-space: nowrap; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.rgtools button.heask .ic { width: 12px; height: 12px; }
 #heTabs { flex: none; } #heTabs button { padding: 4px 10px; flex: none; }
+.tnsaved { border-top: 1px solid var(--line); padding-top: 10px; display: flex; flex-direction: column; gap: 6px; }
 .tnlist { display: flex; flex-direction: column; gap: 4px; max-height: 30vh; overflow: auto; }
 .tnrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 5px 8px;
   border: 1px solid var(--line); border-radius: 8px; font-size: 12.5px; }
@@ -758,11 +760,11 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
         <button data-tool="brush" data-icon="brush" title="Brush (B): paint the area; it adds to the selected region or the shape being drawn; Alt: erase">Brush</button>
         <button data-tool="wand" data-icon="wand" title="Wand (W): paint, and the area follows the colors of the H&amp;E under the brush; Alt: erase">Wand</button>
         <span class="sep"></span>
+        <button id="heAsk" class="heask" hidden title="Outline regions on this H&amp;E: train an organ model from outlines a pathologist drew, or ask the agent">Outline regions</button>
         <button id="toolSub" data-icon="minus" title="Subtract: the tools take away from the shape instead of adding (or hold Alt)">Subtract</button>
         <label id="toolSizeBox" title="Brush and wand size, in screen pixels (the area it covers follows the zoom)"><input type="range" id="toolSize" min="6" max="240" value="40"><span id="toolSizeV">40</span></label>
         <label id="wandTolBox" title="Wand: how different a color may be from the one under the center of the brush">± <input type="range" id="wandTol" min="4" max="90" value="28"></label>
       </div>
-      <div id="heAskRow" hidden><button id="heAsk" class="primary" title="Outline tissue regions on this H&amp;E: ask the agent, or train and manage organ models">Outline regions…</button></div>
       <div class="hint" id="shapebar" hidden><span id="shapeinfo"></span>
         <div class="row"><button id="shapeSave" class="primary" title="Save the shape (Enter); a new one is named first">Save</button>
           <button id="shapeUndo" title="Take back the last stroke or step (Backspace)">Undo</button>
@@ -873,7 +875,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
 </dialog>
 <dialog id="heDlg" style="width:min(640px,95vw)">
   <div class="dh"><svg class="ic" aria-hidden="true"><use href="#ic-sparkle"/></svg><b>Outline regions</b><span class="spacer"></span>
-    <div class="seg" id="heTabs"><button data-t="outline" class="on">Ask the agent</button><button data-t="train">Train a model</button><button data-t="models">Models</button></div></div>
+    <div class="seg" id="heTabs"><button data-t="train" class="on">Train a model</button><button data-t="outline">Ask the agent</button></div></div>
   <div class="imbody" style="gap:10px">
     <div id="heOrganRow">
       <label class="herow"><b>Organ</b><select id="heOrgan"></select></label>
@@ -902,12 +904,11 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <div class="progress" id="tnProg"><div class="pbar"><i id="tnFill"></i></div><span id="tnStage"></span></div>
       <div id="tnResult"></div>
       <div class="hint" id="tnErr"></div>
-      <div class="row"><span class="spacer"></span><button id="tnClose">Close</button><button id="tnGo" class="primary" disabled>Train</button></div>
-    </div>
-    <div id="heModels" class="hepane" hidden>
-      <div class="hint" id="mdFolder"></div>
-      <div id="mdList" class="tnlist"></div>
-      <div class="row"><button id="mdLoad">Load a model…</button><span class="spacer"></span><button id="mdClose">Close</button></div>
+      <div class="row"><span class="spacer"></span><button id="tnGo" class="primary" disabled>Train</button></div>
+      <div class="tnsaved"><div class="row"><b>Saved models</b><span class="spacer"></span><button id="mdLoad">Load a model…</button></div>
+        <div id="mdList" class="tnlist"></div>
+        <div class="hint" id="mdFolder"></div></div>
+      <div class="row"><span class="spacer"></span><button id="tnClose">Close</button></div>
     </div>
   </div>
 </dialog>
@@ -1790,7 +1791,7 @@ function imageOnlyUI() {
   ["tools", "legend"].forEach((id) => { if (on) $(id).hidden = true; });
   if (!on) $("tools").hidden = false;
   $("session").disabled = on;
-  heAskSync();  // Outline regions… (every sample whose H&E is shown)
+  heAskSync();  // Outline regions (every sample whose H&E is shown)
   if (on) {
     ["qfBtn", "sessDel", "anSave", "anLoad", "report", "plaus"].forEach((b) => ($(b).disabled = true));
     $("export").disabled = !st.sid;
@@ -4428,10 +4429,10 @@ async function alignWith(ids) {
 $("alignNow").onclick = askAlign;
 // ---- Outline regions: the organ and the regions to outline (the request is written for Claude Code); the organ
 // models trained from H&E + GeoJSON pairs (organmodel.py), kept in the data folder with all organs together ----
-const HE = { organs: [], other: [], tab: "outline", pairs: [], models: [] };
+const HE = { organs: [], other: [], tab: "train", pairs: [], models: [] };  // (the window opens on the tab used last)
 function heAskSync() {  // for every sample whose H&E is shown (an H&E only too)
   const s = st.sample;
-  $("heAskRow").hidden = !(s && (s.image_only || (s.image_kind === "H&E" && !s.image_pending)));
+  $("heAsk").hidden = !(s && (s.image_only || (s.image_kind === "H&E" && !s.image_pending)));
 }
 function heChips(names, keep) {
   const box = $("heRegions"); box.textContent = "";
@@ -4474,9 +4475,8 @@ $("heOrgan").onchange = () => {
 function heTab(tab) {
   HE.tab = tab;
   document.querySelectorAll("#heTabs button").forEach((b) => b.classList.toggle("on", b.dataset.t === tab));
-  $("heOutline").hidden = tab !== "outline"; $("heTrain").hidden = tab !== "train"; $("heModels").hidden = tab !== "models";
-  $("heOrganRow").hidden = tab === "models";
-  if (tab === "models") mdLoadList().catch((e) => toast(e.message, 6000));
+  $("heOutline").hidden = tab !== "outline"; $("heTrain").hidden = tab !== "train";
+  if (tab === "train") mdLoadList().catch((e) => toast(e.message, 6000));
 }
 document.querySelectorAll("#heTabs button").forEach((b) => (b.onclick = () => heTab(b.dataset.t)));
 async function heLoadOrgans(keepValue) {
@@ -4493,12 +4493,12 @@ async function heOpen() {
   try {
     await heLoadOrgans(false);
     $("heOrganOther").value = ""; $("heMore").value = ""; $("heNotes").value = ""; $("heErr").textContent = "";
-    $("heOrgan").onchange(); heTab("outline");
+    $("heOrgan").onchange(); heTab(HE.tab);
     $("heDlg").showModal();
   } catch (e) { toast(e.message, 6000); }
 }
 $("heAsk").onclick = heOpen;
-$("heCancel").onclick = $("tnClose").onclick = $("mdClose").onclick = () => $("heDlg").close();
+$("heCancel").onclick = $("tnClose").onclick = () => $("heDlg").close();
 $("heGo").onclick = async () => {
   const regions = heRegionsChosen(), organ = heOrganChosen();
   try {
@@ -4623,7 +4623,7 @@ async function mdLoadList() {
   HE.models = r.models;
   $("mdFolder").textContent = `Organ models are kept in ${r.folder} (all organs together; the app finds them at every start, also after an update).`;
   const box = $("mdList"); box.textContent = "";
-  if (!r.models.length) box.append(Object.assign(document.createElement("div"), { className: "hint", textContent: "No models yet: train one (Train a model), or load a model file." }));
+  if (!r.models.length) box.append(Object.assign(document.createElement("div"), { className: "hint", textContent: "No models yet: train one above, or load a model file." }));
   r.models.forEach((m) => {
     const row = document.createElement("div"); row.className = "tnrow";
     const left = document.createElement("div");
@@ -4768,11 +4768,12 @@ const HELP = `
     draw and name regions before the expression data exist.<ul>
     <li>The pixel size is read from the image, or typed in; without it no µm are shown (areas in pixels).</li>
     <li>Only the Data tab and the regions apply; the regions panel shows each outline's area.</li>
-    <li><b>Outline regions…</b> (Regions panel, every sample with an H&amp;E), <b>Ask the agent</b>: choose the organ and
-      tick the regions to draw (or type others); the request goes to the agent.</li>
-    <li><b>Train a model</b> (same window): H&amp;E + GeoJSON pairs a pathologist outlined teach the app an organ's
-      regions; the model is kept in the data folder's organ_models (all organs, kept across updates) and the agent uses
-      it for that organ. <b>Models</b>: export, load or delete them.</li>
+    <li><b>Outline regions</b> (Regions toolbar, right of the Wand; every sample with an H&amp;E), <b>Train a model</b>:
+      H&amp;E + GeoJSON pairs a pathologist outlined teach the app an organ's regions; the model is kept in the data
+      folder's organ_models (all organs, kept across updates); the saved models below it can be exported, loaded or
+      deleted.</li>
+    <li><b>Ask the agent</b> (same window): choose the organ and tick the regions to draw (or type others); the request
+      goes to the agent, which uses the organ's trained model when there is one.</li>
     <li>Ask the agent to outline a compartment (“draw the mucosa”): it asks the organ if needed, reads how each
       compartment looks on the H&amp;E in the organ's priors and the stains of the image, and proposes an outline for
       you to accept and reshape with the Regions tools (Brush adds, Alt+Brush erases).</li>
