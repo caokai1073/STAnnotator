@@ -16,6 +16,7 @@ import glob, json
 from pathlib import Path
 import numpy as np, pandas as pd, scipy.sparse as sp
 from . import config, model
+from .osutil import dump_json
 
 # Lab-server inputs for SCP2927 (Pokatayev et al., Nature 2026); other users import data with `stagent import`
 SOURCE_DIR = Path("/data/kai/endothelial/data/SCP2927")
@@ -36,8 +37,7 @@ def main():
     lineage_of_type = obs.groupby("celltype").file.first().to_dict()
     domain_names = json.load(open(W / "domains/domain_names_auto.json"))
     config.SAMPLES.mkdir(parents=True, exist_ok=True)
-    json.dump({"types": types, "lineage_of_type": lineage_of_type, "domain_names_auto": domain_names},
-              open(config.SAMPLES / "dataset.json", "w"), indent=1)
+    dump_json({"types": types, "lineage_of_type": lineage_of_type, "domain_names_auto": domain_names}, config.SAMPLES / "dataset.json", indent=1)
 
     for donor, g in obs.groupby("donor_id"):
         idx = g.index.values
@@ -68,7 +68,7 @@ def main():
                 "source_dir": str(SOURCE_DIR), "bundle_dir": str(d),
                 "base_model": "logistic regression on 480 genes, temperature-scaled, trained on the other 7 slides",
                 "has_pathologist_regions": bool((g.histopathology != "Unlabelled").any())}
-        json.dump(meta, open(d / "meta.json", "w"), indent=1)
+        dump_json(meta, d / "meta.json", indent=1)
         print("prepared", sid, len(g), flush=True)
     model.build_reference()
 

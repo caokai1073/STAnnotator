@@ -1336,7 +1336,9 @@ const glKey = (sample) => `${sample}@${st.he ? st.he.rev : 0}`;  // positions ch
 const POS_CACHE = new Map(), POS_KEEP_BYTES = 120e6;
 async function loadPositions(sample) {
   const key = glKey(sample);
-  if (!GL.ok || GL.sample === key) return;
+  if (!GL.ok) return;
+  GL.want = key;  // the positions the map should show: a download that arrives after another sample was asked for is not drawn
+  if (GL.sample === key) return;
   if (GL.loading && GL.loading.key === key) return GL.loading.p;  // already on its way (one download, not two)
   const p = (async () => {
     let ent = POS_CACHE.get(key);
@@ -1348,7 +1350,7 @@ async function loadPositions(sample) {
     POS_CACHE.set(key, ent);
     let total = 0;
     for (const [k, e] of [...POS_CACHE].reverse()) { total += e.buf.byteLength; if (total > POS_KEEP_BYTES && k !== key) POS_CACHE.delete(k); }
-    if (GL.loading && GL.loading.key !== key) return;  // another sample was asked for meanwhile: it is drawn instead
+    if (GL.want !== key) return;  // another sample was asked for meanwhile (cached ones arrive at once): it is drawn instead
     const buf = ent.buf;
     GL.posArr = new Float32Array(buf.slice(0));
     GL.n = buf.byteLength / 8; GL.sample = key; GL.radius = ent.radius; GL.colorKey = null; GL.colors = {};
@@ -1627,6 +1629,8 @@ function closeSession() {
   st.sid = null; st.placeholder = false; st.version = null; st.filters = {}; st.regions = null; st.advice = null; st.advicePollSig = undefined; st.adviceSeen = null;
   if (st.drawing) stopDraw(); if (st.editing) stopEdit(); closePlaus();
   st.shape = null; st.rsel = new Set(); syncShapeBar();  // an outline being drawn stays as its sample's draft
+  st.paint = null;  // a proposal's cells shown on the map are rows of this annotation: not of the next one
+  if (typeof PC !== "undefined" && PC.peek) { PC.peek = false; $("pcBack").hidden = true; }
   $("legend").hidden = true; $("cellcard").classList.remove("show");
   $("empty").style.display = "flex";
   ["undo", "export", "send", "plaus", "report", "nRun", "eRun", "eShow"].forEach((b) => ($(b).disabled = true));
@@ -1705,7 +1709,10 @@ async function openSession(sid) {
   const pInfo = api(`/api/s/${sid}/info`), pTraj = api(`/api/s/${sid}/trajectory`).catch(() => ({}));
   const pNiches = loadNiches(false), pEmb = loadEmbedding(false);
   [pInfo, pNiches, pEmb].forEach((p) => p.catch(() => {}));  // (awaited below; no unhandled rejection meanwhile)
-  st.vocab = await api(`/api/s/${sid}/vocab`);
+  const stale = () => st.sid !== sid;  // another annotation opened meanwhile: this one stops here
+  const vocab = await api(`/api/s/${sid}/vocab`);
+  if (stale()) return;
+  st.vocab = vocab;
   st.placeholder = st.vocab.method === "none";  // the sample is not annotated yet
   if (st.placeholder) $("carryWrap").style.visibility = "hidden";  // its regions always come along
   if (st.vocab.marker_list) setMarkers(st.vocab.marker_list, "");  // re-annotating starts from this annotation's list
@@ -1718,14 +1725,18 @@ async function openSession(sid) {
   }
   await pNiches;
   await pEmb;
-  st.trajs = (await pTraj).trajectories || {};
+  const trajs = (await pTraj).trajectories || {};
+  if (stale()) return;
+  st.trajs = trajs;
   loadResults(sid).catch(() => {});
   $("anSave").disabled = false;
   loadGenes(st.sample.sample_id).catch(() => {});
   const pChat = loadChat(); pChat.catch(() => {});
-  await refreshVersion(true, pInfo);
+  await refreshVersion(true, pInfo, sid);
+  if (stale()) return;
   await restoreView();
   await pChat;
+  if (stale()) return;
   if (st.placeholder) {  // not annotated yet: regions, the registration and the agent; the analyses need cell types
     ["report", "nRun", "eRun", "eShow"].forEach((b) => ($(b).disabled = true));
     syncExport();  // the registration, cell positions and regions can be saved before any annotation
@@ -1815,7 +1826,8 @@ function withSel(arr, sel) {  // cells outside the selection are grayed out (map
   return out;
 }
 async function loadEmbedding(show) {
-  const r = await api(`/api/sample/${st.sample.sample_id}/embedding`);
+  const sample = st.sample.sample_id, r = await api(`/api/sample/${sample}/embedding`);
+  if (!st.sample || sample !== st.sample.sample_id) return;  // another sample opened meanwhile
   st.emb = r.embedding;
   const e = st.emb;
   $("eShow").disabled = !e;
@@ -1831,7 +1843,9 @@ async function loadEmbedding(show) {
 const STOPPED = new Set();
 class StoppedError extends Error {}
 const isStop = (e) => e instanceof StoppedError;
+const POLLING = new Map();  // job -> how many pollJob calls follow it now (this page's own runs included)
 async function pollJob(job, prog, fill, stage, btn, every = 700, withTime = false) {  // follow a run to its end; Stop under its button
+  POLLING.set(job, (POLLING.get(job) || 0) + 1);
   let b = btn.nextElementSibling && btn.nextElementSibling.classList.contains("pstop") ? btn.nextElementSibling : null;
   if (!b) {
     b = document.createElement("button"); b.className = "pstop" + (btn.classList.contains("main") ? " main" : ""); b.textContent = "Stop";
@@ -1854,7 +1868,10 @@ async function pollJob(job, prog, fill, stage, btn, every = 700, withTime = fals
       if (j.done) { if (j.error) throw new Error(j.error); return j; }
       await new Promise((r) => setTimeout(r, every));
     }
-  } finally { STOPPED.delete(job); b.hidden = true; }
+  } finally {
+    STOPPED.delete(job); b.hidden = true;
+    const n = (POLLING.get(job) || 1) - 1; if (n > 0) POLLING.set(job, n); else POLLING.delete(job);
+  }
 }
 function stopped(prog, what) {  // after Stop: the bar goes, nothing of the run is kept
   prog.classList.remove("show");
@@ -2105,7 +2122,8 @@ $("emColor").onchange = () => loadEMData().then(drawEM);
 
 // ---------------- niches ----------------
 async function loadNiches(show) {
-  const r = await api(`/api/s/${st.sid}/niches`);
+  const sid = st.sid, r = await api(`/api/s/${sid}/niches`);
+  if (sid !== st.sid) return;  // another annotation opened meanwhile
   st.niche = r.summary;
   st.nicheSig = JSON.stringify([st.niche && st.niche.params.run_id, st.niche ? st.niche.niches.map((x) => x.name) : []]);
   const p = st.niche && st.niche.params;
@@ -2157,9 +2175,11 @@ function syncKMode() {  // "Agent chooses" needs an agent (the app's Claude Code
 }
 $("nKMode").onchange = syncKMode;
 
-async function refreshVersion(force, infoPromise) {  // infoPromise: /info already asked for (openSession)
+async function refreshVersion(force, infoPromise, infoSid) {  // infoPromise: /info of annotation infoSid, asked already
   if (!st.sid) return;
-  const info = await (infoPromise || api(`/api/s/${st.sid}/info`));
+  const sid = st.sid;
+  const info = await (infoPromise && infoSid === sid ? infoPromise : api(`/api/s/${sid}/info`));
+  if (sid !== st.sid) return;  // another annotation opened meanwhile: its own refresh sets its version
   const v = info.summary.latest_version;
   if (!force && v === st.version) return;
   st.version = v;
@@ -2188,7 +2208,9 @@ setInterval(() => { if (!st.busy) refreshVersion(false).catch(() => {}); }, 4000
 // ---------------- legend ----------------
 const MODE_TITLES = { type: "Cell types", lineage: "Lineages", region: "Regions", changed: "Changes", conflicts: "Conflicts", plausibility: "Out-of-place cells", confidence: "Confidence", cluster: "Clusters (marker step)", niche: "Niches", leiden: "Leiden clusters", trajectory: "Trajectory" };
 async function loadLegend() {
-  const r = await api(`/api/s/${st.sid}/legend?version=${st.version}&mode=${st.mode}`);
+  const asked = `${st.sid}|${st.version}|${st.mode}`;
+  const r = await api(`/api/s/${st.sid}/legend?version=${st.version}&mode=${encodeURIComponent(st.mode)}`);
+  if (asked !== `${st.sid}|${st.version}|${st.mode}`) return;  // the color mode (or annotation) changed meanwhile
   st.legend = r.items;
   const f = filt();
   $("legend").hidden = !!st.imageOnly;  // an image only: no cells to list
@@ -5704,13 +5726,19 @@ $("mode").onchange = (e) => {
   if (e.target.value === "__more" || e.target.value === "__less") {  // reveal / hide confidence and clusters
     st.showMore = e.target.value === "__more"; fillModes(st.lastSummary); return;
   }
+  const inPanel = (g) => !st.genes || st.genes.some((x) => x.toUpperCase() === String(g).toUpperCase());
   if (e.target.value === "gene") {  // pick the gene in the box next to it
     $("geneInput").hidden = false;
+    if (st.gene && !inPanel(st.gene)) st.gene = null;  // the gene of another sample's panel
     if (st.gene) { st.mode = `gene:${st.gene}`; refreshOverlay(); loadLegend(); } else $("geneInput").focus();
     return;
   }
   $("geneInput").hidden = true;
-  if (e.target.value === "lr") { st.mode = st.lrMode; refreshOverlay(); loadLegend(); return; }
+  if (e.target.value === "lr") {  // the signal last shown, when this panel has its genes
+    const parts = st.lrMode ? st.lrMode.slice(3).split("~").slice(0, 2).flatMap((x) => x.split("_")) : [];
+    if (!st.lrMode || !parts.every(inPanel)) { st.lrMode = null; fillModes(st.lastSummary); toast("Show a signal from Signal (show on map) first", 5000); return; }
+    st.mode = st.lrMode; refreshOverlay(); loadLegend(); return;
+  }
   st.mode = e.target.value; refreshOverlay();
   if (st.sid) { loadLegend(); emFollow(); }
 };
@@ -6047,12 +6075,17 @@ async function resumeRunning() {
                niches: ["nprogress", "nfill", "nstage", "nRun", "Niches"] };
   for (const j of r.running) {
     const ui = UI[j.kind]; if (!ui || st.following.has(j.job)) continue;
-    st.following.add(j.job);
     const [prog, fill, stage, btn] = ui.slice(0, 4).map($), what = ui[4];
     // while it runs, its progress stays under its button whenever the sample open is the one it works on (opening an
     // annotation or another slice resets the bars, so this is checked every second)
     const mine = () => st.sample && (st.sample.sample_id === s.sample_id || (j.project && projectOf(st.sample.sample_id) && projectOf(st.sample.sample_id).project_id === j.project));
     const keep = () => { const on = mine(); prog.classList.toggle("show", on); if (on) btn.disabled = true; };
+    if (POLLING.get(j.job)) {  // a run of this page (started here, then another sample and back): its own pollJob still
+      keep();                  // follows it and opens its result; only its bar is shown again while it runs
+      const keeper = setInterval(() => { if (POLLING.get(j.job)) keep(); else clearInterval(keeper); }, 1000);
+      continue;
+    }
+    st.following.add(j.job);
     keep(); const keeper = setInterval(keep, 1000);
     toast(`${what}${j.project ? " of all slices" : ""} started earlier is still running: following it`, 5000);
     (async () => {

@@ -135,7 +135,7 @@ def device():
 
 def build():
     """Commit and date of this code: stamped into data/build.txt by git archive (export-subst), else read from git."""
-    text = (PACKAGE / "data" / "build.txt").read_text().strip() if (PACKAGE / "data" / "build.txt").exists() else ""
+    text = (PACKAGE / "data" / "build.txt").read_text(encoding="utf-8").strip() if (PACKAGE / "data" / "build.txt").exists() else ""
     if text and not text.startswith("$Format"):
         return text
     try:

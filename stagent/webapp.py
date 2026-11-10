@@ -19,10 +19,12 @@ from starlette.responses import FileResponse, JSONResponse, Response, StreamingR
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from . import config, vocab, mcp_server, review_app, render
+from .review_app import attachment
 mcp_server.SAME_PROCESS = True  # its tools served at /mcp run on this event loop: they cannot wait for a review
 from . import markers, markerqc, plausibility, claudelink, claudereview, importer, advice, niches, embedding
-from . import communication, jobs, projects, regcheck, visium
+from . import communication, jobs, projects, regcheck, visium, osutil
 from .session import Session, list_samples, list_sessions, panel_genes, filtered_genes, NOT_ANNOTATED
+from .osutil import dump_json
 
 STATIC = Path(__file__).parent / "static"
 TILE, MARGIN_PX, CELL_RADIUS_UM = 512, 400, 3.45  # dot radius: about a cell's radius
@@ -753,6 +755,8 @@ async def api_niches_run(req: Request):
     s = review_app._session(req.path_params["sid"])
     b = await req.json()
     job = f"niche:{s.id}"
+    if job in JOBS and not JOBS[job]["done"]:  # (a second Run would mark the running one failed)
+        return _json({"error": "the niches of this annotation are still being computed", "job": job, "kind": "niches"}, 409)
     JOBS[job] = {"stage": "starting", "progress": 0.0, "done": False, "error": None, "kind": "niches",
                  "sample": s.sample_id, "session": s.id, "started": time.time()}
 
@@ -926,6 +930,8 @@ def api_report_md(req):
 
 async def api_report_save(req: Request):
     """Write the report to a path the user chose (desktop app: Save dialog)."""
+    if not desktop_mode():  # writes to a path of the user's choosing: only the desktop app's own Save dialog
+        return _json({"error": "only in the desktop app"}, 403)
     s = review_app._session(req.path_params["sid"])
     b = await req.json()
     rep = advice.report(s)
@@ -985,6 +991,8 @@ async def api_import(req: Request):
     b = await req.json()
     name = str(b.get("name", "")).strip()
     job = f"import:{name}"
+    if job in JOBS and not JOBS[job]["done"]:  # (a second Import would mark the running one failed)
+        return _json({"error": f"{name} is being imported already; wait until it finishes", "job": job}, 409)
     JOBS[job] = {"stage": "starting", "progress": 0.0, "done": False, "error": None, "log": []}
 
     def say(msg):
@@ -1187,8 +1195,8 @@ def _keep_result(b, kind, result, table):
     except Exception as e:  # the result stays; only its CSV is missing after a restart
         print(f"could not keep the table of {kind}: {e}", file=sys.stderr)
     req = {k: v for k, v in b.items() if k not in ("session", "selection")}
-    json.dump({"time": time.strftime("%Y-%m-%dT%H:%M:%S"), "request": req, "selection": b.get("selection"),
-               "result": result}, open(f, "w"), default=_json_default)
+    dump_json({"time": time.strftime("%Y-%m-%dT%H:%M:%S"), "request": req, "selection": b.get("selection"),
+               "result": result}, f, default=_json_default)
 
 
 def _json_default(o):
@@ -1236,8 +1244,25 @@ def _analysis_cells(b):
     claudelink.write_viewer_selection(sel)
     key = (s.id, b.get("version"), b.get("scope"), json.dumps(sel, sort_keys=True) if sel else "",
            json.dumps(b.get("sessions") or {}, sort_keys=True),
-           (niches.current(s)[0] or {}).get("run_id"), (embedding.current(s.sample_id) or {}).get("run_id"), s.versions()[-1])
+           (niches.current(s)[0] or {}).get("run_id"), (embedding.current(s.sample_id) or {}).get("run_id"), s.versions()[-1],
+           _project_key(s, b) if b.get("scope") == "project" else None)
     return _cell_tables.get_or(key, lambda: _make_cells(s, b, sel))
+
+
+def _project_key(s, b):
+    """What a pooled table of all slices depends on besides the open one: every slice's annotation, its latest version,
+    its niche run and its PCA / UMAP (another slice relabeled or re-run gives another table)."""
+    from . import joint
+    pid = projects.project_of(s.sample_id)
+    if not pid:
+        return None
+    out = []
+    for sample, sid in sorted(joint.latest_sessions(pid, b.get("sessions")).items()):
+        vs = sorted((config.SESSIONS / sid / "versions").glob("v*.json"))
+        nm = config.SESSIONS / sid / "niches" / "run.json"
+        out.append((sample, sid, vs[-1].name if vs else None, nm.stat().st_mtime if nm.exists() else None,
+                    (embedding.current(sample) or {}).get("run_id")))
+    return tuple(out)
 
 
 def _make_cells(s, b, sel):
@@ -1444,7 +1469,7 @@ def api_analysis_csv(req):
     if t is None:
         return _json({"error": "this result is gone: run it again"}, 404)
     return Response(t.to_csv(index=False), media_type="text/csv",
-                    headers={"Content-Disposition": f'attachment; filename="{req.query_params.get("name", "analysis.csv")}"'})
+                    headers={"Content-Disposition": attachment(req.query_params.get("name", "analysis.csv"))})
 
 
 def api_communication_bubble(req):
@@ -1489,7 +1514,7 @@ def api_figure_get(req):
     if pdf is None:
         return _json({"error": "this figure is gone: save it again"}, 404)
     return Response(pdf, media_type="application/pdf",
-                    headers={"Content-Disposition": f'attachment; filename="{req.query_params.get("name", "figure.pdf")}"'})
+                    headers={"Content-Disposition": attachment(req.query_params.get("name", "figure.pdf"))})
 
 
 async def api_save_text(req: Request):
@@ -1498,7 +1523,7 @@ async def api_save_text(req: Request):
         return _json({"error": "only in the desktop app"}, 403)
     b = await req.json()
     try:
-        Path(b["path"]).expanduser().write_text(b.get("text", ""))
+        Path(b["path"]).expanduser().write_text(b.get("text", ""), encoding="utf-8")
     except (OSError, KeyError) as e:
         return _json({"error": str(e)}, 400)
     return _json({"saved": b["path"]})
@@ -1640,7 +1665,10 @@ def api_legend(req):
     s = review_app._session(req.path_params["sid"])
     v = int(req.query_params.get("version") or s.versions()[-1])
     mode = req.query_params.get("mode", "type")
-    return _json({"version": v, "mode": mode, "items": legend_for(s, v, mode)})
+    try:
+        return _json({"version": v, "mode": mode, "items": legend_for(s, v, mode)})
+    except (KeyError, ValueError) as e:  # e.g. a gene or signal not in this sample's panel (as colors.bin)
+        return _json({"error": str(e)}, 400)
 
 
 def api_cell_at(req):
@@ -1907,7 +1935,7 @@ async def api_data_folder(req: Request):
             raise ValueError("the new folder cannot be inside the current data folder, or contain it")
         new.mkdir(parents=True, exist_ok=True)
         probe = new / ".stannotator_write_test"
-        probe.write_text("ok")
+        probe.write_text("ok", encoding="utf-8")
         probe.unlink()
         has_data = (new / "samples").exists() or (new / "sessions").exists()
         if b.get("copy") and has_data:
@@ -2139,7 +2167,6 @@ async def api_region_delete_named(req: Request):
 
 
 # Claude Code keeps chat transcripts per project directory; only those listed in a session's chat metadata are touched
-CLAUDE_PROJECT = Path.home() / ".claude" / "projects" / str(config.ROOT).replace("/", "-")
 
 
 def _sample_sessions(sample):
@@ -2194,9 +2221,9 @@ async def api_sample_reset(req: Request):
     except ValueError:
         with_embedding = False
     sess = _sample_sessions(sample)
-    busy = [d.name for d in sess if d.name in JOBS and not JOBS[d.name]["done"]]
-    if busy:
-        return _json({"error": "an annotation of this sample is still running; wait until it finishes"}, 409)
+    if _busy(sample):  # an annotation, or an analysis of one (niches, signal, trajectory, PCA / UMAP), still running
+        return _json({"error": "an annotation or analysis of this sample is still running; wait until it finishes "
+                               "(or Stop it)"}, 409)
     emb = config.SAMPLES / sample / "embedding"
     if not sess and not (with_embedding and emb.exists()):
         return _json({"deleted_sessions": 0, "deleted_conversations": 0, "deleted_embedding": False, "trash": None})
@@ -2216,8 +2243,9 @@ async def api_session_delete(req: Request):
     d = config.SESSIONS / sid
     if "/" in sid or ".." in sid or not (d / "session.json").exists():
         return _json({"error": f"no annotation {sid}"}, 404)
-    if sid in JOBS and not JOBS[sid]["done"]:
-        return _json({"error": "this annotation is still being computed; wait until it finishes"}, 409)
+    if any(not j["done"] and (k == sid or k.split(":", 1)[-1] == sid) for k, j in JOBS.items()):
+        return _json({"error": "this annotation, or an analysis of it (niches, signal, trajectory), is still running; "
+                               "wait until it finishes (or Stop it)"}, 409)
     trash = config.TRASH / f"{time.strftime('%Y%m%d-%H%M%S')}_{sid}_deleted"
     trash.mkdir(parents=True)
     n_chats = _trash_sessions([d], trash)
@@ -2799,7 +2827,7 @@ def api_registration_csv(req):
     from . import notebook
     sample = req.path_params["sample"]
     return Response(notebook.registration_csv(sample), media_type="text/csv",
-                    headers={"Content-Disposition": f'attachment; filename="{sample}_registration.csv"'})
+                    headers={"Content-Disposition": attachment(f"{sample}_registration.csv")})
 
 
 def api_positions_csv(req):
@@ -2807,7 +2835,7 @@ def api_positions_csv(req):
     from . import notebook
     sample = req.path_params["sample"]
     return Response(notebook.positions_csv(sample), media_type="text/csv",
-                    headers={"Content-Disposition": f'attachment; filename="{sample}_cell_positions.csv"'})
+                    headers={"Content-Disposition": attachment(f"{sample}_cell_positions.csv")})
 
 
 def _regions_geojson(s, v):
@@ -2833,7 +2861,7 @@ def api_regions_geojson(req):
     except ValueError as e:
         return _json({"error": str(e)}, 400)
     return Response(text.encode("utf-8"), media_type="application/geo+json",
-                    headers={"Content-Disposition": f'attachment; filename="{s.sample_id}_v{v}_regions.geojson"'})
+                    headers={"Content-Disposition": attachment(f"{s.sample_id}_v{v}_regions.geojson")})
 
 
 def api_export_notebook(req):
@@ -2941,7 +2969,7 @@ def api_markers_get(req):
     f = next((f for f in _library_files() if f.stem == name), None)
     if f is None:
         return _json({"error": "not found"}, 404)
-    return _json({"name": name, "text": _as_text(f.read_text())})
+    return _json({"name": name, "text": _as_text(osutil.read_text(f))})
 
 
 async def api_markers_delete(req: Request):
@@ -2966,7 +2994,7 @@ async def api_markers_save(req: Request):
     if not name:
         return _json({"error": "give the list a name"}, 400)
     LIBRARY.mkdir(parents=True, exist_ok=True)
-    (LIBRARY / f"{name}.csv").write_text(markers.text_to_csv(b.get("text", "")))
+    (LIBRARY / f"{name}.csv").write_text(markers.text_to_csv(b.get("text", "")), encoding="utf-8")
     return _json({"name": name})
 
 
@@ -2976,7 +3004,7 @@ async def api_markers_import(req: Request):
     try:
         if b.get("path"):
             src = Path(b["path"]).expanduser()
-            raw, name = src.read_text(), src.stem
+            raw, name = osutil.read_text(src), src.stem
         else:
             raw, name = b.get("text", ""), Path(b.get("name") or "imported").stem
         text = _as_text(raw)
@@ -2984,7 +3012,7 @@ async def api_markers_import(req: Request):
         return _json({"error": str(e)}, 400)
     name = _safe_name(name) or "imported"
     LIBRARY.mkdir(parents=True, exist_ok=True)
-    (LIBRARY / f"{name}.csv").write_text(markers.text_to_csv(text) if markers.parse(text, None)["tree"] else raw)
+    (LIBRARY / f"{name}.csv").write_text(markers.text_to_csv(text) if markers.parse(text, None)["tree"] else raw, encoding="utf-8")
     return _json({"name": name, "text": text})
 
 
@@ -3008,7 +3036,7 @@ async def api_existing_inspect(req: Request):
             folder = config.HOME / "annotations"
             folder.mkdir(parents=True, exist_ok=True)
             path = folder / (_safe_name(Path(b.get("name") or "annotation.csv").name) or "annotation.csv")
-            path.write_text(b["text"])
+            path.write_text(b["text"], encoding="utf-8")
         else:
             path = Path(b["path"]).expanduser()
         return _json(existing.inspect(path, sample_cell_ids(b["sample"])))
@@ -3023,9 +3051,11 @@ async def api_markers_to_csv(req: Request):
 
 async def api_markers_save_file(req: Request):
     """Write the marker list as CSV to a path the user chose (desktop app: Save dialog)."""
+    if not desktop_mode():  # writes to a path of the user's choosing: only the desktop app's own Save dialog
+        return _json({"error": "only in the desktop app"}, 403)
     b = await req.json()
     try:
-        Path(b["path"]).expanduser().write_text(markers.text_to_csv(b.get("text", "")))
+        Path(b["path"]).expanduser().write_text(markers.text_to_csv(b.get("text", "")), encoding="utf-8")
     except (OSError, KeyError) as e:
         return _json({"error": str(e)}, 400)
     return _json({"saved": b["path"]})
@@ -3034,6 +3064,8 @@ async def api_markers_save_file(req: Request):
 async def api_sample_export_to(req: Request):
     """Write the sample's registration (kind "registration") or cell positions (kind "positions") to a path the user
     chose (desktop app: Save dialog), also while none of its annotations is open."""
+    if not desktop_mode():  # writes to a path of the user's choosing: only the desktop app's own Save dialog
+        return _json({"error": "only in the desktop app"}, 403)
     sample = req.path_params["sample"]
     if sample in ("", ".", "..") or "/" in sample or "\\" in sample or not (config.SAMPLES / sample / "meta.json").exists():
         return _json({"error": f"no sample {sample}"}, 404)
@@ -3050,6 +3082,8 @@ async def api_sample_export_to(req: Request):
 async def api_export_to(req: Request):
     """Write the per-cell CSV (kind "csv") or the analysis notebook (kind "notebook") of a version to a path the user
     chose (desktop app: Save dialog)."""
+    if not desktop_mode():  # writes to a path of the user's choosing: only the desktop app's own Save dialog
+        return _json({"error": "only in the desktop app"}, 403)
     s = review_app._session(req.path_params["sid"])
     b = await req.json()
     v = int(b.get("version") or s.versions()[-1])
@@ -3216,7 +3250,7 @@ async def api_chat(req: Request):
     else:
         meta["claude_session"] = str(uuid.uuid4())
         args += ["--session-id", meta["claude_session"]]
-        json.dump(meta, open(meta_p, "w"))
+        dump_json(meta, meta_p)
     s._append("chat.jsonl", {"role": "user", "text": msg, "version": s.versions()[-1]})
 
     async def stream():
@@ -3255,7 +3289,7 @@ def api_chat_log(req):
 
 def build_app(port):
     claudelink.write_viewer_state(port=port, pid=os.getpid(), mode="desktop" if desktop_mode() else "web")
-    CHAT_MCP.write_text(json.dumps({"mcpServers": {"stagent": {"type": "http", "url": f"http://127.0.0.1:{port}/mcp"}}}))
+    CHAT_MCP.write_text(json.dumps({"mcpServers": {"stagent": {"type": "http", "url": f"http://127.0.0.1:{port}/mcp"}}}), encoding="utf-8")
     mcp_http = mcp_server.mcp.streamable_http_app()
 
     @contextlib.asynccontextmanager

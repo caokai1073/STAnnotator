@@ -342,6 +342,9 @@ touches, their current labels, the predicted label changes where they can be com
 - **Dismiss** drops it and tells Claude.
 - Several waiting changes come one after the other.
 - Claude learns the outcome by itself when you decide within about 45 seconds, otherwise when it next checks.
+- A change worked out from the annotation as it is (labeling the cells of a region or a cluster, re-clustering,
+  going back to a version, naming niches) applies only to the version (and niches) it was proposed on: accepted after
+  something else changed, it reports that and Claude proposes it again, so it never does other than the window showed.
 
 **Manual or Auto** (the switch on the map's toolbar, next to Review). **Manual**, the default, is the above.
 **Auto** applies every change of Claude as soon as the app sees it, without the review window: a short note says
@@ -993,7 +996,8 @@ Each works as `only`, `exclude` or `enrich` with strength `strong` / `moderate` 
 **Changing the result**
 
 - Local re-clustering ("this cluster is mixed") re-clusters one cluster or level, is previewed, and keeps regions,
-  priors and corrections.
+  priors and corrections. A cluster's markers are scored against the other clusters of its level, as in the first run;
+  the clusters it replaces leave the list; a cluster under 60 cells is labeled rather than re-clustered.
 - To add or remove types, revise the marker list and Annotate again with "keep my regions, priors & corrections".
 
 ### Review

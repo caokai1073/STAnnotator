@@ -21,7 +21,7 @@ def organs():
     for f in sorted(DIR.glob("*.txt")):
         if f.stem in SHARED:
             continue
-        first = f.read_text().splitlines()[0]
+        first = f.read_text(encoding="utf-8").splitlines()[0]
         out.append({"organ": f.stem, "label": first.lstrip("# ").strip() if first.startswith("#") else f.stem})
     return out
 
@@ -32,7 +32,7 @@ def _lines(name, seen=()):
     if not f.exists():
         raise ValueError(f"no built-in list for {name!r}; built-in: {', '.join(o['organ'] for o in organs())}")
     out = []
-    for raw in f.read_text().splitlines():
+    for raw in f.read_text(encoding="utf-8").splitlines():
         if raw.strip().startswith("@"):
             inc = raw.strip()[1:]
             if inc in seen:

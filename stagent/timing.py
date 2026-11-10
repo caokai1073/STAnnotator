@@ -10,6 +10,7 @@ import json, platform, threading, time
 from contextlib import contextmanager
 import numpy as np
 from . import config
+from .osutil import dump_json
 
 # seconds per unit on the reference workstation; units in the comments
 REF = {"prepare": 0.65,         # per 10^6 cells: normalize, detection matrix
@@ -71,7 +72,7 @@ def record(key, units, seconds):
         unit = DECAY * old.get("units", 0.0) + units
         mine[key] = {"rate": sec / unit, "seconds": sec, "units": unit, "runs": old.get("runs", 0) + 1}
         try:
-            json.dump(d, open(_file(), "w"), indent=1)
+            dump_json(d, _file(), indent=1)
         except OSError:
             pass
 

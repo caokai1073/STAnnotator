@@ -33,6 +33,7 @@ dismissed ones are kept. The report is Markdown Claude writes (write_report); th
 import hashlib, json, re, time
 import numpy as np
 from . import constraints as cmod
+from .osutil import dump_json
 
 SCOPES = {
     "annotation": {"label": "Annotation", "categories": {"taxonomy": "Cell types", "context": "Sample context",
@@ -71,7 +72,7 @@ def load(s):
 
 
 def _save(s, st):
-    json.dump(st, open(_file(s), "w"), indent=1)
+    dump_json(st, _file(s), indent=1)
 
 
 def labels_key(s, version=None):
@@ -329,8 +330,8 @@ def write_report(s, markdown, version=None):
     if len(text) < 40:
         raise ValueError("the report is empty")
     meta = {"version": s.state(version)["version"], "time": _now()}
-    _rfile(s).write_text(text + "\n")
-    json.dump(meta, open(s.dir / "report.json", "w"))
+    _rfile(s).write_text(text + "\n", encoding="utf-8")
+    dump_json(meta, s.dir / "report.json")
     return meta | {"path": str(_rfile(s))}
 
 
@@ -339,4 +340,4 @@ def report(s):
     if not p.exists():
         return None
     meta = json.load(open(s.dir / "report.json")) if (s.dir / "report.json").exists() else {}
-    return meta | {"markdown": p.read_text(), "path": str(p)}
+    return meta | {"markdown": p.read_text(encoding="utf-8"), "path": str(p)}

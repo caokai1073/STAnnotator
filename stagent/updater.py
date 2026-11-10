@@ -246,7 +246,7 @@ def install(path):
             return {"mode": "finder", "note": f"{app.parent} cannot be written: drag STAnnotator to Applications "
                                               "in the window that opens, replacing the old one"}
         script = _folder() / "install_update.sh"
-        script.write_text(MAC_SCRIPT)
+        script.write_text(MAC_SCRIPT, encoding="utf-8")
         script.chmod(0o755)
         subprocess.Popen(["/bin/bash", str(script), str(os.getpid()), str(path), str(app), str(log)],
                          start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,

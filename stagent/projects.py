@@ -9,6 +9,7 @@ $STAGENT_HOME/projects/<project_id>.json:
 """
 import json, re, time
 from . import config
+from .osutil import dump_json
 
 PROJECTS = config.HOME / "projects"
 
@@ -52,8 +53,8 @@ def save(pid, name, slices):
         mf = config.SAMPLES / sid / "meta.json"
         m = json.load(open(mf))
         m.update(project=pid, project_section=section, metadata=meta)
-        json.dump(m, open(mf, "w"), indent=1)
-    json.dump(p, open(_file(pid), "w"), indent=1)
+        dump_json(m, mf, indent=1)
+    dump_json(p, _file(pid), indent=1)
     return p
 
 
@@ -67,7 +68,7 @@ def drop_sample(sample_id, trash):
     p["samples"] = [s for s in p["samples"] if s != sample_id]
     p["slices"].pop(sample_id, None)
     if p["samples"]:
-        json.dump(p, open(_file(pid), "w"), indent=1)
+        dump_json(p, _file(pid), indent=1)
         return {"project": pid, "left": len(p["samples"])}
     trash.mkdir(parents=True, exist_ok=True)
     shutil.move(str(_file(pid)), str(trash / f"project_{pid}.json"))
@@ -136,7 +137,7 @@ def assign(groups):
     PROJECTS.mkdir(parents=True, exist_ok=True)
     for pid, p in projs.items():
         if p["samples"]:
-            json.dump(p, open(_file(pid), "w"), indent=1)
+            dump_json(p, _file(pid), indent=1)
         elif _file(pid).exists():  # empty now: gone, its joint results kept in the trash
             trash = config.TRASH / f"{time.strftime('%Y%m%d-%H%M%S')}_project_{pid}"
             trash.mkdir(parents=True, exist_ok=True)
@@ -149,7 +150,7 @@ def assign(groups):
             m.update(project=pid, project_section=projs[pid]["slices"][sid]["section"])
         else:
             m.pop("project", None); m.pop("project_section", None)
-        json.dump(m, open(config.SAMPLES / sid / "meta.json", "w"), indent=1)
+        dump_json(m, config.SAMPLES / sid / "meta.json", indent=1)
     return list_projects()
 
 
@@ -182,7 +183,7 @@ def rename(sample_id, name, project_name=None):
             if not str(project_name).strip():
                 raise ValueError("the project needs a name")
             p["name"] = str(project_name).strip()[:80]
-        json.dump(p, open(_file(pid), "w"), indent=1)
+        dump_json(p, _file(pid), indent=1)
     else:
         taken = set()
         for d in config.SAMPLES.iterdir():
@@ -195,6 +196,6 @@ def rename(sample_id, name, project_name=None):
             m["name"] = name
         else:
             m.pop("name", None)
-    json.dump(m, open(mf, "w"), indent=1)
+    dump_json(m, mf, indent=1)
     return {"sample_id": sample_id, "name": m.get("name") or m.get("project_section") or sample_id,
             "project_name": p["name"] if p else None}

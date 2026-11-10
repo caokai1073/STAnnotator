@@ -25,7 +25,7 @@ def _path(pid):
 def _write(rec):
     DIR.mkdir(parents=True, exist_ok=True)
     tmp = DIR / f".{rec['id']}.{os.getpid()}.tmp"
-    tmp.write_text(json.dumps(rec, default=str, ensure_ascii=False, indent=1))
+    tmp.write_text(json.dumps(rec, default=str, ensure_ascii=False, indent=1), encoding="utf-8")
     os.replace(tmp, _path(rec["id"]))  # readers never see half a file
 
 
@@ -39,7 +39,7 @@ def get(pid):
     p = _path(pid)
     if not p.exists():
         raise ValueError(f"no proposal {pid!r}")
-    return json.loads(p.read_text())
+    return json.loads(p.read_text(encoding="utf-8"))
 
 
 def update(pid, **kw):
@@ -53,7 +53,7 @@ def all(status=None, limit=50):
     out = []
     for p in sorted(DIR.glob("P*.json")) if DIR.exists() else []:
         try:
-            r = json.loads(p.read_text())
+            r = json.loads(p.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
         if status is None or r["status"] == status or (isinstance(status, tuple) and r["status"] in status):

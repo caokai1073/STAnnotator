@@ -10,8 +10,14 @@ The viewer drops what it keeps in memory itself (webapp); the agent asks a runni
 import json, os, shutil, time
 from pathlib import Path
 from . import config, projects
+from .osutil import dump_json
 
-CLAUDE_PROJECT = Path.home() / ".claude" / "projects" / str(config.ROOT).replace("/", "-")
+def claude_project():
+    """Claude Code's folder of the chat box's conversations (its working folder is the app's root): named as Claude Code
+    names it, every character but letters and digits made '-' (report.project_dir), also on Windows and in an app
+    bundle."""
+    from .report import project_dir
+    return project_dir(config.ROOT)
 CARRIED = ("project", "project_section", "name", "organ")  # what a replacement keeps of the old sample's meta.json
 
 
@@ -39,7 +45,7 @@ def trash_sessions(sess, trash):
                 except (OSError, ValueError):
                     pass
         for cid in filter(None, ids):
-            for t in (CLAUDE_PROJECT / f"{cid}.jsonl", CLAUDE_PROJECT / cid):
+            for t in (claude_project() / f"{cid}.jsonl", claude_project() / cid):
                 if t.exists():
                     n_chats += t.suffix == ".jsonl"
                     if trash is None:
@@ -77,7 +83,7 @@ def remove(sample, keep_project=False, why="removed"):
     info = {"sample": sample, "trash": str(trash), "sessions": [x.name for x in sess], "transcripts": moved,
             "n_chats": n_chats, "project": proj, "joint": joint, "pid": pid, "keep_project": keep_project,
             "carried": {k: meta[k] for k in CARRIED if k in meta}, "time": time.strftime("%Y-%m-%dT%H:%M:%S")}
-    json.dump(info, open(trash / "removed.json", "w"), indent=1)
+    dump_json(info, trash / "removed.json", indent=1)
     return info
 
 
@@ -104,8 +110,9 @@ def restore(info):
             shutil.move(str(t / s), str(config.SESSIONS / s))
     for name in info.get("transcripts", []):
         if (t / "claude_transcripts" / name).exists():
-            CLAUDE_PROJECT.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(t / "claude_transcripts" / name), str(CLAUDE_PROJECT / name))
+            cp = claude_project()
+            cp.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(t / "claude_transcripts" / name), str(cp / name))
     if info.get("joint") and (t / info["joint"]).exists() and info.get("pid"):
         shutil.move(str(t / info["joint"]), str(projects.PROJECTS / info["pid"]))
     (t / "removed.json").rename(t / "restored.json")
@@ -123,5 +130,5 @@ def finish_replace(info):
     m = json.load(open(f))
     m.update(info["carried"])
     tmp = f.with_name(f".meta.{os.getpid()}.tmp")
-    json.dump(m, open(tmp, "w"), indent=1)
+    dump_json(m, tmp, indent=1)
     os.replace(tmp, f)

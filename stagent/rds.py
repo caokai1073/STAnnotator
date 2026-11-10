@@ -422,11 +422,29 @@ def _seurat_xy(o, cells, meta):
             c, ids = df[[xc, yc]].to_numpy(float), list(df.index)
         else:
             continue
+        if "Visium" in cls:  # Visium positions are full-resolution image pixels: to um by the 55 um spot diameter
+            upp = _visium_um_per_px(img)
+            if upp:
+                c = c * upp
         for k, cid in enumerate(ids):
             if cid in pos:
                 xy[pos[cid]] = c[k]
                 found = True
     return xy if found and not np.isnan(xy).any() else None
+
+
+VISIUM_SPOT_UM = 55.0
+
+
+def _visium_um_per_px(img):
+    """um per full-resolution pixel of a Seurat Visium image: 55 um over its scale.factors' spot diameter (pixels)."""
+    try:
+        sf = _slot(img, "scale.factors")
+        v = _named(sf).get("spot") if sf is not None else None
+        spot = float(np.asarray(v.value, float).ravel()[0]) if v is not None else None
+        return VISIUM_SPOT_UM / spot if spot and spot > 0 else None
+    except Exception:
+        return None
 
 
 def _sce(o):

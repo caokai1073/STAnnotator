@@ -20,6 +20,7 @@ one replaces it.
 import hashlib, io, json, shutil, time, uuid, zipfile
 from pathlib import PurePosixPath
 from . import config
+from .osutil import dump_json
 
 FORMAT = 2  # 2: the sample's filter and registration (sample/); an older app asks to be updated
 SUFFIX = ".stannot"
@@ -250,7 +251,7 @@ def apply_sample(src, p, progress=lambda *a: None):
                 cells.to_parquet(d / "cells.parquet")
                 if "sample/pieces.json" in z.namelist():
                     (d / "pieces.json").write_bytes(z.read("sample/pieces.json"))
-            json.dump(m, open(config.SAMPLES / target / "meta.json", "w"), indent=1)
+            dump_json(m, config.SAMPLES / target / "meta.json", indent=1)
 
 
 def load(src, sample_id=None):
@@ -288,10 +289,10 @@ def load(src, sample_id=None):
                     f = d / n[len("annotation/"):]
                     f.parent.mkdir(parents=True, exist_ok=True)
                     f.write_bytes(z.read(n))
-            sj = json.loads((d / "session.json").read_text())
+            sj = json.loads((d / "session.json").read_text(encoding="utf-8"))
             sj.update(session_id=sid, sample_id=target, loaded_from={"session_id": info["session_id"], "sample_id": info["sample_id"],
                                                                       "saved_at": info["saved_at"]})
-            (d / "session.json").write_text(json.dumps(sj, indent=1))
+            (d / "session.json").write_text(json.dumps(sj, indent=1), encoding="utf-8")
         except Exception:
             shutil.rmtree(d, ignore_errors=True)
             raise

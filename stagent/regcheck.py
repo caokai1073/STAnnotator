@@ -23,6 +23,7 @@ import json, os, re, time
 import numpy as np, pandas as pd
 from scipy import ndimage
 from . import config, render
+from .osutil import dump_json
 
 FORMAT = 3
 WINDOW_UM = 200.0   # side of a window
@@ -99,7 +100,7 @@ def windows(sample_id, progress=None, wait_s=300):
                 return old
         except (OSError, ValueError):
             pass
-    busy.write_text(str(os.getpid()))
+    busy.write_text(str(os.getpid()), encoding="utf-8")
     try:
         cells = pd.read_parquet(config.SAMPLES / sample_id / "cells.parquet", columns=["px", "py"])
         upp = float(m.get("he_um_per_px") or config.HE_UM_PER_PX)
@@ -118,7 +119,7 @@ def windows(sample_id, progress=None, wait_s=300):
                          "columns": res["columns"] + ["second"]}
         res["coarse"]["windows"] = _scan(sl, kind, px, py, res["coarse"] | {"um_per_px": upp},
                                          lambda f: say(0.8 + 0.2 * f, "registration: large shifts"), coarse=True)
-        json.dump(res, open(f, "w"))
+        dump_json(res, f)
         return res
     finally:
         busy.unlink(missing_ok=True)

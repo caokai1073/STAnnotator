@@ -111,8 +111,10 @@ def fig_compartment(s, comp, name, version=None):
 def type_confusion(s, top=15, version=None):
     """Type pairs the expression model mixes up: for cells of type A, the mean probability of type B, both ways."""
     r = s.result(version)
-    P = np.exp(s.base(r["state"])["logp"].astype(np.float32))
     T = len(s.types)
+    if T < 2 or not len(r["pred"]):
+        return {"pairs": [], "note": "fewer than two cell types (or no cells): no pairs to compare"}
+    P = np.exp(s.base(r["state"])["logp"].astype(np.float32))
     one = np.zeros((T, len(r["pred"])), np.float32)
     one[r["pred"], np.arange(len(r["pred"]))] = 1
     n = one.sum(1)
@@ -319,6 +321,8 @@ def registration(s, n_windows=40, window_um=400.0, max_shift_um=25.0):
     cross-correlation of the two in windows spread over the tissue: the mean over windows (one window alone is noisy,
     crypts repeat), and an affine fit of the per-window offsets against position, which shows a scale or rotation
     error (offsets that grow across the section) that a single shift misses."""
+    if not len(s.cells):
+        raise ValueError("this sample has no cells (an H&E only): no registration to check")
     kind = s.meta.get("image_kind", "H&E")
     from .importer import image_of
     from . import visium

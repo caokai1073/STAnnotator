@@ -18,6 +18,7 @@ import json, time
 import numpy as np, pandas as pd
 from scipy import ndimage
 from . import config, render
+from .osutil import dump_json
 
 MAX_SHIFT_UM = 300.0
 COARSE_UM, FINE_UM = 4.0, 2.0  # image read at these um per pixel
@@ -212,7 +213,7 @@ def fit(s, region, max_shift_um=MAX_SHIFT_UM, mirror=True, progress=None):
                                 "figure" if rec["second"] > LIKELY else ""))
     if max(abs(v) for v in rec["shift_um"]) > 0.95 * max_shift_um:
         rec["verdict"] += "; at the edge of the search (try a larger max_shift_um)"
-    json.dump({"pieces": pieces + [rec]}, open(_file(s.sample_id), "w"))
+    dump_json({"pieces": pieces + [rec]}, _file(s.sample_id))
     say(1.0, "done")
     return rec
 

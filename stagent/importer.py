@@ -33,6 +33,7 @@ from pathlib import Path
 import h5py, numpy as np, pandas as pd, scipy.sparse as sp
 from scipy.spatial import cKDTree
 from . import config, stereoseq, visium
+from .osutil import dump_json
 
 COORD_COLUMNS = [("x_centroid", "y_centroid"), ("x", "y"), ("center_x", "center_y"), ("x_location", "y_location")]
 DEPTH_MARKERS, DEPTH_MIN_COUNTS, DEPTH_MIN_FRAC, DEPTH_K, DEPTH_CORE = ("EPCAM", "KRT8"), 3, 0.05, 30, 0.3
@@ -55,18 +56,25 @@ def as_h5ad(path, progress=None):
     ver = hashlib.sha1(f"{stat.st_mtime_ns}|{stat.st_size}".encode()).hexdigest()[:8]
     d = config.HOME / "converted"
     out = d / f"{re.sub(r'[^A-Za-z0-9_.-]+', '_', p.stem)}_{who}_{ver}.h5ad"
-    if out.exists():
-        return str(out)
-    from . import rds
-    (progress or (lambda m: None))(f"reading the R file {p.name}")
-    tab = rds.table(p)
-    d.mkdir(parents=True, exist_ok=True)
-    for old in d.glob(f"*_{who}_*.h5ad"):
-        old.unlink()
-    tmp = out.with_suffix(".part")
-    write_h5ad(tmp, tab["cell_id"], tab["genes"], tab["X"], tab["obs"], tab["xy"])
-    tmp.rename(out)
+    with _CONVERTING:  # the Import dialog's check and the import itself may convert the same file at once
+        if out.exists():
+            return str(out)
+        from . import rds
+        (progress or (lambda m: None))(f"reading the R file {p.name}")
+        tab = rds.table(p)
+        d.mkdir(parents=True, exist_ok=True)
+        for old in d.glob(f"*_{who}_*.h5ad"):
+            try:
+                old.unlink()
+            except OSError:  # (Windows: open elsewhere)
+                pass
+        tmp = out.with_name(f"{out.stem}.{os.getpid()}.part")
+        write_h5ad(tmp, tab["cell_id"], tab["genes"], tab["X"], tab["obs"], tab["xy"])
+        os.replace(tmp, out)
     return str(out)
+
+
+_CONVERTING = __import__("threading").Lock()
 
 
 def _write_column(g, name, values):
@@ -253,14 +261,24 @@ def _rows_matching(df, value):
 def load_registration(path, section=None, xenium_px_um=0.2125, candidates=(), progress=None):
     """Return a 2x3 affine mapping cell (x, y) in um to H&E level-0 pixels. An affine CSV with one row per section
     needs the section; without one, a candidate value (e.g. the h5ad's donor id) that matches exactly one row is used."""
-    text = Path(path).read_text().strip()
+    raw = Path(path).read_bytes()
+    try:  # UTF-8 (Excel's "CSV UTF-8" starts with a BOM); not the Windows code page, which garbles the header
+        text = raw.decode("utf-8-sig").strip()
+    except UnicodeDecodeError:
+        import locale
+        text = raw.decode(locale.getpreferredencoding(False), errors="replace").strip()
     first = text.splitlines()[0].lower()
     if "a11" in first:
-        df = pd.read_csv(path)
+        import io
+        df = pd.read_csv(io.StringIO(text))
+        df.columns = [str(c).strip().lower() if str(c).strip().lower() in ("a11", "a12", "a21", "a22", "tx", "ty")
+                      else c for c in df.columns]  # A11 or a11
         if len(df) > 1:
             if section is None:
                 found = {str(v): _rows_matching(df, v) for v in candidates}
                 found = {v: h for v, h in found.items() if len(h) == 1}
+                if len({h.index[0] for h in found.values()}) == 1 and len(found) > 1:  # several values, one row
+                    found = dict([next(iter(found.items()))])
                 if len(found) != 1:
                     raise ValueError(f"the registration file has {len(df)} rows (one per section): choose the section "
                                      "(Import dialog: Section column and value; command line: --section-column and "
@@ -274,7 +292,8 @@ def load_registration(path, section=None, xenium_px_um=0.2125, candidates=(), pr
             df = hit
         r = df.iloc[0]
         return np.array([[r.a11, r.a12, r.tx], [r.a21, r.a22, r.ty]], float)
-    M = np.loadtxt(path, delimiter="," if "," in first else None)
+    import io
+    M = np.loadtxt(io.StringIO(text), delimiter="," if "," in first else None)
     if M.shape != (3, 3):
         raise ValueError("registration must be an a11..ty CSV or a 3x3 matrix")
     inv = np.linalg.inv(M)  # Xenium Explorer: H&E px -> morphology px; invert, and convert um to morphology px
@@ -294,27 +313,39 @@ def epithelial_depth(X, genes, xy):
     idx = [up[g] for g in DEPTH_MARKERS if g in up]
     if not idx:
         return np.full(len(xy), np.nan)
-    tot = np.asarray(X.sum(1)).ravel()
-    c = np.asarray(X[:, idx].sum(1)).ravel()
+    out = np.full(len(xy), np.nan)
+    ok = np.isfinite(np.asarray(xy, float)).all(1) if len(xy) else np.zeros(0, bool)
+    if ok.sum() < 2:  # no neighbors to look at (0 or 1 placed cell)
+        return out
+    tot = np.asarray(X.sum(1)).ravel()[ok]
+    c = np.asarray(X[:, idx].sum(1)).ravel()[ok]
+    pts = np.asarray(xy, float)[ok]
     pos = (c >= DEPTH_MIN_COUNTS) & (c / np.maximum(tot, 1) >= DEPTH_MIN_FRAC)
-    tree = cKDTree(xy)
-    _, nn = tree.query(xy, k=min(DEPTH_K + 1, len(xy)))
+    _, nn = cKDTree(pts).query(pts, k=min(DEPTH_K + 1, len(pts)))
     core = pos[nn[:, 1:]].mean(1) >= DEPTH_CORE
     if not core.any():
-        return np.full(len(xy), np.nan)
-    return cKDTree(xy[core]).query(xy)[0]
+        return out
+    out[ok] = cKDTree(pts[core]).query(pts)[0]
+    return out
 
 
 # ---------------- import ----------------
 # characters; a session id adds 21 and file systems allow 255 per path component; Windows also limits a whole path to
 # 260 characters unless long paths are switched on, and a sample's files sit a few folders below the data folder
 MAX_NAME = 100 if os.name == "nt" else 200
+WIN_RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
 
 
 def _check_name(name, overwrite):
     name = str(name).strip()
     if not name or any(ch in name for ch in "/\\ "):
         raise ValueError("the sample name must be a short id without spaces or slashes")
+    # names that a Windows folder cannot have (a data folder may move between computers): <>:"|?* and control
+    # characters, a trailing dot, and the reserved device names
+    if any(ch in name for ch in '<>:"|?*') or any(ord(ch) < 32 for ch in name) or name.endswith(".") \
+            or name.split(".")[0].upper() in WIN_RESERVED:
+        raise ValueError(f"{name!r} cannot be a folder name on Windows: use letters, digits, '-', '_' or '.' "
+                         '(not < > : " | ? *, not CON, NUL, COM1 ...)')
     if len(name) > MAX_NAME:
         raise ValueError(f"the sample name {name[:40]}... is {len(name)} characters long: at most {MAX_NAME}")
     if (config.SAMPLES / name).exists() and not overwrite:
@@ -330,6 +361,17 @@ def _write_bundle(name, ids, xy, X, genes, image, A, regions, description, sourc
     registration: the affine of a registration file (kept even before there is an image to use it on). by: what
     placed the cells (registration_by). own_image: the image is a copy made for this sample (moved into its folder)."""
     out = config.SAMPLES / name
+    xy = np.asarray(xy, float)
+    if not len(xy):
+        raise ValueError("no cells to import")
+    ok = np.isfinite(xy).all(1)
+    if not ok.all():  # cells without a position cannot be placed or have neighbors: left out, with their counts
+        if not ok.any():
+            raise ValueError("no cell has a position (the coordinates are empty or not numbers)")
+        progress(f"  {int((~ok).sum()):,} cells without a position (NaN) left out")
+        ids, xy, X = np.asarray(ids)[ok], xy[ok], sp.csr_matrix(X)[np.where(ok)[0]]
+        if regions is not None:
+            regions = np.asarray(regions)[ok]
     pxy = xy @ A[:, :2].T + A[:, 2]
     if image:
         W, H = _he_size(image)
@@ -392,7 +434,7 @@ def _write_files(d, out, name, cells, X, genes, image, A, description, source, i
             "registration_by": by or ("file" if registration is not None else None),
             "image_pending": str(Path(image_pending).resolve()) if image_pending else None,
             "image_pending_kind": pending_kind}
-    json.dump(meta, open(d / "meta.json", "w"), indent=1)
+    dump_json(meta, d / "meta.json", indent=1)
 
 
 def import_sample(name, h5ad, he=None, registration=None, section_column=None, section=None, x_column=None, y_column=None,
@@ -530,6 +572,16 @@ def xenium_sources(entries):
     if len(set(keys)) < len(keys):  # the same prefix in two folders: name them by folder too
         for s in out:
             s["key"] = f"{Path(s['folder']).name}_{s['key']}" if s["key"] != Path(s["folder"]).name else s["key"]
+        # still the same (two folders of one name, e.g. two Xenium Ranger outs/): by the folder above, then numbered
+        if len({s["key"] for s in out}) < len(out):
+            for s in out:
+                s["key"] = f"{Path(s['folder']).parent.name}_{s['key']}"
+            seen = {}
+            for s in out:
+                k = s["key"]
+                seen[k] = seen.get(k, 0) + 1
+                if seen[k] > 1:
+                    s["key"] = f"{k}_{seen[k]}"
     return out
 
 
@@ -1080,7 +1132,7 @@ def import_image(name, image, um_per_px=None, description="", overwrite=False, p
                      None, None, image_kind)
         m = json.load(open(tmp / "meta.json"))
         m.update(image_only=True, um_per_px_known=known)
-        json.dump(m, open(tmp / "meta.json", "w"), indent=1)
+        dump_json(m, tmp / "meta.json", indent=1)
         if out.exists():
             from .render import forget
             forget(out)
@@ -1148,7 +1200,7 @@ def apply_registration_fix(sample_id, correction):
         meta["registration_by"] = (meta.get("registration_by") or "file") + by
     meta.setdefault("registration_fixes", []).append({"correction_px": correction,
                                                       "time": time.strftime("%Y-%m-%dT%H:%M:%S")})
-    json.dump(meta, open(d / "meta.json", "w"), indent=1)
+    dump_json(meta, d / "meta.json", indent=1)
     return {"moved_um_median": round(float(np.median(np.hypot(*(q - p).T)) * meta.get("he_um_per_px", 1)), 1),
             "moved_um_max": round(float(np.hypot(*(q - p).T).max() * meta.get("he_um_per_px", 1)), 1)}
 
@@ -1175,7 +1227,7 @@ def move_piece(sample_id, piece):
     keep = {k: piece[k] for k in ("id", "region", "n_cells", "angle_deg", "mirrored", "shift_um", "M", "center_px", "t_px")}
     keep["cell_ids"] = cells.cell_id.to_numpy()[sel].tolist()  # by id: row numbers change when a QC filter is applied
     meta.setdefault("registration_fixes", []).append({"piece": keep, "time": time.strftime("%Y-%m-%dT%H:%M:%S")})
-    json.dump(meta, open(d / "meta.json", "w"), indent=1)
+    dump_json(meta, d / "meta.json", indent=1)
     mv = np.hypot(*(q - p).T) * meta.get("he_um_per_px", 1)
     return {"moved_cells": int(sel.sum()), "moved_um_median": round(float(np.median(mv)), 1),
             "moved_um_max": round(float(mv.max()), 1)}
@@ -1206,7 +1258,7 @@ def undo_piece_move(sample_id):
         meta["registration_by"] = (meta.get("registration_by") or "file").replace(" + piece moves", "")
     if not meta["registration_fixes"]:
         meta.pop("registration_fixes")
-    json.dump(meta, open(d / "meta.json", "w"), indent=1)
+    dump_json(meta, d / "meta.json", indent=1)
     return {"moved_back": int(sel.sum()), "region": p["region"]}
 
 
@@ -1251,7 +1303,7 @@ def undo_registration_fix(sample_id):
         meta["placement_affine"] = meta.pop("placement_affine_import")
     meta["registration_by"] = (meta.get("registration_by") or "file").replace(" + nuclei correction", "").replace(
         " + local correction", "").replace(" + piece moves", "")
-    json.dump(meta, open(d / "meta.json", "w"), indent=1)
+    dump_json(meta, d / "meta.json", indent=1)
     return {"ok": True}
 
 
@@ -1279,7 +1331,7 @@ def attach_regions(sample_id, path=None, text=None, source=None):
     if not on_image(m):
         (config.SAMPLES / sample_id / "regions.geojson").write_text(text, encoding="utf-8")
         m["regions_geojson"] = {"source": source, "regions": None, "skipped": skipped}
-        json.dump(m, open(config.SAMPLES / sample_id / "meta.json", "w"), indent=1)
+        dump_json(m, config.SAMPLES / sample_id / "meta.json", indent=1)
         return None
     c = pd.read_parquet(config.SAMPLES / sample_id / "cells.parquet", columns=["px", "py"])
     px, py = c.px.to_numpy(), c.py.to_numpy()
@@ -1295,7 +1347,7 @@ def attach_regions(sample_id, path=None, text=None, source=None):
     (config.SAMPLES / sample_id / "regions.geojson").write_text(text, encoding="utf-8")
     m = _meta(sample_id)
     m["regions_geojson"] = {"source": source, "regions": per, "skipped": skipped}
-    json.dump(m, open(config.SAMPLES / sample_id / "meta.json", "w"), indent=1)
+    dump_json(m, config.SAMPLES / sample_id / "meta.json", indent=1)
     return per
 
 
@@ -1320,7 +1372,7 @@ def unload_image(sample_id):
         s = slide(m["he_path"])
         m["image_unloaded"] = {"size": [s.W0, s.H0]}
         unload(m["he_path"])
-        json.dump(m, open(config.SAMPLES / sample_id / "meta.json", "w"), indent=1)
+        dump_json(m, config.SAMPLES / sample_id / "meta.json", indent=1)
     return {"unloaded": m["he_path"]}
 
 
@@ -1332,7 +1384,7 @@ def load_image(sample_id):
     if not Path(m["he_path"]).exists():
         raise ValueError(f"the image is no longer at {m['he_path']}: add it again under Import (its registration is kept)")
     m.pop("image_unloaded")
-    json.dump(m, open(config.SAMPLES / sample_id / "meta.json", "w"), indent=1)
+    dump_json(m, config.SAMPLES / sample_id / "meta.json", indent=1)
     return {"loaded": m["he_path"]}
 
 
@@ -1368,7 +1420,7 @@ def _move_outlines(sample_id, M):
                 for o in ops:
                     if o.get("polygon"):
                         o["polygon"] = mv(o["polygon"])
-                json.dump(st, open(v, "w"), indent=1)
+                dump_json(st, v, indent=1)
         f = d / "advice.json"
         if f.exists():
             a = json.load(open(f))
@@ -1377,14 +1429,14 @@ def _move_outlines(sample_id, M):
             for it in a.get("items", []):
                 if it.get("action") and it["action"].get("polygons_px"):
                     it["action"]["polygons_px"] = [mv(p) for p in it["action"]["polygons_px"]]
-            json.dump(a, open(f, "w"), indent=1)
+            dump_json(a, f, indent=1)
         f = d / "area_suggestions.json"
         if f.exists():
             a = json.load(open(f))
             for it in a:
                 if it.get("outline_px"):
                     it["outline_px"] = mv(it["outline_px"])
-            json.dump(a, open(f, "w"), indent=1)
+            dump_json(a, f, indent=1)
 
 
 def place_cells(sample_id, A, image, image_kind="H&E", by="file", progress=print):
@@ -1419,7 +1471,7 @@ def place_cells(sample_id, A, image, image_kind="H&E", by="file", progress=print
              registration_by=by)
     if image and m.get("image_pending") and Path(m["image_pending"]).resolve() == Path(image).resolve():
         m["image_pending"] = None
-    json.dump(m, open(d / "meta.json", "w"), indent=1)
+    dump_json(m, d / "meta.json", indent=1)
     return {"placed_on": image, "by": by, "um_per_px": round(m["he_um_per_px"], 4)}
 
 
@@ -1434,7 +1486,7 @@ def undo_placement(sample_id):
     m = _meta(sample_id)
     m.update(image_pending=prev.get("image_pending"), registration_affine=prev.get("registration_affine"),
              placement_previous=None)
-    json.dump(m, open(config.SAMPLES / sample_id / "meta.json", "w"), indent=1)
+    dump_json(m, config.SAMPLES / sample_id / "meta.json", indent=1)
     return r
 
 
@@ -1449,7 +1501,7 @@ def set_image(sample_id, path, kind="H&E", progress=print):
                            progress=progress)
     m["image_pending"] = path
     m["image_pending_kind"] = kind
-    json.dump(m, open(config.SAMPLES / sample_id / "meta.json", "w"), indent=1)
+    dump_json(m, config.SAMPLES / sample_id / "meta.json", indent=1)
     return {"pending": path}
 
 
@@ -1463,14 +1515,14 @@ def set_registration(sample_id, path, section=None, progress=print):
     m["registration_affine"], m["registration_by"] = R.tolist(), "file"
     src["registration"] = str(Path(path).expanduser().resolve())
     m["source"] = src
-    json.dump(m, open(config.SAMPLES / sample_id / "meta.json", "w"), indent=1)
+    dump_json(m, config.SAMPLES / sample_id / "meta.json", indent=1)
     image = m.get("image_pending") or (m.get("he_path") if m.get("image_kind") == "H&E" else None)
     if not image:
         return {"stored": True, "note": "import the image to see the cells on it"}
     r = place_cells(sample_id, R, image, m.get("image_pending_kind") or "H&E", by="file", progress=progress)
     m = _meta(sample_id)  # undo goes back to before this file, registration included
     m["placement_previous"].update(before)
-    json.dump(m, open(config.SAMPLES / sample_id / "meta.json", "w"), indent=1)
+    dump_json(m, config.SAMPLES / sample_id / "meta.json", indent=1)
     return r
 
 

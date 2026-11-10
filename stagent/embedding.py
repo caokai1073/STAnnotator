@@ -9,6 +9,7 @@ Leiden runs on the same kNN graph.
 import json, time
 import numpy as np
 from . import config, jobs, markers, model
+from .osutil import dump_json
 
 
 FILES = ("umap.npy", "pca.npy", "leiden.npy", "meta.json")  # an embedding's files
@@ -49,7 +50,7 @@ def run(s, n_pcs=30, n_neighbors=15, min_dist=0.3, resolution=1.0, progress=None
         np.save(d / "umap.npy", Y.astype(np.float32))
         np.save(d / "pca.npy", Z[:, :2].astype(np.float32))
         np.save(d / "leiden.npy", lab.astype(np.int32))
-        json.dump(meta, open(d / "meta.json", "w"), indent=1)
+        dump_json(meta, d / "meta.json", indent=1)
     say(1.0, "done")
     return meta
 

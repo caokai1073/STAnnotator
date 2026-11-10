@@ -22,6 +22,7 @@ Results are kept in the sample's folder (he_segment/) for outline() and the revi
 import json, re, time
 import numpy as np
 from . import config
+from .osutil import dump_json
 
 STEP_UM = 6.0          # thumbnail resolution
 MAX_SIDE = 4500        # thumbnail pixels on its longer side, at most
@@ -159,7 +160,7 @@ def segment(sample_id, n_classes=6, progress=None, organ=None):
     np.save(d / "labels.npy", lab)
     meta = {"time": time.strftime("%Y-%m-%dT%H:%M:%S"), "n_classes": n_classes, "scale_px": scale, "um_per_px": step,
             "image": str(path), "shape": list(lab.shape), "classes": classes, "pixel_size_known": known, "organ": organ}
-    json.dump(meta, open(d / "meta.json", "w"), indent=1)
+    dump_json(meta, d / "meta.json", indent=1)
     if organ:
         _remember_organ(sample_id, organ)
     say(f"done in {time.time() - t0:.1f} s")
@@ -186,7 +187,7 @@ def _remember_organ(sample_id, organ):
         return
     m["organ"] = organ
     tmp = f.with_name(f".meta.{os.getpid()}.tmp")
-    json.dump(m, open(tmp, "w"), indent=1)
+    dump_json(m, tmp, indent=1)
     os.replace(tmp, f)
 
 

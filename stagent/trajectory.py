@@ -22,6 +22,7 @@ peak in the middle (transient). The cells are treated as independent: rank by ef
 The core functions take arrays only, so the exported notebook can carry this file and run them.
 """
 import numpy as np, scipy.sparse as sp
+from .osutil import dump_json
 
 K = 15                 # neighbors of the expression and the spatial graph
 N_PCS = 30
@@ -353,6 +354,8 @@ def run(c, method, within=None, start=None, end=None, root=None, alpha=0.3, by="
         masks = {"within": sel, "start": A, "end": Bm}
         t = np.where(sel, tt, np.nan)
         raw = np.where(sel, raw, np.nan)
+        if Bm is None and np.isfinite(raw).any():  # a distance: scaled over the cells ordered, as the legend reads it
+            t = np.clip(raw / max(float(np.nanpercentile(raw, 99)), 1e-9), 0, 1)
         unit = "0..1" if Bm is not None else "um"
         info = {"axis": {"start": start, "end": end if Bm is not None else None, "unit": unit}}
         if Bm is None:
@@ -430,7 +433,7 @@ def save(s, t, raw, res, run_id, masks=None, request=None):
             "alpha": res.get("alpha"), "within": res.get("within"), "by": res.get("by"),
             "pooled": bool(request and request.get("scope") == "project"),
             "top": {k: [x["gene"] for x in res[k][:10]] for k in ("rising", "falling", "transient")}}
-    json.dump(meta, open(d / f"{meth}.json", "w"), indent=1)
+    dump_json(meta, d / f"{meth}.json", indent=1)
 
 
 def _files(s, method):

@@ -18,6 +18,7 @@ from scipy.spatial import cKDTree
 from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components
 from . import render
+from .osutil import dump_json
 
 LINK_UM = 25.0   # candidate cells this close join one patch (each cell keeps its own target region)
 MAX_PATCHES = 40
@@ -106,7 +107,7 @@ def candidates(s, max_gap_um=30.0, min_share=0.7, regions=None, include_boundary
           "params": {"max_gap_um": max_gap_um, "min_share": min_share, "regions": targets, "include_boundary": include_boundary,
                      "between_only": between_only},
           "patches": patches}
-    json.dump(st, open(_file(s), "w"))
+    dump_json(st, _file(s))
     out = {k: v for k, v in st.items() if k != "patches"}
     out["n_patches"] = len(patches)
     out["n_cells"] = int(sum(p["n_cells"] for p in patches))

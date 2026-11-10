@@ -21,6 +21,7 @@ import json, time
 import numpy as np
 from scipy import ndimage
 from . import config, importer, render, insights, regcheck
+from .osutil import dump_json
 
 LOCAL_SHARE = 0.05    # the local registration is advised when this share of the tissue's windows sits off its nuclei in
                       # areas (2+ neighboring windows off by >= regcheck.OFF_UM), or where a large shift is found
@@ -141,7 +142,7 @@ def search(s, scales=None, top=6, progress=None):
         c.update(id=f"K{i + 1}", orientation_name=ORIENT_NAMES[c["orientation"]], score=round(c["score"], 3),
                  um_per_px=round(c["um_per_px"], 4))
     st = {"image": path, "kind": kind, "image_um_per_px_in_file": known, "candidates": out, "time": time.time()}
-    json.dump(st, open(_file(s), "w"), indent=1)
+    dump_json(st, _file(s), indent=1)
     say(1.0, "done")
     return st
 
@@ -226,7 +227,7 @@ def refine(s, cid, rounds=(60.0, 25.0, 12.0)):
                     "fit_residual_um": round(resid, 1), "correlation": round(float(np.median([w[4] for w in win])), 3)})
     c["A_refined"] = A.tolist()
     c["refine_log"] = log
-    json.dump(st, open(_file(s), "w"), indent=1)
+    dump_json(st, _file(s), indent=1)
     d = deviation(s, cid)
     return {"id": c["id"], "rounds": log, "um_per_px": round(float(1 / np.sqrt(abs(np.linalg.det(A[:, :2])))), 4),
             "deviation": {k: v for k, v in d.items() if k not in ("A", "offsets_um")}, "deviation_advice": advice_lines(d),
@@ -331,10 +332,10 @@ def deviation(s, cid, progress=None):
            "large_shift_windows": int(big.sum()), "large_shift_um": round(float(np.hypot(b[big, 4], b[big, 5]).max()), 0) if big.any() else None,
            "beyond_search_share": round(beyond, 3), "clear_reading_share": round(read, 3), "affine_part_max_um": round(float(np.hypot(*aff.T).max()), 1),
            "offsets_um": [round(float(x), 1) for x in t], "A": A.tolist()}
-    json.dump(w, open(_wfile(s, cid), "w"))
+    dump_json(w, _wfile(s, cid))
     st, c = _get(s, cid)   # (as stored now)
     c["deviation"] = out
-    json.dump(st, open(_file(s), "w"), indent=1)
+    dump_json(st, _file(s), indent=1)
     return out
 
 
@@ -443,11 +444,11 @@ def apply(s, cid):
         image = importer.image_of(s.sample_id)
         key = regcheck._key(s.sample_id, image)
         w = json.load(open(_wfile(s, cid)))
-        json.dump(dict(w, key=key, image=image), open(regcheck._file(s.sample_id), "w"))
+        dump_json(dict(w, key=key, image=image), regcheck._file(s.sample_id))
         m = importer._meta(s.sample_id)
         m["alignment_check"] = {"key": key, **{k: v for k, v in d.items() if k not in ("A", "offsets_um")},
                                 "time": time.strftime("%Y-%m-%dT%H:%M:%S")}
-        json.dump(m, open(config.SAMPLES / s.sample_id / "meta.json", "w"), indent=1)
+        dump_json(m, config.SAMPLES / s.sample_id / "meta.json", indent=1)
         r["deviation"] = {"verdict": d["verdict"], "advice": advice_lines(d)[1:]}
     return r
 

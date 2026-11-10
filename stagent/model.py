@@ -11,11 +11,13 @@ sampling does not inflate rare types. User corrections enter as extra, up-weight
 import json
 import numpy as np, pandas as pd, scipy.sparse as sp
 from . import config
+from .osutil import dump_json
 
 REF = config.HOME / "reference"  # reference pool (reference mode / benchmarks on the lab server only)
 CAP = 5000
 EPOCHS, BATCH, LR = 6, 8192, 3e-3
 CORRECTION_WEIGHT = 20.0
+MIN_TRAIN = 10  # fewest labeled cells the expression model is trained on (10% of them validate its temperature)
 # fine-tuning from the initial model when the user corrects cells: changes stay local to what was corrected
 # only the classes involved in the corrections may move, and an L2 pull keeps them near the initial model
 FT_STEPS, FT_LR, FT_REPLAY, FT_L2 = 100, 5e-4, 6144, 10.0
@@ -48,8 +50,8 @@ def build_reference():
     np.save(REF / "y.npy", y[keep].astype(np.int16))
     np.save(REF / "slide.npy", obs.slide_id.values[keep])
     natural = pd.crosstab(obs.slide_id, y).reindex(columns=range(len(types)), fill_value=0)
-    json.dump({"types": types, "slides": [int(s) for s in natural.index],
-               "natural_counts": natural.to_numpy().tolist()}, open(REF / "meta.json", "w"))
+    dump_json({"types": types, "slides": [int(s) for s in natural.index],
+               "natural_counts": natural.to_numpy().tolist()}, REF / "meta.json")
     print("reference pool:", len(keep), "cells")
 
 
@@ -122,6 +124,9 @@ def _fit(X, y, T, pi_target, extra_X=None, extra_y=None, progress=None, seed=0, 
     pi_target: class distribution to correct the prior back to (training data may be class-capped). genes: the
     columns to learn from (default: _genes); the model keeps them ("genes") and predict() uses only them."""
     from scipy.optimize import minimize_scalar
+    if len(y) < MIN_TRAIN:
+        raise ValueError(f"only {len(y)} labeled cells to learn the expression model from (at least {MIN_TRAIN}): "
+                         "check that the labels match the sample's cells, and that not all of them are Unassigned")
     genes = _genes(X) if genes is None else genes
     if genes is not None:
         X = X[:, genes]
@@ -183,6 +188,9 @@ def pseudo_pool(counts, labels, T, seed=0):
     """Marker mode: training pool from the sample's own pseudo-labeled cells (at most CAP per type).
     Labels < 0 (cells the marker step left at a lineage or parent level) are not used for training."""
     rng = np.random.default_rng(seed)
+    if not (np.asarray(labels) >= 0).any():
+        raise ValueError("no cell has a cell type to learn the expression model from (all Unassigned, or the labels "
+                         "match none of the sample's cells)")
     keep = np.concatenate([rng.choice(np.where(labels == t)[0], min(CAP, (labels == t).sum()), replace=False)
                            for t in range(T) if (labels == t).any()])
     keep.sort()
@@ -243,7 +251,8 @@ def reference_replay(exclude_slide):
 
 
 def save(model, path):
-    np.savez(path, **{k: np.asarray(v) for k, v in model.items()})
+    from .osutil import replace_atomic
+    replace_atomic(path, lambda t: np.savez(t, **{k: np.asarray(v) for k, v in model.items()}))
 
 
 def load(path):

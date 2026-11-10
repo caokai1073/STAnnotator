@@ -10,6 +10,7 @@ import numpy as np
 from mcp.server.fastmcp import FastMCP, Image
 from . import vocab, render
 from .session import Session, list_samples as _list_samples, list_sessions as _list_sessions
+from .osutil import dump_json
 
 INSTRUCTIONS = """You help a biologist annotate cell types in imaging spatial transcriptomics (e.g. Xenium) on their own
 computer. The tools compute every result; never invent cell types, regions, numbers or files.
@@ -253,7 +254,7 @@ def _heartbeat():
     _active["beat"] = now
     try:
         from . import config
-        json.dump({"pid": os.getpid(), "time": now, "via": _active.get("via", "app")}, open(config.HOME / "mcp_seen.json", "w"))
+        dump_json({"pid": os.getpid(), "time": now, "via": _active.get("via", "app")}, config.HOME / "mcp_seen.json")
     except OSError:
         pass
 
@@ -328,7 +329,8 @@ def _reviewed(describe):
                                    session_id=d.get("session_id", s.id if s else None),
                                    sample_id=d.get("sample_id", s.sample_id if s else None),
                                    version=d.get("version"), via=_active.get("via", "app"),
-                                   **({"advise": d["advise"]} if d.get("advise") else {}))
+                                   **({"advise": d["advise"]} if d.get("advise") else {}),
+                                   **({"guard": d["guard"]} if d.get("guard") else {}))
             if not SAME_PROCESS and claudelink.viewer_alive():
                 rec = proposals.wait(rec["id"], REVIEW_WAIT)
             return _proposal_outcome(rec)
@@ -337,12 +339,36 @@ def _reviewed(describe):
     return deco
 
 
+# tools whose effect is computed from the annotation as it is when they run (which cells a region's labels select,
+# which cells a cluster holds, which niches exist): accepted on a later version they would do something else than the
+# review window showed, so they are applied only on the version (and niche run) they were proposed on
+STATE_BOUND = ("label_cells", "label_cluster", "recluster", "revert", "name_niches")
+
+
+def _check_unchanged(rec, s):
+    if rec["tool"] not in STATE_BOUND or s is None:
+        return
+    cur = s.state()["version"]
+    if rec.get("version") is not None and cur != rec["version"]:
+        raise ValueError(f"the annotation changed since this was proposed (v{rec['version']}, now v{cur}), so it would "
+                         "not do what the review showed: ask the agent to propose it again")
+    g = rec.get("guard") or {}
+    if "niche_run" in g:
+        from . import niches
+        now = (niches.current(s)[0] or {}).get("run_id")
+        if now != g["niche_run"]:
+            raise ValueError("the niches were computed again since this was proposed: ask the agent to name them again")
+
+
 def _proposal_outcome(rec):
     from . import claudelink
     st = rec["status"]
     if st == "done":
-        if rec.get("session_after") and (not _active.get("session") or _active["session"].id != rec["session_after"]):
-            _active["session"] = Session(rec["session_after"])  # e.g. the annotation start_session made
+        # the annotation start_session made becomes the active one; any other change leaves the active annotation as it
+        # is (looking up an old proposal of another annotation with pending_changes must not switch to it)
+        if rec["tool"] == "start_session" and rec.get("session_after") and (
+                not _active.get("session") or _active["session"].id != rec["session_after"]):
+            _active["session"] = Session(rec["session_after"])
         try:
             result = json.loads(rec["result"])
         except (TypeError, ValueError):
@@ -383,7 +409,15 @@ def apply_proposal(rec, get_session=None):
     fn = GATED[rec["tool"]]
     if rec.get("session_id"):
         _active["session"] = get_session(rec["session_id"]) if get_session else Session(rec["session_id"])
-    out = fn(**rec["args"])
+    before = _active.get("session")
+    _check_unchanged(rec, before)
+    try:
+        out = fn(**rec["args"])
+    finally:
+        if get_session:  # in the app: its own annotation objects stay the viewer's (the tool marked them "agent", and
+            for x in (before, _active.get("session")):  # the user's next edits would join the agent's Undo group)
+                if x is not None:
+                    x.actor = "viewer"
     return out, (_active["session"].id if _active.get("session") else None)
 
 
@@ -579,6 +613,10 @@ def _label_breakdown(s, rows_or_cells, by_cell=True):
 
 def _d_label_cells(a):
     s = _s()
+    if s.scheme["kind"] == "markers" and a["cell_type"] in s.type_groups and a["cell_type"] not in s.types:
+        raise vocab.VocabError(f"{a['cell_type']} is a lineage / parent type; label the cells with one of its cell "
+                               "types: " + ", ".join(s.type_groups[a["cell_type"]]))
+    vocab.resolve([a["cell_type"]], s.types, {}, "cell type")  # an unknown type fails here, not after Accept
     cells = s._cells_for(a["region"], None, a.get("only_types"))
     return {"title": f"Label {len(cells):,} cells of region {a['region']} as {a['cell_type']}",
             "version": s.state()["version"],
@@ -590,6 +628,7 @@ def _d_label_cells(a):
 
 def _d_label_cluster(a):
     s = _s()
+    vocab.resolve([a["cell_type"]], s.types, {}, "cell type")  # an unknown type fails here, not after Accept
     mres = s.marker_result(s.state())
     if a["cluster_id"] not in mres["members"]:
         raise ValueError(f"no cluster {a['cluster_id']}; see list_clusters")
@@ -664,8 +703,17 @@ def _d_run_niches(a):
 
 
 def _d_name_niches(a):
-    _s()
-    return {"title": f"Name {len(a['names'])} niches", "details": [f"{k} \u2192 {v}" for k, v in a["names"].items()]}
+    from . import niches
+    s = _s()
+    meta, _ = niches.current(s)
+    if meta is None:
+        raise ValueError("no niches yet: run_niches first")
+    have = {f"N{i + 1}" for i in range(meta["n_niches"])}
+    bad = [k for k in a["names"] if k not in have]
+    if bad:
+        raise ValueError(f"no niche {', '.join(bad)}; niches: {', '.join(sorted(have, key=lambda x: int(x[1:])))}")
+    return {"title": f"Name {len(a['names'])} niches", "guard": {"niche_run": meta.get("run_id")},
+            "details": [f"{k} \u2192 {v}" for k, v in a["names"].items()]}
 
 
 def _d_record_verdicts(a):
@@ -1630,7 +1678,8 @@ def show_communication(ligand: str, receptor: str, side: str = "both") -> list:
     pal = {x[1]: x[2] for x in table}
     out = s.dir / "figures" / f"ccc_{lig}_{rec}_{side}.jpg"
     out.parent.mkdir(exist_ok=True)
-    png = render.tissue_overview(s.meta.get("he_path"), s.cells.px.to_numpy(), s.cells.py.to_numpy(), names[b], pal,
+    from .importer import image_of
+    png = render.tissue_overview(image_of(s.sample_id), s.cells.px.to_numpy(), s.cells.py.to_numpy(), names[b], pal,
                                  plausibility.grid(s), [], out,
                                  title=f"{lig.replace('_', '+')} -> {rec.replace('_', '+')}",
                                  image_kind=s.meta.get("image_kind", "H&E"),
@@ -1679,7 +1728,8 @@ def show_niches() -> list:
     names = np.array(niches.niche_names(s), dtype=object)
     pal = {n: tuple(int(c[i:i + 2], 16) for i in (1, 3, 5)) for n, c in zip(names, (render.DISTINCT * 3)[:len(names)])}
     out = s.dir / "figures" / f"niches_{meta['run_id']}.jpg"
-    png = render.tissue_overview(s.meta.get("he_path"), s.cells.px.to_numpy(), s.cells.py.to_numpy(), names[lab], pal,
+    from .importer import image_of
+    png = render.tissue_overview(image_of(s.sample_id), s.cells.px.to_numpy(), s.cells.py.to_numpy(), names[lab], pal,
                                  plausibility.grid(s), [], out, title=f"niches ({meta['identity']}, k={meta['k']})",
                                  image_kind=s.meta.get("image_kind", "H&E"), colored_by="niche")
     return [_j({"path": png}), Image(path=png)]
@@ -1936,7 +1986,16 @@ def show_embedding(color: str = "cell type", scope: str = "auto") -> list:
     c, meta = _embedding_cells(scope)
     if color not in c.labels.columns:
         raise ValueError(f"color must be one of {list(c.labels.columns)}")
-    Y = np.vstack([embedding.coords(x.sample_id, "umap") for x in c.sessions])
+    def umap(x):
+        try:
+            return embedding.coords(x.sample_id, "umap")
+        except OSError:
+            return None
+    parts = [umap(x) for x in c.sessions]
+    lacking = [x.sample_id for x, y in zip(c.sessions, parts) if y is None or len(y) != len(x.cells)]
+    if lacking:
+        raise ValueError(f"no UMAP of {', '.join(lacking)}: run PCA + UMAP (for all slices together, scope project)")
+    Y = np.vstack(parts)
     s = _s()
     out = s.dir / "figures" / f"umap_{color.replace(' ', '_')}_{'all' if c.pid else 'slice'}.jpg"
     out.parent.mkdir(exist_ok=True)
@@ -2071,7 +2130,7 @@ def save_marker_list(name: str, text: str, sample_id: Optional[str] = None) -> s
     safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", name.strip()).strip("_") or "marker_list"
     config.USER_MARKERS.mkdir(parents=True, exist_ok=True)
     path = config.USER_MARKERS / f"{safe}.txt"
-    path.write_text(text.strip() + "\n")
+    path.write_text(text.strip() + "\n", encoding="utf-8")
     return _j({"saved": str(path), "name": safe, "n_types": p["n_types"], "warnings": p["warnings"]})
 
 

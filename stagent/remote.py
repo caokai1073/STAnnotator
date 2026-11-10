@@ -35,7 +35,7 @@ def serve(check=False):
         print(json.dumps(info))
         return info
     f = config.HOME / STATE
-    st = json.loads(f.read_text()) if f.exists() else {}
+    st = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
     alive = bool(st.get("port")) and _answers(st["port"])
     if alive and st.get("build") == info["build"]:
         info.update(port=st["port"], reused=True)
@@ -58,7 +58,7 @@ def serve(check=False):
             if p.poll() is not None:
                 raise SystemExit(f"the viewer did not start; see {config.HOME / 'remote_viewer.log'}")
             time.sleep(0.2)
-        f.write_text(json.dumps({"port": port, "pid": p.pid, "build": info["build"], "started": time.time()}))
+        f.write_text(json.dumps({"port": port, "pid": p.pid, "build": info["build"], "started": time.time()}), encoding="utf-8")
         info.update(port=port, reused=False)
     print(json.dumps(info))
     return info
@@ -77,7 +77,7 @@ def ssh_hosts():
     if not f.exists():
         return []
     out = []
-    for line in f.read_text(errors="replace").splitlines():
+    for line in f.read_text(encoding="utf-8", errors="replace").splitlines():
         m = re.match(r"\s*Host\s+(.+)", line, re.I)
         if m:
             out += [h for h in m.group(1).split() if not any(c in h for c in "*?!")]
@@ -212,7 +212,7 @@ def settings_file():
 
 def load_settings():
     try:
-        return json.loads(settings_file().read_text())
+        return json.loads(settings_file().read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
 
@@ -221,5 +221,5 @@ def save_settings(**kw):
     s = load_settings()
     s.update(kw)
     config.HOME.mkdir(parents=True, exist_ok=True)
-    settings_file().write_text(json.dumps(s, indent=1))
+    settings_file().write_text(json.dumps(s, indent=1), encoding="utf-8")
     return s

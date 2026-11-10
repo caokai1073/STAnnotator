@@ -14,6 +14,7 @@ removal named by its time; past its limit the oldest removals are deleted for go
 """
 import json, os, threading, time
 from . import config
+from .osutil import dump_json
 
 DEFAULT_GB = 5.0
 DEFAULT_TRASH_GB = 10.0
@@ -48,7 +49,7 @@ def _store(key, gb, what):
     except ValueError:
         cur = {}
     cur[key] = gb
-    json.dump(cur, open(f, "w"), indent=1)
+    dump_json(cur, f, indent=1)
     return gb
 
 
@@ -130,13 +131,29 @@ def _size(p):
     return sum(f.stat().st_size for f in p.rglob("*") if f.is_file() and not f.is_symlink())
 
 
+def removed_at(p):
+    """When an entry went into the trash: the time its name starts with (every removal is named
+    <YYYYmmdd-HHMMSS>_...), else None. The files inside keep their own, older times when they are moved."""
+    import re
+    m = re.match(r"(\d{8}-\d{6})_", p.name)
+    if not m:
+        return None
+    try:
+        return time.mktime(time.strptime(m.group(1), "%Y%m%d-%H%M%S"))
+    except ValueError:
+        return None
+
+
 def trash_entries():
-    """[(path, bytes, time)] of the removals in the trash, oldest first (time: the newest file inside)."""
+    """[(path, bytes, time)] of the removals in the trash, oldest first (time: when it was removed, from its name;
+    for an entry not named so, the newest file inside)."""
     out = []
     for p in config.TRASH.iterdir() if config.TRASH.exists() else []:
         try:
-            files = [p] if p.is_file() else [f for f in p.rglob("*") if f.is_file()]
-            t = max((f.stat().st_mtime for f in files), default=p.stat().st_mtime)
+            t = removed_at(p)
+            if t is None:
+                files = [p] if p.is_file() else [f for f in p.rglob("*") if f.is_file()]
+                t = max((f.stat().st_mtime for f in files), default=p.stat().st_mtime)
             out.append((p, _size(p), t))
         except OSError:
             continue

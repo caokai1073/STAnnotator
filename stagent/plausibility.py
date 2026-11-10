@@ -21,6 +21,7 @@ import json, math, string, time
 import numpy as np, pandas as pd
 from scipy import ndimage
 from . import markers, render
+from .osutil import dump_json
 
 COHESIVE = 0.5   # minimum median same-lineage neighbor share of a cohesive lineage and type
 ISOLATED = 0.2   # a cell is isolated below this share
@@ -89,6 +90,9 @@ def _row_name(i):
 
 def grid(s):
     """Square tiles over the sample in H&E level-0 pixels; tile size a round number of um."""
+    if not len(s.cells):
+        raise ValueError("this sample has no cells (an H&E only): there is nothing to check or count; draw or outline "
+                         "regions on it instead")
     px, py = s.cells.px.to_numpy(), s.cells.py.to_numpy()
     x0, y0 = float(px.min()), float(py.min())
     long_um = max(px.max() - x0, py.max() - y0) * s.he_um_per_px
@@ -434,7 +438,7 @@ def suggest(s, areas, author="agent"):
                     "region_name": str(a.get("region_name", "")).strip(), "tiles": info["tiles"],
                     "from_area": info.get("id"), "outline_px": info["outline_px"], "lineage": info.get("lineage"),
                     "status": "open", "author": author, "created_at": time.strftime("%Y-%m-%dT%H:%M:%S")})
-    json.dump(old + new, open(_sfile(s), "w"), indent=1)
+    dump_json(old + new, _sfile(s), indent=1)
     return new
 
 
@@ -448,7 +452,7 @@ def set_suggestion_status(s, sid, status, region_name=None):
     hit[0]["status"] = status
     if region_name:
         hit[0]["region_name"] = region_name
-    json.dump(rows, open(_sfile(s), "w"), indent=1)
+    dump_json(rows, _sfile(s), indent=1)
     return hit[0]
 
 
@@ -488,7 +492,7 @@ def solve_area(s, area_id, version=None, by="user", reason=""):
     rows.append({"lineage": a["lineage"], "tiles": a["tiles"], "tile_set": [list(t) for t in a["tile_set"]],
                  "n_out_of_place": a["n_out_of_place"], "area_id": a["id"], "version": sc["version"], "by": by,
                  "reason": str(reason).strip(), "time": time.strftime("%Y-%m-%dT%H:%M:%S")})
-    json.dump(rows, open(_afile(s), "w"), indent=1)
+    dump_json(rows, _afile(s), indent=1)
     return {k: v for k, v in rows[-1].items() if k != "tile_set"}
 
 
@@ -498,5 +502,5 @@ def reopen_area(s, index):
     if not 0 <= int(index) < len(rows):
         raise ValueError("no such solved area")
     gone = rows.pop(int(index))
-    json.dump(rows, open(_afile(s), "w"), indent=1)
+    dump_json(rows, _afile(s), indent=1)
     return gone

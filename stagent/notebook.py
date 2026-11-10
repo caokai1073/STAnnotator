@@ -14,7 +14,7 @@ from . import config, embedding, niches, render
 
 # app modules carried into the notebook, in import order (relative imports resolve inside the notebook)
 # visium and stereoseq before importer, which imports them
-CARRIED = ["timing", "vocab", "markers", "model", "constraints", "regions", "existing", "visium", "stereoseq", "importer", "scref",
+CARRIED = ["osutil", "timing", "vocab", "markers", "model", "constraints", "regions", "existing", "visium", "stereoseq", "importer", "scref",
            "trajectory"]
 CONFIG_STUB = '''"""Stand-in for the app's settings: only what the carried modules use."""
 from pathlib import Path
@@ -444,7 +444,13 @@ same = labels == ORIGINAL
 print("labels identical to the original" if same.all() else f"{{same.mean():.2%}} of the labels as in the original "
       f"({{(~same).sum():,}} cells differ; an annotation made with an earlier app version can differ)")
 pd.Series(labels).value_counts().rename_axis("cell type").to_frame("cells").head(30)''',
-                    [_text("labels identical to the original"), _table(comp)]))
+                    [_text("labels identical to the original" if not sch.get("joint") else
+                           "(the annotation was made on all slices of the project together; a replay on this slice "
+                           "alone can label some cells differently)"), _table(comp)]))
+    if sch.get("joint"):
+        nb.insert(len(nb) - 1, _md(f"*This annotation was made on all {sch['joint'].get('slices', 'the')} slices of project "
+                                   f"`{sch['joint'].get('project')}` together (one marker step and one model). The cell below "
+                                   "replays it on this slice alone, so its clusters and some labels differ from the app's.*"))
 
     # ---- 5. spatial map
     px, py = s.cells.px.to_numpy(), s.cells.py.to_numpy()
@@ -478,7 +484,10 @@ umap_xy = umap.UMAP(n_neighbors=K + 1, min_dist=MIN_DIST, init=init, n_jobs=-1, 
                     precomputed_knn=(np.c_[np.arange(n), nbr], np.c_[np.zeros(n, np.float32), dist].astype(np.float32), None)
                     ).fit_transform(Z)
 plot(umap_xy[:, 0], umap_xy[:, 1], labels, "UMAP, cell types", invert=False)''',
-                        [_text(f"{em['n_clusters']} Leiden clusters; identical to the original: True"),
+                        [_text(f"{em['n_clusters']} Leiden clusters; identical to the original: True" if not em.get("project")
+                               else "(computed on all slices of the project together"
+                               + (", corrected with Harmony" if em.get("harmony") else "")
+                               + "; a replay on this slice alone gives other clusters)"),
                          _image(_scatter(Y[:, 0], Y[:, 1], np.asarray(labels, dtype=object), "UMAP, cell types", invert=False))]))
 
     # ---- 7. niches
@@ -507,9 +516,14 @@ kk = np.clip(cKDTree(xy).query_ball_point(xy, r={nmeta['radius_um']}, return_len
 kk = np.full(len(xy), {nmeta['k']})
 for name, k in {_py(nmeta.get('k_by_region') or {})}.items():   # k per drawn region
     kk[region == name] = k'''
+        other_v = nmeta.get("version") not in (None, v) and (nmeta["identity"] != "nmf" or nmeta.get("k_by_region"))
+        caveat = (f" *They were computed on all slices of project `{nmeta['project']}` together, so a replay on this "
+                  "slice alone differs.*" if nmeta.get("project") else
+                  f" *They were computed on version {nmeta.get('version')}; this notebook replays version {v}'s "
+                  "labels and regions, so they can differ.*" if other_v else "")
         nb.append(_md(f"## {sec()}. Niches\nEach cell's identity (" + ("its composition of NMF gene programs" if nmeta["identity"] == "nmf"
                       else "its cell type") + ") is averaged over the cell and its nearest cells, and the averages are "
-                      f"clustered (k-means) into {nmeta['n_niches']} niches, numbered by size."))
+                      f"clustered (k-means) into {nmeta['n_niches']} niches, numbered by size." + caveat))
         nb.append(_code(ident + kk + f'''
 from sklearn.cluster import KMeans
 nn_ = cKDTree(xy).query(xy, k=int(kk.max()) + 1)[1]
@@ -526,7 +540,8 @@ print("niches identical to the original:", bool((niche == unpack("{_pack(nlab, n
 niche_name = np.array(NAMES, dtype=object)[niche]
 pd.DataFrame({{"niche": niche_name, "cell type": labels}}).groupby("niche")["cell type"].agg(
     lambda x: ", ".join(f"{{k}} {{round(100 * v)}}%" for k, v in x.value_counts(normalize=True).head(3).items())).to_frame("main cell types")''',
-                        [_text("niches identical to the original: True"), _table(tab),
+                        [_text("niches identical to the original: True" if not caveat else "(see the note above: a replay "
+                               "can differ)"), _table(tab),
                          _image(_scatter(px, py, np.array(names, dtype=object)[nlab], "niches"))]))
 
     # ---- trajectory: the annotation's last run (Trajectory tab or the agent), replayed from its cells

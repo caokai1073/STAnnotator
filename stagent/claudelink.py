@@ -83,9 +83,9 @@ def workspace(remote=None):
     else:
         ws, entry, home = config.HOME / "claude_workspace", server_entry(), config.HOME
     (ws / ".claude").mkdir(parents=True, exist_ok=True)
-    (ws / "stagent_mcp.json").write_text(json.dumps({"mcpServers": {"stagent": entry}}, indent=2))
-    (ws / ".claude" / "settings.json").write_text(json.dumps({"permissions": {"allow": ["mcp__stagent"]}}, indent=2))
-    (ws / "CLAUDE.md").write_text(CLAUDE_MD.format(home=home))
+    (ws / "stagent_mcp.json").write_text(json.dumps({"mcpServers": {"stagent": entry}}, indent=2), encoding="utf-8")
+    (ws / ".claude" / "settings.json").write_text(json.dumps({"permissions": {"allow": ["mcp__stagent"]}}, indent=2), encoding="utf-8")
+    (ws / "CLAUDE.md").write_text(CLAUDE_MD.format(home=home), encoding="utf-8")
     return ws
 
 
@@ -104,14 +104,15 @@ def _cmd_quote(text):
     return '"' + " ".join(str(text).split()).replace('"', "'").replace("%", "%%") + '"'
 
 
-def _open_windows(ws, prompt, exe):
+def _open_windows(ws, prompt, exe, send=None):
     """Windows: Claude Code in its own console window (cmd.exe), its process recorded in the workspace. A window that
-    is still open is left as it is when there is nothing to send; with a request it is replaced by a new one that
-    continues the same conversation (claude --continue): text cannot be typed into another console."""
+    is still open is left as it is when there is nothing to send (send: a request the user made, not the greeting
+    every opening carries); with one it is replaced by a new one that continues the same conversation
+    (claude --continue): text cannot be typed into another console."""
     rec = ws / "claude_console.txt"
-    old = rec.read_text().strip() if rec.exists() else ""
+    old = rec.read_text(encoding="utf-8").strip() if rec.exists() else ""
     running = old.isdigit() and osutil.pid_alive(int(old))
-    if running and not prompt:
+    if running and not send:  # (the agent may be in the middle of a task: never ended only to bring it forward)
         return {"opened": True, "reused": True, "console": True, "claude_code": exe}
     if running:
         osutil.terminate(int(old), tree=True)
@@ -127,7 +128,7 @@ def _open_windows(ws, prompt, exe):
     script = ws / "start_claude.cmd"
     script.write_text("\r\n".join(body) + "\r\n", encoding="utf-8")
     p = subprocess.Popen(["cmd.exe", "/k", str(script)], cwd=str(ws), creationflags=subprocess.CREATE_NEW_CONSOLE)
-    rec.write_text(str(p.pid))
+    rec.write_text(str(p.pid), encoding="utf-8")
     return {"opened": True, "reused": running, "continued": running, "console": True, "claude_code": exe}
 
 
@@ -197,7 +198,7 @@ def open_claude_code(sample=None, session=None, request=None, send_if_open=False
     send = prompt if (send_if_open and request) else None
     cmd, ws = claude_code_command(prompt, remote)
     if osutil.WINDOWS:
-        return _open_windows(ws, prompt, claude_code_path()) | {"command": cmd}
+        return _open_windows(ws, prompt, claude_code_path(), send) | {"command": cmd}
     if platform.system() != "Darwin":
         return {"opened": False, "command": cmd}
     script = ws / "start_claude.command"
@@ -214,18 +215,18 @@ def open_claude_code(sample=None, session=None, request=None, send_if_open=False
                  '  read -r; exit 1',
                  'fi',
                  f'exec claude {args}']
-    script.write_text("\n".join(body) + "\n")
+    script.write_text("\n".join(body) + "\n", encoding="utf-8")
     script.chmod(0o755)
     focus, tab = ws / "focus_claude.applescript", ws / "claude_tab.txt"
-    focus.write_text(FOCUS_SCRIPT)
-    tty = tab.read_text().strip() if tab.exists() else ""
+    focus.write_text(FOCUS_SCRIPT, encoding="utf-8")
+    tty = tab.read_text(encoding="utf-8").strip() if tab.exists() else ""
     r = subprocess.run(["osascript", str(focus), tty, str(script), TAB_TITLE, send or ""], capture_output=True,
                        text=True, check=False)
     out = r.stdout.strip().split(" ", 1)
     if r.returncode != 0 or len(out) < 2:  # e.g. the user did not allow the app to control Terminal
         subprocess.run(["open", "-a", "Terminal", str(script)], check=False)
         return {"opened": True, "reused": False, "command": cmd, "claude_code": exe}
-    tab.write_text(out[1])
+    tab.write_text(out[1], encoding="utf-8")
     return {"opened": True, "reused": out[0] == "existing", "command": cmd, "claude_code": exe}
 
 
@@ -259,7 +260,7 @@ def close_claude_code(wait=3.0):
     if osutil.WINDOWS:  # the console windows the app opened (their whole process tree: cmd, claude, node)
         done = []
         for rec in sorted(config.HOME.glob("claude_workspace*/claude_console.txt")):
-            pid = rec.read_text().strip()
+            pid = rec.read_text(encoding="utf-8").strip()
             rec.unlink(missing_ok=True)
             if pid.isdigit() and osutil.pid_alive(int(pid)):
                 osutil.terminate(int(pid), tree=True)
@@ -269,7 +270,7 @@ def close_claude_code(wait=3.0):
         return []
     done = []
     for tab in sorted(config.HOME.glob("claude_workspace*/claude_tab.txt")):
-        tty = tab.read_text().strip()
+        tty = tab.read_text(encoding="utf-8").strip()
         tab.unlink(missing_ok=True)
         if not tty.startswith("/dev/tty"):
             continue
@@ -286,7 +287,7 @@ def close_claude_code(wait=3.0):
             pids = [p for p in pids if _alive(p)]
             time.sleep(0.1)
         script = tab.parent / "close_claude.applescript"
-        script.write_text(CLOSE_SCRIPT)
+        script.write_text(CLOSE_SCRIPT, encoding="utf-8")
         r = subprocess.run(["osascript", str(script), tty], capture_output=True, text=True, check=False, timeout=10)
         done.append((tty, r.stdout.strip() or r.stderr.strip()))
     return done
@@ -304,29 +305,29 @@ def _vfile(name):
 def write_viewer_state(**kw):
     p = _vfile("viewer.json")
     try:
-        cur = json.loads(p.read_text()) if p.exists() else {}
+        cur = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
     except ValueError:
         cur = {}
     cur.update(kw, updated=time.time())
-    p.write_text(json.dumps(cur))
+    p.write_text(json.dumps(cur), encoding="utf-8")
 
 
 def viewer_state():
     p = _vfile("viewer.json")
     try:
-        return json.loads(p.read_text()) if p.exists() else {}
+        return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
     except ValueError:
         return {}
 
 
 def write_viewer_selection(sel):
     """The cells selected in the viewer ({sample_id: rows}, or None), as of the last analysis run there."""
-    _vfile("viewer_selection.json").write_text(json.dumps({"selection": sel, "updated": time.time()}))
+    _vfile("viewer_selection.json").write_text(json.dumps({"selection": sel, "updated": time.time()}), encoding="utf-8")
 
 
 def viewer_selection():
     try:
-        return json.loads(_vfile("viewer_selection.json").read_text()).get("selection")
+        return json.loads(_vfile("viewer_selection.json").read_text(encoding="utf-8")).get("selection")
     except (OSError, ValueError):
         return None
 
@@ -345,12 +346,12 @@ def viewer_alive(state=None):
 
 
 def request_show(sample, session):
-    _vfile("viewer_request.json").write_text(json.dumps({"sample": sample, "session": session, "time": time.time()}))
+    _vfile("viewer_request.json").write_text(json.dumps({"sample": sample, "session": session, "time": time.time()}), encoding="utf-8")
 
 
 def viewer_request():
     p = _vfile("viewer_request.json")
     try:
-        return json.loads(p.read_text()) if p.exists() else {}
+        return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
     except ValueError:
         return {}

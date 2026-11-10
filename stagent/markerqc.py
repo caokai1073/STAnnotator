@@ -11,6 +11,7 @@ cell types missing from the list (Unassigned cells are compared with all assigne
 """
 import numpy as np, scipy.sparse as sp
 from . import markers
+from .osutil import dump_json
 
 WEAK = 0.25
 UNSPECIFIC = 0.7
@@ -101,7 +102,10 @@ def check(s, version=None):
             nodes.append(rec)
             walk(nd["children"], depth + 1, nd["name"])
 
-    walk(s.scheme["tree"], 1, None)
+    # the markers the marker step uses in this version: the list with the edits of its re-clusterings applied
+    tree = s._marker_tree(r["state"].get("marker_step", {}).get("ops", [])) if s.scheme.get("kind") == "markers" \
+        else s.scheme["tree"]
+    walk(tree, 1, None)
     ua = s.types.index(markers.UNASSIGNED) if markers.UNASSIGNED in s.types else None
     unassigned = None
     if ua is not None and nt[ua] >= MIN_CELLS:
@@ -138,7 +142,7 @@ def propose(s, text, summary=""):
             if l[:1] in "+-" and not l.startswith(("+++", "---"))]
     rec = {"text": parsed["canonical"], "summary": summary.strip(), "diff": diff, "warnings": parsed["warnings"],
            "n_types": len(parsed["leaves"]), "status": "open", "created_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
-    json.dump(rec, open(_pfile(s), "w"), indent=1)
+    dump_json(rec, _pfile(s), indent=1)
     return rec
 
 
@@ -150,7 +154,7 @@ def set_proposal_status(s, status):
     if rec is None:
         raise ValueError("no marker list proposal")
     rec["status"] = status
-    json.dump(rec, open(_pfile(s), "w"), indent=1)
+    dump_json(rec, _pfile(s), indent=1)
     return rec
 
 
@@ -182,7 +186,7 @@ def solve(s, key, version=None, by="user", reason=""):
     rows.append({"key": key, "node": found[0]["node"], "marker": found[0]["marker"], "flag": found[0]["flag"],
                  "version": q["version"], "by": by, "reason": str(reason).strip(),
                  "time": time.strftime("%Y-%m-%dT%H:%M:%S")})
-    json.dump(rows, open(_rfile(s), "w"), indent=1)
+    dump_json(rows, _rfile(s), indent=1)
     return rows[-1]
 
 
@@ -201,4 +205,4 @@ def reopen(s, key):
     keep = [r for r in rows if r["key"] != key]
     if len(keep) == len(rows):
         raise ValueError(f"marker check {key!r} is not solved")
-    json.dump(keep, open(_rfile(s), "w"), indent=1)
+    dump_json(keep, _rfile(s), indent=1)

@@ -16,6 +16,7 @@ from datetime import datetime
 import numpy as np, pandas as pd, scipy.sparse as sp
 from scipy.spatial import cKDTree
 from . import config, osutil, vocab, markers, regions as regmod, constraints as cmod, conflicts as confmod, render
+from .osutil import dump_json
 
 AGENT_GAP_S = 90  # the agent's changes this close together belong to one request (one Undo)
 NOT_ANNOTATED = "Not annotated"  # the one label of a sample's placeholder (method "none", see Session.create)
@@ -235,8 +236,8 @@ class Session:
         d = config.SESSIONS / sid
         (d / "versions").mkdir(parents=True)
         (d / "figures").mkdir(); (d / "exports").mkdir()
-        json.dump({"session_id": sid, "sample_id": str(sample_id), "created_at": _now(), "method": method,
-                   "scheme": scheme}, open(d / "session.json", "w"), indent=1)
+        dump_json({"session_id": sid, "sample_id": str(sample_id), "created_at": _now(), "method": method,
+                   "scheme": scheme}, d / "session.json", indent=1)
         if method == "existing":
             np.save(d / "loaded_labels.npy", loaded["labels"])
         s = cls(sid)
@@ -280,7 +281,7 @@ class Session:
         msg = (f"carried over from {sid}: {len(regions.get('ops', []))} region polygons, {len(kept)} priors, "
                f"{len(corr)} corrections" + (f"; dropped: {'; '.join(dropped)}" if dropped else ""))
         if old.region_colors():  # the colors the user picked come along with the regions
-            json.dump(old.region_colors(), open(self.dir / "region_colors.json", "w"), indent=1)
+            dump_json(old.region_colors(), self.dir / "region_colors.json", indent=1)
         return self._commit("carry_over", msg, regions=regions, constraints=kept, corrections=corr)
 
     def _vpath(self, v):
@@ -357,11 +358,15 @@ class Session:
         with self._lock:
             if key not in self._bases:
                 f = self.dir / "base" / f"{key}.npy"
+                logp = None
                 if f.exists():
-                    logp = np.load(f)
-                else:
+                    try:
+                        logp = np.load(f)
+                    except Exception:  # a cut file (from before files were written whole)
+                        logp = None
+                if logp is None:
                     logp = self._train_base(st, progress)
-                    np.save(f, logp)
+                    osutil.replace_atomic(f, lambda t: np.save(t, logp))
                 pred, conf = cmod.posterior(logp, [], None, self.types)
                 self._bases[key] = {"key": key, "logp": logp, "pred": pred, "conf": conf}
             elif progress:
@@ -375,12 +380,16 @@ class Session:
         mkey = self._mkey(st.get("marker_step", {}).get("ops", []))
         f = self.dir / "base" / ("init_model.npz" if mkey == "init" else f"model_{mkey}.npz")
         if f.exists():
-            return model.load(f)
+            try:
+                return model.load(f)
+            except Exception:  # a cut file (from before files were written whole): trained again
+                pass
         if self.scheme["kind"] == "markers":
             lab = self.marker_labels(st, lambda fr, msg: say(0.02 + 0.6 * fr, msg))
             say(0.65, "training expression model on the marker annotation")
             m = model.train_pseudo(self.counts, lab, len(self.types), progress=lambda fr, msg: say(0.65 + 0.25 * fr, msg),
-                                   keep=markers.gene_columns(self.scheme["tree"], self.panel))
+                                   keep=markers.gene_columns(self._marker_tree(st.get("marker_step", {}).get("ops", [])),
+                                                             self.panel))
         elif self.scheme["kind"] == "existing":
             say(0.3, "training the expression model on the loaded labels")
             m = model.train_pseudo(self.counts, self._existing_training_labels(), len(self.types),
@@ -413,8 +422,8 @@ class Session:
         if tr["types"] != self.types:
             raise ValueError("the reference's labels changed since this annotation was made")
         X = tr["X"]
-        np.savez(f, data=X.data, indices=X.indices, indptr=X.indptr, shape=np.array(X.shape), y=tr["y"],
-                 panel_idx=tr["panel_idx"])
+        osutil.replace_atomic(f, lambda t: np.savez(t, data=X.data, indices=X.indices, indptr=X.indptr,
+                                                    shape=np.array(X.shape), y=tr["y"], panel_idx=tr["panel_idx"]))
         return tr
 
     def loaded_labels(self):
@@ -442,7 +451,7 @@ class Session:
         say(0.93, "over-clustering for majority voting")
         g, nbr = markers._graph(model.lognorm(self.counts))
         cl = markers._leiden(g, nbr, scref.over_resolution(self.counts.shape[0]), 0)
-        np.save(f, cl)
+        osutil.replace_atomic(f, lambda t: np.save(t, cl))
         return cl
 
     # ----- marker step (versioned: each local re-clustering is an op in state["marker_step"]["ops"]) -----
@@ -461,20 +470,24 @@ class Session:
         code = {n: i for i, n in enumerate(names)}
         ids = list(res["members"])
         rows = [res["members"][i] for i in ids]
-        np.savez(self.dir / "base" / f"markers_{mkey}.npz",
-                 labels=np.array([self.node_names.index(x) for x in res["labels"]], np.int16),
-                 cluster=np.array([code[c] for c in res["cluster_of"]], np.int32),
-                 member_rows=np.concatenate(rows).astype(np.int32) if rows else np.zeros(0, np.int32),
-                 member_offsets=np.cumsum([0] + [len(r) for r in rows]))
-        json.dump({"cluster_names": names, "member_ids": ids, "records": res["records"], "nodes": res["nodes"],
-                   "knn": res.get("knn")},
-                  open(self.dir / "base" / f"markers_{mkey}.json", "w"))
+        # the .json first, the .npz last: _load_mres reads a result only when its .npz exists, and both are whole
+        arrays = dict(labels=np.array([self.node_names.index(x) for x in res["labels"]], np.int16),
+                      cluster=np.array([code[c] for c in res["cluster_of"]], np.int32),
+                      member_rows=np.concatenate(rows).astype(np.int32) if rows else np.zeros(0, np.int32),
+                      member_offsets=np.cumsum([0] + [len(r) for r in rows]))
+        dump_json({"cluster_names": names, "member_ids": ids, "records": res["records"], "nodes": res["nodes"],
+                   "knn": res.get("knn")}, self.dir / "base" / f"markers_{mkey}.json")
+        osutil.replace_atomic(self.dir / "base" / f"markers_{mkey}.npz", lambda t: np.savez(t, **arrays))
 
     def _load_mres(self, mkey):
         f = self.dir / "base" / f"markers_{mkey}.npz"
         if not f.exists():
             return None
-        z, j = np.load(f), json.load(open(self.dir / "base" / f"markers_{mkey}.json"))
+        try:
+            z, j = np.load(f), json.load(open(self.dir / "base" / f"markers_{mkey}.json"))
+            z.files  # (a cut zip fails here)
+        except Exception:  # missing or cut (written before files were whole): computed again
+            return None
         off = z["member_offsets"]
         return {"labels": np.array(self.node_names, dtype=object)[z["labels"]],
                 "cluster_of": np.array(j["cluster_names"], dtype=object)[z["cluster"]],
@@ -921,8 +934,10 @@ class Session:
 
     def assign_region_cells(self, moves, author=None, text="", message=None):
         """Put cells into regions without changing any outline: moves [{"to": region, "cells": [cell ids]}], each
-        one "cells_override" operation (O1, O2, ...; later operations win over earlier ones, so a polygon drawn after
-        it takes its cells back). The agent proposes these (regionfill.py); the user's Accept applies them."""
+        one "cells_override" operation (O1, O2, ...). Overrides are applied after every outline (regions.assign), so the
+        cells stay where they were moved even when an outline is drawn or edited over them later; deleting the override
+        (its x in the Regions panel) gives them back to the outlines. The agent proposes these (regionfill.py); the
+        user's Accept applies them."""
         cur = self.state()
         ops = list(cur["regions"].get("ops", []))
         names = self.region_names()
@@ -985,7 +1000,7 @@ class Session:
             cols.pop(name, None)
         else:
             cols[name] = str(color).lower()
-        json.dump(cols, open(self.dir / "region_colors.json", "w"), indent=1)
+        dump_json(cols, self.dir / "region_colors.json", indent=1)
         return cols
 
     def rename_region(self, old, new, message=None):
@@ -1417,12 +1432,12 @@ class Session:
         d = self.dir / "exports" / f"v{v:04d}"
         d.mkdir(parents=True, exist_ok=True)
         self.export_table(version).to_csv(d / "cells.csv", index=False)
-        json.dump(r["state"], open(d / "state.json", "w"), indent=1)
+        dump_json(r["state"], d / "state.json", indent=1)
         r["conflicts"].to_csv(d / "conflicts.csv", index=False)
         lines = [f"# Session {self.id}, sample {self.sample_id}, version {v}", ""]
         for h in self.history():
             if h["version"] <= v:
                 lines.append(f"- v{h['version']} ({h['created_at']}, {h['action']}): {h['message']}")
         lines += ["", "## Constraints"] + [f"- {cmod.describe(c)}  (\"{c['text']}\")" for c in r["state"]["constraints"]]
-        (d / "CHANGELOG.md").write_text("\n".join(lines) + "\n")
+        (d / "CHANGELOG.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
         return str(d)

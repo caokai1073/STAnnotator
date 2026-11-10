@@ -142,7 +142,7 @@ def inspect(path, segmentation=None):
     out["segmentation"] = str(seg) if seg else None
     out["fine_bins"] = next((str(fd) for fd, fs in sorted(found, key=lambda x: x[1] or 99) if fs and fs <= 4), None)
     if seg and Path(seg).exists():
-        txt = open(seg).read(4_000_000)
+        txt = open(seg, encoding="utf-8", errors="replace").read(4_000_000)
         out["n_outlines_about"] = txt.count('"Feature"') if len(txt) < 4_000_000 else int(Path(seg).stat().st_size / len(txt) * txt.count('"Feature"'))
     return out
 
@@ -247,6 +247,12 @@ def pyramid(src, dst, um_per_px=None, progress=print, tile=512):
             axes, shape = s.axes, s.shape
         z = zarr.open(tifffile.imread(src, aszarr=True), mode="r")
         H, W = shape[axes.index("Y")], shape[axes.index("X")]
+        hi = None  # one scale for a non-8-bit image (DAPI, IF): its 99.9th percentile on a coarse grid of the whole image
+        if np.dtype(s.dtype) != np.uint8:
+            stride = max(1, int(max(H, W) / 2000))
+            idx = tuple(slice(None, None, stride) if c in "YX" else slice(None) if c == "S" else slice(0, 3) if c == "C"
+                        else 0 for c in axes)
+            hi = max(float(np.percentile(np.asarray(z[idx]), 99.9)), 1.0)
 
         def strip(y0, y1):
             idx = tuple(slice(y0, y1) if c == "Y" else slice(None) if c in "XS" else slice(0, 3) if c == "C" else 0
@@ -255,8 +261,8 @@ def pyramid(src, dst, um_per_px=None, progress=print, tile=512):
             kept = [c for c in axes if c in "YXSC"]
             a = np.moveaxis(a, [kept.index("Y"), kept.index("X")], [0, 1])
             a = a.reshape(a.shape[0], a.shape[1], -1)
-            if a.dtype != np.uint8:
-                a = np.clip(a / max(float(a.max()), 1) * 255, 0, 255).astype(np.uint8)
+            if a.dtype != np.uint8:  # the same scale for every strip (a strip's own maximum made bands)
+                a = np.clip(a.astype(np.float32) / (hi or max(float(a.max()), 1)) * 255, 0, 255).astype(np.uint8)
             return a[..., :3] if a.shape[2] >= 3 else np.repeat(a[..., :1], 3, axis=2)
     else:
         from PIL import Image
@@ -270,6 +276,8 @@ def pyramid(src, dst, um_per_px=None, progress=print, tile=512):
         dims.append((h // 2, w // 2))
     progress(f"pyramidal copy of the image ({W:,} x {H:,} px, {len(dims)} levels)")
     tmpd = Path(tempfile.mkdtemp(prefix=".pyramid-", dir=Path(dst).parent))
+    part = Path(str(dst) + ".part")
+    lv = []
     try:
         lv = [None] + [np.lib.format.open_memmap(tmpd / f"l{k}.npy", mode="w+", dtype=np.uint8, shape=(h, w, 3))
                        for k, (h, w) in enumerate(dims) if k]
@@ -292,7 +300,6 @@ def pyramid(src, dst, um_per_px=None, progress=print, tile=512):
                     yield t
                 if k == 0 and (y0 // tile) % 20 == 0:
                     progress(f"  image rows {y0:,} of {h:,}")
-        part = Path(str(dst) + ".part")
         kw = dict(tile=(tile, tile), compression="jpeg", compressionargs={"level": 90}, photometric="rgb", dtype=np.uint8)
         meta = {"axes": "YXS"} | ({"PhysicalSizeX": um_per_px, "PhysicalSizeY": um_per_px} if um_per_px else {})
         with tifffile.TiffWriter(part, bigtiff=True, ome=True) as t:
@@ -301,8 +308,18 @@ def pyramid(src, dst, um_per_px=None, progress=print, tile=512):
                 t.write(tiles(lambda a, b, k=k: lv[k][a:b], k), shape=(*dims[k], 3), subfiletype=1, **kw)
         part.replace(dst)
     finally:
-        import shutil
+        import gc, shutil
+        for m in lv:  # unmapped first: Windows cannot delete a file that is still mapped
+            if m is not None and getattr(m, "_mmap", None) is not None:
+                m._mmap.close()
+        lv.clear()
+        gc.collect()
         shutil.rmtree(tmpd, ignore_errors=True)
+        if part.exists():  # a write that failed or was stopped
+            try:
+                part.unlink()
+            except OSError:
+                pass
     return str(dst)
 
 
@@ -334,7 +351,7 @@ def fine_bins(found):
 def read_outlines(path):
     """Cell outlines of a GeoJSON (Polygon / MultiPolygon features in full-resolution pixels, as Space Ranger 4,
     QuPath, StarDist or Cellpose write them): (ids, [list of rings per cell, each (n, 2) x, y])."""
-    gj = json.load(open(path))
+    gj = json.load(open(path, encoding="utf-8-sig"))
     feats = gj["features"] if isinstance(gj, dict) and "features" in gj else gj
     ids, rings = [], []
     for k, f in enumerate(feats):

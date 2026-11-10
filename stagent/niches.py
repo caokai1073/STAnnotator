@@ -13,6 +13,7 @@ import json, time
 import numpy as np, pandas as pd
 from scipy.spatial import cKDTree
 from . import jobs, model
+from .osutil import dump_json
 
 K_MIN, K_MAX = 5, 80
 NMF_FIT_CELLS = 60000   # NMF is fitted on a random subset, then every cell is projected onto the programs
@@ -105,7 +106,7 @@ def run(s, k=15, n_niches=8, identity="nmf", n_programs=20, k_by_region=None, ra
     with jobs.replacing(d / "labels.npy", d / "profile.npy", d / "run.json"):  # a stopped run puts the last back
         np.save(d / "labels.npy", lab)
         np.save(d / "profile.npy", km.cluster_centers_[order].astype(np.float32))
-        json.dump(meta, open(d / "run.json", "w"), indent=1)
+        dump_json(meta, d / "run.json", indent=1)
     say(1.0, "done")
     return summary(s)
 
@@ -164,7 +165,7 @@ def set_names(s, names):
         if k_ not in {f"N{i + 1}" for i in range(meta["n_niches"])}:
             raise ValueError(f"no niche {k_}")
     meta["names"].update({k_: str(v).strip()[:40] for k_, v in names.items()})
-    json.dump(meta, open(s.dir / "niches" / "run.json", "w"), indent=1)
+    dump_json(meta, s.dir / "niches" / "run.json", indent=1)
     return niche_names(s)
 
 

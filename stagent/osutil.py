@@ -11,6 +11,66 @@ WINDOWS = os.name == "nt"
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if WINDOWS else 0  # creationflags of helper processes
 
 
+def dump_json(obj, path, **kw):
+    """json.dump into path through a temporary file next to it, then one rename: another process (the agent's tools,
+    the app) reading it meanwhile sees the old file or the new one, never half of one. On Windows a rename onto a
+    file another process has open can fail for a moment: it is tried again, then written in place."""
+    import json
+    from pathlib import Path
+    path = Path(path)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(obj, f, **kw)
+    for i in range(20):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            time.sleep(0.05 * (i + 1))
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(obj, f, **kw)
+    try:
+        os.remove(tmp)
+    except OSError:
+        pass
+
+
+def replace_atomic(path, write):
+    """write(tmp_path) makes the file at a temporary name next to path, then one rename puts it in place (a reader or
+    a stopped run never leaves half a file that later reads would trust). The temporary name keeps path's suffix
+    (numpy adds .npy / .npz otherwise)."""
+    from pathlib import Path
+    path = Path(path)
+    tmp = path.with_name(f".{os.getpid()}.{path.name}")
+    try:
+        write(tmp)
+        for i in range(20):
+            try:
+                os.replace(tmp, path)
+                return
+            except PermissionError:  # Windows: a reader has it open for a moment
+                time.sleep(0.05 * (i + 1))
+        os.replace(tmp, path)
+    finally:
+        if tmp.exists():
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+
+
+def read_text(path):
+    """A text file the user gave (a marker list, a CSV): UTF-8 (a BOM too), else the system's encoding (a file saved
+    by Windows Notepad or Excel in GBK), never failing on a stray byte."""
+    from pathlib import Path
+    b = Path(path).expanduser().read_bytes()
+    try:
+        return b.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        import locale
+        return b.decode(locale.getpreferredencoding(False), errors="replace")
+
+
 @contextmanager
 def locked(f):
     """An exclusive lock on the open file f for the duration of the block (several processes write the same file:

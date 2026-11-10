@@ -78,8 +78,11 @@ if sys.platform == "win32":
     # two programs over one bundle: the window has no console; Claude Code needs a console program for the MCP server
     # (stdin / stdout), which config.self_command finds beside the window's
     icon = str(ROOT / "stagent" / "data" / "app_icon.png")  # converted to .ico by PyInstaller (Pillow)
-    exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="STAnnotator", console=False, icon=icon)
-    cli = EXE(pyz, a.scripts, [], exclude_binaries=True, name="stagent", console=True, icon=icon)
+    # Python's UTF-8 mode: text files without an explicit encoding are UTF-8, not the system code page (GBK on Chinese
+    # Windows, which cannot write characters such as "µ" and garbles the UTF-8 files the app and Claude Code share)
+    utf8 = [("X utf8_mode=1", None, "OPTION")]
+    exe = EXE(pyz, a.scripts, utf8, exclude_binaries=True, name="STAnnotator", console=False, icon=icon)
+    cli = EXE(pyz, a.scripts, utf8, exclude_binaries=True, name="stagent", console=True, icon=icon)
     coll = COLLECT(exe, cli, a.binaries, a.datas, name="STAnnotator")
 else:
     exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="STAnnotator", console=sys.platform != "darwin",

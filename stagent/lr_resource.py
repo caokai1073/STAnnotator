@@ -69,7 +69,7 @@ def cellphonedb(d):
             continue
         kind = ("Non-protein Signaling" if "_by" in r.partner_a else
                 "Secreted Signaling" if secreted.get(r.partner_a) in (True, "True") else "Cell-Cell Contact")
-        rows.append({"ligand": a, "receptor": b, "pathway": str(r.classification or "").replace("Signaling by ", ""),
+        rows.append({"ligand": a, "receptor": b, "pathway": ("" if pd.isna(r.classification) else str(r.classification)).replace("Signaling by ", ""),
                      "category": kind, "source": "CellPhoneDB"})
     return pd.DataFrame(rows)
 

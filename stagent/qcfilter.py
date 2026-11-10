@@ -14,6 +14,7 @@ import json, re, shutil
 from pathlib import Path
 import numpy as np, pandas as pd, scipy.sparse as sp
 from . import config, importer
+from .osutil import dump_json
 
 CELL_PARAMS = ("min_counts", "max_counts", "min_genes", "max_mito_pct")
 PARAMS = CELL_PARAMS + ("min_cells",)
@@ -220,7 +221,7 @@ def apply(ids, p, progress=lambda *a: None, genes_removed=None):
                               "slices": ids if len(ids) > 1 else None}
         else:
             meta.pop("filter", None)
-        json.dump(meta, open(d / "meta.json", "w"), indent=1)
+        dump_json(meta, d / "meta.json", indent=1)
         if not prm and o.exists():
             shutil.rmtree(o)
     progress(1.0, "done")

@@ -78,6 +78,15 @@ def _forget_old():
         config.release_memory()
 
 
+def attachment(name):
+    """A Content-Disposition for a download named `name`, also with non-Latin characters (a sample named in Chinese):
+    headers are Latin-1, so the name goes in RFC 5987 form, with an ASCII fallback for old clients."""
+    from urllib.parse import quote
+    name = str(name).replace('"', "").replace("\r", "").replace("\n", "")
+    ascii_name = name.encode("ascii", "replace").decode("ascii").replace("?", "_")
+    return f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{quote(name)}'
+
+
 def _version(req):
     v = req.query_params.get("version")
     return int(v) if v else None
@@ -263,11 +272,11 @@ async def api_suggestions(req):
 async def api_verdicts_csv(req):
     s = _session(req.path_params["sid"])
     v = s.verdicts(latest=True)
-    if len(v):
+    if len(v) and "pathologist_region" in s.cells:  # only samples imported with a region column have it
         info = s.cells.set_index("cell").loc[v.cell, ["pathologist_region"]].reset_index(drop=True)
         v = pd.concat([v.reset_index(drop=True), info], axis=1)
     return Response(v.to_csv(index=False), media_type="text/csv",
-                    headers={"Content-Disposition": f"attachment; filename=verdicts_{s.id}.csv"})
+                    headers={"Content-Disposition": attachment(f"verdicts_{s.id}.csv")})
 
 
 app = Starlette(routes=[

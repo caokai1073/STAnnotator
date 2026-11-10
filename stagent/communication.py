@@ -58,6 +58,7 @@ def load_resource(genes, resource="all", nonprotein=False):
         for c in ("pathway", "category"):
             if c not in t.columns:
                 t[c] = ""
+            t[c] = t[c].astype(str).replace({"nan": "", "None": ""})  # a missing value written out as text: no pathway
         t["ligand"] = t.ligand.str.replace("+", "_", regex=False)
         t["receptor"] = t.receptor.str.replace("+", "_", regex=False)
         t["interaction"] = t.ligand.str.replace("_", "+") + " → " + t.receptor.str.replace("_", "+")

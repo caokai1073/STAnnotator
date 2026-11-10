@@ -425,13 +425,17 @@ def _graph(Xn, knn_mode="auto", fp=None):
     return g, nbr
 
 
+_LEIDEN_LOCK = __import__("threading").Lock()
+
+
 def _leiden(g, nbr, resolution, seed):
     """igraph's built-in Leiden (modularity objective; same algorithm as leidenalg, several times faster).
     Clusters smaller than MIN_CLUSTER are merged into the cluster most of their neighbors belong to."""
     import random
-    random.seed(seed)
-    lab = np.array(g.community_leiden(objective_function="modularity", weights="weight", resolution=resolution,
-                                      n_iterations=2).membership)
+    with _LEIDEN_LOCK:  # igraph draws from Python's global random: two runs at once (an annotation and a PCA / UMAP
+        random.seed(seed)  # in the app's threads) would take each other's numbers and depend on timing
+        lab = np.array(g.community_leiden(objective_function="modularity", weights="weight", resolution=resolution,
+                                          n_iterations=2).membership)
     sizes = np.bincount(lab)
     small = sizes[lab] < MIN_CLUSTER
     if small.any() and (~small).any():
@@ -473,12 +477,15 @@ class _Annotator:
             S[:, j] = np.mean(parts, axis=0)
         return S
 
-    def _evaluate(self, idx, lab, children):
+    def _evaluate(self, idx, lab, children, context=None):
+        """context: detection rates (clusters x genes) of the level's other clusters, when only some of its cells are
+        clustered again (rerun of one cluster): the markers are z-scored over all of them, as in the first run, not
+        over the new sub-clusters alone (between near-identical sub-clusters the z-scores are noise)."""
         k = int(lab.max()) + 1
         onehot = sp.csr_matrix((np.ones(len(idx)), (lab, np.arange(len(idx)))), shape=(k, len(idx)))
         size = np.asarray(onehot.sum(1)).ravel()
         frac = np.asarray((onehot @ self.det[idx]).todense()) / np.maximum(size, 1)[:, None]
-        S = self.score(children, frac)
+        S = self.score(children, frac if context is None or not len(context) else np.vstack([frac, context]))[:k]
         order = np.argsort(-S, 1)
         best = S[np.arange(k), order[:, 0]]
         second = S[np.arange(k), order[:, 1]] if len(children) > 1 else np.full(k, -np.inf)
@@ -486,7 +493,7 @@ class _Annotator:
         return {"k": k, "size": size, "S": S, "order": order, "best": best, "second": second, "ok": ok,
                 "assigned_frac": float(size[ok].sum() / len(idx))}
 
-    def cluster(self, parent, idx, children, resolution):
+    def cluster(self, parent, idx, children, resolution, context=None):
         """Leiden at one level. With resolution "auto", every candidate in RESOLUTIONS is tried on the same graph and
         the one assigning the largest share of cells to a child type wins (ties within 1% go to the lower one)."""
         label = parent or "all cells"
@@ -500,7 +507,7 @@ class _Annotator:
             self.say(self.done / self.total, f"Leiden on {label}, resolution {r:g}")
             with timing.step("leiden", len(idx) / 1e6):
                 lab = _leiden(g, nbr, r, self.seed)
-                ev = self._evaluate(idx, lab, children)
+                ev = self._evaluate(idx, lab, children, context)
             tried[f"{r:g}"] = round(ev["assigned_frac"], 3)
             if best is None or ev["assigned_frac"] > best[1]["assigned_frac"] + 0.01:
                 best = (r, ev, lab)
@@ -508,11 +515,12 @@ class _Annotator:
             self.fp.update(root_resolution=best[0], root_clusters=fingerprint(np.asarray(best[2], np.int64)))
         return best[0], best[1], best[2], tried
 
-    def run(self, res, parent, idx, children, resolution, prefix=""):
-        """Annotate idx under `parent` with its `children` types, then recurse. Updates res in place."""
+    def run(self, res, parent, idx, children, resolution, prefix="", context=None):
+        """Annotate idx under `parent` with its `children` types, then recurse. Updates res in place. context: see
+        _evaluate (this level only)."""
         if not children or len(idx) < MIN_CELLS:
             return
-        r, ev, lab, tried = self.cluster(parent, idx, children, resolution)
+        r, ev, lab, tried = self.cluster(parent, idx, children, resolution, context)
         res["nodes"] = [x for x in res["nodes"] if not (x["node"] == (parent or "root") and x.get("prefix") == prefix)]
         res["nodes"].append({"node": parent or "root", "prefix": prefix, "n_cells": int(len(idx)), "resolution": r,
                              "tried": tried, "assigned_frac": round(ev["assigned_frac"], 3)})
@@ -573,6 +581,7 @@ def rerun(res, counts, panel, tree, target, resolution=AUTO, prefix="", progress
     out = {"labels": res["labels"].copy(), "cluster_of": res["cluster_of"].copy(), "members": dict(res["members"]),
            "records": list(res["records"]), "nodes": list(res["nodes"]), "knn": res.get("knn")}
     rec = {r["id"]: r for r in res["records"]}
+    context = None
     if target == "root":
         parent, children = None, tree
         idx = np.arange(len(out["labels"]))
@@ -580,7 +589,13 @@ def rerun(res, counts, panel, tree, target, resolution=AUTO, prefix="", progress
         parent = rec[target]["parent"]
         node = _find(tree, parent) if parent else None
         children = node["children"] if node else tree
-        idx = out["members"][target]
+        idx = np.asarray(out["members"].get(target, np.zeros(0, np.int32)))
+        # the level's other clusters, for z-scoring the markers as the first run did
+        sib = [np.asarray(m) for r in res["records"] if r["parent"] == parent and r["id"] != target
+               and len(m := res["members"].get(r["id"], ())) ]
+        if sib:
+            det = (sp.csr_matrix(counts) > 0).astype(np.float32).tocsr()
+            context = np.vstack([np.asarray(det[m].mean(0)).ravel() for m in sib])
     else:
         node = _find(tree, target)
         if node is None:
@@ -591,10 +606,35 @@ def rerun(res, counts, panel, tree, target, resolution=AUTO, prefix="", progress
         idx = np.where(np.isin(out["labels"], descendants(tree)[target]))[0]
     if not len(idx):
         raise ValueError(f"no cells under {target}")
+    if len(idx) < MIN_CELLS:  # run() would leave them at the parent level, unannotated
+        raise ValueError(f"{target} has {len(idx)} cells, too few to cluster again (at least {MIN_CELLS}): label "
+                         "them instead (label_cluster or label_cells)")
+    # the clusters this rerun replaces: those of the target's level and below whose cells are all re-clustered now
+    D = descendants(tree)
+    affected = {None} | set(D) if parent is None else set(D.get(parent, [parent]))  # parents of the clusters concerned
+    inside = np.zeros(len(out["labels"]), bool)
+    inside[idx] = True
+    gone = {r["id"] for r in res["records"] if r["parent"] in affected and
+            (r["id"] == target or (r["id"] in out["members"] and inside[np.asarray(out["members"][r["id"]])].all()))}
+    if target not in rec:  # a type or the root: its level is computed again whole
+        out["nodes"] = [x for x in out["nodes"] if x["node"] not in {(p or "root") for p in affected}]
+    for g in gone:
+        out["members"].pop(g, None)
+    kept = []
+    for r in out["records"]:  # clusters partly re-clustered (a deeper level spanning the target): only their other cells
+        if r["id"] in gone:
+            continue
+        m = out["members"].get(r["id"])
+        if r["parent"] in affected and m is not None and inside[np.asarray(m)].any():
+            m = np.asarray(m)[~inside[np.asarray(m)]]
+            out["members"][r["id"]] = m
+            r = dict(r, n_cells=int(len(m)))
+        kept.append(r)
+    out["records"] = kept
     out["labels"][idx] = parent or UNASSIGNED
     A = _Annotator(counts, panel, progress, seed, knn)
     A.total = _n_levels(children) if children else 1
-    A.run(out, parent, idx, children, resolution, prefix)
+    A.run(out, parent, idx, children, resolution, prefix, context)
     A.say(1.0, "re-clustering done")
     return out
 

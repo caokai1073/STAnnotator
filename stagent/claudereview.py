@@ -9,6 +9,7 @@ change), marker checks by key. Nothing here changes the annotation.
 """
 import json, time
 from . import plausibility, markerqc
+from .osutil import dump_json
 
 OVERLAP = 0.5  # a candidate of a later version shares this share of its tiles with an area Claude judged
 
@@ -23,7 +24,7 @@ def load(s):
 
 
 def _save(s, st):
-    json.dump(st, open(_file(s), "w"), indent=1)
+    dump_json(st, _file(s), indent=1)
 
 
 def _area_verdict(a, rows):

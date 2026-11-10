@@ -36,6 +36,7 @@ MIN_CELLS = 10       # smallest group compared, and smallest group per slice for
 PB_MIN_CELLS = 30    # DESeq2: smallest pseudobulk sample (cells of one side in one replicate)
 PB_MIN_COUNT = 10    # DESeq2: genes with fewer counts over all pseudobulk samples are left out
 import re as _re
+from .osutil import dump_json
 DONOR = _re.compile(r"donor|patient|subject|individual|participant|case|mouse|animal|person", _re.I)
 PSEUDO = 0.01        # pseudocount (normalized counts per 100) for the fold change
 BUILTIN = ["cell type", "lineage", "region", "niche", "leiden", "selection", "slice"]
@@ -141,8 +142,20 @@ def cells(session=None, version=None, pid=None, selection=None, get_session=None
         if any(s.panel != S[0].panel for s in S[1:]):
             raise ValueError("the slices of this project do not share one gene panel")
     parts, missing = [], {}
+    # pooled slices: Leiden clusters and niches mean the same in every slice only when they come from one joint run of
+    # the project (slice A's L3 and slice B's L3 of separate runs are unrelated groups)
+    unjoint = set()
+    if pid is not None and len(S) > 1:
+        emb = [embedding.current(s.sample_id) or {} for s in S]
+        if len({(e.get("project"), e.get("run_id")) for e in emb}) > 1 or any(e.get("project") != pid for e in emb):
+            unjoint.add("leiden")
+        nm = [nmod.current(s)[0] or {} for s in S]
+        if len({(m.get("project"), m.get("run_id")) for m in nm}) > 1 or any(m.get("project") != pid for m in nm):
+            unjoint.add("niche")
     for s, v, se in zip(S, versions, sel):
         lab = _labels(s, v, se)
+        for k in unjoint:
+            lab[k] = None
         n = len(s.cells)
         if selection is not None and lab["selection"] is None:
             lab["selection"] = np.full(n, "not selected", dtype=object)
@@ -156,6 +169,8 @@ def cells(session=None, version=None, pid=None, selection=None, get_session=None
         for mk, mv in meta.get(s.sample_id, {}).items():
             lab[mk if mk not in BUILTIN else f"meta:{mk}"] = np.full(n, str(mv), dtype=object)
         parts.append(pd.DataFrame(lab))
+    for k in unjoint:
+        missing[k] = ["not from one run of all slices together: run it for the project"]
     labels = pd.concat(parts, ignore_index=True)
     labels = labels[[c for c in labels.columns if labels[c].notna().any()]]
     slices = np.concatenate([np.full(len(s.cells), s.sample_id, dtype=object) for s in S])
@@ -164,7 +179,8 @@ def cells(session=None, version=None, pid=None, selection=None, get_session=None
 
 def _column(c, by):
     if by not in c.labels.columns:
-        why = f" (missing in {', '.join(c.missing[by])})" if by in c.missing else ""
+        m = c.missing.get(by) or []
+        why = (f" ({m[0]})" if m and m[0].startswith("not from one run") else f" (missing in {', '.join(m)})") if m else ""
         raise ValueError(f"no grouping {by!r}{why}; groupings: {', '.join(c.labels.columns)}")
     return c.labels[by].to_numpy()
 
@@ -253,7 +269,10 @@ def _compare(c, a_mask, b_mask, max_cells=MAX_TEST_CELLS):
             # groups made of different slices: is every slice of the group beyond every slice of the reference?
             ga = [x for x, (u, _) in sl.items() if len(u) >= MIN_CELLS]
             gb = [x for x, (_, v) in sl.items() if len(v) >= MIN_CELLS]
-            if len(ga) + len(gb) > 2:
+            if not ga or not gb:  # one side spread thin (under MIN_CELLS in every slice): nothing to check per slice
+                out["per_slice_check"] = (f"none: the {'group' if not ga else 'reference'} has fewer than {MIN_CELLS} "
+                                          "cells in every slice")
+            elif len(ga) + len(gb) > 2:
                 ma = np.array([_stats(X, sl[x][0])[0] for x in ga])
                 mb = np.array([_stats(X, sl[x][1])[0] for x in gb])
                 up = ma.min(0) > mb.max(0)
@@ -580,7 +599,7 @@ def log_run(s, request, result):
     log.append({"time": time.strftime("%Y-%m-%dT%H:%M:%S"),
                 "section": "signaling" if kind in ("run", "compare") else "trajectory" if kind == "trajectory" else "compare",
                 "request": req, "headline": headline(kind, result)})
-    json.dump(log[-30:], open(f, "w"), indent=1)
+    dump_json(log[-30:], f, indent=1)
 
 
 def recent(s, section=None):

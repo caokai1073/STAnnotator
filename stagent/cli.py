@@ -32,11 +32,11 @@ def make_app(dest=None):
         shutil.rmtree(app)
     (app / "Contents" / "MacOS").mkdir(parents=True)
     (app / "Contents" / "Resources").mkdir()
-    (app / "Contents" / "Info.plist").write_text(APP_PLIST.format(version=__import__("stagent").__version__))
+    (app / "Contents" / "Info.plist").write_text(APP_PLIST.format(version=__import__("stagent").__version__), encoding="utf-8")
     exe = app / "Contents" / "MacOS" / "STAnnotator"
     exe.write_text("#!/bin/sh\n"
                    f'export STAGENT_HOME="{config.HOME}"\n'
-                   f'exec "{sys.executable}" -P -m stagent.desktop "$@" >> "{config.HOME / "app.log"}" 2>&1\n')
+                   f'exec "{sys.executable}" -P -m stagent.desktop "$@" >> "{config.HOME / "app.log"}" 2>&1\n', encoding="utf-8")
     exe.chmod(0o755)
     icon = config.PACKAGE / "data" / "app_icon.png"
     try:  # .icns from the PNG with the system's iconutil
