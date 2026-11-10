@@ -8,13 +8,24 @@
 2. Claude looks at the candidates (show()), picks one (several sections on one slide, symmetric tissue).
 3. refine(): moves the candidate to micrometer precision: nuclei on the image vs cell centroids in windows over the
    tissue (as insights.registration), an affine fit of the window offsets, three rounds with a shrinking search.
-4. apply(): puts the cells on the image (importer.place_cells; undo with importer.undo_placement).
+4. deviation(): the refined candidate checked over the whole tissue, as the registration check does it (regcheck: the
+   nuclei vs the cells in 200 um windows everywhere, and 600 um windows for shifts up to 100 um): how far the cells
+   sit from their nuclei, and whether areas sit off them (tissue stretched, folded or torn between the run and the
+   staining), which one alignment cannot fix: then the local registration (Review: Spatial organization) is advised.
+   The review window of apply_alignment shows its histogram.
+5. apply(): puts the cells on the image (importer.place_cells; undo with importer.undo_placement); the deviation's
+   windows become the registration check of the new placement (regcheck.json), so the local registration starts
+   from them.
 """
 import json, time
 import numpy as np
 from scipy import ndimage
-from . import config, importer, render, insights
+from . import config, importer, render, insights, regcheck
 
+LOCAL_SHARE = 0.05    # the local registration is advised when this share of the tissue's windows sits off its nuclei in
+                      # areas (2+ neighboring windows off by >= regcheck.OFF_UM), or where a large shift is found
+READ_SHARE = 0.15     # the 600 um windows with a clear reading (a unique offset, or none): below this share the alignment
+                      # itself is wrong (measured: about 0.02 for wrong candidates, 0.5-0.9 for right ones, torn tissue too)
 THUMB = 1000          # longest side of the image thumbnail for the search (pixels)
 SCALES = np.exp(np.linspace(np.log(0.1), np.log(2.0), 40))  # image um per pixel tried when the file does not say
 
@@ -216,8 +227,12 @@ def refine(s, cid, rounds=(60.0, 25.0, 12.0)):
     c["A_refined"] = A.tolist()
     c["refine_log"] = log
     json.dump(st, open(_file(s), "w"), indent=1)
+    d = deviation(s, cid)
     return {"id": c["id"], "rounds": log, "um_per_px": round(float(1 / np.sqrt(abs(np.linalg.det(A[:, :2])))), 4),
-            "note": "a good alignment ends with median shifts of a few um and correlations clearly above 0.2"}
+            "deviation": {k: v for k, v in d.items() if k not in ("A", "offsets_um")}, "deviation_advice": advice_lines(d),
+            "note": "a good alignment ends with median shifts of a few um and correlations clearly above 0.2; deviation: "
+                    "the whole tissue checked (as the review window of apply_alignment shows it): 'far off' is not the "
+                    "right alignment, 'local shifts' needs the local registration after it is applied"}
 
 
 def show(s, cid, refined=True):
@@ -260,11 +275,181 @@ def show(s, cid, refined=True):
     return str(out)
 
 
-def apply(s, cid):
-    """Put the cells on the image with candidate cid (refined if it was)."""
+def _affine(c):
+    return np.asarray(c.get("A_refined") or c["A"], float)
+
+
+def _wfile(s, cid):
+    return config.SAMPLES / s.sample_id / "align" / f"{cid}_windows.json"
+
+
+def deviation(s, cid, progress=None):
+    """How far the cells sit from their nuclei with candidate cid (refined if it was), over the whole tissue: the
+    offsets of regcheck's windows (fine and coarse) with the cells where the candidate puts them, a verdict ("fine",
+    "local shifts": advise the local registration after the alignment, "far off": not the right alignment) and the
+    numbers behind it. Kept on the candidate (and its windows next to it) until the candidate changes."""
     st, c = _get(s, cid)
-    A = c.get("A_refined") or c["A"]
-    return importer.place_cells(s.sample_id, A, st["image"], st["kind"], by="Claude", progress=lambda *a: None)
+    A = _affine(c)
+    if (c.get("deviation") or {}).get("A") == A.tolist() and _wfile(s, cid).exists():
+        return c["deviation"]
+    sl = render.slide(st["image"])
+    pxy = s.cells[["x", "y"]].to_numpy() @ A[:, :2].T + A[:, 2]
+    px, py = pxy[:, 0], pxy[:, 1]
+    upp = float(1 / np.sqrt(abs(np.linalg.det(A[:, :2]))))
+    x0, y0 = float(px.min()), float(py.min())
+    tile, ct = regcheck.WINDOW_UM / upp, regcheck.COARSE_WINDOW_UM / upp
+    cols = ["i", "j", "cx", "cy", "dx_um", "dy_um", "corr", "n_cells", "corr_at_zero"]
+    w = {"image": st["image"], "kind": st["kind"], "um_per_px": upp, "window_um": regcheck.WINDOW_UM,
+         "search_um": regcheck.SEARCH_UM, "origin_px": [x0, y0], "tile_px": tile, "nx": int((px.max() - x0) // tile) + 1,
+         "time": time.strftime("%Y-%m-%dT%H:%M:%S"), "columns": cols}
+    say = progress or (lambda f: None)
+    w["windows"] = regcheck._scan(sl, st["kind"], px, py, w, lambda f: say(0.8 * f))
+    w["coarse"] = {"window_um": regcheck.COARSE_WINDOW_UM, "search_um": regcheck.COARSE_SEARCH_UM, "tile_px": ct,
+                   "origin_px": [x0, y0], "nx": int((px.max() - x0) // ct) + 1, "columns": cols + ["second"]}
+    w["coarse"]["windows"] = regcheck._scan(sl, st["kind"], px, py, w["coarse"] | {"um_per_px": upp},
+                                            lambda f: say(0.8 + 0.2 * f), coarse=True)
+    if not w["windows"]:
+        raise ValueError("no window of dense tissue overlaps the image with this candidate: try another")
+    a, mu, coef, aff, res, noise, D = regcheck._analyse(w)
+    tot, raw = np.hypot(*D.T), np.hypot(a[:, 4], a[:, 5])
+    trusted = ~noise
+    areas = [x for x in regcheck._areas(a, D, noise) if len(x) >= 2]
+    in_areas = int(sum(len(x) for x in areas))
+    b, big, anchor = regcheck._large(w)
+    read = float((big | anchor).mean()) if len(b) else 0.0
+    beyond = float((np.abs(a[:, 4:6]).max(1) >= w["search_um"]).mean())
+    share_areas = in_areas / max(int(trusted.sum()), 1)
+    verdict = ("far off" if read < READ_SHARE else
+               "local shifts" if share_areas >= LOCAL_SHARE or big.any() or beyond > 0.3 else "fine")
+    t = raw[trusted]
+    out = {"verdict": verdict, "windows": int(len(a)), "trusted_windows": int(trusted.sum()), "window_um": regcheck.WINDOW_UM,
+           "median_um": round(float(np.median(t)), 1) if len(t) else None,
+           "p90_um": round(float(np.percentile(t, 90)), 1) if len(t) else None,
+           "share_off": round(float(((tot >= regcheck.OFF_UM) & trusted).sum() / max(int(trusted.sum()), 1)), 3),
+           "off_um": regcheck.OFF_UM, "areas_off": len(areas), "share_in_areas": round(share_areas, 3),
+           "largest_area_windows": max((len(x) for x in areas), default=0),
+           "large_shift_windows": int(big.sum()), "large_shift_um": round(float(np.hypot(b[big, 4], b[big, 5]).max()), 0) if big.any() else None,
+           "beyond_search_share": round(beyond, 3), "clear_reading_share": round(read, 3), "affine_part_max_um": round(float(np.hypot(*aff.T).max()), 1),
+           "offsets_um": [round(float(x), 1) for x in t], "A": A.tolist()}
+    json.dump(w, open(_wfile(s, cid), "w"))
+    st, c = _get(s, cid)   # (as stored now)
+    c["deviation"] = out
+    json.dump(st, open(_file(s), "w"), indent=1)
+    return out
+
+
+def advice_lines(d):
+    """The deviation in words, for the review window and the agent."""
+    lines = [f"Deviation of the cells from the nuclei on the image ({d['trusted_windows']} windows of "
+             f"{d['window_um']:g} um over the tissue): median {d['median_um']} um, 90% within {d['p90_um']} um; "
+             f"{d['share_off']:.0%} of the windows off by {d['off_um']:g} um or more."]
+    if d["verdict"] == "far off":
+        lines.append(f"Far off: only {d['clear_reading_share']:.0%} of the {regcheck.COARSE_WINDOW_UM:g} um windows find "
+                     f"the nuclei within {regcheck.COARSE_SEARCH_UM} um of the cells. This does not look like the right "
+                     "alignment: try another candidate rather than accepting it.")
+    elif d["verdict"] == "local shifts":
+        what = []
+        if d["areas_off"]:
+            what.append(f"{d['areas_off']} area(s) off their nuclei ({d['share_in_areas']:.0%} of the tissue's windows)")
+        if d["beyond_search_share"] > 0.3:
+            what.append(f"{d['beyond_search_share']:.0%} of the windows off by more than {regcheck.SEARCH_UM} um")
+        if d["large_shift_windows"]:
+            what.append(f"{d['large_shift_windows']} window(s) of {regcheck.COARSE_WINDOW_UM:g} um shifted up to "
+                        f"{d['large_shift_um']:g} um")
+        lines.append("Shifts too large for one alignment: " + "; ".join(what) + " (tissue stretched, folded or torn "
+                     "between the run and the staining). Accept, then do the local registration: Steps > Check "
+                     "registration (Review: Spatial organization); the agent measures the shifts and offers the local "
+                     "correction.")
+    else:
+        lines.append("No area sits off its nuclei: no local registration needed.")
+    return lines
+
+
+def deviation_figure(s, cid):
+    """Histogram of the windows' deviation (offset of the nuclei from the cells, um) and the windows on the tissue
+    colored by it (large shifts dashed)."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Rectangle
+    d = deviation(s, cid)
+    w = json.load(open(_wfile(s, cid)))
+    a, mu, coef, aff, res, noise, D = regcheck._analyse(w)
+    b, big, _ = regcheck._large(w)
+    raw = np.hypot(a[:, 4], a[:, 5])
+    off = regcheck.OFF_UM
+    fig = plt.figure(figsize=(13, 4.6))
+    ax = fig.add_axes([0.06, 0.13, 0.42, 0.72])
+    t = raw[~noise]
+    bins = np.arange(0, regcheck.SEARCH_UM + 1, 1.0)
+    ax.hist(t[t < off], bins=bins, color="#4c9a6a", label=f"on their nuclei (< {off:g} um)")
+    ax.hist(t[t >= off], bins=bins, color="#d9822b", label=f"off (>= {off:g} um)")
+    ax.axvline(off, color="#555", lw=1, ls="--")
+    ax.set_xlim(0, regcheck.SEARCH_UM)
+    ax.set_xlabel(f"deviation: nuclei on the image vs cell centroids, per {w['window_um']:g} um window (um)")
+    ax.set_ylabel("windows")
+    ax.legend(frameon=False, fontsize=9, loc="best")
+    extra = (f"; + {d['large_shift_windows']} large shift(s) of {regcheck.COARSE_WINDOW_UM:g} um windows up to "
+             f"{d['large_shift_um']:g} um") if d["large_shift_windows"] else ""
+    ax.set_title(f"median {d['median_um']} um, {d['share_off']:.0%} of windows >= {off:g} um{extra}", fontsize=9.5)
+    ax.spines[["top", "right"]].set_visible(False)
+    ax2 = fig.add_axes([0.52, 0.04, 0.42, 0.84])
+    sl = render.slide(w["image"])
+    half = w["tile_px"] / 2
+    X0, Y0 = a[:, 2].min() - 3 * half, a[:, 3].min() - 3 * half
+    X1, Y1 = a[:, 2].max() + 3 * half, a[:, 3].max() + 3 * half
+    X0, Y0, X1, Y1 = max(X0, 0), max(Y0, 0), min(X1, sl.W0), min(Y1, sl.H0)
+    f = max(X1 - X0, Y1 - Y0) / 900
+    ax2.imshow(np.asarray(sl.read(X0, Y0, X1, Y1, int((X1 - X0) / f), int((Y1 - Y0) / f))), extent=(X0, X1, Y1, Y0), alpha=0.55)
+    from matplotlib.colors import LinearSegmentedColormap
+    cmap = LinearSegmentedColormap.from_list("dev", [(0, "#4c9a6a"), (off / 15, "#f2d15c"), (0.6, "#d9822b"), (1, "#a01010")])
+    for n in range(len(a)):
+        if noise[n]:
+            ax2.add_patch(Rectangle((a[n, 2] - half, a[n, 3] - half), 2 * half, 2 * half, fc="none", ec="#999", lw=0.3))
+        else:
+            v = min(raw[n] / 15.0, 1.0)  # (the offsets beyond the fine search: 15+)
+            ax2.add_patch(Rectangle((a[n, 2] - half, a[n, 3] - half), 2 * half, 2 * half, fc=cmap(v), ec="none", alpha=0.75))
+    hb = w["coarse"]["tile_px"] / 2
+    for n in np.where(big)[0]:
+        ax2.add_patch(Rectangle((b[n, 2] - hb, b[n, 3] - hb), 2 * hb, 2 * hb, fc="none", ec="#b00000", lw=1.4, ls="--"))
+    ax2.set_xlim(X0, X1); ax2.set_ylim(Y1, Y0); ax2.set_xticks([]); ax2.set_yticks([]); ax2.set_aspect("equal")
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(0, 15))
+    cb = fig.colorbar(sm, ax=ax2, fraction=0.035, pad=0.01)
+    cb.set_label("deviation (um)", fontsize=8)
+    cb.set_ticks([0, off, 10, 15]); cb.set_ticklabels(["0", f"{off:g}", "10", "15+"])
+    ax2.set_title("windows on the tissue (gray outline: no clear reading; dashed: large shift)", fontsize=9)
+    head = {"fine": "Cells on their nuclei: no local registration needed",
+            "local shifts": "Some areas sit off their nuclei: do the local registration after accepting",
+            "far off": "Far off: probably not the right alignment"}[d["verdict"]]
+    fig.suptitle(f"{c_id(cid)}: {head}", fontsize=11, fontweight="bold",
+                 color={"fine": "#2d6a45", "local shifts": "#9a5200", "far off": "#a01010"}[d["verdict"]])
+    out = config.SAMPLES / s.sample_id / "align" / f"{c_id(cid)}_deviation.jpg"
+    plt.savefig(out, dpi=90, pil_kwargs={"quality": 88}); plt.close(fig)
+    return str(out)
+
+
+def c_id(cid):
+    return str(cid).upper()
+
+
+def apply(s, cid):
+    """Put the cells on the image with candidate cid (refined if it was); its deviation check, when made for this
+    affine, becomes the registration check of the placement (and the sample notes its verdict for the steps)."""
+    st, c = _get(s, cid)
+    A = _affine(c)
+    r = importer.place_cells(s.sample_id, A.tolist(), st["image"], st["kind"], by="Claude", progress=lambda *a: None)
+    d = c.get("deviation")
+    if d and d.get("A") == A.tolist() and _wfile(s, cid).exists():
+        image = importer.image_of(s.sample_id)
+        key = regcheck._key(s.sample_id, image)
+        w = json.load(open(_wfile(s, cid)))
+        json.dump(dict(w, key=key, image=image), open(regcheck._file(s.sample_id), "w"))
+        m = importer._meta(s.sample_id)
+        m["alignment_check"] = {"key": key, **{k: v for k, v in d.items() if k not in ("A", "offsets_um")},
+                                "time": time.strftime("%Y-%m-%dT%H:%M:%S")}
+        json.dump(m, open(config.SAMPLES / s.sample_id / "meta.json", "w"), indent=1)
+        r["deviation"] = {"verdict": d["verdict"], "advice": advice_lines(d)[1:]}
+    return r
 
 
 class Sample:

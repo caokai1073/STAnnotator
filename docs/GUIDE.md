@@ -79,6 +79,18 @@ them one after the other, each coming to you for review (applied at once in Auto
 3. a refinement moves the cells onto their nuclei (nuclei on the image vs cell centroids in windows, affine fit,
    three rounds).
 
+Then the whole tissue is checked with the refined alignment, as the registration check does it (the nuclei against
+the cells in 200 µm windows everywhere, and 600 µm windows for shifts up to 100 µm). The review window of the
+alignment shows the result: a histogram of the deviation between the cells and the nuclei, and the windows on the
+tissue colored by it. Its verdict:
+
+- **fine**: the cells sit on their nuclei; no local registration needed;
+- **some areas sit off their nuclei** (tissue stretched, folded or torn between the run and the staining; one
+  alignment cannot fix it): accept, then do the local registration (**Steps → Check registration**, Review: Spatial
+  organization). The step stays to do until then, and the check's windows are reused, so it starts at once;
+- **far off**: hardly any part of the tissue finds its nuclei; this is not the right alignment, and the agent tries
+  another candidate instead.
+
 A registration needs at least 90% of the cells on the image. Regions drawn before the cells move are moved along
 with them.
 

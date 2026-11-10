@@ -4477,6 +4477,9 @@ const HELP = `
   <li>It is next to No registration, or on the yellow notice among the map's bars.</li>
   <li>When several samples wait for their alignment, choose the ones to align (or All samples): the agent aligns
     them one after the other.</li>
+  <li>Before you accept it, the whole tissue is checked: the review window shows a histogram of the deviation between
+    the cells and the nuclei, and the windows on the tissue. When areas sit off their nuclei it advises the local
+    registration after accepting (Steps → Check registration).</li>
   <li>It imports, then the agent finds the section and its orientation on the image and refines it until the cells
     sit on their nuclei.</li></ul></li>
 <li>Another image or registration for a sample: import it again with them (same name).</li></ul>
@@ -5460,7 +5463,10 @@ async function proposalApplied(r) {
     $("pcAccept").hidden = true; $("pcDismiss").disabled = false; $("pcDismiss").textContent = "Close"; PC.failed = true; return;
   }
   $("pcDlg").close();
-  toast(auto ? `Applied automatically: ${r.title} (Undo takes it back)` : `Applied: ${r.title}`, auto ? 7000 : 5000);
+  if (r.advise === "local_registration") {  // the alignment's deviation check found areas off their nuclei
+    toast(`${auto ? "Applied automatically" : "Applied"}: ${r.title}. Some areas sit off their nuclei: do the local registration (Steps → Check registration)`, 15000);
+    loadSteps().catch(() => {});
+  } else toast(auto ? `Applied automatically: ${r.title} (Undo takes it back)` : `Applied: ${r.title}`, auto ? 7000 : 5000);
   if (r.tool === "start_session" && r.session_after) { st.openedThisVisit[r.sample_id] = r.session_after; await loadSamples(r.sample_id); return; }
   if (["import_sample", "import_visium", "import_stereoseq", "import_cosmx_merfish"].includes(r.tool)) { await loadSamples(st.sample ? st.sample.sample_id : r.sample_id); return; }
   if ((r.tool === "move_piece" || r.tool === "undo_piece_move") && st.sample && st.sample.sample_id === r.sample_id) {

@@ -325,7 +325,8 @@ def _reviewed(describe):
                                    details=d.get("details", []), preview=d.get("preview"),
                                    session_id=d.get("session_id", s.id if s else None),
                                    sample_id=d.get("sample_id", s.sample_id if s else None),
-                                   version=d.get("version"), via=_active.get("via", "app"))
+                                   version=d.get("version"), via=_active.get("via", "app"),
+                                   **({"advise": d["advise"]} if d.get("advise") else {}))
             if not SAME_PROCESS and claudelink.viewer_alive():
                 rec = proposals.wait(rec["id"], REVIEW_WAIT)
             return _proposal_outcome(rec)
@@ -555,11 +556,21 @@ def _d_revert(a):
 
 
 def _d_apply_alignment(a):
+    from . import align
     sid = _sample_id(a.get("sample_id"))
+    s = align.Sample(sid)
+    det, pv, adv = [], None, None
+    try:  # the whole tissue checked with this alignment: the histogram of the deviation in the review window
+        d = align.deviation(s, a["candidate"])
+        det, pv = align.advice_lines(d), {"kind": "image", "path": align.deviation_figure(s, a["candidate"])}
+        adv = "local_registration" if d["verdict"] == "local shifts" else None
+    except Exception as e:
+        det = [f"(The deviation check could not run: {e})"]
     return {"title": f"Put the cells of {sid} on the image with alignment {a['candidate']}", "sample_id": sid,
             "args": a | {"sample_id": sid},
-            "details": ["The cells move to where this alignment places them on the image; regions and outlines drawn "
-                        "before move with them.", "Undo last alignment (Import dialog) takes it back."]}
+            "details": [*det, "The cells move to where this alignment places them on the image; regions and outlines "
+                        "drawn before move with them.", "Undo last alignment (Import dialog) takes it back."],
+            **({"preview": pv} if pv else {}), **({"advise": adv} if adv else {})}
 
 
 def _d_run_niches(a):
@@ -1313,7 +1324,11 @@ def show_alignment(candidate: str, sample_id: Optional[str] = None) -> list:
 def refine_alignment(candidate: str, sample_id: Optional[str] = None) -> str:
     """Bring a candidate to micrometer precision: nuclei on the image vs cell centroids in windows over the tissue,
     an affine fit of the offsets, three rounds (60, 25, 12 um search). A good result ends with median shifts of a
-    few um and correlations clearly above 0.2; then look at show_alignment."""
+    few um and correlations clearly above 0.2; then look at show_alignment. It then checks the whole tissue
+    ("deviation": the cells vs the nuclei in 200 um windows everywhere, and 600 um windows for shifts up to 100 um;
+    the review window of apply_alignment shows its histogram): verdict "fine"; "local shifts" (areas off their
+    nuclei that one alignment cannot fix: apply it, then tell the user to do the local registration, Steps > Check
+    registration); "far off" (not the right alignment: try another candidate instead of applying it)."""
     from . import align
     return _j(align.refine(align.Sample(_sample_id(sample_id)), candidate))
 
@@ -1322,7 +1337,9 @@ def refine_alignment(candidate: str, sample_id: Optional[str] = None) -> str:
 @_reviewed(_d_apply_alignment)
 def apply_alignment(candidate: str, sample_id: Optional[str] = None) -> str:
     """Put the cells on the image with this candidate (refined if it was): the app shows them there at once and
-    outlines drawn before move along. The user can undo it in the app (Import, bottom part: Undo last alignment)."""
+    outlines drawn before move along. The user can undo it in the app (Import, bottom part: Undo last alignment).
+    The review window shows the deviation check (histogram of the cells' offsets from the nuclei over the tissue)
+    and advises the local registration when areas sit off their nuclei; pass that advice on to the user."""
     from . import align
     sid = _sample_id(sample_id)
     r = align.apply(align.Sample(sid), candidate)

@@ -2446,7 +2446,11 @@ def steps_of(s, sample=None):
             pass
         org = advice.status(s, "organization") if s is not None else {"n_runs": 0}
         fixed = " (corrected)" if "local" in (meta.get("registration_by") or "") or "piece" in (meta.get("registration_by") or "") else ""
-        if checked:
+        ac = meta.get("alignment_check") or {}
+        if img and ac.get("key") == regcheck._key(sid, img) and ac.get("verdict") != "fine" \
+                and not (org["n_runs"] and org["last_run"]["time"] >= ac.get("time", "")):  # (not reviewed since)
+            reg = {"state": "todo", "detail": "the alignment check found areas off their nuclei: do the local registration"}
+        elif checked:
             reg = {"state": "done", "detail": f"checked {checked}{fixed}"}
         elif org["n_runs"]:
             reg = {"state": "done", "detail": f"reviewed {org['last_run']['time'][:10]}{fixed}"}
@@ -2636,15 +2640,19 @@ async def api_sample_placement_undo(req: Request):
 
 ALIGN_REQUEST = ("Align the cells of sample {sample} to its image (I clicked 'Align with Claude'; there is no "
                  "registration file): alignment_status, search_alignment, compare the best candidates on their figures "
-                 "(show_alignment), refine_alignment the right one, check the close-ups and numbers, then "
-                 "apply_alignment. Do not change the annotation. Then tell me in three lines what you chose and why.")
+                 "(show_alignment), refine_alignment the right one, check the close-ups, the numbers and its deviation check "
+                 "(a 'far off' verdict: try another candidate), then apply_alignment. Do not change the annotation. Then "
+                 "tell me in three lines what you chose and why, and whether the deviation check advises the local "
+                 "registration.")
 
 
 ALIGN_MANY = ("Align the cells of these samples to their images, one after the other (I chose them in 'Align with Agent'; "
               "they have no registration file): {samples}. For each: alignment_status, search_alignment, compare the "
-              "best candidates on their figures (show_alignment), refine_alignment the right one, check the close-ups and "
-              "numbers, then apply_alignment, before going on to the next. Do not change any annotation. When all are "
-              "done, tell me in one or two lines per sample what you chose and why, and which (if any) need my look.")
+              "best candidates on their figures (show_alignment), refine_alignment the right one, check the close-ups, "
+              "the numbers and its deviation check (a 'far off' verdict: try another candidate), then apply_alignment, "
+              "before going on to the next. Do not change any annotation. When all are done, tell me in one or two lines "
+              "per sample what you chose and why, which (if any) need my look, and which the deviation check advises "
+              "the local registration for.")
 
 
 async def api_claude_align(req: Request):
