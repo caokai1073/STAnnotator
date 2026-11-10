@@ -477,8 +477,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     </div>
     <div class="fld" id="sessWrap"><span>Annotation</span><div class="inrow"><select id="session" title="Earlier annotations of this sample"></select>
       <button id="sessDel" disabled title="Delete this annotation (it goes to the data folder's trash with its chat)">Delete</button></div></div>
-    <div class="act2"><button id="anSave" disabled title="Save the open annotation as one file: cell types with every version, regions, priors, corrections, niches, the PCA / UMAP, the last results of Compare and Signaling">Save…</button>
-      <button id="anLoad" disabled title="Load a saved annotation (.stannot) for the sample with the same cells">Load…</button></div>
+    <div class="act2"><button id="anSave" disabled title="Save the open annotation as one file: cell types with every version, regions, priors, corrections, niches, the PCA / UMAP, the last results of the analyses, and the sample's filter and registration">Save…</button>
+      <button id="anLoad" disabled title="Load a saved annotation (.stannot) for the same sample: imported again from the same files is enough; its filter and registration are made as saved (you are asked first)">Load…</button></div>
     <input type="file" id="anLoadFile" accept=".stannot,.zip" hidden>
   </div>
   <div class="pane" data-pane="annotate">
@@ -5722,20 +5722,44 @@ $("anSave").onclick = async () => {
     toast("Saved", 2500);
   } catch (e) { toast(e.message, 7000); }
 };
+function loadPlanText(p) {  // what loading the file will change on the sample, for the user's go-ahead
+  const f = p.saved_filter, prm = f && f.params ? Object.entries(f.params).map(([k, v]) => `${k} ${v}`).join(", ") : "";
+  const lines = [`This file also brings the state of sample ${p.target} the annotation was made on:`];
+  if (p.filter === "apply") lines.push(f ? `• the cell and gene filter (${prm}${f.genes_removed && f.genes_removed.length ? `; ${f.genes_removed.length} genes left out` : ""})`
+                                         : "• no filter: the sample's filter is undone (every imported cell and gene back)");
+  if (p.registration === "apply") lines.push(`• the registration (${p.registration_by || "as saved"}): the cells go where they were on the image`);
+  if (p.filter === "apply" && (p.n_annotations || p.n_drafts || p.embedding))
+    lines.push("", `Filtering renumbers the cells, so the sample's ${[p.n_annotations ? `${p.n_annotations} annotation(s)` : "", p.n_drafts ? "regions drawn without an annotation" : "", p.embedding ? "PCA / UMAP" : ""].filter(Boolean).join(", ")} go to the trash first (as with Filter cells and genes).`);
+  (p.notes || []).forEach((n) => lines.push("", "Note: " + n));
+  lines.push("", "Continue?");
+  return lines.join("\n");
+}
+async function bundleLoad(first, again) {  // first: the answer to the first request; again(body): the request confirmed
+  let r = first;
+  if (r.confirm) {
+    if (!confirm(loadPlanText(r.confirm))) { toast("Not loaded: nothing was changed", 4000); return; }
+    toast("Loading…", 30000);
+    r = await again(r);
+  }
+  await anLoaded(r);
+}
 async function anLoaded(r) {
   st.openedThisVisit[r.sample_id] = r.session_id;
   await loadSamples(r.sample_id);
-  const sv = r.saved;
+  const sv = r.saved, p = r.plan || {};
   toast(`Loaded the annotation saved ${sv.saved_at.replace("T", " ").slice(0, 16)} (${sv.n_versions} version${sv.n_versions === 1 ? "" : "s"}` +
         (sv.has_niches ? ", niches" : "") + (r.embedding_loaded ? ", PCA / UMAP" : "") + (sv.results.length ? `, ${sv.results.length} analysis results` : "") + ")" +
-        (r.replaced_embedding ? "; the sample's earlier PCA / UMAP went to the trash" : ""), 8000);
+        (p.filter === "apply" ? "; the sample was filtered as saved" : "") + (p.registration === "apply" ? "; its registration was put back" : "") +
+        ((p.notes || []).length ? ". " + p.notes.join(" ") : "") +
+        (r.replaced_embedding ? "; the sample's earlier PCA / UMAP went to the trash" : ""), 10000);
 }
 $("anLoad").onclick = async () => {
   if (st.busy) { toast("Wait until the assistant has answered"); return; }
   if (native() && !st.remote) {  // the desktop app: a file on this computer, read in place
     const p = await native().pick("bundle", false); if (!p.length) return;
     toast("Loading…", 20000);
-    try { await anLoaded(await post(`/api/bundle-load?sample=${encodeURIComponent(st.sample.sample_id)}`, { path: p[0] })); }
+    const url = `/api/bundle-load?sample=${encodeURIComponent(st.sample.sample_id)}`;
+    try { await bundleLoad(await post(url, { path: p[0] }), () => post(url, { path: p[0], confirm: true })); }
     catch (e) { toast(e.message, 9000); }
     return;
   }
@@ -5745,10 +5769,11 @@ $("anLoadFile").onchange = async () => {
   const f = $("anLoadFile").files[0]; if (!f) return;
   toast(`Loading ${f.name}…`, 30000);
   try {
-    const r = await fetch(`/api/bundle-load?sample=${encodeURIComponent(st.sample.sample_id)}`, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: f });
+    const url = `/api/bundle-load?sample=${encodeURIComponent(st.sample.sample_id)}`;
+    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: f });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || r.statusText);
-    await anLoaded(j);
+    await bundleLoad(j, (first) => post(url, { upload: first.upload, confirm: true }));  // the file stays on the server meanwhile
   } catch (e) { toast(e.message, 9000); }
 };
 

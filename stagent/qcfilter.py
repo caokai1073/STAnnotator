@@ -170,16 +170,22 @@ def _corrected(cells, meta, now):
     return cells
 
 
-def apply(ids, p, progress=lambda *a: None):
+def apply(ids, p, progress=lambda *a: None, genes_removed=None):
     """Filter the samples ids with these thresholds (from the data as imported); no thresholds: every cell and gene
-    back. Returns the preview of what was done."""
+    back. genes_removed: the genes to leave out, as a saved filter did (bundle.py: a project's slices counted together
+    for min_cells), instead of counting them here. Returns the preview of what was done."""
     prm = params(p)
     data, genes, keep, gkeep, _ = _plan(ids, prm)
+    if genes_removed is not None:
+        out = set(genes_removed)
+        gkeep = np.array([g not in out for g in genes])
     if not any(k[0].any() for k in keep.values()):
         raise ValueError("these thresholds remove every cell")
     if not gkeep.any():
         raise ValueError("these thresholds remove every gene")
     summary = preview(ids, p)
+    if genes_removed is not None:
+        summary["genes_removed"] = [g for g in genes if g in set(genes_removed)]
     for i, s in enumerate(ids):
         progress(i / len(ids), f"filtering {s}")
         d = config.SAMPLES / s

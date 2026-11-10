@@ -2296,21 +2296,60 @@ def api_bundle_get(req):
 
 
 async def api_bundle_load(req: Request):
-    """Load a saved annotation: JSON {path} (a file on this computer), or the file itself as the request body;
-    ?sample= the sample to try first."""
+    """Load a saved annotation: JSON {path} (a file on this computer) or {upload} (a file sent before), or the file
+    itself as the request body; ?sample= the sample to try first. When loading would change the sample (filter it as
+    saved, which sends its annotations and PCA / UMAP to the trash; put its cells where they were on the image), the
+    answer is {"confirm": plan, "upload"/"path"} and nothing changes until the same request comes with confirm: true."""
     from . import bundle
     sample = req.query_params.get("sample") or None
+    BUNDLES.mkdir(parents=True, exist_ok=True)
     try:
         if req.headers.get("content-type", "").startswith("application/json"):
-            src = Path((await req.json())["path"]).expanduser()
-        else:
-            src = io.BytesIO(await req.body())
-        r = await asyncio.to_thread(bundle.load, src, sample)
+            b = await req.json()
+            if b.get("upload"):
+                if not re.fullmatch(r"[0-9a-f]{12}", b["upload"]) or not (BUNDLES / f"up_{b['upload']}.stannot").exists():
+                    return _json({"error": "the file sent is gone: choose it again"}, 400)
+                src, up = BUNDLES / f"up_{b['upload']}.stannot", b["upload"]
+            else:
+                src, up = Path(b["path"]).expanduser(), None
+            confirm = bool(b.get("confirm"))
+        else:  # the file itself: kept until the user decides
+            for old in sorted(BUNDLES.glob("up_*.stannot"), key=lambda p: p.stat().st_mtime)[:-2]:
+                old.unlink(missing_ok=True)
+            up = uuid.uuid4().hex[:12]
+            src = BUNDLES / f"up_{up}.stannot"
+            src.write_bytes(await req.body())
+            confirm, b = False, {}
+        plan = await asyncio.to_thread(bundle.plan, src, sample)
+        changes = plan["filter"] == "apply" or plan["registration"] == "apply"
+        if changes and not confirm:
+            return _json({"confirm": plan, "upload": up, "path": b.get("path")})
+        target = plan["target"]
+        trash = None
+        if plan["filter"] == "apply":  # filtering renumbers the cells: the sample's annotations and PCA / UMAP to the trash
+            sess = _sample_sessions(target)
+            mine = {d.name for d in sess} | {f"embed:{target}"}
+            if any(not j["done"] and (k in mine or k.split(":", 1)[-1] in mine) for k, j in JOBS.items()):
+                return _json({"error": "an annotation or analysis of this sample is still running; wait until it finishes"}, 409)
+            emb = config.SAMPLES / target / "embedding"
+            if sess or emb.exists():
+                trash = config.TRASH / f"{time.strftime('%Y%m%d-%H%M%S')}_{target}_load"
+                trash.mkdir(parents=True)
+                _trash_sessions(sess, trash)
+                if emb.exists():
+                    shutil.move(str(emb), str(trash / f"embedding_{target}"))
+        if changes:
+            await asyncio.to_thread(bundle.apply_sample, src, plan)
+            _reload_sample(target)
+            _cell_tables.clear()
+        r = await asyncio.to_thread(bundle.load, src, target)
+        if up:
+            src.unlink(missing_ok=True)
     except (ValueError, OSError, KeyError, __import__("zipfile").BadZipFile) as e:
         return _json({"error": str(e) if not isinstance(e, __import__("zipfile").BadZipFile) else "this is not a saved annotation (not a zip file)"}, 400)
     if r["embedding_loaded"]:
         _cell_tables.clear()
-    return _json(r)
+    return _json(r | {"plan": plan, "trash": str(trash) if trash else None})
 
 
 # ---------------- the agent's proposed changes (proposals.py): the user accepts or dismisses them ----------------

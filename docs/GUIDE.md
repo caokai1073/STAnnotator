@@ -411,10 +411,20 @@ The app's window, or the web viewer (`.venv/bin/stagent viewer`, then http://loc
 
 - **Save…** under Annotation writes the open annotation into one file (`.stannot`): every version with its regions,
   priors and corrections, the marker step and model, niches and their names, review verdicts and advice, the PCA /
-  UMAP / Leiden clusters, and the last result of each Compare and Signaling analysis (these are kept with the
-  annotation, so **Last result** also works after a restart). Chats are left out.
-- **Load…** opens such a file as a new annotation of the sample with the same cells and genes (here or in another data
-  folder); it is marked "loaded copy" in the list. A different PCA / UMAP of that sample goes to the trash first.
+  UMAP / Leiden clusters, and the last result of each analysis (these are kept with the annotation, so **Last result**
+  also works after a restart). It also holds the sample's **filter** (thresholds and the genes left out) and its
+  **registration** (the placement, local corrections and piece moves, every cell's place on the image, the image's
+  size). Chats are left out; so are the data and the image themselves.
+- **Load…** opens such a file as a new annotation of the same sample (here or in another data folder); it is marked
+  "loaded copy" in the list. The sample can be the one it was saved on, or the same files imported again, with the
+  same image but without the filter or the registration: the app then says what it will do and asks first:
+  - filter the sample as saved (filtering renumbers the cells, so the sample's annotations and PCA / UMAP go to the
+    trash first, as with **Filter cells and genes**);
+  - put the cells back where they were on the image (also when the image still waits for a registration), if the
+    sample has an image of the saved size; otherwise the annotation is loaded without it and the app says which image
+    to add.
+- A different PCA / UMAP of that sample goes to the trash first. A file saved before 0.2.52 holds the annotation only:
+  the sample must then be filtered and registered as it was.
 
 ### Filtering cells and genes (Data tab)
 
