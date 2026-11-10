@@ -519,6 +519,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <div class="seg" data-for="aScope"></div></div>
     <div class="fld"><span>Analysis</span><select id="aKind" class="segsel" title="What to compare">
       <option value="de" data-short="DE genes">Genes that differ between one group and the rest or another group</option>
+      <option value="deseq2" data-short="DESeq2">DESeq2 on pseudobulk counts (summed per slice or patient): genes that differ across replicates; a project's slices only</option>
       <option value="markers" data-short="Top genes">The top genes of every group</option>
       <option value="composition" data-short="Composition">How the cells of one grouping split over another</option></select>
       <div class="seg" data-for="aKind"></div></div>
@@ -527,6 +528,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <label class="fld"><span>Group</span><select id="aGroup"></select></label>
       <label class="fld"><span>Versus</span><select id="aRef"></select></label>
     </div>
+    <label class="fld an-ds" title="One pseudobulk sample per value: the counts of each side summed per slice, or per patient / donor (a metadata column with one value per slice; several slices of a patient form one sample)"><span>Replicates</span><select id="aRep"></select></label>
     <div class="fgrid an-cp">
       <label class="fld" title="One bar per value"><span>Rows</span><select id="aRows"></select></label>
       <label class="fld" title="The shares in each bar"><span>Split by</span><select id="aCols"></select></label>
@@ -4483,13 +4485,17 @@ const HELP = `
 <li>With <b>k: Agent chooses</b>, the agent picks k per region, runs and names them.</li></ul>
 
 <h3>Compare</h3><ul>
-<li>For this slice or all slices pooled. Three analyses:<ul>
+<li>For this slice or all slices pooled. Four analyses:<ul>
   <li><b>DE genes</b> of one group against the other cells or another group, or of every group at once (Group: <b>All</b>,
     each against the other cells).<ul>
     <li>A group: a cell type, lineage, region, niche, Leiden cluster, the cells selected in the UMAP window, a slice,
       or a metadata value such as condition.</li>
     <li>Optionally only within e.g. one cell type.</li>
     <li>Wilcoxon test, genes ranked by AUC; with several slices it checks the change in every slice.</li></ul></li>
+  <li><b>DESeq2</b> (all slices of a project): the same comparison on pseudobulk counts, summed per slice or per
+    patient (<b>Replicates</b>; a patient / donor metadata column is chosen when there is one). Needs 2+ replicates
+    with 30+ cells on each side; paired when the same slices hold both sides. <b>Samples</b> lists the pseudobulk
+    samples.</li>
   <li><b>Top genes</b> of every group.</li>
   <li><b>Composition</b>: how one grouping splits over another (cell types per niche, niches per slice or per
     condition), as shares or as enrichment.</li></ul></li>
@@ -4760,6 +4766,9 @@ to 100, then log(1 + x). Random steps use a fixed seed, so a rerun on the same c
 <li><b>DE genes</b>: Wilcoxon rank-sum test of the log-normalized expression between the group and the reference (up
   to 20,000 random cells per side; Group All: 5,000), AUC as the effect size, log2 fold change of the normalized
   means, Benjamini-Hochberg FDR. Pooled slices: the direction is checked in every slice.</li>
+<li><b>DESeq2</b>: PyDESeq2 on the raw counts summed per replicate (slice or patient) and side; design ~ replicate +
+  side when the replicates hold both sides, else ~ side; Wald test, Benjamini-Hochberg adjusted p, genes with fewer
+  than 10 counts over all samples left out. Not offered for one slice (no replicates).</li>
 <li><b>Top genes</b>: every group against the other cells, ranked by AUC.</li>
 <li><b>Composition</b>: shares of one grouping within another, and log2 enrichment over what independence predicts.</li>
 <li>Cells are not independent replicates: rank by AUC and fold change, not by p.</li></ul>
@@ -6030,8 +6039,8 @@ async function paintTile(t, mode, sel) {  // the image, then the cells: light gr
 }
 $("allSamples").onclick = () => openGallery(true);
 // ---------------- Compare: DE genes, top genes per group, composition (one slice or all slices pooled) ----------------
-const AN = { opts: null, key: "", last: null, req: null, view: "", by: {}, n: { de: 20, deall: 5, markers: 5, run: 20, compare: 20, circle: 40 } };
-const AN_N = { de: [5, 60], deall: [1, 30], markers: [1, 15], run: [5, 60], compare: [5, 80], circle: [5, 300] };  // the dialog's number: least, most
+const AN = { opts: null, key: "", last: null, req: null, view: "", by: {}, n: { de: 20, deseq2: 20, deall: 5, markers: 5, run: 20, compare: 20, circle: 40 } };
+const AN_N = { de: [5, 60], deseq2: [5, 60], deall: [1, 30], markers: [1, 15], run: [5, 60], compare: [5, 80], circle: [5, 300] };  // the dialog's number: least, most
 const AN_LABEL = { "cell type": "cell type", leiden: "Leiden cluster", selection: "UMAP selection" };
 const anLabel = (g) => AN_LABEL[g] || g;
 const AN_LEGEND = { "cell type": "type", lineage: "lineage", niche: "niche", leiden: "leiden", region: "region" };
@@ -6072,7 +6081,7 @@ async function loadAnOptions(force) {  // the groupings of the open annotation (
   pick("aRows", anScope() === "project" ? ["slice", "niche"] : ["niche", "region"], many);
   pick("aCols", ["cell type", "lineage"], Object.keys(g));
   fillSelect("aWBy", items(many), undefined, ["", "all cells"]);
-  anGroups(); anWithin();
+  anGroups(); anWithin(); anReplicates();
   const miss = Object.entries(AN.opts.missing || {}).map(([k, s]) => `no ${anLabel(k)} in ${s.length} slice(s)`);
   $("aninfo").textContent = [`${AN.opts.n_cells.toLocaleString()} cells`, anScope() === "project" ? "all slices pooled" : "this slice",
     sel ? "UMAP selection available" : null, ...miss].filter(Boolean).join(" · ");
@@ -6080,11 +6089,19 @@ async function loadAnOptions(force) {  // the groupings of the open annotation (
 }
 function anGroups() {  // Group: one value, or All (every group against the other cells); Versus: the rest or another value
   const vals = (AN.opts && AN.opts.groupings[$("aBy").value]) || [], cur = $("aGroup").value;
-  fillSelect("aGroup", [["__all__", "All (each against the other cells)"], ...vals.map((v) => [v, v])],
-             cur === "__all__" || vals.includes(cur) ? cur : vals[0]);
+  const allOk = $("aKind").value !== "deseq2";  // DESeq2: one group at a time
+  fillSelect("aGroup", [...(allOk ? [["__all__", "All (each against the other cells)"]] : []), ...vals.map((v) => [v, v])],
+             (cur === "__all__" && allOk) || vals.includes(cur) ? cur : vals[0]);
   const all = $("aGroup").value === "__all__", ref = all ? [] : vals.filter((v) => v !== $("aGroup").value);
   fillSelect("aRef", ref.map((v) => [v, v]), undefined, ["rest", "all other cells"]);
   $("aRef").disabled = all;
+}
+function anReplicates() {  // DESeq2: offered for a project's slices only (one slice has no replicates)
+  const reps = (AN.opts && AN.opts.replicates) || [], ok = anScope() === "project" && reps.length && (AN.opts.n_slices || 0) >= 2;
+  const btn = document.querySelector('.seg[data-for="aKind"] button[data-v="deseq2"]'); if (btn) btn.hidden = !ok;
+  if (!ok && $("aKind").value === "deseq2") { $("aKind").value = "de"; syncSeg("aKind"); syncAnKind(); syncLast(); }
+  fillSelect("aRep", reps.map((k) => [k, k === "slice" ? "slice" : `${anLabel(k)} (metadata)`]),
+             reps.includes($("aRep").value) ? $("aRep").value : AN.opts && AN.opts.replicate_default);
 }
 function anWithin() {
   const by = $("aWBy").value, vals = by && AN.opts ? AN.opts.groupings[by] || [] : [];
@@ -6092,12 +6109,15 @@ function anWithin() {
 }
 function syncAnKind() {
   const k = $("aKind").value;
-  document.querySelectorAll("[data-pane=compare] .an-de").forEach((e) => (e.hidden = k !== "de" && !(k === "markers" && e.classList.contains("an-mk"))));
+  document.querySelectorAll("[data-pane=compare] .an-de").forEach((e) => (e.hidden = k !== "de" && k !== "deseq2" && !(k === "markers" && e.classList.contains("an-mk"))));
+  document.querySelectorAll("[data-pane=compare] .an-ds").forEach((e) => (e.hidden = k !== "deseq2"));
+  if (AN.opts) anGroups();
   document.querySelectorAll("[data-pane=compare] .an-cp").forEach((e) => (e.hidden = k !== "composition"));
   $("aByLbl").textContent = k === "markers" ? "Group by" : "Compare by";
-  setLabel($("aRun"), { de: "Find DE genes", markers: "Find top genes", composition: "Show composition" }[k]);
+  setLabel($("aRun"), { de: "Find DE genes", deseq2: "Run DESeq2", markers: "Find top genes", composition: "Show composition" }[k]);
   $("aHint").textContent = {
     de: "Wilcoxon test on log-normalized expression; genes ranked by AUC (0.5 = no difference). Group All compares every group with the other cells at once. Click a gene to color the map by it.",
+    deseq2: "The raw counts of each side summed per replicate (slice, or patient), then DESeq2: needs 2 or more replicates with 30+ cells on each side (3+ is better). Replicates holding both sides (e.g. two regions in the same slices) are paired.",
     markers: "Every group against the other cells: what sets each niche, cluster or region apart.",
     composition: "Shares of each value per row, and how much more or less common it is than if the two were unrelated.",
   }[k];
@@ -6112,7 +6132,8 @@ document.querySelector('#tabs .tab[data-tab="compare"]').addEventListener("click
 $("aRun").onclick = async () => {
   const kind = $("aKind").value, b = { ...anBody(), kind }, w = $("aWBy").value;
   b.within = w ? { [w]: $("aWVal").value } : {};
-  if (kind === "de") Object.assign(b, { by: $("aBy").value, group: $("aGroup").value, reference: $("aRef").value });
+  if (kind === "de" || kind === "deseq2") Object.assign(b, { by: $("aBy").value, group: $("aGroup").value, reference: $("aRef").value });
+  if (kind === "deseq2") b.replicate = $("aRep").value;
   else if (kind === "markers") b.by = $("aBy").value;
   else Object.assign(b, { rows: $("aRows").value, cols: $("aCols").value });
   $("aRun").disabled = true; const label = $("aRun").textContent; setLabel($("aRun"), "Running…");
@@ -6249,6 +6270,30 @@ async function showAnalysis() {
       ...(slc ? [slc === "slices_same_direction" ? x[slc] : x[slc] ? "yes" : "no"] : [])]))
       : Object.assign(document.createElement("div"), { className: "hint", textContent: "No significant genes in this direction." }));
     if (list.length < r[dir === "up" ? "n_up" : "n_down"]) $("anNote").textContent = `The ${list.length} strongest shown (up to 60 with the number above); Save CSV has every gene. ` + r.note;
+  } else if (q.kind === "deseq2") {
+    const ref = r.reference === "rest" ? "all other cells" : r.reference;
+    $("anTitle").textContent = `${r.group} vs ${ref} · DESeq2`;
+    $("anSub").textContent = `${anLabel(r.by)} · ${where} · pseudobulk per ${anLabel(r.replicate)}: ${r.n_samples[0]} vs ${r.n_samples[1]} samples` +
+      ` (${r.n_group.toLocaleString()} vs ${r.n_reference.toLocaleString()} cells) · design ${r.design} · ${r.n_genes_tested.toLocaleString()} genes tested`;
+    const dir = AN.view || "up", N = AN.n.deseq2;
+    anSeg([["up", `Up (${r.n_up})`], ["down", `Down (${r.n_down})`], ["samples", "Samples"]], dir, (v) => { AN.view = v; showAnalysis(); });
+    if (dir === "samples") {  // the pseudobulk samples, and those left out for too few cells
+      $("anNWrap").hidden = true;
+      const rows = r.samples.map((x) => [x.replicate, x.side === "group" ? r.group : ref, x.n_cells.toLocaleString(), "used"])
+        .concat((r.left_out || []).map((x) => [x.replicate, x.side === "group" ? r.group : ref, x.n_cells.toLocaleString(), "left out (under 30 cells)"]));
+      $("anBody").append(anTable([anLabel(r.replicate), "Side", "Cells", ""], rows));
+      $("anNote").textContent = r.note;
+    } else {
+      $("anNWrap").hidden = false; $("anNLabel").textContent = "genes";
+      Object.assign($("anN"), { min: 5, max: 60, value: N });
+      const list = r[dir].slice(0, N);
+      $("anBody").append(list.length ? anTable(["Gene", "log<sub>2</sub> FC", "SE", "Mean group", "Mean ref.", "Base mean", "Adj. p"],
+        list.map((x) => [geneLink(x.gene), fmt(x.log2fc), fmt(x.lfc_se), fmt(x.mean_group, 1), fmt(x.mean_reference, 1), fmt(x.base_mean, 1),
+                         x.padj ? Number(x.padj).toExponential(1) : "< 1e-300"]))
+        : Object.assign(document.createElement("div"), { className: "hint", textContent: "No significant genes in this direction (adjusted p < 0.05)." }));
+      $("anNote").textContent = (list.length < r[dir === "up" ? "n_up" : "n_down"] ? `The ${list.length} strongest shown (up to 60 with the number above); Save CSV has every gene. ` : "") +
+        "Mean = mean normalized counts of a side's pseudobulk samples. " + r.note;
+    }
   } else if (q.kind === "markers") {
     $("anTitle").textContent = `Top genes per ${anLabel(r.by)}`;
     $("anSub").textContent = where + (r.skipped_small.length ? ` · skipped (under 30 cells): ${r.skipped_small.join(", ")}` : "");

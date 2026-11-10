@@ -733,6 +733,19 @@ For this slice, or all slices of a project pooled.
   skipped; up to 5,000 cells per side in the test, so that many groups take seconds to a minute or two): the top up
   and down genes of each group, and every group's genes in Save CSV (column `group`).
 
+**DESeq2** (all slices of a project only): the same kind of comparison, done the way DESeq2 is meant to be used, on
+pseudobulk counts with replicates.
+
+- The raw counts of each side are summed per **replicate**: a slice, or a patient / donor (a slice metadata column
+  with one value per slice; the app picks a column named like patient, donor or subject when there is one, so that
+  a patient's slices form one sample). A replicate with fewer than 30 cells on a side is left out.
+- It needs at least 2 replicates on each side (3 or more are better); one slice has no replicates, so DESeq2 is not
+  offered there (use DE genes).
+- When the same replicates hold both sides (e.g. mucosa vs submucosa in the same slices) the design is paired,
+  `~ replicate + side`; when the sides are different slices or patients (e.g. condition A vs B), `~ side`.
+- The result: up and down genes by adjusted p (< 0.05) with log2 fold change and its standard error, mean normalized
+  counts per side, and the pseudobulk samples used (**Samples**). Save CSV has every gene tested. It runs PyDESeq2.
+
 **Top genes**: every group against the rest (what sets each niche or cluster apart).
 
 **Composition**: how one grouping splits over another (cell types per niche, niches per region, niches per slice or per
@@ -747,8 +760,9 @@ down; DE of All: 1–30 per group; Top genes: 1–15 per group).
 
 - **Save figure…** writes the plot as PDF; **Save CSV…** keeps the full table.
 - A click on a gene colors the map by it.
-- **Last result** reopens the last result of the analysis chosen in the tab (DE genes, Top genes or Composition).
-- **Ask Agent** asks the agent to interpret the result (it calls the same analysis through `de_genes`,
+- **Last result** reopens the last result of the analysis chosen in the tab (DE genes, DESeq2, Top genes or
+  Composition).
+- **Ask Agent** asks the agent to interpret the result (it calls the same analysis through `de_genes`, `deseq2`,
   `group_markers` or `composition`).
 
 On SCP2927 (559,539 cells, 480 genes) a DE run takes 1-2 s and the top genes of 8 niches about 10 s.

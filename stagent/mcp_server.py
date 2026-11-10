@@ -184,6 +184,9 @@ Rank DE genes by AUC and fold change rather than p-values (cells are not indepen
 slices trust what holds in every slice (slices_same_direction / slices_separate), and with one slice per side say a
 slice effect cannot be told from a group effect. A gene of the neighboring cell types may be spillover. Interpret the
 genes with care and say which claims come from the data and which from general knowledge.
+deseq2 (a project's slices only): DESeq2 on pseudobulk counts summed per replicate (slice, or a patient / donor
+metadata column), for differences between conditions or regions that should hold across replicates; it needs 2+
+replicates per side (say how many; 3+ is better) and is the test to cite for condition differences.
 
 Trajectories (when asked, or the app's Trajectory tab): trajectory orders cells on a spatial axis between two groups
 (e.g. the crypt axis from stem cells to colonocytes, portal to central regions), or by diffusion pseudotime from a
@@ -1372,6 +1375,23 @@ def de_genes(by: str, group: Union[str, list], reference: Union[str, list] = "re
     from . import analysis
     c = _cells(scope, _uses_selection(by, within))
     return _j(analysis.de(c, by, group, reference, within, max(1, min(int(top), 100))))
+
+
+@mcp.tool()
+def deseq2(by: str, group: Union[str, list], reference: Union[str, list] = "rest", within: Optional[dict] = None,
+           replicate: Optional[str] = None, top: int = 20) -> str:
+    """DESeq2 (PyDESeq2) on pseudobulk counts, for a project's slices (scope "project"): the raw counts of group (a
+    value or list of grouping by) and of reference ("rest" or a value / list), within = {grouping: value(s)} (e.g.
+    one cell type), summed per replicate. replicate: "slice" or a metadata column with one value per slice; default:
+    a patient / donor-like column when the project has one (a patient's slices form one sample), else slice. Needs
+    at least 2 replicates with 30+ cells on each side; replicates holding both sides are paired (~ replicate + side,
+    e.g. two regions in the same slices), else ~ side (e.g. conditions made of different slices). Returns the
+    design, the pseudobulk samples, and the top up and down genes by adjusted p (log2 fold change, its standard
+    error, mean normalized counts). Use it for differences between conditions or regions across replicates; one
+    slice has no replicates: use de_genes there."""
+    from . import analysis
+    c = _cells("project", _uses_selection(by, within))
+    return _j(analysis.deseq2(c, by, group, reference, within, replicate, max(1, min(int(top), 100))))
 
 
 @mcp.tool()

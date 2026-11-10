@@ -9,6 +9,7 @@ dependencies = [
   "numpy", "pandas", "scipy", "pyarrow", "matplotlib",
   "tifffile", "zarr>=3", "imagecodecs", "h5py", "mcp>=1.9,<2", "igraph", "pynndescent", "uvicorn",
   "starlette", "pillow", "scikit-learn", "umap-learn",
+  "pydeseq2",  # Compare > DESeq2 (pseudobulk over a project's slices)
   # Harmony (joint embedding of several slices): 2.x is compiled and has no Windows build, so Windows uses
   # stagent/harmony.py, its NumPy version
   "harmonypy; sys_platform != 'win32'",

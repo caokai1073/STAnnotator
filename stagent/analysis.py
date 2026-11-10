@@ -13,6 +13,10 @@ de(): genes that differ between a group of cells and the rest (or another group)
   when the groups are made of different slices, the slices of the group are compared with those of the reference.
 de_all(): de() of every group of a grouping against the other cells, in one run (group "all"); the test on up to
   ALL_TEST_CELLS cells per side, so that many groups take seconds to a minute or two.
+deseq2(): DESeq2 (PyDESeq2) on pseudobulk counts: a group against the rest or another group, the raw counts summed per
+  replicate (a slice, or a patient / donor column of the project's metadata) and side; needs several replicates on
+  each side, so it is offered for a project's slices only. Paired (~ replicate + side) when the replicates hold both
+  sides, else ~ side.
 markers(): the top genes of every group of a grouping against the rest of the cells.
 crosstab(): how the cells of one grouping split over another (cell types per niche, niches per slice, ...), with the
   enrichment over what independence predicts and, for slice-level rows, every slice's own shares.
@@ -29,6 +33,10 @@ ALL_MIN_CELLS = 30      # smaller groups are skipped by de_all
 ALL_MAX_ROWS = 1000000  # de_all's full table beyond this many rows (genes x groups): significant genes only
 ALL = ("all", "__all__")  # group "all" (unless a group is called so): every group against the other cells
 MIN_CELLS = 10       # smallest group compared, and smallest group per slice for the per-slice check
+PB_MIN_CELLS = 30    # DESeq2: smallest pseudobulk sample (cells of one side in one replicate)
+PB_MIN_COUNT = 10    # DESeq2: genes with fewer counts over all pseudobulk samples are left out
+import re as _re
+DONOR = _re.compile(r"donor|patient|subject|individual|participant|case|mouse|animal|person", _re.I)
 PSEUDO = 0.01        # pseudocount (normalized counts per 100) for the fold change
 BUILTIN = ["cell type", "lineage", "region", "niche", "leiden", "selection", "slice"]
 NOTE = ("p-values treat cells as independent and are tiny for large groups: rank by AUC and fold change, and with "
@@ -51,6 +59,34 @@ class Cells:
         if self._X is None:
             self._X = model.lognorm(sp.vstack([s.counts for s in self.sessions]).tocsr()).tocsr()
         return self._X
+
+    def replicates(self):
+        """The columns a pseudobulk replicate can be (DESeq2): slice, and the metadata columns with one value per slice;
+        and the default: a patient / donor-like column when there is one (several slices of one patient are one
+        sample), else slice."""
+        if self.pid is None:
+            return [], None
+        cols = ["slice"]
+        for c in self.labels.columns:
+            if c in BUILTIN or c == "selection":
+                continue
+            per = self.labels.groupby(self.labels["slice"])[c].nunique(dropna=False)
+            if (per <= 1).all() and self.labels[c].nunique() > 1:
+                cols.append(c)
+        donor = next((c for c in cols[1:] if DONOR.search(c)), None)
+        return cols, donor or "slice"
+
+    def counts_sum(self, groups):
+        """Raw counts summed over each group of cells: groups = [row indices into the pooled table] -> groups x genes."""
+        off = np.cumsum([0] + [len(s.cells) for s in self.sessions])
+        out = np.zeros((len(groups), len(self.genes)), np.float64)
+        for i, s in enumerate(self.sessions):
+            X = sp.csr_matrix(s.counts)
+            for k, rows in enumerate(groups):
+                r = rows[(rows >= off[i]) & (rows < off[i + 1])] - off[i]
+                if len(r):
+                    out[k] += np.asarray(X[r].sum(0)).ravel()
+        return out
 
     def options(self):
         """{grouping: [values by size]}; metadata columns only when they differ between slices."""
@@ -304,6 +340,100 @@ def de_all(c, by, within=None, top=20, full=False, min_cells=ALL_MIN_CELLS, max_
     return res
 
 
+def deseq2(c, by, group, reference="rest", within=None, replicate=None, top=20, full=False, min_cells=PB_MIN_CELLS):
+    """DESeq2 on pseudobulk counts: the cells of group (a value of grouping by, or a list) against reference ("rest"
+    or a value / list), among the cells in within; the raw counts are summed per replicate (a column of
+    Cells.replicates(): a slice, or a patient / donor) and side. Replicate samples with fewer than min_cells cells are
+    left out. Needs at least 2 samples on each side. Paired design (~ replicate + side) when at least 2 replicates hold
+    both sides (e.g. two regions in the same slices; then only those), else ~ side (e.g. conditions made of different
+    slices or patients)."""
+    import logging, warnings
+    cols, default = c.replicates()
+    if not cols:
+        raise ValueError("DESeq2 needs several slices (pseudobulk replicates): use it on a project's slices, or use "
+                         "DE genes on one slice")
+    replicate = replicate or default
+    if replicate not in cols:
+        raise ValueError(f"the replicate must be one of {', '.join(cols)} (a column with one value per slice)")
+    col = _column(c, by)
+    if isinstance(group, str) and group in ALL:
+        raise ValueError("DESeq2 compares one group with the rest or with another group, not every group at once")
+    w = _within(c, within)
+    a = _mask(c, by, group) & w
+    b = (pd.notna(col) & ~_mask(c, by, group) if reference in (None, "", "rest") else _mask(c, by, reference)) & w
+    if (a & b).any():
+        raise ValueError("the group and the reference overlap")
+    rep = c.labels[replicate].astype(str).to_numpy()
+    samples, groups, small = [], [], []
+    for side, m in (("group", a), ("reference", b)):
+        for r in sorted(set(rep[m])):
+            rows = np.where(m & (rep == r))[0]
+            (samples if len(rows) >= min_cells else small).append({"replicate": r, "side": side, "n_cells": int(len(rows))})
+            if len(rows) >= min_cells:
+                groups.append(rows)
+    na = sum(x["side"] == "group" for x in samples)
+    nb = len(samples) - na
+    if na < 2 or nb < 2:
+        raise ValueError(f"DESeq2 needs at least 2 replicates ({replicate}) with {min_cells}+ cells on each side; here "
+                         f"{na} for the group and {nb} for the reference" + (f" ({len(small)} left out with fewer cells)" if small else ""))
+    shared = {x["replicate"] for x in samples if x["side"] == "group"} & {x["replicate"] for x in samples if x["side"] == "reference"}
+    paired = len(shared) >= 2
+    if paired:  # only the replicates holding both sides
+        keep = [i for i, x in enumerate(samples) if x["replicate"] in shared]
+        samples, groups = [samples[i] for i in keep], [groups[i] for i in keep]
+    counts = c.counts_sum(groups)
+    genes = np.asarray(c.genes)
+    ok = counts.sum(0) >= PB_MIN_COUNT
+    names = [f"{x['replicate']}|{x['side']}" for x in samples]
+    cm = pd.DataFrame(np.rint(counts[:, ok]).astype(np.int64), index=names, columns=genes[ok])
+    md = pd.DataFrame({"side": [x["side"] for x in samples], "rep": [x["replicate"] for x in samples]}, index=names)
+    design = "~rep + side" if paired else "~side"
+    from pydeseq2.dds import DeseqDataSet
+    from pydeseq2.ds import DeseqStats
+    logging.getLogger("pydeseq2").setLevel(logging.ERROR)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        dds = DeseqDataSet(counts=cm, metadata=md, design=design, quiet=True, n_cpus=1)
+        dds.deseq2()
+        stt = DeseqStats(dds, contrast=["side", "group", "reference"], quiet=True, n_cpus=1)
+        stt.summary()
+    r = stt.results_df
+    norm = pd.DataFrame(dds.layers["normed_counts"], index=names, columns=cm.columns)
+    side = md["side"].to_numpy()
+    t = pd.DataFrame({"gene": r.index.to_numpy(), "log2fc": r["log2FoldChange"].to_numpy(), "lfc_se": r["lfcSE"].to_numpy(),
+                      "base_mean": r["baseMean"].to_numpy(),
+                      "mean_group": norm[side == "group"].mean(0).reindex(r.index).to_numpy(),
+                      "mean_reference": norm[side == "reference"].mean(0).reindex(r.index).to_numpy(),
+                      "stat": r["stat"].to_numpy(), "p": r["pvalue"].to_numpy(), "padj": r["padj"].to_numpy()})
+    t["padj"] = t["padj"].fillna(1.0)
+    t["p"] = t["p"].fillna(1.0)
+    t = t.sort_values(["padj", "stat"], key=lambda v: v if v.name == "padj" else -v.abs())  # then the strongest
+    sig = t.padj < 0.05
+    up, down = t[sig & (t.log2fc > 0)], t[sig & (t.log2fc < 0)]
+    def rows(x):
+        out = x.head(top)[["gene", "log2fc", "lfc_se", "base_mean", "mean_group", "mean_reference", "padj"]].copy()
+        for k in ("log2fc", "lfc_se"):
+            out[k] = out[k].astype(float).round(3)
+        for k in ("base_mean", "mean_group", "mean_reference"):
+            out[k] = out[k].astype(float).round(1)
+        out["padj"] = out["padj"].map(lambda v: float(f"{v:.2e}"))
+        return out.to_dict("records")
+    res = {"scope": "project", "by": by, "group": group,
+           "reference": "rest" if reference in (None, "", "rest") else reference, "within": within or {},
+           "replicate": replicate, "design": design.replace("rep", replicate), "paired": paired,
+           "samples": samples, "left_out": small, "n_samples": [na if not paired else len(shared), nb if not paired else len(shared)],
+           "n_group": int(sum(x["n_cells"] for x in samples if x["side"] == "group")),
+           "n_reference": int(sum(x["n_cells"] for x in samples if x["side"] == "reference")),
+           "n_genes_tested": int(ok.sum()), "n_up": int(len(up)), "n_down": int(len(down)), "up": rows(up), "down": rows(down),
+           "note": ("DESeq2 (PyDESeq2) on pseudobulk counts: the raw counts of each side summed per " + replicate +
+                    (", paired by " + replicate if paired else "") + ". The replicates carry the statistics: with 2 per side"
+                    " few genes are trustworthy, 3 or more are better. Imaging panels pick up transcripts of neighboring"
+                    " cells (segmentation spillover), as in DE genes.")}
+    if full:
+        res["table"] = t
+    return res
+
+
 def markers(c, by, top=8, within=None, min_cells=30):
     """The top up genes (AUC) of every group of grouping by against the other cells (within the filter)."""
     w = _within(c, within)
@@ -418,6 +548,9 @@ def headline(kind, r):
                 "per_slice_check": r.get("per_slice_check")}
     if kind == "markers":
         return {"groups": {g["group"]: [x["gene"] for x in g["genes"][:5]] for g in r["groups"][:20]}}
+    if kind == "deseq2":
+        return {"replicate": r["replicate"], "design": r["design"], "n_samples": r["n_samples"], "n_up": r["n_up"],
+                "n_down": r["n_down"], "top_up": [x["gene"] for x in r["up"][:8]], "top_down": [x["gene"] for x in r["down"][:8]]}
     if kind == "composition":
         return {"rows": [x["row"] for x in r["table"][:20]], "keys": r["keys"][:20], "n_cells": r["n_cells"]}
     if kind == "run":

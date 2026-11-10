@@ -53,7 +53,7 @@ def dropped_file(dest):
 # packages that load parts of themselves dynamically (codecs, event loops, numba-compiled modules, plugins)
 # (Windows: pywebview drives Edge WebView2 through pythonnet / clr_loader, which load .NET assemblies and DLLs)
 for pkg in ["zarr", "numcodecs", "imagecodecs", "tifffile", "pynndescent", "numba", "llvmlite", "igraph", "umap", "sklearn", "harmonypy",
-            "uvicorn", "mcp", "webview"] + (["clr_loader", "pythonnet"] if sys.platform == "win32" else []):
+            "uvicorn", "mcp", "webview", "pydeseq2", "anndata", "formulaic", "formulaic_contrasts"] + (["clr_loader", "pythonnet"] if sys.platform == "win32" else []):
     try:
         d, b, h = collect_all(pkg)
     except Exception:

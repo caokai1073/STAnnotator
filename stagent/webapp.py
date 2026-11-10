@@ -1222,11 +1222,14 @@ async def api_analysis_options(req: Request):
         c = await asyncio.to_thread(_analysis_cells, b)
     except ValueError as e:
         return _json({"error": str(e)}, 400)
-    return _json({"groupings": c.options(), "missing": c.missing, "n_cells": len(c.labels)})
+    reps, rep_default = c.replicates()
+    return _json({"groupings": c.options(), "missing": c.missing, "n_cells": len(c.labels),
+                  "replicates": reps, "replicate_default": rep_default, "n_slices": len(c.sessions)})
 
 
 async def api_analysis_run(req: Request):
-    """kind "de" (by, group, reference, within), "markers" (by, within) or "composition" (rows, cols, within)."""
+    """kind "de" (by, group, reference, within), "deseq2" (the same and replicate; a project's slices), "markers" (by,
+    within) or "composition" (rows, cols, within)."""
     from . import analysis
     b = await req.json()
 
@@ -1236,6 +1239,10 @@ async def api_analysis_run(req: Request):
         if b["kind"] == "de":
             r = analysis.de(c, b["by"], b["group"], b.get("reference") or "rest", within, top=60, full=True)
             table = r.pop("table")
+        elif b["kind"] == "deseq2":
+            r = analysis.deseq2(c, b["by"], b["group"], b.get("reference") or "rest", within, b.get("replicate") or None,
+                                top=60, full=True)
+            table = r.pop("table")
         elif b["kind"] == "markers":
             r = analysis.markers(c, b["by"], top=15, within=within)
             table = pd.DataFrame([{"group": g["group"], "n_cells": g["n_cells"], **x} for g in r["groups"] for x in g["genes"]])
@@ -1243,7 +1250,7 @@ async def api_analysis_run(req: Request):
             r = analysis.crosstab(c, b["rows"], b["cols"], within)
             table = pd.DataFrame([{b["rows"]: x["row"], "n_cells": x["n_cells"], **x["shares"]} for x in r["table"]]).fillna(0)
         else:
-            raise ValueError("kind must be de, markers or composition")
+            raise ValueError("kind must be de, deseq2, markers or composition")
         key = uuid.uuid4().hex[:12]
         ANALYSES[key] = table
         while len(ANALYSES) > ANALYSES.n:
