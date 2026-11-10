@@ -1584,6 +1584,7 @@ async function selectSample(id) {
   if (sid) await startAnnotation("continue", sid, token);
   else if (!ids.length) await openPlaceholder(token);  // not annotated yet: regions and the registration still work
   else st.wantMode = st.keepView = null;
+  if (token === st.switchToken) resumeRunning();  // an annotation, PCA / UMAP or niches still running from before
 }
 async function openPlaceholder(token) {  // the sample's "not annotated yet" session (method none), made on first use
   const ph = st.sample.allSessions.filter((x) => x.method === "none").sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0];
@@ -6003,8 +6004,51 @@ function projectSessions() {  // the annotation of each slice a project-wide ana
 }
 async function projectJob(path, body, fill, stage, btn) {  // a project-wide analysis, with its progress in fill / stage
   const pid = projectOf(st.sample.sample_id).project_id;
-  const { job } = await post(`/api/project/${pid}/${path}`, body);
-  await pollJob(job, fill.closest(".progress"), fill, stage, btn, 800, true);
+  let job;
+  try { ({ job } = await post(`/api/project/${pid}/${path}`, body)); }
+  catch (e) {  // the same analysis already runs (e.g. started before a reconnect): follow it instead
+    const r = await api(`/api/sample/${encodeURIComponent(st.sample.sample_id)}/running`).catch(() => ({ running: [] }));
+    const x = r.running.find((j) => j.project === pid && j.kind === path);
+    if (!x) throw e;
+    job = x.job; toast("Already running (started earlier): following it", 5000);
+  }
+  st.following.add(job);
+  try { await pollJob(job, fill.closest(".progress"), fill, stage, btn, 800, true); } finally { st.following.delete(job); }
+}
+// Analyses still running when the page opens again (a reconnect to the server, a reload): their progress and Stop come
+// back under their button, and what they made opens when they end, instead of the button offering to start them again
+st.following = new Set();
+async function resumeRunning() {
+  const s = st.sample; if (!s) return;
+  let r; try { r = await api(`/api/sample/${encodeURIComponent(s.sample_id)}/running`); } catch (e) { return; }
+  const UI = { annotate: ["progress", "pfill", "pstage", "annotate", "Annotation"], embed: ["eprogress", "efill", "estage", "eRun", "PCA + UMAP"],
+               niches: ["nprogress", "nfill", "nstage", "nRun", "Niches"] };
+  for (const j of r.running) {
+    const ui = UI[j.kind]; if (!ui || st.following.has(j.job)) continue;
+    st.following.add(j.job);
+    const [prog, fill, stage, btn] = ui.slice(0, 4).map($), what = ui[4];
+    // while it runs, its progress stays under its button whenever the sample open is the one it works on (opening an
+    // annotation or another slice resets the bars, so this is checked every second)
+    const mine = () => st.sample && (st.sample.sample_id === s.sample_id || (j.project && projectOf(st.sample.sample_id) && projectOf(st.sample.sample_id).project_id === j.project));
+    const keep = () => { const on = mine(); prog.classList.toggle("show", on); if (on) btn.disabled = true; };
+    keep(); const keeper = setInterval(keep, 1000);
+    toast(`${what}${j.project ? " of all slices" : ""} started earlier is still running: following it`, 5000);
+    (async () => {
+      try {
+        await pollJob(j.job, prog, fill, stage, btn, 1000, true);
+        if (j.kind === "annotate") {
+          if (j.project) { const p = projectOf(s.sample_id); if (p) p.samples.forEach((id) => delete st.openedThisVisit[id]); st.sliceSwitch = true; }
+          else if (j.session) st.openedThisVisit[s.sample_id] = j.session;
+          await loadSamples(st.sample ? st.sample.sample_id : s.sample_id);
+        } else if (j.kind === "embed") { setSelection(null); await loadEmbedding(true); }
+        else await loadNiches(true);
+        toast(`${what} done`, 4000);
+        setTimeout(() => prog.classList.remove("show"), 800);
+      } catch (e) {
+        if (isStop(e)) stopped(prog, what); else { stage.textContent = `${what} failed: ${e.message}`; toast(stage.textContent, 8000); }
+      } finally { clearInterval(keeper); st.following.delete(j.job); btn.disabled = false; }
+    })();
+  }
 }
 async function annotateProject() {  // one marker annotation of all slices; then the current slice's new annotation opens
   const text = $("mkText").value;

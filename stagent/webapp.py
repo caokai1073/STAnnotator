@@ -748,7 +748,8 @@ async def api_niches_run(req: Request):
     s = review_app._session(req.path_params["sid"])
     b = await req.json()
     job = f"niche:{s.id}"
-    JOBS[job] = {"stage": "starting", "progress": 0.0, "done": False, "error": None}
+    JOBS[job] = {"stage": "starting", "progress": 0.0, "done": False, "error": None, "kind": "niches",
+                 "sample": s.sample_id, "session": s.id, "started": time.time()}
 
     def work():
         try:
@@ -767,8 +768,9 @@ async def api_embedding_run(req: Request):
     b = await req.json()
     job = f"embed:{s.sample_id}"
     if job in JOBS and not JOBS[job]["done"]:
-        return _json({"error": "already running"}, 409)
-    JOBS[job] = {"stage": "starting", "progress": 0.0, "done": False, "error": None}
+        return _json({"error": "already running", "job": job, "kind": "embed"}, 409)
+    JOBS[job] = {"stage": "starting", "progress": 0.0, "done": False, "error": None, "kind": "embed",
+                 "sample": s.sample_id, "started": time.time()}
 
     def work():
         try:
@@ -1115,13 +1117,15 @@ def api_samples(req):
     return _json(rows)
 
 
-async def _project_job(pid, fn, estimate_s=None):
-    """Run a project-wide analysis in the background; progress under /api/job/project:<id>."""
+async def _project_job(pid, fn, estimate_s=None, kind=None):
+    """Run a project-wide analysis in the background; progress under /api/job/project:<id>. kind (annotate, embed,
+    niches): what runs, so a page opened again (a reconnect) can follow it (/api/sample/<s>/running)."""
     job = f"project:{pid}"
     if job in JOBS and not JOBS[job]["done"]:
-        return _json({"error": "an analysis of this project is still running"}, 409)
+        return _json({"error": f"an analysis of this project is still running ({JOBS[job].get('kind') or 'analysis'})",
+                      "job": job, "kind": JOBS[job].get("kind")}, 409)
     JOBS[job] = {"stage": "starting", "progress": 0.0, "done": False, "error": None, "started": time.time(),
-                 "estimate_s": estimate_s}
+                 "estimate_s": estimate_s, "kind": kind, "project": pid}
 
     def work():
         try:
@@ -1137,7 +1141,7 @@ async def api_project_annotate(req: Request):
     pid, b = req.path_params["pid"], await req.json()
     return await _project_job(pid, lambda say: joint.annotate(pid, b.get("markers_text", ""), b.get("resolution"),
                                                         bool(b.get("carry")), say, b.get("knn")),
-                        estimate_s=b.get("estimate_s"))
+                        estimate_s=b.get("estimate_s"), kind="annotate")
 
 
 async def api_project_embed(req: Request):
@@ -1145,7 +1149,7 @@ async def api_project_embed(req: Request):
     pid, b = req.path_params["pid"], await req.json()
     return await _project_job(pid, lambda say: joint.embed(pid, int(b.get("n_pcs", 30)), int(b.get("n_neighbors", 15)),
                                                      float(b.get("min_dist", 0.3)), float(b.get("resolution", 1.0)),
-                                                     bool(b.get("harmony", True)), say))
+                                                     bool(b.get("harmony", True)), say), kind="embed")
 
 
 async def api_project_niches(req: Request):
@@ -1153,7 +1157,7 @@ async def api_project_niches(req: Request):
     pid, b = req.path_params["pid"], await req.json()
     return await _project_job(pid, lambda say: joint.niches(pid, int(b.get("k", 15)), int(b.get("n_niches", 8)),
                                                       b.get("identity", "nmf"), int(b.get("n_programs", 20)), say,
-                                                      sessions=b.get("sessions")))
+                                                      sessions=b.get("sessions")), kind="niches")
 
 
 # ---------------- differential expression and composition ----------------
@@ -1526,7 +1530,8 @@ async def api_annotate(req: Request):
         return _json({"session_id": sid})
     s = review_app._session(sid)
     JOBS[sid] = {"stage": "starting", "progress": 0.0, "done": False, "error": None, "started": time.time(),
-                 "estimate_s": b.get("estimate_s") if mode == "new" else None}
+                 "estimate_s": b.get("estimate_s") if mode == "new" else None,
+                 "kind": "annotate" if mode == "new" else "open", "sample": sample, "session": sid}
 
     def work():
         from . import timing
@@ -1570,6 +1575,23 @@ async def api_job_stop(req: Request):
     if ok and job in JOBS:
         JOBS[job].update(done=True, error="stopped", stopped=True)
     return _json({"stopped": ok})
+
+
+def api_sample_running(req):
+    """The analyses of a sample (or of its project) running now, so that a page opened again (a reconnect, a reload)
+    follows them instead of offering to start them again: [{job, kind, stage, progress, elapsed_s, estimate_s,
+    session, project}]."""
+    sample = req.path_params["sample"]
+    pid = projects.project_of(sample) if (config.SAMPLES / sample / "meta.json").exists() else None
+    out = []
+    for k, j in list(JOBS.items()):
+        if j.get("done") or not j.get("kind"):
+            continue
+        if j.get("sample") == sample or (pid and j.get("project") == pid):
+            out.append({"job": k, "kind": j["kind"], "stage": j.get("stage"), "progress": j.get("progress"),
+                        "elapsed_s": round(time.time() - j["started"], 1) if j.get("started") else None,
+                        "estimate_s": j.get("estimate_s"), "session": j.get("session"), "project": j.get("project")})
+    return _json({"running": out})
 
 
 def api_job(req):
@@ -3289,6 +3311,7 @@ def build_app(port):
         Route("/api/annotate", api_annotate, methods=["POST"]),
         Route("/api/estimate", api_estimate, methods=["POST"]),
         Route("/api/job/{sid}", api_job),
+        Route("/api/sample/{sample}/running", api_sample_running),
         Route("/api/job/{sid}/stop", api_job_stop, methods=["POST"]),
         Route("/api/data_folder", api_data_folder, methods=["POST"]),
         Route("/api/open_folder", api_open_folder, methods=["POST"]),
