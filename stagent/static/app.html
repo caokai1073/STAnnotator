@@ -412,13 +412,13 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .imkind { display: flex; gap: 16px; margin-bottom: 6px; }
 .choice { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font-size: 13px; }
 .choice button { padding: 2px 10px; font-size: 12.5px; }
-/* in the bars on top of the map, as a row of its own: the panels below follow the bars' height, so on a small
-   screen nothing lies on top of it (the text wraps) */
-#alignbar { flex: 1 1 100%; pointer-events: auto; display: flex; flex-wrap: wrap; gap: 6px 10px;
-            align-items: center; padding: 6px 12px; font-size: 12.5px; background: #fff5e0; color: #6b4a00;
-            border: 1px solid #f0c674; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+/* one of the bars on top of the map, as small as its text: beside the others on a wide map, on a row of its own
+   on a narrow one (the panels below follow the bars' height, so nothing lies on top of it) */
+#alignbar { flex: 0 1 auto; max-width: 100%; pointer-events: auto; display: flex; flex-wrap: wrap; gap: 6px 10px;
+            align-items: center; padding: 7px 10px 7px 12px; font-size: 12.5px; background: #fff5e0; color: #6b4a00;
+            border: 1px solid #f0c674; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
 #alignbar[hidden] { display: none; }
-#alignbar #alignmsg { flex: 1 1 200px; min-width: 0; }
+#alignbar #alignmsg { min-width: 0; }
 #alignbar button { padding: 2px 9px; font-size: 12px; }
 .clcard { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 6px 0; display: flex; flex-direction: column; gap: 6px; }
 .clcard pre { font: 11.5px ui-monospace, Menlo, monospace; white-space: pre-wrap; margin: 0; color: var(--muted); }
@@ -4315,7 +4315,8 @@ $("alignNow").onclick = askAlign;
 function alignBar() {  // an image waits for its alignment
   const s = st.sample;
   $("alignbar").hidden = !(s && s.image_pending);
-  if (s && s.image_pending) $("alignmsg").textContent = "This sample's image is not aligned yet: the cells are shown on a blank background.";
+  if (s && s.image_pending) { $("alignmsg").textContent = "Image not aligned yet";
+    $("alignbar").title = "This sample's image is not aligned yet: the cells are shown on a blank background until the agent aligns them (or a registration file is given)"; }
   $("alignNow").hidden = !st.desktop && !st.chatAvailable;
 }
 async function importSample() {  // returns true when the sample was imported
