@@ -21,7 +21,7 @@ and comparisons across regions, slices and conditions, with an AI agent at your 
 - **Annotate** from a marker gene list, a labeled single-cell reference, or an existing annotation.
 - **Refine in plain language**: priors ("epithelial cells are only in the mucosa"), corrections, re-clustering.
   Every change is a version you can undo.
-- **Analyze**: regions you draw (with QuPath's tools: brush, wand, polygon, rectangle, ellipse), PCA / UMAP / Leiden, niches, DE genes, composition, cell-cell communication; one
+- **Analyze**: regions you draw (with QuPath-like tools: brush, pen, polygon, rectangle, ellipse), PCA / UMAP / Leiden, niches, DE genes, composition, cell-cell communication; one
   slice or several slices together.
 - **Review**: the agent reviews one part of the analysis, checks its own advice against the data, and keeps
   only what holds up.

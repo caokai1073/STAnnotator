@@ -281,7 +281,6 @@ header .br { flex: 1 1 100%; height: 0; }
 .rgtools .sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 3px; }
 .rgtools label { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--muted); }
 .rgtools input[type=range] { width: 56px; }
-#wandTol { width: 44px !important; }
 #shapebar, #selbar { padding: 6px 10px; border-bottom: 1px solid var(--line); }
 #shapebar .row, #selbar .row { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 4px; }
 #shapebar button, #selbar button { padding: 1px 8px; font-size: 12px; }
@@ -462,7 +461,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 </style>
 </head>
 <body>
-<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="ic-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol><symbol id="ic-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></symbol><symbol id="ic-upload" viewBox="0 0 24 24"><path d="M12 16V5M7 9l5-5 5 5M5 20h14"/></symbol><symbol id="ic-import" viewBox="0 0 24 24"><path d="M12 3v11M7.5 9.5L12 14l4.5-4.5M4 14v6h16v-6"/></symbol><symbol id="ic-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5zM8 4v5h7V4M8 20v-6h8v6"/></symbol><symbol id="ic-help" viewBox="0 0 24 24"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.6 9.4a2.5 2.5 0 1 1 3.6 2.3c-.7.3-1.2 1-1.2 1.8v.4M12 17.2v.1"/></symbol><symbol id="ic-chev-left" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol><symbol id="ic-chev-right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol><symbol id="ic-chev-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol><symbol id="ic-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol><symbol id="ic-grid" viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></symbol><symbol id="ic-chart" viewBox="0 0 24 24"><path d="M4 20h16M7 16v-5M12 16V6M17 16V9"/></symbol><symbol id="ic-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></symbol><symbol id="ic-play" viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></symbol><symbol id="ic-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 15.5l.8 1.7 1.7.8-1.7.8-.8 1.7-.8-1.7-1.7-.8 1.7-.8z"/></symbol><symbol id="ic-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3"/></symbol><symbol id="ic-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7M20 4v5h-5"/></symbol><symbol id="ic-terminal" viewBox="0 0 24 24"><path d="M3 5h18v14H3zM7 10l3 2-3 2M12.5 15h4.5"/></symbol><symbol id="ic-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM8.6 12.2l2.4 2.4 4.4-4.8"/></symbol><symbol id="ic-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h6"/></symbol><symbol id="ic-share" viewBox="0 0 24 24"><path d="M12 15V4M8 8l4-4 4 4M5 12v8h14v-8"/></symbol><symbol id="ic-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol><symbol id="ic-server" viewBox="0 0 24 24"><path d="M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01"/></symbol><symbol id="ic-monitor" viewBox="0 0 24 24"><path d="M3 4h18v12H3zM8 20h8M12 16v4"/></symbol><symbol id="ic-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></symbol><symbol id="ic-image" viewBox="0 0 24 24"><path d="M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15.5 8.5h.01"/></symbol><symbol id="ic-pen" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"/></symbol><symbol id="ic-lasso" viewBox="0 0 24 24"><path d="M7 15.5C4.6 14.4 3 12.6 3 10.5 3 6.9 7 4 12 4s9 2.9 9 6.5S17 17 12 17c-1 0-2-.1-2.9-.3M7 15.5c-1 .8-1.5 1.7-1.5 2.6C5.5 19.7 7 21 9 21M7 15.5a1.6 1.6 0 1 0 2.3 1"/></symbol><symbol id="ic-target" viewBox="0 0 24 24"><path d="M12 19a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM12 2v4M12 18v4M2 12h4M18 12h4"/></symbol><symbol id="ic-scatter" viewBox="0 0 24 24"><path d="M4 4v16h16M8 15h.01M10 10h.01M14 13h.01M16 8h.01M18 15h.01"/></symbol><symbol id="ic-folder" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v11H3z"/></symbol><symbol id="ic-send" viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-3-7z"/></symbol><symbol id="ic-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></symbol><symbol id="ic-home" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9H4zM10 20v-6h4v6"/></symbol><symbol id="ic-move" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3L9.5 5.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5M3 12l2.5-2.5M3 12l2.5 2.5M21 12l-2.5-2.5M21 12l-2.5 2.5"/></symbol><symbol id="ic-copy" viewBox="0 0 24 24"><path d="M8 8h12v12H8zM4 16V4h12"/></symbol><symbol id="ic-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5zM3 13l9 5 9-5"/></symbol><symbol id="ic-rect" viewBox="0 0 24 24"><path d="M4 6h16v12H4z"/></symbol><symbol id="ic-ellipse" viewBox="0 0 24 24"><path d="M12 18.5c4.7 0 8.5-2.9 8.5-6.5S16.7 5.5 12 5.5 3.5 8.4 3.5 12s3.8 6.5 8.5 6.5z"/></symbol><symbol id="ic-polygon" viewBox="0 0 24 24"><path d="M5 9l7-5 7 4-2 10-9 2z"/></symbol><symbol id="ic-brush" viewBox="0 0 24 24"><path d="M20 4l-8.5 8.5M11.5 12.5l-1.5 1.5M9.5 13.5c-2 0-3.5 1.6-3.5 3.5 0 1-.5 2-2 2.5 1 .7 2.3 1 3.5 1 2.5 0 4.5-2 4.5-4.5 0-1.4-1.1-2.5-2.5-2.5z"/></symbol><symbol id="ic-wand" viewBox="0 0 24 24"><path d="M4 20L15 9M13 7l4 4M18 3v3M16.5 4.5h3M20 8v2M19 9h2M10 3v2M9 4h2"/></symbol><symbol id="ic-minus" viewBox="0 0 24 24"><path d="M6 12h12"/></symbol><symbol id="ic-hand" viewBox="0 0 24 24"><path d="M8 13V6.5a1.5 1.5 0 0 1 3 0V12M11 11V5a1.5 1.5 0 0 1 3 0v6M14 11V6.5a1.5 1.5 0 0 1 3 0V14c0 3.9-2.5 7-6.5 7-2.6 0-4-1.2-5.3-3.2L3.6 15a1.5 1.5 0 0 1 2.4-1.8L8 15"/></symbol><symbol id="ic-cell" viewBox="0 0 24 24"><path d="M12 20.5c4.4 0 8-3.6 8-8.2 0-4.5-3.4-8.8-8.3-8.8C7 3.5 4 7.4 4 11.8c0 4.8 3.6 8.7 8 8.7zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></symbol><symbol id="ic-bug" viewBox="0 0 24 24"><path d="M8 9h8v6a4 4 0 0 1-8 0zM9 9V7a3 3 0 0 1 6 0v2M12 11v8M4 12h4M16 12h4M5 7l3 2M19 7l-3 2M5 18l3-2M19 18l-3-2"/></symbol></svg>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="ic-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol><symbol id="ic-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></symbol><symbol id="ic-upload" viewBox="0 0 24 24"><path d="M12 16V5M7 9l5-5 5 5M5 20h14"/></symbol><symbol id="ic-import" viewBox="0 0 24 24"><path d="M12 3v11M7.5 9.5L12 14l4.5-4.5M4 14v6h16v-6"/></symbol><symbol id="ic-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5zM8 4v5h7V4M8 20v-6h8v6"/></symbol><symbol id="ic-help" viewBox="0 0 24 24"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.6 9.4a2.5 2.5 0 1 1 3.6 2.3c-.7.3-1.2 1-1.2 1.8v.4M12 17.2v.1"/></symbol><symbol id="ic-chev-left" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol><symbol id="ic-chev-right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol><symbol id="ic-chev-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol><symbol id="ic-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol><symbol id="ic-grid" viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></symbol><symbol id="ic-chart" viewBox="0 0 24 24"><path d="M4 20h16M7 16v-5M12 16V6M17 16V9"/></symbol><symbol id="ic-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></symbol><symbol id="ic-play" viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></symbol><symbol id="ic-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 15.5l.8 1.7 1.7.8-1.7.8-.8 1.7-.8-1.7-1.7-.8 1.7-.8z"/></symbol><symbol id="ic-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3"/></symbol><symbol id="ic-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7M20 4v5h-5"/></symbol><symbol id="ic-terminal" viewBox="0 0 24 24"><path d="M3 5h18v14H3zM7 10l3 2-3 2M12.5 15h4.5"/></symbol><symbol id="ic-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM8.6 12.2l2.4 2.4 4.4-4.8"/></symbol><symbol id="ic-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h6"/></symbol><symbol id="ic-share" viewBox="0 0 24 24"><path d="M12 15V4M8 8l4-4 4 4M5 12v8h14v-8"/></symbol><symbol id="ic-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol><symbol id="ic-server" viewBox="0 0 24 24"><path d="M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01"/></symbol><symbol id="ic-monitor" viewBox="0 0 24 24"><path d="M3 4h18v12H3zM8 20h8M12 16v4"/></symbol><symbol id="ic-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></symbol><symbol id="ic-image" viewBox="0 0 24 24"><path d="M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15.5 8.5h.01"/></symbol><symbol id="ic-pen" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"/></symbol><symbol id="ic-lasso" viewBox="0 0 24 24"><path d="M7 15.5C4.6 14.4 3 12.6 3 10.5 3 6.9 7 4 12 4s9 2.9 9 6.5S17 17 12 17c-1 0-2-.1-2.9-.3M7 15.5c-1 .8-1.5 1.7-1.5 2.6C5.5 19.7 7 21 9 21M7 15.5a1.6 1.6 0 1 0 2.3 1"/></symbol><symbol id="ic-target" viewBox="0 0 24 24"><path d="M12 19a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM12 2v4M12 18v4M2 12h4M18 12h4"/></symbol><symbol id="ic-scatter" viewBox="0 0 24 24"><path d="M4 4v16h16M8 15h.01M10 10h.01M14 13h.01M16 8h.01M18 15h.01"/></symbol><symbol id="ic-folder" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v11H3z"/></symbol><symbol id="ic-send" viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-3-7z"/></symbol><symbol id="ic-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></symbol><symbol id="ic-home" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9H4zM10 20v-6h4v6"/></symbol><symbol id="ic-move" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3L9.5 5.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5M3 12l2.5-2.5M3 12l2.5 2.5M21 12l-2.5-2.5M21 12l-2.5 2.5"/></symbol><symbol id="ic-copy" viewBox="0 0 24 24"><path d="M8 8h12v12H8zM4 16V4h12"/></symbol><symbol id="ic-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5zM3 13l9 5 9-5"/></symbol><symbol id="ic-rect" viewBox="0 0 24 24"><path d="M4 6h16v12H4z"/></symbol><symbol id="ic-ellipse" viewBox="0 0 24 24"><path d="M12 18.5c4.7 0 8.5-2.9 8.5-6.5S16.7 5.5 12 5.5 3.5 8.4 3.5 12s3.8 6.5 8.5 6.5z"/></symbol><symbol id="ic-polygon" viewBox="0 0 24 24"><path d="M5 9l7-5 7 4-2 10-9 2z"/></symbol><symbol id="ic-brush" viewBox="0 0 24 24"><path d="M20 4l-8.5 8.5M11.5 12.5l-1.5 1.5M9.5 13.5c-2 0-3.5 1.6-3.5 3.5 0 1-.5 2-2 2.5 1 .7 2.3 1 3.5 1 2.5 0 4.5-2 4.5-4.5 0-1.4-1.1-2.5-2.5-2.5z"/></symbol><symbol id="ic-minus" viewBox="0 0 24 24"><path d="M6 12h12"/></symbol><symbol id="ic-hand" viewBox="0 0 24 24"><path d="M8 13V6.5a1.5 1.5 0 0 1 3 0V12M11 11V5a1.5 1.5 0 0 1 3 0v6M14 11V6.5a1.5 1.5 0 0 1 3 0V14c0 3.9-2.5 7-6.5 7-2.6 0-4-1.2-5.3-3.2L3.6 15a1.5 1.5 0 0 1 2.4-1.8L8 15"/></symbol><symbol id="ic-cell" viewBox="0 0 24 24"><path d="M12 20.5c4.4 0 8-3.6 8-8.2 0-4.5-3.4-8.8-8.3-8.8C7 3.5 4 7.4 4 11.8c0 4.8 3.6 8.7 8 8.7zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></symbol><symbol id="ic-bug" viewBox="0 0 24 24"><path d="M8 9h8v6a4 4 0 0 1-8 0zM9 9V7a3 3 0 0 1 6 0v2M12 11v8M4 12h4M16 12h4M5 7l3 2M19 7l-3 2M5 18l3-2M19 18l-3-2"/></symbol></svg>
 <header>
   <div class="hmini"><button id="hdrShow" title="Show the toolbar (t)">‹</button><b>STAnnotator</b><span id="miniInfo"></span></div>
   <!-- the toolbar: a panel on the right of the map: the app, then the tabs Data and Analysis (its steps as a second row),
@@ -740,11 +739,9 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
         <button data-tool="polygon" data-icon="polygon" title="Polygon (P): click points; Finish, Enter or a click on the first point closes it">Polygon</button>
         <button data-tool="pen" data-icon="pen" title="Pen (F): hold the mouse button and drag to draw freehand; letting go pauses, the next stroke goes on from the end; Finish, Enter or a click on the first point closes it. Space + drag moves the map, the wheel zooms">Pen</button>
         <button data-tool="brush" data-icon="brush" title="Brush (B): paint the area; it adds to the selected region or the shape being drawn; Alt: erase">Brush</button>
-        <button data-tool="wand" data-icon="wand" title="Wand (W): paint, and the area follows the colors of the H&amp;E under the brush; Alt: erase">Wand</button>
         <span class="sep"></span>
         <button id="toolSub" data-icon="minus" title="Subtract: the tools take away from the shape instead of adding (or hold Alt)">Subtract</button>
-        <label id="toolSizeBox" title="Brush and wand size, in screen pixels (the area it covers follows the zoom)"><input type="range" id="toolSize" min="6" max="240" value="40"><span id="toolSizeV">40</span></label>
-        <label id="wandTolBox" title="Wand: how different a color may be from the one under the center of the brush">± <input type="range" id="wandTol" min="4" max="90" value="28"></label>
+        <label id="toolSizeBox" title="Brush size, in screen pixels (the area it covers follows the zoom)"><input type="range" id="toolSize" min="6" max="240" value="40"><span id="toolSizeV">40</span></label>
       </div>
       <div class="hint" id="shapebar" hidden><span id="shapeinfo"></span>
         <div class="row"><button id="shapeSave" class="primary" title="Save the shape (Enter); a new one is named first">Save</button>
@@ -2496,7 +2493,7 @@ async function loadRegions() {
       const go = mk("target", "Zoom to this polygon"); go.onclick = () => zoomTo(p);
       const del = mk("trash", "Delete this polygon"); del.onclick = (e) => { e.stopPropagation(); deleteRegion(p.id); };
       go.onclick = (e) => { e.stopPropagation(); zoomTo(p); };
-      pr.title = "Click to select it (on the map: Alt + click): then paint with the Brush or Wand to add, hold Alt to erase; Shift-click selects more";
+      pr.title = "Click to select it (on the map: Alt + click): then paint with the Brush to add, hold Alt to erase; Shift-click selects more";
       pr.style.cursor = "pointer"; pr.dataset.id = p.id; pr.classList.toggle("on", st.rsel.has(p.id));
       pr.onclick = (e) => {  // select it, as a click on the map does
         if (st.shape) return;
@@ -2978,13 +2975,13 @@ $("outlines").onchange = drawRegions;
 $("rgtoggle").onclick = () => { $("regpanel").classList.toggle("collapsed"); $("rgtoggle").classList.toggle("flip", $("regpanel").classList.contains("collapsed")); };
 
 // ---------------- drawing tools, as in QuPath ----------------
-// Move (select), Rectangle, Ellipse, Polygon (clicks or Pen), Brush and Wand. Every tool works on one shape at a time
+// Move (select), Rectangle, Ellipse, Polygon (clicks), Pen (freehand) and Brush. Every tool works on one shape at a time
 // (st.shape): a new region, or the selected polygon(s) being changed. The tools add to it; with Alt held, or Subtract
 // on, they take away. Nothing is saved until Save (Enter); Undo takes back a stroke, Cancel (Esc) drops the changes.
 // The geometry is Clipper's (vendor/clipper.js): shapes are polygons with holes, in integer image pixels x CS.
 const CL = window.ClipperLib, CS = 16;
 st.tool = "move"; st.shape = null; st.rsel = new Set(); st.subtract = false; st.altHeld = false; st.toolDrag = null;
-const toolSize = () => +$("toolSize").value;  // brush and wand diameter, screen pixels
+const toolSize = () => +$("toolSize").value;  // brush diameter, screen pixels
 function imgPerScreen() { const o = toScreen(0, 0), u = toScreen(1000, 0); return 1000 / Math.max(1e-9, Math.hypot(u.x - o.x, u.y - o.y)); }
 function ringArea(r) { let a = 0; for (let i = 0; i < r.length; i++) { const [x0, y0] = r[i], [x1, y1] = r[(i + 1) % r.length]; a += x0 * y1 - x1 * y0; } return a / 2; }
 function toPath(ring, outer) {
@@ -3175,7 +3172,7 @@ function syncSelBar() {
   const names = [...new Set(ids.map((id) => polyOf(id).name))];
   $("selinfo").textContent = `Selected ${ids.join(", ")} (${names.join(", ")})`;
   document.querySelectorAll("#rgitems .pg[data-id]").forEach((r) => r.classList.toggle("on", st.rsel.has(r.dataset.id)));
-  $("selhow").textContent = ids.length === 1 ? "Brush or Wand: paint over it to add, hold Alt (or −) to erase; then Save" : "";
+  $("selhow").textContent = ids.length === 1 ? "Brush: paint over it to add, hold Alt (or −) to erase; then Save" : "";
 }
 $("selClear").onclick = () => { st.rsel.clear(); syncSelBar(); drawRegions(); };
 $("shapeSave").onclick = saveShape;
@@ -3190,8 +3187,7 @@ function setTool(t) {
   st.tool = t;
   if (drawTool(t)) setPen(t === "pen");  // (between Polygon and Pen the outline being drawn goes on)
   document.querySelectorAll("#rgtools [data-tool]").forEach((b) => b.classList.toggle("on", b.dataset.tool === t));
-  $("toolSizeBox").hidden = !["brush", "wand"].includes(t);
-  $("wandTolBox").hidden = t !== "wand";
+  $("toolSizeBox").hidden = t !== "brush";
   $("toolSub").hidden = t === "move";
   if (drawTool(t) && !st.drawing) startDraw(false);
   toolCursor(); drawRegions();
@@ -3200,7 +3196,7 @@ function toolCursor() {
   const t = st.tool, el = $("osd");
   if (st.spaceHeld) { el.style.cursor = "grab"; return; }
   el.style.cursor = st.drawing || (st.editing && st.editing.curve) || t === "rect" || t === "ellipse" ? "crosshair"
-    : t === "brush" || t === "wand" ? "none" : "";
+    : t === "brush" ? "none" : "";
 }
 document.querySelectorAll("#rgtools button[data-icon]").forEach((b) => decorate(b, b.dataset.icon, true));
 document.querySelectorAll("#rgtools [data-tool]").forEach((b) => { b.onclick = (e) => {  // a second click lets go of the tool
@@ -3208,96 +3204,37 @@ document.querySelectorAll("#rgtools [data-tool]").forEach((b) => { b.onclick = (
 }; });
 $("toolSub").onclick = (e) => { st.subtract = !st.subtract; $("toolSub").classList.toggle("on", st.subtract); e.currentTarget.blur(); drawRegionsOnce(); };
 $("toolSize").oninput = () => { $("toolSizeV").textContent = $("toolSize").value; try { localStorage.setItem("toolSize", $("toolSize").value); } catch (e) {} drawRegionsOnce(); };
-$("wandTol").oninput = () => { try { localStorage.setItem("wandTol", $("wandTol").value); } catch (e) {} };
-try { const v = localStorage.getItem("toolSize"); if (v) { $("toolSize").value = v; $("toolSizeV").textContent = v; } const w = localStorage.getItem("wandTol"); if (w) $("wandTol").value = w; } catch (e) {}
-$("toolSizeBox").hidden = $("wandTolBox").hidden = $("toolSub").hidden = true;
+try { const v = localStorage.getItem("toolSize"); if (v) { $("toolSize").value = v; $("toolSizeV").textContent = v; } } catch (e) {}
+$("toolSizeBox").hidden = $("toolSub").hidden = true;
 document.querySelector('#rgtools [data-tool="move"]').classList.add("on");
 $("osd").addEventListener("pointermove", (e) => {  // the brush's circle follows the mouse
-  if (st.tool !== "brush" && st.tool !== "wand") { if (st.cursorPos) { st.cursorPos = null; drawRegionsOnce(); } return; }
+  if (st.tool !== "brush") { if (st.cursorPos) { st.cursorPos = null; drawRegionsOnce(); } return; }
   const r = $("osd").getBoundingClientRect(); st.cursorPos = { x: e.clientX - r.left, y: e.clientY - r.top }; drawRegionsOnce();
 });
 $("osd").addEventListener("pointerleave", () => { st.cursorPos = null; drawRegionsOnce(); });
 
-// Wand: the pixels of the H&E under the brush whose color is close to the one under its center, grown from there
-function wandPaths(pos) {
-  if (st.heHidden || !st.he || st.he.image_kind === "none") { toast("The wand follows the colors of the image: show the H&E (e)", 4000); return null; }
-  const cv = viewer.drawer && viewer.drawer.canvas, ctx = cv && cv.getContext && cv.getContext("2d");
-  if (!ctx) { toast("The wand cannot read the image here", 4000); return null; }
-  const k = cv.width / (cv.clientWidth || cv.width), R = Math.max(2, Math.round(toolSize() / 2 * k));
-  const cx = Math.round(pos.x * k), cy = Math.round(pos.y * k), x0 = cx - R, y0 = cy - R, W = 2 * R + 1;
-  let d; try { d = ctx.getImageData(x0, y0, W, W).data; } catch (e) { toast("The wand cannot read the image here", 4000); return null; }
-  const L = new Float32Array(W * W * 3), A = new Uint8Array(W * W);
-  for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) {  // a 3x3 mean, so that single noisy pixels do not stop it
-    let r = 0, g = 0, b = 0, n = 0;
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-      const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= W || yy >= W) continue;
-      const i = (yy * W + xx) * 4; if (d[i + 3] < 128) continue; r += d[i]; g += d[i + 1]; b += d[i + 2]; n++;
-    }
-    const j = y * W + x; A[j] = d[j * 4 + 3] >= 128 ? 1 : 0;
-    if (n) { L[j * 3] = r / n; L[j * 3 + 1] = g / n; L[j * 3 + 2] = b / n; }
-  }
-  const c0 = R * W + R; if (!A[c0]) return null;
-  const s = [L[c0 * 3], L[c0 * 3 + 1], L[c0 * 3 + 2]], tol2 = (+$("wandTol").value) ** 2;
-  const m = new Uint8Array(W * W), q = [c0]; m[c0] = 1;
-  while (q.length) {
-    const j = q.pop(), x = j % W, y = (j - x) / W;
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= W || yy >= W) continue;
-      const jj = yy * W + xx; if (m[jj] || !A[jj] || (xx - R) ** 2 + (yy - R) ** 2 > R * R) continue;
-      const e = (L[jj * 3] - s[0]) ** 2 + (L[jj * 3 + 1] - s[1]) ** 2 + (L[jj * 3 + 2] - s[2]) ** 2;
-      if (e <= tol2) { m[jj] = 1; q.push(jj); }
-    }
-  }
-  const rects = [];  // the grown pixels as runs, joined into outlines, then smoothed (the steps of screen pixels)
-  for (let y = 0; y < W; y++) for (let x = 0; x < W; ) {
-    if (!m[y * W + x]) { x++; continue; }
-    let e = x; while (e < W && m[y * W + e]) e++;
-    rects.push([{ X: x, Y: y }, { X: e, Y: y }, { X: e, Y: y + 1 }, { X: x, Y: y + 1 }]); x = e;
-  }
-  const c = new CL.Clipper(); c.AddPaths(rects, CL.PolyType.ptSubject, true);
-  const out = new CL.Paths(); c.Execute(CL.ClipType.ctUnion, out, CL.PolyFillType.pftNonZero, CL.PolyFillType.pftNonZero);
-  const paths = [];
-  for (const path of out) {
-    let ring = path.map((p) => [p.X, p.Y]);
-    if (Math.abs(ringArea(ring)) < 6) continue;
-    ring = simplifyRing(ring, 0.9);
-    for (let it = 0; it < 2 && ring.length >= 4; it++) {
-      const n = ring.length, b = [];
-      for (let i = 0; i < n; i++) { const [ax, ay] = ring[i], [bx, by] = ring[(i + 1) % n]; b.push([0.75 * ax + 0.25 * bx, 0.75 * ay + 0.25 * by], [0.25 * ax + 0.75 * bx, 0.25 * ay + 0.75 * by]); }
-      ring = b;
-    }
-    const img = ring.map(([x, y]) => { const p = imgPointFromEvent(new OpenSeadragon.Point((x0 + x) / k, (y0 + y) / k)); return [p.x, p.y]; });
-    paths.push(img.map(([x, y]) => ({ X: Math.round(x * CS), Y: Math.round(y * CS) })));
-  }
-  return paths;  // (orientation as traced: outer rings and holes keep their own; NonZero union)
-}
-
 viewer.addHandler("canvas-press", (e) => {
   st.toolDrag = null;
   const t = st.tool;
-  if (!st.sid || st.drawing || st.editing || st.spaceHeld || !["rect", "ellipse", "brush", "wand"].includes(t)) return;
+  if (!st.sid || st.drawing || st.editing || st.spaceHeld || !["rect", "ellipse", "brush"].includes(t)) return;
   const p = imgPointFromEvent(e.position);
   st.toolDrag = { t, from: [p.x, p.y], to: [p.x, p.y], last: e.position, sub: subtracting(e.originalEvent), pending: [], started: false };
-  if (t === "brush" || t === "wand") { toolDab([e.position]); }
+  if (t === "brush") { toolDab([e.position]); }
 });
 const LIVE_POINTS = 8000;  // a larger shape is changed live in and around the view only; the whole of it when the stroke ends
-function toolDab(positions, final) {  // a brush or wand stroke so far: its whole area added to (or taken from) the shape
+function toolDab(positions, final) {  // a brush stroke so far: its whole area added to (or taken from) the shape
   const k = st.toolDrag; if (!k) return;
   if (!k.started) {  // the shape as it was before the stroke; every step starts again from it
     k.r = toolSize() / 2 * imgPerScreen();
     const q = imgPointFromEvent(positions[0] || k.last);
     const s = ensureShape(q, k.r); s.hist.push(s.pieces); k.base = s.pieces; k.started = true;
-    k.pts = []; k.blobs = [];
+    k.pts = [];
     k.live = s.pieces.reduce((t, p) => t + p.outer.length + p.holes.reduce((u, h) => u + h.length, 0), 0) < LIVE_POINTS;
     if (!k.live) { k.local = localPieces(k.base); st.shapeView = k.local; }
   }
-  if (k.t === "brush") {
-    for (const q of positions) { const p = imgPointFromEvent(q); k.pts.push([p.x, p.y]); }
-  } else {
-    for (const q of positions) { const w = wandPaths(q); if (w && w.length) k.blobs.push(...w); }
-  }
+  for (const q of positions) { const p = imgPointFromEvent(q); k.pts.push([p.x, p.y]); }
   const s = st.shape;
-  const paths = k.t === "brush" ? bandPaths(k.pts, k.r) : k.blobs;  // one band along the whole stroke: no seams
+  const paths = bandPaths(k.pts, k.r);  // one band along the whole stroke: no seams
   if (k.live || final) {
     if (paths.length) { s.pieces = clipShape(k.base, paths, k.sub); s.dirty = true; }
     if (final) st.shapeView = null;
@@ -3311,8 +3248,8 @@ viewer.addHandler("canvas-drag", (e) => {
   const k = st.toolDrag; if (!k) return;
   e.preventDefaultAction = true;
   const p = imgPointFromEvent(e.position); k.to = [p.x, p.y]; k.shift = !!(e.originalEvent && e.originalEvent.shiftKey);
-  if (k.t === "brush" || k.t === "wand") {
-    const step = k.t === "wand" ? toolSize() / 4 : Math.max(2, toolSize() / 8);
+  if (k.t === "brush") {
+    const step = Math.max(2, toolSize() / 8);
     if (Math.hypot(e.position.x - k.last.x, e.position.y - k.last.y) < step) return;
     k.last = e.position; k.pending.push(e.position);
     if (!k.raf) k.raf = requestAnimationFrame(() => { k.raf = 0; const q = k.pending; k.pending = []; if (st.toolDrag === k && q.length) toolDab(q); });
@@ -3325,7 +3262,7 @@ viewer.addHandler("canvas-release", (e) => {
   if (!k) return;
   st.penAt = Date.now();
   if (k.raf) { cancelAnimationFrame(k.raf); k.raf = 0; }
-  if ((k.t === "brush" || k.t === "wand") && (k.pending.length || (k.started && !k.live))) {
+  if (k.t === "brush" && (k.pending.length || (k.started && !k.live))) {
     st.toolDrag = k; toolDab(k.pending, true); st.toolDrag = null;
   }
   st.shapeView = null;
@@ -3382,10 +3319,10 @@ function drawToolLayer(root) {
     svg.append(svgEl("polygon", { points: ring.map((q) => `${q.x},${q.y}`).join(" "), fill: k.sub ? "rgba(255,154,0,.10)" : "rgba(0,230,255,.10)",
                                   stroke: k.sub ? "#ff9a00" : "#00e6ff", "stroke-width": 2, "stroke-dasharray": "6 4" }));
   }
-  if (st.cursorPos && (st.tool === "brush" || st.tool === "wand")) {
+  if (st.cursorPos && st.tool === "brush") {
     const sub = subtracting(), c = st.cursorPos, r = toolSize() / 2;
     svg.append(svgEl("circle", { cx: c.x, cy: c.y, r, fill: "none", stroke: "#000", "stroke-opacity": 0.5, "stroke-width": 3.5 }),
-               svgEl("circle", { cx: c.x, cy: c.y, r, fill: "none", stroke: sub ? "#ff9a00" : st.tool === "wand" ? "#ffd400" : "#00e6ff", "stroke-width": 1.6 }));
+               svgEl("circle", { cx: c.x, cy: c.y, r, fill: "none", stroke: sub ? "#ff9a00" : "#00e6ff", "stroke-width": 1.6 }));
     if (sub) svg.append(svgEl("path", { d: `M${c.x - 5},${c.y}h10`, stroke: "#ff9a00", "stroke-width": 2 }));
   }
 }
@@ -4539,9 +4476,8 @@ const HELP = `
   <li><b>Polygon</b> <kbd>P</kbd>: click points. <b>Pen</b> <kbd>F</kbd>: hold the mouse button and drag freehand;
     letting go only pauses. <b>Finish</b>, <kbd>Enter</kbd> or a click on the first point closes it. A second click on
     the chosen tool, or <kbd>Esc</kbd>, lets go of it.</li>
-  <li><b>Brush</b> <kbd>B</kbd>: paint the area. <b>Wand</b> <kbd>W</kbd>: paint, and the area follows the colors of
-    the H&amp;E under the brush (<b>±</b>: how different a color may be). The slider sets the brush size.</li>
-  <li>A Brush or Wand stroke that starts on a region (or with the brush over its edge) changes that region, as in
+  <li><b>Brush</b> <kbd>B</kbd>: paint the area. The slider sets the brush size.</li>
+  <li>A Brush stroke that starts on a region (or with the brush over its edge) changes that region, as in
     QuPath, also one imported from QuPath; elsewhere it starts a new shape. Hold <kbd>Alt</kbd> (or turn on <b>−</b>)
     to erase instead. On a large outline the part in view follows the brush; the whole of it is updated when you let go.</li>
   <li><b>Save</b> (<kbd>Enter</kbd>) keeps the shape (a new one is named first); <b>Undo</b> (<kbd>Backspace</kbd>)
@@ -7353,7 +7289,7 @@ document.addEventListener("keydown", (e) => {
   if (st.drawing && e.key === "Enter") { e.preventDefault(); finishDraw(); }
   if (st.drawing && e.key === "Backspace") { e.preventDefault(); $("drawUndo").click(); }
   if (st.sid && !e.ctrlKey && !e.metaKey && !e.altKey) {  // the drawing tools, with QuPath's keys
-    const t = { m: "move", r: "rect", o: "ellipse", p: "polygon", f: "pen", b: "brush", w: "wand" }[e.key.toLowerCase()];
+    const t = { m: "move", r: "rect", o: "ellipse", p: "polygon", f: "pen", b: "brush" }[e.key.toLowerCase()];
     if (t) setTool(t);
   }
   if (!st.drawing && !st.editing) {

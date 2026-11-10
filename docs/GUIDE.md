@@ -526,12 +526,11 @@ The Regions panel has a row of tools:
 | Polygon | P | Click points |
 | Pen | F | Hold the mouse button and drag to draw freehand |
 | Brush | B | Paint the area |
-| Wand | W | Paint, and the area follows the colors of the H&E under the brush (± sets how different a color may be) |
 
 A second click on the chosen tool, or **Esc**, lets go of it (back to Move; Esc first drops a shape not saved yet, after
 asking). The chosen tool has a gray background.
 
-- A Brush or Wand stroke that starts on a region (inside it, or with the brush over its edge) changes **that
+- A Brush stroke that starts on a region (inside it, or with the brush over its edge) changes **that
   region**, as in QuPath, imported outlines included; elsewhere it starts a **new shape**. Rectangle, Ellipse,
   Polygon and Pen add to the selected region, or start a new shape. Hold **Alt** (or turn on **−**) and the tools erase
   instead: brush with Alt over a region to take a piece out of it.
@@ -549,7 +548,7 @@ asking). The chosen tool has a gray background.
 
 - A selected region (Alt + click on the map, or its row in the list; on an H&E only or with the cells hidden a plain
   click) is named above the list (Selected R3 (submucosa));
-  paint over it with the Brush or Wand to add, hold Alt (or −) to erase, then **Save**. ✕ (or Esc) clears the
+  paint over it with the Brush to add, hold Alt (or −) to erase, then **Save**. ✕ (or Esc) clears the
   selection. To delete a polygon or a whole region, use the trash on its row in the list.
 - A region keeps its name and priors when its outline changes; its cells are recomputed, and Undo (the toolbar's)
   brings the old outline back. A shape cut in two keeps its id on the larger piece.

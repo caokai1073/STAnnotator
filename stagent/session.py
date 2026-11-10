@@ -821,7 +821,7 @@ class Session:
 
     def set_region_shape(self, ids, name, pieces, author=None):
         """Replace drawn polygons `ids` (none: a new region) by `pieces` [{"outer", "holes"}] (H&E level-0 pixels), in
-        one version: a shape drawn or edited with the viewer's tools (brush, wand, rectangle, ellipse, polygon; added
+        one version: a shape drawn or edited with the viewer's tools (brush, pen, rectangle, ellipse, polygon; added
         or subtracted), the polygons of one region merged, an outline expanded or its holes filled. The first piece
         keeps the first id; the pieces go where the first replaced polygon was, so a later polygon still wins where
         polygons overlap. Pieces without cells are left out (except on an image only)."""
