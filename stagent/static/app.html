@@ -447,7 +447,9 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 #stepsList li .nm { font-weight: 600; }
 #stepsList li .dt { grid-column: 2 / 4; color: var(--muted); font-size: 12px; line-height: 1.35; }
 #stepsList li button { padding: 2px 10px; font-size: 12.5px; }
-#stepsList li .fold { display: inline-block; width: 12px; color: var(--muted); font-size: 11px; }
+#stepsList li button.stfold { border-color: transparent; background: none; color: var(--muted); padding: 2px 6px; }
+#stepsList li button.stfold:hover { color: var(--ink); background-color: var(--accent-soft); }
+#stepsList li button.stfold .ic { width: 13px; height: 13px; }
 #stepsList li.sub { margin-left: 22px; padding-top: 1px; padding-bottom: 1px; }
 #stepsList li.sub .nm { font-weight: 500; }
 #stepsList li.sub .mk { width: 14px; height: 14px; font-size: 9px; border: 1.5px solid var(--line); }
@@ -5387,7 +5389,7 @@ const STEPS = {
   traj: ["Trajectory", "Spatial axes and pseudotime, and the genes that change along them (Analysis → Trajectory).", ["Trajectory", () => anTab("traj")]],
 };
 const anTab = (t) => document.querySelector(`#tabs .tab[data-tab="${t}"]`).click();
-st.stepsAnalyze = (() => { try { return localStorage.getItem("stepsAnalyze") === "1"; } catch (e) { return false; } })();
+st.stepsAnalyze = (() => { try { return localStorage.getItem("stepsAnalyze") !== "0"; } catch (e) { return true; } })();  // unfolded unless folded before
 const STEP_MARK = { done: "✓", todo: "", optional: "", skipped: "–", blocked: "!", "not needed": "–" };
 let stepsTimer = 0;
 function loadStepsSoon() { clearTimeout(stepsTimer); stepsTimer = setTimeout(() => loadSteps().catch(() => {}), 300); }
@@ -5422,9 +5424,10 @@ async function loadSteps() {
     const dt = Object.assign(document.createElement("span"), { className: "dt", textContent: x.detail });
     li.append(mk, nm, right, dt); box.append(li);
     if (x.children && x.children.length) {  // Analyze: unfolds into each analysis
-      li.classList.add("group");
-      const fold = Object.assign(document.createElement("span"), { className: "fold", textContent: st.stepsAnalyze ? "▾" : "▸" });
-      nm.prepend(fold); li.title = help; li.style.cursor = "pointer";
+      li.classList.add("group");  // the arrow as on Steps, Regions and Cell types (up: open, down: folded), a little smaller
+      const fold = decorate(Object.assign(document.createElement("button"), { className: "stfold", title: "Fold or unfold the analyses" }), "chev-up", true);
+      fold.classList.toggle("flip", !st.stepsAnalyze);
+      right.append(fold); li.title = help; li.style.cursor = "pointer";
       li.onclick = (e) => { e.stopPropagation(); st.stepsAnalyze = !st.stepsAnalyze; try { localStorage.setItem("stepsAnalyze", st.stepsAnalyze ? "1" : "0"); } catch (err) {} loadSteps().catch(() => {}); };
       if (st.stepsAnalyze) x.children.forEach((c) => {
         const [cn, ch, ca] = STEPS[c.key] || [c.key, "", null];
