@@ -575,7 +575,9 @@ read); **×** removes one (Undo brings it back).
 
 ### Export
 
-**Export** saves one of:
+**Export** saves one of the items below. Once the cells sit on their image (a registration file, or Align with
+Agent), it is available before any annotation, for the registration and the cell positions; the cells table and
+the notebook need an annotation.
 
 - **Cells table** (CSV, one row per cell): `cell_id`, `region`, `cell_type`, `lineage`, `level_1`… (the full type
   path), `confidence`, `expression_label`, `marker_cluster`, `hand_labeled`, and when computed `niche`, `leiden`,

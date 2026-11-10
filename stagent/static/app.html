@@ -1571,7 +1571,7 @@ async function selectSample(id) {
   $("path").title = `bundle: ${st.sample.bundle_dir}\nsource: ${st.sample.source_dir}\nH&E: ${st.sample.he_path}`;
   closeSession();
   await openHE(id);
-  alignBar(); miniInfo(); sliceNav(); sampleInfo();
+  alignBar(); miniInfo(); sliceNav(); sampleInfo(); syncExport();
   fillModes(null); refreshOverlay();  // the cells in gray until there is an annotation
   if (token !== st.switchToken) return;
   // reopen the session last used on this sample, else its most recent one
@@ -1706,7 +1706,8 @@ async function openSession(sid) {
   await restoreView();
   await loadChat();
   if (st.placeholder) {  // not annotated yet: regions, the registration and the agent; the analyses need cell types
-    ["export", "report", "nRun", "eRun", "eShow"].forEach((b) => ($(b).disabled = true));
+    ["report", "nRun", "eRun", "eShow"].forEach((b) => ($(b).disabled = true));
+    syncExport();  // the registration, cell positions and regions can be saved before any annotation
     $("einfo").textContent = $("nicheinfo").textContent = "Annotate the sample first";
     $("anSave").disabled = true;
   }
@@ -4315,7 +4316,7 @@ async function afterPlacement(msg) {  // the sample's image or cell positions ch
   Object.assign(st.sample, fresh, { sessions: st.sample.sessions, allSessions: st.sample.allSessions });
   const sameImage = before === `${st.sample.image_kind}|${st.sample.he_path}`;  // else show the whole new image
   if (st.sid) await reloadGeometry(sameImage); else { await openHE(id); GL.colorKey = null; fillModes(null); refreshOverlay(); }
-  alignBar();
+  alignBar(); syncExport();
   if (msg) toast(msg, 6000);
 }
 function askAlign() {  // choose the samples whose image waits for its alignment: the agent aligns them one after the other
@@ -7270,9 +7271,17 @@ $("rpSave").onclick = async () => {
   const a = document.createElement("a"); a.href = `/api/s/${st.sid}/report.md`; a.download = name;
   document.body.append(a); a.click(); a.remove();
 };
+function cellsPlaced() { return !!(st.sample && st.sample.image_kind && st.sample.image_kind !== "none" && !st.sample.image_only); }
+function syncExport() {  // Export: with an annotation open, or once the cells sit on their image (the registration)
+  if (!st.sample) { $("export").disabled = true; return; }
+  $("export").disabled = !((st.sid && (!st.placeholder || st.sample.image_only)) || cellsPlaced());  // (an H&E only: its regions)
+}
 $("export").onclick = () => {
-  $("xpInfo").textContent = `${st.sample.sample_id} · version ${st.version}`; $("xpStatus").textContent = "";
-  const placed = st.sample.image_kind && st.sample.image_kind !== "none";
+  const annotated = !!st.sid && !st.placeholder;
+  $("xpInfo").textContent = st.sid && st.version != null ? `${st.sample.sample_id} · version ${st.version}` : st.sample.sample_id; $("xpStatus").textContent = "";
+  $("xpCsv").disabled = $("xpNb").disabled = !annotated;  // these need the cell types
+  $("xpCsv").title = $("xpNb").title = annotated ? "" : "Annotate the sample first";
+  const placed = cellsPlaced();
   const by = st.sample.registration_by || "file", local = /local correction|piece moves|nuclei correction/.test(by);
   $("xpReg").disabled = $("xpPos").disabled = !placed;
   $("xpRegInfo").textContent = placed
@@ -7280,7 +7289,7 @@ $("export").onclick = () => {
     : "The cells are not on an image yet: import an image and its registration, or align it with the agent.";
   const only = !!st.sample.image_only, nOut = ((st.regions && st.regions.polygons) || []).length;
   ["xpCsvCard", "xpNbCard", "xpRegCard"].forEach((id) => ($(id).hidden = only));
-  $("xpGeo").disabled = !nOut; $("xpGeo").title = nOut ? "" : "No outlines drawn in this version";
+  $("xpGeo").disabled = !st.sid || !nOut; $("xpGeo").title = nOut ? "" : st.sid ? "No outlines drawn in this version" : "No regions: open the sample's annotation";
   $("xpGeo").classList.toggle("primary", only);
   $("xpPosInfo").textContent = !placed ? "" : local
     ? "This sample's registration was corrected in the app: the affine holds the overall part of the correction; local shifts and moved pieces are only in Cell positions, the complete placement: every cell's id, x and y (um) and its px and py on the image (full-resolution pixels), as the app shows them."
@@ -7303,7 +7312,8 @@ async function exportAs(kind) {  // the cell table or the notebook of the curren
   if (native()) {  // the desktop app saves through a Save dialog
     const path = await native().save_path(name); if (!path) return;
     $("xpStatus").textContent = kind === "notebook" ? "Writing the notebook (figures included)…" : "Writing the CSV…";
-    try { await post(`/api/s/${st.sid}/export_to`, { path, version: st.version, kind }); $("xpStatus").textContent = `Saved ${path}`; }
+    const to = sampleFile && !st.sid ? `/api/sample/${encodeURIComponent(st.sample.sample_id)}/export_to` : `/api/s/${st.sid}/export_to`;  // (no annotation open)
+    try { await post(to, { path, version: st.version, kind }); $("xpStatus").textContent = `Saved ${path}`; }
     catch (e) { $("xpStatus").textContent = e.message; }
     return;
   }

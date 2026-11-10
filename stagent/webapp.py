@@ -2411,7 +2411,7 @@ def api_steps(req):
 def api_sample_steps(req):
     """The steps of a sample with no annotation open (e.g. after a reconnect: it waits for one to be chosen)."""
     sample = req.path_params["sample"]
-    if not (config.SAMPLES / sample / "meta.json").exists():
+    if sample in ("", ".", "..") or "/" in sample or "\\" in sample or not (config.SAMPLES / sample / "meta.json").exists():
         return _json({"error": f"no sample {sample}"}, 404)
     return _json(steps_of(None, sample))
 
@@ -2949,6 +2949,22 @@ async def api_markers_save_file(req: Request):
     return _json({"saved": b["path"]})
 
 
+async def api_sample_export_to(req: Request):
+    """Write the sample's registration (kind "registration") or cell positions (kind "positions") to a path the user
+    chose (desktop app: Save dialog), also while none of its annotations is open."""
+    sample = req.path_params["sample"]
+    if sample in ("", ".", "..") or "/" in sample or "\\" in sample or not (config.SAMPLES / sample / "meta.json").exists():
+        return _json({"error": f"no sample {sample}"}, 404)
+    b = await req.json()
+    try:
+        from . import notebook
+        text = {"registration": notebook.registration_csv, "positions": notebook.positions_csv}[b.get("kind")](sample)
+        Path(b["path"]).expanduser().write_text(text, encoding="utf-8")
+    except (OSError, KeyError, ValueError) as e:
+        return _json({"error": str(e)}, 400)
+    return _json({"saved": b["path"]})
+
+
 async def api_export_to(req: Request):
     """Write the per-cell CSV (kind "csv") or the analysis notebook (kind "notebook") of a version to a path the user
     chose (desktop app: Save dialog)."""
@@ -3278,6 +3294,7 @@ def build_app(port):
         Route("/api/s/{sid}/export.ipynb", api_export_notebook),
         Route("/api/sample/{sample}/registration.csv", api_registration_csv),
         Route("/api/sample/{sample}/cell_positions.csv", api_positions_csv),
+        Route("/api/sample/{sample}/export_to", api_sample_export_to, methods=["POST"]),
         Route("/api/s/{sid}/regions.geojson", api_regions_geojson),
         Route("/api/s/{sid}/trajectory", api_trajectory_last),
         Route("/api/s/{sid}/chat", api_chat, methods=["POST"]),
