@@ -425,29 +425,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .alrow { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 5px 4px; border-radius: 6px; font-size: 13px; cursor: pointer; }
 .alrow:hover { background: var(--bg); } .alrow.alall { border-bottom: 1px solid var(--line); border-radius: 0; }
 #alList { max-height: 50vh; overflow-y: auto; overflow-x: hidden; }
-#heDlg .imbody { overflow-x: hidden; }
 .inrow button.rmsample { color: #c0392b; } .inrow button.rmsample:hover:not(:disabled) { border-color: #c0392b; }
 .imreplace { display: flex; gap: 6px; align-items: flex-start; } .imreplace input { margin-top: 2px; }
-.herow { display: flex; align-items: center; gap: 10px; min-width: 0; } .herow select { flex: 1; min-width: 0; }
-#heOrganOther { width: 100%; box-sizing: border-box; }
-.hechips { display: flex; flex-wrap: wrap; gap: 6px; max-height: 32vh; overflow: auto; }
-.hechips label { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border: 1px solid var(--line);
-  border-radius: 14px; font-size: 12.5px; cursor: pointer; user-select: none; }
-.hechips label.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
-.hechips input { margin: 0; }
-.rgtools button.heask { font-size: 11px; padding: 1px 6px; white-space: nowrap; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
-#heTabs { flex: none; } #heTabs button { padding: 4px 10px; flex: none; }
-.tnsaved { border-top: 1px solid var(--line); padding-top: 10px; display: flex; flex-direction: column; gap: 6px; }
-.tnlist { display: flex; flex-direction: column; gap: 4px; max-height: 30vh; overflow: auto; }
-.tnrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 5px 8px;
-  border: 1px solid var(--line); border-radius: 8px; font-size: 12.5px; }
-.tnrow .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tnrow .sub { color: var(--muted); font-size: 11.5px; }
-.tnrow .acts { display: flex; gap: 6px; align-items: center; }
-.tncls { display: grid; grid-template-columns: 18px minmax(0, 1fr) 14px minmax(0, 1fr); gap: 8px; align-items: center; font-size: 12.5px; }
-.tncls input[type=text] { width: 100%; box-sizing: border-box; }
-.tnacc { width: 100%; border-collapse: collapse; font-size: 12px; } .tnacc td, .tnacc th { padding: 3px 6px; text-align: left; border-bottom: 1px solid var(--line); }
-.tnacc td.n { text-align: right; font-variant-numeric: tabular-nums; }
 .alrow .alname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .clcard { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 6px 0; display: flex; flex-direction: column; gap: 6px; }
 .clcard pre { font: 11.5px ui-monospace, Menlo, monospace; white-space: pre-wrap; margin: 0; color: var(--muted); }
@@ -761,7 +740,6 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
         <button data-tool="brush" data-icon="brush" title="Brush (B): paint the area; it adds to the selected region or the shape being drawn; Alt: erase">Brush</button>
         <button data-tool="wand" data-icon="wand" title="Wand (W): paint, and the area follows the colors of the H&amp;E under the brush; Alt: erase">Wand</button>
         <span class="sep"></span>
-        <button id="heAsk" class="heask" hidden title="Organ model: train one from H&amp;E outlines a pathologist drew (GeoJSON), or let it outline regions on this H&amp;E">Train / Predict</button>
         <button id="toolSub" data-icon="minus" title="Subtract: the tools take away from the shape instead of adding (or hold Alt)">Subtract</button>
         <label id="toolSizeBox" title="Brush and wand size, in screen pixels (the area it covers follows the zoom)"><input type="range" id="toolSize" min="6" max="240" value="40"><span id="toolSizeV">40</span></label>
         <label id="wandTolBox" title="Wand: how different a color may be from the one under the center of the brush">± <input type="range" id="wandTol" min="4" max="90" value="28"></label>
@@ -872,46 +850,6 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <label class="alrow alall"><input type="checkbox" id="alAll"><b>All samples</b></label>
     <div id="alList"></div>
     <div class="row" style="margin-top:4px"><span class="spacer"></span><button id="alCancel">Cancel</button><button id="alGo" class="primary">Align</button></div>
-  </div>
-</dialog>
-<dialog id="heDlg" style="width:min(640px,95vw)">
-  <div class="dh"><b>Organ model</b><span class="spacer"></span>
-    <div class="seg" id="heTabs"><button data-t="train" class="on">Train</button><button data-t="predict">Predict</button></div></div>
-  <div class="imbody" style="gap:10px">
-    <div id="heOrganRow">
-      <label class="herow"><b>Organ</b><select id="heOrgan"></select></label>
-      <input type="text" id="heOrganOther" placeholder="Organ (type it)" hidden style="margin-top:6px">
-      <div class="hint" id="heModelNote" style="margin-top:4px"></div>
-    </div>
-    <div id="heTrain" class="hepane" hidden>
-      <div class="hint">Teach the app this organ's regions from outlines a pathologist drew: each H&amp;E with its GeoJSON
-        (in the image's full-resolution pixels, e.g. QuPath annotations exported as GeoJSON). The model is kept with all
-        organ models in the data folder and used for this organ from then on, also after the app is updated.</div>
-      <div class="row"><b>Slides</b><span class="spacer"></span><button id="tnAddPair">Add an H&amp;E and its GeoJSON…</button></div>
-      <div id="tnPairs" class="tnlist"><div class="hint">No slides yet.</div></div>
-      <div><b>Classes to learn</b> <span class="hint">(rename to merge several into one; untick to leave one out)</span></div>
-      <div id="tnClasses" class="tnlist"><div class="hint">The classes of the GeoJSON files appear here.</div></div>
-      <label class="hint" id="tnAddWrap" hidden><input type="checkbox" id="tnAdd" checked> <span id="tnAddText"></span></label>
-      <div class="progress" id="tnProg"><div class="pbar"><i id="tnFill"></i></div><span id="tnStage"></span></div>
-      <div id="tnResult"></div>
-      <div class="hint" id="tnErr"></div>
-      <div class="row"><span class="spacer"></span><button id="tnGo" class="primary" disabled>Train</button></div>
-      <div class="tnsaved"><div class="row"><b>Saved models</b><span class="spacer"></span><button id="mdLoad">Load a model…</button></div>
-        <div id="mdList" class="tnlist"></div>
-        <div class="hint" id="mdFolder"></div></div>
-      <div class="row"><span class="spacer"></span><button id="tnClose">Close</button></div>
-    </div>
-    <div id="hePredict" class="hepane" hidden>
-      <div class="hint">The organ's model outlines the regions you tick on this sample's H&amp;E: it reads the whole image
-        once (a few minutes; kept for the sample), then each region is one class of the model, small gaps closed and
-        small holes filled. They are added as regions in one step (Undo takes them back) and can be reshaped with the
-        Regions tools; a region of the same name gets them as further polygons.</div>
-      <div><b>Regions to outline</b> <span class="hint" id="pdHint"></span></div>
-      <div id="pdClasses" class="hechips"></div>
-      <div class="progress" id="pdProg"><div class="pbar"><i id="pdFill"></i></div><span id="pdStage"></span></div>
-      <div class="hint" id="pdErr"></div>
-      <div class="row"><span class="spacer"></span><button id="pdClose">Close</button><button id="pdGo" class="primary" disabled>Predict</button></div>
-    </div>
   </div>
 </dialog>
 <dialog id="pcDlg" style="width:min(620px,95vw)">
@@ -1280,7 +1218,7 @@ const ICON_ONLY = { rmSample: "trash", sessDel: "x", hdrShow: "chev-left", hdrHi
   lgtoggle: "chev-up", rgtoggle: "chev-up", stepsFold: "chev-up", plclose: "x", emClose: "x", imClose: "x", rcClose: "x", clClose: "x", rpClose: "x",
   xpClose: "x", glClose: "x", anClose: "x", rvClose: "x", hpClose: "x", anCsv: "download", rpSave: "download", mkExport: "download",
   fbUp: "arrow-up", fbHome: "home", rsClose: "x", hide: "cell", hideHE: "image" };
-const ICON_TEXT = { pdGo: "play", qfBtn: "play", importBtn: "import", clearAll: "trash", allSamples: "grid", connBtn: "monitor", 
+const ICON_TEXT = { qfBtn: "play", importBtn: "import", clearAll: "trash", allSamples: "grid", connBtn: "monitor", 
   openMarkers: "list", openRef: "file", openEx: "file", annotate: "play", eRun: "play", eShow: "scatter", nRun: "play",
   undo: "undo", refresh: "refresh", claudeBtn: "sparkle", plaus: "shield", report: "file", export: "share", reset: "trash",
   draw: "pen", emLasso: "lasso", emClear: "x", emZoom: "target", send: "send",
@@ -1793,7 +1731,6 @@ function imageOnlyUI() {
   ["tools", "legend"].forEach((id) => { if (on) $(id).hidden = true; });
   if (!on) $("tools").hidden = false;
   $("session").disabled = on;
-  heAskSync();  // Train / Predict (every sample whose H&E is shown)
   if (on) {
     ["qfBtn", "sessDel", "anSave", "anLoad", "report", "plaus"].forEach((b) => ($(b).disabled = true));
     $("export").disabled = !st.sid;
@@ -4394,7 +4331,7 @@ async function afterPlacement(msg) {  // the sample's image or cell positions ch
   Object.assign(st.sample, fresh, { sessions: st.sample.sessions, allSessions: st.sample.allSessions });
   const sameImage = before === `${st.sample.image_kind}|${st.sample.he_path}`;  // else show the whole new image
   if (st.sid) await reloadGeometry(sameImage); else { await openHE(id); GL.colorKey = null; fillModes(null); refreshOverlay(); }
-  alignBar(); syncExport(); heAskSync();
+  alignBar(); syncExport();
   if (msg) toast(msg, 6000);
 }
 function askAlign() {  // choose the samples whose image waits for its alignment: the agent aligns them one after the other
@@ -4430,237 +4367,6 @@ async function alignWith(ids) {
   } catch (e) { toast(e.message, 6000); }
 }
 $("alignNow").onclick = askAlign;
-// ---- The organ model window (Train / Predict): the organ, its regions; the organ
-// models trained from H&E + GeoJSON pairs (organmodel.py), kept in the data folder with all organs together ----
-const HE = { organs: [], other: [], tab: "train", pairs: [], models: [] };
-function heAskSync() {  // for every sample whose H&E is shown (an H&E only too)
-  const s = st.sample;
-  $("heAsk").hidden = !(s && (s.image_only || (s.image_kind === "H&E" && !s.image_pending)));
-}
-function heOrganChosen() { return $("heOrgan").value === "__other" ? $("heOrganOther").value.trim() : $("heOrgan").value; }
-function heModel(organ) { const o = HE.organs.find((x) => x.organ.toLowerCase() === String(organ || "").toLowerCase()); return o && o.model; }
-function heSync() {
-  const organ = heOrganChosen(), m = heModel(organ);
-  $("heModelNote").textContent = m ? `Trained ${organ} model: ${m.classes.join(", ")} (${m.slides.length} annotated slide${m.slides.length === 1 ? "" : "s"}, ${m.trained.slice(0, 10)})`
-    : organ ? "No trained model for this organ yet" : "";
-  pdRender(); tnSync();
-}
-$("heOrgan").onchange = () => {
-  $("heOrganOther").hidden = $("heOrgan").value !== "__other";
-  heSync(); tnDefaults(); if (!$("heOrganOther").hidden) $("heOrganOther").focus();
-};
-$("heOrganOther").oninput = heSync;
-function heTab(tab) {
-  HE.tab = tab;
-  document.querySelectorAll("#heTabs button").forEach((b) => b.classList.toggle("on", b.dataset.t === tab));
-  $("hePredict").hidden = tab !== "predict"; $("heTrain").hidden = tab !== "train";
-  if (tab === "train") mdLoadList().catch((e) => toast(e.message, 6000));
-}
-document.querySelectorAll("#heTabs button").forEach((b) => (b.onclick = () => heTab(b.dataset.t)));
-async function heLoadOrgans(keepValue) {
-  const r = await api(`/api/he_organs?sample=${encodeURIComponent(st.sample ? st.sample.sample_id : "")}`);
-  HE.organs = r.organs; HE.other = r.other || [];
-  const sel = $("heOrgan"), was = keepValue ? sel.value : null; sel.textContent = "";
-  sel.append(Object.assign(document.createElement("option"), { value: "", textContent: "Choose the organ…" }));
-  r.organs.forEach((o) => sel.append(Object.assign(document.createElement("option"), { value: o.organ, textContent: o.organ + (o.model ? " · trained model" : "") })));
-  sel.append(Object.assign(document.createElement("option"), { value: "__other", textContent: "Other (type it)…" }));
-  sel.value = was != null && [...sel.options].some((x) => x.value === was) ? was : r.organ && r.organs.some((o) => o.organ === r.organ) ? r.organ : "";
-}
-async function heOpen() {
-  if (!st.sample) return;
-  try {
-    await heLoadOrgans(false);
-    $("heOrganOther").value = ""; $("pdErr").textContent = "";
-    $("heOrgan").onchange(); heTab(heModel(heOrganChosen()) ? HE.tab : "train");  // (no model yet: Train)
-    $("heDlg").showModal();
-  } catch (e) { toast(e.message, 6000); }
-}
-$("heAsk").onclick = heOpen;
-$("pdClose").onclick = $("tnClose").onclick = () => $("heDlg").close();
-// ---- Predict: the organ's model outlines the ticked classes on this sample (no agent) ----
-function pdRender() {
-  const m = heModel(heOrganChosen()), box = $("pdClasses");
-  const was = new Set([...box.querySelectorAll("input:checked")].map((c) => c.value));
-  box.textContent = "";
-  (m ? m.classes : []).forEach((n) => {
-    const lab = document.createElement("label");
-    const cb = Object.assign(document.createElement("input"), { type: "checkbox", value: n, checked: was.has(n) });
-    lab.classList.toggle("on", cb.checked);
-    cb.onchange = () => { lab.classList.toggle("on", cb.checked); pdSync(); };
-    lab.append(cb, document.createTextNode(n)); box.append(lab);
-  });
-  $("pdHint").textContent = m ? "" : "(this organ has no trained model: train one first)";
-  pdSync();
-}
-function pdSync() {
-  const n = $("pdClasses").querySelectorAll("input:checked").length;
-  $("pdGo").disabled = !n || !st.sid || HE.predicting;
-  $("pdGo").textContent = n > 1 ? `Predict ${n} regions` : "Predict";
-}
-$("pdGo").onclick = async () => {
-  const classes = [...$("pdClasses").querySelectorAll("input:checked")].map((c) => c.value), organ = heOrganChosen();
-  $("pdErr").textContent = ""; HE.predicting = true; pdSync(); $("pdProg").classList.add("show");
-  try {
-    const { job, error } = await post(`/api/s/${st.sid}/organ_models/predict`, { organ, classes });
-    if (error) throw new Error(error);
-    const j = await pollJob(job, $("pdProg"), $("pdFill"), $("pdStage"), $("pdGo"), 1000, true);
-    const r = j.result;
-    $("heDlg").close();
-    toast(`Added: ${Object.entries(r.regions).map(([k, v]) => `${k} (${v} piece${v === 1 ? "" : "s"})`).join(", ")}` +
-      (r.not_found.length ? `; not found: ${r.not_found.join(", ")}` : "") + ". Undo takes them back.", 9000);
-    await refreshVersion(true);
-  } catch (e) {
-    if (e instanceof StoppedError) stopped($("pdProg"), "Predict"); else $("pdErr").textContent = e.message;
-  } finally { HE.predicting = false; pdSync(); setTimeout(() => $("pdProg").classList.remove("show"), 800); }
-};
-// ---- Train a model ----
-const pickAny = (kind, multi) => (st.remote || !native()) ? browseServer(kind, multi) : native().pick(kind, !!multi);
-const fileName = (p) => String(p).split(/[\\/]/).pop();
-function tnRender() {
-  const box = $("tnPairs"); box.textContent = "";
-  if (!HE.pairs.length) box.append(Object.assign(document.createElement("div"), { className: "hint", textContent: "No slides yet." }));
-  HE.pairs.forEach((p, i) => {
-    const row = document.createElement("div"); row.className = "tnrow";
-    const left = document.createElement("div");
-    left.append(Object.assign(document.createElement("div"), { className: "nm", textContent: fileName(p.image), title: p.image }),
-      Object.assign(document.createElement("div"), { className: "sub nm", title: p.geojson,
-        textContent: `${fileName(p.geojson)} · ${p.info.classes.length} classes` + (p.info.points_on_image < 0.98 ? ` · ${Math.round(100 * (1 - p.info.points_on_image))}% of the outline points lie off the image!` : "") }));
-    const acts = document.createElement("div"); acts.className = "acts";
-    if (!p.info.um_per_px) {
-      const u = Object.assign(document.createElement("input"), { type: "number", step: "0.001", min: "0.05", max: "20", placeholder: "µm/px", value: p.um_per_px || "", title: "The image's pixel size (it is not in the file)" });
-      u.style.width = "78px"; u.oninput = () => { p.um_per_px = parseFloat(u.value) || null; tnSync(); }; acts.append(u);
-    }
-    const rm = decorate(Object.assign(document.createElement("button"), { title: "Leave this slide out" }), "x", true);
-    rm.onclick = () => { HE.pairs.splice(i, 1); tnRender(); tnDefaults(); };
-    acts.append(rm); row.append(left, acts); box.append(row);
-  });
-}
-function tnClassNames() {  // the GeoJSON classes of all slides, with their area
-  const m = new Map();
-  HE.pairs.forEach((p) => p.info.classes.forEach((c) => { const x = m.get(c.name) || { name: c.name, area: 0, outlines: 0 }; x.area += c.area_mm2 || 0; x.outlines += c.outlines; m.set(c.name, x); }));
-  return [...m.values()].sort((a, b) => b.area - a.area);
-}
-function tnGuess(name) {  // the organ's region of this name (case, plural and "mucosa"/"mucosae" alike), else the name
-  const o = HE.organs.find((x) => x.organ === $("heOrgan").value);
-  const pool = [...((o && o.model && o.model.classes) || []), ...((o && o.regions) || [])];
-  const k = (s) => s.toLowerCase().replace(/[^a-z]/g, "").replace(/(ae|es|s|e)$/, "");
-  return pool.find((r) => k(r) === k(name)) || pool.find((r) => k(r).startsWith(k(name)) || k(name).startsWith(k(r))) || name.toLowerCase();
-}
-function tnDefaults() {  // the classes table, keeping what the user already set
-  const was = {}; document.querySelectorAll("#tnClasses .tncls").forEach((r) => (was[r.dataset.k] = { on: r.querySelector("input[type=checkbox]").checked, to: r.querySelector("input[type=text]").value }));
-  const box = $("tnClasses"); box.textContent = "";
-  const cls = tnClassNames();
-  if (!cls.length) box.append(Object.assign(document.createElement("div"), { className: "hint", textContent: "The classes of the GeoJSON files appear here." }));
-  cls.forEach((c) => {
-    const r = document.createElement("div"); r.className = "tncls"; r.dataset.k = c.name;
-    const cb = Object.assign(document.createElement("input"), { type: "checkbox", checked: was[c.name] ? was[c.name].on : true });
-    const nm = Object.assign(document.createElement("span"), { className: "nm", textContent: `${c.name}`, title: `${c.outlines} outlines, ${c.area.toFixed(2)} mm²` });
-    const sub = Object.assign(document.createElement("span"), { className: "hint", textContent: ` ${c.area.toFixed(1)} mm²` }); nm.append(sub);
-    const to = Object.assign(document.createElement("input"), { type: "text", value: was[c.name] ? was[c.name].to : tnGuess(c.name), title: "The name in the model (the region the agent draws); the same name for several classes merges them" });
-    cb.onchange = to.oninput = tnSync;
-    r.append(cb, nm, Object.assign(document.createElement("span"), { textContent: "→" }), to); box.append(r);
-  });
-  tnSync();
-}
-function tnClasses() {
-  const out = {};
-  document.querySelectorAll("#tnClasses .tncls").forEach((r) => { const v = r.querySelector("input[type=text]").value.trim(); if (r.querySelector("input[type=checkbox]").checked && v) out[r.dataset.k] = v; });
-  return out;
-}
-function tnSync() {
-  const organ = heOrganChosen(), m = heModel(organ), cls = tnClasses();
-  $("tnAddWrap").hidden = !m;
-  if (m) $("tnAddText").textContent = `Add these slides to the existing ${organ} model (${m.slides.length} slide${m.slides.length === 1 ? "" : "s"}); untick to train a new one in its place`;
-  const ready = organ && HE.pairs.length && HE.pairs.every((p) => p.info.um_per_px || p.um_per_px) && new Set(Object.values(cls)).size >= 2;
-  $("tnGo").disabled = !ready || HE.training;
-  $("tnGo").textContent = HE.pairs.length > 1 ? `Train on ${HE.pairs.length} slides` : "Train";
-}
-$("tnAddPair").onclick = async () => {
-  $("tnErr").textContent = "";
-  try {
-    const im = await pickAny("heonly", false); if (!im || !im.length) return;
-    toast("Now the GeoJSON of this H&E", 3000);
-    const gj = await pickAny("geojson", false); if (!gj || !gj.length) return;
-    $("tnErr").textContent = "Reading the GeoJSON…";
-    const info = await post("/api/organ_models/inspect", { image: im[0], geojson: gj[0] });
-    $("tnErr").textContent = info.points_on_image < 0.9 ? `Most outline points of ${fileName(gj[0])} lie off ${fileName(im[0])}: is it this image's GeoJSON, in full-resolution pixels?` : "";
-    HE.pairs.push({ image: im[0], geojson: gj[0], info, um_per_px: info.um_per_px });
-    tnRender(); tnDefaults();
-  } catch (e) { $("tnErr").textContent = e.message; }
-};
-function tnShowResult(meta) {
-  const ho = meta.held_out || {}, box = $("tnResult"); box.textContent = "";
-  const head = Object.assign(document.createElement("div"), { className: "hint" });
-  head.textContent = `Saved: ${meta.organ} model, ${meta.classes.length} classes, ${meta.slides.length} slide${meta.slides.length === 1 ? "" : "s"}. Accuracy on held-out data (${ho.how || "—"}), per pixel:`;
-  const tb = document.createElement("table"); tb.className = "tnacc";
-  tb.innerHTML = "<tr><th>Class</th><th class='n'>Found</th><th class='n'>Right when called</th><th>Taken for</th></tr>";
-  (ho.classes || []).forEach((c) => {
-    const tr = document.createElement("tr");
-    const tf = Object.entries(c.taken_for || {}).map(([k, v]) => `${k} ${Math.round(100 * v)}%`).join(", ");
-    [c.class, c.recall == null ? "—" : `${Math.round(100 * c.recall)}%`, c.precision == null ? "—" : `${Math.round(100 * c.precision)}%`, tf].forEach((v, i) => {
-      const td = document.createElement("td"); td.textContent = v; if (i === 1 || i === 2) td.className = "n"; tr.append(td);
-    });
-    tb.append(tr);
-  });
-  box.append(head, tb);
-}
-$("tnGo").onclick = async () => {
-  const organ = heOrganChosen(), classes = tnClasses();
-  $("tnErr").textContent = ""; $("tnResult").textContent = ""; HE.training = true; tnSync();
-  $("tnProg").classList.add("show");
-  try {
-    const { job, error } = await post("/api/organ_models/train", { organ, classes, add: !$("tnAddWrap").hidden && $("tnAdd").checked,
-      pairs: HE.pairs.map((p) => ({ image: p.image, geojson: p.geojson, um_per_px: p.info.um_per_px || p.um_per_px })) });
-    if (error) throw new Error(error);
-    const j = await pollJob(job, $("tnProg"), $("tnFill"), $("tnStage"), $("tnGo"), 1000, true);
-    tnShowResult(j.result); HE.pairs = []; tnRender();
-    await heLoadOrgans(true); heSync(); tnDefaults();
-    toast(`The ${organ} model is saved; the agent uses it for ${organ} from now on`, 7000);
-  } catch (e) {
-    if (e instanceof StoppedError) stopped($("tnProg"), "Training"); else $("tnErr").textContent = e.message;
-  } finally { HE.training = false; tnSync(); setTimeout(() => $("tnProg").classList.remove("show"), 800); }
-};
-// ---- Models: all organs' models together (the data folder's organ_models), export, delete, load ----
-async function mdLoadList() {
-  const r = await api("/api/organ_models");
-  HE.models = r.models;
-  $("mdFolder").textContent = `Organ models are kept in ${r.folder} (all organs together; the app finds them at every start, also after an update).`;
-  const box = $("mdList"); box.textContent = "";
-  if (!r.models.length) box.append(Object.assign(document.createElement("div"), { className: "hint", textContent: "No models yet: train one above, or load a model file." }));
-  r.models.forEach((m) => {
-    const row = document.createElement("div"); row.className = "tnrow";
-    const left = document.createElement("div");
-    const rec = ((m.held_out || {}).classes || []).map((c) => `${c.class} ${c.recall == null ? "—" : Math.round(100 * c.recall) + "%"}`).join(", ");
-    left.append(Object.assign(document.createElement("div"), { className: "nm", innerHTML: `<b>${pcEsc(m.organ)}</b> · ${m.classes.length} classes · ${m.slides.length} slide${m.slides.length === 1 ? "" : "s"} · ${pcEsc(m.trained.slice(0, 10))} · ${m.size_mb} MB` }),
-      Object.assign(document.createElement("div"), { className: "sub", textContent: `Held-out: ${rec || "—"}`, title: (m.held_out || {}).how || "" }));
-    const acts = document.createElement("div"); acts.className = "acts";
-    const ex = Object.assign(document.createElement("button"), { textContent: "Export…", title: "Save a copy of this model (to share it, or keep it elsewhere)" });
-    ex.onclick = () => mdExport(m);
-    const del = decorate(Object.assign(document.createElement("button"), { title: "Delete this model (it goes to the data folder's trash)" }), "trash", true);
-    del.onclick = async () => {
-      if (!confirm(`Delete the ${m.organ} model? It goes to the data folder's trash.`)) return;
-      try { await post("/api/organ_models/delete", { organ: m.organ }); await mdLoadList(); await heLoadOrgans(true); } catch (e) { toast(e.message, 6000); }
-    };
-    acts.append(ex, del); row.append(left, acts); box.append(row);
-  });
-}
-async function mdExport(m) {
-  const name = fileName(m.file), url = `/api/organ_models/${encodeURIComponent(m.organ)}/file`;
-  if (st.remote) { await saveDownload(name, url); return; }
-  if (native()) {
-    const path = await native().save_path(name); if (!path) return;
-    try { await post("/api/organ_models/export", { organ: m.organ, path }); toast(`Saved ${path}`, 5000); } catch (e) { toast(e.message, 6000); }
-    return;
-  }
-  const a = document.createElement("a"); a.href = url; a.download = name; document.body.append(a); a.click(); a.remove();
-}
-$("mdLoad").onclick = async () => {
-  try {
-    const p = await pickAny("stmodel", false); if (!p || !p.length) return;
-    const r = await post("/api/organ_models/import", { path: p[0] });
-    toast(`Loaded the ${r.model.organ} model`, 5000); await mdLoadList(); await heLoadOrgans(true);
-  } catch (e) { toast(e.message, 7000); }
-};
 function alignBar() {  // an image waits for its alignment
   const s = st.sample;
   $("alignbar").hidden = !(s && s.image_pending);
@@ -4787,11 +4493,6 @@ const HELP = `
     draw and name regions before the expression data exist.<ul>
     <li>The pixel size is read from the image, or typed in; without it no µm are shown (areas in pixels).</li>
     <li>Only the Data tab and the regions apply; the regions panel shows each outline's area.</li>
-    <li><b>Train / Predict</b> (Regions toolbar, right of the Wand; every sample with an H&amp;E), the organ model window.
-      <b>Train</b>: H&amp;E + GeoJSON pairs a pathologist outlined teach the app an organ's regions; the model is kept in
-      the data folder's organ_models (all organs, kept across updates); the saved models below can be exported, loaded
-      or deleted. <b>Predict</b>: the model outlines the regions you tick on this H&amp;E, added in one step (Undo takes
-      them back). The agent can also use a trained model when you ask it to outline a region.</li>
     <li>Ask the agent to outline a compartment (“draw the mucosa”): it asks the organ if needed, reads how each
       compartment looks on the H&amp;E in the organ's priors and the stains of the image, and proposes an outline for
       you to accept and reshape with the Regions tools (Brush adds, Alt+Brush erases).</li>
@@ -7667,7 +7368,7 @@ $("xpReg").onclick = () => exportAs("registration");
 $("xpPos").onclick = () => exportAs("positions");
 $("xpGeo").onclick = () => exportAs("regions");
 document.addEventListener("keydown", (e) => {
-  if ($("mkDlg").open || $("alDlg").open || $("heDlg").open || $("rpDlg").open || $("bugDlg").open || $("updDlg").open || $("shareDlg").open || $("hpDlg").open || $("xpDlg").open || $("glDlg").open || $("anDlg").open || $("rvDlg").open || $("nameDlg").open || $("rnDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
+  if ($("mkDlg").open || $("alDlg").open || $("rpDlg").open || $("bugDlg").open || $("updDlg").open || $("shareDlg").open || $("hpDlg").open || $("xpDlg").open || $("glDlg").open || $("anDlg").open || $("rvDlg").open || $("nameDlg").open || $("rnDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
   if (e.key === "h") $("hide").click();
   if (e.key === "e") $("hideHE").click();
   if (e.key === "[") stepSlice(-1);

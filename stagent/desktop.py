@@ -56,8 +56,7 @@ FILE_TYPES = {"h5ad": ("AnnData or R (*.h5ad;*.rds;*.rda;*.RData)", "All files (
               "bundle": ("Saved annotations (*.stannot;*.zip)", "All files (*.*)"),
               "flat": ("CosMx and MERSCOPE files (*.csv;*.csv.gz)", "All files (*.*)"),
               "geojson": ("GeoJSON (*.geojson;*.json)", "All files (*.*)"),
-              "heonly": ("Slide images (*.tif;*.tiff;*.btf;*.svs;*.ndpi;*.png;*.jpg;*.jpeg)", "All files (*.*)"),
-              "stmodel": ("Organ models (*.stmodel)", "All files (*.*)")}
+              "heonly": ("Slide images (*.tif;*.tiff;*.btf;*.svs;*.ndpi;*.png;*.jpg;*.jpeg)", "All files (*.*)")}
 FILE_FILTER = r'^([\w ]+)\((\*(?:\.(?:\w+|\*))*(?:;\*(?:\.(?:\w+|\*))*)*)\)$'  # pywebview 6's, for the test
 
 

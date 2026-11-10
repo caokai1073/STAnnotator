@@ -561,7 +561,7 @@ FS_KINDS = {"h5ad": (".h5ad", ".rds", ".rda", ".rdata"),
             "xcells": (".parquet", ".csv.gz"), "xcounts": (".h5", ".mtx.gz", ".tsv.gz"), "xexp": (".xenium",),
             "ximage": (".ome.tif", ".tif", ".tiff"), "image": (".tif", ".tiff", ".btf"), "csv": (".csv", ".tsv", ".txt"),
             "markers": (".csv", ".tsv", ".txt"), "flat": (".csv", ".csv.gz"), "geojson": (".geojson", ".json"),
-            "heonly": importer.IMAGE_ONLY_SUFFIXES, "stmodel": (".stmodel",)}
+            "heonly": importer.IMAGE_ONLY_SUFFIXES}
 
 
 def api_fs_list(req):
@@ -2722,151 +2722,6 @@ async def api_claude_align(req: Request):
     return _json({"claude_code": claudelink.open_claude_code(sample, b.get("session"), text, send_if_open=True)})
 
 
-def api_he_organs(req):
-    """The organs of the tissue priors with the compartments each can draw, and their trained models (for the organ
-    model window: Train / Predict), and the organ
-    given for this sample before."""
-    from . import hetissue
-    organs = hetissue.tissue_priors()["organs"]
-    sample = req.query_params.get("sample") or ""
-    known = hetissue.sample_organ(sample) if sample and "/" not in sample and sample not in (".", "..") else None
-    from . import organmodel
-    models = {m["organ"]: m for m in organmodel.list_models()}
-    extra = [m for m in models if m not in organs]  # a model of an organ the priors do not cover
-    return _json({"organs": [{"organ": o, "regions": hetissue.compartment_names(o),
-                              "model": {k: models[o][k] for k in ("classes", "slides", "trained")} if o in models else None}
-                             for o in organs + extra],
-                  "other": hetissue.compartment_names("other"), "organ": known})
-
-
-# ---------------- organ models (organmodel.py): trained from H&E + GeoJSON pairs, kept in the data folder ----------------
-def api_organ_models(req):
-    from . import organmodel
-    return _json({"models": organmodel.list_models(), "folder": str(organmodel.models_dir()), "workers": organmodel.WORKERS})
-
-
-async def api_organ_model_inspect(req: Request):
-    """What a training pair holds (classes, area, whether the outlines lie on the image, the pixel size)."""
-    from . import organmodel
-    b = await req.json()
-    try:
-        return _json(await asyncio.to_thread(organmodel.inspect_pair, b["image"], b["geojson"], b.get("um_per_px")))
-    except (OSError, ValueError, KeyError) as e:
-        return _json({"error": str(e)}, 400)
-
-
-async def api_organ_model_train(req: Request):
-    """Train (or extend) an organ's model in the background: {organ, pairs: [{image, geojson, um_per_px?}], classes:
-    {GeoJSON class: model class}, add}; progress under /api/job/organtrain:<organ>."""
-    from . import organmodel
-    b = await req.json()
-    organ = re.sub(r"\s+", " ", str(b.get("organ") or "")).strip()[:80]
-    pairs = [p for p in (b.get("pairs") or []) if isinstance(p, dict) and p.get("image") and p.get("geojson")]
-    classes = {str(k): re.sub(r"\s+", " ", str(v)).strip()[:60] for k, v in (b.get("classes") or {}).items() if str(v).strip()}
-    if not organ or not pairs or len(set(classes.values())) < 2:
-        return _json({"error": "choose the organ, at least one H&E with its GeoJSON, and at least two classes"}, 400)
-    job = f"organtrain:{organmodel.slug(organ)}"
-    if job in JOBS and not JOBS[job]["done"]:
-        return _json({"error": "this organ's model is being trained"}, 409)
-    JOBS[job] = {"stage": "starting", "progress": 0.0, "done": False, "error": None}
-
-    def work():
-        try:
-            meta = organmodel.train(organ, pairs, classes, add=bool(b.get("add")), app_version=__import__("stagent").__version__,
-                                    progress=lambda f, m: JOBS[job].update(progress=round(f, 3), stage=m))
-            JOBS[job].update(progress=1.0, stage="done", done=True, result=meta)
-        except Exception as e:
-            JOBS[job].update(error=f"{type(e).__name__}: {e}", done=True)
-    return await _spawn(job, work) or _json({"job": job})
-
-
-async def api_organ_model_predict(req: Request):
-    """Outline the chosen classes of an organ's model on the annotation's H&E, without the agent: {organ, classes};
-    in the background (progress under /api/job/organpredict:<session>); all of them are added as regions in one
-    version (one Undo takes them back)."""
-    from . import organmodel, regions as regmod
-    s = review_app._session(req.path_params["sid"])
-    b = await req.json()
-    organ, classes = str(b.get("organ") or ""), [str(c) for c in (b.get("classes") or []) if str(c).strip()]
-    om = organmodel.model_of(organ) if organ else None
-    if not om:
-        return _json({"error": f"no trained model for {organ or 'this organ'}"}, 400)
-    if not classes:
-        return _json({"error": "choose at least one class"}, 400)
-    job = f"organpredict:{s.id}"
-    if job in JOBS and not JOBS[job]["done"]:
-        return _json({"error": "already outlining"}, 409)
-    JOBS[job] = {"stage": "starting", "progress": 0.0, "done": False, "error": None}
-
-    def work():
-        try:
-            say = lambda f, m: JOBS[job].update(progress=round(f, 3), stage=m)
-            organmodel.predict(s.sample_id, om["organ"], progress=lambda f, m: say(0.9 * f, m))
-            pieces, made, none = [], {}, []
-            for i, c in enumerate(classes):
-                say(0.9 + 0.08 * i / len(classes), f"outlining {c}")
-                try:
-                    pcs = regmod.normalize_pieces(organmodel.outline(s.sample_id, om["organ"], c))
-                except ValueError:
-                    none.append(c)
-                    continue
-                name = regmod.validate_name(re.sub(r"\s+", "_", c.strip()))
-                pieces += [dict(p, name=name) for p in pcs]
-                made[name] = len(pcs)
-            if not pieces:
-                raise ValueError(f"the {om['organ']} model found none of {', '.join(classes)} here")
-            with jobs.critical():
-                r = s.import_regions(pieces, source=f"the {om['organ']} model",
-                                     author=f"{om['organ']} model ({len(om['slides'])} annotated slides, {om['trained'][:10]})")
-            JOBS[job].update(progress=1.0, stage="done", done=True,
-                             result={"new_version": r["new_version"], "message": r["message"], "regions": made, "not_found": none})
-        except Exception as e:
-            JOBS[job].update(error=f"{type(e).__name__}: {e}", done=True)
-    return await _spawn(job, work) or _json({"job": job})
-
-
-async def api_organ_model_import(req: Request):
-    from . import organmodel
-    b = await req.json()
-    try:
-        return _json({"model": organmodel.import_model(b["path"])})
-    except (OSError, ValueError, KeyError) as e:
-        return _json({"error": str(e)}, 400)
-
-
-async def api_organ_model_export(req: Request):
-    """Desktop app: copy an organ's model to a path the user chose."""
-    from . import organmodel
-    b = await req.json()
-    try:
-        src = organmodel._path(b["organ"])
-        if not src.exists():
-            raise ValueError(f"no model for {b['organ']}")
-        shutil.copyfile(src, Path(b["path"]).expanduser())
-    except (OSError, ValueError, KeyError) as e:
-        return _json({"error": str(e)}, 400)
-    return _json({"saved": b["path"]})
-
-
-def api_organ_model_file(req):
-    """An organ's model file, downloaded (browser, or the server viewer)."""
-    from . import organmodel
-    f = organmodel._path(req.path_params["organ"])
-    if not f.exists():
-        return _json({"error": "no such model"}, 404)
-    return FileResponse(f, media_type="application/zip", filename=f.name)
-
-
-async def api_organ_model_delete(req: Request):
-    from . import organmodel
-    b = await req.json()
-    try:
-        organmodel.delete_model(b["organ"])
-    except (ValueError, KeyError) as e:
-        return _json({"error": str(e)}, 400)
-    return _json({"deleted": b["organ"]})
-
-
 def api_samples_clear(req):
     """Desktop app: delete every sample with all its annotations and chats for good, to import from scratch (and the
     *_all_samples folders an earlier version of this button left in the trash); marker lists are kept."""
@@ -3491,15 +3346,6 @@ def build_app(port):
         Route("/api/sample/{sample}/filter", api_sample_filter, methods=["POST"]),
         Route("/api/sample/{sample}/placement/undo", api_sample_placement_undo, methods=["POST"]),
         Route("/api/claude/align", api_claude_align, methods=["POST"]),
-        Route("/api/he_organs", api_he_organs),
-        Route("/api/organ_models", api_organ_models),
-        Route("/api/organ_models/inspect", api_organ_model_inspect, methods=["POST"]),
-        Route("/api/organ_models/train", api_organ_model_train, methods=["POST"]),
-        Route("/api/s/{sid}/organ_models/predict", api_organ_model_predict, methods=["POST"]),
-        Route("/api/organ_models/import", api_organ_model_import, methods=["POST"]),
-        Route("/api/organ_models/export", api_organ_model_export, methods=["POST"]),
-        Route("/api/organ_models/delete", api_organ_model_delete, methods=["POST"]),
-        Route("/api/organ_models/{organ}/file", api_organ_model_file),
         Route("/api/s/{sid}/export", api_export, methods=["POST"]),
         Route("/api/s/{sid}/export.csv", api_export_csv),
         Route("/api/s/{sid}/export.ipynb", api_export_notebook),

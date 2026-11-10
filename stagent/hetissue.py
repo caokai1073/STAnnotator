@@ -209,24 +209,6 @@ def compartments(organ):
                     "often 2-3 classes; a class that fits none is left out"}
 
 
-def compartment_names(organ):
-    """The names of the organ's "Compartments to draw" (the bold or quoted names before each description), for the
-    app's choices; [] when the organ is not covered."""
-    r = compartments(organ)
-    if r.get("error"):
-        return []
-    names = []
-    for line in r["compartments_to_draw"].splitlines():
-        if not line.lstrip().startswith("- "):
-            continue
-        head = line.split(":", 1)[0]
-        for n in re.findall(r"\*\*([^*]+)\*\*|`([^`]+)`", head):
-            n = (n[0] or n[1]).strip()
-            if n and n.lower() not in (x.lower() for x in names):
-                names.append(n)
-    return names
-
-
 def load(sample_id):
     d = config.SAMPLES / sample_id / "he_segment"
     if not (d / "meta.json").exists():
