@@ -390,7 +390,8 @@ The app's window, or the web viewer (`.venv/bin/stagent viewer`, then http://loc
     cells and genes, 4 Annotate, 5 Regions and priors, 6 Review, 7 Analyze. Each step shows what was done
     (✓ and a line such as "5,799 cells removed" or "checked 2026-11-09"), or a button that goes where it is done; the
     next step stands out. Steps 5–7 are optional; a step the sample does not need is grayed (no image: no
-    registration; Visium and Stereo-seq are placed by their software). A click on the title folds the list;
+    registration; Visium and Stereo-seq are placed by their software). An H&E only (no cells) shows no steps. A
+    click on the title folds the list;
   - two tabs, **Data** and **Analysis**. Analysis has the steps **Annotate**, **Embed**, **Niche**, **Compare**,
     **Signal** and **Trajectory** as a second row and reopens the one last used (a dot on a tab whose analysis is
     running);

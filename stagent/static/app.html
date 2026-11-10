@@ -5383,9 +5383,10 @@ async function loadSteps() {
   // the open annotation's steps; with none open (e.g. after a reconnect the sample waits for one to be chosen), the
   // sample's own
   const smp = st.sample && st.sample.sample_id;
-  if (!st.sid && !smp) { $("steps").hidden = true; stepsRoom(); return; }
+  if ((!st.sid && !smp) || (st.sample && st.sample.image_only)) { $("steps").hidden = true; stepsRoom(); return; }  // (an H&E only: no steps)
   const sid = st.sid, r = await api(sid ? `/api/s/${sid}/steps` : `/api/sample/${encodeURIComponent(smp)}/steps`);
   if (sid !== st.sid || smp !== (st.sample && st.sample.sample_id)) return;
+  if (st.sample && st.sample.image_only) return;  // (switched to an H&E only meanwhile)
   $("steps").hidden = false; stepsRoom();
   const box = $("stepsList"); box.textContent = "";
   r.steps.forEach((x, i) => {
