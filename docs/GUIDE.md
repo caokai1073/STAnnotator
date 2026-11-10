@@ -528,7 +528,8 @@ The Regions panel has a row of tools:
 | Brush | B | Paint the area |
 | Wand | W | Paint, and the area follows the colors of the H&E under the brush (± sets how different a color may be) |
 
-A second click on the chosen tool lets go of it (back to Move). The chosen tool has a gray background.
+A second click on the chosen tool, or **Esc**, lets go of it (back to Move; Esc first drops a shape not saved yet, after
+asking). The chosen tool has a gray background.
 
 - A Brush or Wand stroke that starts on a region (inside it, or with the brush over its edge) changes **that
   region**, as in QuPath, imported outlines included; elsewhere it starts a **new shape**. Rectangle, Ellipse,
