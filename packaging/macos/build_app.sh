@@ -8,6 +8,12 @@ cd "$(dirname "$0")/../.."
 uv venv --allow-existing .build-venv --python 3.12
 # --reinstall-package: an earlier build left the same version in .build-venv; always take this folder's code
 uv pip install --python .build-venv/bin/python --reinstall-package stagent ".[app]" pyinstaller
+# MLX (the exact neighbor search on the Apple GPU) in its build for macOS 14, the oldest it has: uv would take the
+# build for the macOS it runs on (macOS 15 on the release runner), which a Mac on macOS 14 cannot load
+MLX=$(sed -n 's/^ *"mlx==\([0-9.]*\);.*/\1/p' pyproject.toml)
+MACOSX_DEPLOYMENT_TARGET=14.0 uv pip install --python .build-venv/bin/python --python-platform aarch64-apple-darwin \
+  --reinstall --no-deps "mlx==$MLX" "mlx-metal==$MLX"
+.build-venv/bin/python -c "import mlx.core as mx; print('MLX', mx.__version__, '(Apple GPU here:', mx.is_available(mx.gpu), ')')"
 # app icon (.icns) from the PNG
 ICONSET=$(mktemp -d)/AppIcon.iconset; mkdir -p "$ICONSET"
 for s in 16 32 128 256 512; do

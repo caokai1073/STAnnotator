@@ -223,6 +223,84 @@ def _topk_torch(Z, k, dev):
     return torch.cat(nbr).numpy().astype(np.int64)
 
 
+MLX_BLOCK_BYTES = 512 * 2 ** 20  # distances of a block of rows to all rows on the Apple GPU (MLX): at most this much
+_MLX = {}                        # whether MLX can use the Apple GPU here (checked once)
+_MLX_LOCK = __import__("threading").Lock()  # one MLX search at a time (two jobs at once take turns)
+
+
+def _mlx_gpu():
+    """MLX can compute on the Apple GPU here: the macOS app on Apple silicon (MLX needs macOS 14 or later; an older
+    macOS, or a failing import, leaves the search on the CPU). A tiny product on the GPU checks that its kernels load."""
+    if "ok" not in _MLX:
+        import sys, platform
+        ok = False
+        if sys.platform == "darwin" and platform.machine() == "arm64":
+            try:
+                import mlx.core as mx
+                ok = bool(mx.is_available(mx.gpu))
+                if ok:
+                    with _MLX_LOCK, mx.stream(mx.gpu):
+                        ok = (mx.arange(4, dtype=mx.float32) @ mx.ones(4)).item() == 6.0
+            except Exception as e:
+                print(f"exact neighbors: no Apple GPU through MLX ({type(e).__name__}: {e}); on the CPU")
+                ok = False
+        _MLX["ok"] = ok
+    return _MLX["ok"]
+
+
+def _topk_mlx(Z, k, dev=None):
+    """Indices of the k nearest rows of every row by their float32 squared distance (any of equally near rows; the
+    row itself is one of them unless k others are as near), with MLX on the Apple GPU (dev: an MLX device, the GPU by
+    default). A block of rows at a time (MLX_BLOCK_BYTES of distances, at least 64 rows): |z_j|^2 - 2 z_i.z_j as one
+    product. MLX sorts a whole row for a partition, which over all n columns would cost more than the distances, so
+    the columns go in groups of g: the k groups with the smallest minimum hold k nearest rows (a group with a row
+    nearer than the k-th has its minimum below the k-th distance, and at most k groups have), and only their k g
+    columns are sorted. Rows with NaN or infinity are left to the CPU search (ValueError)."""
+    import mlx.core as mx
+    Z = np.asarray(Z, np.float32)
+    n, dim = Z.shape
+    if not np.isfinite(Z).all():
+        raise ValueError("non-finite values")
+    g = max(1, int(round(np.sqrt(n / k))))  # about as many groups per row (n / g) as columns sorted (k g)
+    ng = -(-n // g)
+    direct = g == 1 or ng <= k  # few rows: whole rows sorted
+    if direct:
+        g, ng = 1, n
+    w = -(-(dim + 1) // 16) * 16  # (zeros up to a multiple of 16: the GPU's product runs on whole tiles)
+    A = np.zeros((ng * g, w), np.float32)  # columns: [z_j, |z_j|^2]; the padding to whole groups is never near
+    A[:n, :dim] = Z
+    A[:n, dim] = (Z ** 2).sum(1)
+    A[n:, dim] = 1e30
+    L = np.zeros((n, w), np.float32)  # rows: [-2 z_i, 1]
+    np.multiply(Z, -2, out=L[:, :dim])
+    L[:, dim] = 1
+    rows = int(min(n, max(64, MLX_BLOCK_BYTES // (4 * len(A)))))
+    nbr = np.empty((n, k), np.int64)
+    with _MLX_LOCK, mx.stream(dev if dev is not None else mx.gpu):
+        try:
+            Lm, At = mx.array(L), mx.array(A).T
+            offs = mx.arange(g, dtype=mx.uint32)
+            for i in range(0, n, rows):
+                P = Lm[i:i + rows] @ At  # rows x columns: the squared distance less |z_i|^2
+                if direct:
+                    c = mx.argpartition(P, k - 1, axis=1)[:, :k]
+                else:
+                    grp = mx.argpartition(P.reshape(-1, ng, g).min(axis=2), k - 1, axis=1)[:, :k].astype(mx.uint32)
+                    cols = (grp[:, :, None] * g + offs).reshape(-1, k * g)
+                    v = mx.take_along_axis(P, cols, axis=1)
+                    c = mx.take_along_axis(cols, mx.argpartition(v, k - 1, axis=1)[:, :k], axis=1)
+                nbr[i:i + rows] = np.array(c)
+            del Lm, At, P
+        finally:
+            try:
+                mx.clear_cache()  # (the GPU memory MLX keeps for reuse)
+            except Exception:
+                pass
+    if nbr.min() < 0 or nbr.max() >= n:  # (only with absurdly large values: their distances overflow)
+        raise ValueError("neighbor out of range")
+    return nbr
+
+
 KNN_TILE = (64, 4096)  # rows x columns of a distance tile of the exact search on the CPU: 1 MB, it stays in the cache
 KNN_BLOCK = 512        # rows a thread takes at once (their tiles share the columns read from memory)
 KNN_SAMPLE = 32        # every KNN_SAMPLE-th row is searched first: it bounds each row's k-th distance from above
@@ -418,9 +496,55 @@ def pca(Xn, n_pcs=None):
         keep = np.sort(np.argsort(-(ex2 - mu ** 2))[:N_HVG])
         X, mu, ex2 = X[:, keep], mu[keep], ex2[keep]
     sd = np.sqrt(np.maximum(ex2 - mu ** 2, 0) * n / max(n - 1, 1)) + 1e-3
-    cov = ((X.T @ X).toarray() / n - np.outer(mu, mu)) / np.outer(sd, sd)  # covariance of standardized genes
-    V = np.linalg.eigh(cov)[1][:, -(n_pcs or N_PCS):] / sd[:, None]  # ascending variance: the last column is PC1
+    cov = (gram(X) / n - np.outer(mu, mu)) / np.outer(sd, sd)  # covariance of standardized genes
+    k = min(n_pcs or N_PCS, len(cov))
+    import scipy.linalg
+    V = scipy.linalg.eigh(cov, subset_by_index=[len(cov) - k, len(cov) - 1], driver="evr")[1]  # the top k only
+    V *= np.where(V[np.abs(V).argmax(0), np.arange(k)] < 0, -1.0, 1.0)  # each one's largest entry positive: a sign
+    V /= sd[:, None]  # that does not depend on the computer's LAPACK. Ascending variance: the last column is PC1
     return np.asarray(X @ V - mu @ V, dtype=np.float32)  # = standardized X times the top components
+
+
+_GRAM = None
+
+
+def gram(X):
+    """X.T @ X of a sparse matrix as a dense float64 array, on up to 8 threads (numba): each entry summed over the
+    cells in their order, so the same on every computer and for any number of threads, and exact in float64 (scipy's
+    sparse product sums in float32 on one thread: 3 times slower on 8 cores for a 5,000-gene panel, 21.6 -> 6.3 s
+    on 188,644 cells, and off by 3e-5)."""
+    global _GRAM
+    import os
+    import numba
+    if _GRAM is None:
+        from numba import njit, prange
+        cache = bool(globals().get("__file__")) and os.path.isfile(globals()["__file__"])  # (not in a notebook's sa)
+
+        @njit(parallel=True, cache=cache)
+        def _upper(cp, ci, cv, rp, ri, rv, g):
+            C = np.zeros((g, g))
+            for i in prange(g):  # row i of the upper half from column i: cells ascending, one thread per row
+                for a in range(cp[i], cp[i + 1]):
+                    c, v = ci[a], np.float64(cv[a])
+                    lo, hi = rp[c], rp[c + 1]
+                    s = lo + np.searchsorted(ri[lo:hi], i)  # (the row's genes are sorted: from gene i on)
+                    for b in range(s, hi):
+                        C[i, ri[b]] += v * np.float64(rv[b])
+            return C
+        _GRAM = _upper
+    R = sp.csr_matrix(X)
+    if not R.has_sorted_indices:
+        R = R.sorted_indices()
+    Cc = R.tocsc()
+    Cc.sort_indices()
+    with numba_parallel():
+        before = numba.get_num_threads()
+        try:
+            numba.set_num_threads(max(1, min(KNN_THREADS, int(numba.config.NUMBA_NUM_THREADS))))
+            U = _GRAM(Cc.indptr, Cc.indices, Cc.data, R.indptr, R.indices, R.data, R.shape[1])
+        finally:
+            numba.set_num_threads(before)
+    return U + np.triu(U, 1).T  # the lower half mirrored
 
 
 KNN = "exact"  # neighbor search of the marker step: "exact" (default: the true neighbors, the same on every computer) or "approx" (see knn)
@@ -445,6 +569,8 @@ def knn_backend(mode):
     dev = device()
     if dev != "cpu":
         return "knn_exact_gpu", f"exact, on the {'CUDA' if dev == 'cuda' else 'Apple'} GPU"
+    if _mlx_gpu():  # the macOS app (no torch): MLX
+        return "knn_exact_mlx", "exact, on the Apple GPU (MLX)"
     if has_torch():
         return "knn_exact_torch", "exact, on the CPU (torch)"
     return "knn_exact_numpy", "exact, on the CPU (numpy)"
@@ -481,7 +607,7 @@ def _expand_copies(Zu, cu, inv, cnt, kk):
 
 def _exact(Z, k):
     """Exact neighbors, the same on every computer: candidates from a GPU (CUDA or Apple MPS) when torch has one,
-    else from the CPU (torch, or numpy without it), in float32, re-ranked by their float64 distance with ties going to
+    else from the Apple GPU through MLX (the macOS app), else from the CPU (torch, or numpy without it), in float32, re-ranked by their float64 distance with ties going to
     the lower row number. A row whose k-th distance is not clearly below its farthest candidate's (by more than
     float32 rounding can move a distance: many exact duplicates, say) is searched again over all rows that rounding
     could put within its k-th distance, so rounding differences between the backends do not change the result."""
@@ -511,6 +637,14 @@ def _exact(Z, k):
                 cand = _topk_torch(X, kx, device())
         except RuntimeError:  # e.g. GPU memory taken by other jobs: the CPU gives the same neighbors
             key = "knn_exact_torch"
+    elif key == "knn_exact_mlx":
+        try:
+            with timing.step(key, len(X) ** 2 / 1e9):
+                cand = _topk_mlx(X, kx)
+        except Exception as e:  # any failure of MLX or the GPU: the CPU gives the same neighbors
+            if not isinstance(e, ValueError):  # (ValueError: NaN in the data, for the CPU search)
+                print(f"exact neighbors: the Apple GPU (MLX) failed ({type(e).__name__}: {e}); on the CPU instead")
+            key = "knn_exact_numpy"
     if cand is None:
         with timing.step(key, len(X) ** 2 / 1e9):
             cand = _topk_torch(X, kx, "cpu") if key == "knn_exact_torch" else _topk_numpy(X, kx)

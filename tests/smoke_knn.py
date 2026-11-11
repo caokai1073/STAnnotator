@@ -29,6 +29,14 @@ if markers.has_torch():
     backends["torch, CPU"] = lambda: markers._topk_torch(Z, kk, "cpu")
     if config.device() != "cpu":
         backends[f"torch, {config.device()}"] = lambda: markers._topk_torch(Z, kk, config.device())
+if markers._mlx_gpu():
+    backends["MLX, Apple GPU"] = lambda: markers._topk_mlx(Z, kk)
+else:
+    try:  # (MLX's CPU build, e.g. mlx[cpu] on Linux: the same code on the CPU)
+        import mlx.core as mx
+        backends["MLX, CPU"] = lambda: markers._topk_mlx(Z, kk, mx.cpu)
+    except ImportError:
+        pass
 got = {}
 for name, f in backends.items():
     t = time.time()

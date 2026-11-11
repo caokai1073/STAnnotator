@@ -61,6 +61,22 @@ for pkg in ["zarr", "numcodecs", "imagecodecs", "tifffile", "pynndescent", "numb
     datas += [x for x in d if not dropped_file(x[1] + "/" + Path(x[0]).name)]
     binaries += [x for x in b if not dropped_file(x[1] + "/" + Path(x[0]).name)]
     hidden += [m for m in h if not dropped_module(m)]
+# MLX (macOS only: the exact neighbor search on the Apple GPU): its compiled module (mlx.core), its library
+# (mlx/lib/libmlx.dylib) and the GPU kernels (mlx/lib/mlx.metallib, which MLX looks for in the folder of the library:
+# the data file goes to Contents/Resources with a link beside the library in Contents/Frameworks; one more link at the
+# top, below: PyInstaller also links the library at the top, and MLX may see that path). Without MLX the app searches
+# on the CPU (the same neighbors).
+mlx_metallib = False
+if sys.platform == "darwin":
+    from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
+    try:
+        __import__("mlx.core")
+        binaries += collect_dynamic_libs("mlx")
+        datas += collect_data_files("mlx", includes=["**/*.metallib"])
+        hidden += ["mlx.core", "mlx._reprlib_fix", "mlx.__array_api_info"]  # (the last two: imported by mlx.core)
+        mlx_metallib = any(Path(dest) / Path(src).name == Path("mlx/lib/mlx.metallib") for src, dest in datas)
+    except ImportError:
+        print("NOTE: no MLX: the app will search neighbors on the CPU only")
 for pkg in ["zarr", "numcodecs", "mcp", "imagecodecs", "tifffile", "uvicorn", "starlette", "pydantic"]:
     try:
         datas += copy_metadata(pkg)
@@ -73,6 +89,8 @@ a = Analysis([str(ROOT / "packaging" / "entry.py")], pathex=[str(ROOT)], datas=d
                 if p.suffix in (".so", ".pyd") and p.stem.split(".")[0] not in TIFF_CODECS], noarchive=False)
 a.datas = [x for x in a.datas if not dropped_file(x[0])]
 a.binaries = [x for x in a.binaries if not dropped_file(x[0])]
+if mlx_metallib:
+    a.datas += [("mlx.metallib", "mlx/lib/mlx.metallib", "SYMLINK")]
 pyz = PYZ(a.pure)
 if sys.platform == "win32":
     # two programs over one bundle: the window has no console; Claude Code needs a console program for the MCP server

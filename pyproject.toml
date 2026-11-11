@@ -16,6 +16,10 @@ dependencies = [
   # Harmony (joint embedding of several slices): 2.x is compiled and has no Windows build, so Windows uses
   # stagent/harmony.py, its NumPy version
   "harmonypy; sys_platform != 'win32'",
+  # the exact neighbor search on the Apple GPU (Apple silicon, macOS 14 or later = Darwin 23: MLX has no build for
+  # older macOS, where the search runs on the CPU, with the same neighbors). Pinned so every build is alike; it pulls
+  # mlx-metal (the GPU library and its kernels)
+  "mlx==0.32.4; sys_platform == 'darwin' and platform_machine == 'arm64' and platform_release >= '23'",
 ]
 
 [project.optional-dependencies]

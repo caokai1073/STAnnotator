@@ -500,9 +500,10 @@ Histograms show where each threshold cuts and the dialog counts what goes; empty
    - *Load existing*: a CSV with one cell type per cell (**Annotation file…**).
 2. With marker genes, choose **Neighbors**, the neighbor search of the marker step:
    - *Exact* (the default): the true neighbors, the same on every computer, with or without a GPU (cells at exactly
-     the same distance are taken in their order, and every row is checked against rounding). On the CPU it runs on up
-     to 8 threads in small tiles: about 9 s for the 188,644 cells of a 5,000-gene Xenium section and under a minute
-     for 400,000 cells on 8 cores, in under 1 GB of memory;
+     the same distance are taken in their order, and every row is checked against rounding). The macOS app runs it on
+     the Apple GPU (MLX, macOS 14 or later), with the same result. On the CPU it runs on up to 8 threads in small
+     tiles: about 9 s for the 188,644 cells of a 5,000-gene Xenium section and under a minute for 400,000 cells on 8
+     cores, in under 1 GB of memory;
    - *Approximate* (pynndescent): faster for very large samples (about a million cells or more; the time estimate
      suggests it when Exact would take over 10 minutes). Its result depends on the number of threads, so it always
      runs on 8 (also with fewer cores): a rerun gives the same labels with the same app version (Intel / AMD and
@@ -1065,7 +1066,8 @@ to 98.6%.
 ## 7. Performance
 
 - Everything runs on the CPU. Installed from source with PyTorch (`gpu` extra), the marker step's exact neighbor
-  search uses an NVIDIA or Apple GPU (the same neighbors, only faster).
+  search uses an NVIDIA or Apple GPU (the same neighbors, only faster). The macOS app runs that search on the Apple
+  GPU through MLX (macOS 14 or later), also with the same neighbors.
 - The exact neighbor search takes about 9 s for 188,644 cells and under a minute for 400,000 cells on 8 CPU cores.
   The Annotate tab shows the estimate of the whole annotation for the sample and computer at hand.
 - A correction or a local re-clustering takes a few seconds.

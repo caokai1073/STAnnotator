@@ -18,6 +18,8 @@ REF = {"prepare": 0.65,         # per 10^6 cells: normalize, detection matrix
        "knn_exact_gpu": 0.055,  # per 10^9 cell pairs
        "knn_exact_torch": 1.93,
        "knn_exact_numpy": 0.21,  # (8 threads)
+       "knn_exact_mlx": 0.1,    # Apple GPU (MLX; no reference workstation has one): 2.5 x the "mlx" speed test, which
+                                # searches 20,000 points (0.4 x 10^9 pairs; small, so a rate on the slow side)
        "knn_rerank": 1.8,       # per 10^6 cells: float64 re-ranking of the exact candidates
        "knn_approx": 9.2,       # per 10^6 cells (pynndescent)
        "approx_compile": 10.0,  # once per app start: numba compiles pynndescent (less once its cache is on disk)
@@ -27,11 +29,11 @@ REF = {"prepare": 0.65,         # per 10^6 cells: normalize, detection matrix
        "finish": 5.7}           # per 10^6 cells: the expression model on every cell, regions, priors, conflicts and
                                 # whatever else is not timed separately
 # which speed test scales each step: "cores" (matrix product on all cores), "one" (one core), or the neighbor
-# search itself on a small set ("torch", "numpy", "gpu")
+# search itself on a small set ("torch", "numpy", "gpu", "mlx"; "mlx" has no reference run: its REF_PROBE is nominal)
 SCALE = {"knn_exact_torch": "torch", "knn_exact_numpy": "numpy", "knn_approx": "cores", "model": "cores",
-         "knn_exact_gpu": "gpu"}
-REF_PROBE = {"cores": 0.135, "one": 0.0164, "torch": 0.23, "numpy": 0.21, "gpu": 0.0113}  # their seconds there
-VERSION = {"knn_exact_numpy": 2, "knn_rerank": 2}  # a step whose code changed: its rates timed before are dropped
+         "knn_exact_gpu": "gpu", "knn_exact_mlx": "mlx"}
+REF_PROBE = {"cores": 0.135, "one": 0.0164, "torch": 0.23, "numpy": 0.21, "gpu": 0.0113, "mlx": 0.04}  # their seconds there
+VERSION = {"knn_exact_numpy": 2, "knn_rerank": 2, "knn_exact_mlx": 1}  # a step whose code changed: its rates timed before are dropped
 MIN_SECONDS = 1.0  # shorter steps are not recorded: fixed overheads would dominate their rate
 DECAY = 0.8        # earlier records count this much less with every new one; the rate is seconds / units of what
                    # is kept, so large runs weigh more than small ones (whose fixed overheads differ)
@@ -143,6 +145,12 @@ def _probe_numpy():
     return _best(lambda: _topk_numpy(Z, 24), 2)
 
 
+def _probe_mlx():
+    from .markers import _topk_mlx
+    Z = _points(20000)
+    return _best(lambda: _topk_mlx(Z, 24), 2)  # (the first run also compiles MLX's GPU kernels)
+
+
 def _probe_knn(dev):
     import torch
     Z = torch.tensor(_points(50000), device=dev)
@@ -166,7 +174,7 @@ def speed_factor(key):
                 from .config import device
                 _probe[kind] = _probe_knn(device())
             else:
-                _probe[kind] = {"cores": _probe_cores, "one": _probe_one, "numpy": _probe_numpy,
+                _probe[kind] = {"cores": _probe_cores, "one": _probe_one, "numpy": _probe_numpy, "mlx": _probe_mlx,
                                 "torch": lambda: _probe_knn("cpu")}[kind]()
         except Exception:
             _probe[kind] = REF_PROBE[kind]
