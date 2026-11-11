@@ -295,6 +295,54 @@
         ev("pointerup", bx, by, w); await sleep(350, run);
       }
     },
+    async mapDrag(run, instant, pts, opt) {  // press, drag along points of the H&E (image pixels) and let go, as with a drawing tool
+      opt = opt || {};
+      const w = W(), d = D(), cv = w.eval("viewer.canvas"), osd = d.getElementById("osd").getBoundingClientRect();
+      const scr = ([x, y]) => { const p = w.toScreen(x, y); return [osd.left + p.x, osd.top + p.y]; };
+      const path = [];  // the points, filled in every ~6 screen px
+      for (let k = 0; k < pts.length; k++) {
+        const a = scr(pts[k]);
+        if (k) { const b = path[path.length - 1], n = Math.max(1, Math.round(Math.hypot(a[0] - b[0], a[1] - b[1]) / 6)); for (let j = 1; j < n; j++) path.push([b[0] + (a[0] - b[0]) * j / n, b[1] + (a[1] - b[1]) * j / n]); }
+        path.push(a);
+      }
+      const ev = (t, [px, py], buttons) => cv.dispatchEvent(new (w.PointerEvent)(t, { bubbles: true, cancelable: true, composed: true, clientX: px, clientY: py,
+        pointerId: 1, pointerType: "mouse", isPrimary: true, button: 0, buttons, altKey: !!opt.alt, view: w }));
+      const E = w.Element.prototype, cap = E.setPointerCapture, rel = E.releasePointerCapture, has = E.hasPointerCapture;
+      E.setPointerCapture = function () {}; E.releasePointerCapture = function () {}; E.hasPointerCapture = function () { return false; };
+      try {
+        if (!instant) await moveTo(...path[0], run);
+        ev("pointerover", path[0], 0); ev("pointerenter", path[0], 0); ev("pointermove", path[0], 0);
+        if (!instant) clickFx();
+        ev("pointerdown", path[0], 1);
+        if (!instant) cur.style.transition = "none";
+        const per = instant ? 0 : Math.max(10, Math.min(40, (opt.ms || 1600) / path.length));
+        for (const p of path.slice(1)) {
+          if (!instant) { cur.style.left = p[0] + "px"; cur.style.top = p[1] + "px"; curPos = { x: p[0], y: p[1] }; }
+          ev("pointermove", p, 1);
+          if (per) await sleep(per, run);
+        }
+        ev("pointerup", path[path.length - 1], 0);
+      } finally { E.setPointerCapture = cap; E.releasePointerCapture = rel; E.hasPointerCapture = has; }
+      if (!instant) await sleep(400, run);
+    },
+    async mapClick(run, instant, pt, opt) {  // a click on the map at a point of the H&E (image pixels); alt: select the region there
+      opt = opt || {};
+      const w = W(), d = D(), cv = w.eval("viewer.canvas"), osd = d.getElementById("osd").getBoundingClientRect();
+      const p = w.toScreen(pt[0], pt[1]), xy = [osd.left + p.x, osd.top + p.y];
+      if (!instant) { await moveTo(...xy, run); clickFx(); }
+      const o = (b) => ({ bubbles: true, cancelable: true, composed: true, clientX: xy[0], clientY: xy[1], pointerId: 1, pointerType: "mouse", isPrimary: true,
+        button: 0, buttons: b, altKey: !!opt.alt, view: w });
+      const E = w.Element.prototype, cap = E.setPointerCapture, rel = E.releasePointerCapture;
+      E.setPointerCapture = function () {}; E.releasePointerCapture = function () {};
+      try {
+        cv.dispatchEvent(new (w.PointerEvent)("pointermove", o(0)));
+        cv.dispatchEvent(new (w.PointerEvent)("pointerdown", o(1)));
+        await sleep(instant ? 0 : 90, run);
+        cv.dispatchEvent(new (w.PointerEvent)("pointerup", o(0)));
+        cv.dispatchEvent(new (w.MouseEvent)("click", o(0)));
+      } finally { E.setPointerCapture = cap; E.releasePointerCapture = rel; }
+      if (!instant) await sleep(500, run);
+    },
     async lasso(run, instant, type, opt) {  // draw around the cells of one type on the UMAP (as the user does with Select)
       const w = W(), EM = w.eval("EM"), c = D().getElementById("emcanvas");
       if (!EM || !EM.xy || !c) throw new Error("lasso: the UMAP is not open");
@@ -425,7 +473,15 @@
   const lastText = (ev) => [...ev].reverse().find((e) => e.k === "text");
   const typePer = (t) => Math.max(30, Math.min(85, 3200 / t.length));  // ms per typed character: a short prompt types slowly enough to read
   const answerMs = (e) => Math.min(4500, 12 * e.text.length);  // after the answer, before the app moves on (pause to read it all)
+  function toolIdx(ev, spec) {  // index of the event of "tool#n" (the nth call of that tool)
+    const c = {};
+    return ev.findIndex((e) => { if (e.k !== "tool") return false; const nm = e.name.replace(/^mcp__stagent__/, ""); c[nm] = (c[nm] || 0) + 1; return nm + "#" + c[nm] === spec; });
+  }
   function agentMs(ev, opt) {  // estimated playing time of one conversation at 1x
+    if (opt.startAt || opt.stopAt) {
+      const a = opt.startAt ? toolIdx(ev, opt.startAt) : 0, b = opt.stopAt ? toolIdx(ev, opt.stopAt) : ev.length - 1;
+      ev = ev.slice(Math.max(0, a), b + 1);
+    }
     let ms = 0;
     const last = lastText(ev);
     for (const e of ev) {
@@ -438,13 +494,28 @@
   async function playAgent(id, opt, run, instant) {
     const ev = S.agent[id];
     if (!ev) { console.warn("[tutorial] no conversation", id); return; }
-    const scenes = opt.scenes || {};
+    const scenes = opt.scenes || {};  // scenes: { tool: scene } at each call, or { "tool#2": scene } at its 2nd call in the conversation
     let spin = null;
     const spinOn = (label) => { if (instant) return; if (!spin) { spin = el("div", "t-spin"); add(spin); } spin.textContent = "✻ " + (label || "Working…"); tscroll.append(spin); };
     const spinOff = () => { if (spin) { spin.remove(); spin = null; } };
     const last = lastText(ev);
+    // a conversation in parts (a tool that waits for the user's Accept): stopAt "tool#n" ends this part at that call,
+    // shown with its scene; startAt "tool#n" goes on from there (its answer first)
+    const count = {};
+    let skipping = !!opt.startAt;
+    if (skipping) tscroll.querySelectorAll(".t-spin").forEach((x) => x.remove());
     for (const e of ev) {
       check(run);
+      if (skipping) {
+        if (e.k !== "tool") continue;
+        const nm0 = e.name.replace(/^mcp__stagent__/, "");
+        count[nm0] = (count[nm0] || 0) + 1;
+        if (nm0 + "#" + count[nm0] !== opt.startAt) continue;
+        skipping = false;
+        add(el("div", "t-out", esc(outLines(e.out)))); spinOn(); tscroll.scrollTop = tscroll.scrollHeight;
+        await sleep(750 / AGENT_FAST, run, instant);
+        continue;
+      }
       if (e.k === "user") {
         const typed = tprompt.querySelector(".typed");
         if (!instant && !opt.fromApp) {
@@ -460,8 +531,11 @@
         const nm = e.name.replace(/^mcp__stagent__/, "");
         const line = el("div", "t-line t-tool" + (e.error ? " err" : ""), `<span class="nm">stagent · ${esc(nm)}</span><span class="args">(${esc(shortArgs(e.input))})</span>`);
         add(line); spinOn(); await sleep(750 / AGENT_FAST, run, instant);
+        count[nm] = (count[nm] || 0) + 1;
+        const sc = scenes[nm + "#" + count[nm]] || scenes[nm];
+        if (opt.stopAt === nm + "#" + count[nm]) { spinOn("Waiting for your Accept in the app…"); if (sc) setScene(sc); return; }
         add(el("div", "t-out", esc(outLines(e.out)))); spinOn(); tscroll.scrollTop = tscroll.scrollHeight;
-        if (scenes[nm]) setScene(scenes[nm]);
+        if (sc) setScene(sc);
         await sleep(750 / AGENT_FAST, run, instant);
       } else if (e.k === "text") {
         spinOff();
@@ -497,6 +571,8 @@
       else if (a[0] === "wait") act += a[1];
       else if (a[0] === "zoom") act += a[2] || 1600;
       else if (a[0] === "lasso") act += 2600;
+      else if (a[0] === "mapDrag") act += 1400 + ((a[2] && a[2].ms) || 1600);
+      else if (a[0] === "mapClick") act += 1300;
       else if (a[0] === "agent") act += S.agent[a[1]] ? agentMs(S.agent[a[1]], a[2] || {}) : 0;
     }
     return st.ms ? Math.max(st.ms, act + AFTER_MS) : Math.max(ms, act + AFTER_MS);

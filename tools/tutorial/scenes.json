@@ -1,16 +1,16 @@
 {
- "about": "Scenes of the recorded session, in order (build.py). until: drop requests recorded after this time (the agent was working). rewrite: local paths shown as generic ones. synthetic: answers for requests the recording could not make (the app would open a real Terminal).",
+ "about": "Scenes of the recorded session (0.2.54), in order (build.py). rewrite: local paths shown as generic ones. synthetic: answers for requests the recording could not make (the app would open a real Terminal). inject: such an answer for one scene.",
  "rewrite": [
   [
    "/Users/caokai/Documents/STAnnotator-repo/work/tut/data/",
    "/Users/me/Downloads/scp2927/"
   ],
   [
-   "/Users/caokai/Documents/STAnnotator-repo/work/tut/home",
+   "/Users/caokai/Documents/STAnnotator-repo/work/tut/home54",
    "/Users/me/stagent"
   ],
   [
-   "/Users/caokai/.claude/projects/-Users-caokai-Documents-STAnnotator-repo-work-tut-home-claude-workspace",
+   "/Users/caokai/.claude/projects/-Users-caokai-Documents-STAnnotator-repo-work-tut-home54-claude-workspace",
    "~/.claude/projects/stagent"
   ],
   [
@@ -22,11 +22,15 @@
    "~/.claude/projects/STAnnotator"
   ],
   [
+   "/Users/caokai/Documents/STAnnotator-repo/.venv/bin/python",
+   "/Applications/STAnnotator.app/Contents/MacOS/python"
+  ],
+  [
    "/Users/caokai/",
    "/Users/me/"
   ],
   [
-   "work/tut/home",
+   "work/tut/home54",
    "/Users/me/stagent"
   ]
  ],
@@ -43,9 +47,17 @@
   },
   "GET /api/claude/status": {
    "platform": "Darwin",
-   "claude_code": "/Users/me/.local/bin/claude"
+   "claude_code": "/Users/me/.local/bin/claude",
+   "model": ""
   },
   "POST /api/claude/markers": {
+   "claude_code": {
+    "opened": true,
+    "reused": true
+   }
+  },
+  "POST /api/claude/review": {
+   "needed": true,
    "claude_code": {
     "opened": true,
     "reused": true
@@ -57,149 +69,343 @@
    "name": "s00-empty"
   },
   {
-   "name": "c01-import",
-   "until": 1794086567.0
+   "name": "c01-import"
   },
   {
-   "name": "c01-import2",
-   "source": "c01-import",
-   "from": 1794086567.0
+   "name": "c01-import2"
   },
   {
-   "name": "c02-align1-pre"
+   "name": "c02-align-pre"
   },
   {
-   "name": "c02-align1-proposal"
+   "name": "c02-aligning"
   },
   {
-   "name": "c02-align1-accepted",
-   "from": 1794086751.6
+   "name": "c02-al-alignment_status-1"
   },
   {
-   "name": "c02-align2-pre"
+   "name": "c02-al-alignment_status-2"
   },
   {
-   "name": "c02-align2-proposal"
+   "name": "c02-al-search_alignment-1"
   },
   {
-   "name": "c02-align2-accepted",
-   "from": 1794086998.6
+   "name": "c02-al-show_alignment-1"
+  },
+  {
+   "name": "c02-al-refine_alignment-1"
+  },
+  {
+   "name": "c02-al-show_alignment-2"
+  },
+  {
+   "name": "c02-al-apply_alignment-1"
+  },
+  {
+   "name": "c02-align1-accepted"
+  },
+  {
+   "name": "c02-al-search_alignment-2"
+  },
+  {
+   "name": "c02-al-show_alignment-3"
+  },
+  {
+   "name": "c02-al-refine_alignment-2"
+  },
+  {
+   "name": "c02-al-show_alignment-4"
+  },
+  {
+   "name": "c02-al-apply_alignment-2"
+  },
+  {
+   "name": "c02-align2-accepted"
   },
   {
    "name": "c03-start"
   },
   {
-   "name": "c03-filtered-b",
-   "from": 1794087713.0
+   "name": "c03-project"
   },
   {
-   "name": "c03-filtered2-b",
-   "from": 1794087729.3
+   "name": "c03-filter"
   },
   {
-   "name": "c05-project",
-   "from": 1794087774
+   "name": "c03-filtered"
   },
   {
-   "name": "c04-markers-b",
-   "skip": [
-    "GET /api/samples",
-    "GET /api/projects"
-   ]
+   "name": "c04-markers"
   },
   {
-   "name": "c04-si-b",
-   "skip": [
-    "GET /api/samples",
-    "GET /api/projects"
-   ]
-  },
-  {
-   "name": "c04-refined-b",
-   "skip": [
-    "GET /api/samples",
-    "GET /api/projects"
-   ]
+   "name": "c04-si"
   },
   {
    "name": "c05-markers-load"
   },
   {
-   "name": "c05-annotate",
-   "from": 1794087822.0
+   "name": "c05-annotate"
   },
   {
    "name": "c05-explore"
   },
   {
-   "name": "c06-embed",
-   "from": 1794087912.5
+   "name": "c06-embed"
   },
   {
-   "name": "c07-niches",
-   "from": 1794087954.4
+   "name": "c07-niches"
   },
   {
-   "name": "c07-names-proposal"
+   "name": "c07-naming"
   },
   {
-   "name": "c07-named",
-   "from": 1794088083.4
+   "name": "c07-name_niches-1"
+  },
+  {
+   "name": "c07-named"
   },
   {
    "name": "c07-explore"
   },
   {
-   "name": "c08-mucosa-proposal"
+   "name": "c08-drawing"
   },
   {
-   "name": "c08-mucosa",
-   "from": 1794088263.7
+   "name": "c08-propose_region-1"
   },
   {
-   "name": "c08-edit"
+   "name": "c08-mucosa"
   },
   {
-   "name": "c08-edited",
-   "from": 1794088390.3
+   "name": "c08-draw"
+  },
+  {
+   "name": "c08-brush"
+  },
+  {
+   "name": "c08-brushed"
   },
   {
    "name": "c08-geojson"
   },
   {
-   "name": "c09-compare"
+   "name": "c09-prior-pre",
+   "source": "x-look",
+   "from": 1794418019.944,
+   "until": 1794418033.681,
+   "skip": [
+    "GET /api/sample/167799/priors",
+    "POST /api/sample/167799/priors"
+   ]
   },
   {
-   "name": "c09-de",
-   "from": 1794088474.3
+   "name": "c09-prior"
   },
   {
-   "name": "c09-top",
-   "from": 1794088499.5
+   "name": "c09-prior-colon"
   },
   {
-   "name": "c09-comp",
-   "from": 1794088516.6
+   "name": "c09-prior-added",
+   "inject": {
+    "POST /api/sample/167799/priors": {
+     "organ": "Colon",
+     "guess": {
+      "organ": "Colon",
+      "from": "given",
+      "covered": true,
+      "evidence": [
+       "given for this sample: Colon"
+      ]
+     },
+     "organs": [
+      "Colon",
+      "Small intestine",
+      "Stomach",
+      "Liver",
+      "Pancreas",
+      "Kidney",
+      "Lung",
+      "Heart",
+      "Breast",
+      "Skin",
+      "Brain (cortex)",
+      "Lymph node and tonsil"
+     ],
+     "edited_organs": [
+      "Colon"
+     ],
+     "covered": true,
+     "priors": [
+      {
+       "id": "COL-01",
+       "title": "Epithelial cells (all subtypes) lie in the mucosa, not in the submucosa, muscularis propria or serosa.",
+       "short": "Epithelial cells (all subtypes) lie in the mucosa, not in the submucosa, muscularis propria or serosa.",
+       "rules": [
+        "kind=region, types=[Epithelial], regions=[mucosa], mode=only, strength=strong"
+       ]
+      },
+      {
+       "id": "COL-02",
+       "title": "Stem cells (LGR5+/OLFM4+) sit at the crypt base, and Cycling TAs sit in the lower half of the crypt.",
+       "short": "Stem cells (LGR5+/OLFM4+) sit at the crypt base, and Cycling TAs sit in the lower half of the crypt.",
+       "rules": [
+        "kind=region, types=[Stem cells], regions=[crypt base], mode=enrich, strength=moderate",
+        "kind=region, types=[Stem cells, Cycling TAs], regions=[surface epithelium], mode=exclude, strength=moderate"
+       ]
+      },
+      {
+       "id": "COL-03",
+       "title": "Differentiated, mature absorptive cells are at the crypt top and the luminal surface. This covers Colonocytes (CA1, SLC26A3, AQP8, CEACAM7) and especially BEST4+ colonocytes.",
+       "short": "Differentiated, mature absorptive cells are at the crypt top and the luminal surface.",
+       "rules": [
+        "kind=region, types=[BEST4+ colonocytes, Colonocytes], regions=[surface epithelium], mode=enrich, strength=moderate",
+        "kind=region, types=[BEST4+ colonocytes], regions=[crypt base], mode=exclude, strength=weak"
+       ]
+      },
+      {
+       "id": "COL-04",
+       "title": "Goblet cells, Enteroendocrine cells, Tuft cells and Cycling TAs are scattered inside the epithelium. The same call in a cell surrounded by stroma is usually spill-over or a mis-assigned immune cell.",
+       "short": "Goblet cells, Enteroendocrine cells, Tuft cells and Cycling TAs are scattered inside the epithelium.",
+       "rules": [
+        "kind=neighborhood, types=[Goblet cells, Enteroendocrine cells, Tuft cells, Cycling TAs], neighbor_types=[Epithelial], min_frac=0.3, mode=only, strength=moderate"
+       ]
+      },
+      {
+       "id": "COL-05",
+       "title": "Paneth cells (not in the built-in colon list) are normally present only in the proximal colon (caecum and ascending colon) of humans, at crypt bases. They are absent from the normal distal colon and from the mouse colon.",
+       "short": "Paneth cells (not in the built-in colon list) are normally present only in the proximal colon (caecum and ascending colon) of humans, at crypt bases.",
+       "rules": [
+        "kind=region, types=[Paneth cells], regions=[crypt base], mode=only, strength=moderate",
+        "kind=region, types=[Paneth cells], regions=[mucosa], mode=exclude, strength=weak"
+       ]
+      },
+      {
+       "id": "COL-06",
+       "title": "Plasma cells (mostly IgA) and most effector immune cells are concentrated in the lamina propria of the mucosa. They are sparse in the submucosa and the muscularis propria.",
+       "short": "Plasma cells (mostly IgA) and most effector immune cells are concentrated in the lamina propria of the mucosa.",
+       "rules": [
+        "kind=region, types=[Plasma cells], regions=[mucosa], mode=enrich, strength=moderate"
+       ]
+      },
+      {
+       "id": "COL-07",
+       "title": "B cells (naive, MS4A1+) are concentrated in lymphoid follicles. In the colon these are isolated lymphoid follicles and colonic patches, and they often straddle the muscularis mucosae. Outside follicles the lamina propria has few B cells but many Plasma cells.",
+       "short": "B cells (naive, MS4A1+) are concentrated in lymphoid follicles.",
+       "rules": [
+        "kind=region, types=[B cells], regions=[lymphoid follicle], mode=enrich, strength=strong"
+       ]
+      },
+      {
+       "id": "COL-08",
+       "title": "Naive CD4 T cells (CCR7+, SELL+) sit in the T-cell zones of lymphoid follicles and aggregates. The diffuse lamina propria holds mainly Effector/memory CD4 T cells and Tregs.",
+       "short": "Naive CD4 T cells (CCR7+, SELL+) sit in the T-cell zones of lymphoid follicles and aggregates.",
+       "rules": [
+        "kind=region, types=[Naive CD4 T cells], regions=[lymphoid follicle], mode=enrich, strength=moderate",
+        "kind=region, types=[Effector/memory CD4 T cells], regions=[lymphoid follicle], mode=enrich, strength=weak"
+       ]
+      },
+      {
+       "id": "COL-09",
+       "title": "Intraepithelial lymphocytes are almost exclusively T cells, mainly CD8 T cells and gd T cells. They sit between the epithelial cells. The colon has fewer of them than the small intestine.",
+       "short": "Intraepithelial lymphocytes are almost exclusively T cells, mainly CD8 T cells and gd T cells.",
+       "rules": [
+        "kind=neighborhood, types=[CD8 T cells, gd T cells], neighbor_types=[Epithelial], min_frac=0.6, mode=enrich, strength=weak"
+       ]
+      },
+      {
+       "id": "COL-10",
+       "title": "Smooth muscle cells form the muscularis propria (and the thin muscularis mucosae). Within the mucosa proper, only scattered muscularis mucosae fibres and vascular smooth muscle occur.",
+       "short": "Smooth muscle cells form the muscularis propria (and the thin muscularis mucosae).",
+       "rules": [
+        "kind=region, types=[Smooth muscle cells], regions=[muscularis propria, muscularis mucosae], mode=enrich, strength=moderate",
+        "kind=region, types=[Smooth muscle cells], regions=[mucosa], mode=exclude, strength=weak"
+       ]
+      },
+      {
+       "id": "COL-11",
+       "title": "Neurons (enteric neuronal cell bodies) are in the ganglia of the submucosal plexus and the myenteric plexus. The myenteric plexus lies between the circular and longitudinal muscle. The mucosa contains nerve fibres but no neuronal cell bodies. Glia occur in all layers, including the mucosa.",
+       "short": "Neurons (enteric neuronal cell bodies) are in the ganglia of the submucosal plexus and the myenteric plexus.",
+       "rules": [
+        "kind=region, types=[Neurons], regions=[submucosa, muscularis propria, myenteric plexus], mode=only, strength=moderate",
+        "kind=region, types=[Neurons, Glia], regions=[myenteric plexus], mode=enrich, strength=strong"
+       ]
+      },
+      {
+       "id": "COL-12",
+       "title": "ICC (interstitial cells of Cajal, KIT+ ANO1+) are part of the smooth-muscle syncytium of the muscularis propria: around the myenteric plexus, within the muscle layers, and, in the colon, at the submucosal border of the circular muscle. They are not in the mucosa.",
+       "short": "ICC (interstitial cells of Cajal, KIT+ ANO1+) are part of the smooth-muscle syncytium of the muscularis propria: around the myenteric plexus, within the muscle layers, and, in the colon, at the submucosal border of the circular muscle.",
+       "rules": [
+        "kind=region, types=[ICC], regions=[muscularis propria, myenteric plexus], mode=only, strength=moderate"
+       ]
+      },
+      {
+       "id": "COL-13",
+       "title": "Lymphatic EC are essentially absent from the normal colonic lamina propria above the muscularis mucosae. Colonic lymphatics start at or below the muscularis mucosae. This differs from the small intestine, which has lacteals.",
+       "short": "Lymphatic EC are essentially absent from the normal colonic lamina propria above the muscularis mucosae.",
+       "rules": [
+        "kind=region, types=[Lymphatic EC], regions=[mucosa], mode=exclude, strength=weak"
+       ]
+      },
+      {
+       "id": "COL-14",
+       "title": "Types deliberately left unconstrained across layers: Macrophages, Fibroblasts, Blood vessel EC, Pericytes and Mast cells.",
+       "short": "Types deliberately left unconstrained across layers: Macrophages, Fibroblasts, Blood vessel EC, Pericytes and Mast cells.",
+       "rules": []
+      }
+     ],
+     "removed": [],
+     "added": [
+      {
+       "id": "U-1",
+       "text": "Paneth cells do not occur in this section: it is sigmoid colon, far from the caecum."
+      }
+     ],
+     "edited": true,
+     "asked": [
+      "U-1"
+     ],
+     "claude_code": {
+      "opened": true,
+      "reused": true
+     }
+    }
+   }
   },
   {
-   "name": "c10-signal",
-   "from": 1794088540.6
+   "name": "c09-set_prior_rule-1"
   },
   {
-   "name": "c10-map"
+   "name": "c10-compare"
   },
   {
-   "name": "c11-traj",
-   "from": 1794088654.0
+   "name": "c10-de"
   },
   {
-   "name": "c11-traj-map"
+   "name": "c10-deseq2"
   },
   {
-   "name": "c12-help"
+   "name": "c10-top"
   },
   {
-   "name": "c13-review",
+   "name": "c10-comp"
+  },
+  {
+   "name": "c11-signal"
+  },
+  {
+   "name": "c11-map"
+  },
+  {
+   "name": "c12-traj"
+  },
+  {
+   "name": "c12-traj-map"
+  },
+  {
+   "name": "c13-help"
+  },
+  {
+   "name": "c14-review",
    "inject": {
     "POST /api/claude/review": {
      "needed": true,
@@ -208,8 +414,8 @@
       "reused": true
      },
      "asked": true,
-     "asked_at": "2026-11-07T16:59:03",
-     "unchecked": 34,
+     "asked_at": "2026-11-11T12:32:36",
+     "unchecked": 32,
      "checked": 0,
      "checking": true,
      "advice": {
@@ -219,77 +425,54 @@
       "n_open": 0,
       "n_filtered": 0,
       "last_run": null,
-      "asked_at": "2026-11-07T16:59:03",
+      "asked_at": "2026-11-11T12:32:36",
       "n_runs": 0
      }
     }
    }
   },
   {
-   "name": "c13-reviewed"
+   "name": "c14-reviewing"
   },
   {
-   "name": "c13-advice-map"
+   "name": "c14-check_advice-1"
   },
   {
-   "name": "c14-review-sig",
-   "inject": {
-    "POST /api/claude/review": {
-     "needed": true,
-     "claude_code": {
-      "opened": true,
-      "reused": true
-     },
-     "asked": true,
-     "asked_at": "2026-11-07T16:59:03",
-     "unchecked": 0,
-     "checked": 34,
-     "checking": false,
-     "advice": {
-      "current": false,
-      "preparing": true,
-      "n_drafts": 0,
-      "n_open": 0,
-      "n_filtered": 0,
-      "last_run": null,
-      "asked_at": "2026-11-07T17:03:34",
-      "n_runs": 0
-     }
-    }
-   }
+   "name": "c14-reviewed"
   },
   {
-   "name": "c14-sig-reviewed"
+   "name": "c14-advice-map"
   },
   {
-   "name": "c15-ask"
+   "name": "c15b-shift-start"
   },
   {
-   "name": "c16-report"
+   "name": "c15b-shift-import"
   },
   {
-   "name": "c17-export"
+   "name": "c15b-check"
   },
   {
-   "name": "c18-shift-start"
+   "name": "c15b-local"
   },
   {
-   "name": "c18-shift-import"
+   "name": "c15b-fixed"
   },
   {
-   "name": "c18-shift-advice"
+   "name": "c16-ask-pre",
+   "source": "x-look",
+   "from": 1794418674.421,
+   "until": 1794418720.449
   },
   {
-   "name": "c18-shift-fixed"
+   "name": "c16-ask"
+  },
+  {
+   "name": "c17-report"
+  },
+  {
+   "name": "c18-export"
   }
- ],
- "dropped": [
-  "c03-filtered",
-  "c03-filtered2",
-  "c04-markers",
-  "c04-builtin",
-  "c04-si",
-  "c04-refined"
  ],
  "harvest": [
   "GET /api/markers/organs",
