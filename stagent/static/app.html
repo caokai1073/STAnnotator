@@ -5800,18 +5800,19 @@ $("pcAccept").onclick = () => pcAccept(false);
 $("pcAnyway").onclick = () => pcAccept(false);
 $("pcLocal").onclick = () => pcAccept(true);
 async function localRegistration(sample) {  // the local correction measured, checked and applied at once (no review)
+  const smp = (st.samples || []).find((x) => x.sample_id === sample), who = `Local registration of ${smp ? sampleName(smp) : sample}`;
   let job;
   try { ({ job } = await post(`/api/sample/${encodeURIComponent(sample)}/registration/local`, {})); }
-  catch (e) { toast(`Local registration: ${e.message}`, 8000); return; }
-  toast("Local registration: measuring where the cells sit off their nuclei…", 600000);
+  catch (e) { toast(`${who}: ${e.message}`, 8000); return; }
+  toast(`${who}: measuring where the cells sit off their nuclei…`, 600000);
   for (;;) {
     await new Promise((res) => setTimeout(res, 1000));
     let j; try { j = await api(`/api/job/${encodeURIComponent(job)}`); } catch (e) { continue; }
-    if (!j.done) { toast(`Local registration: ${j.stage} (${Math.round(100 * j.progress)}%)`, 600000); continue; }
-    if (j.error) { toast(`Local registration failed: ${j.error}`, 10000); return; }
+    if (!j.done) { toast(`${who}: ${j.stage} (${Math.round(100 * j.progress)}%)`, 600000); continue; }
+    if (j.error) { toast(`${who} failed: ${j.error}`, 10000); return; }
     if (st.sample && st.sample.sample_id === sample) await afterPlacement();
     loadStepsSoon();
-    toast(`Local registration done: the cells moved onto their nuclei where the tissue shifted (up to ${j.result.moved_um_max} µm, median ${j.result.moved_um_median} µm)`, 9000);
+    toast(`${who} done: the cells moved onto their nuclei where the tissue shifted (up to ${j.result.moved_um_max} µm, median ${j.result.moved_um_median} µm)`, 9000);
     return;
   }
 }
