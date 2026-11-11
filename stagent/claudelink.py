@@ -59,8 +59,32 @@ def mcp_seen():
 
 
 def status():
-    """Whether Claude Code is installed (shown when the app's Claude Code button cannot open it)."""
-    return {"platform": platform.system(), "claude_code": claude_code_path()}
+    """Whether Claude Code is installed (shown when the app's Claude Code button cannot open it), and its model."""
+    return {"platform": platform.system(), "claude_code": claude_code_path(), "model": model()}
+
+
+MODELS = ("fable", "opus", "sonnet", "haiku")  # Claude Code's aliases: each the latest model of its family
+
+
+def model():
+    """The model the user chose for Claude Code in the app ("" for Claude Code's own default), kept in the app's
+    settings on the computer Claude Code runs on."""
+    m = str(config.read_settings().get("claude_model") or "")
+    return m if m in MODELS else ""
+
+
+def set_model(m):
+    m = str(m or "").strip().lower()
+    if m and m not in MODELS:
+        raise ValueError(f"model one of {', '.join(MODELS)} (or empty for Claude Code's default)")
+    config.write_settings(claude_model=m)
+    return {"model": m}
+
+
+def model_args():
+    """The --model argument of a Claude Code command line (none for its default)."""
+    m = model()
+    return ["--model", m] if m else []
 
 
 # ---------------- Claude Code workspace ----------------
@@ -93,10 +117,16 @@ def claude_code_command(prompt=None, remote=None):
     ws = workspace(remote)
     # the prompt goes first: --mcp-config takes several values and would swallow it
     if osutil.WINDOWS:
-        cmd = f'cd /d "{ws}" && claude ' + (f"{_cmd_quote(prompt)} " if prompt else "") + f'--mcp-config "{ws / "stagent_mcp.json"}"'
+        cmd = f'cd /d "{ws}" && claude ' + (f"{_cmd_quote(prompt)} " if prompt else "") + _model_flag() + f'--mcp-config "{ws / "stagent_mcp.json"}"'
     else:
-        cmd = f'cd "{ws}" && claude ' + (f"'{prompt}' " if prompt else "") + f'--mcp-config "{ws / "stagent_mcp.json"}"'
+        cmd = f'cd "{ws}" && claude ' + (f"'{prompt}' " if prompt else "") + _model_flag() + f'--mcp-config "{ws / "stagent_mcp.json"}"'
     return cmd, ws
+
+
+def _model_flag():
+    """ "--model <alias> " before --mcp-config (which takes several values), or nothing."""
+    m = model()
+    return f"--model {m} " if m else ""
 
 
 def _cmd_quote(text):
@@ -117,7 +147,7 @@ def _open_windows(ws, prompt, exe, send=None):
     if running:
         osutil.terminate(int(old), tree=True)
     line = (f'call "{exe}"' if exe else "claude") + (" --continue" if running else "") + \
-        (f" {_cmd_quote(prompt)}" if prompt else "") + f' --mcp-config "{ws / "stagent_mcp.json"}"'
+        (f" {_cmd_quote(prompt)}" if prompt else "") + " " + _model_flag() + f'--mcp-config "{ws / "stagent_mcp.json"}"'
     body = ["@echo off", "chcp 65001 >nul", f"title {TAB_TITLE}", f'cd /d "{ws}"']
     if not exe:
         body += ["where claude >nul 2>nul || (",
@@ -204,7 +234,7 @@ def open_claude_code(sample=None, session=None, request=None, send_if_open=False
     script = ws / "start_claude.command"
     exe = claude_code_path()
     # the prompt goes first: --mcp-config takes several values and would swallow it
-    args = (f"'{prompt}' " if prompt else "") + f'--mcp-config "{ws / "stagent_mcp.json"}"'
+    args = (f"'{prompt}' " if prompt else "") + _model_flag() + f'--mcp-config "{ws / "stagent_mcp.json"}"'
     body = ["#!/bin/zsh -il", f'cd "{ws}"']  # interactive login shell: the same PATH as the user's Terminal
     if exe:
         body.append(f'exec "{exe}" {args}')

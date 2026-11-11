@@ -149,6 +149,11 @@ class Api:
         from . import claudelink
         return claudelink.open_claude_code(**args, remote=self._conn.conn if self._conn else None)
 
+    def claude_model(self, m=None):
+        """The model of the Claude Code the app opens on this computer: read it (None) or set it (an alias or "")."""
+        from . import claudelink
+        return claudelink.set_model(m) if m is not None else {"model": claudelink.model()}
+
     def close_claude(self):
         """End the Claude Code the app opened on this computer and close its window (Remove all on a server)."""
         from . import claudelink

@@ -629,6 +629,16 @@ def api_claude_status(req):
     return _json(claudelink.status())
 
 
+async def api_claude_model(req: Request):
+    """{model}: the model of Claude Code (opened by the app on this computer) and of the chat box: fable, opus,
+    sonnet, haiku (each the latest of its family), or "" for Claude Code's own default."""
+    b = await req.json()
+    try:
+        return _json(claudelink.set_model((b or {}).get("model")))
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+
+
 REVIEW_REQUEST = ("Check the review candidates of version {v} (I clicked Review: Annotation): look at every "
                   "candidate area on the H&E with show_area and judge every marker check, then record each verdict "
                   "with record_review, keeping only real annotation problems.")
@@ -3368,7 +3378,7 @@ async def api_markers_draft(req: Request):
     args = ["claude", "-p", prompt, "--output-format", "stream-json", "--verbose", "--tools", "",
             "--mcp-config", str(CHAT_MCP), "--strict-mcp-config",
             "--allowedTools", "mcp__stagent__get_panel_genes mcp__stagent__check_marker_list mcp__stagent__organ_marker_draft",
-            "--append-system-prompt", DRAFT_PROMPT]
+            "--append-system-prompt", DRAFT_PROMPT] + claudelink.model_args()   # the model chosen in the app (Claude Code's default if none)
 
     async def stream():
         proc = await asyncio.create_subprocess_exec(*args, cwd=str(config.ROOT), stdout=asyncio.subprocess.PIPE,
@@ -3479,7 +3489,7 @@ async def api_chat(req: Request):
     args = ["claude", "-p", prompt, "--output-format", "stream-json", "--verbose", "--tools", "",
             "--mcp-config", str(CHAT_MCP), "--strict-mcp-config", "--allowedTools", "mcp__stagent",
             "--disallowedTools", " ".join(f"mcp__stagent__{t}" for t in BLOCKED),
-            "--append-system-prompt", SYSTEM_PROMPT.format(sid=sid, sample=s.sample_id)]
+            "--append-system-prompt", SYSTEM_PROMPT.format(sid=sid, sample=s.sample_id)] + claudelink.model_args()
     if meta.get("claude_session"):
         args += ["--resume", meta["claude_session"]]
     else:
@@ -3630,6 +3640,7 @@ def build_app(port):
         Route("/api/sample/{sample}/image", api_sample_image, methods=["POST"]),
         Route("/api/sample/{sample}/registration", api_sample_registration, methods=["POST"]),
         Route("/api/sample/{sample}/rename", api_sample_rename, methods=["POST"]),
+        Route("/api/claude/model", api_claude_model, methods=["POST"]),
         Route("/api/sample/{sample}/registration/local", api_registration_local, methods=["POST"]),
         Route("/api/sample/{sample}/priors", api_sample_priors),
         Route("/api/sample/{sample}/priors", api_sample_priors_save, methods=["POST"]),
