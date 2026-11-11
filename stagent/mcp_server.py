@@ -568,10 +568,48 @@ def _d_start_session(a):
     return {"title": f"Start a new annotation of {a['sample_id']}", "sample_id": a["sample_id"], "details": det}
 
 
+def _slice_name(s):
+    return s.meta.get("project_section") or s.meta.get("name") or s.sample_id
+
+
+def _prior_slices(s, all_slices):
+    """The annotations a prior goes to: the open one, or with all_slices every slice of its joint annotation."""
+    from . import joint
+    from .session import Session
+    if not all_slices:
+        return [s]
+    return [s if x == s.id else Session(x) for x in joint.run_sessions(s)]
+
+
+def _previews(s, spec, all_slices):
+    """(slice session, preview or the reason it does not apply) for each annotation the prior goes to."""
+    out = []
+    for x in _prior_slices(s, all_slices):
+        try:
+            out.append((x, x.preview_constraint(spec)))
+        except (ValueError, KeyError) as e:   # e.g. a region this slice does not have
+            out.append((x, str(e)))
+    return out
+
+
 def _d_constraint(a):
     s = _s()
     spec = _spec(a["text"], a["types"], a["mode"], a["weight"], a["kind"], a["regions"], a["max_depth_um"],
                  a["neighbor_types"], a["min_frac"])
+    if a.get("all_slices") and len(_prior_slices(s, True)) > 1:   # one Accept for every slice of the joint annotation
+        res = _previews(s, spec, True)
+        ok = [(x, p) for x, p in res if not isinstance(p, str)]
+        if not ok:
+            raise ValueError("the prior applies to no slice: " + "; ".join(f"{_slice_name(x)}: {p}" for x, p in res))
+        pv = next((p for x, p in ok if x.id == s.id), ok[0][1])
+        where = f"all {len(ok)} slices" if len(ok) == len(res) else f"{len(ok)} of {len(res)} slices"
+        return {"title": f"Add a prior to {where}: {pv['interpretation']}", "version": pv["based_on_version"],
+                "details": [*_words(a), f"Types: {_names(pv['types_resolved'], 10)}",
+                            *[f"{_slice_name(x)}: {p['n_label_changes']:,} cells change their label" for x, p in ok],
+                            *[f"{_slice_name(x)}: left out ({p})" for x, p in res if isinstance(p, str)],
+                            "Each slice gets a new version (Undo in each slice takes it back)."],
+                "preview": {"n_label_changes": sum(p["n_label_changes"] for _, p in ok),
+                            "top_transitions": _transitions(pv["top_transitions"])}}
     pv = s.preview_constraint(spec)
     return {"title": f"Add a prior: {pv['interpretation']}", "version": pv["based_on_version"],
             "details": [*_words(a), f"Types: {_names(pv['types_resolved'], 10)}",
@@ -1003,9 +1041,11 @@ def session_summary(version: Optional[int] = None) -> str:
 def preview_constraint(text: str, types: list[str], mode: str, weight: Union[str, float] = "strong",
                        kind: str = "region", regions: Optional[list[str]] = None,
                        max_depth_um: Optional[float] = None, neighbor_types: Optional[list[str]] = None,
-                       min_frac: Optional[float] = None) -> str:
+                       min_frac: Optional[float] = None, all_slices: bool = False) -> str:
     """Validate a constraint and show its effect WITHOUT committing it. Show the interpretation and the
     predicted label changes to the user, then call add_constraint (the user accepts it in the app's review window).
+    all_slices: for an annotation of all slices of a project together, the effect in every slice (when the user
+    means every slice; add_constraint(all_slices=True) then adds it to all of them with one Accept).
 
     text: the user's own words, verbatim. types: cell type or group names from get_vocabulary.
     kind: 'region' (needs regions), 'depth' (needs max_depth_um: distance to the epithelium / crypt core),
@@ -1014,7 +1054,12 @@ def preview_constraint(text: str, types: list[str], mode: str, weight: Union[str
           'enrich' (more likely where true).
     weight: 'strong' | 'moderate' | 'weak' or a number (only/exclude: 0-1, enrich: >1).
     """
-    return _j(_s().preview_constraint(_spec(text, types, mode, weight, kind, regions, max_depth_um, neighbor_types, min_frac)))
+    s = _s()
+    spec = _spec(text, types, mode, weight, kind, regions, max_depth_um, neighbor_types, min_frac)
+    if not all_slices:
+        return _j(s.preview_constraint(spec))
+    return _j({"slices": [{"slice": _slice_name(x), "sample_id": x.sample_id, "session": x.id,
+                           **({"left_out": p} if isinstance(p, str) else p)} for x, p in _previews(s, spec, True)]})
 
 
 @mcp.tool()
@@ -1023,11 +1068,23 @@ def add_constraint(text: str, types: list[str], mode: str, weight: Union[str, fl
                    kind: str = "region", regions: Optional[list[str]] = None,
                    max_depth_um: Optional[float] = None, neighbor_types: Optional[list[str]] = None,
                    min_frac: Optional[float] = None, author: Optional[str] = None,
-                   message: Optional[str] = None) -> str:
+                   message: Optional[str] = None, all_slices: bool = False) -> str:
     """Commit a constraint the user has confirmed (same arguments as preview_constraint, plus the author's
-    name if known). Creates a new version."""
+    name if known). Creates a new version. all_slices: for an annotation of all slices of a project together, add it
+    to every slice at once (one review window, one Accept; a slice without the prior's region is left out and said
+    so) when the user means every slice: do not call it again per slice."""
     s = _s()
     spec = _spec(text, types, mode, weight, kind, regions, max_depth_um, neighbor_types, min_frac) | {"author": author}
+    if all_slices and len(_prior_slices(s, True)) > 1:
+        out = []
+        for x in _prior_slices(s, True):
+            try:
+                v = x.add_constraint(spec, message)
+                out.append({"slice": _slice_name(x), "session": x.id, "new_version": v,
+                            "n_label_changes": x.diff(v - 1, v)["n_label_changes"]})
+            except (ValueError, KeyError) as e:
+                out.append({"slice": _slice_name(x), "session": x.id, "left_out": str(e)})
+        return _j({"slices": out, "n_conflicts": s.summary()["n_conflicts"]})
     v = s.add_constraint(spec, message)
     return _j({"new_version": v, "diff": s.diff(v - 1, v), "n_conflicts": s.summary()["n_conflicts"]})
 

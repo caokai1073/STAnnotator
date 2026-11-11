@@ -63,6 +63,32 @@ def latest_sessions(pid, chosen=None):
     return out
 
 
+def run_sessions(s):
+    """The annotations of every slice annotated together with s (one joint run), in the project's slice order;
+    [s.id] for an annotation of one slice."""
+    j = (s.scheme or {}).get("joint") or {}
+    if not j.get("run") or not j.get("project"):
+        return [s.id]
+    found = {}
+    for d in sorted(config.SESSIONS.iterdir()) if config.SESSIONS.exists() else []:
+        f = d / "session.json"
+        if not f.exists():
+            continue
+        try:
+            info = json.load(open(f, encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        jj = (info.get("scheme") or {}).get("joint") or {}
+        if jj.get("run") == j["run"] and jj.get("project") == j["project"]:
+            found[info["sample_id"]] = d.name
+    found[s.sample_id] = s.id
+    try:
+        order = projects.load(j["project"])["samples"]
+    except Exception:
+        order = []
+    return [found[x] for x in order if x in found] + [v for k, v in found.items() if k not in order]
+
+
 def annotate(pid, markers_text, resolution=None, carry=False, progress=None, knn=None):
     """One marker annotation of all the project's slices together; returns {sample_id: new session id}.
     knn: the neighbor search, "exact" (default) or "approx"."""
