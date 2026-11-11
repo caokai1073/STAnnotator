@@ -321,7 +321,7 @@ footer .counted { flex-basis: 100%; margin: 0; }
             </a>
             <a class="btn btn-ghost" href="#source">Install from source</a>
           </div>
-          <p class="hero-meta">Version <span data-version>0.2.49</span> · free for noncommercial use, source on GitHub · runs on your computer or your server · the agent is your own Claude Code</p>
+          <p class="hero-meta">Version <span data-version>0.2.52</span> · free for noncommercial use, source on GitHub · runs on your computer or your server · the agent is your own Claude Code</p>
         </div>
       </div>
       <p class="lede">STAnnotator takes spatial transcriptomics (Xenium, CosMx, MERSCOPE, Visium HD, Stereo-seq and more)
@@ -379,20 +379,21 @@ footer .counted { flex-basis: 100%; margin: 0; }
       <div class="side"><p class="eyebrow">How it works</p></div>
       <div>
         <h2>From the instrument's output to a notebook you can rerun</h2>
-        <p class="intro">Every step happens in one window, on the image. Each change becomes a version you can go back to.</p>
+        <p class="intro">Every step happens in one window, on the image. Each change becomes a version you can go back to.
+          A <b>Steps</b> panel on the map shows where the sample stands and takes you to the next step.</p>
         <ol class="steps">
           <li><span class="n">1</span><h3>Import</h3>
-            <p>Xenium, CosMx (AtoMx flat files), MERSCOPE, Visium HD and Stereo-seq output, h5ad, or Seurat and SpatialExperiment <code>.rds</code> files, read without R. Add the H&amp;E and its registration, or let the agent align it without a registration file; bring regions drawn in QuPath; filter cells and genes. An H&amp;E alone works too, for a pathologist to outline regions before the expression data exist.</p></li>
+            <p>Xenium, CosMx (AtoMx flat files), MERSCOPE, Visium HD and Stereo-seq output, h5ad, or Seurat and SpatialExperiment <code>.rds</code> files, read without R. Add the H&amp;E and its registration, or let the agent align it without a registration file. Before you accept an alignment the whole tissue is checked, and areas where the tissue shifted are corrected in one click. Bring regions drawn in QuPath; filter cells and genes. An H&amp;E alone works too, for a pathologist to outline regions before the expression data exist.</p></li>
           <li><span class="n">2</span><h3>Annotate</h3>
-            <p>From a marker gene list, a labeled single-cell reference, or an annotation you already have. No marker list? Start from a built-in list for 12 organs, pruned to your gene panel.</p></li>
+            <p>From a marker gene list, a labeled single-cell reference, or an annotation you already have. No marker list? Start from a built-in list for 12 organs, pruned to your gene panel. The same data gives the same annotation on every computer.</p></li>
           <li><span class="n">3</span><h3>Refine in words</h3>
-            <p>Draw regions on the tissue and say what you know: priors, corrections, a cluster to split. Each change opens in a review window with the cells it affects; you accept or dismiss it.</p></li>
+            <p>Draw regions on the tissue with QuPath's tools (rectangle, ellipse, polygon, pen, brush) and say what you know: priors, corrections, a cluster to split. Each change opens in a review window with the cells it affects; you accept or dismiss it.</p></li>
           <li><span class="n">4</span><h3>Analyze</h3>
-            <p>PCA, UMAP and Leiden, niches, composition, DE genes, cell–cell communication and trajectories, for one slice or several together.</p></li>
+            <p>PCA, UMAP and Leiden, niches, composition, DE genes (also DESeq2 on pseudobulk), cell–cell communication and trajectories, for one slice or several together.</p></li>
           <li><span class="n">5</span><h3>Review</h3>
-            <p>Review checks one part of the analysis, tests its own advice against the data and the H&amp;E, and shows only what holds up.</p></li>
+            <p>Review checks one part of the analysis against the organ's literature priors, tests its own advice against the data and the H&amp;E, and shows only what holds up.</p></li>
           <li><span class="n">6</span><h3>Export</h3>
-            <p>The cell table, the registration, the regions as GeoJSON, figures as PDF, the agent's annotation report, a Jupyter notebook that reproduces the analysis without the app, or the whole annotation as one <code>.stannot</code> file to share.</p></li>
+            <p>The cell table, the registration, the regions as GeoJSON, figures as PDF, the agent's annotation report, a Jupyter notebook that reproduces the analysis without the app (one slice, or a whole project), or the whole annotation as one <code>.stannot</code> file to share.</p></li>
         </ol>
       </div>
     </div>
@@ -405,6 +406,10 @@ footer .counted { flex-basis: 100%; margin: 0; }
         <h2>Say what a pathologist would say</h2>
         <p class="intro">Knowledge about where cells belong becomes a rule the model can use. The agent reads your sentence
           and proposes the change; the app shows it to you, and nothing happens until you accept it.</p>
+        <p class="intro">The app also knows what the literature says for 12 organs: where each cell type lies, with its
+          exceptions and references. <b>Prior</b> shows them for your tissue, chosen from your annotation; remove the ones
+          that do not hold for it, or add your own in plain words and the agent writes the rule. The agent's Review
+          checks your annotation and regions against them.</p>
         <div class="priors">
           <div>
             <div class="talk" aria-label="Example exchange">
@@ -448,7 +453,8 @@ footer .counted { flex-basis: 100%; margin: 0; }
       <div>
         <h2>Ask it to check the work, not only to do it</h2>
         <p class="intro">The agent works through the app's tools: it reads the numbers and figures they compute, checks
-          them on the H&amp;E, and proposes changes that wait in the app for you. Three examples of many.</p>
+          them on the H&amp;E, and proposes changes that wait in the app for you. In <b>Auto</b> mode they apply as they
+          come, and Undo takes one back. Choose its model next to the Agent button. Three examples of many.</p>
         <div class="exs">
 
           <article class="ex">
@@ -507,6 +513,7 @@ footer .counted { flex-basis: 100%; margin: 0; }
                   <li>Nuclei (hematoxylin or DAPI) against cell centers in 200 µm windows, then 600 µm windows for shifts up to 100 µm</li>
                   <li>For a torn or folded piece: rotation, a shift of up to 300 µm, and mirroring</li>
                   <li>It proposes no move when the fit is no better than where the cells are now</li>
+                  <li>After every alignment, before you accept it: the whole tissue, with <b>Do local registration</b> when areas sit off their nuclei</li>
                 </ul></div>
               <div class="result">
                 <h4>Measured</h4>
@@ -563,6 +570,7 @@ footer .counted { flex-basis: 100%; margin: 0; }
             <li>“These cells in crypt_1 are goblet cells.”</li>
             <li>“Show me the biggest group of cells labeled against my priors.”</li>
             <li>“Name the niches from the H&amp;E.”</li>
+            <li>“Add this prior to all slices.”</li>
             <li>“Is my UMAP driven by one slice?”</li>
             <li>“What do these DE genes mean? What are the caveats?”</li>
             <li>“Import these CosMx files as a new sample.”</li>
@@ -585,13 +593,13 @@ footer .counted { flex-basis: 100%; margin: 0; }
           <div class="tool"><span class="tab">Niche</span><h3>Cellular neighborhoods</h3>
             <p>Niches shared across slices, which the agent names from the H&amp;E and their composition.</p></div>
           <div class="tool"><span class="tab">Compare</span><h3>Composition and DE genes</h3>
-            <p>Compare regions, niches, slices or conditions, with dot plots of the top genes.</p></div>
+            <p>Compare regions, niches, slices or conditions, with dot plots of the top genes; DESeq2 on pseudobulk counts per slice or patient.</p></div>
           <div class="tool"><span class="tab">Signal</span><h3>Cell–cell communication</h3>
             <p>Ligand–receptor interactions as bubble and circle plots. Senders and receivers shown together on the map.</p></div>
           <div class="tool"><span class="tab">Trajectory</span><h3>Spatial axes and pseudotime</h3>
             <p>Order cells from the crypt base to the surface, or by diffusion pseudotime from a root, with tissue neighbors mixed in if you like. The genes that rise, fall or peak along it, and the cells colored by their place on the map.</p></div>
           <div class="tool"><span class="tab">Projects</span><h3>Several slices at once</h3>
-            <p>Healthy and disease, time courses, replicates: one annotation model and one embedding for all slices. Put any samples into a project, or move slices between projects.</p></div>
+            <p>Healthy and disease, time courses, replicates: one annotation model and one embedding for all slices. Niche names and priors go to every slice with one Accept. Put any samples into a project, or move slices between projects.</p></div>
           <div class="tool"><span class="tab">Overview of all samples</span><h3>Every sample side by side</h3>
             <p>Each sample over its image, colored the same way. Tick legend entries to show only those cells on all samples, and save the panel as one PDF.</p></div>
           <div class="tool"><span class="tab">Report</span><h3>An annotation report</h3>
@@ -680,7 +688,7 @@ footer .counted { flex-basis: 100%; margin: 0; }
       <div class="side"><p class="eyebrow">Download</p></div>
       <div>
         <div class="get"><img src="assets/logo.png" width="64" height="64" alt="STAnnotator app icon"><h2>Get STAnnotator</h2></div>
-        <p class="intro">Version <span data-version>0.2.49</span>. Both apps contain everything they need; no Python to install.
+        <p class="intro">Version <span data-version>0.2.52</span>. Both apps contain everything they need; no Python to install.
           All releases and their notes are on the <a href="#" data-releases>releases page</a>. Once installed (0.2.46 and
           later), the app offers each new version itself and installs it with one click. Something not working? The bug
           icon at the top right of the app sends the developers a report.</p>
@@ -730,7 +738,7 @@ uv pip install --python .venv/bin/python -e ".[app]"
               <h3>On a server</h3>
               <p class="sub">Install the same version as the app on your computer (the tag below is the newest release), then click <b>Local → A server over SSH</b> in the app.</p>
             </div>
-            <div class="code"><button class="copy" type="button">Copy</button><pre><code>git clone --branch v<span data-version>0.2.49</span> https://github.com/caokai1073/STAnnotator.git ~/STAnnotator && cd ~/STAnnotator
+            <div class="code"><button class="copy" type="button">Copy</button><pre><code>git clone --branch v<span data-version>0.2.52</span> https://github.com/caokai1073/STAnnotator.git ~/STAnnotator && cd ~/STAnnotator
 uv venv .venv --python 3.12
 uv pip install --python .venv/bin/python -e .
 <span class="c"># the command to enter in the app: ~/STAnnotator/.venv/bin/stagent</span></code></pre></div>
@@ -752,7 +760,7 @@ uv pip install --python .venv/bin/python -e .
 
 <footer>
   <div class="wrap">
-    <span>STAnnotator <span data-version>0.2.49</span> · spatial transcriptomics on the tissue image · macOS and Windows</span>
+    <span>STAnnotator <span data-version>0.2.52</span> · spatial transcriptomics on the tissue image · macOS and Windows</span>
     <nav aria-label="Links">
       <a href="https://github.com/caokai1073/STAnnotator">Source code</a>
       <a href="https://github.com/caokai1073/STAnnotator/blob/main/docs/GUIDE.md">User guide</a>
