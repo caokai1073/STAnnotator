@@ -632,10 +632,12 @@ def api_claude_status(req):
 async def api_claude_model(req: Request):
     """{model}: the model of Claude Code (opened by the app on this computer) and of the chat box: fable, opus,
     sonnet, haiku (each the latest of its family), or "" for Claude Code's own default."""
-    b = await req.json()
     try:
-        return _json(claudelink.set_model((b or {}).get("model")))
-    except ValueError as e:
+        b = await req.json()
+        if not isinstance(b, dict):
+            raise ValueError("send {\"model\": ...}")
+        return _json(claudelink.set_model(b.get("model")))
+    except ValueError as e:   # (a JSON error is a ValueError too)
         return _json({"error": str(e)}, 400)
 
 
@@ -2280,7 +2282,7 @@ def _busy(sample, skip=None):
     """An import, annotation or analysis of the sample is running (skip: the asking job itself)."""
     sess = _sample_sessions(sample)
     pid = projects.project_of(sample)
-    mine = {x.name for x in sess} | {f"embed:{sample}", f"import:{sample}", f"regfix:{sample}", f"project:{pid}"}
+    mine = {x.name for x in sess} | {f"embed:{sample}", f"import:{sample}", f"regfix:{sample}", f"filter:{sample}", f"project:{pid}"}
     return any(k != skip and not j["done"] and (k in mine or k.split(":", 1)[-1] in mine) for k, j in JOBS.items())
 
 
@@ -2898,6 +2900,18 @@ async def api_sample_qc(req: Request):
 
 
 async def api_sample_filter(req: Request):
+    """The filter (_sample_filter); its progress job filter:<sample> ends whatever happens (a job left running would
+    keep the sample busy and refuse Remove all)."""
+    job = f"filter:{req.path_params['sample']}"
+    try:
+        return await _sample_filter(req)
+    finally:
+        j = JOBS.get(job)
+        if j is not None and not j["done"]:
+            j.update(done=True, error=j.get("error") or "the filter failed")
+
+
+async def _sample_filter(req: Request):
     """{params, preview}: preview: what the thresholds keep; else filter the sample (all slices of its project),
     after moving their annotations, chats and PCA / UMAP to trash/<time>_<sample>_filter/ (they number the cells)."""
     from . import qcfilter
@@ -2926,7 +2940,7 @@ async def api_sample_filter(req: Request):
             JOBS[f"filter:{sample}"].update(done=True, error=str(e))
         return _json({"error": str(e)}, 400)
     sess = [d for x in ids for d in _sample_sessions(x)]
-    mine = {d.name for d in sess} | {f"embed:{x}" for x in ids} | {f"project:{projects.project_of(sample)}"}
+    mine = {d.name for d in sess} | {f"embed:{x}" for x in ids} | {f"regfix:{x}" for x in ids} | {f"project:{projects.project_of(sample)}"}
     if any(not j["done"] and (k in mine or k.split(":", 1)[-1] in mine) for k, j in JOBS.items()):
         JOBS[job].update(done=True, error="busy")
         return _json({"error": "an annotation or analysis of this sample is still running; wait until it finishes"}, 409)
@@ -2955,6 +2969,8 @@ async def api_sample_filter(req: Request):
 
 async def api_sample_placement_undo(req: Request):
     sample = req.path_params["sample"]
+    if _busy(sample):  # e.g. a local registration that would apply its correction to the positions undone
+        return _json({"error": "the sample is busy (an import, filter, annotation or correction is running): try again when it ends"}, 409)
     try:
         r = importer.undo_placement(sample)
     except ValueError as e:

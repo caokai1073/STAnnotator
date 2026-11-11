@@ -5672,7 +5672,7 @@ async function proposalApplied(r) {
   $("pcDlg").close();
   if (r.advise === "local_registration" && (PC.thenLocal === r.id || auto)) {  // Do local registration (auto mode: always): now, without a review
     PC.thenLocal = null;
-    await afterPlacement();
+    if (st.sample && st.sample.sample_id === r.sample_id) await afterPlacement().catch(() => {});
     await localRegistration(r.sample_id);
     return;
   }
@@ -5788,6 +5788,7 @@ async function localRegistration(sample) {  // the local correction measured, ch
     let j; try { j = await api(`/api/job/${encodeURIComponent(job)}`); } catch (e) { continue; }
     if (!j.done) { toast(`${who}: ${j.stage} (${Math.round(100 * j.progress)}%)`, 600000); continue; }
     if (j.error) { toast(`${who} failed: ${j.error}`, 10000); return; }
+    if (!j.result) { toast(`${who}: no result (the server was restarted meanwhile?); look at Steps → Check registration`, 8000); loadStepsSoon(); return; }
     if (st.sample && st.sample.sample_id === sample) await afterPlacement();
     loadStepsSoon();
     toast(`${who} done: the cells moved onto their nuclei where the tissue shifted (up to ${j.result.moved_um_max} µm, median ${j.result.moved_um_median} µm)`, 9000);
