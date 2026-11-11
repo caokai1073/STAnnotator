@@ -39,7 +39,7 @@ def write_settings(**kw):
     that moment would otherwise get half a file, take it for none and use the default data folder."""
     f = settings_file()
     f.parent.mkdir(parents=True, exist_ok=True)
-    tmp = f.with_name(f"{f.name}.{os.getpid()}.tmp")
+    tmp = f.with_name(f"{f.name}.{os.getpid()}.{__import__('threading').get_ident()}.{__import__('uuid').uuid4().hex[:8]}.tmp")  # one per call
     with open(tmp, "w", encoding="utf-8") as out:
         json.dump(read_settings() | kw, out, indent=1)
     os.replace(tmp, f)

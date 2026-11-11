@@ -4,11 +4,17 @@ helper processes (ssh, git) without a console window popping up from the windowe
 On Windows os.kill(pid, 0) does not test a process: it ends it (TerminateProcess with exit code 0), so pid_alive()
 asks the system instead.
 """
-import os, subprocess, time
+import os, subprocess, threading, time, uuid
 from contextlib import contextmanager
 
 WINDOWS = os.name == "nt"
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if WINDOWS else 0  # creationflags of helper processes
+
+
+def _unique():
+    """A temporary file's name part of its own: the process, the thread and a random part (two threads, or two calls
+    of one, writing the same file must not share it: one rename would find it gone)."""
+    return f"{os.getpid()}.{threading.get_ident()}.{uuid.uuid4().hex[:8]}"
 
 
 def dump_json(obj, path, **kw):
@@ -18,7 +24,7 @@ def dump_json(obj, path, **kw):
     import json
     from pathlib import Path
     path = Path(path)
-    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp = path.with_name(f".{path.name}.{_unique()}.tmp")
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(obj, f, **kw)
     for i in range(20):
@@ -41,7 +47,7 @@ def replace_atomic(path, write):
     (numpy adds .npy / .npz otherwise)."""
     from pathlib import Path
     path = Path(path)
-    tmp = path.with_name(f".{os.getpid()}.{path.name}")
+    tmp = path.with_name(f".{_unique()}.{path.name}")
     try:
         write(tmp)
         for i in range(20):

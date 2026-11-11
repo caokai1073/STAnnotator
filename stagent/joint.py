@@ -144,9 +144,10 @@ def embed(pid, n_pcs=30, n_neighbors=15, min_dist=0.3, resolution=1.0, harmony=T
     n = len(Z)
     init = Z[:, :2].astype(np.float64)
     init = 10 * (init - init.mean(0)) / max(float(np.abs(init - init.mean(0)).max()), 1e-9)
-    Y = umap.UMAP(n_neighbors=n_neighbors + 1, min_dist=float(min_dist), init=init, n_jobs=-1, low_memory=True,
-                  precomputed_knn=(np.c_[np.arange(n), nbr].astype(np.int64),
-                                   np.c_[np.zeros(n, np.float32), dist].astype(np.float32), None)).fit_transform(Z)
+    with markers.numba_parallel():  # not at the same time as another numba-parallel run (see there)
+        Y = umap.UMAP(n_neighbors=n_neighbors + 1, min_dist=float(min_dist), init=init, n_jobs=-1, low_memory=True,
+                      precomputed_knn=(np.c_[np.arange(n), nbr].astype(np.int64),
+                                       np.c_[np.zeros(n, np.float32), dist].astype(np.float32), None)).fit_transform(Z)
     run = time.strftime("%Y%m%d-%H%M%S")
     meta = {"run_id": run, "n_pcs": int(n_pcs), "n_neighbors": int(n_neighbors), "min_dist": float(min_dist),
             "resolution": float(resolution), "n_clusters": int(lab.max()) + 1, "seconds": round(time.time() - t0, 1),

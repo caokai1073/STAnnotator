@@ -2321,7 +2321,9 @@ def export_notebook(version: Optional[int] = None, scope: str = "slice") -> str:
         pid = projects.project_of(_s().sample_id)
         if not pid:
             raise ValueError("this sample is not part of a project")
-        return _j({"notebook": notebook.build_project(pid)})
+        # the slices of the open annotation's joint run (when it is one): not each slice's latest annotation
+        run = (_s().scheme.get("joint") or {}).get("run")
+        return _j({"notebook": notebook.build_project(pid, notebook.joint_run_sessions(pid, run) if run else None)})
     return _j({"notebook": notebook.build(_s(), version)})
 
 

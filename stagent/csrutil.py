@@ -42,17 +42,24 @@ def rows(X, ok):
     return X if ok.all() else X[ok]
 
 
+LIVE = set()  # the folders of the RowBlocks of this process not closed yet
+
+
 class RowBlocks:
     """Row blocks of a matrix read in chunks (a CSV of counts), kept on disk until the last one: then the matrix is
     read back in one piece, so memory holds it once, not its blocks and itself side by side (a CosMx 6K slide of
     two million cells is some 15 GB). folder: where the two temporary files go (the data folder: room for the
-    matrix); they are removed when the matrix is made or the reading fails."""
+    matrix); they are removed when the matrix is made or the reading fails. A process killed meanwhile leaves its
+    rows_* folder: cachemgr.prune_importing removes it later (owner.pid names the process that wrote it)."""
 
     def __init__(self, n_cols, folder=None):
         import tempfile
         if folder is not None:
             os.makedirs(folder, exist_ok=True)
         self.dir = tempfile.mkdtemp(prefix="rows_", dir=folder)
+        LIVE.add(os.path.abspath(self.dir))
+        with open(os.path.join(self.dir, "owner.pid"), "w", encoding="utf-8") as f:  # (cachemgr.prune_importing)
+            f.write(str(os.getpid()))
         self.n_cols, self.nnz, self.total = n_cols, [], 0
         self.fd = open(os.path.join(self.dir, "data.bin"), "wb")
         self.fi = open(os.path.join(self.dir, "indices.bin"), "wb")
@@ -85,3 +92,4 @@ class RowBlocks:
             except OSError:
                 pass
         shutil.rmtree(self.dir, ignore_errors=True)
+        LIVE.discard(os.path.abspath(self.dir))

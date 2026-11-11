@@ -10,7 +10,7 @@ One JSON file per proposal in proposals/ of the data folder; the agent (MCP serv
 processes. status: open -> applying -> done | failed, or open -> dismissed.
 """
 import json, os, time, uuid
-from . import config
+from . import config, osutil
 
 DIR = config.HOME / "proposals"
 FINAL = ("done", "failed", "dismissed")
@@ -24,7 +24,7 @@ def _path(pid):
 
 def _write(rec):
     DIR.mkdir(parents=True, exist_ok=True)
-    tmp = DIR / f".{rec['id']}.{os.getpid()}.tmp"
+    tmp = DIR / f".{rec['id']}.{osutil._unique()}.tmp"   # one per call: two threads may write at once
     tmp.write_text(json.dumps(rec, default=str, ensure_ascii=False, indent=1), encoding="utf-8")
     os.replace(tmp, _path(rec["id"]))  # readers never see half a file
 

@@ -13,8 +13,9 @@ import numpy as np, pandas as pd
 from . import config, embedding, niches, render
 
 # app modules carried into the notebook, in import order (relative imports resolve inside the notebook)
-# visium and stereoseq before importer, which imports them
-CARRIED = ["osutil", "csrutil", "harmony", "timing", "vocab", "markers", "model", "constraints", "regions", "existing", "visium", "stereoseq", "importer", "scref",
+# visium and stereoseq before importer, which imports them; rds (R files, read without R) for samples and references
+# imported from an .rds / .rda: importer converts it to an h5ad again, in converted/ next to the notebook
+CARRIED = ["osutil", "csrutil", "harmony", "timing", "vocab", "markers", "model", "constraints", "regions", "existing", "visium", "stereoseq", "rds", "importer", "scref",
            "trajectory"]
 CONFIG_STUB = '''"""Stand-in for the app's settings: only what the carried modules use."""
 from pathlib import Path
@@ -417,6 +418,9 @@ Xn = sa.model.lognorm(counts)
 if TRAJ["method"] == "spatial":
     t, raw = sa.trajectory.spatial_axis(xy, one, MASK["start"], MASK.get("end"))
     t[~MASK["within"]] = np.nan
+    r = np.where(MASK["within"], raw, np.nan)
+    if MASK.get("end") is None and np.isfinite(r).any():   # a distance: scaled over the cells ordered, as in the app
+        t = np.clip(r / max(float(np.nanpercentile(r, 99)), 1e-9), 0, 1)
 else:
     rows = np.where(MASK["within"])[0]
     Z = sa.markers.pca(Xn[rows], sa.trajectory.N_PCS)[:, ::-1].copy()
@@ -553,7 +557,8 @@ cell_ids = c.cell_id.to_numpy()'''
         read = f'''
 H5AD = {_py(src.get('h5ad'))}
 SECTION_COLUMN, SECTION = {_py(src.get('section_column'))}, {_py(src.get('section'))}
-parts = [sa.importer.read_h5ad(p, SECTION_COLUMN, SECTION) for p in H5AD]
+X_COLUMN, Y_COLUMN, COUNTS_LAYER = {_py(src.get('x_column'))}, {_py(src.get('y_column'))}, {_py(src.get('counts_layer'))}   # None: found as at import
+parts = [sa.importer.read_h5ad(p, SECTION_COLUMN, SECTION, X_COLUMN, Y_COLUMN, COUNTS_LAYER) for p in H5AD]
 parts = [q for q in parts if len(q["cell_id"])]
 genes = parts[0]["genes"]
 for q in parts[1:]:   # the same gene order in every file
@@ -589,6 +594,9 @@ cell_ids, dnb, counts = cell_ids[ok], dnb[ok], counts[ok].tocsr()
 xy = dnb * sa.stereoseq.DNB_UM   # DNBs -> um'''
     else:
         read = "raise RuntimeError('this sample was imported before its source files were recorded')"
+    read += '''
+ok = np.isfinite(xy).all(1)   # cells without a position (NaN) are left out, as at import
+counts, xy, cell_ids = sp.csr_matrix(counts)[np.where(ok)[0]], xy[ok], np.asarray(cell_ids)[ok]'''
     flt = meta.get("filter")
     if flt:  # the sample's QC filter (qcfilter.py), applied to the cells as imported
         out.append(_md(f"The sample was filtered in the app ({', '.join(f'{k} {x:g}' for k, x in flt['params'].items())}): "
@@ -812,6 +820,29 @@ for i, x in enumerate(ORDER):
     SLICES[x]["niche"] = np.array(NAMES, dtype=object)[niche[OFF[i]:OFF[i + 1]]]'''
 
 
+def joint_run_sessions(pid, run=None):
+    """{sample_id: session id} of one joint annotation of the project (Annotate with All slices together), found as
+    the app's notebook dialog lists them: run (its time, scheme["joint"]["run"]), or the latest run that covers every
+    slice of the project (else the latest run); {} when the project has none."""
+    from . import projects
+    from .session import list_sessions
+    p, ss, runs = projects.load(pid), list_sessions(), {}
+    for sid, smp in (zip(ss.session_id, ss.sample_id) if len(ss) else ()):
+        if smp not in p["samples"]:
+            continue
+        try:
+            with open(config.SESSIONS / sid / "session.json", encoding="utf-8") as fh:
+                j = (json.load(fh).get("scheme") or {}).get("joint") or {}
+        except (OSError, ValueError):
+            continue
+        if j.get("project") == pid and j.get("run"):
+            runs.setdefault(j["run"], {})[smp] = sid
+    if run is not None:
+        return runs.get(run, {})
+    full = [r for r, sess in runs.items() if set(sess) >= set(p["samples"])]
+    return runs[max(full or runs)] if runs else {}
+
+
 def build_project(pid, sessions=None):
     """A notebook of a whole project annotated jointly (Annotate with All slices together): every slice read from its
     own files and placed on its image, the joint marker step and expression model on the pooled cells, then each
@@ -821,8 +852,11 @@ def build_project(pid, sessions=None):
     from . import joint, projects
     from .session import Session
     p = projects.load(pid)
+    # the slices of one joint run only (a slice annotated again on its own, or added to the project after the run,
+    # is left out rather than taken with an annotation of its own); no sessions given: the latest run of all slices
+    sessions = sessions or joint_run_sessions(pid)
     latest = joint.latest_sessions(pid, sessions)
-    S = {x: Session(latest[x]) for x in p["samples"] if x in latest}
+    S = {x: Session(latest[x]) for x in p["samples"] if x in latest and x in sessions}
     runs = {(s.scheme.get("joint") or {}).get("run") for s in S.values()}
     if len(S) < 2 or None in runs or len(runs) != 1:
         raise ValueError("the slices' annotations are not one joint annotation: annotate with 'All slices together' "

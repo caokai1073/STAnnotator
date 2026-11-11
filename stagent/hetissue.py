@@ -174,9 +174,10 @@ def segmented(sample_id):
 def sample_organ(sample_id):
     """The organ given for the sample's tissue earlier (segment_he), or None."""
     try:
-        return json.load(open(config.SAMPLES / sample_id / "meta.json")).get("organ")
+        organ = json.load(open(config.SAMPLES / sample_id / "meta.json", encoding="utf-8")).get("organ")
     except (OSError, ValueError):
         return None
+    return str(organ or "").strip() or None
 
 
 # words that name an organ in a sample's name or description, by built-in marker list
@@ -185,10 +186,11 @@ ORGAN_WORDS = {"colon": ["colon", "colorectal", "rectum", "rectal", "large intes
                                    "duodenal"],
                "stomach": ["stomach", "gastric", "antrum", "fundus"], "liver": ["liver", "hepatic", "hepatocellular"],
                "pancreas": ["pancreas", "pancreatic"], "kidney": ["kidney", "renal", "nephron"],
-               "lung": ["lung", "pulmonary", "alveolar", "bronch"], "heart": ["heart", "cardiac", "myocard", "ventric"],
+               "lung": ["lung", "pulmonary", "alveolar", "bronch"], "heart": ["heart", "cardiac", "myocard"],
                "breast": ["breast", "mammary"], "skin": ["skin", "cutaneous", "epidermis", "dermis"],
-               "brain": ["brain", "cortex", "cortical", "cerebr", "hippocamp"],
-               "lymph_node": ["lymph node", "lymph-node", "tonsil"]}
+               "brain": ["brain", "cerebr", "hippocamp", "neocortex"],   # not "cortex": renal / adrenal cortex
+               "lymph_node": ["lymph node", "lymph-node", "tonsil"]}   # matched at the start of a word ("adrenal"
+# is not "renal"); "ventric" is left out: the brain has ventricles too
 
 
 GENERIC_TYPES = {"T cells", "Endothelial cells", "Stromal", "Proliferating cells", "Endocrine", "Exocrine", "Vascular EC",
@@ -223,13 +225,16 @@ def guess_organ(s):
     meta = s.meta
     text = " ".join(str(x) for x in [s.sample_id, meta.get("name"), meta.get("description"),
                                      *(meta.get("metadata") or {}).values()] if x).lower().replace("_", " ")
-    by_text = [o for o, words in ORGAN_WORDS.items() if any(w in text for w in words)]
+    by_text = [o for o, words in ORGAN_WORDS.items() if any(re.search(r"\b" + re.escape(w), text) for w in words)]
     if by_text:
         evidence.append("the sample's name or description: " + ", ".join(by_text))
     pick, src = ((given, "given") if given and given != "other" else (by_list, "marker list") if by_list else
                  (by_text[0], "name or description") if len(by_text) == 1 else (None, None))
     hit = tissue_priors(pick).get("organ") if pick else None
-    return {"organ": hit, "from": src if hit else None, "evidence": evidence or ["nothing names the organ"]}
+    if hit is None and src == "given":
+        hit = given   # an organ the priors do not cover, chosen for the sample: kept (the user may add its priors)
+    return {"organ": hit, "from": src if hit else None, "covered": bool(hit) and not default_priors(hit).get("error"),
+            "evidence": evidence or ["nothing names the organ"]}
 
 
 def _remember_organ(sample_id, organ):
@@ -239,9 +244,7 @@ def _remember_organ(sample_id, organ):
     if m.get("organ") == organ:
         return
     m["organ"] = organ
-    tmp = f.with_name(f".meta.{os.getpid()}.tmp")
-    dump_json(m, tmp, indent=1)
-    os.replace(tmp, f)
+    dump_json(m, f, indent=1)   # atomic, with a temporary name of its own
 
 
 NEXT_HEADINGS = ("Priors", "References", "Depth rule", "Verification note", "The depth rule", "How to read the depth")
@@ -250,7 +253,10 @@ NEXT_HEADINGS = ("Priors", "References", "Depth rule", "Verification note", "The
 def compartments(organ):
     """The organ's "Compartments to draw" from the priors (how each compartment looks on the H&E), to match the classes
     of segment() to; organ "other": the organ-independent ones. {"organ", "compartments_to_draw"} or {"error", ...}."""
-    q = str(organ).strip()
+    q = str(organ or "").strip()
+    if not q:
+        return {"error": "which organ is this tissue? Name it", "organs": default_priors()["organs"],
+                "hint": "use one of the organs, or organ='other' for a tissue none of them covers"}
     r = tissue_priors("General cross-organ priors" if q.lower() in ("other", "none", "unknown") else q)
     if r.get("error"):
         return r | {"hint": "use one of the organs, or organ='other' for a tissue none of them covers"}
@@ -405,8 +411,18 @@ def to_txt(md):
     return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip() + "\n"
 
 
+WINDOWS_RESERVED = {"con", "prn", "aux", "nul", *(f"com{i}" for i in range(1, 10)), *(f"lpt{i}" for i in range(1, 10))}
+
+
 def _slug(organ):
-    return re.sub(r"[^a-z0-9]+", "_", str(organ).lower()).strip("_") or "organ"
+    """The organ's file name: its letters and digits in any script (a Chinese name keeps its own file), safe on
+    Windows; a name without any: a short hash of it."""
+    import hashlib
+    name = str(organ).strip()
+    slug = re.sub(r"[\W_]+", "_", name.lower()).strip("_")[:80]
+    if not slug:
+        return "organ_" + hashlib.sha1(name.encode("utf-8")).hexdigest()[:8]
+    return slug + "_" if slug in WINDOWS_RESERVED else slug
 
 
 def _user_file(organ):
@@ -419,7 +435,10 @@ def _changes(organ):
         c = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
     except ValueError:
         c = {}
-    return {"organ": c.get("organ") or organ, "removed": list(c.get("removed") or []), "added": list(c.get("added") or [])}
+    if not isinstance(c, dict) or (c.get("organ") and _slug(c["organ"]) != _slug(organ)):
+        c = {}   # another organ's file (an older version gave every non-ASCII name the same one)
+    return {"organ": c.get("organ") or organ, "removed": list(c.get("removed") or []), "added": list(c.get("added") or []),
+            "next_id": int(c.get("next_id") or 0)}
 
 
 def user_organs():
@@ -430,7 +449,9 @@ def user_organs():
             c = json.loads(f.read_text(encoding="utf-8"))
         except ValueError:
             continue
-        if c.get("organ") and default_priors(c["organ"]).get("error") and c.get("added"):
+        if not isinstance(c, dict) or not c.get("organ") or f.stem != _slug(c["organ"]):
+            continue   # not the organ's own file
+        if default_priors(c["organ"]).get("error") and c.get("added"):
             out.append(c["organ"])
     return out
 
@@ -458,6 +479,9 @@ def _prior_blocks(md):
 
 def organ_priors(organ):
     """What the Prior window shows: the organ's priors (id, statement, rules), those the user removed and added."""
+    organ = str(organ or "").strip()
+    if not organ:
+        raise ValueError("name the organ")
     d = default_priors(organ)
     name = d.get("organ") or next((o for o in user_organs() if _slug(o) == _slug(organ)), str(organ).strip())
     ch = _changes(name)
@@ -471,6 +495,7 @@ def organ_priors(organ):
 def tissue_priors(organ=None):
     """The organ's priors as plain text: the app's document (with its group's shared notes) less the priors the user
     removed, plus those the user added (Prior in the app; "edited": true); without organ, the list of organs."""
+    organ = str(organ or "").strip()
     if not organ:
         r = default_priors()
         return {"organs": r["organs"] + user_organs(), "how_to_read": to_txt(r["how_to_read"]),
@@ -507,10 +532,16 @@ def set_priors(organ, removed=None, added=None):
     name = d.get("organ") or name
     ids = {b["id"] for b in _prior_blocks(d["text"])} if not d.get("error") else set()
     removed = sorted({str(x) for x in (removed or []) if str(x) in ids})
-    old = {a["id"]: a for a in _changes(name)["added"]}
-    n = max([int(i[2:]) for i in old if re.fullmatch(r"U-\d+", i)] + [0])
+    ch = _changes(name)
+    old = {a["id"]: a for a in ch["added"]}
+    # the ids U-n are never given twice (a deleted prior's id may still be in a rule request to the agent)
+    n = max([int(i[2:]) for i in old if re.fullmatch(r"U-\d+", i)] + [ch["next_id"] - 1, 0])
     clean = []
     for a in added or []:
+        if isinstance(a, str):
+            a = {"text": a}
+        elif not isinstance(a, dict):
+            continue
         text = " ".join(str(a.get("text") or "").split())
         if not text:
             continue
@@ -522,17 +553,17 @@ def set_priors(organ, removed=None, added=None):
         else:
             n += 1
             clean.append({"id": f"U-{n}", "text": text})
-    _write_changes(name, removed, clean)
+    _write_changes(name, removed, clean, n + 1)
     return organ_priors(name)
 
 
-def _write_changes(name, removed, added):
+def _write_changes(name, removed, added, next_id):
     f = _user_file(name)
     if not removed and not added:
         f.unlink(missing_ok=True)
     else:
         f.parent.mkdir(parents=True, exist_ok=True)
-        dump_json({"organ": name, "removed": removed, "added": added}, f, indent=1)
+        dump_json({"organ": name, "removed": removed, "added": added, "next_id": next_id}, f, indent=1)
 
 
 RULE_KINDS, RULE_MODES, RULE_STRENGTHS = ("region", "depth", "neighborhood"), ("only", "exclude", "enrich"), ("strong", "moderate", "weak")
@@ -570,8 +601,28 @@ def set_prior_rule(organ, prior_id, types=None, mode=None, strength="moderate", 
                 raise ValueError("a neighborhood rule needs neighbor_types and min_frac")
             parts += [f"neighbor_types=[{', '.join(neighbor_types)}]", f"min_frac={float(min_frac):g}"]
         a["rule"] = ", ".join(parts + [f"mode={mode}", f"strength={strength}"])
-    _write_changes(v["organ"], ch["removed"], ch["added"])
+    _write_changes(v["organ"], ch["removed"], ch["added"], ch["next_id"])
     return next(x for x in ch["added"] if x["id"] == prior_id)
+
+
+# other names of the priors' sections, besides their own (kept short: a name not known is an organ not covered)
+PRIOR_ALIASES = {"Colon": ["large intestine", "large bowel", "colorectal", "colorectum", "rectum"],
+                 "Small intestine": ["small bowel", "ileum", "jejunum", "duodenum"], "Lung": ["lungs"],
+                 "Lymph node and tonsil": ["lymph nodes", "tonsils"]}
+
+
+def _key(name):
+    """A name compared without case, spaces, "_", "-" or "`" (the built-in lists' names: small_intestine, lymph_node)."""
+    return re.sub(r"[\s_`-]+", "", str(name).lower())
+
+
+def _section_keys(k):
+    """The names that mean section k: its title, with and without the part in brackets, each organ of an "X and Y"
+    title ("Brain (cortex)": "brain"; "Lymph node and tonsil": "lymph node", "tonsil"), its aliases."""
+    base = re.sub(r"\s*\(.*\)", "", k).strip()
+    names = [k, base, k.replace("(", " ").replace(")", " "), *re.split(r",\s*|\s+and\s+", base),
+             *PRIOR_ALIASES.get(k, [])]
+    return {_key(n) for n in names if n.strip()}
 
 
 def default_priors(organ=None):
@@ -580,12 +631,12 @@ def default_priors(organ=None):
     parts = re.split(r"(?m)^## ", text)
     head, secs = parts[0], {p.split("\n", 1)[0].strip(): "## " + p for p in parts[1:]}
     organs = [k for k in secs if not k.lower().startswith(("how to", "using", "contents")) and "shared notes" not in k]
+    organ = str(organ or "").strip()
     if not organ:
         return {"organs": organs, "how_to_read": secs.get("How to read a rule", ""),
                 "care": secs.get("Using priors with care", "")}
-    q = organ.lower().replace("_", " ").strip()   # also the built-in lists' names (small_intestine, lymph_node)
-    hit = next((k for k in organs if k.lower() == q), None) or next((k for k in organs if q in k.lower()), None) \
-        or next((k for k in organs if any(w in k.lower() for w in q.split())), None)
+    q = _key(organ)   # a whole name only: "Large intestine" is not "Small intestine", "Ear" not "Heart"
+    hit = next((k for k in organs if q in _section_keys(k)), None)
     if hit is None:
         return {"error": f"no priors for {organ!r}", "organs": organs}
     shared = [k for k in secs if "shared notes" in k and any(w.lower() in k.lower() for w in re.split(r"[ ,()]+", hit) if len(w) > 3)]

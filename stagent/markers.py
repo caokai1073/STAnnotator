@@ -345,6 +345,22 @@ def knn(Z, k, mode="auto"):
     return dist[:, 1:], nbr[:, 1:]
 
 
+_NUMBA_LOCK = __import__("threading").Lock()
+
+
+@__import__("contextlib").contextmanager
+def numba_parallel():
+    """One numba-parallel run at a time in this process (pynndescent, UMAP, the startup compile): with numba's
+    "workqueue" threading layer (the one a Mac or Windows build may get) two threads running parallel code at once abort
+    the whole app. Waits in short steps, so a Stop still reaches a run that is waiting."""
+    while not _NUMBA_LOCK.acquire(timeout=0.25):
+        pass
+    try:
+        yield
+    finally:
+        _NUMBA_LOCK.release()
+
+
 def prewarm_approx():
     """Compile pynndescent's numba code now (a small search in this process: about 10 s here, longer the first time
     on a Mac), so that the first approximate annotation of this app session does not wait for it; from then on the
@@ -376,15 +392,16 @@ def _nndescent(Z, k):
     cores; the thread count of the calling thread is put back afterwards (UMAP and the rest keep theirs)."""
     import numba
     from pynndescent import NNDescent
-    before = numba.get_num_threads()
-    try:
+    with numba_parallel():
+        before = numba.get_num_threads()
         try:
-            return NNDescent(Z, n_neighbors=k, random_state=0, n_jobs=knn_threads()).neighbor_graph
-        except ValueError as e:  # a thread setting numba refuses: the default, rather than no result
-            print(f"approximate neighbors: {e}; using numba's default threads")
-            return NNDescent(Z, n_neighbors=k, random_state=0).neighbor_graph
-    finally:
-        numba.set_num_threads(before)
+            try:
+                return NNDescent(Z, n_neighbors=k, random_state=0, n_jobs=knn_threads()).neighbor_graph
+            except ValueError as e:  # a thread setting numba refuses: the default, rather than no result
+                print(f"approximate neighbors: {e}; using numba's default threads")
+                return NNDescent(Z, n_neighbors=k, random_state=0).neighbor_graph
+        finally:
+            numba.set_num_threads(before)
 
 
 def knn_graph(dist, nbr):

@@ -329,7 +329,7 @@ class Session:
         """Written whole, then moved into place: a reader (the viewer asks for the latest version while one is saved)
         never sees half a file. The temporary name does not match v*.json."""
         path = self._vpath(state["version"])
-        tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+        tmp = path.with_name(f".{path.name}.{osutil._unique()}.tmp")  # one per call: two threads may save at once
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(state, f, indent=1)
         os.replace(tmp, path)

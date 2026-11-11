@@ -1692,6 +1692,10 @@ function panelsIdle() {  // no annotation open on this sample: the panels say so
 function closeSession() {
   st.sid = null; st.placeholder = false; st.version = null; st.filters = {}; st.regions = null; st.advice = null; st.advicePollSig = undefined; st.adviceSeen = null;
   if (st.drawing) stopDraw(); if (st.editing) stopEdit(); closePlaus();
+  if (drawTool(st.tool)) {  // Polygon or Pen would stay chosen but do nothing in the next annotation: back to Move
+    st.tool = "move"; document.querySelectorAll("#rgtools [data-tool]").forEach((b) => b.classList.toggle("on", b.dataset.tool === "move"));
+    $("toolSub").hidden = true; toolCursor();
+  }
   st.shape = null; st.rsel = new Set(); syncShapeBar();  // an outline being drawn stays as its sample's draft
   st.paint = null;  // a proposal's cells shown on the map are rows of this annotation: not of the next one
   if (typeof PC !== "undefined" && PC.peek) { PC.peek = false; $("pcBack").hidden = true; }
@@ -1923,11 +1927,15 @@ async function pollJob(job, prog, fill, stage, btn, every = 700, withTime = fals
     try { if (!(await post(`/api/job/${encodeURIComponent(job)}/stop`, {})).stopped) STOPPED.delete(job); }  // it had just ended
     catch (e) { STOPPED.delete(job); toast(e.message, 5000); }
   };
+  const imp = job.startsWith("import:");  // a stopped import is over only once the server says so (a replace puts the old sample back first)
   try {
     for (;;) {
-      if (STOPPED.has(job)) throw new StoppedError();
+      if (STOPPED.has(job) && !imp) throw new StoppedError();
       const j = await api(`/api/job/${encodeURIComponent(job)}`);
-      if (STOPPED.has(job) || j.stopped) throw new StoppedError();
+      if (STOPPED.has(job) || j.stopped) {
+        if (imp && !j.done) { if (stage) stage.textContent = "stopping…"; await new Promise((r) => setTimeout(r, every)); continue; }
+        throw new StoppedError();
+      }
       if (fill) fill.style.width = `${Math.round(100 * j.progress)}%`;
       if (stage) stage.textContent = j.error ? `error: ${j.error}` : j.stage + (withTime ? jobTime(j) : "");
       if (j.done) { if (j.error) throw new Error(j.error); return j; }
@@ -3083,6 +3091,7 @@ $("nameSave").onclick = async () => {
 };
 $("regname").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("nameSave").click(); } });
 $("nameCancel").onclick = () => { st.namingShape = false; $("nameDlg").close(); };  // keep the points so the user can continue or Esc
+$("nameDlg").addEventListener("close", () => { if (!$("nameDlg").open) st.namingShape = false; });  // also closed with Esc
 $("draw").onclick = (e) => (st.drawing ? cancelDraw() : startDraw(e.shiftKey));
 $("drawUndo").onclick = (e) => { undoDraw(); e.currentTarget.blur(); };  // (blur: Space must not press it again)
 $("drawPause").onclick = () => { pauseDraw(); if (drawTool(st.tool)) setTool("move"); };
@@ -3940,7 +3949,7 @@ $("priorBtn").onclick = async () => {
   if (!st.sample) return;
   $("prInfo").textContent = sampleName(st.sample);
   try { await prLoad(""); } catch (e) { toast(e.message, 6000); return; }
-  $("prDlg").showModal();
+  $("prDlg").showModal(); prShow(PR.view);  // again with the dialog open: a rule still being written is then looked for
 };
 $("prOrgan").onchange = async (e) => {
   let organ = e.target.value;
@@ -4010,7 +4019,8 @@ function addMsg(role, text) {
 }
 async function loadChat() {
   if (!st.sid) return;  // the annotation was closed meanwhile (e.g. a reset)
-  const log = await api(`/api/s/${st.sid}/chat_log`);
+  const sid = st.sid, log = await api(`/api/s/${sid}/chat_log`);
+  if (sid !== st.sid) return;  // another annotation opened meanwhile
   $("msgs").querySelectorAll(".m").forEach((m) => m.remove());
   log.forEach((m) => { if (m.text) addMsg(m.role, m.text); });
 }
@@ -6314,13 +6324,17 @@ async function resumeRunning() {
           if (j.project) { const p = projectOf(s.sample_id); if (p) p.samples.forEach((id) => forgetOpened(id)); st.sliceSwitch = true; }
           else if (j.session) st.openedThisVisit[s.sample_id] = j.session;
           await loadSamples(st.sample ? st.sample.sample_id : s.sample_id);
-        } else if (j.kind === "embed") { setSelection(null); await loadEmbedding(true); }
+        } else if (!mine() || !st.sid || st.placeholder) { /* the sample open now has nothing to show it in */ }
+        else if (j.kind === "embed") { setSelection(null); await loadEmbedding(true); }
         else await loadNiches(true);
         toast(`${what} done`, 4000);
         setTimeout(() => prog.classList.remove("show"), 800);
       } catch (e) {
         if (isStop(e)) stopped(prog, what); else { stage.textContent = `${what} failed: ${e.message}`; toast(stage.textContent, 8000); }
-      } finally { clearInterval(keeper); st.following.delete(j.job); btn.disabled = false; }
+      } finally {  // the button as the sample open now allows
+        clearInterval(keeper); st.following.delete(j.job);
+        btn.disabled = j.kind === "annotate" ? !!st.imageOnly : !st.sid || st.placeholder || st.imageOnly;
+      }
     })();
   }
 }
@@ -7673,16 +7687,16 @@ $("xpReg").onclick = () => exportAs("registration");
 $("xpPos").onclick = () => exportAs("positions");
 $("xpGeo").onclick = () => exportAs("regions");
 document.addEventListener("keydown", (e) => {
-  if ($("mkDlg").open || $("alDlg").open || $("rpDlg").open || $("bugDlg").open || $("updDlg").open || $("shareDlg").open || $("hpDlg").open || $("xpDlg").open || $("glDlg").open || $("anDlg").open || $("rvDlg").open || $("nameDlg").open || $("rnDlg").open || $("prDlg").open || $("imDlg").open || $("clDlg").open || $("refDlg").open || $("exDlg").open || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
+  if (document.querySelector("dialog[open]") || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;  // a dialog open: not the map's keys
   if (e.key === "h") $("hide").click();
   if (e.key === "e") $("hideHE").click();
   if (e.key === "[") stepSlice(-1);
   if (e.key === "]") stepSlice(1);
   if (e.key === "t") setHeader(!document.querySelector("header").classList.contains("collapsed"));
-  if (st.editing && e.key === "Escape") stopEdit();
+  if (st.editing && e.key === "Escape") { stopEdit(); return; }  // (not also the shape below)
   if (st.editing && e.key === "Enter") { e.preventDefault(); saveEdit(); }
   if (st.editing && e.key === "Backspace") { e.preventDefault(); editUndo(); }
-  if (st.drawing && e.key === "Escape") cancelDraw();
+  if (st.drawing && e.key === "Escape") { cancelDraw(); return; }
   if (st.drawing && e.key === "Enter") { e.preventDefault(); finishDraw(); }
   if (st.drawing && e.key === "Backspace") { e.preventDefault(); $("drawUndo").click(); }
   if (st.sid && !e.ctrlKey && !e.metaKey && !e.altKey) {  // the drawing tools, with QuPath's keys

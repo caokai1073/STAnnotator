@@ -477,7 +477,9 @@ def import_sample(name, h5ad, he=None, registration=None, section_column=None, s
     return _write_bundle(name, ids, xy, X, genes, image, A, regions, description,
                          {"kind": "h5ad", "h5ad": [str(Path(p).resolve()) for p in h5ad], "section_column": section_column,
                           "section": section, "registration": str(Path(registration).resolve()) if registration else None,
-                          "region_column": region_column, "candidates": [str(c) for c in candidates]}, progress, kind,
+                          "region_column": region_column, "candidates": [str(c) for c in candidates],
+                          # how the files were read (the notebook reads them the same way)
+                          "x_column": x_column, "y_column": y_column, "counts_layer": counts_layer}, progress, kind,
                          registration=R, image_pending=he if he and R is None else None, pending_kind=he_kind)
 
 

@@ -205,11 +205,41 @@ def prune(limit=None, everything=False):
     return n, freed
 
 
+def prune_importing(min_age_s=6 * 3600, idle_s=48 * 3600):
+    """Delete the chunk folders (importing/rows_*, csrutil.RowBlocks) an import killed meanwhile left (the app quit
+    or crashed, the computer shut down): never one an import of this process still uses, nor one of another process
+    still running (owner.pid) unless nothing in it changed for idle_s (its process number used again), nor one
+    without owner.pid changed in the last min_age_s. Returns the number of folders deleted."""
+    import shutil
+    from . import csrutil
+    from .osutil import pid_alive
+    root = config.HOME / "importing"
+    n = 0
+    for d in sorted(root.glob("rows_*")) if root.exists() else []:
+        if not d.is_dir() or os.path.abspath(d) in csrutil.LIVE:
+            continue
+        try:
+            newest = max([d.stat().st_mtime] + [f.stat().st_mtime for f in d.iterdir()])
+            owner = (d / "owner.pid").read_text(encoding="utf-8").strip() if (d / "owner.pid").exists() else ""
+        except OSError:
+            continue
+        idle = time.time() - newest
+        if owner.isdigit():  # this process's own and no longer in use, or its process ended
+            if int(owner) != os.getpid() and pid_alive(int(owner)) and idle < idle_s:
+                continue
+        elif idle < min_age_s:  # (being made just now)
+            continue
+        shutil.rmtree(d, ignore_errors=True)
+        n += not d.exists()
+    return n
+
+
 def start(every_s=600):
-    """Prune the caches and the trash now and every every_s seconds in the background (the app's lifetime)."""
+    """Prune the caches, the trash and the chunk folders of killed imports now and every every_s seconds in the
+    background (the app's lifetime)."""
     def loop():
         while True:
-            for fn in (prune, prune_trash):
+            for fn in (prune, prune_trash, prune_importing):
                 try:
                     fn()
                 except Exception as e:

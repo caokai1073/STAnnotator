@@ -38,18 +38,29 @@ def _json(obj, status=200):
 
 
 class LRU(OrderedDict):
+    """A cache of the last n results. Tile requests (threadpool), imports and the agent's replacements (their own
+    threads) use one at once: changes and sweeps hold its lock (an OrderedDict changed while another thread loops
+    over it raises)."""
     def __init__(self, n):
-        super().__init__(); self.n = n
+        super().__init__(); self.n = n; self.lock = threading.Lock()
 
     def get_or(self, key, fn):
-        if key in self:
-            self.move_to_end(key)
-            return self[key]
+        with self.lock:
+            if key in self:
+                self.move_to_end(key)
+                return self[key]
         v = fn()
-        self[key] = v
-        if len(self) > self.n:
-            self.popitem(last=False)
+        with self.lock:
+            self[key] = v
+            if len(self) > self.n:
+                self.popitem(last=False)
         return v
+
+    def drop(self, pred):
+        """Remove the entries whose key pred(key) is true."""
+        with self.lock:
+            for k in [k for k in self if pred(k)]:
+                del self[k]
 
 
 _tiles, _overlays, _colors = LRU(3000), LRU(3000), LRU(40)
@@ -106,8 +117,7 @@ MAX_VIEWS = 4  # samples whose geometry (cell positions, search tree) stays in m
 def _drop_view(sample_id):
     _views.pop(sample_id, None)
     for cache in (_tiles, _overlays):
-        for k in [k for k in cache if k[0] == sample_id or (len(k) > 8 and k[8] == sample_id)]:
-            cache.pop(k)
+        cache.drop(lambda k: k[0] == sample_id or (len(k) > 8 and k[8] == sample_id))
 
 
 def view(sample_id) -> SampleView:
@@ -1024,13 +1034,19 @@ async def api_import(req: Request):
             if _busy(name, skip=job):
                 JOBS[job].update(error="an annotation or analysis of this sample is still running", done=True)
                 return
-            replaced = _remove_sample(name, keep_project=True, why="replaced")
-            say(f"the old {name} went to the trash ({len(replaced['sessions'])} annotations with it)")
+            try:
+                with jobs.critical():  # (a stop after it, not between the removal and its put_back)
+                    replaced = _remove_sample(name, keep_project=True, why="replaced")
 
-            def put_back(info=replaced):  # (stopped: after the import's own undo)
-                samplestore.restore(info)
-                _forget_sample(name)
-            jobs.on_stop(put_back)
+                    def put_back(info=replaced):  # (stopped: after the import's own undo)
+                        samplestore.restore(info)
+                        _forget_sample(name)
+                    jobs.on_stop(put_back)
+            except Exception as e:  # (samplestore.remove put back what it had moved)
+                JOBS[job].update(error=f"the old {name} could not be moved to the trash, nothing was imported: "
+                                       f"{type(e).__name__}: {e}", done=True)
+                return
+            say(f"the old {name} went to the trash ({len(replaced['sessions'])} annotations with it)")
         had = {d.name for d in config.SAMPLES.iterdir()} if config.SAMPLES.exists() else set()
         had_project = (projects.PROJECTS / f"{name}.json").exists()
 
@@ -1417,8 +1433,7 @@ async def api_trajectory_run(req: Request):
 
 def _colors_forget(s):
     """Drop the cached colors of the trajectory mode of an annotation (a new run)."""
-    for k in [k for k in _colors if k[0] == s.id and str(k[2]).startswith("traj")]:
-        _colors.pop(k, None)
+    _colors.drop(lambda k: k[0] == s.id and str(k[2]).startswith("traj"))
 
 
 ANALYSIS_ASK = {
@@ -1614,7 +1629,17 @@ async def api_job_stop(req: Request):
     """Stop a run (the app's Stop button): what it made is taken back. {"stopped": false} when it had already ended."""
     job = req.path_params["sid"]
     ok = jobs.stop(job)
-    if ok and job in JOBS:
+    r = jobs.RUNS.get(job)
+    if ok and job in JOBS and job.startswith("import:") and r is not None and r.thread is not None:
+        # an import is done once its run has taken back what it made (a replaced sample put back): until then the
+        # sample stays busy, so a Remove or Reset cannot start on a half-restored sample
+        JOBS[job].update(stage="stopping: taking back what it imported", stopped=True)
+
+        def finish():
+            r.thread.join()
+            JOBS[job].update(done=True, error="stopped", stopped=True)
+        threading.Thread(target=finish, daemon=True).start()
+    elif ok and job in JOBS:
         JOBS[job].update(done=True, error="stopped", stopped=True)
     return _json({"stopped": ok})
 
@@ -2143,8 +2168,7 @@ async def api_region_color(req: Request):
     except ValueError as e:
         return _json({"error": str(e)}, 400)
     for cache in (_overlays, _colors):
-        for k in [k for k in cache if k[0] == s.id and k[2] == "region"]:
-            cache.pop(k)
+        cache.drop(lambda k: k[0] == s.id and k[2] == "region")
     return _json({"ok": True})
 
 
@@ -2193,17 +2217,16 @@ def _forget_sessions(names):
         JOBS.pop(n, None)
         if mcp_server._active.get("session") is not None and mcp_server._active["session"].id == n:
             mcp_server._active.pop("session")
-        for cache in (_overlays, _colors):
-            for k in [k for k in cache if k[0] == n]:
-                cache.pop(k)
+        for cache in (_overlays, _colors):  # (under their locks: tile requests add to them meanwhile)
+            cache.drop(lambda k: k[0] == n)
 
 
 def _forget_sample(sample):
-    """Drop what the viewer keeps in memory of a sample (removed, or replaced by a new import)."""
+    """Drop what the viewer keeps in memory of a sample (removed, or replaced by a new import). Runs in worker
+    threads (an import, the agent's replacement) while tile requests add to the caches (LRU.drop holds their lock)."""
     _views.pop(sample, None)
     for cache in (_tiles, _overlays):
-        for k in [k for k in cache if k[0] == sample or (len(k) > 8 and k[8] == sample)]:
-            cache.pop(k)
+        cache.drop(lambda k: k[0] == sample or (len(k) > 8 and k[8] == sample))
     _cell_tables.clear()
 
 
@@ -2319,24 +2342,30 @@ async def api_sample_remove(req: Request):
         b = await req.json()
     except ValueError:
         b = {}
+    b = b if isinstance(b, dict) else {}  # (a body of null or a list: the defaults)
     if not (config.SAMPLES / sample / "meta.json").exists():
         return _json({"error": f"no sample {sample!r}"}, 404)
     if _busy(sample):
         return _json({"error": "an import, annotation or analysis of this sample is still running; wait until it finishes"}, 409)
-    info = _remove_sample(sample, keep_project=bool(b.get("keep_project")), why="replaced" if b.get("keep_project") else "removed")
+    try:
+        info = _remove_sample(sample, keep_project=bool(b.get("keep_project")),
+                              why="replaced" if b.get("keep_project") else "removed")
+    except OSError as e:  # (samplestore.remove put back what it had moved)
+        return _json({"error": f"the sample could not be moved to the trash, nothing was removed: {e}"}, 500)
     return _json({"removed": sample, "deleted_sessions": len(info["sessions"]), "deleted_conversations": info["n_chats"],
                   "project": info["project"], "trash": info["trash"], "info": info})
 
 
 async def api_sample_restore(req: Request):
-    """Put back a sample removed for a replacement whose import failed: {info} as remove gave it."""
+    """Put back a sample removed for a replacement whose import failed: {info} as remove gave it. Only info["trash"]
+    is used (a folder of the data folder's trash): what goes where is read from its removed.json."""
     from . import samplestore
-    b = await req.json()
     try:
-        r = samplestore.restore(b["info"])
-    except (OSError, ValueError, KeyError) as e:
+        b = await req.json()
+        r = samplestore.restore({"trash": str(b["info"]["trash"])})
+    except (OSError, ValueError, KeyError, TypeError) as e:
         return _json({"error": str(e)}, 400)
-    _forget_sample(b["info"]["sample"])
+    _forget_sample(r["restored"])
     return _json(r)
 
 
@@ -2383,6 +2412,17 @@ async def api_session_rename(req: Request):
         return _json({"error": str(e)}, 400)
 
 
+def _open_session(sid):
+    """The annotation sid, or None when there is none of that id (deleted meanwhile, or not a plain id)."""
+    sid = str(sid or "")
+    if not sid or "/" in sid or "\\" in sid or ".." in sid:
+        return None
+    try:
+        return review_app._session(sid)
+    except (OSError, KeyError, ValueError):
+        return None
+
+
 def _priors_view(sample, sid=None, organ=None):
     """The priors the agent uses for a sample: the organ (asked, chosen for the sample, or guessed from the
     annotation), its priors (id, short statement, rules), those the user removed and added, the organs to choose."""
@@ -2390,9 +2430,9 @@ def _priors_view(sample, sid=None, organ=None):
     from . import hetissue
     if not (config.SAMPLES / sample / "meta.json").exists():
         raise ValueError(f"no sample {sample!r}")
-    s = review_app._session(sid) if sid else None
-    if s is None:
-        meta = json.load(open(config.SAMPLES / sample / "meta.json"))
+    s = _open_session(sid)
+    if s is None:  # (no annotation open, or it was deleted meanwhile, e.g. in another window)
+        meta = json.load(open(config.SAMPLES / sample / "meta.json", encoding="utf-8"))
         s = SimpleNamespace(sample_id=sample, meta=meta, types=[], node_names=[])
     g = hetissue.guess_organ(s)
     organ = (organ or "").strip() or g["organ"]
@@ -2426,8 +2466,17 @@ async def api_sample_priors_save(req: Request):
     New added priors without a rule go to the agent (with the open annotation), which writes them with set_prior_rule;
     the agent's reviews use the changed priors from then on."""
     from . import hetissue
-    sample, b = req.path_params["sample"], await req.json()
+    sample = req.path_params["sample"]
     try:
+        b = await req.json()
+        if not isinstance(b, dict):
+            raise ValueError("send {organ, removed, added}")
+        for k in ("removed", "added"):
+            if b.get(k) is not None and not isinstance(b[k], list):
+                raise ValueError(f"{k} is a list")
+        if any(not isinstance(a, (dict, str)) for a in b.get("added") or []):
+            raise ValueError('added is a list of priors: {"text"} (or as returned, with their "id")')
+        b["added"] = [{"text": a} if isinstance(a, str) else a for a in b.get("added") or []]
         if not (config.SAMPLES / sample / "meta.json").exists():
             raise ValueError(f"no sample {sample!r}")
         organ = str(b.get("organ") or "").strip()
@@ -2437,11 +2486,11 @@ async def api_sample_priors_save(req: Request):
         r = hetissue.set_priors(organ, [] if b.get("reset") else b.get("removed"), [] if b.get("reset") else b.get("added"))
         hetissue._remember_organ(sample, r["organ"])
         out = _priors_view(sample, b.get("session") or None, r["organ"])
-    except ValueError as e:
+    except (ValueError, TypeError) as e:  # (TypeError: a malformed body, e.g. an id that is a list)
         return _json({"error": str(e)}, 400)
     new = [a for a in r["added"] if a["id"] not in before and not a.get("rule") and not a.get("no_rule")]
-    if new and b.get("session"):
-        s = review_app._session(b["session"])
+    s = _open_session(b.get("session")) if new else None
+    if s is not None:
         items = "; ".join(f"{a['id']}: \"{a['text']}\"" for a in new)
         # at the top level: on a server reached over SSH the page hands {"claude_code": {"remote"...}} to the app,
         # which opens Claude Code on the user's computer
