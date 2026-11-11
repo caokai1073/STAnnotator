@@ -5870,12 +5870,20 @@ async function checkRegistration() {  // the cells against the nuclei over the w
   const title = `Registration of ${name}`;
   if (r.verdict === "fine")
     return regDialog(sample, title, r.figure, `The cells sit on their nuclei everywhere (median offset ${r.median_offset_um} µm).`, [close]);
-  if (r.median_offset_um != null && r.median_offset_um <= 3 && r.after_median_um != null && r.median_offset_um - r.after_median_um < 1)  // a correction would gain under 1 µm
+  // too little to correct: few windows off and none far (the alignment check's rule), or the correction would not bring
+  // any window back onto its nuclei. Not the whole-tissue median: a shift in one place hardly moves it. (A server
+  // without windows_off: the median, as before.)
+  const helps = r.windows_off != null && r.after_windows_off != null ? r.windows_off - r.after_windows_off : null;
+  const little = helps == null ? r.after_median_um != null && r.median_offset_um - r.after_median_um < 1
+    : helps <= 0 || (r.share_off < (r.local_share || 0.05) && (r.max_offset_um || 0) < 10);
+  if (r.median_offset_um != null && r.median_offset_um <= 3 && little)
     return regDialog(sample, title, r.figure, `The cells sit on their nuclei (median offset ${r.median_offset_um} µm); ${r.n_areas} small area(s) are a little off, too little to correct.`, [close]);
   if (r.after_median_um != null && r.after_median_um > 10)  // the correction would not bring them onto their nuclei
     return regDialog(sample, title, r.figure, `The cells sit far off their nuclei (median ${r.median_offset_um} µm) and a local correction would not fix it: align the image again (Align with Agent, or a registration file).`, [close]);
   const what = r.verdict === "global" ? "The whole tissue is slightly off its nuclei" : `${r.n_areas} area(s) sit off their nuclei`;
-  regDialog(sample, title, r.figure, `${what} (up to ${r.max_offset_um} µm). The local registration moves the cells onto their nuclei there (up to ${r.moves_um_max} µm; the median offset goes from ${r.median_offset_um} to about ${r.after_median_um} µm); regions keep their cells. You see the result before you accept it.`,
+  const gain = helps != null && r.trusted_windows ? `windows off their nuclei: ${r.windows_off} of ${r.trusted_windows}, about ${r.after_windows_off} after`
+    : `the median offset goes from ${r.median_offset_um} to about ${r.after_median_um} µm`;
+  regDialog(sample, title, r.figure, `${what} (up to ${r.max_offset_um} µm). The local registration moves the cells onto their nuclei there (up to ${r.moves_um_max} µm; ${gain}); regions keep their cells. You see the result before you accept it.`,
     [["Close", false, async () => $("rgDlg").close()], ["Do local registration", true, async () => { $("rgDlg").close(); await localRegistration(sample); }]]);
 }
 async function localRegistration(sample) {  // the local correction measured, checked and applied at once (no review)

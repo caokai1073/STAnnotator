@@ -971,6 +971,12 @@ async def api_registration_check(req: Request):
                 "verdict": r["verdict"], "n_areas": r.get("n_areas", 0), "median_offset_um": r.get("median_offset_um"),
                 "max_offset_um": max([a.get("max_offset_um") or 0 for a in areas] + [r["affine_part"]["max_offset_um"]]),
                 "moves_um_max": r["correction"]["moves_cells_um_max"],
+                # how much of the tissue is off: the page offers the local registration on the same rule as the
+                # alignment's check (align.LOCAL_SHARE of the windows, or one far off), not on the whole-tissue median,
+                # which a shift in one place hardly moves
+                "windows_off": r.get("windows_off"), "trusted_windows": r.get("trusted_windows"),
+                "share_off": round(r.get("windows_off", 0) / max(r.get("trusted_windows") or 0, 1), 3),
+                "local_share": align.LOCAL_SHARE,
                 # what the correction leaves, measured again with the cells moved by it
                 "after_median_um": r["correction"].get("median_offset_after_um"),
                 "after_windows_off": r["correction"].get("windows_off_after")})
