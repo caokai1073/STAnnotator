@@ -888,6 +888,40 @@ def _reload_sample(sample_id):
         mcp_server._active["session"] = Session(mcp_server._active["session"].id)
 
 
+async def api_registration_check(req: Request):
+    """Check the registration now, without the agent (Steps > Check registration): the cells against the nuclei in
+    windows over the whole tissue (regcheck.summary; the windows of the alignment's check are reused). A run under
+    /api/job/regcheck:<sample>; its result: the verdict, the areas off their nuclei and how far."""
+    sample, b = req.path_params["sample"], await req.json()
+    if "/" in sample or ".." in sample or not (config.SAMPLES / sample / "meta.json").exists():
+        return _json({"error": f"no sample {sample}"}, 404)
+    s = _open_session((b or {}).get("session") if isinstance(b, dict) else None)
+    if s is None or s.sample_id != sample:
+        return _json({"error": "open the sample first"}, 400)
+    if _busy(sample):
+        return _json({"error": "the sample is busy (an import, filter, annotation or correction is running): try again when it ends"}, 409)
+    job = f"regcheck:{sample}"
+    JOBS[job] = {"stage": "starting", "progress": 0.0, "done": False, "error": None, "kind": "regcheck", "sample": sample,
+                 "started": time.time()}
+
+    def work():
+        try:
+            r = regcheck.summary(s, progress=lambda f, m: JOBS[job].update(progress=round(0.9 * f, 3), stage=m))
+            if r.get("error"):
+                raise ValueError(r["error"])
+            areas = r.get("areas") or []
+            JOBS[job].update(progress=1.0, stage="done", done=True, result={
+                "verdict": r["verdict"], "n_areas": r.get("n_areas", 0), "median_offset_um": r.get("median_offset_um"),
+                "max_offset_um": max([a.get("max_offset_um") or 0 for a in areas] + [r["affine_part"]["max_offset_um"]]),
+                "moves_um_max": r["correction"]["moves_cells_um_max"],
+                # what the correction leaves, measured again with the cells moved by it
+                "after_median_um": r["correction"].get("median_offset_after_um"),
+                "after_windows_off": r["correction"].get("windows_off_after")})
+        except Exception as e:
+            JOBS[job].update(error=f"{type(e).__name__}: {e}" if not isinstance(e, ValueError) else str(e), done=True)
+    return await _spawn(job, work) or _json({"job": job})
+
+
 async def api_registration_local(req: Request):
     """Do the local registration now, without a review (the alignment's check found areas off their nuclei and the
     user chose Do local registration): the offsets measured over the whole tissue, the correction checked by measuring
@@ -2287,7 +2321,7 @@ def _busy(sample, skip=None):
     """An import, annotation or analysis of the sample is running (skip: the asking job itself)."""
     sess = _sample_sessions(sample)
     pid = projects.project_of(sample)
-    mine = {x.name for x in sess} | {f"embed:{sample}", f"import:{sample}", f"regfix:{sample}", f"filter:{sample}", f"project:{pid}"}
+    mine = {x.name for x in sess} | {f"embed:{sample}", f"import:{sample}", f"regfix:{sample}", f"regcheck:{sample}", f"filter:{sample}", f"project:{pid}"}
     return any(k != skip and not j["done"] and (k in mine or k.split(":", 1)[-1] in mine) for k, j in JOBS.items())
 
 
@@ -3682,6 +3716,7 @@ def build_app(port):
         Route("/api/sample/{sample}/rename", api_sample_rename, methods=["POST"]),
         Route("/api/claude/model", api_claude_model, methods=["POST"]),
         Route("/api/sample/{sample}/registration/local", api_registration_local, methods=["POST"]),
+        Route("/api/sample/{sample}/registration/check", api_registration_check, methods=["POST"]),
         Route("/api/sample/{sample}/priors", api_sample_priors),
         Route("/api/sample/{sample}/priors", api_sample_priors_save, methods=["POST"]),
         Route("/api/sample/{sample}/qc", api_sample_qc),

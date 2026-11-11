@@ -5587,7 +5587,7 @@ setInterval(() => { if (!st.busy) followAgent().catch(() => {}); }, 4000);
 // stands (from /api/s/<sid>/steps), and a button that goes where each step is done. The next step stands out.
 const STEPS = {
   import: ["Import", "The sample: its cells and genes, and its image and registration if it has them.", null],
-  registration: ["Check registration", "Are the cells on their nuclei everywhere? The agent measures the offsets over the whole tissue and offers a correction where the tissue shifted (Review → Spatial organization). About a minute.", ["Check", () => { st.rvScope = "organization"; openReviewChooser().catch((e) => toast(e.message, 6000)); }]],
+  registration: ["Check registration", "Are the cells on their nuclei everywhere? The app measures the offsets over the whole tissue (about a minute) and, where the tissue shifted, offers the local registration. (Review → Spatial organization asks the agent for a wider review.)", ["Check", () => checkRegistration()]],
   filter: ["Filter cells and genes", "Leave out cells with few transcripts or genes and genes detected in few cells, before annotating. Seconds to a minute.", ["Filter", () => $("qfBtn").click()]],
   annotate: ["Annotate", "Cell types from a marker list (or a reference, or a CSV of labels): Annotate tab → Markers… → Annotate. A few minutes.", ["Annotate", () => showTab("annotate")]],
   regions: ["Regions and priors", "Optional: outline tissue regions on the map (brush, polygon…), then tell the agent what holds there, e.g. “epithelial cells are only in the mucosa”.", ["Draw", () => { $("regpanel").hidden = false; $("regpanel").classList.remove("collapsed"); setTool("brush"); toast("Brush: paint a region on the map (or pick another tool in the Regions panel), then Save", 6000); }]],
@@ -5829,6 +5829,36 @@ async function pcAccept(thenLocal) {
 $("pcAccept").onclick = () => pcAccept(false);
 $("pcAnyway").onclick = () => pcAccept(false);
 $("pcLocal").onclick = () => pcAccept(true);
+async function checkRegistration() {  // the cells against the nuclei over the whole tissue, by the app (no agent)
+  if (!st.sample || !st.sid) return;
+  const sample = st.sample.sample_id, who = `Checking the registration of ${sampleName(st.sample)}`;
+  let job;
+  try { ({ job } = await post(`/api/sample/${encodeURIComponent(sample)}/registration/check`, { session: st.sid })); }
+  catch (e) { toast(`${who}: ${e.message}`, 8000); return; }
+  toast(`${who}…`, 600000);
+  let j;
+  for (;;) {
+    await new Promise((res) => setTimeout(res, 1000));
+    try { j = await api(`/api/job/${encodeURIComponent(job)}`); } catch (e) { continue; }
+    if (!j.done) { toast(`${who}: ${j.stage} (${Math.round(100 * j.progress)}%)`, 600000); continue; }
+    break;
+  }
+  loadStepsSoon();
+  if (j.error || !j.result) { toast(`${who} failed: ${j.error || "no result"}`, 10000); return; }
+  const r = j.result, name = sampleName(st.sample);
+  if (r.verdict === "fine") { toast(`${name}: the cells sit on their nuclei everywhere (median offset ${r.median_offset_um} µm)`, 8000); return; }
+  if (r.median_offset_um != null && r.median_offset_um <= 3 && r.after_median_um != null && r.median_offset_um - r.after_median_um < 1) {
+    // already on their nuclei but for small spots: a correction would gain under 1 µm
+    toast(`${name}: the cells sit on their nuclei (median offset ${r.median_offset_um} µm); ${r.n_areas} small area(s) are a little off, too little to correct (Review → Spatial organization shows them)`, 10000); return;
+  }
+  if (r.after_median_um != null && r.after_median_um > 10) {  // the correction would not bring them onto their nuclei
+    toast(`${name}: the cells sit far off their nuclei (median ${r.median_offset_um} µm) and a local correction would not fix it: align the image again (Align with Agent, or a registration file)`, 12000); return;
+  }
+  toast("", 1);
+  const what = r.verdict === "global" ? "The whole tissue is slightly off its nuclei" : `${r.n_areas} area(s) sit off their nuclei`;
+  if (confirm(`${name}: ${what} (up to ${r.max_offset_um} µm).\n\nDo the local registration now? The cells move onto their nuclei there (up to ${r.moves_um_max} µm; the median offset goes from ${r.median_offset_um} to about ${r.after_median_um} µm); regions keep their cells.`))
+    await localRegistration(sample);
+}
 async function localRegistration(sample) {  // the local correction measured, checked and applied at once (no review)
   const smp = (st.samples || []).find((x) => x.sample_id === sample), who = `Local registration of ${smp ? sampleName(smp) : sample}`;
   let job;

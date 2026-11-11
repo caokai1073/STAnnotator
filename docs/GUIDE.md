@@ -90,8 +90,8 @@ tissue colored by it. Its verdict:
   alignment cannot fix it): the window offers **Do local registration** instead of Accept: the alignment, then the
   cells moved onto their nuclei where the tissue shifted, at once, without a review (measured over the whole
   tissue and checked by measuring again; about a minute; in **Auto** mode it is done so by itself). **Align anyway**
-  applies only the alignment; the step then stays to do (**Steps → Check registration**, Review: Spatial
-  organization), and the check's windows are reused, so it starts at once;
+  applies only the alignment; the step then stays to do (**Steps → Check registration**), and the check's windows
+  are reused, so it starts at once;
 - **far off**: hardly any part of the tissue finds its nuclei; this is not the right alignment, and the agent tries
   another candidate instead.
 
@@ -408,7 +408,11 @@ The app's window, or the web viewer (`.venv/bin/stagent viewer`, then http://loc
     cells and genes, 4 Annotate, 5 Regions and priors, 6 Review, 7 Analyze (it lists Embed, Niche, Compare,
     Signal and Trajectory, each done or not with a button to its tab; folded when the app starts, its arrow unfolds it). Each step shows what was done
     (✓ and a line such as "5,799 cells removed" or "checked 2026-11-09"), or a button that goes where it is done; the
-    next step stands out. Steps 5–7 are optional; a step the sample does not need is grayed (no image: no
+    next step stands out. **Check registration** is done by the app, without the agent: the cells against the
+    nuclei over the whole tissue (about a minute); where the tissue shifted it offers the local registration (the
+    cells moved onto their nuclei at once), and it says when the cells already sit on their nuclei or when only
+    aligning the image again would help (Review → Spatial organization asks the agent for a wider look, with the
+    organ's priors). Steps 5–7 are optional; a step the sample does not need is grayed (no image: no
     registration; Visium and Stereo-seq are placed by their software). An H&E only (no cells) shows no steps. A
     click on the title folds the list;
   - two tabs, **Data** and **Analysis**. Analysis has the steps **Annotate**, **Embed**, **Niche**, **Compare**,
