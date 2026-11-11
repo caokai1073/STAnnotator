@@ -871,6 +871,42 @@ def _reload_sample(sample_id):
         mcp_server._active["session"] = Session(mcp_server._active["session"].id)
 
 
+async def api_registration_local(req: Request):
+    """Do the local registration now, without a review (the alignment's check found areas off their nuclei and the
+    user chose Do local registration): the offsets measured over the whole tissue, the correction checked by measuring
+    again (regcheck.correction) and applied, as the Review's "correct locally" does. A run under /api/job/regfix:<sample>."""
+    sample = req.path_params["sample"]
+    if "/" in sample or ".." in sample or not (config.SAMPLES / sample / "meta.json").exists():
+        return _json({"error": f"no sample {sample}"}, 404)
+    job = f"regfix:{sample}"
+    if _busy(sample):
+        return _json({"error": "the sample is busy (an import, annotation or correction is running): try again when it ends"}, 409)
+    JOBS[job] = {"stage": "starting", "progress": 0.0, "done": False, "error": None, "kind": "regfix", "sample": sample,
+                 "started": time.time()}
+
+    def work():
+        try:
+            say = lambda f, m: JOBS[job].update(progress=round(0.7 * f, 3), stage=m)
+            w = regcheck.windows(sample, say)
+            JOBS[job].update(progress=0.75, stage="checking the correction (the cells moved and measured again)")
+            f = regcheck.correction(sample, w)
+            fix = {k: f[k] for k in regcheck.FIX_KEYS if k in f}
+            with jobs.critical():  # the cells' file is written whole or not at all
+                importer.apply_registration_fix(sample, fix)
+                mf = config.SAMPLES / sample / "meta.json"
+                m = json.load(open(mf, encoding="utf-8"))
+                m["registration_local"] = {"key": regcheck._key(sample, importer.image_of(sample)),
+                                           "time": time.strftime("%Y-%m-%d %H:%M"), "moved_um_max": f["moved_um_max"],
+                                           "moved_um_median": f["moved_um_median"]}
+                dump_json(m, mf, indent=1)
+            _reload_sample(sample)
+            JOBS[job].update(progress=1.0, stage="done", done=True,
+                             result={"moved_um_max": f["moved_um_max"], "moved_um_median": f["moved_um_median"]})
+        except Exception as e:
+            JOBS[job].update(error=f"{type(e).__name__}: {e}", done=True)
+    return await _spawn(job, work) or _json({"job": job})
+
+
 async def api_advice_act(req: Request):
     """The user takes a piece of advice: step region (add the outline as a region), prior_preview / prior (preview
     or add its prior), registration / undo_registration, claude (send its request to Claude Code)."""
@@ -2234,7 +2270,7 @@ def _busy(sample, skip=None):
     """An import, annotation or analysis of the sample is running (skip: the asking job itself)."""
     sess = _sample_sessions(sample)
     pid = projects.project_of(sample)
-    mine = {x.name for x in sess} | {f"embed:{sample}", f"import:{sample}", f"project:{pid}"}
+    mine = {x.name for x in sess} | {f"embed:{sample}", f"import:{sample}", f"regfix:{sample}", f"project:{pid}"}
     return any(k != skip and not j["done"] and (k in mine or k.split(":", 1)[-1] in mine) for k, j in JOBS.items())
 
 
@@ -2693,8 +2729,10 @@ def steps_of(s, sample=None):
             pass
         org = advice.status(s, "organization") if s is not None else {"n_runs": 0}
         fixed = " (corrected)" if "local" in (meta.get("registration_by") or "") or "piece" in (meta.get("registration_by") or "") else ""
-        ac = meta.get("alignment_check") or {}
-        if img and ac.get("key") == regcheck._key(sid, img) and ac.get("verdict") != "fine" \
+        ac, rl = meta.get("alignment_check") or {}, meta.get("registration_local") or {}
+        if img and rl.get("key") == regcheck._key(sid, img):  # Do local registration, right after the alignment
+            reg = {"state": "done", "detail": f"corrected locally {rl['time'][:10]} (cells moved up to {rl['moved_um_max']} µm)"}
+        elif img and ac.get("key") == regcheck._key(sid, img) and ac.get("verdict") != "fine" \
                 and not (org["n_runs"] and org["last_run"]["time"] >= ac.get("time", "")):  # (not reviewed since)
             reg = {"state": "todo", "detail": "the alignment check found areas off their nuclei: do the local registration"}
         elif checked:
@@ -3585,6 +3623,7 @@ def build_app(port):
         Route("/api/sample/{sample}/image", api_sample_image, methods=["POST"]),
         Route("/api/sample/{sample}/registration", api_sample_registration, methods=["POST"]),
         Route("/api/sample/{sample}/rename", api_sample_rename, methods=["POST"]),
+        Route("/api/sample/{sample}/registration/local", api_registration_local, methods=["POST"]),
         Route("/api/sample/{sample}/priors", api_sample_priors),
         Route("/api/sample/{sample}/priors", api_sample_priors_save, methods=["POST"]),
         Route("/api/sample/{sample}/qc", api_sample_qc),

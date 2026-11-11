@@ -87,8 +87,11 @@ tissue colored by it. Its verdict:
 
 - **fine**: the cells sit on their nuclei; no local registration needed;
 - **some areas sit off their nuclei** (tissue stretched, folded or torn between the run and the staining; one
-  alignment cannot fix it): accept, then do the local registration (**Steps → Check registration**, Review: Spatial
-  organization). The step stays to do until then, and the check's windows are reused, so it starts at once;
+  alignment cannot fix it): the window offers **Do local registration** instead of Accept: the alignment, then the
+  cells moved onto their nuclei where the tissue shifted, at once, without a review (measured over the whole
+  tissue and checked by measuring again; about a minute). **Align anyway** applies only the alignment; the step then
+  stays to do (**Steps → Check registration**, Review: Spatial organization), and the check's windows are reused,
+  so it starts at once;
 - **far off**: hardly any part of the tissue finds its nuclei; this is not the right alignment, and the agent tries
   another candidate instead.
 

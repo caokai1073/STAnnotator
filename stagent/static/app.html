@@ -874,10 +874,12 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <div class="hint" id="pcWhere"></div>
     <ul id="pcDetails" class="pclist"></ul>
     <div id="pcPreview"></div>
-    <div class="hint">Nothing changes until you click Accept; Dismiss drops the change and tells Claude.</div>
+    <div class="hint" id="pcHint">Nothing changes until you click Accept; Dismiss drops the change and tells Claude.</div>
     <div class="row" style="margin-top:4px"><span class="err" id="pcErr"></span><span class="hint" id="pcStatus"></span><span class="spacer"></span>
       <button id="pcShow" hidden title="Close this window for a moment and highlight these cells on the map">Show on map</button>
-      <button id="pcDismiss">Dismiss</button><button id="pcAccept" class="primary">Accept</button></div>
+      <button id="pcDismiss">Dismiss</button><button id="pcAccept" class="primary">Accept</button>
+      <button id="pcAnyway" hidden title="Put the cells on the image with this alignment and leave the areas off their nuclei as they are">Align anyway</button>
+      <button id="pcLocal" class="primary" hidden title="Put the cells on the image with this alignment, then move them onto their nuclei where the tissue shifted (about a minute)">Do local registration</button></div>
   </div>
 </dialog>
 <div id="pcBack" class="float" hidden><span id="pcBackMsg"></span><button id="pcBackBtn" class="primary">Back to the review</button></div>
@@ -4639,8 +4641,8 @@ const HELP = `
   <li>When several samples wait for their alignment, choose the ones to align (or All samples): the agent aligns
     them one after the other.</li>
   <li>Before you accept it, the whole tissue is checked: the review window shows a histogram of the deviation between
-    the cells and the nuclei, and the windows on the tissue. When areas sit off their nuclei it advises the local
-    registration after accepting (Steps → Check registration).</li>
+    the cells and the nuclei, and the windows on the tissue. When areas sit off their nuclei it offers <b>Do local
+    registration</b> (the alignment, then the cells moved onto their nuclei there, at once) or <b>Align anyway</b>.</li>
   <li>It imports, then the agent finds the section and its orientation on the image and refines it until the cells
     sit on their nuclei.</li></ul></li>
 <li>Another image or registration for a sample: import it again with them under the same name and tick <b>Replace the
@@ -5645,7 +5647,12 @@ function showProposal(r, n) {
     })() : "");
   $("pcPos").textContent = n > 1 ? `1 of ${n} waiting` : "";
   $("pcErr").textContent = ""; $("pcStatus").textContent = "";
-  $("pcAccept").hidden = false; $("pcAccept").disabled = $("pcDismiss").disabled = false; $("pcDismiss").textContent = "Dismiss";
+  // an alignment whose check found areas off their nuclei: align and correct them at once, or align only
+  const loc = r.tool === "apply_alignment" && r.advise === "local_registration";
+  $("pcAccept").hidden = loc; $("pcLocal").hidden = $("pcAnyway").hidden = !loc;
+  $("pcHint").textContent = loc ? "Do local registration: the alignment, then the cells moved onto their nuclei where the tissue shifted (measured over the whole tissue, about a minute). Align anyway: the alignment only. Dismiss drops it and tells Claude."
+                                : "Nothing changes until you click Accept; Dismiss drops the change and tells Claude.";
+  ["pcAccept", "pcLocal", "pcAnyway", "pcDismiss"].forEach((b) => ($(b).disabled = false)); $("pcDismiss").textContent = "Dismiss";
   if (!$("pcDlg").open) $("pcDlg").showModal();
 }
 async function autoAccept(r) {  // auto mode: the change is applied as it arrives, without the review window
@@ -5660,9 +5667,15 @@ async function proposalApplied(r) {
   if (r.status === "failed" && !$("pcDlg").open) showProposal(r, 1);  // (auto mode: the window opens for the error)
   if (r.status === "failed") {  // keep the window open with the error
     $("pcStatus").textContent = ""; $("pcErr").textContent = `Could not apply it: ${r.error}`;
-    $("pcAccept").hidden = true; $("pcDismiss").disabled = false; $("pcDismiss").textContent = "Close"; PC.failed = true; return;
+    $("pcAccept").hidden = $("pcLocal").hidden = $("pcAnyway").hidden = true; $("pcDismiss").disabled = false; $("pcDismiss").textContent = "Close"; PC.failed = true; PC.thenLocal = null; return;
   }
   $("pcDlg").close();
+  if (r.advise === "local_registration" && PC.thenLocal === r.id) {  // Do local registration: now, without a review
+    PC.thenLocal = null;
+    await afterPlacement();
+    await localRegistration(r.sample_id);
+    return;
+  }
   if (r.advise === "local_registration") {  // the alignment's deviation check found areas off their nuclei
     toast(`${auto ? "Applied automatically" : "Applied"}: ${r.title}. Some areas sit off their nuclei: do the local registration (Steps → Check registration)`, 15000);
     loadSteps().catch(() => {});
@@ -5752,13 +5765,34 @@ $("pcBackBtn").onclick = () => {
   if (PC.cur) showProposal(PC.cur, 1);
   pollProposals().catch(() => {});
 };
-$("pcAccept").onclick = async () => {
+async function pcAccept(thenLocal) {
   const r = PC.cur; if (!r) return;
-  $("pcAccept").disabled = $("pcDismiss").disabled = true; $("pcErr").textContent = "";
+  const btns = ["pcAccept", "pcLocal", "pcAnyway", "pcDismiss"];
+  btns.forEach((b) => ($(b).disabled = true)); $("pcErr").textContent = "";
   $("pcStatus").textContent = "Applying… (a new annotation, niches or a re-clustering take a minute or more)";
+  PC.thenLocal = thenLocal ? r.id : null;
   try { await post(`/api/proposal/${r.id}/decide`, { accept: true }); PC.applying = r.id; }
-  catch (e) { $("pcErr").textContent = e.message; $("pcAccept").disabled = $("pcDismiss").disabled = false; $("pcStatus").textContent = ""; }
-};
+  catch (e) { $("pcErr").textContent = e.message; btns.forEach((b) => ($(b).disabled = false)); $("pcStatus").textContent = ""; PC.thenLocal = null; }
+}
+$("pcAccept").onclick = () => pcAccept(false);
+$("pcAnyway").onclick = () => pcAccept(false);
+$("pcLocal").onclick = () => pcAccept(true);
+async function localRegistration(sample) {  // the local correction measured, checked and applied at once (no review)
+  let job;
+  try { ({ job } = await post(`/api/sample/${encodeURIComponent(sample)}/registration/local`, {})); }
+  catch (e) { toast(`Local registration: ${e.message}`, 8000); return; }
+  toast("Local registration: measuring where the cells sit off their nuclei…", 600000);
+  for (;;) {
+    await new Promise((res) => setTimeout(res, 1000));
+    let j; try { j = await api(`/api/job/${encodeURIComponent(job)}`); } catch (e) { continue; }
+    if (!j.done) { toast(`Local registration: ${j.stage} (${Math.round(100 * j.progress)}%)`, 600000); continue; }
+    if (j.error) { toast(`Local registration failed: ${j.error}`, 10000); return; }
+    if (st.sample && st.sample.sample_id === sample) await afterPlacement();
+    loadStepsSoon();
+    toast(`Local registration done: the cells moved onto their nuclei where the tissue shifted (up to ${j.result.moved_um_max} µm, median ${j.result.moved_um_median} µm)`, 9000);
+    return;
+  }
+}
 $("pcDismiss").onclick = async () => {
   if (PC.failed) { PC.failed = false; $("pcAccept").hidden = false; $("pcDlg").close(); return; }
   const r = PC.cur; if (!r) return;
