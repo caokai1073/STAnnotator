@@ -429,7 +429,14 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .imreplace { display: flex; gap: 6px; align-items: flex-start; } .imreplace input { margin-top: 2px; }
 .xpchoose { flex-wrap: wrap; gap: 6px 10px; } .xpchoose label { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
 .xpchoose select { max-width: 240px; }
-.xpchoose > button { margin-left: auto; }   /* stays on the right when the row wraps */
+.xpchoose > button { margin-left: auto; }
+.prlist { overflow: auto; min-height: 0; display: flex; flex-direction: column; }
+#prList { flex: 1 1 auto; border: 1px solid var(--line); border-radius: 8px; }
+.prrow { display: flex; gap: 10px; align-items: flex-start; padding: 6px 10px; border-top: 1px solid var(--line); font-size: 13px; }
+.prrow:first-child { border-top: 0; }
+.prrow .pid { flex: none; width: 64px; color: var(--muted); font-size: 12px; padding-top: 1px; }
+.prrow .ptx { flex: 1; } .prrow .prule { display: block; color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+.prrow button { flex: none; padding: 1px 7px; font-size: 12px; } .prrow.mine .pid { color: var(--accent); }   /* stays on the right when the row wraps */
 .alrow .alname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .clcard { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 6px 0; display: flex; flex-direction: column; gap: 6px; }
 .clcard pre { font: 11.5px ui-monospace, Menlo, monospace; white-space: pre-wrap; margin: 0; color: var(--muted); }
@@ -884,22 +891,20 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <div class="row"><span class="err" id="pjErr"></span><span class="spacer"></span><button id="pjCancel">Cancel</button><button id="pjSave" class="primary">Save</button></div>
   </div>
 </dialog>
-<dialog id="prDlg" style="width:min(980px,95vw)">
+<dialog id="prDlg" style="width:min(760px,95vw)">
   <div class="dh"><b>Tissue priors</b><span class="hint" id="prInfo" style="margin-left:8px"></span><span class="spacer"></span>
     <button id="prClose">Close</button></div>
-  <div style="padding:12px 14px;display:flex;flex-direction:column;gap:8px;height:min(82vh,860px);box-sizing:border-box">
+  <div style="padding:12px 14px;display:flex;flex-direction:column;gap:8px;max-height:min(80vh,820px);box-sizing:border-box">
     <div class="row"><label class="f" style="flex-direction:row;align-items:center;gap:8px">Organ <select id="prOrgan"></select></label>
       <span class="hint" id="prWhy" style="flex:1"></span></div>
-    <div class="hint">Where each cell type lies, the compartments to draw and their exceptions, from the literature
-      (the numbers after Evidence are the references at the end). The agent's Review checks the annotation and the
-      regions against these; edit the text and it follows your version, for every sample of this organ in this data
-      folder (kept as a text file in its priors folder).</div>
-    <details id="prHow"><summary class="hint" style="cursor:pointer">How to write a rule</summary>
-      <pre id="prHowText" style="white-space:pre-wrap;font:12px ui-monospace,Menlo,monospace;max-height:24vh;overflow:auto;margin:6px 0 0"></pre></details>
-    <textarea id="prText" spellcheck="false" wrap="off" style="flex:1 1 auto;min-height:120px;font:12px/1.45 ui-monospace,Menlo,monospace;resize:none;white-space:pre;overflow:auto"></textarea>
+    <div class="hint">What the agent's Review checks the annotation and regions against. Remove what does not hold for
+      your tissue, or add your own in plain words: the agent writes its rule.</div>
+    <div id="prList" class="prlist"></div>
+    <details id="prRemovedBox" hidden><summary class="hint" style="cursor:pointer">Removed (<span id="prNRemoved"></span>)</summary><div id="prRemoved" class="prlist"></div></details>
+    <div class="row"><input type="text" id="prNew" maxlength="600" style="flex:1" placeholder="Add a prior, e.g. Paneth cells do not occur in the colon">
+      <button id="prAdd" class="primary">Add</button></div>
     <div class="row"><span class="hint" id="prState"></span><span class="err" id="prErr"></span><span class="spacer"></span>
-      <button id="prDefault" title="Back to the app's priors of this organ (your version is removed)">Restore default</button>
-      <button id="prSave" class="primary" title="Use this organ for the sample, and this text for its priors">Save</button></div>
+      <button id="prDefault" title="Back to the app's priors of this organ: your removals and additions go">Restore default</button></div>
   </div>
 </dialog>
 <dialog id="rnDlg" style="width:min(420px,92vw)">
@@ -3844,32 +3849,64 @@ async function adviceArrived() {  // new advice from Claude Code: open the Revie
     toast(`The agent outlined “${reg.action.name}”: check it, then click “add region” in the Review panel`, 7000);
   } else if (fresh.length) toast("The agent's advice is in the Review panel", 4000);
 }
-// ---------------- tissue priors: the organ from the annotation, the app's priors or the user's version ----------------
-const PR = { view: null, loaded: "" };
+// ---------------- tissue priors: the organ from the annotation; remove the app's priors or add your own ----------------
+const PR = { view: null, poll: null };
 function prWhy(v) {
   const g = v.guess || {};
   if (!v.organ) return "No organ found from the annotation or the sample: choose one.";
   if (g.organ !== v.organ) return "";
-  return { given: "Chosen for this sample.", "marker list": "From your annotation: " + (g.evidence || []).join("; ").replace(/^the marker list has /, ""),
+  return { given: "Chosen for this sample.", "marker list": "From your annotation (" + (g.evidence || []).join("; ").replace(/^the marker list has cell types only the built-in \S+ list has: /, "") + ").",
            "name or description": "From the sample's name or description." }[g.from] || "";
 }
+function prRow(id, text, sub, tip, btn, onclick, mine) {
+  const d = document.createElement("div"); d.className = "prrow" + (mine ? " mine" : ""); d.title = tip || "";
+  const tx = Object.assign(document.createElement("span"), { className: "ptx", textContent: text });
+  if (sub) tx.append(Object.assign(document.createElement("span"), { className: "prule", textContent: sub }));
+  const b = Object.assign(document.createElement("button"), { textContent: btn, title: btn === "×" ? "Remove this prior" : "Put it back" });
+  b.onclick = onclick;
+  d.append(Object.assign(document.createElement("span"), { className: "pid", textContent: id }), tx, b);
+  return d;
+}
 function prShow(v) {
-  PR.view = v; PR.loaded = v.text || "";
+  PR.view = v;
   const sel = $("prOrgan"); sel.textContent = "";
   if (!v.organ) sel.append(new Option("choose the organ…", ""));
-  const organs = v.organ && !v.organs.includes(v.organ) ? [...v.organs, v.organ] : v.organs;  // a new one being written
-  organs.forEach((o) => sel.append(new Option(o + ((v.edited_organs || []).includes(o) ? " (your version)" : ""), o)));
+  const organs = v.organ && !v.organs.includes(v.organ) ? [...v.organs, v.organ] : v.organs;
+  organs.forEach((o) => sel.append(new Option(o + ((v.edited_organs || []).includes(o) ? " (changed)" : ""), o)));
   sel.append(new Option("another organ…", "__new"));
   sel.value = v.organ || "";
   $("prWhy").textContent = prWhy(v);
-  $("prText").value = v.text || ""; $("prText").disabled = !v.organ;
-  $("prHowText").textContent = v.how_to_read || "";
-  $("prState").textContent = !v.organ ? "" : v.edited ? "Your version: the Review uses it." : v.has_default ? "The app's priors (default)." : "";
-  $("prDefault").disabled = !v.edited || !v.has_default; $("prSave").disabled = !v.organ; $("prErr").textContent = "";
+  const removed = new Set(v.removed || []), list = $("prList"), rem = $("prRemoved");
+  list.textContent = ""; rem.textContent = "";
+  (v.priors || []).forEach((p) => {
+    const tip = p.title + (p.rules.length ? "\n\nRule: " + p.rules.join("\nRule: ") : "\n\nNo rule: the agent reads it as written.");
+    if (removed.has(p.id)) rem.append(prRow(p.id, p.short, "", tip, "↺", () => prPost({ removed: v.removed.filter((x) => x !== p.id) })));
+    else list.append(prRow(p.id, p.short, "", tip, "×", () => prPost({ removed: [...v.removed, p.id] })));
+  });
+  (v.added || []).forEach((a) => {
+    const sub = a.rule ? "Rule: " + a.rule : a.no_rule ? "No rule: " + a.no_rule : "Rule: the agent is writing it…";
+    list.append(prRow(a.id, a.text, sub, a.text, "×", () => prPost({ added: v.added.filter((x) => x.id !== a.id) }), true));
+  });
+  if (!list.children.length) list.append(Object.assign(document.createElement("div"), { className: "prrow hint", textContent: v.organ ? "No priors: add one below." : "" }));
+  $("prRemovedBox").hidden = !removed.size; $("prNRemoved").textContent = removed.size;
+  $("prState").textContent = !v.organ ? "" : v.edited ? "Changed: the Review uses your version." : v.covered ? "The app's priors (default)." : "";
+  $("prDefault").disabled = !v.edited; $("prNew").disabled = $("prAdd").disabled = !v.organ; $("prErr").textContent = "";
+  clearTimeout(PR.poll);  // a rule the agent is writing: look again until it is there
+  if ($("prDlg").open && (v.added || []).some((a) => !a.rule && !a.no_rule)) PR.poll = setTimeout(() => prLoad(v.organ).catch(() => {}), 3000);
 }
 async function prLoad(organ) {
   const q = new URLSearchParams(); if (st.sid) q.set("session", st.sid); if (organ) q.set("organ", organ);
   prShow(await api(`/api/sample/${encodeURIComponent(st.sample.sample_id)}/priors?${q}`));
+}
+async function prPost(change) {
+  const v = PR.view; if (!v || !v.organ) return false;
+  let r;
+  try { r = await post(`/api/sample/${encodeURIComponent(st.sample.sample_id)}/priors`,
+                       { session: st.sid || null, organ: v.organ, removed: v.removed || [], added: v.added || [], ...change }); }
+  catch (e) { $("prErr").textContent = e.message; return false; }
+  prShow(r);
+  if (r.agent && r.agent.message && st.chatAvailable) { $("input").value = r.agent.message; send(); }
+  return true;
 }
 $("priorBtn").onclick = async () => {
   if (!st.sample) return;
@@ -3880,31 +3917,26 @@ $("priorBtn").onclick = async () => {
 $("prOrgan").onchange = async (e) => {
   let organ = e.target.value;
   if (organ === "__new") {
-    organ = (prompt("Name of the organ (you write its priors):", "") || "").trim();
+    organ = (prompt("Name of the organ (you add its priors):", "") || "").trim();
     if (!organ) { e.target.value = PR.view.organ || ""; return; }
   }
-  if ($("prText").value !== PR.loaded && !confirm("Leave your unsaved changes?")) { e.target.value = PR.view.organ || ""; return; }
   try { await prLoad(organ); } catch (err) { $("prErr").textContent = err.message; return; }
-  if (!PR.view.text) {  // an organ the app's priors do not cover: a skeleton to fill in
-    $("prText").value = `=== ${PR.view.organ} ===\n\nCompartments to draw\n- compartment: how it looks on the H&E.\n\nPriors\n\n- XXX-01. A cell type lies in a compartment.\n  - Rule: kind=region, types=[...], regions=[...], mode=only, strength=moderate\n  - Exceptions and caveats: ...\n  - Evidence: [1]\n\nReferences\n- [1] ...\n`;
-    $("prState").textContent = "Not in the app's priors: write them, then Save.";
+  try { await post(`/api/sample/${encodeURIComponent(st.sample.sample_id)}/priors`, { session: st.sid || null, organ, removed: PR.view.removed || [], added: PR.view.added || [] }); } catch (err) { /* kept for the sample when a prior changes */ }
+};
+$("prAdd").onclick = async () => {
+  const text = $("prNew").value.trim(); if (!text) return;
+  if (await prPost({ added: [...(PR.view.added || []), { text }] })) {
+    $("prNew").value = "";
+    toast(st.sid && (st.desktop || st.chatAvailable) ? "Added: the agent writes its rule" : "Added: the agent writes its rule at the next Review", 4000);
   }
 };
-async function prPost(body) {
-  try { prShow(await post(`/api/sample/${encodeURIComponent(st.sample.sample_id)}/priors`, { session: st.sid || null, ...body })); }
-  catch (e) { $("prErr").textContent = e.message; return false; }
-  return true;
-}
-$("prSave").onclick = async () => {
-  const organ = $("prOrgan").value; if (!organ || organ === "__new") return;
-  if (await prPost({ organ, text: $("prText").value })) toast(PR.view.edited ? "Saved: the Review uses your priors" : "Saved: the Review uses the app's priors", 3500);
-};
+$("prNew").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("prAdd").click(); } });
 $("prDefault").onclick = async () => {
-  if (!confirm(`Remove your version of the ${PR.view.organ} priors and use the app's?`)) return;
-  if (await prPost({ organ: PR.view.organ, reset: true })) toast("The app's priors again", 2500);
+  if (!confirm(`Back to the app's ${PR.view.organ} priors? Your removals and additions go.`)) return;
+  if (await prPost({ reset: true })) toast("The app's priors again", 2500);
 };
-$("prClose").onclick = () => { if ($("prText").value !== PR.loaded && !confirm("Close without saving your changes?")) return; $("prDlg").close(); };
-$("prDlg").addEventListener("cancel", (e) => { if ($("prText").value !== PR.loaded && !confirm("Close without saving your changes?")) e.preventDefault(); });
+$("prClose").onclick = () => $("prDlg").close();
+$("prDlg").addEventListener("close", () => clearTimeout(PR.poll));
 $("plaus").onclick = () => openReviewChooser().catch((e) => toast(e.message, 6000));
 async function openReviewChooser() {  // what the agent reviews: one part of the analysis
   const adv = await api(`/api/s/${st.sid}/advice`); st.advice = adv;

@@ -1329,6 +1329,22 @@ def propose_region(name: str, compartment: Optional[str] = None, area: Optional[
 
 # ---------------- regions from the H&E itself (also a sample of an H&E only) ----------------
 @mcp.tool()
+def set_prior_rule(organ: str, prior_id: str, types: Optional[list[str]] = None, mode: Optional[str] = None,
+                   strength: str = "moderate", kind: str = "region", regions: Optional[list[str]] = None,
+                   max_depth_um: Optional[float] = None, neighbor_types: Optional[list[str]] = None,
+                   min_frac: Optional[float] = None, no_rule: Optional[str] = None) -> str:
+    """Write the rule of a tissue prior the user added in their own words (the app's Prior window; ids U-1, U-2...;
+    tissue_priors(organ) lists them, "Rule: not written yet"). The constraint language of the priors: kind 'region'
+    (regions: compartment names as the user draws them), 'depth' (max_depth_um) or 'neighborhood' (neighbor_types,
+    min_frac); mode 'only' | 'exclude' | 'enrich'; strength 'strong' | 'moderate' | 'weak'; types as the marker list
+    names them. no_rule: why the statement cannot be a rule (then the reviews read it as written). Changes only the
+    prior's rule; the reviews use it."""
+    from . import hetissue
+    return _j(hetissue.set_prior_rule(organ, prior_id, types, mode, strength, kind, regions, max_depth_um,
+                                      neighbor_types, min_frac, no_rule))
+
+
+@mcp.tool()
 def tissue_priors(organ: Optional[str] = None) -> str:
     """The app's literature-based tissue priors (data/priors/tissue_priors.md, given as plain text) of an organ: its compartments to draw
     with how each looks on the H&E, and spatial priors (where each cell type lives, as rules of the constraint
@@ -1336,7 +1352,8 @@ def tissue_priors(organ: Optional[str] = None) -> str:
     outline compartments on the H&E (segment_he, propose_he_region), to review an annotation and its regions
     against the rules (name the rule, e.g. COL-01, in the advice) and to suggest priors (preview_constraint),
     always with the user's agreement. sample_context gives the sample's organ when something names it. When the
-    user edited an organ's priors (Prior in the app), this returns their version ("edited": true): follow it."""
+    user removed or added priors (Prior in the app), this returns their version ("edited": true): follow it; write
+    the rule of an added prior that has none with set_prior_rule."""
     from . import hetissue
     return _j(hetissue.tissue_priors(organ))
 

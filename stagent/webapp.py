@@ -622,7 +622,8 @@ def api_claude_status(req):
 REVIEW_REQUEST = ("Check the review candidates of version {v} (I clicked Review: Annotation): look at every "
                   "candidate area on the H&E with show_area and judge every marker check, then record each verdict "
                   "with record_review, keeping only real annotation problems.")
-PRIORS_READ = ("tissue_priors(organ) (the tissue's priors: the user's version when they edited them, else the app's "
+PRIORS_READ = ("tissue_priors(organ) (the tissue's priors: the user's version when they removed or added priors, "
+               "whose added priors without a rule you write first with set_prior_rule; else the app's "
                "literature priors; organ: sample_context's organ, "
                "and when it gives none but the cell types make the tissue clear, that organ, said so; else no priors, "
                "said so)")
@@ -2384,7 +2385,7 @@ async def api_session_rename(req: Request):
 
 def _priors_view(sample, sid=None, organ=None):
     """The priors the agent uses for a sample: the organ (asked, chosen for the sample, or guessed from the
-    annotation), its text (the user's version when edited) and the organs to choose from."""
+    annotation), its priors (id, short statement, rules), those the user removed and added, the organs to choose."""
     from types import SimpleNamespace
     from . import hetissue
     if not (config.SAMPLES / sample / "meta.json").exists():
@@ -2397,13 +2398,19 @@ def _priors_view(sample, sid=None, organ=None):
     organ = (organ or "").strip() or g["organ"]
     covered = [o for o in hetissue.default_priors()["organs"] if not o.startswith("General")]
     out = {"organ": organ, "guess": g, "organs": covered + [o for o in hetissue.user_organs() if o not in covered],
-           "how_to_read": hetissue.tissue_priors()["how_to_read"],
            "edited_organs": [o for o in covered if hetissue._user_file(o).exists()]}
     if organ:
-        r = hetissue.tissue_priors(organ)
-        out |= {"organ": r.get("organ", organ), "text": r.get("text", ""), "edited": bool(r.get("edited")),
-                "has_default": not hetissue.default_priors(organ).get("error")}
+        out |= hetissue.organ_priors(organ)
     return out
+
+
+PRIOR_RULE_REQUEST = ("I added tissue priors for {organ} in the Prior window, in my own words: {items}. Write the rule "
+                      "of each with set_prior_rule(organ='{organ}', prior_id=..., ...) in the constraint language: cell "
+                      "types as the marker list names them (get_vocabulary), regions as tissue_priors('{organ}') names "
+                      "the compartments to draw (or the regions drawn, list_regions); kind region, depth or "
+                      "neighborhood; mode only, exclude or enrich; strength from how firm the statement is. When a "
+                      "statement cannot be a rule, give no_rule with the reason. Change nothing else; then say each "
+                      "rule in one line.")
 
 
 def api_sample_priors(req):
@@ -2415,19 +2422,27 @@ def api_sample_priors(req):
 
 
 async def api_sample_priors_save(req: Request):
-    """{organ, text}: the organ of the sample's tissue and the user's version of its priors (the default text, or
-    reset: true, goes back to the app's priors). The agent's reviews use them from then on."""
+    """{organ, removed, added} (or reset: true): the organ of the sample's tissue and the user's changes to its priors.
+    New added priors without a rule go to the agent (with the open annotation), which writes them with set_prior_rule;
+    the agent's reviews use the changed priors from then on."""
     from . import hetissue
     sample, b = req.path_params["sample"], await req.json()
     try:
         if not (config.SAMPLES / sample / "meta.json").exists():
             raise ValueError(f"no sample {sample!r}")
         organ = str(b.get("organ") or "").strip()
-        r = hetissue.save_user_priors(organ, "" if b.get("reset") else b.get("text"))
-        hetissue._remember_organ(sample, r.get("organ", organ))
-        return _json(_priors_view(sample, b.get("session") or None, r.get("organ", organ)))
+        before = {a["id"] for a in hetissue.organ_priors(organ)["added"]} if organ else set()
+        r = hetissue.set_priors(organ, [] if b.get("reset") else b.get("removed"), [] if b.get("reset") else b.get("added"))
+        hetissue._remember_organ(sample, r["organ"])
+        out = _priors_view(sample, b.get("session") or None, r["organ"])
     except ValueError as e:
         return _json({"error": str(e)}, 400)
+    new = [a for a in r["added"] if a["id"] not in before and not a.get("rule") and not a.get("no_rule")]
+    if new and b.get("session"):
+        s = review_app._session(b["session"])
+        items = "; ".join(f"{a['id']}: \"{a['text']}\"" for a in new)
+        out["agent"] = _ask_claude(s, PRIOR_RULE_REQUEST.format(organ=r["organ"], items=items))
+    return _json(out)
 
 
 async def api_sample_rename(req: Request):

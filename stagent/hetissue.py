@@ -388,12 +388,11 @@ def outline(sample_id, classes=None, box_px=None, within_px=None, min_area_um2=M
 
 
 def _user_dir():
-    return config.HOME / "priors"   # the user's versions of the priors, one plain-text file per organ
+    return config.HOME / "priors"   # the user's changes to the priors: one file per organ (removed and added priors)
 
 
 def to_txt(md):
-    """The priors as plain text for people to read and write: "=== Title ===" headings, no ** or ` marks (the rules,
-    lists, evidence numbers and references stay)."""
+    """The priors as plain text: "=== Title ===" headings, no ** or ` marks (rules, lists and references stay)."""
     out = []
     for line in md.splitlines():
         if line.strip() == "---":
@@ -411,54 +410,168 @@ def _slug(organ):
 
 
 def _user_file(organ):
-    return _user_dir() / f"{_slug(organ)}.txt"
+    return _user_dir() / f"{_slug(organ)}.json"
+
+
+def _changes(organ):
+    f = _user_file(organ)
+    try:
+        c = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
+    except ValueError:
+        c = {}
+    return {"organ": c.get("organ") or organ, "removed": list(c.get("removed") or []), "added": list(c.get("added") or [])}
 
 
 def user_organs():
-    """Organs the user wrote priors for that the app's document does not cover (their name: the file's first heading)."""
+    """Organs the user added priors for that the app's document does not cover."""
     out = []
-    for f in sorted(_user_dir().glob("*.txt")) if _user_dir().exists() else []:
-        first = next((l for l in f.read_text(encoding="utf-8").splitlines() if re.match(r"^=== .+ ===\s*$", l)), "")
-        out.append(first.strip()[4:-4].strip() or f.stem.replace("_", " "))
+    for f in sorted(_user_dir().glob("*.json")) if _user_dir().exists() else []:
+        try:
+            c = json.loads(f.read_text(encoding="utf-8"))
+        except ValueError:
+            continue
+        if c.get("organ") and default_priors(c["organ"]).get("error") and c.get("added"):
+            out.append(c["organ"])
     return out
 
 
+PRIOR_START = re.compile(r"(?m)^- \*\*([A-Z]+-\d+[a-z]?)\. ")
+
+
+def _prior_blocks(md):
+    """The priors of an organ's section: [{"id", "title", "rules", "start", "end"}] (positions in md)."""
+    sec0 = md.rfind("\n## ") + 1 if md.count("\n## ") else 0   # the organ's own section (after its group's notes)
+    ref = md.find("**References**", sec0)
+    stop = ref if ref > 0 else len(md)
+    ms = [m for m in PRIOR_START.finditer(md, sec0) if m.start() < stop]
+    out = []
+    for k, m in enumerate(ms):
+        end = ms[k + 1].start() if k + 1 < len(ms) else stop
+        block = md[m.start():end]
+        title = re.sub(r"\s+", " ", block[m.end() - m.start():].split("**", 1)[0]).strip()
+        rp = re.search(r"(?ms)^  - Rule.*?(?=^  - |\Z)", block)   # the Rule item with its sub-items
+        rules = [re.sub(r"\s+", " ", x).strip() for x in re.findall(r"`(kind=[^`]+)`", rp.group(0) if rp else "")]
+        short = re.split(r"(?<=[a-z0-9)\]])\. (?=[A-Z])", title, maxsplit=1)[0].rstrip(".") + "."
+        out.append({"id": m.group(1), "title": title, "short": short, "rules": rules, "start": m.start(), "end": end})
+    return out
+
+
+def organ_priors(organ):
+    """What the Prior window shows: the organ's priors (id, statement, rules), those the user removed and added."""
+    d = default_priors(organ)
+    name = d.get("organ") or next((o for o in user_organs() if _slug(o) == _slug(organ)), str(organ).strip())
+    ch = _changes(name)
+    blocks = [] if d.get("error") else _prior_blocks(d["text"])
+    return {"organ": name, "covered": not d.get("error"),
+            "priors": [{k: b[k] for k in ("id", "title", "short", "rules")} for b in blocks],
+            "removed": [x for x in ch["removed"] if any(b["id"] == x for b in blocks)], "added": ch["added"],
+            "edited": bool(ch["removed"] or ch["added"])}
+
+
 def tissue_priors(organ=None):
-    """The organ's priors: the user's version when they edited them (Prior in the app; "edited": true), else the
-    section of the app's priors document (with the shared notes of its group); without organ, the list of organs."""
+    """The organ's priors as plain text: the app's document (with its group's shared notes) less the priors the user
+    removed, plus those the user added (Prior in the app; "edited": true); without organ, the list of organs."""
     if not organ:
         r = default_priors()
-        return {"organs": r["organs"] + [o for o in user_organs() if default_priors(o).get("error")],
-                "how_to_read": to_txt(r["how_to_read"]), "care": to_txt(r["care"])}
-    r = default_priors(organ)
-    q = str(organ).strip()
-    name = r.get("organ") or next((o for o in user_organs() if _slug(o) == _slug(q)), q)
-    f = _user_file(name)
-    if f.exists():
-        return {"organ": name, "text": f.read_text(encoding="utf-8"), "edited": True,
-                "note": "the user's version of these priors (edited in the app): follow it, not the app's default"}
-    return r if r.get("error") else r | {"text": to_txt(r["text"]), "edited": False}
+        return {"organs": r["organs"] + user_organs(), "how_to_read": to_txt(r["how_to_read"]),
+                "care": to_txt(r["care"])}
+    d = default_priors(organ)
+    v = organ_priors(organ)
+    if d.get("error") and not v["added"]:
+        return d
+    md = "" if d.get("error") else d["text"]
+    for b in sorted([b for b in _prior_blocks(md) if b["id"] in v["removed"]], key=lambda b: -b["start"]):
+        md = md[:b["start"]] + md[b["end"]:]
+    text = to_txt(md) if md else f"=== {v['organ']} ===\n"
+    if v["removed"]:
+        text += f"\nRemoved by the user (do not apply): {', '.join(v['removed'])}\n"
+    if v["added"]:
+        text += "\nPriors added by the user\n" + "".join(
+            f"- {a['id']}. {a['text']}\n" + (f"  - Rule: {a['rule']}\n" if a.get("rule") else
+                                              f"  - Rule: none ({a['no_rule']})\n" if a.get("no_rule") else
+                                              "  - Rule: not written yet (set_prior_rule)\n") for a in v["added"])
+    out = {"organ": v["organ"], "text": text, "edited": v["edited"]}
+    if v["edited"]:
+        out["note"] = "the user removed or added priors in the app: follow this version, not the app's default"
+    return out
 
 
-def save_user_priors(organ, text):
-    """Keep the user's version of an organ's priors; the default text (or an empty one) removes it."""
+def set_priors(organ, removed=None, added=None):
+    """Keep the user's changes to an organ's priors: the ids removed, and the added priors [{"text"}, or as returned
+    with their "id" and rule]: a new one gets the next id U-n and no rule yet (the agent writes it, set_prior_rule).
+    Nothing removed or added: back to the app's priors."""
     name = str(organ or "").strip()
     if not name or len(name) > 80:
         raise ValueError("name the organ (at most 80 characters)")
     d = default_priors(name)
     name = d.get("organ") or name
-    text = str(text or "").replace("\r\n", "\n")
+    ids = {b["id"] for b in _prior_blocks(d["text"])} if not d.get("error") else set()
+    removed = sorted({str(x) for x in (removed or []) if str(x) in ids})
+    old = {a["id"]: a for a in _changes(name)["added"]}
+    n = max([int(i[2:]) for i in old if re.fullmatch(r"U-\d+", i)] + [0])
+    clean = []
+    for a in added or []:
+        text = " ".join(str(a.get("text") or "").split())
+        if not text:
+            continue
+        if len(text) > 600:
+            raise ValueError("a prior is longer than 600 characters")
+        prev = old.get(a.get("id"))
+        if prev and prev["text"] == text:
+            clean.append(prev)   # unchanged: its rule stays
+        else:
+            n += 1
+            clean.append({"id": f"U-{n}", "text": text})
+    _write_changes(name, removed, clean)
+    return organ_priors(name)
+
+
+def _write_changes(name, removed, added):
     f = _user_file(name)
-    if not text.strip() or (not d.get("error") and text.strip() == to_txt(d["text"]).strip()):
+    if not removed and not added:
         f.unlink(missing_ok=True)
-        return tissue_priors(name)
-    if len(text) > 400_000:
-        raise ValueError("the priors are longer than 400,000 characters")
-    f.parent.mkdir(parents=True, exist_ok=True)
-    if not re.match(r"^=== .+ ===", text.lstrip()):
-        text = f"=== {name} ===\n\n" + text
-    f.write_text(text, encoding="utf-8")
-    return tissue_priors(name)
+    else:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        dump_json({"organ": name, "removed": removed, "added": added}, f, indent=1)
+
+
+RULE_KINDS, RULE_MODES, RULE_STRENGTHS = ("region", "depth", "neighborhood"), ("only", "exclude", "enrich"), ("strong", "moderate", "weak")
+
+
+def set_prior_rule(organ, prior_id, types=None, mode=None, strength="moderate", kind="region", regions=None,
+                   max_depth_um=None, neighbor_types=None, min_frac=None, no_rule=None):
+    """The rule of a prior the user added (in the constraint language), or no_rule: why it cannot be one."""
+    v = organ_priors(organ)
+    ch = _changes(v["organ"])
+    a = next((x for x in ch["added"] if x["id"] == prior_id), None)
+    if a is None:
+        raise ValueError(f"no added prior {prior_id!r} for {v['organ']}: " + ", ".join(x["id"] for x in ch["added"]))
+    a.pop("rule", None); a.pop("no_rule", None)
+    if no_rule:
+        a["no_rule"] = " ".join(str(no_rule).split())[:300]
+    else:
+        types = [str(x).strip() for x in (types or []) if str(x).strip()]
+        if not types:
+            raise ValueError("give the cell types (or no_rule with the reason)")
+        if kind not in RULE_KINDS or mode not in RULE_MODES or strength not in RULE_STRENGTHS:
+            raise ValueError(f"kind one of {RULE_KINDS}, mode one of {RULE_MODES}, strength one of {RULE_STRENGTHS}")
+        parts = [f"kind={kind}", f"types=[{', '.join(types)}]"]
+        if kind == "region":
+            regions = [str(x).strip() for x in (regions or []) if str(x).strip()]
+            if not regions:
+                raise ValueError("a region rule needs regions (the names the user draws)")
+            parts.append(f"regions=[{', '.join(regions)}]")
+        elif kind == "depth":
+            if max_depth_um is None:
+                raise ValueError("a depth rule needs max_depth_um")
+            parts.append(f"max_depth_um={float(max_depth_um):g}")
+        else:
+            if not neighbor_types or min_frac is None:
+                raise ValueError("a neighborhood rule needs neighbor_types and min_frac")
+            parts += [f"neighbor_types=[{', '.join(neighbor_types)}]", f"min_frac={float(min_frac):g}"]
+        a["rule"] = ", ".join(parts + [f"mode={mode}", f"strength={strength}"])
+    _write_changes(v["organ"], ch["removed"], ch["added"])
+    return next(x for x in ch["added"] if x["id"] == prior_id)
 
 
 def default_priors(organ=None):
