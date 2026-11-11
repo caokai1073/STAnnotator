@@ -242,6 +242,7 @@ body.desktop #side { display: none; }
 header .br { flex: 1 1 100%; height: 0; }
 #tools label { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
 #legend { left: 10px; bottom: 10px; width: 270px; max-height: 45%; display: flex; flex-direction: column; }
+#legend.stale #lgitems, #regpanel.stale #rgitems { opacity: .45; pointer-events: none; }  /* another slice is opening */
 #legend .lh { display: flex; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 12px; gap: 6px; }
 #legend .items { overflow: auto; padding: 4px 6px; }
 #legend .it { display: flex; align-items: center; gap: 7px; padding: 2px 4px; border-radius: 4px; cursor: pointer; font-size: 12px; }
@@ -1648,6 +1649,7 @@ async function selectSample(id) {
   if (sid) await startAnnotation("continue", sid, token);
   else if (!ids.length) await openPlaceholder(token);  // not annotated yet: regions and the registration still work
   else st.wantMode = st.keepView = null;
+  if (token === st.switchToken) panelsIdle();  // (none opened: say so)
   if (token === st.switchToken) resumeRunning();  // an annotation, PCA / UMAP or niches still running from before
 }
 async function openPlaceholder(token) {  // the sample's "not annotated yet" session (method none), made on first use
@@ -1674,13 +1676,26 @@ function forgetOpened(sample) {  // the next opening of this sample takes its la
   delete st.openedThisVisit[sample];
   try { localStorage.removeItem(`ann:${sample}`); } catch (e) {}
 }
+function panelsWait() {  // Cell types and Regions stay while another annotation (slice) opens, dimmed until it is there
+  const smp = st.sample;
+  $("legend").hidden = !smp || !!smp.image_only;  // an H&E only: no cells to list
+  $("regpanel").hidden = !smp;
+  ["legend", "regpanel"].forEach((id) => $(id).classList.add("stale"));
+}
+function panelsIdle() {  // no annotation open on this sample: the panels say so instead of showing the last slice's
+  if (st.sid) return;
+  const hint = (text) => Object.assign(document.createElement("div"), { className: "hint", textContent: text, style: "padding:6px 4px" });
+  $("lgtitle").textContent = "Cell types"; $("lgitems").replaceChildren(hint("No annotation open: choose one in Data → Annotation, or Annotate."));
+  $("rgitems").replaceChildren(hint("No annotation open: its regions show when one is open."));
+  ["legend", "regpanel"].forEach((id) => $(id).classList.remove("stale"));
+}
 function closeSession() {
   st.sid = null; st.placeholder = false; st.version = null; st.filters = {}; st.regions = null; st.advice = null; st.advicePollSig = undefined; st.adviceSeen = null;
   if (st.drawing) stopDraw(); if (st.editing) stopEdit(); closePlaus();
   st.shape = null; st.rsel = new Set(); syncShapeBar();  // an outline being drawn stays as its sample's draft
   st.paint = null;  // a proposal's cells shown on the map are rows of this annotation: not of the next one
   if (typeof PC !== "undefined" && PC.peek) { PC.peek = false; $("pcBack").hidden = true; }
-  $("legend").hidden = true; $("cellcard").classList.remove("show");
+  panelsWait(); $("cellcard").classList.remove("show");
   $("empty").style.display = "flex";
   ["undo", "export", "send", "plaus", "report", "nRun", "eRun", "eShow"].forEach((b) => ($(b).disabled = true));
   closeEmbedding(); st.emb = null; EM.selAll = null; EM.lassoRaw = null; setSelection(null); $("einfo").textContent = "Open or make an annotation first";
@@ -1690,7 +1705,7 @@ function closeSession() {
   $("ainfo").textContent = "No annotation open: choose a method and click Annotate, or open one in Data → Annotation";
   $("carryWrap").style.visibility = "hidden";
   $("input").disabled = true; $("composerhint").textContent = "Annotate a sample first.";
-  $("vinfo").textContent = ""; $("regpanel").hidden = true; drawRegions();
+  $("vinfo").textContent = ""; drawRegions();
   fillModes(null); st.lastSummary = null;
   GL.colorKey = null; drawGL();
   $("msgs").querySelectorAll(".m").forEach((m) => m.remove());
@@ -2267,6 +2282,7 @@ async function loadLegend() {
   st.legend = r.items;
   const f = filt();
   $("legend").hidden = !!st.imageOnly;  // an image only: no cells to list
+  $("legend").classList.remove("stale");
   $("lgtitle").textContent = (st.mode.startsWith("gene:") ? `${st.mode.slice(5)} transcripts` : st.mode.startsWith("lr:") ? lrTitle(st.mode)
     : st.mode.startsWith("trajectory:") ? `Trajectory: ${((st.trajs || {})[st.mode.slice(11)] || {}).label || TR_NAME[st.mode.slice(11)]}` : MODE_TITLES[st.mode]) + (f.size ? ` (${f.size} shown)` : "");
   $("lgall").disabled = !f.size;
@@ -2563,8 +2579,10 @@ $("rgImportFile").onchange = async () => {
 };
 async function loadRegions() {
   if (!st.sid) return;
-  st.regions = await api(`/api/s/${st.sid}/regions?version=${st.version}`);
-  $("regpanel").hidden = false;
+  const sid = st.sid, regions = await api(`/api/s/${st.sid}/regions?version=${st.version}`);
+  if (sid !== st.sid) return;  // another annotation (slice) opened meanwhile
+  st.regions = regions;
+  $("regpanel").hidden = false; $("regpanel").classList.remove("stale");
   const box = $("rgitems"); box.textContent = "";
   if (!st.regions.regions.length) {
     const d = document.createElement("div"); d.className = "hint"; d.style.padding = "6px 4px";
@@ -5889,7 +5907,7 @@ $("sample").onchange = (e) => {  // another slice of the same project: like ◀ 
   return p && p.samples.includes(e.target.value) ? gotoSlice(e.target.value) : selectSample(e.target.value);
 };
 $("annotate").onclick = () => (projectMode() && $("method").value === "markers" ? annotateProject() : startAnnotation("new"));
-$("session").onchange = (e) => { closeSession(); $("sessDel").disabled = $("sessRename").disabled = !e.target.value; if (e.target.value) startAnnotation("continue", e.target.value); };
+$("session").onchange = (e) => { closeSession(); $("sessDel").disabled = $("sessRename").disabled = !e.target.value; if (e.target.value) startAnnotation("continue", e.target.value); else panelsIdle(); };
 $("sessDel").onclick = async () => {  // delete the annotation chosen in the box; the next most recent one opens
   const sel = $("session"), sid = sel.value; if (!sid) return;
   if (st.busy) { toast("Wait until the assistant has answered"); return; }
