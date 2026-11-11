@@ -234,21 +234,33 @@ def cpu_threads():
     return max(1, min(KNN_THREADS, os.cpu_count() or 1))
 
 
+_BLAS = {"n": 0, "lim": None}       # searches under the one-thread limit now, and the limit to undo after the last
+_BLAS_LOCK = __import__("threading").Lock()
+
+
 @__import__("contextlib").contextmanager
 def _one_blas_thread():
     """BLAS on one thread while the threads of the exact search each run their own products (OpenBLAS or MKL: a
     product this thin is several times slower spread over all cores, and several at once on all cores slower still).
-    A BLAS threadpoolctl cannot set (Apple's Accelerate) keeps its own threads."""
-    try:
-        from threadpoolctl import threadpool_limits
-        lim = threadpool_limits(1, user_api="blas")
-    except Exception:
-        lim = None
+    A BLAS threadpoolctl cannot set (Apple's Accelerate) keeps its own threads. The limit is process-wide: two
+    searches at once (two jobs) share it, set by the first and lifted by the last (else the one ending last would put
+    back the other's one thread for good)."""
+    with _BLAS_LOCK:
+        if _BLAS["n"] == 0:
+            try:
+                from threadpoolctl import threadpool_limits
+                _BLAS["lim"] = threadpool_limits(1, user_api="blas")
+            except Exception:
+                _BLAS["lim"] = None
+        _BLAS["n"] += 1
     try:
         yield
     finally:
-        if lim is not None:
-            lim.restore_original_limits()
+        with _BLAS_LOCK:
+            _BLAS["n"] -= 1
+            if _BLAS["n"] == 0 and _BLAS["lim"] is not None:
+                _BLAS["lim"].restore_original_limits()
+                _BLAS["lim"] = None
 
 
 def _blocks(n, rows, threads, fn):
@@ -375,8 +387,8 @@ def _within(Z, rows, bound, fn, threads=None):
             ends = np.cumsum(np.bincount(r, minlength=min(KNN_TILE[0], len(sel) - s)))
             for q in range(len(ends)):
                 fn(sel[s + q], c[ends[q - 1] if q else 0:ends[q]])
-    with _one_blas_thread():
-        _blocks(len(rows), KNN_BLOCK, threads or cpu_threads(), block)
+    with _one_blas_thread():  # (KNN_TILE[0] rows at once: a row can have many columns under its bound)
+        _blocks(len(rows), KNN_TILE[0], threads or cpu_threads(), block)
 
 
 MAX_PCA_GENES, N_HVG = 6000, 3000  # above MAX_PCA_GENES genes (whole-transcriptome data such as Visium HD) the PCA
@@ -438,6 +450,35 @@ def knn_backend(mode):
     return "knn_exact_numpy", "exact, on the CPU (numpy)"
 
 
+def _expand_copies(Zu, cu, inv, cnt, kk):
+    """Candidates of every row from those of the distinct points Zu (cu: kx of them per point, any order): the points
+    in order of distance (float64; ties by point), each standing for its first kk rows by row number, the first kk
+    rows of that list. So a row's candidates are its kk nearest rows, ties at one point by row number, as a search
+    over all rows gives them (the re-rank and its check in _exact then make them exact)."""
+    u = len(Zu)
+    order = np.argsort(inv, kind="stable")  # rows grouped by their point, ascending within a point
+    start = np.concatenate([[0], np.cumsum(cnt)[:-1]])
+    j = np.arange(kk)
+    mem = np.where(j < cnt[:, None], order[np.minimum(start[:, None] + j, len(order) - 1)], -1)  # u x kk, -1 padded
+    Zu64 = Zu.astype(np.float64)
+    out = np.empty((u, kk), np.int64)
+    for i in range(0, u, 4096):
+        c = cu[i:i + 4096]
+        d = ((Zu64[c] - Zu64[i:i + len(c), None]) ** 2).sum(-1)
+        c = np.take_along_axis(c, np.lexsort((c, d), axis=1), 1)  # nearest point first (the point itself at 0)
+        m = mem[c].reshape(len(c), -1)
+        first = np.argsort(m < 0, axis=1, kind="stable")[:, :kk]  # the rows of the nearest points, in that order
+        out[i:i + len(c)] = np.take_along_axis(m, first, 1)
+    cand = out[inv]
+    bad = cand < 0  # fewer than kk rows in all the points found (only with very few distinct points): any rows
+    if bad.any():
+        fill = np.arange(len(inv))
+        for r in np.flatnonzero(bad.any(1)):
+            have = cand[r][cand[r] >= 0]
+            cand[r] = np.concatenate([have, np.setdiff1d(fill, have)[:kk - len(have)]])
+    return cand
+
+
 def _exact(Z, k):
     """Exact neighbors, the same on every computer: candidates from a GPU (CUDA or Apple MPS) when torch has one,
     else from the CPU (torch, or numpy without it), in float32, re-ranked by their float64 distance with ties going to
@@ -448,6 +489,8 @@ def _exact(Z, k):
     from .config import device
     from . import timing
     n, dim = Z.shape
+    if k <= 0 or n < 2:  # (a single row has no neighbors)
+        return np.empty((n, 0), np.float32), np.empty((n, 0), np.int64)
     kk = min(k + 1 + KNN_EXTRA, n)
     Z64 = np.asarray(Z, np.float64)
     with warnings.catch_warnings():  # (NaN in the data)
@@ -455,16 +498,24 @@ def _exact(Z, k):
         mu = np.nan_to_num(np.nanmean(Z64, 0), nan=0.0, posinf=0.0, neginf=0.0)
     Zc = (Z64 - mu).astype(np.float32)  # near the origin float32 rounds less
     key, _ = knn_backend("exact")
+    # many identical rows (cells without transcripts, or with one, in unfiltered data: often thousands): the distinct
+    # points are searched, and each row gets the members of its nearest points (its own first): copies cost nothing
+    Zu, inv, cnt = np.unique(Zc, axis=0, return_inverse=True, return_counts=True)
+    inv = np.asarray(inv).ravel()
+    dedup = n - len(Zu) > max(1000, n // 100)
+    X, kx = (Zu, min(kk, len(Zu))) if dedup else (Zc, kk)
     cand = None
     if key == "knn_exact_gpu":
         try:
-            with timing.step(key, n * n / 1e9):
-                cand = _topk_torch(Zc, kk, device())
+            with timing.step(key, len(X) ** 2 / 1e9):
+                cand = _topk_torch(X, kx, device())
         except RuntimeError:  # e.g. GPU memory taken by other jobs: the CPU gives the same neighbors
             key = "knn_exact_torch"
     if cand is None:
-        with timing.step(key, n * n / 1e9):
-            cand = _topk_torch(Zc, kk, "cpu") if key == "knn_exact_torch" else _topk_numpy(Zc, kk)
+        with timing.step(key, len(X) ** 2 / 1e9):
+            cand = _topk_torch(X, kx, "cpu") if key == "knn_exact_torch" else _topk_numpy(X, kx)
+    if dedup:
+        cand = _expand_copies(Zu, cand, inv, cnt, kk)
     dist, nbr = np.empty((n, k), np.float32), np.empty((n, k), np.int64)
     dk, dmax = np.empty(n), np.empty(n)  # squared: the k-th neighbor's and the farthest candidate's
 
@@ -500,6 +551,20 @@ def _exact(Z, k):
             # times a safety factor 2 (torch computes them slightly differently)
             margin = 16 * (dim + 4) * 2.0 ** -24 * (a + np.sqrt(dmax)) ** 2
             redo = np.flatnonzero(~(dmax - dk > margin))
+            if len(redo):
+                # a row with at least k identical rows (cells without transcripts, say: often thousands): its k
+                # nearest are the k lowest-numbered of them, at distance 0, without searching (a search over every
+                # row under a zero bound would cost the square of their number)
+                _, inv, cnt = np.unique(Z64, axis=0, return_inverse=True, return_counts=True)
+                inv = np.asarray(inv).ravel()
+                same = redo[cnt[inv[redo]] > k]
+                if len(same):
+                    order = np.argsort(inv, kind="stable")  # the rows grouped by their point, ascending in a group
+                    start = np.concatenate([[0], np.cumsum(cnt)[:-1]])
+                    for i in same:
+                        g = order[start[inv[i]]:start[inv[i]] + k + 1]
+                        nbr[i], dist[i] = g[g != i][:k], 0.0
+                    redo = redo[cnt[inv[redo]] <= k]
             if len(redo):
                 _within(Zc, redo, dk - a * a + margin, again)
     return dist, nbr

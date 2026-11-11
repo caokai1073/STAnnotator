@@ -4502,7 +4502,7 @@ async function alignWith(ids) {
 // sample sits on its image (or its alignment was dismissed)
 const AW = { ids: null, t0: 0, timer: null, skipped: new Set(), shown: "" };
 function watchAlign(ids) {
-  AW.ids = ids; AW.t0 = Date.now() / 1000; AW.skipped = new Set(); AW.shown = "";
+  AW.ids = ids; AW.t0 = Date.now() / 1000; AW.skipped = new Set(); AW.shown = ""; AW.last = 0;
   clearInterval(AW.timer); AW.timer = setInterval(() => alignTick().catch(() => {}), 3000);
   setTimeout(() => alignTick().catch(() => {}), 1500);  // (after the request's own message)
 }
@@ -4520,6 +4520,12 @@ async function alignTick() {
     return;
   }
   const cur = act.kind === "align" && act.time >= AW.t0 - 5 && pending.includes(act.sample) ? act : null;
+  if (cur) AW.last = Math.max(AW.last || 0, cur.time);
+  if (Date.now() / 1000 - Math.max(AW.last || 0, AW.t0) > 600) {  // the agent has not worked on it for 10 min
+    clearInterval(AW.timer); AW.ids = null;
+    toast(`Stopped following the alignment: the agent has not worked on it for 10 minutes (${done} of ${n} done)`, 8000);
+    return;
+  }
   const msg = `Aligning with the agent: ${cur ? `${name(cur.sample)}, ${cur.what}` : `waiting for the agent (${name(pending[0])} next)`}` + (n > 1 ? ` · ${done} of ${n} done` : "");
   if (msg !== AW.shown || !$("toast").classList.contains("show")) { AW.shown = msg; toast(msg, 10000); }
 }
