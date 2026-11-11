@@ -2976,6 +2976,12 @@ def api_samples_clear(req):
     old = sorted(config.TRASH.glob("*_all_samples")) if config.TRASH.exists() else []
     if not samples and not sess and not old:
         return _json({"deleted_samples": 0, "deleted_sessions": 0})
+    closed = []
+    if os.environ.get("STAGENT_REMOTE") != "1":  # the Claude Code this app opened (on this computer) ends with them
+        try:  # (on a server the app reaches over SSH, the app on the user's computer closes it)
+            closed = claudelink.close_claude_code()
+        except Exception as e:
+            print(f"could not close Claude Code: {e}")
     n_chats = _trash_sessions(sess, None)
     for d in samples + old:
         render.forget(d)  # images open in the viewer (Windows cannot delete an open file)
@@ -2984,7 +2990,8 @@ def api_samples_clear(req):
         cache.clear()
     review_app._sessions.clear()
     mcp_server._active.pop("session", None)
-    return _json({"deleted_samples": len(samples), "deleted_sessions": len(sess), "deleted_conversations": n_chats})
+    return _json({"deleted_samples": len(samples), "deleted_sessions": len(sess), "deleted_conversations": n_chats,
+                  "claude_closed": len(closed)})
 
 
 async def api_undo(req):

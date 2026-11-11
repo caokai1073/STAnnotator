@@ -774,7 +774,8 @@ asks now and always shows it. Without an internet connection nothing is shown.
   of this slice or of all slices, and optionally the PCA / UMAP and Leiden clusters too (they are computed from the
   expression alone and stay otherwise).
 - **Remove all** (bottom of the toolbar, desktop app) deletes every sample with all its annotations and chats for
-  good, to import from scratch (it cannot be undone); marker lists stay.
+  good, to import from scratch (it cannot be undone); marker lists stay. The agent (Claude Code) the app opened is
+  closed with them.
 
 ## 5. Analyses
 

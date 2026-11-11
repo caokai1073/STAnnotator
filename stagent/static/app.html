@@ -5493,7 +5493,9 @@ $("clearAll").onclick = async () => {
   if (!confirm(`Remove all ${n} sample(s)?\n\nEvery sample, all its annotations, regions, priors, niches and agent chats are deleted for good, so you can import from scratch. This cannot be undone. Marker lists are kept.`)) return;
   try {
     const r = await post("/api/samples/clear", {});
-    toast(`Removed ${r.deleted_samples} sample(s) and ${r.deleted_sessions} annotation(s)`, 4000);
+    // the agent (Claude Code) goes too: on this computer the server closed it; working on a server, the app here does
+    if (st.remote && native() && native().close_claude) { try { await native().close_claude(); } catch (e) { /* (already closed) */ } }
+    toast(`Removed ${r.deleted_samples} sample(s) and ${r.deleted_sessions} annotation(s); the agent (Claude Code) was closed`, 4000);
     setTimeout(() => location.reload(), 900);
   } catch (e) { toast(e.message, 7000); }
 };

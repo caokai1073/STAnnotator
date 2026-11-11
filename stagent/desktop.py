@@ -149,6 +149,11 @@ class Api:
         from . import claudelink
         return claudelink.open_claude_code(**args, remote=self._conn.conn if self._conn else None)
 
+    def close_claude(self):
+        """End the Claude Code the app opened on this computer and close its window (Remove all on a server)."""
+        from . import claudelink
+        return claudelink.close_claude_code()
+
     def download(self, path, dest):
         """Save an export of the server's viewer (a URL path) to a file on this computer."""
         if not self._conn:
