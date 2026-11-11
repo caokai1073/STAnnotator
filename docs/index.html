@@ -261,6 +261,8 @@ section.band { padding-block: clamp(64px, 9vw, 112px) 0; }
 .osc ol { margin: 0; padding-left: 1.3em; display: grid; gap: 8px; }
 .osc ol li::marker { font-family: var(--f-mono); color: var(--accent); }
 .osc .note { font-size: var(--s-0); color: var(--muted); }
+.dlnote { margin-top: 20px; padding: 16px 20px; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 10px; background: var(--panel); display: grid; gap: 6px; font-size: var(--s-0); color: var(--muted); }
+.dlnote b:first-child { color: var(--ink); }
 .other { margin-top: 40px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; }
 @media (max-width: 860px) { .other { grid-template-columns: minmax(0, 1fr); } }
 .other-col { display: grid; gap: 16px; align-content: start; min-width: 0; }
@@ -321,7 +323,7 @@ footer .counted { flex-basis: 100%; margin: 0; }
             </a>
             <a class="btn btn-ghost" href="#source">Install from source</a>
           </div>
-          <p class="hero-meta">Version <span data-version>0.2.52</span> · free for noncommercial use, source on GitHub · runs on your computer or your server · the agent is your own Claude Code</p>
+          <p class="hero-meta">Version <span data-version>0.2.54</span> · free for noncommercial use, source on GitHub · runs on your computer or your server · the agent is your own Claude Code</p>
         </div>
       </div>
       <p class="lede">STAnnotator takes spatial transcriptomics (Xenium, CosMx, MERSCOPE, Visium HD, Stereo-seq and more)
@@ -688,7 +690,7 @@ footer .counted { flex-basis: 100%; margin: 0; }
       <div class="side"><p class="eyebrow">Download</p></div>
       <div>
         <div class="get"><img src="assets/logo.png" width="64" height="64" alt="STAnnotator app icon"><h2>Get STAnnotator</h2></div>
-        <p class="intro">Version <span data-version>0.2.52</span>. Both apps contain everything they need; no Python to install.
+        <p class="intro">Version <span data-version>0.2.54</span>. Both apps contain everything they need; no Python to install.
           All releases and their notes are on the <a href="#" data-releases>releases page</a>. Once installed (0.2.46 and
           later), the app offers each new version itself and installs it with one click. Something not working? The bug
           icon at the top right of the app sends the developers a report.</p>
@@ -718,9 +720,17 @@ footer .counted { flex-basis: 100%; margin: 0; }
               <li>Install <a href="https://code.claude.com/docs/en/setup">Claude Code</a> and log in once, so that <code>claude</code> works in PowerShell.</li>
               <li>Start STAnnotator from the Start menu and click <b>Import</b>.</li>
             </ol>
-            <p class="note">The installer is not signed yet. If Windows SmartScreen stops it, click <b>More info → Run anyway</b>.
-              Uninstalling keeps your data.</p>
+            <p class="note">Uninstalling keeps your data.</p>
           </div>
+        </div>
+        <div class="dlnote" role="note">
+          <b>Note for Windows</b>
+          <p>The Windows installer is not signed yet. If Windows SmartScreen stops it, click <b>More info → Run anyway</b>.
+            On Windows 11, <b>Smart App Control</b> blocks unsigned apps without that button: the installer does not run,
+            and an installed STAnnotator does not open ("blocked by an application control policy"). STAnnotator then runs
+            only with Smart App Control turned off (Settings → Privacy &amp; security → Windows Security → App &amp; browser
+            control → Smart App Control settings). Depending on the Windows version, turning it back on may need a reset of
+            Windows.</p>
         </div>
         <div class="other">
           <div class="other-col">
@@ -738,7 +748,7 @@ uv pip install --python .venv/bin/python -e ".[app]"
               <h3>On a server</h3>
               <p class="sub">Install the same version as the app on your computer (the tag below is the newest release), then click <b>Local → A server over SSH</b> in the app.</p>
             </div>
-            <div class="code"><button class="copy" type="button">Copy</button><pre><code>git clone --branch v<span data-version>0.2.52</span> https://github.com/caokai1073/STAnnotator.git ~/STAnnotator && cd ~/STAnnotator
+            <div class="code"><button class="copy" type="button">Copy</button><pre><code>git clone --branch v<span data-version>0.2.54</span> https://github.com/caokai1073/STAnnotator.git ~/STAnnotator && cd ~/STAnnotator
 uv venv .venv --python 3.12
 uv pip install --python .venv/bin/python -e .
 <span class="c"># the command to enter in the app: ~/STAnnotator/.venv/bin/stagent</span></code></pre></div>
@@ -760,7 +770,7 @@ uv pip install --python .venv/bin/python -e .
 
 <footer>
   <div class="wrap">
-    <span>STAnnotator <span data-version>0.2.52</span> · spatial transcriptomics on the tissue image · macOS and Windows</span>
+    <span>STAnnotator <span data-version>0.2.54</span> · spatial transcriptomics on the tissue image · macOS and Windows</span>
     <nav aria-label="Links">
       <a href="https://github.com/caokai1073/STAnnotator">Source code</a>
       <a href="https://github.com/caokai1073/STAnnotator/blob/main/docs/GUIDE.md">User guide</a>
