@@ -22,3 +22,8 @@ def _numba_threads():
 
 
 _numba_threads()
+
+# MLX (the exact neighbor search on the Apple GPU) multiplies float32 matrices in TF32 by default on the GPUs that have
+# it (Apple M5): about 10 bits, which drops true neighbors and changes the annotation. Off: full float32, the same
+# neighbors as every other computer. MLX reads it once, at its first product (markers._mlx_gpu checks the precision).
+__import__("os").environ["MLX_ENABLE_TF32"] = "0"

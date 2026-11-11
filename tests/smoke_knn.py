@@ -29,7 +29,15 @@ if markers.has_torch():
     backends["torch, CPU"] = lambda: markers._topk_torch(Z, kk, "cpu")
     if config.device() != "cpu":
         backends[f"torch, {config.device()}"] = lambda: markers._topk_torch(Z, kk, config.device())
-if markers._mlx_gpu():
+if markers._mlx_gpu():  # (it checks that the GPU multiplies in full float32, not TF32: else it is not used)
+    import mlx.core as mx, os
+    assert os.environ.get("MLX_ENABLE_TF32") == "0"
+    rng = np.random.default_rng(2)
+    a, b = rng.standard_normal((512, 32), np.float32), rng.standard_normal((32, 8192), np.float32)
+    with mx.stream(mx.gpu):
+        p = np.array(mx.array(a) @ mx.array(b))
+    err = np.abs(p - a.astype(np.float64) @ b).max() / (np.abs(a) @ np.abs(b)).max()
+    assert err < 1e-5, f"MLX multiplies in reduced precision on the GPU ({err:.1e})"
     backends["MLX, Apple GPU"] = lambda: markers._topk_mlx(Z, kk)
 else:
     try:  # (MLX's CPU build, e.g. mlx[cpu] on Linux: the same code on the CPU)

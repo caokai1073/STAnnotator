@@ -33,7 +33,7 @@ REF = {"prepare": 0.65,         # per 10^6 cells: normalize, detection matrix
 SCALE = {"knn_exact_torch": "torch", "knn_exact_numpy": "numpy", "knn_approx": "cores", "model": "cores",
          "knn_exact_gpu": "gpu", "knn_exact_mlx": "mlx"}
 REF_PROBE = {"cores": 0.135, "one": 0.0164, "torch": 0.23, "numpy": 0.21, "gpu": 0.0113, "mlx": 0.04}  # their seconds there
-VERSION = {"knn_exact_numpy": 2, "knn_rerank": 2, "knn_exact_mlx": 1}  # a step whose code changed: its rates timed before are dropped
+VERSION = {"knn_exact_numpy": 2, "knn_rerank": 2, "knn_exact_mlx": 2}  # a step whose code changed: its rates timed before are dropped
 MIN_SECONDS = 1.0  # shorter steps are not recorded: fixed overheads would dominate their rate
 DECAY = 0.8        # earlier records count this much less with every new one; the rate is seconds / units of what
                    # is kept, so large runs weigh more than small ones (whose fixed overheads differ)

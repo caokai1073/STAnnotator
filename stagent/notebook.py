@@ -523,6 +523,8 @@ import os
 # the approximate neighbor search runs on 8 threads, as in the app (its result depends on the thread count): numba must
 # allow 8 threads even with fewer cores. Set before numba is imported.
 os.environ["NUMBA_NUM_THREADS"] = str(max(int(os.environ.get("NUMBA_NUM_THREADS") or 0), os.cpu_count() or 1, 8))
+# on a Mac with MLX the exact neighbor search runs on the GPU: in full float32, as in the app (not TF32)
+os.environ["MLX_ENABLE_TF32"] = "0"
 import json, base64, zlib
 import numpy as np, pandas as pd, scipy.sparse as sp
 import matplotlib.pyplot as plt

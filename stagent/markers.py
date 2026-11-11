@@ -230,7 +230,10 @@ _MLX_LOCK = __import__("threading").Lock()  # one MLX search at a time (two jobs
 
 def _mlx_gpu():
     """MLX can compute on the Apple GPU here: the macOS app on Apple silicon (MLX needs macOS 14 or later; an older
-    macOS, or a failing import, leaves the search on the CPU). A tiny product on the GPU checks that its kernels load."""
+    macOS, or a failing import, leaves the search on the CPU). A product on the GPU checks that its kernels load and
+    that it computes in full float32: MLX uses TF32 (about 10 bits) on the GPUs that have it unless MLX_ENABLE_TF32=0
+    (set in stagent/__init__), which MLX reads once; if something multiplied on the GPU before it was set, or MLX
+    changes its default, the search stays on the CPU."""
     if "ok" not in _MLX:
         import sys, platform
         ok = False
@@ -239,8 +242,15 @@ def _mlx_gpu():
                 import mlx.core as mx
                 ok = bool(mx.is_available(mx.gpu))
                 if ok:
+                    rng = np.random.default_rng(0)
+                    a, b = rng.standard_normal((64, 32), np.float32), rng.standard_normal((32, 2048), np.float32)
                     with _MLX_LOCK, mx.stream(mx.gpu):
-                        ok = (mx.arange(4, dtype=mx.float32) @ mx.ones(4)).item() == 6.0
+                        p = np.array(mx.array(a) @ mx.array(b))  # (8 rows or more: the matrix kernel the search uses)
+                    err = float(np.abs(p - a.astype(np.float64) @ b).max() / (np.abs(a) @ np.abs(b)).max())
+                    if err > 1e-5:  # float32 rounds by about 1e-7; TF32 by 1e-3
+                        print(f"exact neighbors: the Apple GPU multiplies in reduced precision (relative error "
+                              f"{err:.1e}; MLX_ENABLE_TF32 must be 0 before MLX's first product); on the CPU")
+                        ok = False
             except Exception as e:
                 print(f"exact neighbors: no Apple GPU through MLX ({type(e).__name__}: {e}); on the CPU")
                 ok = False
