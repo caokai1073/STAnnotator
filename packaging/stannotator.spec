@@ -111,5 +111,5 @@ if sys.platform == "darwin":
     app = BUNDLE(coll, name="STAnnotator.app", icon=str(icon) if icon.exists() else None,
                  bundle_identifier="io.github.caokai1073.stannotator",
                  info_plist={"CFBundleName": "STAnnotator", "CFBundleDisplayName": "STAnnotator",
-                             "CFBundleShortVersionString": VERSION, "LSMinimumSystemVersion": "11.0",
+                             "CFBundleShortVersionString": VERSION, "LSMinimumSystemVersion": "14.0",
                              "NSHighResolutionCapable": True})

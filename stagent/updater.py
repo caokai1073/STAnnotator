@@ -100,6 +100,23 @@ def _cached():
         return {}
 
 
+MIN_MACOS = 14  # the app's LSMinimumSystemVersion (packaging/stannotator.spec), since 0.2.54
+
+
+def _macos():
+    import platform
+    return platform.mac_ver()[0] or "?"
+
+
+def _too_old_macos():
+    if sys.platform != "darwin":
+        return False
+    try:
+        return int(_macos().split(".")[0]) < MIN_MACOS
+    except ValueError:
+        return False
+
+
 def check(force=False, fresh=False):
     """{current, latest, available, can_install, skipped, ...}; asks GitHub at most every CHECK_EVERY seconds, or now
     with force (About > Check for updates) or fresh (the app starting: a release published since the last check, a
@@ -121,6 +138,9 @@ def check(force=False, fresh=False):
                         "error": "could not check for updates: no internet connection, or GitHub did not answer"}
     latest = cached.get("version", "")
     available = bool(latest) and newer(latest, __version__)
+    if available and _too_old_macos():  # the release needs macOS 14 (MIN_MACOS): not offered where it would not open
+        return {"current": __version__, "latest": latest, "available": False, "platform": _platform(),
+                "error": f"STAnnotator {latest} needs macOS {MIN_MACOS} or later: this Mac runs macOS {_macos()}"}
     return {"current": __version__, "latest": latest, "available": available, "platform": _platform(),
             "skipped": st.get("update_skip") == latest,
             # offered by itself today: this release only (a newer one published later the same day is offered too)

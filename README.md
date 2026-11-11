@@ -39,7 +39,7 @@ Two ways to run it:
 ## A. Local computer
 
 **You need**
-- A Mac with Apple silicon (macOS 11+) or a PC with Windows 10 / 11 (x64), and 8 GB of RAM or more. Linux: install
+- A Mac with Apple silicon (macOS 14+) or a PC with Windows 10 / 11 (x64), and 8 GB of RAM or more. Linux: install
   from source.
 - Claude Code, installed and logged in once (`claude` works in Terminal, or in PowerShell on Windows).
 
