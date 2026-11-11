@@ -316,7 +316,8 @@ def summary(s, focus=None, version=None, progress=None):
         cid = ((a[:, 3] - c["origin_px"][1]) // c["tile_px"]).astype(int) * c["nx"] + ((a[:, 2] - c["origin_px"][0]) // c["tile_px"]).astype(int)
         in_big = np.isin(cid, (b[big, 0] * c["nx"] + b[big, 1]).astype(int))
     areas = []
-    for k, comp in enumerate(_areas(a, D, noise | in_big | false)):
+    comps = _areas(a, D, noise | in_big | false)
+    for k, comp in enumerate(comps):
         c = np.array(comp)
         tags = pd.Series([t for t in tag[c] if t]).value_counts()
         regs = pd.Series(top_region[c]).value_counts()
@@ -358,7 +359,11 @@ def summary(s, focus=None, version=None, progress=None):
                "global" if affine["max_offset_um"] >= OFF_UM and not loc else
                "local" if affine["max_offset_um"] < OFF_UM else "global and local")
     return {"verdict": verdict, "windows": int(len(a)), "trusted_windows": int(trusted.sum()), "window_um": w["window_um"],
-            "windows_off": n_off, "median_offset_um": round(float(np.median(raw[trusted])), 1) if trusted.any() else None,
+            "windows_off": n_off,
+            # the alignment check's rule for a local registration (align.LOCAL_SHARE): the share of the windows in
+            # areas of 2 or more neighboring windows off, or a large shift
+            "share_in_areas": round(sum(len(c) for c in comps if len(c) >= 2) / max(int(trusted.sum()), 1), 3),
+            "large_shift": bool(big.any()), "median_offset_um": round(float(np.median(raw[trusted])), 1) if trusted.any() else None,
             "affine_part": affine, "areas": areas[:15], "n_areas": len(areas),
             "noise_windows": int((noise & (a[:, 6] >= MIN_CORR)).sum()),
             "beyond_search_share": round(float((np.abs(a[:, 4:6]).max(1) >= w["search_um"]).mean()), 3),

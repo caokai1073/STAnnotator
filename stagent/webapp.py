@@ -932,6 +932,8 @@ async def api_registration_local_undo(req: Request):
         else:
             m.pop(k, None)
     dump_json(m, sd / "meta.json", indent=1)
+    if (keep / "regcheck.json").exists():  # the cells are back where they were checked: the check is valid again
+        osutil.replace_atomic(regcheck._file(sample), lambda tmp: shutil.copy2(keep / "regcheck.json", tmp))
     shutil.rmtree(keep, ignore_errors=True)
     _reload_sample(sample)
     return _json({"ok": True})
@@ -976,6 +978,7 @@ async def api_registration_check(req: Request):
                 # which a shift in one place hardly moves
                 "windows_off": r.get("windows_off"), "trusted_windows": r.get("trusted_windows"),
                 "share_off": round(r.get("windows_off", 0) / max(r.get("trusted_windows") or 0, 1), 3),
+                "share_in_areas": r.get("share_in_areas"), "large_shift": r.get("large_shift"),
                 "local_share": align.LOCAL_SHARE,
                 # what the correction leaves, measured again with the cells moved by it
                 "after_median_um": r["correction"].get("median_offset_after_um"),
@@ -1009,6 +1012,8 @@ async def api_registration_local(req: Request):
             keep = sd / "align" / "before_local"   # the placement before, for Undo in the result window
             keep.mkdir(parents=True, exist_ok=True)
             shutil.copy2(sd / "cells.parquet", keep / "cells.parquet"); shutil.copy2(sd / "meta.json", keep / "meta.json")
+            if regcheck._file(sample).exists():  # the check of the placement before (Undo puts it back with the cells)
+                shutil.copy2(regcheck._file(sample), keep / "regcheck.json")
             with jobs.critical():  # the cells' file is written whole or not at all
                 importer.apply_registration_fix(sample, fix)
                 mf = config.SAMPLES / sample / "meta.json"

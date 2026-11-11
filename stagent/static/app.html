@@ -5703,12 +5703,15 @@ async function checkRegistration() {  // the cells against the nuclei over the w
   // any window back onto its nuclei. Not the whole-tissue median: a shift in one place hardly moves it. (A server
   // without windows_off: the median, as before.)
   const helps = r.windows_off != null && r.after_windows_off != null ? r.windows_off - r.after_windows_off : null;
+  // (the alignment check's rule: 5% of the windows in areas of 2 or more neighboring windows off, or a large shift;
+  // a server without share_in_areas: any window off, or one 10 µm off)
   const little = helps == null ? r.after_median_um != null && r.median_offset_um - r.after_median_um < 1
-    : helps <= 0 || (r.share_off < (r.local_share || 0.05) && (r.max_offset_um || 0) < 10);
+    : helps <= 0 || (r.share_in_areas != null ? r.share_in_areas < (r.local_share || 0.05) && !r.large_shift
+      : r.share_off < (r.local_share || 0.05) && (r.max_offset_um || 0) < 10);
   if (r.median_offset_um != null && r.median_offset_um <= 3 && little)
     return regDialog(sample, title, r.figure, `The cells sit on their nuclei (median offset ${r.median_offset_um} µm); ${r.n_areas} small area(s) are a little off, too little to correct.`, [close]);
-  if (r.after_median_um != null && r.after_median_um > 10)  // the correction would not bring them onto their nuclei
-    return regDialog(sample, title, r.figure, `The cells sit far off their nuclei (median ${r.median_offset_um} µm) and a local correction would not fix it: align the image again (Align with Agent, or a registration file).`, [close]);
+  if ((r.after_median_um != null && r.after_median_um > 10) || (helps != null && helps <= 0))  // the correction would not bring them onto their nuclei
+    return regDialog(sample, title, r.figure, `The cells sit off their nuclei (median ${r.median_offset_um} µm) and a local correction would not bring them back: align the image again (Align with Agent, or a registration file).`, [close]);
   const what = r.verdict === "global" ? "The whole tissue is slightly off its nuclei" : `${r.n_areas} area(s) sit off their nuclei`;
   const gain = helps != null && r.trusted_windows ? `windows off their nuclei: ${r.windows_off} of ${r.trusted_windows}, about ${r.after_windows_off} after`
     : `the median offset goes from ${r.median_offset_um} to about ${r.after_median_um} µm`;
@@ -6211,11 +6214,12 @@ $("qfBtn").onclick = async () => {
   $("qfHmito").toggleAttribute("hidden", !q.mito_pct);  // an SVG element has no .hidden
   $("qf_max_mito_pct").closest(".qfin").hidden = !q.mito_pct; $("qfNoMito").hidden = !!q.mito_pct;
   $("qfRestore").hidden = !f;
-  const lose = [q.n_sessions ? `${q.n_sessions === 1 ? "the annotation" : `the ${q.n_sessions} annotations`} (with chats)` : "",
+  const lose = [q.n_sessions ? `${q.n_sessions === 1 ? "the annotation" : `the ${q.n_sessions} annotations`} (with their drawn regions and chats)` : "",
                 q.has_embedding ? "the PCA / UMAP" : ""].filter(Boolean).join(" and ");
   $("qfNote").textContent = "The cells and genes removed are deleted from the data the app and the agent use; the data as imported stays " +
     "in the sample folder (original/), so Restore all brings them back. Thresholds always apply to the cells as imported." +
-    (lose ? ` Filtering moves ${lose} of ${p ? "the project's slices" : "this sample"} to the trash, since they refer to the cells by number.` : "");
+    (lose ? ` Filtering moves ${lose} of ${p ? "the project's slices" : "this sample"} to the trash, since they refer to the cells by number.` +
+      " To keep the drawn regions, save them first (Export → Save regions…) and bring them back with Import in the Regions panel." : "");
   qfPreview();
 };
 QF.keys.forEach((k) => $(`qf_${k}`).addEventListener("input", qfPreview));

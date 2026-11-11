@@ -17,10 +17,14 @@ from . import config, embedding, niches, render
 # imported from an .rds / .rda: importer converts it to an h5ad again, in converted/ next to the notebook
 CARRIED = ["osutil", "csrutil", "harmony", "timing", "vocab", "markers", "model", "constraints", "regions", "existing", "visium", "stereoseq", "rds", "importer", "scref",
            "trajectory"]
+# printed after a comparison with the original that a replay on one slice cannot match (computed on all slices)
+_JOINT_NOTE = (', "(computed on all slices of the project together: this slice alone gives other ones; '
+               'Export > Save project replays them exactly)"')
 CONFIG_STUB = '''"""Stand-in for the app's settings: only what the carried modules use."""
 from pathlib import Path
 HOME = WORK = SAMPLES = SESSIONS = Path(".")
 RECORD_TIMINGS = False  # the app keeps how long its steps take; the notebook does not
+
 def device():
     """As in the app: the GPU that exact neighbor searches run on when torch is installed (it gives the same
     neighbors as the CPU, only faster)."""
@@ -307,7 +311,7 @@ Z = sa.markers.pca(sa.model.lognorm(counts), N_PCS)[:, ::-1].copy()     # PC1 fi
 dist, nbr = sa.markers.knn(Z, K)
 leiden = sa.markers._leiden(sa.markers.knn_graph(dist, nbr), nbr, RESOLUTION, 0)
 print(leiden.max() + 1, "Leiden clusters; identical to the original:",
-      bool((leiden == unpack("{_pack(lab, np.int32)}", np.int32)).all()))
+      bool((leiden == unpack("{_pack(lab, np.int32)}", np.int32)).all()){_JOINT_NOTE if em.get("project") else ""})
 n = len(Z)
 init = Z[:, :2].astype(np.float64); init = 10 * (init - init.mean(0)) / np.abs(init - init.mean(0)).max()
 umap_xy = umap.UMAP(n_neighbors=K + 1, min_dist=MIN_DIST, init=init, n_jobs=-1, low_memory=True,
@@ -366,7 +370,7 @@ km = KMeans(n_clusters={nmeta['n_niches']}, n_init=4, random_state=0).fit(avg)
 order = np.argsort(-np.bincount(km.labels_, minlength={nmeta['n_niches']}))
 niche = np.argsort(order)[km.labels_]
 NAMES = {_py(names)}
-print("niches identical to the original:", bool((niche == unpack("{_pack(nlab, np.int16)}", np.int16)).all()))
+print("niches identical to the original:", bool((niche == unpack("{_pack(nlab, np.int16)}", np.int16)).all()){_JOINT_NOTE if nmeta.get("project") else ""})
 niche_name = np.array(NAMES, dtype=object)[niche]
 pd.DataFrame({{"niche": niche_name, "cell type": labels}}).groupby("niche")["cell type"].agg(
     lambda x: ", ".join(f"{{k}} {{round(100 * v)}}%" for k, v in x.value_counts(normalize=True).head(3).items())).to_frame("main cell types")''',
