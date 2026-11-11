@@ -418,7 +418,7 @@ The app's window, or the web viewer (`.venv/bin/stagent viewer`, then http://loc
 - **On the map**: the **Color by** bar (with opacity, dot size, hide cells, hide H&E: struck through while hidden;
   then **Undo** and **Refresh**), and a bar with **Agent** (Claude Code), **Review**, **Report** and **Manual** /
   **Auto**.
-- **Panels on the map**: Regions (with the Priors list) at the top left, the cell type legend at the bottom left, the
+- **Panels on the map**: Regions at the top left, the cell type legend at the bottom left, the
   overview of the whole sample at the bottom right.
 
 ### Samples (Data tab)
@@ -597,8 +597,8 @@ already be drawn, edited and imported there, and **Review** offers the registrat
 cells on their nuclei, the local correction, torn pieces). The first annotation of the sample starts with these
 regions.
 
-**Priors.** The **Priors** list under Regions shows the priors of the annotation (the user's words and how they were
-read); **×** removes one (Undo brings it back).
+**Priors.** The agent lists the annotation's priors (the user's words and how they were read) and removes one when
+asked (`remove_constraint`, a new version); **Undo** takes back the last one added.
 
 ### Corrections and Undo
 

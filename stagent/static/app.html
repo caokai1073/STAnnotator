@@ -2649,7 +2649,7 @@ async function loadRegions() {
   });
   const u = document.createElement("div"); u.className = "hint"; u.style.padding = "4px";
   u.textContent = `${st.regions.n_unknown.toLocaleString()} cells in no region (region priors do not apply to them)`;
-  if (!st.imageOnly) { box.append(u); renderPriors(box); }
+  if (!st.imageOnly) box.append(u);
   $("regnames").textContent = "";
   st.regions.regions.forEach((r) => { const o = document.createElement("option"); o.value = r.name; $("regnames").append(o); });
   syncSelBar();
@@ -2667,29 +2667,6 @@ function areaText(polys) {  // the area of outlines (holes left out): mm² when 
     return `${mm2 >= 0.1 ? mm2.toFixed(2) : mm2.toFixed(3)} mm²`;
   }
   return a >= 1e6 ? `${(a / 1e6).toFixed(1)} M px²` : `${Math.round(a).toLocaleString()} px²`;
-}
-function renderPriors(box) {  // the priors of this version, each removable (a new version; Undo brings it back)
-  const cons = (st.lastSummary && st.lastSummary.constraints) || [];
-  const h = document.createElement("div"); h.className = "plh"; h.textContent = `Priors (${cons.length})`; box.append(h);
-  if (!cons.length) {
-    const d = document.createElement("div"); d.className = "hint"; d.style.padding = "2px 4px 6px";
-    d.textContent = "No priors yet. Ask the agent, e.g. “epithelial cells are only in the mucosa”.";
-    box.append(d); return;
-  }
-  cons.forEach((c) => {
-    const row = document.createElement("div"); row.className = "prior";
-    const a = document.createElement("div"); a.className = "pt";
-    a.textContent = `${c.id} · ${c.text || c.rule}`;
-    const b = document.createElement("div"); b.className = "pr"; b.textContent = c.rule.replace(/^C\d+: /, "") + (c.author ? ` · by ${c.author}` : "");
-    const del = decorate(Object.assign(document.createElement("button"), { title: "Remove this prior (Undo brings it back)" }), "trash", true);
-    del.onclick = async () => {
-      if (!confirm(`Remove prior ${c.id}?\n\n${c.text || c.rule}`)) return;
-      try { const r = await post(`/api/s/${st.sid}/constraint/${c.id}/delete`); toast(r.message, 4000); await refreshVersion(true); }
-      catch (e) { toast(e.message, 6000); }
-    };
-    const txt = document.createElement("div"); txt.style.flex = "1"; txt.style.minWidth = "0"; txt.append(a, b);
-    row.append(txt, del); box.append(row);
-  });
 }
 function polyBounds(poly) {  // [x0, y0, x1, y1] (a loop: Math.min(...xs) fails on outlines of many points in Safari)
   const b = [Infinity, Infinity, -Infinity, -Infinity];
@@ -4723,7 +4700,7 @@ const HELP = `
 <h3>Priors and corrections</h3><ul>
 <li>Tell the agent (Agent), e.g. “epithelial cells are only in the mucosa”, “the cells in region X are goblet cells”.<ul>
   <li>It previews the change and asks before adding a prior.</li></ul></li>
-<li>The <b>Priors</b> list under Regions shows them; <b>×</b> removes one.</li></ul>
+<li>Ask the agent which priors the annotation has, or to remove one; <b>Undo</b> takes back the last one added.</li></ul>
 
 <h3>Annotate</h3><ul>
 <li><b>Method</b>:<ul>
@@ -4893,7 +4870,7 @@ Anything that would change your data opens here in a review window first and is 
 <h3>Tell it what you know: priors and corrections</h3><ul>
 <li>“Epithelial cells are only in the mucosa”, “plasma cells are rare in the muscularis”.<ul>
   <li>It turns the sentence into a prior, shows how it reads it and how many cells would change, and asks before
-    adding it. The <b>Priors</b> list shows it; <b>×</b> removes it.</li></ul></li>
+    adding it. Ask it to remove one, or click <b>Undo</b>.</li></ul></li>
 <li>“The cells in region Crypts_2 are goblet cells”, “cluster c27 is Tuft cells”.<ul>
   <li>A hand correction of those cells, proposed for Accept.</li></ul></li>
 <li>“Split the fibroblasts”, “re-cluster the T cells finer”.<ul>
