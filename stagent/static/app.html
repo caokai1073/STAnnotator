@@ -5548,7 +5548,7 @@ const STEPS = {
   traj: ["Trajectory", "Spatial axes and pseudotime, and the genes that change along them (Analysis → Trajectory).", ["Trajectory", () => anTab("traj")]],
 };
 const anTab = (t) => document.querySelector(`#tabs .tab[data-tab="${t}"]`).click();
-st.stepsAnalyze = (() => { try { return localStorage.getItem("stepsAnalyze") !== "0"; } catch (e) { return true; } })();  // unfolded unless folded before
+st.stepsAnalyze = false;  // Analyze folded whenever the app starts; unfolding it holds while the app is open
 const STEP_MARK = { done: "✓", todo: "", optional: "", skipped: "–", blocked: "!", "not needed": "–" };
 let stepsTimer = 0;
 function loadStepsSoon() { clearTimeout(stepsTimer); stepsTimer = setTimeout(() => loadSteps().catch(() => {}), 300); }
@@ -5589,7 +5589,6 @@ async function loadSteps() {
       right.append(fold); li.title = help; li.style.cursor = "pointer";
       li.onclick = (e) => {  // shown or hidden on the page (the analyses are listed already: nothing to ask the server)
         e.stopPropagation(); st.stepsAnalyze = !st.stepsAnalyze;
-        try { localStorage.setItem("stepsAnalyze", st.stepsAnalyze ? "1" : "0"); } catch (err) {}
         box.classList.toggle("anfold", !st.stepsAnalyze); fold.classList.toggle("flip", !st.stepsAnalyze);
       };
       x.children.forEach((c) => {
@@ -5670,7 +5669,7 @@ async function proposalApplied(r) {
     $("pcAccept").hidden = $("pcLocal").hidden = $("pcAnyway").hidden = true; $("pcDismiss").disabled = false; $("pcDismiss").textContent = "Close"; PC.failed = true; PC.thenLocal = null; return;
   }
   $("pcDlg").close();
-  if (r.advise === "local_registration" && PC.thenLocal === r.id) {  // Do local registration: now, without a review
+  if (r.advise === "local_registration" && (PC.thenLocal === r.id || auto)) {  // Do local registration (auto mode: always): now, without a review
     PC.thenLocal = null;
     await afterPlacement();
     await localRegistration(r.sample_id);

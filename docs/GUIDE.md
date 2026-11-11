@@ -89,9 +89,9 @@ tissue colored by it. Its verdict:
 - **some areas sit off their nuclei** (tissue stretched, folded or torn between the run and the staining; one
   alignment cannot fix it): the window offers **Do local registration** instead of Accept: the alignment, then the
   cells moved onto their nuclei where the tissue shifted, at once, without a review (measured over the whole
-  tissue and checked by measuring again; about a minute). **Align anyway** applies only the alignment; the step then
-  stays to do (**Steps → Check registration**, Review: Spatial organization), and the check's windows are reused,
-  so it starts at once;
+  tissue and checked by measuring again; about a minute; in **Auto** mode it is done so by itself). **Align anyway**
+  applies only the alignment; the step then stays to do (**Steps → Check registration**, Review: Spatial
+  organization), and the check's windows are reused, so it starts at once;
 - **far off**: hardly any part of the tissue finds its nuclei; this is not the right alignment, and the agent tries
   another candidate instead.
 
@@ -400,7 +400,7 @@ The app's window, or the web viewer (`.venv/bin/stagent viewer`, then http://loc
   - **Steps** (a panel at the map's top right; the panels opened there go under it): the usual flow for the open
     sample, and where it stands: 1 Import, 2 Check registration, 3 Filter
     cells and genes, 4 Annotate, 5 Regions and priors, 6 Review, 7 Analyze (it lists Embed, Niche, Compare,
-    Signal and Trajectory, each done or not with a button to its tab; unfolded at first, its arrow folds it). Each step shows what was done
+    Signal and Trajectory, each done or not with a button to its tab; folded when the app starts, its arrow unfolds it). Each step shows what was done
     (✓ and a line such as "5,799 cells removed" or "checked 2026-11-09"), or a button that goes where it is done; the
     next step stands out. Steps 5–7 are optional; a step the sample does not need is grayed (no image: no
     registration; Visium and Stereo-seq are placed by their software). An H&E only (no cells) shows no steps. A
