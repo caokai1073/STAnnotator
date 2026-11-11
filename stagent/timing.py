@@ -17,8 +17,8 @@ REF = {"prepare": 0.65,         # per 10^6 cells: normalize, detection matrix
        "pca": 11.0,             # per 10^9 cells x genes
        "knn_exact_gpu": 0.055,  # per 10^9 cell pairs
        "knn_exact_torch": 1.93,
-       "knn_exact_numpy": 7.5,
-       "knn_rerank": 3.85,      # per 10^6 cells: float64 re-ranking of the exact candidates
+       "knn_exact_numpy": 0.21,  # (8 threads)
+       "knn_rerank": 1.8,       # per 10^6 cells: float64 re-ranking of the exact candidates
        "knn_approx": 9.2,       # per 10^6 cells (pynndescent)
        "approx_compile": 10.0,  # once per app start: numba compiles pynndescent (less once its cache is on disk)
        "graph": 3.1,            # per 10^6 cells
@@ -30,7 +30,8 @@ REF = {"prepare": 0.65,         # per 10^6 cells: normalize, detection matrix
 # search itself on a small set ("torch", "numpy", "gpu")
 SCALE = {"knn_exact_torch": "torch", "knn_exact_numpy": "numpy", "knn_approx": "cores", "model": "cores",
          "knn_exact_gpu": "gpu"}
-REF_PROBE = {"cores": 0.135, "one": 0.0164, "torch": 0.23, "numpy": 0.218, "gpu": 0.0113}  # their seconds there
+REF_PROBE = {"cores": 0.135, "one": 0.0164, "torch": 0.23, "numpy": 0.21, "gpu": 0.0113}  # their seconds there
+VERSION = {"knn_exact_numpy": 2, "knn_rerank": 2}  # a step whose code changed: its rates timed before are dropped
 MIN_SECONDS = 1.0  # shorter steps are not recorded: fixed overheads would dominate their rate
 DECAY = 0.8        # earlier records count this much less with every new one; the rate is seconds / units of what
                    # is kept, so large runs weigh more than small ones (whose fixed overheads differ)
@@ -56,9 +57,13 @@ def _load():
         return {}
 
 
+def _current(key, m):
+    return bool(m) and m.get("v", 1) == VERSION.get(key, 1)
+
+
 def measured():
-    """{step: {"rate", "runs"}} timed on this computer."""
-    return _load().get(_host(), {})
+    """{step: {"rate", "runs"}} timed on this computer (by the step's current code)."""
+    return {k: m for k, m in _load().get(_host(), {}).items() if _current(k, m)}
 
 
 def record(key, units, seconds):
@@ -67,10 +72,12 @@ def record(key, units, seconds):
     with _lock:
         d = _load()
         mine = d.setdefault(_host(), {})
-        old = mine.get(key) or {}
+        old = mine.get(key) if _current(key, mine.get(key)) else {}
         sec = DECAY * old.get("seconds", 0.0) + seconds
         unit = DECAY * old.get("units", 0.0) + units
         mine[key] = {"rate": sec / unit, "seconds": sec, "units": unit, "runs": old.get("runs", 0) + 1}
+        if key in VERSION:
+            mine[key]["v"] = VERSION[key]
         try:
             dump_json(d, _file(), indent=1)
         except OSError:
@@ -132,7 +139,7 @@ def _probe_one():
 
 def _probe_numpy():
     from .markers import _topk_numpy
-    Z = _points(6000)
+    Z = _points(20000)
     return _best(lambda: _topk_numpy(Z, 24), 2)
 
 

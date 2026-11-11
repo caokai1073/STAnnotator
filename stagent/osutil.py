@@ -41,6 +41,24 @@ def dump_json(obj, path, **kw):
         pass
 
 
+def save_counts(path, X):
+    """A sparse matrix as scipy.sparse.save_npz writes it (load_npz reads it, older versions of the app too), with the
+    fastest zip compression: about 4x faster to write than save_npz's default for ~25% more bytes (a 177,000 x 5,000
+    panel: 10 s -> 2.4 s, 79 -> 98 MB). Written at a temporary name, then put in place."""
+    import zipfile
+    import numpy as np
+    X = X.tocsr() if X.format not in ("csr", "csc") else X
+
+    def write(tmp):
+        arrays = {"indices": X.indices, "indptr": X.indptr, "format": np.array(X.format.encode("ascii")),
+                  "shape": np.array(X.shape), "data": X.data}
+        with zipfile.ZipFile(tmp, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=1) as z:
+            for k, a in arrays.items():
+                with z.open(k + ".npy", "w", force_zip64=True) as fh:
+                    np.lib.format.write_array(fh, np.asanyarray(a), allow_pickle=False)
+    replace_atomic(path, write)
+
+
 def replace_atomic(path, write):
     """write(tmp_path) makes the file at a temporary name next to path, then one rename puts it in place (a reader or
     a stopped run never leaves half a file that later reads would trust). The temporary name keeps path's suffix

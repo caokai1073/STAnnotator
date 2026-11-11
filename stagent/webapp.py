@@ -629,6 +629,11 @@ def api_claude_status(req):
     return _json(claudelink.status())
 
 
+def api_agent_activity(req):
+    """What the agent's tools say it is doing now (e.g. aligning a sample), for the page's status line."""
+    return _json(claudelink.activity())
+
+
 async def api_claude_model(req: Request):
     """{model}: the model of Claude Code (opened by the app on this computer) and of the chat box: fable, opus,
     sonnet, haiku (each the latest of its family), or "" for Claude Code's own default."""
@@ -3605,6 +3610,7 @@ def build_app(port):
         Route("/api/config", api_config),
         Route("/api/viewer/state", api_viewer_state, methods=["POST"]),
         Route("/api/viewer/request", api_viewer_request),
+        Route("/api/agent/activity", api_agent_activity),
         Route("/api/claude/status", api_claude_status),
         Route("/api/claude/code", api_claude_code, methods=["POST"]),
         Route("/api/claude/review", api_claude_review, methods=["POST"]),

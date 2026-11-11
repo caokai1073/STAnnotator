@@ -100,12 +100,14 @@ def _cached():
         return {}
 
 
-def check(force=False):
-    """{current, latest, available, can_install, skipped, ...}; asks GitHub at most every CHECK_EVERY seconds."""
+def check(force=False, fresh=False):
+    """{current, latest, available, can_install, skipped, ...}; asks GitHub at most every CHECK_EVERY seconds, or now
+    with force (About > Check for updates) or fresh (the app starting: a release published since the last check, a
+    few hours ago, must show at the next start)."""
     st = config.read_settings()
     c = _cached()
     cached = c.get("latest") or {}
-    if force or not cached or time.time() - c.get("checked", 0) > CHECK_EVERY - 600:  # (the app's timer is CHECK_EVERY)
+    if force or fresh or not cached or time.time() - c.get("checked", 0) > CHECK_EVERY - 600:  # (the app's timer is CHECK_EVERY)
         try:
             cached = _fetch_latest()
             f = _cache_file()
@@ -120,7 +122,9 @@ def check(force=False):
     latest = cached.get("version", "")
     available = bool(latest) and newer(latest, __version__)
     return {"current": __version__, "latest": latest, "available": available, "platform": _platform(),
-            "skipped": st.get("update_skip") == latest, "shown_today": st.get("update_shown") == _today(),
+            "skipped": st.get("update_skip") == latest,
+            # offered by itself today: this release only (a newer one published later the same day is offered too)
+            "shown_today": st.get("update_shown") == _today() and st.get("update_shown_version") in (None, latest),
             "can_install": can_install() and bool(cached.get("asset")),
             "notes": cached.get("notes", ""), "releases": releases_between(cached, __version__) if available else [],
             "page": cached.get("page", PAGE), "asset": cached.get("asset")}
@@ -134,9 +138,9 @@ def _today():
     return time.strftime("%Y-%m-%d")  # the user's own day
 
 
-def shown():
-    """The app offered a release by itself today: not again before tomorrow."""
-    config.write_settings(update_shown=_today())
+def shown(version=None):
+    """The app offered this release by itself today: not again before tomorrow (a newer release is)."""
+    config.write_settings(update_shown=_today(), update_shown_version=version)
 
 
 # ---------------- download ----------------

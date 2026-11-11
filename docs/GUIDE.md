@@ -493,23 +493,22 @@ Histograms show where each threshold cuts and the dialog counts what goes; empty
    - *Single-cell reference*: a labeled reference h5ad (**Reference…**);
    - *Load existing*: a CSV with one cell type per cell (**Annotation file…**).
 2. With marker genes, choose **Neighbors**, the neighbor search of the marker step:
-   - *Approximate* (pynndescent, the default) is fast on any computer. Its result depends on the number of threads,
-     so it always runs on 8 (also with fewer cores): a rerun gives the same labels, on this computer or another with
-     the same app version (Intel / AMD and Apple silicon may still differ slightly). Its code is compiled once per
-     app start; the app does it in the background a few seconds after it starts (one core, about 10 s; longer the
-     first time on a Mac), so the first annotation does not wait for it. On a computer with a GPU, *Exact* can be
-     as fast or faster for samples up to a few hundred thousand cells: the time estimate shows both;
-   - *Exact*: the true neighbors, slow without a GPU for large samples. A GPU and a CPU can still give slightly
-     different neighbors for some cells.
+   - *Exact* (the default): the true neighbors, the same on every computer, with or without a GPU (cells at exactly
+     the same distance are taken in their order, and every row is checked against rounding). On the CPU it runs on up
+     to 8 threads in small tiles: about 9 s for the 188,644 cells of a 5,000-gene Xenium section and under a minute
+     for 400,000 cells on 8 cores, in under 1 GB of memory;
+   - *Approximate* (pynndescent): faster for very large samples (about a million cells or more; the time estimate
+     suggests it when Exact would take over 10 minutes). Its result depends on the number of threads, so it always
+     runs on 8 (also with fewer cores): a rerun gives the same labels with the same app version (Intel / AMD and
+     Apple silicon may still differ slightly). Its code is compiled once per app start, in the background a few
+     seconds after the app starts.
    - Every annotation keeps checksums of its steps (PCA, neighbors, first clusters, labels) in `base/fingerprints.json`
      and in the app's log, so that two runs can be compared step by step (a bug report carries them).
 3. Click **Annotate**.
 
 **Time estimate.** Under Neighbors the app estimates how long the whole annotation will take here, for both choices
 (hover for the steps), and the progress bar shows the time so far against that estimate. The estimate starts from a
-short speed test of the computer and learns from every annotation run on it. For 357k cells: under a minute with a GPU
-either way; without one, about 5 min exact and about 1 min approximate on a 12-core CPU with PyTorch (numpy alone
-makes the exact search about 4 times slower).
+short speed test of the computer and learns from every annotation run on it.
 
 **Stop** under Annotate ends a run at once and removes what it made: the annotation open before stays as it was. The
 same Stop button appears under Run PCA + UMAP, Run niches, the Signaling run and Import (a stopped run puts back the
@@ -1059,12 +1058,10 @@ to 98.6%.
 
 ## 7. Performance
 
-- Everything runs on the CPU. With PyTorch installed (`gpu` extra) the marker step's exact neighbor search uses an
-  NVIDIA or Apple GPU (same neighbors, only faster); without a GPU, PyTorch still makes it about 4 times faster than
-  numpy.
-- A 357k-cell section takes under a minute to annotate with a GPU, about 5 min with exact neighbors on a 12-core CPU
-  and about 1 min with approximate ones (3.3 GB of RAM). The Annotate tab shows the estimate for the sample and
-  computer at hand.
+- Everything runs on the CPU. Installed from source with PyTorch (`gpu` extra), the marker step's exact neighbor
+  search uses an NVIDIA or Apple GPU (the same neighbors, only faster).
+- The exact neighbor search takes about 9 s for 188,644 cells and under a minute for 400,000 cells on 8 CPU cores.
+  The Annotate tab shows the estimate of the whole annotation for the sample and computer at hand.
 - A correction or a local re-clustering takes a few seconds.
 - The viewer draws the cells with WebGL, so panning, zooming and changing colors are immediate.
 

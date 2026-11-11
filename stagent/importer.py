@@ -32,7 +32,7 @@ import hashlib, json, os, re, shutil, time
 from pathlib import Path
 import h5py, numpy as np, pandas as pd, scipy.sparse as sp
 from scipy.spatial import cKDTree
-from . import config, csrutil, stereoseq, visium
+from . import config, csrutil, osutil, stereoseq, visium
 from .osutil import dump_json
 
 COORD_COLUMNS = [("x_centroid", "y_centroid"), ("x", "y"), ("center_x", "center_y"), ("x_location", "y_location")]
@@ -424,7 +424,7 @@ def _write_files(d, out, name, cells, X, genes, image, A, description, source, i
                  registration, image_pending, pending_kind, by=None):
     """The files of a sample bundle, in d (meta.json names out, where the bundle goes)."""
     cells.to_parquet(d / "cells.parquet")
-    sp.save_npz(d / "counts.npz", X)
+    osutil.save_counts(d / "counts.npz", X)   # (the fastest zip compression: seconds, not tens of seconds)
     config.write_genes(d / "genes.txt", genes)
     meta = {"sample_id": name, "description": description, "n_cells": int(len(cells)), "n_genes": len(genes),
             "he_path": str(Path(image).resolve()) if image else None, "he_um_per_px": um_per_px,

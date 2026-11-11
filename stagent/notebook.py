@@ -271,7 +271,7 @@ labels = np.array(TYPES, dtype=object)[pred]
 ORIGINAL = np.array({_py(tnames)}, dtype=object)[unpack("{_pack(tcodes, np.uint16)}", np.uint16)]
 same = labels == ORIGINAL
 print("labels identical to the original" if same.all() else f"{{same.mean():.2%}} of the labels as in the original "
-      f"({{(~same).sum():,}} cells differ; an annotation made with an earlier app version can differ)")
+      f"({{(~same).sum():,}} cells differ; {"it was annotated on all slices of the project together, and this replays it on this slice alone: Export > Save project replays it exactly" if sch.get("joint") else "an annotation made with an earlier app version can differ"})")
 pd.Series(labels).value_counts().rename_axis("cell type").to_frame("cells").head(30)''',
                     [_text("labels identical to the original" if not sch.get("joint") else
                            "(the annotation was made on all slices of the project together; a replay on this slice "

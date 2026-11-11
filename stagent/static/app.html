@@ -536,8 +536,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <button id="openEx" hidden title="A CSV with an existing cell type annotation (one row per cell)">Annotation file…</button>
     </div>
     <div class="fld" id="knnWrap"><span>Neighbors</span><select id="knn" class="segsel" title="Neighbor search of the marker step">
-      <option value="approx" data-short="Approximate" selected>Approximate (pynndescent, the default): fast on any computer; runs on 8 threads everywhere, so a rerun gives the same labels, on this computer or another</option>
-      <option value="exact" data-short="Exact">Exact: the true neighbors; slow without a GPU for large samples (a GPU and a CPU may differ for a few cells)</option></select>
+      <option value="approx" data-short="Approximate">Approximate (pynndescent): faster for very large samples (about a million cells or more); the same labels with the same versions of its packages</option>
+      <option value="exact" data-short="Exact" selected>Exact (the default): the true neighbors, the same labels on every computer, with or without a GPU; about a minute for 450,000 cells</option></select>
       <div class="seg" data-for="knn"></div><div class="hint" id="annEst"></div></div>
     <label class="switch" id="carryWrap" style="visibility:hidden" title="Start the new annotation with the regions (and their colors), priors and hand corrections of the one that is open; priors and corrections naming cell types the new annotation does not have are dropped"><input type="checkbox" id="carry" checked>
       <span>Keep my regions, priors &amp; corrections<small>carried into the new annotation</small></span></label>
@@ -1743,13 +1743,31 @@ async function startAnnotation(mode, sid, token = st.switchToken) {
     if (!chk.ok) { openMarkers(); showCheck(chk); toast("Fix the marker list first", 3000); return; }
   }
   if (mode === "continue") body.session_id = sid;
-  $("annotate").disabled = $("session").disabled = true;
-  $("progress").classList.add("show");
+  // an annotation still running (e.g. on the sample left when the agent opened another): opening one leaves its
+  // progress bar, Stop button and the Annotate button alone, and is followed without them
+  const quiet = mode === "continue" && st.running === "Annotate";
+  if (!quiet) { $("annotate").disabled = $("session").disabled = true; $("progress").classList.add("show"); }
+  const runSample = st.sample.sample_id, runName = sampleName(st.sample);
   try {
     const { session_id } = await post("/api/annotate", body);
-    $("pstage").textContent = mode === "continue" ? "opening…" : "starting…";
-    await pollJob(session_id, $("progress"), $("pfill"), $("pstage"), $("annotate"), 600, true);
-    if (token !== st.switchToken) return;  // the user picked another sample meanwhile
+    if (quiet) {
+      for (;;) {
+        const j = await api(`/api/job/${encodeURIComponent(session_id)}`);
+        if (j.done) { if (j.error) throw new Error(j.error); break; }
+        await new Promise((res) => setTimeout(res, 400));
+      }
+    } else {
+      $("pstage").textContent = mode === "continue" ? "opening…" : "starting…";
+      await pollJob(session_id, $("progress"), $("pfill"), $("pstage"), $("annotate"), 600, true);
+    }
+    if (token !== st.switchToken) {  // the user (or the agent) opened another sample meanwhile
+      if (mode === "new") {
+        st.openedThisVisit[runSample] = session_id;  // shown when that sample is opened again
+        toast(`The annotation of ${runName} is done: open ${runName} to see it`, 8000);
+        setTimeout(() => $("progress").classList.remove("show"), 800);
+      }
+      return;
+    }
     st.openedThisVisit[st.sample.sample_id] = session_id;
     if (mode === "new") {
       st.samples = await api("/api/samples");
@@ -1760,13 +1778,14 @@ async function startAnnotation(mode, sid, token = st.switchToken) {
       fillSessions(session_id);
     }
     await openSession(session_id);
-    setTimeout(() => $("progress").classList.remove("show"), 800);
+    if (!quiet) setTimeout(() => $("progress").classList.remove("show"), 800);
   } catch (e) {
+    if (quiet) { toast(`Could not open this annotation: ${e.message}`, 8000); return; }
     if (isStop(e)) { stopped($("progress"), mode === "continue" ? "Opening the annotation" : "Annotation"); return; }
     $("pstage").textContent = (mode === "continue" ? "Could not open this annotation: " : "Annotation failed: ") + e.message;
     toast($("pstage").textContent, 8000);
   }
-  finally { $("annotate").disabled = $("session").disabled = !!st.imageOnly; }  // an H&E only: stays grayed out
+  finally { if (!quiet) $("annotate").disabled = $("session").disabled = !!st.imageOnly; }  // an H&E only: stays grayed out
 }
 
 async function openSession(sid) {
@@ -4082,6 +4101,7 @@ function showEstimate() {
   const cells = `${e.n_cells.toLocaleString()} cells` + (e.slices > 1 ? ` of ${e.slices} slices` : "");
   const cap = (t) => t[0].toUpperCase() + t.slice(1);
   box.textContent = `${cap(duration(me.seconds))} for ${cells}: ${me.backend}. ${other === "exact" ? "Exact" : "Approximate"}: ${duration(e[other].seconds)}.`
+    + (k === "exact" && me.seconds > 600 && e.approx.seconds < me.seconds / 2 ? " A sample this large: Approximate is much faster." : "")
     + (e.marker_list ? "" : " Load the marker list for a closer estimate.");
   box.title = `Estimated ${me.basis}; every run here makes it more precise.\n`
     + me.steps.map(([s, t]) => `${s}: ${t < 1 ? "<1" : Math.round(t)} s`).join("\n");
@@ -4474,8 +4494,34 @@ async function alignWith(ids) {
     if (r.message && st.chatAvailable) { $("imDlg").close(); $("input").value = r.message; send(); }
     else if (r.claude_code) toast((ids.length > 1 ? `The agent aligns ${ids.length} samples, one after the other` : r.claude_code.reused ? "The agent is aligning the image" : "The agent is opening to align the image") +
       (st.reviewMode === "auto" ? "; each alignment is applied when done" : "; you accept each alignment in its review window"), 8000);
-    else toast("Open the agent first (Agent)", 5000);
+    else { toast("Open the agent first (Agent)", 5000); return; }
+    watchAlign(ids);
   } catch (e) { toast(e.message, 6000); }
+}
+// while the agent aligns: which sample it is on and at what step (its tools say so), at the bottom, until every chosen
+// sample sits on its image (or its alignment was dismissed)
+const AW = { ids: null, t0: 0, timer: null, skipped: new Set(), shown: "" };
+function watchAlign(ids) {
+  AW.ids = ids; AW.t0 = Date.now() / 1000; AW.skipped = new Set(); AW.shown = "";
+  clearInterval(AW.timer); AW.timer = setInterval(() => alignTick().catch(() => {}), 3000);
+  setTimeout(() => alignTick().catch(() => {}), 1500);  // (after the request's own message)
+}
+async function alignTick() {
+  if (!AW.ids) return;
+  const [samples, act, props] = await Promise.all([api("/api/samples"), api("/api/agent/activity").catch(() => ({})), api("/api/proposals").catch(() => [])]);
+  props.filter((x) => x.tool === "apply_alignment" && ["dismissed", "failed"].includes(x.status) && x.created >= AW.t0).forEach((x) => AW.skipped.add(x.sample_id));
+  const name = (id) => { const x = samples.find((s) => s.sample_id === id); return x ? sampleName(x) : id; };
+  const pending = AW.ids.filter((id) => { const x = samples.find((s) => s.sample_id === id); return x && x.image_pending && !AW.skipped.has(id); });
+  const n = AW.ids.length, done = n - pending.length;
+  if (!pending.length || Date.now() / 1000 - AW.t0 > 3 * 3600) {  // all aligned (or skipped), or given up after 3 h
+    clearInterval(AW.timer); AW.ids = null;
+    toast(pending.length ? "Stopped following the alignment" : `Alignment done: ${done - AW.skipped.size} of ${n} sample(s) aligned` + (AW.skipped.size ? ` (${AW.skipped.size} dismissed)` : ""), 8000);
+    st.samples = samples; if (st.sample) { Object.assign(st.sample, samples.find((s) => s.sample_id === st.sample.sample_id) || {}); alignBar(); loadStepsSoon(); }
+    return;
+  }
+  const cur = act.kind === "align" && act.time >= AW.t0 - 5 && pending.includes(act.sample) ? act : null;
+  const msg = `Aligning with the agent: ${cur ? `${name(cur.sample)}, ${cur.what}` : `waiting for the agent (${name(pending[0])} next)`}` + (n > 1 ? ` · ${done} of ${n} done` : "");
+  if (msg !== AW.shown || !$("toast").classList.contains("show")) { AW.shown = msg; toast(msg, 10000); }
 }
 $("alignNow").onclick = askAlign;
 function alignBar() {  // an image waits for its alignment
@@ -5386,14 +5432,14 @@ function showUpdate(u) {
   $("updGo").textContent = u.can_install ? "Download and install" : "Open the release page"; $("updGo").disabled = false;
   if (!$("updDlg").open) $("updDlg").showModal();
 }
-async function checkForUpdate(force) {
+async function checkForUpdate(force, fresh = false) {  // fresh: the app starting, GitHub asked now
   if (!native() || !native().update_check) return;
-  const u = await native().update_check(!!force);
+  const u = await native().update_check(!!force, !!fresh);
   if (u.error) { if (force) toast(u.error, 7000); return; }
   if (!force) {  // by itself: at most once a day, never over an open update dialog or a download
     if (u.available && !u.skipped && !u.shown_today && !$("updDlg").open && !UPD.timer) {
       showUpdate(u);
-      if (native().update_shown) native().update_shown();
+      if (native().update_shown) native().update_shown(u.latest);
     }
     return;
   }
@@ -7891,7 +7937,7 @@ api("/api/config").then((c) => {  // the desktop app (or no Claude Code CLI): th
   // wait until the functions are there (polling as well, in case the event fired before this listener)
   let tries = 0;
   const ready = () => (native() && native().connection
-    ? (initConnection(c.remote).catch(() => {}), setTimeout(() => checkForUpdate(false).catch(() => {}), 4000),
+    ? (initConnection(c.remote).catch(() => {}), setTimeout(() => checkForUpdate(false, true).catch(() => {}), 4000),
        setInterval(() => checkForUpdate(false).catch(() => {}), 6 * 3600 * 1000),  // while the app stays open
        setTimeout(() => askShare().catch(() => {}), 9000))
     : ++tries < 300 && setTimeout(ready, 100));

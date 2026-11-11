@@ -45,18 +45,20 @@ def start_server(port):
 # digits, underscores and spaces only (webview.util.parse_file_type): any other character (e.g. "/") makes it refuse
 # the dialog, so the Choose button does nothing (macOS and Windows alike).
 FILE_TYPES = {"h5ad": ("AnnData or R (*.h5ad;*.rds;*.rda;*.RData)", "All files (*.*)"),
-              "xenium": ("Xenium files (*.parquet;*.csv.gz;*.h5;*.xenium;*.mtx.gz;*.tsv.gz;*.ome.tif)", "All files (*.*)"),
-              "xcells": ("Xenium cells (*.parquet;*.csv.gz)", "All files (*.*)"),
-              "xcounts": ("Xenium counts (*.h5;*.mtx.gz;*.tsv.gz)", "All files (*.*)"),
+              "xenium": ("Xenium files (*.parquet;*.csv.gz;*.gz;*.h5;*.xenium;*.mtx.gz;*.tsv.gz;*.ome.tif)", "All files (*.*)"),
+              "xcells": ("Xenium cells (*.parquet;*.csv.gz;*.gz)", "All files (*.*)"),
+              "xcounts": ("Xenium counts (*.h5;*.mtx.gz;*.tsv.gz;*.gz)", "All files (*.*)"),
               "xexp": ("Xenium experiment (*.xenium)", "All files (*.*)"),
               "ximage": ("Images (*.ome.tif;*.tif;*.tiff)", "All files (*.*)"),
               "image": ("Images (*.tif;*.tiff;*.btf)", "All files (*.*)"),
               "csv": ("CSV (*.csv)", "All files (*.*)"),
               "markers": ("Marker lists (*.csv;*.txt)", "All files (*.*)"),
               "bundle": ("Saved annotations (*.stannot;*.zip)", "All files (*.*)"),
-              "flat": ("CosMx and MERSCOPE files (*.csv;*.csv.gz)", "All files (*.*)"),
+              "flat": ("CosMx and MERSCOPE files (*.csv;*.csv.gz;*.gz)", "All files (*.*)"),
               "geojson": ("GeoJSON (*.geojson;*.json)", "All files (*.*)"),
               "heonly": ("Slide images (*.tif;*.tiff;*.btf;*.svs;*.ndpi;*.png;*.jpg;*.jpeg)", "All files (*.*)")}
+# macOS matches only a file's last extension: x.csv.gz has "gz", so "*.csv.gz" alone grays such files out; "*.gz"
+# lets them be chosen (pywebview merges the filters into one list there and leaves "*.*" out)
 FILE_FILTER = r'^([\w ]+)\((\*(?:\.(?:\w+|\*))*(?:;\*(?:\.(?:\w+|\*))*)*)\)$'  # pywebview 6's, for the test
 
 
@@ -214,11 +216,12 @@ class Api:
             return {"error": str(e)}
 
     # ---- updates (updater.py) ----
-    def update_check(self, force=False):
-        """The latest release and whether it is newer than this app (GitHub, at most every few hours unless force)."""
+    def update_check(self, force=False, fresh=False):
+        """The latest release and whether it is newer than this app (GitHub, at most every few hours unless force or
+        fresh: the app starting)."""
         from . import updater
         try:
-            return updater.check(bool(force))
+            return updater.check(bool(force), bool(fresh))
         except Exception as e:
             return {"error": str(e)}
 
@@ -262,9 +265,9 @@ class Api:
         updater.skip(str(version))
         return {"ok": True}
 
-    def update_shown(self):
+    def update_shown(self, version=None):
         from . import updater
-        updater.shown()
+        updater.shown(version)
         return {"ok": True}
 
     # ---- usage sharing during testing (autoshare.py) ----

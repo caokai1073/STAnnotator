@@ -30,8 +30,8 @@ Getting started
   (inspect_reference first: shared genes, label columns). Or load an existing annotation (CSV, one row per cell):
   start_session(sample_id, annotation_csv=..., id_column=..., label_column=...) after inspect_annotation. Or
   resume_session from list_sessions. The review window of start_session shows how long the annotation should take
-  on this computer (about a minute with the default approximate neighbor search; with knn="exact", under a minute
-  with a GPU, minutes for large samples without one).
+  on this computer (exact neighbors by default, the same on every computer: about a minute for 450,000 cells;
+  knn="approx" is faster for samples of about a million cells or more).
 - The user usually has the STAnnotator app (or the web viewer) open: call use_viewer_session to load what they
   are looking at. After starting a new annotation call open_viewer: a running app switches to it by itself;
   otherwise give the user the link. The viewer shows the cell types on the H&E (or DAPI); the user draws and names
@@ -716,8 +716,9 @@ def _d_revert(a):
 
 
 def _d_apply_alignment(a):
-    from . import align
+    from . import align, claudelink
     sid = _sample_id(a.get("sample_id"))
+    claudelink.note_activity("align", sid, "waiting for your Accept")
     s = align.Sample(sid)
     det, pv, adv = [], None, None
     try:  # the whole tissue checked with this alignment: the histogram of the deviation in the review window
@@ -1546,8 +1547,10 @@ def alignment_status(sample_id: Optional[str] = None) -> str:
     """Whether the sample's cells sit on an image: the image shown, an image waiting for alignment, whether a
     registration file was given and who placed the cells (file / Claude), the cells' extent in um and the image pixel
     size stored in the file. Default sample: the active session's, else the one open in the app."""
-    from . import align
-    return _j(align.status(_sample_id(sample_id)))
+    from . import align, claudelink
+    sid = _sample_id(sample_id)
+    claudelink.note_activity("align", sid, "looking at the sample and its image")
+    return _j(align.status(sid))
 
 
 @mcp.tool()
@@ -1556,8 +1559,9 @@ def search_alignment(sample_id: Optional[str] = None) -> list:
     with the cells' footprint over 8 orientations (rotations, mirrored) and a range of pixel sizes. Returns the best
     candidates (K1, K2, ... with orientation, um per pixel, score) and the figure of K1. Scores near 0.7-0.9 with a
     clear lead are typical of the right one; a slide often holds several sections, so check the place too."""
-    from . import align
+    from . import align, claudelink
     sid = _sample_id(sample_id)
+    claudelink.note_activity("align", sid, "searching where the cells lie on the image")
     st = align.search(align.Sample(sid))
     png = align.show(align.Sample(sid), st["candidates"][0]["id"], refined=False) if st["candidates"] else None
     out = {k: v for k, v in st.items() if k != "candidates"} | {"candidates": [{k: c[k] for k in (
@@ -1569,8 +1573,10 @@ def search_alignment(sample_id: Optional[str] = None) -> list:
 def show_alignment(candidate: str, sample_id: Optional[str] = None) -> list:
     """Figure of a candidate (refined if refine_alignment ran): the cells' footprint on the whole image and two
     close-ups where the cell centroids should sit on nuclei."""
-    from . import align
-    png = align.show(align.Sample(_sample_id(sample_id)), candidate)
+    from . import align, claudelink
+    sid = _sample_id(sample_id)
+    claudelink.note_activity("align", sid, f"looking at candidate {candidate}")
+    png = align.show(align.Sample(sid), candidate)
     return [_j({"figure": png}), Image(path=png)]
 
 
@@ -1583,8 +1589,10 @@ def refine_alignment(candidate: str, sample_id: Optional[str] = None) -> str:
     the review window of apply_alignment shows its histogram): verdict "fine"; "local shifts" (areas off their
     nuclei that one alignment cannot fix: apply it, then tell the user to do the local registration, Steps > Check
     registration); "far off" (not the right alignment: try another candidate instead of applying it)."""
-    from . import align
-    return _j(align.refine(align.Sample(_sample_id(sample_id)), candidate))
+    from . import align, claudelink
+    sid = _sample_id(sample_id)
+    claudelink.note_activity("align", sid, f"refining candidate {candidate} and checking the whole tissue")
+    return _j(align.refine(align.Sample(sid), candidate))
 
 
 @mcp.tool()

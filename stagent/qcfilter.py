@@ -13,7 +13,7 @@ back; the distance to the epithelium is estimated again on the cells kept.
 import json, re, shutil
 from pathlib import Path
 import numpy as np, pandas as pd, scipy.sparse as sp
-from . import config, importer
+from . import config, importer, osutil
 from .osutil import dump_json
 
 CELL_PARAMS = ("min_counts", "max_counts", "min_genes", "max_mito_pct")
@@ -101,6 +101,10 @@ def preview(ids, p):
     """What a filter with these thresholds keeps and removes (from the data as imported)."""
     prm = params(p)
     data, genes, keep, gkeep, _ = _plan(ids, prm)
+    return _summary(ids, prm, genes, keep, gkeep)
+
+
+def _summary(ids, prm, genes, keep, gkeep):
     n = sum(len(k[0]) for k in keep.values())
     kept = sum(int(k[0].sum()) for k in keep.values())
     by = {k: int(sum(int(f[k].sum()) for _, f in keep.values() if k in f)) for k in CELL_PARAMS}
@@ -181,6 +185,7 @@ def apply(ids, p, progress=lambda *a: None, genes_removed=None):
     prm = params(p)
     progress(0.02, "reading the cells and genes as imported")
     data, genes, keep, gkeep, _ = _plan(ids, prm)
+    summary = _summary(ids, prm, genes, keep, gkeep)   # (from the plan above: the data is not read again)
     if genes_removed is not None:
         out = set(genes_removed)
         gkeep = np.array([g not in out for g in genes])
@@ -188,13 +193,17 @@ def apply(ids, p, progress=lambda *a: None, genes_removed=None):
         raise ValueError("these thresholds remove every cell")
     if not gkeep.any():
         raise ValueError("these thresholds remove every gene")
-    summary = preview(ids, p)
     if genes_removed is not None:
         summary["genes_removed"] = [g for g in genes if g in set(genes_removed)]
     n = len(ids)
-    at = lambda i, f, what: progress(0.3 + 0.7 * (i + f) / n, what + (f" ({s}, slice {i + 1} of {n})" if n > 1 else ""))
-    for i, s in enumerate(ids):
-        at(i, 0.0, "keeping the data as imported")
+    done = [0.0] * n   # each slice's share done: the slices are filtered at once (zlib, parquet and numpy let go of the GIL)
+
+    def at(i, s, f, what):
+        done[i] = f
+        progress(0.3 + 0.7 * sum(done) / n, what + (f" ({s}, slice {i + 1} of {n})" if n > 1 else ""))
+
+    def one(i, s):
+        at(i, s, 0.0, "keeping the data as imported")
         d = config.SAMPLES / s
         meta = json.load(open(d / "meta.json"))
         meta.setdefault("placement_affine", importer.placement(s).tolist())
@@ -204,7 +213,7 @@ def apply(ids, p, progress=lambda *a: None, genes_removed=None):
             o.mkdir(exist_ok=True)
             for f in ("cells.parquet", "counts.npz", "genes.txt"):
                 shutil.copy2(d / f, o / f)
-        at(i, 0.25, "filtering the cells and genes")
+        at(i, s, 0.25, "filtering the cells and genes")
         D, km = data[s], keep[s][0]
         X = D["X"][km][:, gkeep].tocsr()
         cells = D["cells"].iloc[np.flatnonzero(km)].reset_index(drop=True)
@@ -216,11 +225,11 @@ def apply(ids, p, progress=lambda *a: None, genes_removed=None):
             cells["total_counts"] = np.asarray(X.sum(1)).ravel().astype(np.int64)
         g = [x for x, k in zip(genes, gkeep) if k]
         if "depth_um" in cells and prm:
-            at(i, 0.45, "the distance of each cell to the epithelium")
+            at(i, s, 0.45, "the distance of each cell to the epithelium")
             cells["depth_um"] = importer.epithelial_depth(X, g, cells[["x", "y"]].to_numpy(float))
-        at(i, 0.85, "writing the filtered cells")
+        at(i, s, 0.85, "writing the filtered cells")
         cells.to_parquet(d / "cells.parquet")
-        sp.save_npz(d / "counts.npz", X)
+        osutil.save_counts(d / "counts.npz", X)   # (the fastest zip compression: seconds, not tens of seconds)
         config.write_genes(d / "genes.txt", g)
         meta.update(n_cells=int(len(cells)), n_genes=len(g))
         if prm:
@@ -233,5 +242,14 @@ def apply(ids, p, progress=lambda *a: None, genes_removed=None):
         dump_json(meta, d / "meta.json", indent=1)
         if not prm and o.exists():
             shutil.rmtree(o)
+        done[i] = 1.0
+
+    if n == 1:
+        one(0, ids[0])
+    else:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(min(4, n)) as ex:
+            for f in [ex.submit(one, i, s) for i, s in enumerate(ids)]:
+                f.result()
     progress(1.0, "done")
     return summary

@@ -379,6 +379,23 @@ def request_show(sample, session):
     _vfile("viewer_request.json").write_text(json.dumps({"sample": sample, "session": session, "time": time.time()}), encoding="utf-8")
 
 
+def note_activity(kind, sample, what):
+    """What the agent is doing now (its tools say so), for the app's status line: e.g. kind "align", the sample and the
+    step. The tools may run in Claude Code's own process: kept in a file of the data folder."""
+    try:
+        _vfile("agent_activity.json").write_text(json.dumps({"kind": kind, "sample": sample, "what": what,
+                                                             "time": time.time()}), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def activity():
+    try:
+        return json.loads(_vfile("agent_activity.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
 def viewer_request():
     p = _vfile("viewer_request.json")
     try:

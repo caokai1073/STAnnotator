@@ -223,15 +223,160 @@ def _topk_torch(Z, k, dev):
     return torch.cat(nbr).numpy().astype(np.int64)
 
 
-def _topk_numpy(Z, k):
-    """Indices of the k nearest rows (the row itself included), blockwise through BLAS (a KD-tree is slow in 30
-    dimensions)."""
-    sq = (Z * Z).sum(1)
-    nbr = np.empty((len(Z), k), np.int64)
-    for i in range(0, len(Z), 4096):
-        D = sq[i:i + 4096, None] + sq[None, :] - 2 * Z[i:i + 4096] @ Z.T
-        nbr[i:i + 4096] = np.argpartition(D, k - 1, axis=1)[:, :k]
+KNN_TILE = (64, 4096)  # rows x columns of a distance tile of the exact search on the CPU: 1 MB, it stays in the cache
+KNN_BLOCK = 512        # rows a thread takes at once (their tiles share the columns read from memory)
+KNN_SAMPLE = 32        # every KNN_SAMPLE-th row is searched first: it bounds each row's k-th distance from above
+
+
+def cpu_threads():
+    """Threads of the exact search on the CPU (numpy): KNN_THREADS, fewer on a computer with fewer cores."""
+    import os
+    return max(1, min(KNN_THREADS, os.cpu_count() or 1))
+
+
+@__import__("contextlib").contextmanager
+def _one_blas_thread():
+    """BLAS on one thread while the threads of the exact search each run their own products (OpenBLAS or MKL: a
+    product this thin is several times slower spread over all cores, and several at once on all cores slower still).
+    A BLAS threadpoolctl cannot set (Apple's Accelerate) keeps its own threads."""
+    try:
+        from threadpoolctl import threadpool_limits
+        lim = threadpool_limits(1, user_api="blas")
+    except Exception:
+        lim = None
+    try:
+        yield
+    finally:
+        if lim is not None:
+            lim.restore_original_limits()
+
+
+def _blocks(n, rows, threads, fn):
+    """fn(start, stop) for consecutive blocks of `rows` of range(n), on `threads` threads (numpy and BLAS let go of
+    the GIL while they compute)."""
+    from concurrent.futures import ThreadPoolExecutor
+    import itertools, threading
+    starts, lock = itertools.count(0, rows), threading.Lock()
+
+    def work():
+        while True:
+            with lock:
+                i = next(starts)
+            if i >= n:
+                return
+            fn(i, min(i + rows, n))
+    if threads == 1 or n <= rows:
+        return work()
+    with ThreadPoolExecutor(threads) as ex:
+        for f in [ex.submit(work) for _ in range(threads)]:
+            f.result()
+
+
+class _Tiles:
+    """Squared distances of rows of Z to all rows in float32, tile by tile: P[q, j] = |z_j|^2 - 2 z_q.z_j (the squared
+    distance less |z_q|^2, the same along a row), one BLAS product per tile of KNN_TILE that stays in the cache; a
+    block of KNN_BLOCK rows goes through the columns tile by tile, so each column tile is read from memory once per
+    block. Columns are the rows of Z; with `step`, every step-th row comes first (self.order): the sample, self.m
+    columns. A thread keeps its own buffers (a few MB)."""
+
+    def __init__(self, Z, step=None):
+        n, dim = Z.shape
+        self.Z, self.n, self.m = Z, n, -(-n // step) if step else 0
+        self.order = np.argsort(np.arange(n) % step, kind="stable") if step and step > 1 else np.arange(n)
+        self.A = np.empty((n, dim + 1), np.float32)
+        self.A[:, :dim] = Z[self.order]
+        self.A[:, dim] = (self.A[:, :dim] ** 2).sum(1)
+        self.local = __import__("threading").local()
+
+    def _tile(self, L, c0, c1):
+        P = self.local.P[:len(L), :c1 - c0]
+        return np.matmul(L, self.A[c0:c1].T, out=P)
+
+    def _below(self, P, t, c0):
+        M = np.less_equal(P, t[:, None], out=self.local.M[:len(P), :P.shape[1]])
+        idx = np.flatnonzero(M)
+        r = idx // P.shape[1]
+        return r, idx - r * P.shape[1] + c0, P.ravel()[idx]
+
+    def scan(self, rows, t=None, k=None):
+        """[(first row, (row, column, value))] of the entries at most t (one per row) of the rows `rows` (at most
+        KNN_BLOCK), one per KNN_TILE[0] of them, sorted by row (columns ascending within a row). t=None: the k-th
+        smallest of the sample (an upper bound for the k-th smallest of the row)."""
+        h, w = KNN_TILE
+        loc = self.local
+        if getattr(loc, "P", None) is None:
+            loc.P, loc.M = np.empty((h, max(w, self.m)), np.float32), np.empty((h, max(w, self.m)), bool)
+        L = np.empty((len(rows), self.A.shape[1]), np.float32)
+        np.multiply(self.Z[rows], -2, out=L[:, :-1])
+        L[:, -1] = 1
+        subs = range(0, len(rows), h)
+        parts = {s: [] for s in subs}
+        start = 0
+        if t is None:
+            t, start = np.empty(len(rows), np.float32), self.m
+            for s in subs:
+                S = self._tile(L[s:s + h], 0, self.m)
+                t[s:s + h] = np.partition(S, k - 1, axis=1)[:, k - 1]
+                parts[s].append(self._below(S, t[s:s + h], 0))
+        for c0 in range(start, self.n, w):
+            for s in subs:
+                parts[s].append(self._below(self._tile(L[s:s + h], c0, min(c0 + w, self.n)), t[s:s + h], c0))
+        out = []
+        for s in subs:
+            r, c, v = (np.concatenate(x) for x in zip(*parts[s]))
+            o = np.argsort(r.astype(np.int16), kind="stable")  # (a radix sort)
+            out.append((s, (r[o], c[o], v[o])))
+        return out
+
+
+def _topk_numpy(Z, k, threads=None):
+    """Indices of the k nearest rows of every row by their float32 squared distance (any of equally near rows; the row
+    itself is one of them unless k others are as near), through BLAS (a KD-tree is slow in 30 dimensions) on
+    cpu_threads() threads, in tiles that stay in the cache (a few MB per thread, whatever the number of rows). Rows
+    are first compared with every KNN_SAMPLE-th row: their k-th nearest there bounds the k-th distance; the other
+    tiles only keep the few entries under that bound."""
+    Z = np.asarray(Z, np.float32)
+    n = len(Z)
+    T = _Tiles(Z, max(1, min(KNN_SAMPLE, n // (4 * k))))  # the sample has at least 4 k rows (all when n is small)
+    nbr = np.empty((n, k), np.int64)
+
+    def block(i, j):
+        for s, (r, c, v) in T.scan(np.arange(i, j), k=k):
+            i0 = i + s
+            b = min(KNN_TILE[0], j - i0)
+            cnt = np.bincount(r, minlength=b)
+            if cnt.min() >= k and cnt.max() <= 8192:
+                pos = np.arange(len(r)) - np.repeat(np.cumsum(cnt) - cnt, cnt)
+                V, C = np.full((b, int(cnt.max())), np.inf, np.float32), np.zeros((b, int(cnt.max())), np.int64)
+                V[r, pos], C[r, pos] = v, c
+                nbr[i0:i0 + b] = T.order[np.take_along_axis(C, np.argpartition(V, k - 1, axis=1)[:, :k], 1)]
+                continue
+            ends = np.cumsum(cnt)
+            for q in range(b):  # many exact duplicates (or NaN): one row at a time
+                cq, vq = c[ends[q] - cnt[q]:ends[q]], v[ends[q] - cnt[q]:ends[q]]
+                if len(cq) < k:  # NaN: they go last
+                    cq, vq = np.arange(n), T.A @ (-2 * np.append(Z[i0 + q], -0.5))
+                nbr[i0 + q] = T.order[cq[np.argsort(vq, kind="stable")[:k]]]
+    with _one_blas_thread():
+        _blocks(n, KNN_BLOCK, threads or cpu_threads(), block)
     return nbr
+
+
+def _within(Z, rows, bound, fn, threads=None):
+    """fn(i, cols) for each row i of `rows`, cols: every row j of Z (ascending) with |z_j|^2 - 2 z_i.z_j <= bound[i]
+    in float32, the squared distance less |z_i|^2 (tiles as in _topk_numpy)."""
+    Z = np.asarray(Z, np.float32)
+    T = _Tiles(Z)
+
+    def block(i, j):
+        sel = rows[i:j]
+        t = np.nextafter(np.asarray(bound[sel], np.float32), np.float32(np.inf))  # rounded up
+        for s, (r, c, _) in T.scan(sel, t):
+            ends = np.cumsum(np.bincount(r, minlength=min(KNN_TILE[0], len(sel) - s)))
+            for q in range(len(ends)):
+                fn(sel[s + q], c[ends[q - 1] if q else 0:ends[q]])
+    with _one_blas_thread():
+        _blocks(len(rows), KNN_BLOCK, threads or cpu_threads(), block)
 
 
 MAX_PCA_GENES, N_HVG = 6000, 3000  # above MAX_PCA_GENES genes (whole-transcriptome data such as Visium HD) the PCA
@@ -266,7 +411,7 @@ def pca(Xn, n_pcs=None):
     return np.asarray(X @ V - mu @ V, dtype=np.float32)  # = standardized X times the top components
 
 
-KNN = "approx"  # neighbor search of the marker step: "approx" (default) or "exact" (see knn)
+KNN = "exact"  # neighbor search of the marker step: "exact" (default: the true neighbors, the same on every computer) or "approx" (see knn)
 KNN_THREADS = 8  # the approximate search always runs on this many threads (its result depends on the count)
 KNN_EXTRA = 8  # candidates beyond k that the exact search re-ranks in float64
 
@@ -295,34 +440,68 @@ def knn_backend(mode):
 
 def _exact(Z, k):
     """Exact neighbors, the same on every computer: candidates from a GPU (CUDA or Apple MPS) when torch has one,
-    else from the CPU (torch, or numpy without it), re-ranked by their float64 distance with ties going to the lower
-    row number, so rounding differences between the backends do not change the result."""
+    else from the CPU (torch, or numpy without it), in float32, re-ranked by their float64 distance with ties going to
+    the lower row number. A row whose k-th distance is not clearly below its farthest candidate's (by more than
+    float32 rounding can move a distance: many exact duplicates, say) is searched again over all rows that rounding
+    could put within its k-th distance, so rounding differences between the backends do not change the result."""
+    import warnings
     from .config import device
     from . import timing
-    n = len(Z)
+    n, dim = Z.shape
     kk = min(k + 1 + KNN_EXTRA, n)
+    Z64 = np.asarray(Z, np.float64)
+    with warnings.catch_warnings():  # (NaN in the data)
+        warnings.simplefilter("ignore")
+        mu = np.nan_to_num(np.nanmean(Z64, 0), nan=0.0, posinf=0.0, neginf=0.0)
+    Zc = (Z64 - mu).astype(np.float32)  # near the origin float32 rounds less
     key, _ = knn_backend("exact")
     cand = None
     if key == "knn_exact_gpu":
         try:
             with timing.step(key, n * n / 1e9):
-                cand = _topk_torch(Z, kk, device())
+                cand = _topk_torch(Zc, kk, device())
         except RuntimeError:  # e.g. GPU memory taken by other jobs: the CPU gives the same neighbors
             key = "knn_exact_torch"
     if cand is None:
         with timing.step(key, n * n / 1e9):
-            cand = _topk_torch(Z, kk, "cpu") if key == "knn_exact_torch" else _topk_numpy(Z, kk)
-    Z64 = Z.astype(np.float64)
+            cand = _topk_torch(Zc, kk, "cpu") if key == "knn_exact_torch" else _topk_numpy(Zc, kk)
     dist, nbr = np.empty((n, k), np.float32), np.empty((n, k), np.int64)
+    dk, dmax = np.empty(n), np.empty(n)  # squared: the k-th neighbor's and the farthest candidate's
+
+    def rerank(i, j):  # 4096 rows x 24 candidates x 30 dimensions in float64: about 25 MB per thread
+        c = cand[i:j]
+        x = Z64[c]
+        x -= Z64[i:j, None]
+        x *= x
+        d = x.sum(-1)
+        dmax[i:j] = d.max(1)
+        d[c == np.arange(i, j)[:, None]] = np.inf  # not its own neighbor
+        o = np.lexsort((c, d), axis=1)[:, :k]
+        nbr[i:j] = np.take_along_axis(c, o, 1)
+        d = np.take_along_axis(d, o, 1)
+        dk[i:j] = d[:, -1]
+        dist[i:j] = np.sqrt(d)
+
+    def again(i, c):  # every row that float32 rounding could put within the k-th distance
+        x = Z64[c]
+        x -= Z64[i]
+        x *= x
+        d = x.sum(-1)
+        d[c == i] = np.inf
+        if np.isfinite(d).sum() >= k:  # (else NaN in the data)
+            o = np.lexsort((c, d))[:k]
+            nbr[i], dist[i] = c[o], np.sqrt(d[o])
     with timing.step("knn_rerank", n / 1e6):
-        for i in range(0, n, 32768):
-            c = cand[i:i + 32768]
-            rows = np.arange(i, i + len(c))
-            d = ((Z64[c] - Z64[rows, None]) ** 2).sum(-1)
-            d[c == rows[:, None]] = np.inf  # not its own neighbor
-            o = np.lexsort((c, d), axis=1)[:, :k]
-            nbr[i:i + len(c)] = np.take_along_axis(c, o, 1)
-            dist[i:i + len(c)] = np.sqrt(np.take_along_axis(d, o, 1))
+        _blocks(n, 4096, cpu_threads(), rerank)
+        if kk < n:
+            a = np.sqrt((Zc.astype(np.float64) ** 2).sum(1))
+            # float32 rounding moves each compared value by at most about 4 (dim + 4) 2^-24 (|z_i| + |z_j|)^2 (centered;
+            # a row nearer than the k-th has |z_j| <= |z_i| + its distance): twice that for the two values compared,
+            # times a safety factor 2 (torch computes them slightly differently)
+            margin = 16 * (dim + 4) * 2.0 ** -24 * (a + np.sqrt(dmax)) ** 2
+            redo = np.flatnonzero(~(dmax - dk > margin))
+            if len(redo):
+                _within(Zc, redo, dk - a * a + margin, again)
     return dist, nbr
 
 
@@ -449,8 +628,13 @@ def _leiden(g, nbr, resolution, seed):
     """igraph's built-in Leiden (modularity objective; same algorithm as leidenalg, several times faster).
     Clusters smaller than MIN_CLUSTER are merged into the cluster most of their neighbors belong to."""
     import random
+    import igraph
     with _LEIDEN_LOCK:  # igraph draws from Python's global random: two runs at once (an annotation and a PCA / UMAP
-        random.seed(seed)  # in the app's threads) would take each other's numbers and depend on timing
+        # in the app's threads) would take each other's numbers and depend on timing. igraph binds Python's random only
+        # in the thread that imported it first; every other thread (each job of the app) used igraph's own unseeded
+        # generator, so annotating twice gave other clusters: bound here, in this thread, before seeding
+        igraph.set_random_number_generator(random)
+        random.seed(seed)
         lab = np.array(g.community_leiden(objective_function="modularity", weights="weight", resolution=resolution,
                                           n_iterations=2).membership)
     sizes = np.bincount(lab)
