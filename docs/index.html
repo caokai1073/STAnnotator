@@ -518,7 +518,7 @@ footer .counted { flex-basis: 100%; margin: 0; }
                   <li>Nuclei (hematoxylin or DAPI) against cell centers in 200 µm windows, then 600 µm windows for shifts up to 100 µm</li>
                   <li>For a torn or folded piece: rotation, a shift of up to 300 µm, and mirroring</li>
                   <li>It proposes no move when the fit is no better than where the cells are now</li>
-                  <li>After every alignment, before you accept it: the whole tissue, with <b>Do local registration</b> when areas sit off their nuclei</li>
+                  <li>After every alignment, and any time from <b>Steps → Check registration</b> (the app itself, about a minute): the whole tissue, with a histogram and a map of the offsets, and <b>Do local registration</b> where areas sit off their nuclei</li>
                 </ul></div>
               <div class="result">
                 <h4>Measured</h4>
@@ -624,7 +624,7 @@ footer .counted { flex-basis: 100%; margin: 0; }
           <div class="measure">
             <p class="big num">~1<small>minute</small></p>
             <p class="what">to annotate a 356,629-cell section</p>
-            <p class="how">On a 12-core CPU with approximate neighbors and 3.3 GB of memory. Exact neighbors, the default since 0.2.53 and the same on every computer, take seconds to a minute for the neighbor search. A correction or a local re-clustering takes a few seconds.</p>
+            <p class="how">On a 12-core CPU with approximate neighbors and 3.3 GB of memory. Exact neighbors, the default and the same on every computer, add seconds to a minute (on a Mac, on its GPU). A correction or a local re-clustering takes a few seconds.</p>
             <p class="src">SCP2927 IBD Xenium atlas, section 147328</p>
           </div>
           <div class="measure">
