@@ -261,8 +261,10 @@ section.band { padding-block: clamp(64px, 9vw, 112px) 0; }
 .osc ol { margin: 0; padding-left: 1.3em; display: grid; gap: 8px; }
 .osc ol li::marker { font-family: var(--f-mono); color: var(--accent); }
 .osc .note { font-size: var(--s-0); color: var(--muted); }
-.dlnote { margin-top: 20px; padding: 16px 20px; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 10px; background: var(--panel); display: grid; gap: 6px; font-size: var(--s-0); color: var(--muted); }
-.dlnote b:first-child { color: var(--ink); }
+.dlnote { --warn: #e07a10; --warn-bg: #fff4e5; margin-top: 20px; padding: 16px 20px; border: 1px solid var(--warn); border-left: 6px solid var(--warn); border-radius: 10px; background: var(--warn-bg); display: grid; gap: 6px; font-size: var(--s-0); color: var(--ink); }
+.dlnote > b:first-child { color: var(--warn); font-size: var(--s-1, 1.05em); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .dlnote { --warn: #f59e3b; --warn-bg: #2e2316; } }
+:root[data-theme="dark"] .dlnote { --warn: #f59e3b; --warn-bg: #2e2316; }
 .other { margin-top: 40px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; }
 @media (max-width: 860px) { .other { grid-template-columns: minmax(0, 1fr); } }
 .other-col { display: grid; gap: 16px; align-content: start; min-width: 0; }
@@ -728,8 +730,8 @@ footer .counted { flex-basis: 100%; margin: 0; }
           <p>The Windows installer is not signed yet. If Windows SmartScreen stops it, click <b>More info → Run anyway</b>.
             On Windows 11, <b>Smart App Control</b> blocks unsigned apps without that button: the installer does not run,
             and an installed STAnnotator does not open ("blocked by an application control policy"). STAnnotator then runs
-            only with Smart App Control turned off (Settings → Privacy &amp; security → Windows Security → App &amp; browser
-            control → Smart App Control settings). Depending on the Windows version, turning it back on may need a reset of
+            only with Smart App Control turned off (<b>Settings → Privacy &amp; security → Windows Security → App &amp; browser
+            control → Smart App Control settings</b>). Depending on the Windows version, turning it back on may need a reset of
             Windows.</p>
         </div>
         <div class="other">
