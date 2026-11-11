@@ -924,7 +924,14 @@ async def api_registration_local_undo(req: Request):
     if not (keep / "cells.parquet").exists() or rl.get("key") != regcheck._key(sample, importer.image_of(sample)):
         return _json({"error": "the cells have moved since that correction: it can no longer be undone here"}, 409)
     osutil.replace_atomic(sd / "cells.parquet", lambda tmp: shutil.copy2(keep / "cells.parquet", tmp))
-    osutil.replace_atomic(sd / "meta.json", lambda tmp: shutil.copy2(keep / "meta.json", tmp))
+    # only the placement's keys come back: a rename (or anything else) made meanwhile stays
+    saved, m = json.load(open(keep / "meta.json", encoding="utf-8")), json.load(open(sd / "meta.json", encoding="utf-8"))
+    for k in ("placement_affine", "placement_affine_import", "registration_by", "registration_fixes", "registration_local"):
+        if k in saved:
+            m[k] = saved[k]
+        else:
+            m.pop(k, None)
+    dump_json(m, sd / "meta.json", indent=1)
     shutil.rmtree(keep, ignore_errors=True)
     _reload_sample(sample)
     return _json({"ok": True})
@@ -934,7 +941,11 @@ async def api_registration_check(req: Request):
     """Check the registration now, without the agent (Steps > Check registration): the cells against the nuclei in
     windows over the whole tissue (regcheck.summary; the windows of the alignment's check are reused). A run under
     /api/job/regcheck:<sample>; its result: the verdict, the areas off their nuclei and how far."""
-    sample, b = req.path_params["sample"], await req.json()
+    sample = req.path_params["sample"]
+    try:
+        b = await req.json()
+    except ValueError:  # (no body)
+        b = {}
     if "/" in sample or ".." in sample or not (config.SAMPLES / sample / "meta.json").exists():
         return _json({"error": f"no sample {sample}"}, 404)
     s = _open_session((b or {}).get("session") if isinstance(b, dict) else None)

@@ -1069,11 +1069,15 @@ def _flat_counts_arrow(kind, path, head, ids_cols, genes, gene_type, rows, progr
     blocks = None
     try:
         parts = []  # text not parsed yet: the header line, then the start of a line cut by a read
+        got = 0
         while True:  # the header line: the same names as pandas reads
             b = read(ARROW_CHUNK)
             parts.append(b)
+            got += b.size
             if not b.size or _last_newline(b) >= 0:
                 break
+            if got > 4 * ARROW_CHUNK or (np.frombuffer(b, np.uint8) == 13).any():
+                raise _NotFast()  # no "\n" in sight: lines ended by "\r" alone (old Mac files) or a huge header
         buf = pa.py_buffer(b"".join(parts))
         a = np.frombuffer(buf, np.uint8) if buf.size else np.zeros(0, np.uint8)
         k = int(np.argmax(a == 10)) if (a == 10).any() else buf.size - 1

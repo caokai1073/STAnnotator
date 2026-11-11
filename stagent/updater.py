@@ -109,10 +109,13 @@ def _macos():
 
 
 def _too_old_macos():
+    """By the Darwin kernel's version (macOS 14 = Darwin 23): unlike platform.mac_ver(), never the "10.16" an app
+    built with an old SDK can be told."""
     if sys.platform != "darwin":
         return False
+    import platform
     try:
-        return int(_macos().split(".")[0]) < MIN_MACOS
+        return int(platform.release().split(".")[0]) < MIN_MACOS + 9
     except ValueError:
         return False
 
