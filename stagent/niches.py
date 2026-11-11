@@ -12,7 +12,7 @@ The latest run of a session is stored in niches/ (labels, parameters, compositio
 import json, time
 import numpy as np, pandas as pd
 from scipy.spatial import cKDTree
-from . import jobs, model
+from . import config, jobs, model
 from .osutil import dump_json
 
 K_MIN, K_MAX = 5, 80
@@ -156,16 +156,40 @@ def summary(s, version=None, top=5):
                                             "k_range", "run_id")}, "niches": out}
 
 
+def run_dirs(s):
+    """The niches folders of the session's niche run: its own, and for niches computed on all slices of a project
+    together (joint.niches) those of every slice of that run (the same N1, N2... everywhere)."""
+    meta, _ = current(s)
+    own = [s.dir / "niches"]
+    if meta is None or not meta.get("project"):
+        return own
+    out = []
+    for d in sorted(config.SESSIONS.iterdir()) if config.SESSIONS.exists() else []:
+        f = d / "niches" / "run.json"
+        if f.exists() and d != s.dir:
+            try:
+                m = json.load(open(f, encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if m.get("project") == meta["project"] and m.get("run_id") == meta.get("run_id"):
+                out.append(d / "niches")
+    return own + out
+
+
 def set_names(s, names):
-    """Names for niches ({"N1": "crypt base", ...}); shown in the viewer's legend."""
+    """Names for niches ({"N1": "crypt base", ...}); shown in the viewer's legend. Niches of all slices of a project
+    (one joint run) are named in every slice at once, so the names stay the same everywhere."""
     meta, _ = current(s)
     if meta is None:
         raise ValueError("no niches yet: run them first")
     for k_ in names:
         if k_ not in {f"N{i + 1}" for i in range(meta["n_niches"])}:
             raise ValueError(f"no niche {k_}")
-    meta["names"].update({k_: str(v).strip()[:40] for k_, v in names.items()})
-    dump_json(meta, s.dir / "niches" / "run.json", indent=1)
+    new = {k_: str(v).strip()[:40] for k_, v in names.items()}
+    for d in run_dirs(s):
+        m = json.load(open(d / "run.json", encoding="utf-8"))
+        m["names"] = {**(m.get("names") or {}), **new}
+        dump_json(m, d / "run.json", indent=1)
     return niche_names(s)
 
 

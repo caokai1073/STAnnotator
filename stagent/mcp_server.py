@@ -716,8 +716,11 @@ def _d_name_niches(a):
     bad = [k for k in a["names"] if k not in have]
     if bad:
         raise ValueError(f"no niche {', '.join(bad)}; niches: {', '.join(sorted(have, key=lambda x: int(x[1:])))}")
-    return {"title": f"Name {len(a['names'])} niches", "guard": {"niche_run": meta.get("run_id")},
-            "details": [f"{k} \u2192 {v}" for k, v in a["names"].items()]}
+    n = len(niches.run_dirs(s))   # niches of all slices of a project: named in every slice, one Accept
+    return {"title": f"Name {len(a['names'])} niches" + (f" in all {n} slices of project {meta['project']}" if n > 1 else ""),
+            "guard": {"niche_run": meta.get("run_id")},
+            "details": [f"{k} \u2192 {v}" for k, v in a["names"].items()]
+                       + ([f"The niches were computed on the {n} slices together: the names apply to every slice."] if n > 1 else [])}
 
 
 def _d_record_verdicts(a):
@@ -1764,7 +1767,8 @@ def show_niches() -> list:
 @_reviewed(_d_name_niches)
 def name_niches(names: dict) -> str:
     """Give niches names the user sees in the legend, e.g. {"N1": "lamina propria", "N3": "crypt base"}; base them
-    on niche_summary and the H&E."""
+    on niche_summary and the H&E. Niches computed on all slices of a project together are named in every slice of
+    that run at once (one call, one Accept): do not call it again per slice."""
     from . import niches
     return _j(niches.set_names(_s(), names))
 

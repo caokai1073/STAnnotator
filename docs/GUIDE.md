@@ -253,7 +253,8 @@ shows them side by side, and the **Compare** tab compares them (all slices, by s
 
 - **Annotate** pools the slices (one marker step and one model; each slice gets its own session);
 - **Run PCA + UMAP** makes one embedding of all slices (optionally with **Harmony** on the PCs by slice);
-- **Run niches** finds niches shared by all slices.
+- **Run niches** finds niches shared by all slices; naming them (the agent, or the Review's advice) names them in
+  every slice at once, with one Accept.
 
 On four slices of the Cadinu et al. MERFISH mouse colon (healthy, DSS day 3, 9 and 21; 66,818 cells) the joint
 annotation took about 15-40 s, the joint embedding 15 s and the niches 9 s. Lineage agreement with the authors' labels
