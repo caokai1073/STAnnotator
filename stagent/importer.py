@@ -938,22 +938,28 @@ def _cosmx_id(df):
     raise ValueError("a CosMx file needs the columns fov and cell_ID")
 
 
-def read_csv(path, **kw):
-    """pandas.read_csv with the compression read from the file's first bytes, not only from its name: AtoMx (and
-    copies of it) can hand out gzip files named .csv, which pandas would read as text (\"'utf-8' codec can't decode
-    byte 0x8b\")."""
+def _compression(path):
+    """The compression of a file read from its first bytes (None: plain text)."""
     try:
         with open(path, "rb") as fh:
             magic = fh.read(4)
     except (OSError, TypeError):
         magic = b""
-    comp = ("gzip" if magic[:2] == b"\x1f\x8b" else "zip" if magic[:4] == b"PK\x03\x04" else "bz2" if magic[:3] == b"BZh"
+    return ("gzip" if magic[:2] == b"\x1f\x8b" else "zip" if magic[:4] == b"PK\x03\x04" else "bz2" if magic[:3] == b"BZh"
             else "zstd" if magic[:4] == b"\x28\xb5\x2f\xfd" else "xz" if magic[:4] == b"\xfd7zX" else None)
+
+
+def read_csv(path, **kw):
+    """pandas.read_csv with the compression read from the file's first bytes, not only from its name: AtoMx (and
+    copies of it) can hand out gzip files named .csv, which pandas would read as text (\"'utf-8' codec can't decode
+    byte 0x8b\")."""
+    comp = _compression(path)
     return pd.read_csv(path, compression=comp, **kw) if comp else pd.read_csv(path, **kw)
 
 
 def _flat_counts(kind, path, progress=print):
-    """(cell ids, genes, cells x genes CSR) of a counts file, read in chunks (a CosMx 6K matrix is large)."""
+    """(cell ids, genes, cells x genes CSR) of a counts file, read in chunks (a CosMx 6K matrix is large): by pyarrow
+    on all cores (_flat_counts_arrow), or by pandas when pyarrow cannot give the very same result for the file."""
     head = read_csv(path, nrows=0).columns.tolist()
     if kind == "cosmx":
         ids_cols = [c for c in head if c.lower() in COSMX_IDS]
@@ -965,6 +971,219 @@ def _flat_counts(kind, path, progress=print):
         raise ValueError(f"{Path(path).name}: no gene columns")
     # rows per chunk: about 60 million values (a 6K panel: ~10,000 rows; parsing a chunk takes several times its size)
     rows = int(min(20000, max(500, 6e7 // max(len(head), 1))))
+    out, said = None, []
+    for gene_type in ("int32", "float64"):  # counts as integers; a file of decimals ("1.0") read as float64
+        try:
+            out = _flat_counts_arrow(kind, path, head, ids_cols, genes, gene_type, rows, progress, said)
+            break
+        except _NotFast:
+            break
+        except Exception as e:  # pyarrow missing, or failing on this file (its error is the pandas reader's to give)
+            if "conversion error to int32" not in str(e):
+                break
+    if out is None:
+        if said:
+            progress("  reading again (the slower reader)")
+        out = _flat_counts_pandas(kind, path, ids_cols, genes, rows, progress)
+    if n_ctrl:
+        progress(f"  {n_ctrl} control probes left out")
+    return out
+
+
+class _NotFast(Exception):
+    """The file is read by pandas: pyarrow could read it differently (ids pandas parses to floats, odd headers)."""
+
+
+_INT_RE = r"^(0|-?[1-9][0-9]*)$"
+
+
+def _plain_ints(a):
+    """Raise _NotFast unless every string of the arrow array is written as pandas writes the integer it parses it to
+    (no leading zeros, signs or spaces), and none is in the uint64-only range [2**63, 2**64) (or a 19-digit negative):
+    pandas parses a file in pieces and a column of int64 and uint64 pieces becomes float64 ("9.2e+18"). Then the
+    pandas ids of these strings are the strings themselves."""
+    import pyarrow.compute as pc
+    if not len(a):
+        return
+    if not pc.all(pc.match_substring_regex(a, _INT_RE)).as_py():
+        raise _NotFast()
+    n = pc.utf8_length(a)
+    big = pc.or_(pc.and_(pc.equal(n, 19), pc.greater_equal(a, "9223372036854775808")),
+                 pc.and_(pc.equal(n, 20), pc.less_equal(a, "18446744073709551615")))
+    if pc.any(big).as_py():
+        raise _NotFast()
+
+
+def _byte_stream(path):
+    """(read(n) -> a pyarrow buffer, close()) of the decompressed bytes of a file: gzip, bz2 and zstd by pyarrow,
+    zip and xz by pandas' own handle (the same member of a zip as pandas.read_csv)."""
+    import pyarrow as pa
+    comp = _compression(path)
+    if comp is None:
+        f = pa.OSFile(str(path), "rb")
+        return f.read_buffer, f.close
+    if comp in ("gzip", "bz2", "zstd") and pa.Codec.is_available(comp):
+        f = pa.CompressedInputStream(pa.OSFile(str(path), "rb"), comp)
+        return f.read_buffer, f.close
+    from pandas.io.common import get_handle
+    h = get_handle(str(path), "rb", compression=comp, is_text=False)
+    return (lambda n: pa.py_buffer(h.handle.read(n))), h.close
+
+
+def _last_newline(b):
+    """The position of the last line end in a pyarrow buffer, or -1."""
+    a = np.frombuffer(b, np.uint8) if b.size else np.zeros(0, np.uint8)
+    w = 1 << 16
+    while True:
+        lo = max(0, len(a) - w)
+        hit = np.flatnonzero(a[lo:] == 10)
+        if len(hit):
+            return lo + int(hit[-1])
+        if not lo:
+            return -1
+        w *= 16
+
+
+ARROW_CHUNK = 16 << 20  # bytes of text parsed by one thread at a time (a 6K panel: ~1,300 cells)
+
+
+def _flat_counts_arrow(kind, path, head, ids_cols, genes, gene_type, rows, progress, said):
+    """_flat_counts by pyarrow: the text cut in chunks at line ends, each parsed and made a sparse block by a thread
+    (no dense cells x genes array beyond a chunk's), the blocks kept in file order. The same ids, matrix and dtype
+    as the pandas reader, or _NotFast / a pyarrow error (then pandas reads the file)."""
+    import pyarrow as pa, pyarrow.csv as pcsv, pyarrow.compute as pc
+    from collections import deque
+    from concurrent.futures import ThreadPoolExecutor
+    if kind == "cosmx":
+        low = {c.lower(): c for c in ids_cols}  # the last of a name, as in _cosmx_id
+        if "fov" not in low or "cell_id" not in low:
+            raise _NotFast()  # (pandas gives the error)
+        id_use = [low["fov"], low["cell_id"]]
+    else:
+        id_use = [ids_cols[0]]
+    G = len(genes)
+    read, close = _byte_stream(path)
+    workers = max(1, pa.cpu_count())
+    ex = ThreadPoolExecutor(workers)
+    ahead = ThreadPoolExecutor(1)  # the next text read (and decompressed) while this one is cut and handed out
+    blocks = None
+    try:
+        parts = []  # text not parsed yet: the header line, then the start of a line cut by a read
+        while True:  # the header line: the same names as pandas reads
+            b = read(ARROW_CHUNK)
+            parts.append(b)
+            if not b.size or _last_newline(b) >= 0:
+                break
+        buf = pa.py_buffer(b"".join(parts))
+        a = np.frombuffer(buf, np.uint8) if buf.size else np.zeros(0, np.uint8)
+        k = int(np.argmax(a == 10)) if (a == 10).any() else buf.size - 1
+        del a
+        line = buf.slice(0, k + 1)
+        line = line if line.size and line[-1] == 10 else pa.py_buffer(line.to_pybytes() + b"\n")  # (a file of a header)
+        names = pcsv.read_csv(pa.BufferReader(line), read_options=pcsv.ReadOptions(use_threads=False)).column_names
+        parts, size = [buf.slice(k + 1)], buf.size - k - 1
+        del buf
+        if len(names) != len(head) or any(a != b and not (a == "" and b == f"Unnamed: {i}")
+                                          for i, (a, b) in enumerate(zip(names, head))):
+            raise _NotFast()  # repeated names (pandas renames them "x.1"), a header over two lines, ...
+        types = {g: getattr(pa, gene_type)() for g in genes}
+        types.update({c: pa.string() for c in id_use})
+        conv = pcsv.ConvertOptions(column_types=types, include_columns=id_use + genes)
+
+        def work(chunk):
+            chunk = pa.py_buffer(b"".join(chunk)) if len(chunk) > 1 else chunk[0]  # (a cut line and the rest)
+            t = pcsv.read_csv(pa.BufferReader(chunk), convert_options=conv, read_options=pcsv.ReadOptions(
+                column_names=head, use_threads=False, block_size=chunk.size + 1024)).combine_chunks()
+            del chunk
+            if not t.num_rows:
+                return None
+            if kind == "cosmx":
+                fov, cell = t.column(id_use[0]), t.column(id_use[1])
+                _plain_ints(fov); _plain_ints(cell)
+                ok = pc.not_equal(cell, "0")
+                cid = pc.binary_join_element_wise(fov, cell, "_").filter(ok)
+                ok = ok.to_numpy(zero_copy_only=False)
+            else:
+                cid, ok = t.column(id_use[0]), None
+                _plain_ints(cid)
+            ids = np.asarray(cid.to_numpy(zero_copy_only=False), dtype=str)
+            # genes x cells, a gene's counts in a row (the columns as parsed, copied once); raises on empty values
+            T = np.asarray(t.select(genes).to_batches()[0].to_tensor(row_major=False)).T
+            del t
+            if T.dtype != np.int32:
+                T = T.astype(np.float32)  # pandas' float32 of the parsed double
+            R = T.shape[1]
+            nz = T != 0
+            per_gene = np.count_nonzero(nz, axis=1)
+            at = np.flatnonzero(nz)
+            del nz
+            indptr = np.zeros(G + 1, np.int64)
+            np.cumsum(per_gene, out=indptr[1:])
+            cells = (at - np.repeat(np.arange(G, dtype=np.int64) * R, per_gene)).astype(np.int32)
+            m = sp.csc_matrix((T.ravel()[at].astype(np.float32), cells, indptr), shape=(R, G)).tocsr()
+            if ok is not None and not ok.all():
+                m = m[ok]
+            return ids, m
+
+        ids, n, last = [], 0, 0
+        blocks = csrutil.RowBlocks(G, config.HOME / "importing")  # on disk until the matrix is complete
+        pending = deque()
+
+        def collect():
+            nonlocal n, last
+            r = pending.popleft().result()
+            if r is None:
+                return
+            blocks.add(r[1])
+            ids.append(r[0])
+            n += len(r[0])
+            if n - last >= rows:
+                progress(f"  read {n:,} cells")
+                said.append(n)
+                last = n
+
+        eof, nxt = False, ahead.submit(read, ARROW_CHUNK)
+        while not eof:
+            b = nxt.result()
+            eof = not b.size
+            if not eof:
+                nxt = ahead.submit(read, ARROW_CHUNK)
+            if eof:
+                chunk, parts = parts, []
+                if not size:
+                    break
+            else:
+                k = _last_newline(b)
+                if k < 0:
+                    parts.append(b)
+                    size += b.size
+                    if size > 16 * ARROW_CHUNK:
+                        raise _NotFast()  # no line ends (a file of \r only)
+                    continue
+                chunk, parts = parts + [b.slice(0, k + 1)], [b.slice(k + 1)]
+                size = parts[0].size
+            del b
+            pending.append(ex.submit(work, chunk))
+            del chunk
+            while len(pending) >= workers:  # memory: a chunk per thread at most
+                collect()
+        while pending:
+            collect()
+        if n != last:
+            progress(f"  read {n:,} cells")
+        pa.default_memory_pool().release_unused()  # (the parsing's memory back before the matrix is read in)
+        X = blocks.matrix()
+    finally:
+        ex.shutdown(wait=True, cancel_futures=True)
+        ahead.shutdown(wait=True, cancel_futures=True)
+        if blocks is not None:
+            blocks.close()
+        close()
+    return np.concatenate(ids) if ids else np.zeros(0, str), [str(g) for g in genes], X
+
+
+def _flat_counts_pandas(kind, path, ids_cols, genes, rows, progress):
+    """_flat_counts by pandas (the reader of files pyarrow cannot read the same way)."""
     ids, n = [], 0
     blocks = csrutil.RowBlocks(len(genes), config.HOME / "importing")  # on disk until the matrix is complete
     try:
@@ -984,8 +1203,6 @@ def _flat_counts(kind, path, progress=print):
         X = blocks.matrix()
     finally:
         blocks.close()
-    if n_ctrl:
-        progress(f"  {n_ctrl} control probes left out")
     return np.concatenate(ids) if ids else np.zeros(0, str), [str(g) for g in genes], X
 
 

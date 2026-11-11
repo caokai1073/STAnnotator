@@ -66,8 +66,8 @@ class RowBlocks:
 
     def add(self, m):
         m = sp.csr_matrix(m)
-        self.fd.write(np.ascontiguousarray(m.data, np.float32).tobytes())
-        self.fi.write(np.ascontiguousarray(m.indices, np.int32).tobytes())
+        self.fd.write(np.ascontiguousarray(m.data, np.float32).data)  # (the array's bytes, not a copy of them)
+        self.fi.write(np.ascontiguousarray(m.indices, np.int32).data)
         self.nnz.append(np.diff(m.indptr).astype(np.int64))
         self.total += m.nnz
 
