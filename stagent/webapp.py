@@ -2432,6 +2432,8 @@ async def api_sample_priors_save(req: Request):
             raise ValueError(f"no sample {sample!r}")
         organ = str(b.get("organ") or "").strip()
         before = {a["id"] for a in hetissue.organ_priors(organ)["added"]} if organ else set()
+        if b.get("ask"):   # ask the agent again for every added prior still without a rule
+            before = set()
         r = hetissue.set_priors(organ, [] if b.get("reset") else b.get("removed"), [] if b.get("reset") else b.get("added"))
         hetissue._remember_organ(sample, r["organ"])
         out = _priors_view(sample, b.get("session") or None, r["organ"])
@@ -2441,7 +2443,9 @@ async def api_sample_priors_save(req: Request):
     if new and b.get("session"):
         s = review_app._session(b["session"])
         items = "; ".join(f"{a['id']}: \"{a['text']}\"" for a in new)
-        out["agent"] = _ask_claude(s, PRIOR_RULE_REQUEST.format(organ=r["organ"], items=items))
+        # at the top level: on a server reached over SSH the page hands {"claude_code": {"remote"...}} to the app,
+        # which opens Claude Code on the user's computer
+        out |= {"asked": [a["id"] for a in new]} | _ask_claude(s, PRIOR_RULE_REQUEST.format(organ=r["organ"], items=items))
     return _json(out)
 
 

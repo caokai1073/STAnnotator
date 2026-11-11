@@ -3885,7 +3885,13 @@ function prShow(v) {
   });
   (v.added || []).forEach((a) => {
     const sub = a.rule ? "Rule: " + a.rule : a.no_rule ? "No rule: " + a.no_rule : "Rule: the agent is writing it…";
-    list.append(prRow(a.id, a.text, sub, a.text, "×", () => prPost({ added: v.added.filter((x) => x.id !== a.id) }), true));
+    const row = prRow(a.id, a.text, sub, a.text, "×", () => prPost({ added: v.added.filter((x) => x.id !== a.id) }), true);
+    if (!a.rule && !a.no_rule) {  // not there yet (no agent was connected, or it was closed): ask it again
+      const again = Object.assign(document.createElement("button"), { textContent: "ask again", title: "Ask the agent to write the rules still missing" });
+      again.style.marginLeft = "6px"; again.onclick = () => prPost({ ask: true });
+      row.querySelector(".prule").append(again);
+    }
+    list.append(row);
   });
   if (!list.children.length) list.append(Object.assign(document.createElement("div"), { className: "prrow hint", textContent: v.organ ? "No priors: add one below." : "" }));
   $("prRemovedBox").hidden = !removed.size; $("prNRemoved").textContent = removed.size;
@@ -3905,7 +3911,11 @@ async function prPost(change) {
                        { session: st.sid || null, organ: v.organ, removed: v.removed || [], added: v.added || [], ...change }); }
   catch (e) { $("prErr").textContent = e.message; return false; }
   prShow(r);
-  if (r.agent && r.agent.message && st.chatAvailable) { $("input").value = r.agent.message; send(); }
+  if (r.asked && r.asked.length) {
+    if (r.message && st.chatAvailable) { $("input").value = r.message; send(); }
+    toast(r.claude_code ? (r.claude_code.reused ? "The agent is writing the rule" : "The agent is opening to write the rule")
+          : r.message && st.chatAvailable ? "The agent is writing the rule (chat)" : "No agent connected: the rule is written at the next Review", 4500);
+  }
   return true;
 }
 $("priorBtn").onclick = async () => {
@@ -3925,10 +3935,7 @@ $("prOrgan").onchange = async (e) => {
 };
 $("prAdd").onclick = async () => {
   const text = $("prNew").value.trim(); if (!text) return;
-  if (await prPost({ added: [...(PR.view.added || []), { text }] })) {
-    $("prNew").value = "";
-    toast(st.sid && (st.desktop || st.chatAvailable) ? "Added: the agent writes its rule" : "Added: the agent writes its rule at the next Review", 4000);
-  }
+  if (await prPost({ added: [...(PR.view.added || []), { text }] })) $("prNew").value = "";
 };
 $("prNew").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("prAdd").click(); } });
 $("prDefault").onclick = async () => {
