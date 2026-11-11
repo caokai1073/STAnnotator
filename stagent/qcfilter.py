@@ -179,6 +179,7 @@ def apply(ids, p, progress=lambda *a: None, genes_removed=None):
     back. genes_removed: the genes to leave out, as a saved filter did (bundle.py: a project's slices counted together
     for min_cells), instead of counting them here. Returns the preview of what was done."""
     prm = params(p)
+    progress(0.02, "reading the cells and genes as imported")
     data, genes, keep, gkeep, _ = _plan(ids, prm)
     if genes_removed is not None:
         out = set(genes_removed)
@@ -190,8 +191,10 @@ def apply(ids, p, progress=lambda *a: None, genes_removed=None):
     summary = preview(ids, p)
     if genes_removed is not None:
         summary["genes_removed"] = [g for g in genes if g in set(genes_removed)]
+    n = len(ids)
+    at = lambda i, f, what: progress(0.3 + 0.7 * (i + f) / n, what + (f" ({s}, slice {i + 1} of {n})" if n > 1 else ""))
     for i, s in enumerate(ids):
-        progress(i / len(ids), f"filtering {s}")
+        at(i, 0.0, "keeping the data as imported")
         d = config.SAMPLES / s
         meta = json.load(open(d / "meta.json"))
         meta.setdefault("placement_affine", importer.placement(s).tolist())
@@ -201,6 +204,7 @@ def apply(ids, p, progress=lambda *a: None, genes_removed=None):
             o.mkdir(exist_ok=True)
             for f in ("cells.parquet", "counts.npz", "genes.txt"):
                 shutil.copy2(d / f, o / f)
+        at(i, 0.25, "filtering the cells and genes")
         D, km = data[s], keep[s][0]
         X = D["X"][km][:, gkeep].tocsr()
         cells = D["cells"].iloc[np.flatnonzero(km)].reset_index(drop=True)
@@ -212,7 +216,9 @@ def apply(ids, p, progress=lambda *a: None, genes_removed=None):
             cells["total_counts"] = np.asarray(X.sum(1)).ravel().astype(np.int64)
         g = [x for x, k in zip(genes, gkeep) if k]
         if "depth_um" in cells and prm:
+            at(i, 0.45, "the distance of each cell to the epithelium")
             cells["depth_um"] = importer.epithelial_depth(X, g, cells[["x", "y"]].to_numpy(float))
+        at(i, 0.85, "writing the filtered cells")
         cells.to_parquet(d / "cells.parquet")
         sp.save_npz(d / "counts.npz", X)
         config.write_genes(d / "genes.txt", g)

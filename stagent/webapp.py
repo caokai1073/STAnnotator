@@ -2909,13 +2909,28 @@ async def api_sample_filter(req: Request):
         prm = qcfilter.params(b.get("params"))
         if not prm and not any((config.SAMPLES / x / "original").exists() for x in ids):
             return _json({"error": "set at least one threshold"}, 400)
-        await asyncio.to_thread(qcfilter.preview, ids, prm)  # checks the thresholds before anything is moved
+        job = f"filter:{sample}"   # its progress, for the page's bar while this request runs
+        JOBS[job] = {"stage": "checking the thresholds", "progress": 0.0, "done": False, "error": None, "kind": "filter",
+                     "sample": sample, "started": time.time()}
+        chk = await asyncio.to_thread(qcfilter.preview, ids, prm)  # checks the thresholds before anything is moved
+        if prm:  # what the filter itself would refuse, refused now: else the annotations go to the trash for nothing
+            if not chk["n_cells_kept"]:
+                raise ValueError("these thresholds remove every cell")
+            if not chk["n_genes_kept"]:
+                raise ValueError("these thresholds remove every gene")
+            empty = [x["sample_id"] for x in chk["slices"] if not x["n_cells_kept"]]
+            if empty:
+                raise ValueError(f"these thresholds remove every cell of {', '.join(empty)}")
     except (ValueError, OSError) as e:
+        if f"filter:{sample}" in JOBS:
+            JOBS[f"filter:{sample}"].update(done=True, error=str(e))
         return _json({"error": str(e)}, 400)
     sess = [d for x in ids for d in _sample_sessions(x)]
     mine = {d.name for d in sess} | {f"embed:{x}" for x in ids} | {f"project:{projects.project_of(sample)}"}
     if any(not j["done"] and (k in mine or k.split(":", 1)[-1] in mine) for k, j in JOBS.items()):
+        JOBS[job].update(done=True, error="busy")
         return _json({"error": "an annotation or analysis of this sample is still running; wait until it finishes"}, 409)
+    JOBS[job].update(stage="moving the annotations to the trash", progress=0.01)
     trash = config.TRASH / f"{time.strftime('%Y%m%d-%H%M%S')}_{sample}_filter"
     embs = [config.SAMPLES / x / "embedding" for x in ids if (config.SAMPLES / x / "embedding").exists()]
     n_chats = 0
@@ -2925,12 +2940,15 @@ async def api_sample_filter(req: Request):
         for e in embs:
             shutil.move(str(e), str(trash / f"embedding_{e.parent.name}"))
     try:
-        r = await asyncio.to_thread(qcfilter.apply, ids, prm)
+        r = await asyncio.to_thread(qcfilter.apply, ids, prm,
+                                    lambda f, m: JOBS[job].update(progress=round(float(f), 3), stage=m))
     except (ValueError, OSError) as e:
+        JOBS[job].update(done=True, error=str(e))
         return _json({"error": str(e)}, 400)
     for x in ids:
         _reload_sample(x)
     _cell_tables.clear()
+    JOBS[job].update(progress=1.0, stage="done", done=True)
     return _json(r | {"deleted_sessions": len(sess), "deleted_conversations": n_chats, "deleted_embeddings": len(embs),
                       "trash": str(trash) if sess or embs else None})
 

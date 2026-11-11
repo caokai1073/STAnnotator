@@ -941,6 +941,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <div class="qfin"><label class="f">Min cells per gene<input type="number" min="0" step="1" id="qf_min_cells" placeholder="none"></label></div>
     </div>
     <div id="qfPrev"></div>
+    <div class="progress" id="qfprog" style="max-width:none;margin-top:6px"><div class="pbar"><i id="qffill"></i></div><span id="qfstage" class="hint"></span></div>
     <div class="hint" id="qfNote" style="margin-top:6px"></div>
     <div class="row" style="margin-top:10px"><button id="qfRestore" hidden title="Bring back every cell and gene as imported">Restore all</button>
       <span class="err" id="qfErr"></span><span class="spacer"></span>
@@ -6293,15 +6294,35 @@ async function qfRun(params) {
   const id = st.sample.sample_id, p = projectOf(id);
   $("qfGo").disabled = true; $("qfRestore").disabled = true; $("qfErr").textContent = "";
   $("qfPrev").textContent = Object.keys(params).length ? "Filtering…" : "Restoring…";
+  // the filter runs while this request waits: its progress, from the server, on the bar
+  const job = `filter:${id}`, bar = $("qfprog"); let polling = true;
+  $("qffill").style.width = "0%"; $("qfstage").textContent = "starting"; bar.classList.add("show");
+  (async () => {
+    await new Promise((res) => setTimeout(res, 400));
+    while (polling) {
+      try {
+        const j = await api(`/api/job/${encodeURIComponent(job)}`);
+        if (polling && j.stage !== "idle") { $("qffill").style.width = `${Math.round(100 * (j.progress || 0))}%`; $("qfstage").textContent = j.stage; }
+      } catch (e) { /* (the next try) */ }
+      await new Promise((res) => setTimeout(res, 500));
+    }
+  })();
+  // the filter moves the sample's annotations to the trash: the page lets go of the open one first (its periodic
+  // requests would find it gone), and opens the sample again afterwards
+  const wasOpen = st.sid;
+  if (wasOpen) closeSession();
   try {
-    const r = await post(`/api/sample/${id}/filter`, { params });
+    const r = await post(`/api/sample/${id}/filter`, { params }).finally(() => { polling = false; bar.classList.remove("show"); });
     $("qfDlg").close();
     (p ? p.samples : [id]).forEach((x) => forgetOpened(x));
     GL.sample = null;  // the cells' positions are read again
     await loadSamples(id);
     toast((Object.keys(params).length ? `Filtered: ${(r.n_cells - r.n_cells_kept).toLocaleString()} cells and ${r.genes_removed.length} genes removed` : "All cells and genes restored") +
           (r.deleted_sessions ? `; ${r.deleted_sessions} annotation(s) moved to the trash` : "") + (r.deleted_embeddings ? "; PCA / UMAP removed" : ""), 7000);
-  } catch (e) { $("qfErr").textContent = e.message; qfPreview(); }
+  } catch (e) {
+    $("qfErr").textContent = e.message; qfPreview();
+    if (wasOpen && st.sample && st.sample.sample_id === id && !st.sid) selectSample(id).catch(() => {});  // (nothing was filtered: the sample again)
+  }
   $("qfRestore").disabled = false;
 }
 $("qfGo").onclick = () => qfRun(qfParams());
