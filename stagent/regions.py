@@ -169,6 +169,19 @@ def cells_in_polygon(px, py, polygon):
     return cand[points_in(np.asarray(px, float)[cand], np.asarray(py, float)[cand], poly)]
 
 
+def cells_in_pieces(px, py, pieces):
+    """How many cells pieces [{"outer", "holes"}] hold: inside an outer ring and outside its holes, counted once (as
+    session.set_region_shape assigns them)."""
+    inside = np.zeros(len(px), bool)
+    for pc in pieces:
+        rows = cells_in_polygon(px, py, pc["outer"])
+        for h in pc.get("holes") or []:
+            if len(h) >= 3:
+                rows = np.setdiff1d(rows, cells_in_polygon(px, py, h))
+        inside[rows] = True
+    return int(inside.sum())
+
+
 def points_in(px, py, poly, chunk=4_000_000):
     """Which points lie inside a closed outline (even-odd rule): for each point, the edges that cross the horizontal
     line through it on its right. The edges are matched to the points through the points sorted by y, so the work

@@ -87,7 +87,12 @@ def compartment(s, lineages, max_dist_um=30.0, min_share=0.5, min_cells=200, ver
         area += int((lab == k).sum())
     if not polys:
         raise ValueError("no piece of that compartment holds enough cells; lower min_cells or raise max_dist_um")
-    covered = np.any(pieces, axis=0)
+    # the cells inside the outlines, as a region drawn with them holds them (session.set_region_shape), not those on
+    # the raster's pixels: the smoothed outline cuts the edge a little differently (about 1% of the cells)
+    from .regions import cells_in_polygon
+    covered = np.zeros(len(px), bool)
+    for poly in polys:
+        covered[cells_in_polygon(px, py, poly)] = True
     comp = pd.Series(lin[covered]).value_counts(normalize=True).head(6).round(3)
     return {"polygons_px": polys, "n_pieces": len(polys), "n_cells": int(covered.sum()),
             "share_of_members_inside": round(float(mask[covered].sum() / mask.sum()), 3),

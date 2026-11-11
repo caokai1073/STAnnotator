@@ -71,6 +71,30 @@ def _file(sample_id):
     return config.SAMPLES / sample_id / "regcheck.json"
 
 
+def carry(sample_id, image, old, meta):
+    """The cells' file was written again without moving a cell (Filter cells and genes: fewer cells, or cells brought
+    back placed as the others): the checks of this placement stay valid. Their key (old, the file before) becomes the
+    new file's in regcheck.json and in meta (alignment_check, registration_local; meta is written by the caller), so
+    Steps does not ask for the registration check again. The Undo of a local registration would put back the cells'
+    file from before it, undoing the filter too: it is no longer offered."""
+    new = _key(sample_id, image)
+    if new == old:
+        return
+    for k in ("alignment_check", "registration_local"):
+        x = meta.get(k)
+        if isinstance(x, dict) and x.get("key") == old:
+            x["key"] = new
+    f = _file(sample_id)
+    try:
+        w = json.load(open(f))
+    except (OSError, ValueError):
+        w = None
+    if isinstance(w, dict) and w.get("key") == old:
+        dump_json(dict(w, key=new), f)
+    import shutil
+    shutil.rmtree(config.SAMPLES / sample_id / "align" / "before_local", ignore_errors=True)
+
+
 def _key(sample_id, image):
     st = (config.SAMPLES / sample_id / "cells.parquet").stat()
     return f"{FORMAT}:{st.st_mtime_ns}:{st.st_size}:{image}"

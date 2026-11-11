@@ -781,12 +781,6 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
           <button id="drawDone" class="primary" style="padding:1px 8px;font-size:12px" title="Close the outline and name it (Enter)">Finish</button></div>
         <span id="drawHow">Click to add points · double-click a point to remove it</span> · click the first point, Enter or
         Finish to close · Backspace undo · Esc cancel · the outline is saved as you draw</div>
-      <div class="hint" id="edithint" hidden style="padding:6px 10px;border-top:1px solid var(--line)">
-        <div id="editinfo" style="margin-bottom:4px"></div>
-        <span id="editHow">Drag a point to move it · drag a small ◦ between two points to add one · double-click a point to remove it</span>
-        <div style="display:flex;gap:6px;margin-top:6px"><button id="editSave" class="primary" style="padding:2px 10px">Save</button>
-          <button id="editUndo" style="padding:2px 10px" title="Take back the last change (Backspace)">Undo</button>
-          <button id="editCancel" style="padding:2px 10px">Cancel</button></div></div>
     </div>
   </section>
   <aside id="side">
@@ -1278,7 +1272,7 @@ const ICON_TEXT = { qfBtn: "play", importBtn: "import", clearAll: "trash", allSa
   mkImport: "import", mkCheck: "check", mkSave: "save", mkDraft: "sparkle", mkOrganUse: "list", mkOrganAgent: "sparkle", mkClose: "check", imGo: "import",
   imNewAlign: "sparkle", alignNow: "sparkle", refPick: "folder", exPick: "folder", refClose: "check", exClose: "check", rcTest: "check",
   rcGo: "server", fbOk: "check", rpAsk: "sparkle", xpCsv: "download", xpNb: "download", xpReg: "download", xpPos: "download", xpGeo: "download", xpNbAll: "download",
-  hpCopy: "copy", editSave: "check", nameSave: "check", rsGo: "trash", anFig: "download", aRun: "play", aLast: "list", anAsk: "sparkle", sRun: "play", sLast: "list", tRun: "play", tLast: "list", rvGo: "sparkle", rvShow: "list" };
+  hpCopy: "copy", nameSave: "check", rsGo: "trash", anFig: "download", aRun: "play", aLast: "list", anAsk: "sparkle", sRun: "play", sLast: "list", tRun: "play", tLast: "list", rvGo: "sparkle", rvShow: "list" };
 const ICON_TITLES = { lgtoggle: "Fold or unfold", rgtoggle: "Fold or unfold", stepsFold: "Fold or unfold", anCsv: "Save as CSV…", rpSave: "Save as Markdown…",
   mkExport: "Save the list as CSV…", fbHome: "Home folder", fbUp: "Parent folder", plclose: "Close", emClose: "Close" };
 Object.entries(ICON_TITLES).forEach(([id, t]) => $(id) && ($(id).title = t));
@@ -1705,7 +1699,7 @@ function panelsIdle() {  // no annotation open on this sample: the panels say so
 }
 function closeSession() {
   st.sid = null; st.placeholder = false; st.version = null; st.filters = {}; st.regions = null; st.advice = null; st.advicePollSig = undefined; st.adviceSeen = null;
-  if (st.drawing) stopDraw(); if (st.editing) stopEdit(); closePlaus();
+  if (st.drawing) stopDraw(); closePlaus();
   if (drawTool(st.tool)) {  // Polygon or Pen would stay chosen but do nothing in the next annotation: back to Move
     st.tool = "move"; document.querySelectorAll("#rgtools [data-tool]").forEach((b) => b.classList.toggle("on", b.dataset.tool === "move"));
     $("toolSub").hidden = true; toolCursor();
@@ -2364,7 +2358,6 @@ function imgPointFromEvent(pos) { return heItem().viewerElementToImageCoordinate
 viewer.addHandler("canvas-click", async (e) => {
   if (!e.quick || !st.sid) return;
   if (st.drawing) { if (Date.now() - (st.penAt || 0) > 300) addPoint(e.position); return; }
-  if (st.editing) return;
   if (st.tool !== "move" || Date.now() - (st.penAt || 0) < 300) return;
   // a plain click shows the cell; Alt (Option), Ctrl or Cmd + click selects the region under it, Shift + click adds or
   // takes one away. With no cells to show (an H&E only, or the cells hidden) a plain click selects the region.
@@ -2442,13 +2435,13 @@ function regionShape(p, k = 0) {  // the outline and holes of a polygon at level
 // outlines (QuPath's run to tens of thousands of points) made moving the map slow; labels, the shape being drawn and
 // the selection stay SVG.
 function buildRegionLayer(svg) {
-  const editing = (st.editing ? st.editing.id : "") + "|" + (st.shape ? st.shape.ids.join(",") : ""), on = $("outlines").checked;
+  const editing = st.shape ? st.shape.ids.join(",") : "", on = $("outlines").checked;  // (the shape's regions are drawn by it)
   if (REG.g && REG.g.parentNode === svg && REG.regions === st.regions && REG.editing === editing && REG.on === on) return;
   svg.textContent = "";
   Object.assign(REG, { regions: st.regions, editing, on, level: -1, items: [] });
   REG.g = svgEl("g", {}); REG.dyn = svgEl("g", {}); svg.append(REG.g, REG.dyn);  // (REG.g: the view's transform only)
   if (!st.regions || !on) return;
-  const hidden = new Set([st.editing && st.editing.id, ...(st.shape ? st.shape.ids : [])]);
+  const hidden = new Set(st.shape ? st.shape.ids : []);
   st.regions.polygons.filter((p) => !hidden.has(p.id)).forEach((p) => {
     regionShape(p);
     REG.items.push({ p, col: rgb(p.color), fill: `rgba(${p.color[0]},${p.color[1]},${p.color[2]},0.08)` });
@@ -2568,7 +2561,6 @@ function drawRegions() {
     svg.append(svgEl("polygon", { points: pts.map((q) => `${q.x},${q.y}`).join(" "), fill: "rgba(0,230,255,.06)",
                                   stroke: "#00e6ff", "stroke-width": 2.5 }));
   }
-  if (st.editing) drawEditing(svg);
   if (!st.drawing && st.pausedDraft && $("outlines").checked) {  // a paused outline: gray, dashed
     const pts = st.pausedDraft.map(([x, y]) => toScreen(x, y));
     svg.append(svgEl("polyline", { points: pts.map((q) => `${q.x},${q.y}`).join(" "), fill: "none",
@@ -2752,10 +2744,7 @@ async function deleteRegion(rid) {
   catch (e) { toast(e.message, 6000); }
 }
 
-// ---------------- editing a drawn polygon: drag points, drag a midpoint to add one, double-click to remove ----------------
-st.editing = null;
-const MAX_HANDLES = 900;  // more points than this on screen: zoom in to edit them
-const EDIT_TOL_UM = 1.5;  // an outline imported from QuPath (a point every pixel or two) is edited simplified to this
+// ---------------- outlines simplified (the drawing's level of detail, the shapes' edits) ----------------
 function simplifyRing(pts, tol) {  // Douglas-Peucker on a closed outline: the points that keep it within tol
   const n = pts.length;
   if (n <= 8) return pts.map((q) => [q[0], q[1]]);
@@ -2774,164 +2763,6 @@ function simplifyRing(pts, tol) {  // Douglas-Peucker on a closed outline: the p
   }
   return pts.filter((_, i) => keep[i]).map((q) => [q[0], q[1]]);
 }
-// A curve (an outline with many close points: drawn with the Pen, or imported from QuPath) is edited as a curve, at
-// full resolution: a stretch of it is redrawn with the pen (press on the outline, draw the new border, let go on the
-// outline; the shorter stretch between the two places is replaced). A polygon of clicked points is edited by its points.
-function isCurve(poly) {
-  return poly.length >= 60 && poly.length > 2.5 * simplifyRing(poly, EDIT_TOL_UM / st.he.um_per_px).length;
-}
-function startEdit(p) {
-  if (st.shape) { cancelShape(); if (st.shape) return; }
-  if (st.tool !== "move") setTool("move");
-  if (st.drawing) pauseDraw();
-  const curve = isCurve(p.polygon);
-  const pts = curve ? p.polygon.map((q) => [q[0], q[1]])
-    : simplifyRing(p.polygon, EDIT_TOL_UM / st.he.um_per_px);  // unchanged unless a point is moved and saved
-  st.editing = { id: p.id, name: p.name, pts, dirty: false, from: p.polygon.length, curve, hist: [] };
-  $("editHow").textContent = curve
-    ? "Redraw a part: press on the outline, draw the new border, let go on the outline · Space + drag moves the map · Backspace undo"
-    : "Drag a point to move it · drag a small ◦ between two points to add one · double-click a point to remove it";
-  $("osd").style.cursor = curve ? "crosshair" : "";
-  $("edithint").hidden = false; $("draw").disabled = true;
-  editInfo();
-  zoomTo(p); drawRegions();
-}
-function editInfo() {
-  const e = st.editing;
-  $("editinfo").textContent = `Editing ${e.id} (${e.name}) · ` + (e.curve ? "curve" : `${e.pts.length} points` +
-    (e.from > e.pts.length ? ` (simplified from ${e.from.toLocaleString()}, within ${EDIT_TOL_UM} µm)` : "")) + (e.dirty ? " · changed" : "");
-}
-function editUndo() {
-  const e = st.editing;
-  if (!e || !e.hist.length) return;
-  e.pts = e.hist.pop(); e.dirty = e.hist.length > 0; editInfo(); drawRegions();
-}
-function nearOutline(pos, pts) {  // the outline's point nearest to a screen position, and how far it is (screen px)
-  let best = -1, bd = Infinity;
-  pts.forEach(([x, y], i) => { const q = toScreen(x, y), d = Math.hypot(q.x - pos.x, q.y - pos.y); if (d < bd) { bd = d; best = i; } });
-  return { i: best, d: bd };
-}
-function reshape(ring, i, j, stroke) {  // ring with the shorter stretch between points i and j replaced by stroke (i -> j)
-  const n = ring.length, seg = (a, b) => Math.hypot(ring[b][0] - ring[a][0], ring[b][1] - ring[a][1]);
-  let fwd = 0; for (let k = i; k !== j; k = (k + 1) % n) fwd += seg(k, (k + 1) % n);
-  let all = 0; for (let k = 0; k < n; k++) all += seg(k, (k + 1) % n);
-  const walk = (a, b) => { const o = []; for (let k = a; k !== b; k = (k + 1) % n) o.push(ring[k]); return o; };
-  return fwd <= all - fwd
-    ? [...stroke, ...walk((j + 1) % n, i)]  // the stretch i -> j (forward) goes; j+1 .. i-1 stays
-    : [...walk((i + 1) % n, j), ...stroke.slice().reverse()];  // the stretch j -> i goes; i+1 .. j-1 stays
-}
-viewer.addHandler("canvas-press", (e) => {
-  const ed = st.editing;
-  st.reshaping = null;
-  if (!ed || !ed.curve || st.spaceHeld) return;
-  const hit = nearOutline(e.position, ed.pts);
-  if (hit.d <= 12) { const p = imgPointFromEvent(e.position); st.reshaping = { i: hit.i, pts: [[p.x, p.y]] }; }
-});
-viewer.addHandler("canvas-drag", (e) => {
-  const k = st.reshaping;
-  if (!k || !st.editing) return;
-  e.preventDefaultAction = true;
-  const oe = e.originalEvent, r = $("osd").getBoundingClientRect();
-  const seen = oe && oe.getCoalescedEvents ? oe.getCoalescedEvents().map((c) => new OpenSeadragon.Point(c.clientX - r.left, c.clientY - r.top)) : [];
-  for (const pos of seen.length ? seen : [e.position]) {
-    const [lx, ly] = k.pts[k.pts.length - 1], q = toScreen(lx, ly);
-    if (Math.hypot(q.x - pos.x, q.y - pos.y) < PEN_STEP_PX) continue;
-    const p = imgPointFromEvent(pos); k.pts.push([p.x, p.y]);
-  }
-  drawRegionsOnce();
-});
-viewer.addHandler("canvas-release", (e) => {
-  const k = st.reshaping, ed = st.editing; st.reshaping = null;
-  if (!k || !ed) return;
-  st.penAt = Date.now();
-  if (k.pts.length < 3) { drawRegions(); return; }
-  const hit = nearOutline(e.position, ed.pts);
-  if (hit.d > 12) { toast("End the new border on the outline: that part was not changed", 4000); drawRegions(); return; }
-  smoothStroke(k.pts, 0);
-  const next = reshape(ed.pts, k.i, hit.i, k.pts);
-  if (next.length < 3) { drawRegions(); return; }
-  ed.hist.push(ed.pts); ed.pts = next; ed.dirty = true; editInfo(); drawRegions();
-});
-function stopEdit() {
-  if (st.editing && st.editing.curve) $("osd").style.cursor = "";
-  st.editing = null; st.drag = null; st.reshaping = null;
-  $("edithint").hidden = true; $("draw").disabled = false;
-  drawRegions();
-}
-async function saveEdit() {
-  const e = st.editing;
-  if (!e) return;
-  if (!e.dirty) { stopEdit(); return; }
-  try { const r = await post(`/api/s/${st.sid}/regions/${e.id}/edit`, { polygon: e.pts }); stopEdit(); await afterRegionChange(r); }
-  catch (err) { toast(err.message, 6000); }
-}
-function evToImage(ev) {
-  const r = $("osd").getBoundingClientRect();
-  const p = imgPointFromEvent(new OpenSeadragon.Point(ev.clientX - r.left, ev.clientY - r.top));
-  return [p.x, p.y];
-}
-function drawEditing(svg) {
-  const e = st.editing, pts = e.pts.map(([x, y]) => toScreen(x, y));
-  svg.append(svgEl("polygon", { points: pts.map((q) => `${q.x},${q.y}`).join(" "), fill: "rgba(0,230,255,.07)",
-                                stroke: "#000", "stroke-opacity": 0.6, "stroke-width": 5 }));
-  svg.append(svgEl("polygon", { points: pts.map((q) => `${q.x},${q.y}`).join(" "), fill: "none", stroke: "#00e6ff", "stroke-width": 2.4 }));
-  if (e.curve) {  // a curve: no points to drag; the new border being drawn
-    if (st.reshaping) svg.append(svgEl("polyline", { points: st.reshaping.pts.map(([x, y]) => toScreen(x, y)).map((q) => `${q.x},${q.y}`).join(" "),
-                                                     fill: "none", stroke: "#ffd400", "stroke-width": 2.4 }));
-    return;
-  }
-  const W = $("regsvg").clientWidth || 4000, H = $("regsvg").clientHeight || 4000;
-  const on = (q) => q.x > -20 && q.y > -20 && q.x < W + 20 && q.y < H + 20;
-  const visible = pts.filter(on).length;
-  if (visible > MAX_HANDLES) { $("editinfo").textContent = `Editing ${e.id} · ${e.pts.length} points: zoom in to move them`; return; }
-  editInfo();
-  pts.forEach((q, i) => {  // midpoints first, so the vertices sit on top
-    const n = pts[(i + 1) % pts.length];
-    if (!on(q) && !on(n)) return;
-    if (Math.hypot(n.x - q.x, n.y - q.y) < 18) return;
-    const m = svgEl("circle", { cx: (q.x + n.x) / 2, cy: (q.y + n.y) / 2, r: 4, fill: "rgba(255,255,255,.55)", stroke: "#00a0d0",
-                                "stroke-width": 1.5, class: "hdl mid" });
-    m.addEventListener("pointerdown", (ev) => {
-      ev.preventDefault(); ev.stopPropagation();
-      const a = e.pts[i], b = e.pts[(i + 1) % e.pts.length];
-      e.hist.push(e.pts.map((q) => [q[0], q[1]]));
-      e.pts.splice(i + 1, 0, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]);
-      e.dirty = true; beginDrag(i + 1);
-    });
-    svg.append(m);
-  });
-  let last = null;
-  pts.forEach((q, i) => {
-    if (!on(q)) return;
-    if (last && Math.hypot(q.x - last.x, q.y - last.y) < 8) return;  // too close to the last handle to grab: zoom in for it
-    last = q;
-    const c = svgEl("circle", { cx: q.x, cy: q.y, r: 5, fill: "#fff", stroke: "#00a0d0", "stroke-width": 2, class: "hdl" });
-    c.addEventListener("pointerdown", (ev) => {  // the layer is redrawn on every press, so double-clicks are timed here
-      ev.preventDefault(); ev.stopPropagation();
-      const now = Date.now(), last = st.lastDown;
-      st.lastDown = { i, t: now };
-      if (last && last.i === i && now - last.t < 400) {
-        st.lastDown = null;
-        if (e.pts.length <= 3) { toast("A region needs at least 3 points"); return; }
-        e.hist.push(e.pts.map((q) => [q[0], q[1]]));
-        e.pts.splice(i, 1); e.dirty = true; drawRegions(); return;
-      }
-      e.hist.push(e.pts.map((q) => [q[0], q[1]]));
-      beginDrag(i);
-    });
-    svg.append(c);
-  });
-}
-function beginDrag(i) {
-  st.drag = { i };
-  const move = (ev) => { if (!st.editing || !st.drag) return; st.editing.pts[st.drag.i] = evToImage(ev); st.editing.dirty = true; drawRegions(); };
-  const up = () => { st.drag = null; window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); drawRegions(); };
-  window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
-  drawRegions();
-}
-$("editSave").onclick = saveEdit;
-$("editUndo").onclick = (ev) => { editUndo(); ev.currentTarget.blur(); };
-$("editCancel").onclick = stopEdit;
 
 // Drawing a region: the points are kept as a draft of the sample (browser storage) at every change, so a long outline
 // can be paused (Pause, or another sample) and continued later, also after a reload; a double-click on a point
@@ -3178,7 +3009,6 @@ const subtracting = (ev) => st.subtract || st.altHeld || !!(ev && ev.altKey);
 const polyOf = (id) => st.regions && st.regions.polygons.find((p) => p.id === id);
 const piecesOf = (ids) => ids.map(polyOf).filter(Boolean).map((p) => ({ outer: p.polygon.map((q) => [q[0], q[1]]), holes: (p.holes || []).map((h) => h.map((q) => [q[0], q[1]])) }));
 function startShape(ids, pieces) {
-  if (st.editing) stopEdit();
   const name = ids.length ? (polyOf(ids[0]) || {}).name : "";
   st.shape = { ids: [...ids], name, pieces: pieces || piecesOf(ids), hist: [], dirty: !!pieces, drawn: null };
   syncShapeBar(); drawRegions();
@@ -3317,7 +3147,6 @@ $("shapeCancel").onclick = () => cancelShape();
 // ---- tools ----
 function setTool(t) {
   if (!st.sid) return;
-  if (st.editing && t !== "move") stopEdit();
   if (st.drawing && !drawTool(t)) pauseDraw();
   st.tool = t;
   if (drawTool(t)) setPen(t === "pen");  // (between Polygon and Pen the outline being drawn goes on)
@@ -3330,7 +3159,7 @@ function setTool(t) {
 function toolCursor() {
   const t = st.tool, el = $("osd");
   if (st.spaceHeld) { el.style.cursor = "grab"; return; }
-  el.style.cursor = st.drawing || (st.editing && st.editing.curve) || t === "rect" || t === "ellipse" ? "crosshair"
+  el.style.cursor = st.drawing || t === "rect" || t === "ellipse" ? "crosshair"
     : t === "brush" ? "none" : "";
 }
 document.querySelectorAll("#rgtools button[data-icon]").forEach((b) => decorate(b, b.dataset.icon, true));
@@ -3351,7 +3180,7 @@ $("osd").addEventListener("pointerleave", () => { st.cursorPos = null; drawRegio
 viewer.addHandler("canvas-press", (e) => {
   st.toolDrag = null;
   const t = st.tool;
-  if (!st.sid || st.drawing || st.editing || st.spaceHeld || !["rect", "ellipse", "brush"].includes(t)) return;
+  if (!st.sid || st.drawing || st.spaceHeld || !["rect", "ellipse", "brush"].includes(t)) return;
   const p = imgPointFromEvent(e.position);
   st.toolDrag = { t, from: [p.x, p.y], to: [p.x, p.y], last: e.position, sub: subtracting(e.originalEvent), pending: [], started: false };
   if (t === "brush") { toolDab([e.position]); }
@@ -4470,7 +4299,7 @@ async function afterPlacement(msg) {  // the sample's image or cell positions ch
   Object.assign(st.sample, fresh, { sessions: st.sample.sessions, allSessions: st.sample.allSessions });
   const sameImage = before === `${st.sample.image_kind}|${st.sample.he_path}`;  // else show the whole new image
   if (st.sid) await reloadGeometry(sameImage); else { await openHE(id); GL.colorKey = null; fillModes(null); refreshOverlay(); }
-  alignBar(); syncExport();
+  alignBar(); sampleInfo(); syncExport();  // (the Data card: "image waiting for its alignment" no more)
   if (msg) toast(msg, 6000);
 }
 function askAlign() {  // choose the samples whose image waits for its alignment: the agent aligns them one after the other
@@ -7871,9 +7700,6 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "[") stepSlice(-1);
   if (e.key === "]") stepSlice(1);
   if (e.key === "t") setHeader(!document.querySelector("header").classList.contains("collapsed"));
-  if (st.editing && e.key === "Escape") { stopEdit(); return; }  // (not also the shape below)
-  if (st.editing && e.key === "Enter") { e.preventDefault(); saveEdit(); }
-  if (st.editing && e.key === "Backspace") { e.preventDefault(); editUndo(); }
   if (st.drawing && e.key === "Escape") { cancelDraw(); return; }
   if (st.drawing && e.key === "Enter") { e.preventDefault(); finishDraw(); }
   if (st.drawing && e.key === "Backspace") { e.preventDefault(); $("drawUndo").click(); }
@@ -7881,7 +7707,7 @@ document.addEventListener("keydown", (e) => {
     const t = { m: "move", r: "rect", o: "ellipse", p: "polygon", f: "pen", b: "brush" }[e.key.toLowerCase()];
     if (t) setTool(t);
   }
-  if (!st.drawing && !st.editing) {
+  if (!st.drawing) {
     if (e.key === "Escape") {  // a stroke being dragged; else the shape not saved (asked) and the tool; else the selections
       if (st.toolDrag) { const k = st.toolDrag; st.toolDrag = null; st.shapeView = null; if (k.started && st.shape) undoShape(); drawRegions(); }
       else if (st.shape || st.tool !== "move") { if (st.shape) cancelShape(); if (!st.shape && st.tool !== "move") setTool("move"); }
@@ -7894,7 +7720,7 @@ document.addEventListener("keydown", (e) => {
     if (st.shape && e.key === "Backspace") { e.preventDefault(); undoShape(); }
   }
   if (e.key === "Alt" && !st.altHeld) { st.altHeld = true; drawRegionsOnce(); }
-  if ((st.drawing || st.editing || st.tool !== "move") && e.key === " ") { e.preventDefault(); if (!st.spaceHeld) { st.spaceHeld = true; syncPen(); } }
+  if ((st.drawing || st.tool !== "move") && e.key === " ") { e.preventDefault(); if (!st.spaceHeld) { st.spaceHeld = true; syncPen(); } }
 });
 document.addEventListener("keyup", (e) => { if (e.key === "Alt" && st.altHeld) { st.altHeld = false; drawRegionsOnce(); } });
 document.addEventListener("keyup", (e) => { if (e.key === " " && st.spaceHeld) { e.preventDefault(); st.spaceHeld = false; syncPen(); } });

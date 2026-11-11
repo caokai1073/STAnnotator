@@ -1359,6 +1359,8 @@ def _d_propose_region(a):
     name = regmod.validate_name(re.sub(r"\s+", "_", str(a["name"]).strip()))
     polys, n = (a["resolved"], a.get("n_cells", 0)) if a.get("resolved") else _region_outline(s, a.get("compartment"), a.get("area"))
     polys = regmod.normalize_pieces(polys)  # as the viewer's tools save a shape (what is shown is what is saved)
+    # the cells Accept adds: those inside the outline as saved (not the compartment's count on its raster)
+    n = regmod.cells_in_pieces(s.cells.px.to_numpy(), s.cells.py.to_numpy(), polys)
     exists = name in s.region_names()
     return {"title": f"Add region {name}" + (f" ({len(polys)} pieces)" if len(polys) > 1 else "") + f": {n:,} cells",
             "version": s.state()["version"],

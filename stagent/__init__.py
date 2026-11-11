@@ -4,7 +4,7 @@ The LLM only translates user intent into tool calls; every annotation result is 
 deterministically here from (base probabilities, regions, constraints) and versioned.
 Entry points: stagent.session.Session, stagent.mcp_server.
 """
-__version__ = "0.2.54"  # one step up per release: 0.2.1, 0.2.2, ...
+__version__ = "0.2.55"  # one step up per release: 0.2.1, 0.2.2, ...
 
 # The approximate neighbor search (pynndescent, markers.knn) always runs on KNN_THREADS threads, because its result
 # depends on the number of threads: so that every computer gives the same annotation, numba must allow that many

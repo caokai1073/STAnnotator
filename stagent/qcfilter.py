@@ -13,7 +13,7 @@ back; the distance to the epithelium is estimated again on the cells kept.
 import json, re, shutil
 from pathlib import Path
 import numpy as np, pandas as pd, scipy.sparse as sp
-from . import config, importer, osutil
+from . import config, importer, osutil, regcheck
 from .osutil import dump_json
 
 CELL_PARAMS = ("min_counts", "max_counts", "min_genes", "max_mito_pct")
@@ -228,6 +228,8 @@ def apply(ids, p, progress=lambda *a: None, genes_removed=None):
             at(i, s, 0.45, "the distance of each cell to the epithelium")
             cells["depth_um"] = importer.epithelial_depth(X, g, cells[["x", "y"]].to_numpy(float))
         at(i, s, 0.85, "writing the filtered cells")
+        image = importer.image_of(s)
+        placed = regcheck._key(s, image)   # the placement's checks stay valid: no cell moves (regcheck.carry)
         cells.to_parquet(d / "cells.parquet")
         osutil.save_counts(d / "counts.npz", X)   # (the fastest zip compression: seconds, not tens of seconds)
         config.write_genes(d / "genes.txt", g)
@@ -239,6 +241,7 @@ def apply(ids, p, progress=lambda *a: None, genes_removed=None):
                               "slices": ids if len(ids) > 1 else None}
         else:
             meta.pop("filter", None)
+        regcheck.carry(s, image, placed, meta)
         dump_json(meta, d / "meta.json", indent=1)
         if not prm and o.exists():
             shutil.rmtree(o)
