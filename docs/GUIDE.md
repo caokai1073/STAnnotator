@@ -409,10 +409,12 @@ The app's window, or the web viewer (`.venv/bin/stagent viewer`, then http://loc
     Signal and Trajectory, each done or not with a button to its tab; folded when the app starts, its arrow unfolds it). Each step shows what was done
     (✓ and a line such as "5,799 cells removed" or "checked 2026-11-09"), or a button that goes where it is done; the
     next step stands out. **Check registration** is done by the app, without the agent: the cells against the
-    nuclei over the whole tissue (about a minute); where the tissue shifted it offers the local registration (the
-    cells moved onto their nuclei at once), and it says when the cells already sit on their nuclei or when only
-    aligning the image again would help (Review → Spatial organization asks the agent for a wider look, with the
-    organ's priors). Steps 5–7 are optional; a step the sample does not need is grayed (no image: no
+    nuclei over the whole tissue (about a minute), shown in a window with the histogram of the deviation and the
+    windows on the tissue. Where the tissue shifted it offers **Do local registration**; the cells are then
+    measured again and a second window shows the result: **Accept** keeps it, **Undo** puts the cells back where
+    they were. It also says when the cells already sit on their nuclei, or when only aligning the image again would
+    help. An alignment whose check found the cells on their nuclei, once accepted, needs no further check (Review →
+    Spatial organization asks the agent for a wider look, with the organ's priors). Steps 5–7 are optional; a step the sample does not need is grayed (no image: no
     registration; Visium and Stereo-seq are placed by their software). An H&E only (no cells) shows no steps. A
     click on the title folds the list;
   - two tabs, **Data** and **Analysis**. Analysis has the steps **Annotate**, **Embed**, **Niche**, **Compare**,

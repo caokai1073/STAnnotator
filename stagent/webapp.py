@@ -22,7 +22,7 @@ from . import config, vocab, mcp_server, review_app, render
 from .review_app import attachment
 mcp_server.SAME_PROCESS = True  # its tools served at /mcp run on this event loop: they cannot wait for a review
 from . import markers, markerqc, plausibility, claudelink, claudereview, importer, advice, niches, embedding
-from . import communication, jobs, projects, regcheck, visium, osutil
+from . import communication, jobs, projects, regcheck, visium, osutil, align
 from .session import Session, list_samples, list_sessions, panel_genes, filtered_genes, NOT_ANNOTATED
 from .osutil import dump_json
 
@@ -888,6 +888,48 @@ def _reload_sample(sample_id):
         mcp_server._active["session"] = Session(mcp_server._active["session"].id)
 
 
+_CHECK_HEAD = {"fine": ("Cells on their nuclei", "#2d6a45"), "local": ("Some areas sit off their nuclei", "#9a5200"),
+               "global": ("The whole tissue is slightly off its nuclei", "#9a5200"),
+               "global and local": ("The tissue is off its nuclei, more in some areas", "#9a5200")}
+
+
+def _sample_label(sample):
+    try:
+        m = json.load(open(config.SAMPLES / sample / "meta.json", encoding="utf-8"))
+        return m.get("project_section") or m.get("name") or sample
+    except (OSError, ValueError):
+        return sample
+
+
+def api_registration_figure(req):
+    """A figure of the registration check or of the local registration (samples/<s>/align/placement_*.jpg)."""
+    sample, name = req.path_params["sample"], req.query_params.get("f", "")
+    if "/" in sample or ".." in sample or not re.fullmatch(r"placement_\d+\.jpg", name):
+        return _json({"error": "no such figure"}, 404)
+    f = config.SAMPLES / sample / "align" / name
+    return FileResponse(f, media_type="image/jpeg") if f.exists() else _json({"error": "no such figure"}, 404)
+
+
+async def api_registration_local_undo(req: Request):
+    """Put the cells back where they were before the last local registration (Undo in its result window), while
+    nothing else has moved them since."""
+    sample = req.path_params["sample"]
+    if "/" in sample or ".." in sample or not (config.SAMPLES / sample / "meta.json").exists():
+        return _json({"error": f"no sample {sample}"}, 404)
+    if _busy(sample):
+        return _json({"error": "the sample is busy: try again when it ends"}, 409)
+    sd = config.SAMPLES / sample
+    keep = sd / "align" / "before_local"
+    rl = json.load(open(sd / "meta.json", encoding="utf-8")).get("registration_local") or {}
+    if not (keep / "cells.parquet").exists() or rl.get("key") != regcheck._key(sample, importer.image_of(sample)):
+        return _json({"error": "the cells have moved since that correction: it can no longer be undone here"}, 409)
+    osutil.replace_atomic(sd / "cells.parquet", lambda tmp: shutil.copy2(keep / "cells.parquet", tmp))
+    osutil.replace_atomic(sd / "meta.json", lambda tmp: shutil.copy2(keep / "meta.json", tmp))
+    shutil.rmtree(keep, ignore_errors=True)
+    _reload_sample(sample)
+    return _json({"ok": True})
+
+
 async def api_registration_check(req: Request):
     """Check the registration now, without the agent (Steps > Check registration): the cells against the nuclei in
     windows over the whole tissue (regcheck.summary; the windows of the alignment's check are reused). A run under
@@ -910,7 +952,11 @@ async def api_registration_check(req: Request):
             if r.get("error"):
                 raise ValueError(r["error"])
             areas = r.get("areas") or []
+            JOBS[job].update(progress=0.95, stage="drawing the figure")
+            head, color = _CHECK_HEAD[r["verdict"]]
+            fig = align.placement_figure(sample, f"{_sample_label(sample)}: {head}", color)
             JOBS[job].update(progress=1.0, stage="done", done=True, result={
+                "figure": Path(fig).name,
                 "verdict": r["verdict"], "n_areas": r.get("n_areas", 0), "median_offset_um": r.get("median_offset_um"),
                 "max_offset_um": max([a.get("max_offset_um") or 0 for a in areas] + [r["affine_part"]["max_offset_um"]]),
                 "moves_um_max": r["correction"]["moves_cells_um_max"],
@@ -942,6 +988,10 @@ async def api_registration_local(req: Request):
             JOBS[job].update(progress=0.75, stage="checking the correction (the cells moved and measured again)")
             f = regcheck.correction(sample, w)
             fix = {k: f[k] for k in regcheck.FIX_KEYS if k in f}
+            sd = config.SAMPLES / sample
+            keep = sd / "align" / "before_local"   # the placement before, for Undo in the result window
+            keep.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(sd / "cells.parquet", keep / "cells.parquet"); shutil.copy2(sd / "meta.json", keep / "meta.json")
             with jobs.critical():  # the cells' file is written whole or not at all
                 importer.apply_registration_fix(sample, fix)
                 mf = config.SAMPLES / sample / "meta.json"
@@ -951,8 +1001,17 @@ async def api_registration_local(req: Request):
                                            "moved_um_median": f["moved_um_median"]}
                 dump_json(m, mf, indent=1)
             _reload_sample(sample)
-            JOBS[job].update(progress=1.0, stage="done", done=True,
-                             result={"moved_um_max": f["moved_um_max"], "moved_um_median": f["moved_um_median"]})
+            res = {"moved_um_max": f["moved_um_max"], "moved_um_median": f["moved_um_median"]}
+            try:  # measured again where the cells are now, for the user to see before accepting
+                say2 = lambda fr, m: JOBS[job].update(progress=round(0.8 + 0.18 * fr, 3), stage=f"measuring again: {m}")
+                regcheck.windows(sample, say2)
+                st2 = align.window_stats(regcheck.windows(sample))
+                fig = align.placement_figure(sample, f"{_sample_label(sample)} after the local registration: median "
+                                             f"{st2['median_um']} um", "#2d6a45")
+                res |= {"figure": Path(fig).name, "after_median_um": st2["median_um"], "after_share_off": st2["share_off"]}
+            except Exception as e:  # (the correction stands; only its figure is missing)
+                print(f"local registration of {sample}: no figure ({e})")
+            JOBS[job].update(progress=1.0, stage="done", done=True, result=res)
         except Exception as e:
             JOBS[job].update(error=f"{type(e).__name__}: {e}", done=True)
     return await _spawn(job, work) or _json({"job": job})
@@ -2786,6 +2845,8 @@ def steps_of(s, sample=None):
         elif img and ac.get("key") == regcheck._key(sid, img) and ac.get("verdict") != "fine" \
                 and not (org["n_runs"] and org["last_run"]["time"] >= ac.get("time", "")):  # (not reviewed since)
             reg = {"state": "todo", "detail": "the alignment check found areas off their nuclei: do the local registration"}
+        elif img and ac.get("key") == regcheck._key(sid, img) and ac.get("verdict") == "fine":  # accepted: nothing more
+            reg = {"state": "done", "detail": f"checked when aligned: the cells sit on their nuclei (median {ac.get('median_um')} µm)"}
         elif checked:
             reg = {"state": "done", "detail": f"checked {checked}{fixed}"}
         elif org["n_runs"]:
@@ -3047,6 +3108,22 @@ async def api_claude_align(req: Request):
     return _json({"claude_code": claudelink.open_claude_code(sample, b.get("session"), text, send_if_open=True)})
 
 
+def _forget_all_data():
+    """Every sample's data the app keeps between requests, dropped (Remove all), and the memory given back."""
+    from . import qcfilter, trajectory, model
+    qcfilter._data.clear()
+    trajectory._CACHE.clear()
+    regcheck._moved.clear(); regcheck._checked.clear()
+    for p in list(render._slides):
+        s = render._slides.pop(p, None)
+        if hasattr(s, "close"):
+            s.close()
+    model._ref = None
+    for k in [k for k, j in JOBS.items() if j.get("done")]:  # finished runs' records (their results, if any, too)
+        JOBS.pop(k, None)
+    osutil.release_memory()
+
+
 def api_samples_clear(req):
     """Desktop app: delete every sample with all its annotations and chats for good, to import from scratch (and the
     *_all_samples folders an earlier version of this button left in the trash); marker lists are kept."""
@@ -3069,10 +3146,11 @@ def api_samples_clear(req):
     for d in samples + old:
         render.forget(d)  # images open in the viewer (Windows cannot delete an open file)
         shutil.rmtree(d)
-    for cache in (_views, _tiles, _overlays, _colors):
+    for cache in (_views, _tiles, _overlays, _colors, _cell_tables, _lr_cache, ANALYSES, FIGURES):
         cache.clear()
     review_app._sessions.clear()
     mcp_server._active.pop("session", None)
+    _forget_all_data()
     return _json({"deleted_samples": len(samples), "deleted_sessions": len(sess), "deleted_conversations": n_chats,
                   "claude_closed": len(closed)})
 
@@ -3717,6 +3795,8 @@ def build_app(port):
         Route("/api/claude/model", api_claude_model, methods=["POST"]),
         Route("/api/sample/{sample}/registration/local", api_registration_local, methods=["POST"]),
         Route("/api/sample/{sample}/registration/check", api_registration_check, methods=["POST"]),
+        Route("/api/sample/{sample}/registration/figure", api_registration_figure),
+        Route("/api/sample/{sample}/registration/local/undo", api_registration_local_undo, methods=["POST"]),
         Route("/api/sample/{sample}/priors", api_sample_priors),
         Route("/api/sample/{sample}/priors", api_sample_priors_save, methods=["POST"]),
         Route("/api/sample/{sample}/qc", api_sample_qc),

@@ -897,6 +897,14 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <div class="row"><span class="err" id="pjErr"></span><span class="spacer"></span><button id="pjCancel">Cancel</button><button id="pjSave" class="primary">Save</button></div>
   </div>
 </dialog>
+<dialog id="rgDlg" style="width:min(1100px,95vw)">
+  <div class="dh"><b id="rgTitle">Registration</b><span class="spacer"></span></div>
+  <div class="imbody" style="gap:8px">
+    <img id="rgFig" alt="How far the cells sit from their nuclei: a histogram over the tissue, and the windows on it" style="width:100%;border:1px solid var(--line)">
+    <div id="rgText" style="font-size:13.5px"></div>
+    <div class="row"><span class="err" id="rgErr"></span><span class="spacer"></span><span id="rgBtns" class="row" style="gap:8px"></span></div>
+  </div>
+</dialog>
 <dialog id="prDlg" style="width:min(760px,95vw)">
   <div class="dh"><b>Tissue priors</b><span class="hint" id="prInfo" style="margin-left:8px"></span><span class="spacer"></span>
     <button id="prClose">Close</button></div>
@@ -5829,6 +5837,18 @@ async function pcAccept(thenLocal) {
 $("pcAccept").onclick = () => pcAccept(false);
 $("pcAnyway").onclick = () => pcAccept(false);
 $("pcLocal").onclick = () => pcAccept(true);
+function regDialog(sample, title, figure, text, buttons) {  // the registration figure, a sentence, and its choices
+  $("rgTitle").textContent = title; $("rgText").textContent = text; $("rgErr").textContent = "";
+  $("rgFig").hidden = !figure;
+  if (figure) $("rgFig").src = `/api/sample/${encodeURIComponent(sample)}/registration/figure?f=${encodeURIComponent(figure)}`;
+  const box = $("rgBtns"); box.textContent = "";
+  buttons.forEach(([label, primary, fn]) => {
+    const b = Object.assign(document.createElement("button"), { textContent: label, className: primary ? "primary" : "" });
+    b.onclick = async () => { b.disabled = true; try { await fn(); } catch (e) { $("rgErr").textContent = e.message; } b.disabled = false; };
+    box.append(b);
+  });
+  if (!$("rgDlg").open) $("rgDlg").showModal();
+}
 async function checkRegistration() {  // the cells against the nuclei over the whole tissue, by the app (no agent)
   if (!st.sample || !st.sid) return;
   const sample = st.sample.sample_id, who = `Checking the registration of ${sampleName(st.sample)}`;
@@ -5845,19 +5865,18 @@ async function checkRegistration() {  // the cells against the nuclei over the w
   }
   loadStepsSoon();
   if (j.error || !j.result) { toast(`${who} failed: ${j.error || "no result"}`, 10000); return; }
-  const r = j.result, name = sampleName(st.sample);
-  if (r.verdict === "fine") { toast(`${name}: the cells sit on their nuclei everywhere (median offset ${r.median_offset_um} µm)`, 8000); return; }
-  if (r.median_offset_um != null && r.median_offset_um <= 3 && r.after_median_um != null && r.median_offset_um - r.after_median_um < 1) {
-    // already on their nuclei but for small spots: a correction would gain under 1 µm
-    toast(`${name}: the cells sit on their nuclei (median offset ${r.median_offset_um} µm); ${r.n_areas} small area(s) are a little off, too little to correct (Review → Spatial organization shows them)`, 10000); return;
-  }
-  if (r.after_median_um != null && r.after_median_um > 10) {  // the correction would not bring them onto their nuclei
-    toast(`${name}: the cells sit far off their nuclei (median ${r.median_offset_um} µm) and a local correction would not fix it: align the image again (Align with Agent, or a registration file)`, 12000); return;
-  }
+  const r = j.result, name = sampleName(st.sample), close = ["Close", true, async () => $("rgDlg").close()];
   toast("", 1);
+  const title = `Registration of ${name}`;
+  if (r.verdict === "fine")
+    return regDialog(sample, title, r.figure, `The cells sit on their nuclei everywhere (median offset ${r.median_offset_um} µm).`, [close]);
+  if (r.median_offset_um != null && r.median_offset_um <= 3 && r.after_median_um != null && r.median_offset_um - r.after_median_um < 1)  // a correction would gain under 1 µm
+    return regDialog(sample, title, r.figure, `The cells sit on their nuclei (median offset ${r.median_offset_um} µm); ${r.n_areas} small area(s) are a little off, too little to correct.`, [close]);
+  if (r.after_median_um != null && r.after_median_um > 10)  // the correction would not bring them onto their nuclei
+    return regDialog(sample, title, r.figure, `The cells sit far off their nuclei (median ${r.median_offset_um} µm) and a local correction would not fix it: align the image again (Align with Agent, or a registration file).`, [close]);
   const what = r.verdict === "global" ? "The whole tissue is slightly off its nuclei" : `${r.n_areas} area(s) sit off their nuclei`;
-  if (confirm(`${name}: ${what} (up to ${r.max_offset_um} µm).\n\nDo the local registration now? The cells move onto their nuclei there (up to ${r.moves_um_max} µm; the median offset goes from ${r.median_offset_um} to about ${r.after_median_um} µm); regions keep their cells.`))
-    await localRegistration(sample);
+  regDialog(sample, title, r.figure, `${what} (up to ${r.max_offset_um} µm). The local registration moves the cells onto their nuclei there (up to ${r.moves_um_max} µm; the median offset goes from ${r.median_offset_um} to about ${r.after_median_um} µm); regions keep their cells. You see the result before you accept it.`,
+    [["Close", false, async () => $("rgDlg").close()], ["Do local registration", true, async () => { $("rgDlg").close(); await localRegistration(sample); }]]);
 }
 async function localRegistration(sample) {  // the local correction measured, checked and applied at once (no review)
   const smp = (st.samples || []).find((x) => x.sample_id === sample), who = `Local registration of ${smp ? sampleName(smp) : sample}`;
@@ -5873,7 +5892,20 @@ async function localRegistration(sample) {  // the local correction measured, ch
     if (!j.result) { toast(`${who}: no result (the server was restarted meanwhile?); look at Steps → Check registration`, 8000); loadStepsSoon(); return; }
     if (st.sample && st.sample.sample_id === sample) await afterPlacement();
     loadStepsSoon();
-    toast(`${who} done: the cells moved onto their nuclei where the tissue shifted (up to ${j.result.moved_um_max} µm, median ${j.result.moved_um_median} µm)`, 9000);
+    const r = j.result;
+    if (!r.figure || st.reviewMode === "auto") {
+      toast(`${who} done: the cells moved onto their nuclei where the tissue shifted (up to ${r.moved_um_max} µm, median ${r.moved_um_median} µm)`, 9000);
+      return;
+    }
+    toast("", 1);
+    regDialog(sample, `${who}: the result`, r.figure,
+      `The cells moved onto their nuclei where the tissue shifted (up to ${r.moved_um_max} µm). Measured again: median offset ${r.after_median_um} µm, ${Math.round(100 * (r.after_share_off || 0))}% of the windows still off. Accept keeps it; Undo puts the cells back where they were before.`,
+      [["Undo", false, async () => {
+        await post(`/api/sample/${encodeURIComponent(sample)}/registration/local/undo`, {});
+        $("rgDlg").close();
+        if (st.sample && st.sample.sample_id === sample) await afterPlacement();
+        loadStepsSoon(); toast("The local registration was undone: the cells are back where they were", 6000);
+      }], ["Accept", true, async () => { $("rgDlg").close(); toast("Local registration kept", 3000); }]]);
     return;
   }
 }

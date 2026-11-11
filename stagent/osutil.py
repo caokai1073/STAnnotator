@@ -41,6 +41,20 @@ def dump_json(obj, path, **kw):
         pass
 
 
+def release_memory():
+    """Hand memory Python has freed back to the system (glibc on Linux and Apple's malloc keep freed blocks for
+    reuse, so the app would still look as large to the system after its data is gone)."""
+    import ctypes, gc, sys
+    gc.collect()
+    try:
+        if sys.platform.startswith("linux"):
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
+        elif sys.platform == "darwin":
+            ctypes.CDLL("/usr/lib/libSystem.B.dylib").malloc_zone_pressure_relief(None, 0)
+    except (OSError, AttributeError):
+        pass
+
+
 def save_counts(path, X):
     """A sparse matrix as scipy.sparse.save_npz writes it (load_npz reads it, older versions of the app too), with the
     fastest zip compression: about 4x faster to write than save_npz's default for ~25% more bytes (a 177,000 x 5,000

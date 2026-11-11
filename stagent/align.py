@@ -18,6 +18,7 @@
    from them.
 """
 import json, time
+from pathlib import Path
 import numpy as np
 from scipy import ndimage
 from . import config, importer, render, insights, regcheck
@@ -369,12 +370,36 @@ def advice_lines(d):
 def deviation_figure(s, cid):
     """Histogram of the windows' deviation (offset of the nuclei from the cells, um) and the windows on the tissue
     colored by it (large shifts dashed)."""
+    d = deviation(s, cid)
+    w = json.load(open(_wfile(s, cid)))
+    head = {"fine": "Cells on their nuclei: no local registration needed",
+            "local shifts": "Some areas sit off their nuclei: do the local registration after accepting",
+            "far off": "Far off: probably not the right alignment"}[d["verdict"]]
+    out = config.SAMPLES / s.sample_id / "align" / f"{c_id(cid)}_deviation.jpg"
+    return windows_figure(w, d, f"{c_id(cid)}: {head}",
+                          {"fine": "#2d6a45", "local shifts": "#9a5200", "far off": "#a01010"}[d["verdict"]], out)
+
+
+def window_stats(w):
+    """The numbers of the figure's histogram title for any windows of regcheck (median, share off, large shifts)."""
+    a, mu, coef, aff, res, noise, D = regcheck._analyse(w)
+    tot, raw = np.hypot(*D.T), np.hypot(a[:, 4], a[:, 5])
+    trusted = ~noise
+    b, big, _ = regcheck._large(w)
+    t = raw[trusted]
+    return {"median_um": round(float(np.median(t)), 1) if len(t) else None,
+            "share_off": round(float(((tot >= regcheck.OFF_UM) & trusted).sum() / max(int(trusted.sum()), 1)), 3),
+            "large_shift_windows": int(big.sum()),
+            "large_shift_um": round(float(np.hypot(b[big, 4], b[big, 5]).max()), 0) if big.any() else None}
+
+
+def windows_figure(w, d, title, color, out):
+    """The deviation figure of regcheck's windows w (an alignment's candidate, or the cells as placed now): the
+    histogram (numbers d: window_stats) and the windows on the tissue."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from matplotlib.patches import Rectangle
-    d = deviation(s, cid)
-    w = json.load(open(_wfile(s, cid)))
     a, mu, coef, aff, res, noise, D = regcheck._analyse(w)
     b, big, _ = regcheck._large(w)
     raw = np.hypot(a[:, 4], a[:, 5])
@@ -419,14 +444,19 @@ def deviation_figure(s, cid):
     cb.set_label("deviation (um)", fontsize=8)
     cb.set_ticks([0, off, 10, 15]); cb.set_ticklabels(["0", f"{off:g}", "10", "15+"])
     ax2.set_title("windows on the tissue (gray outline: no clear reading; dashed: large shift)", fontsize=9)
-    head = {"fine": "Cells on their nuclei: no local registration needed",
-            "local shifts": "Some areas sit off their nuclei: do the local registration after accepting",
-            "far off": "Far off: probably not the right alignment"}[d["verdict"]]
-    fig.suptitle(f"{c_id(cid)}: {head}", fontsize=11, fontweight="bold",
-                 color={"fine": "#2d6a45", "local shifts": "#9a5200", "far off": "#a01010"}[d["verdict"]])
-    out = config.SAMPLES / s.sample_id / "align" / f"{c_id(cid)}_deviation.jpg"
+    fig.suptitle(title, fontsize=11, fontweight="bold", color=color)
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(out, dpi=90, pil_kwargs={"quality": 88}); plt.close(fig)
     return str(out)
+
+
+def placement_figure(sample_id, title, color):
+    """The deviation figure of the cells as placed now (regcheck's windows of this placement)."""
+    w = regcheck.windows(sample_id)
+    out = config.SAMPLES / sample_id / "align" / f"placement_{int(time.time())}.jpg"
+    for old in (config.SAMPLES / sample_id / "align").glob("placement_*.jpg") if (config.SAMPLES / sample_id / "align").exists() else []:
+        old.unlink(missing_ok=True)   # one figure per sample: the last check's
+    return windows_figure(w, window_stats(w), title, color, out)
 
 
 def c_id(cid):
