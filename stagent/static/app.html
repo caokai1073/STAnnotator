@@ -239,7 +239,7 @@ body.desktop #side { display: none; }
 #maptop button.ib { padding: 5px; }
 #tools, #acts { gap: 6px; }
 #acts #vinfo { font-size: 11.5px; color: var(--muted); padding: 0 2px; }
-#agentModel { height: 32px; font-size: 12.5px; padding: 0 6px; }
+#agentModel { height: 32px; font-size: 12.5px; padding: 0 2px; width: auto; min-width: 0; }
 header .br { flex: 1 1 100%; height: 0; }
 #tools label { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
 #legend { left: 10px; bottom: 10px; width: 270px; max-height: 45%; display: flex; flex-direction: column; }
@@ -720,7 +720,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <div id="acts" class="float">
       <button id="claudeBtn" hidden title="Ask your own agent (Claude Code, in its own terminal window), connected to the sample open here">Agent</button>
       <select id="agentModel" hidden title="The model of the agent (Claude Code): each choice is the latest model of its family; Default: Claude Code's own setting. Claude Code opened from now on uses it">
-        <option value="">Default model</option><option value="fable">Fable</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku</option></select>
+        <option value="">Default</option><option value="fable">Fable</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku</option></select>
       <button id="priorBtn" disabled title="The tissue priors the agent's Review uses: the organ chosen from your annotation and its literature priors; edit them and the Review follows your version">Prior</button>
       <button id="plaus" disabled title="The agent reviews one part of the analysis (annotation, spatial organization, embedding, niches, compare, signaling): its advice, checked by the agent itself">Review</button>
       <button id="report" disabled title="The annotation report the agent writes: method, composition, compartments, quality, open questions">Report</button>

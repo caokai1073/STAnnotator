@@ -319,7 +319,7 @@ text format and how the list is used are in [Annotation methods](#6-annotation-m
 Claude runs in your own Claude Code, with your own Claude account; the app connects it and shows every change. Click
 **Agent** (the bar on the map): Terminal opens with Claude Code connected to the app and to the sample you are
 looking at. Install Claude Code and log in once beforehand. The box next to it chooses its model: **Fable**,
-**Opus**, **Sonnet** or **Haiku** (each the latest model of its family) or **Default model** (Claude Code's own
+**Opus**, **Sonnet** or **Haiku** (each the latest model of its family) or **Default** (Claude Code's own
 setting); Claude Code opened from then on uses it (in one already open, type `/model sonnet` and so on). The choice is
 kept on the computer Claude Code runs on; in the server viewer it sets the chat's model.
 
