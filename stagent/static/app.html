@@ -5506,12 +5506,15 @@ $("clearAll").onclick = async () => {
 // ---------------- Claude Code (the user's own, in a terminal window: Terminal on macOS, a console on Windows) ----------------
 async function syncModel() {  // the agent's model, kept where Claude Code runs (this computer; the server for its chat box)
   const sel = $("agentModel");
-  sel.hidden = !(st.desktop || st.chatAvailable);
+  // working on a server, the app on this computer keeps the model: an app older than the server cannot (until updated)
+  const appCan = !st.remote || !!(native() && typeof native().claude_model === "function");
+  sel.hidden = !(st.desktop || st.chatAvailable) || !appCan;
   if (sel.hidden) return;
   try { sel.value = (st.remote ? await native().claude_model() : await api("/api/claude/status")).model || ""; } catch (e) { /* (older server) */ }
 }
 $("agentModel").onchange = async (e) => {
   const m = e.target.value, name = m ? e.target.selectedOptions[0].textContent : "Claude Code's default";
+  if (st.remote && !(native() && typeof native().claude_model === "function")) { syncModel(); return; }
   try {
     const r = st.remote ? await native().claude_model(m) : await post("/api/claude/model", { model: m });
     if (r && r.error) throw new Error(r.error);
