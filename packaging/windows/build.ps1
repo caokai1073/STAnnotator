@@ -56,6 +56,9 @@ $out = & (Join-Path $app "stagent.exe") --help 2>&1
 $code = $LASTEXITCODE
 $out | Select-Object -First 3
 if ($code -ne 0) { throw "the built stagent.exe does not start (exit code $code)" }
+Write-Host "== check: the image compressions of H&E files"
+& (Join-Path $app "stagent.exe") selfcheck
+if ($LASTEXITCODE -ne 0) { throw "the built app cannot read or write an image compression (stagent selfcheck)" }
 
 $version = (Select-String -Path stagent\__init__.py -Pattern '__version__ = "([^"]+)"').Matches[0].Groups[1].Value
 $zip = Join-Path $root "dist\STAnnotator-windows-$version.zip"

@@ -123,7 +123,11 @@ def main(argv=None):
     rs = sub.add_parser("remote-serve", help="on a server: start the viewer in the background for the app on another "
                                              "computer (it connects over SSH) and print its port")
     rs.add_argument("--check", action="store_true", help="only print the version and data folder")
+    sub.add_parser("selfcheck", help="check that this installation reads and writes the image compressions of H&E files")
     a = ap.parse_args(argv)
+    if a.cmd == "selfcheck":  # (before ensure_dirs: the release builds run it, with no data folder)
+        from .selfcheck import run
+        sys.exit(run())
     config.ensure_dirs()
     if a.cmd == "import":
         from .importer import import_sample

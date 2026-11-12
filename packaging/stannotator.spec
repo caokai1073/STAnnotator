@@ -25,8 +25,9 @@ binaries, hidden = [], ["stagent.mcp_server", "stagent.webapp", "stagent.desktop
 # Left out to keep the app small; none of it is ever imported by the app, so nothing it does changes:
 # - imagecodecs: the codecs of other file formats (CZI, FITS, AVIF, ...). Images are read with tifffile, which can call
 #   only the TIFF compressions below (jpeg8 and ljpeg through imagecodecs.jpeg_decode); imagecodecs loads a codec
-#   module when it is first used.
-TIFF_CODECS = {"_ccitt", "_deflate", "_imcd", "_jetraw", "_jpeg2k", "_jpeg8", "_jpegxl", "_jpegxr", "_lerc", "_ljpeg",
+#   module when it is first used. "_jpeg": the name of "_jpeg8" from imagecodecs 2026.11.11 on (pyproject keeps an
+#   earlier one); a module left out that the app needs fails the build's selfcheck (stagent/selfcheck.py).
+TIFF_CODECS = {"_ccitt", "_deflate", "_imcd", "_jetraw", "_jpeg", "_jpeg2k", "_jpeg8", "_jpegxl", "_jpegxr", "_lerc", "_ljpeg",
                "_lzma", "_png", "_webp", "_zlib", "_zstd", "_shared", "_shared_cython"}
 # - pyarrow: Flight (RPC) and the S3 file system (optional in pyarrow.fs); the app reads local parquet files only.
 # - cryptography (pulled in by optional parts of mcp), numba's CUDA target (no NVIDIA GPU on a Mac), test suites,

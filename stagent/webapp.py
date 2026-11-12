@@ -1287,7 +1287,9 @@ async def api_import(req: Request):
                 samplestore.finish_replace(replaced)
                 _forget_sample(name)
             JOBS[job].update(progress=1.0, stage="done", done=True)
-        except Exception as e:  # shown in the dialog
+        except Exception as e:  # shown in the dialog, and kept in the log (a Report bug takes its end)
+            import traceback
+            print(f"import {name} failed:\n{traceback.format_exc()}", flush=True)
             undo()
             if replaced:  # the old sample comes back as it was
                 try:

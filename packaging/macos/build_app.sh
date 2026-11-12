@@ -22,6 +22,8 @@ for s in 16 32 128 256 512; do
 done
 iconutil -c icns "$ICONSET" -o packaging/macos/AppIcon.icns
 .build-venv/bin/pyinstaller --noconfirm --clean packaging/stannotator.spec
+# the built app reads and writes the image compressions of H&E files (a codec module left out fails the build)
+"dist/STAnnotator.app/Contents/MacOS/STAnnotator" selfcheck
 codesign --force --deep --sign - "dist/STAnnotator.app"   # ad-hoc signature (replaced when notarizing)
 rm -f dist/STAnnotator.dmg
 # LZMA-compressed disk image (macOS 10.15+, smaller download); zlib where hdiutil does not know ULMO
