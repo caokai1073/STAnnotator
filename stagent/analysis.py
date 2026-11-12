@@ -25,7 +25,7 @@ embedding_facts(): Leiden clusters against the labels and, in a joint embedding,
 """
 import json, time
 import numpy as np, pandas as pd, scipy.sparse as sp
-from . import config, embedding, model, niches as nmod, projects
+from . import config, embedding, fastpar, model, niches as nmod, projects
 
 MAX_TEST_CELLS = 20000
 ALL_TEST_CELLS = 5000   # per side when every group is compared (de_all): quicker, the AUC hardly moves
@@ -53,13 +53,20 @@ class Cells:
         self.sessions, self.labels, self.slices, self.pid = sessions, labels, slices, pid
         self.missing = missing or {}
         self.genes = sessions[0].panel
-        self._X = None
+        self._X = self._E = None
 
     @property
     def X(self):
         if self._X is None:
             self._X = model.lognorm(sp.vstack([s.counts for s in self.sessions]).tocsr()).tocsr()
         return self._X
+
+    @property
+    def E(self):
+        """expm1 of X's nonzeros (the normalized counts), for the means of _stats."""
+        if self._E is None:
+            self._E = np.expm1(self.X.data)
+        return self._E
 
     def replicates(self):
         """The columns a pseudobulk replicate can be (DESeq2): slice, and the metadata columns with one value per slice;
@@ -203,15 +210,23 @@ def _within(c, within):
     return m
 
 
-def _wilcoxon(X, a, b, rng, max_cells):
-    """AUC and two-sided p of every gene, group rows a vs reference rows b (subsampled)."""
+def _wilcoxon(X, a, b, rng, max_cells, parallel=True):
+    """AUC and two-sided p of every gene, group rows a vs reference rows b (subsampled). The genes go in blocks of 256,
+    on several threads when parallel (each block on its own: the same numbers)."""
+    import warnings
     from scipy.stats import mannwhitneyu
     sa = np.sort(rng.choice(a, max_cells, replace=False)) if len(a) > max_cells else a
     sb = np.sort(rng.choice(b, max_cells, replace=False)) if len(b) > max_cells else b
     A, B = X[sa].tocsc(), X[sb].tocsc()
+
+    def block(g):
+        with warnings.catch_warnings():  # (a gene detected nowhere: no spread, p NaN, set to 1 below)
+            warnings.simplefilter("ignore", RuntimeWarning)
+            return mannwhitneyu(A[:, g:g + 256].toarray(), B[:, g:g + 256].toarray(), axis=0, method="asymptotic")
+    starts = range(0, X.shape[1], 256)
+    res = fastpar.pmap(block, starts) if parallel else [block(g) for g in starts]
     auc, p = np.empty(X.shape[1]), np.empty(X.shape[1])
-    for g in range(0, X.shape[1], 256):
-        u, pv = mannwhitneyu(A[:, g:g + 256].toarray(), B[:, g:g + 256].toarray(), axis=0, method="asymptotic")
+    for g, (u, pv) in zip(starts, res):
         auc[g:g + 256], p[g:g + 256] = u / (len(sa) * len(sb)), pv
     return np.nan_to_num(auc, nan=0.5), np.nan_to_num(p, nan=1.0), len(sa), len(sb)
 
@@ -226,25 +241,24 @@ def _bh(p):
     return out
 
 
-def _stats(X, rows):
-    sub = X[rows]
-    mean_log = np.asarray(sub.mean(0)).ravel()
-    e = sub.copy()
-    e.data = np.expm1(e.data)
-    return mean_log, np.asarray(e.mean(0)).ravel(), sub.getnnz(axis=0) / max(len(rows), 1)
+def _stats(c, rows):
+    """Mean log-normalized expression, mean normalized counts and detection rate of every gene over the rows (ascending)
+    of c.X: scipy's X[rows].mean(0) and the rest, summed in the same order without copying the rows (fastpar)."""
+    return fastpar.col_means(c.X, rows, c.E)
 
 
-def _compare(c, a_mask, b_mask, max_cells=MAX_TEST_CELLS):
-    """DE of the cells in a_mask vs those in b_mask: the full gene table and the per-slice check."""
+def _compare(c, a_mask, b_mask, max_cells=MAX_TEST_CELLS, parallel=True):
+    """DE of the cells in a_mask vs those in b_mask: the full gene table and the per-slice check. parallel: the
+    Wilcoxon test's gene blocks on several threads (de_all runs the groups so instead)."""
     a, b = np.where(a_mask)[0], np.where(b_mask)[0]
     if len(a) < MIN_CELLS or len(b) < MIN_CELLS:
         raise ValueError(f"too few cells to compare: {len(a)} in the group, {len(b)} in the reference "
                          f"(at least {MIN_CELLS} each)")
     X = c.X
     rng = np.random.default_rng(0)
-    auc, p, na, nb = _wilcoxon(X, a, b, rng, max_cells)
-    ml_a, me_a, pa = _stats(X, a)
-    ml_b, me_b, pb = _stats(X, b)
+    auc, p, na, nb = _wilcoxon(X, a, b, rng, max_cells, parallel)
+    ml_a, me_a, pa = _stats(c, a)
+    ml_b, me_b, pb = _stats(c, b)
     lfc = np.log2((me_a + PSEUDO) / (me_b + PSEUDO))
     t = pd.DataFrame({"gene": c.genes, "auc": auc, "log2fc": lfc, "mean_group": ml_a, "mean_reference": ml_b,
                       "pct_group": pa, "pct_reference": pb, "p": p, "fdr": _bh(p)})
@@ -259,7 +273,7 @@ def _compare(c, a_mask, b_mask, max_cells=MAX_TEST_CELLS):
         both = [x for x, (u, v) in sl.items() if len(u) >= MIN_CELLS and len(v) >= MIN_CELLS]
         if len(both) >= 2:
             # the fold change within every slice that has enough cells of both groups
-            per = np.array([np.log2((_stats(X, sl[x][0])[1] + PSEUDO) / (_stats(X, sl[x][1])[1] + PSEUDO))
+            per = np.array([np.log2((_stats(c, sl[x][0])[1] + PSEUDO) / (_stats(c, sl[x][1])[1] + PSEUDO))
                             for x in both])
             sign = np.sign(lfc)
             t["slices_same_direction"] = [f"{int((np.sign(per[:, g]) == sign[g]).sum())}/{len(both)}"
@@ -273,8 +287,8 @@ def _compare(c, a_mask, b_mask, max_cells=MAX_TEST_CELLS):
                 out["per_slice_check"] = (f"none: the {'group' if not ga else 'reference'} has fewer than {MIN_CELLS} "
                                           "cells in every slice")
             elif len(ga) + len(gb) > 2:
-                ma = np.array([_stats(X, sl[x][0])[0] for x in ga])
-                mb = np.array([_stats(X, sl[x][1])[0] for x in gb])
+                ma = np.array([_stats(c, sl[x][0])[0] for x in ga])
+                mb = np.array([_stats(c, sl[x][1])[0] for x in gb])
                 up = ma.min(0) > mb.max(0)
                 down = ma.max(0) < mb.min(0)
                 t["slices_separate"] = np.where(lfc > 0, up, down)
@@ -330,13 +344,16 @@ def de_all(c, by, within=None, top=20, full=False, min_cells=ALL_MIN_CELLS, max_
     if len(vc) < 2:
         raise ValueError(f"{by} has only one value here ({', '.join(map(str, vc.index))}): nothing to compare")
     groups, tables, skipped = [], [], []
+    todo = []
     for g, n in vc.items():
-        a = w & (col == g)
-        b = w & pd.notna(col) & (col != g)
-        if n < min_cells or b.sum() < MIN_CELLS:
+        if n < min_cells or (w & pd.notna(col) & (col != g)).sum() < MIN_CELLS:
             skipped.append(str(g))
-            continue
-        t, info = _compare(c, a, b, max_cells=max_cells)
+        else:
+            todo.append(g)
+    _ = c.X, c.E  # (made once, before the threads)
+    done = fastpar.pmap(lambda g: _compare(c, w & (col == g), w & pd.notna(col) & (col != g), max_cells=max_cells,
+                                           parallel=False), todo)  # one group per thread: the same tables
+    for g, (t, info) in zip(todo, done):
         sig = t.fdr < 0.05
         up = t[sig & (t.auc > 0.5) & (t.log2fc > 0)].sort_values("auc", ascending=False)
         down = t[sig & (t.auc < 0.5) & (t.log2fc < 0)].sort_values("auc")
@@ -461,14 +478,11 @@ def markers(c, by, top=8, within=None, min_cells=30):
     if len(vc) < 2:
         raise ValueError(f"{by} has only one value here ({', '.join(map(str, vc.index))}): nothing to compare")
     out = []
-    for g, n in vc.items():
-        if n < min_cells:
-            continue
-        a = w & (col == g)
-        b = w & pd.notna(col) & (col != g)
-        if b.sum() < MIN_CELLS:
-            continue
-        t, _ = _compare(c, a, b, max_cells=5000)  # quicker per group; the AUC hardly moves
+    todo = [(g, n) for g, n in vc.items() if n >= min_cells and (w & pd.notna(col) & (col != g)).sum() >= MIN_CELLS]
+    _ = c.X, c.E  # (made once, before the threads)
+    done = fastpar.pmap(lambda gn: _compare(c, w & (col == gn[0]), w & pd.notna(col) & (col != gn[0]), max_cells=5000,
+                                            parallel=False)[0], todo)  # 5000 per side: quicker, the AUC hardly moves
+    for (g, n), t in zip(todo, done):
         up = t[(t.fdr < 0.05) & (t.log2fc > 0)].sort_values("auc", ascending=False).head(top)
         out.append({"group": str(g), "n_cells": int(n),
                     "genes": [{"gene": r.gene, "auc": round(float(r.auc), 3), "log2fc": round(float(r.log2fc), 2),

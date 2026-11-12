@@ -1018,7 +1018,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <label><input type="radio" name="imRegMode" value="file"> Registration file</label>
       <label><input type="radio" name="imRegMode" value="none" checked> No registration</label>
       <button id="imNewAlign" disabled title="Choose an image first">Align with Agent</button></span><span></span></div>
-    <div class="frow" id="imRegRow" hidden><span></span><textarea id="imNewReg" rows="1" placeholder="affine CSV (a11,a12,a21,a22,tx,ty) or Xenium Explorer alignment (3x3); several slices: one file for all (a row per slice) or one per slice, in their order"></textarea><button data-pick="csv" data-multi="1" data-target="imNewReg">Choose…</button></div>
+    <div class="frow" id="imRegRow" hidden><span></span><textarea id="imNewReg" rows="1" placeholder="affine CSV (a11,a12,a21,a22,tx,ty), Xenium Explorer alignment (3x3), or cell positions saved by this app; several slices: one file for all (a row per slice) or one per slice, in their order"></textarea><button data-pick="csv" data-multi="1" data-target="imNewReg">Choose…</button></div>
     <div class="frow" id="imRegSecRow" hidden><span>Registration row</span><input type="text" id="imNewRegSec" placeholder="only if the file has one row per section; default: the section chosen above"><span></span></div>
     <div class="frow" id="imGeoFromRow" hidden><span>Regions from<small class="opt">optional</small></span><select id="imGeoFrom" title="Regions drawn on a sample of the H&amp;E only: the same image file (scan) as the one this data is registered to"><option value="">none</option></select><span></span></div>
     <div class="frow" id="imGeoRow"><span>Regions<small class="opt">optional</small></span><textarea id="imNewGeo" rows="1" placeholder="GeoJSON of outlines drawn on this H&amp;E (e.g. QuPath annotations): they become regions of every new annotation; several slices: one per slice, in their order"></textarea><button data-pick="geojson" data-multi="1" data-target="imNewGeo">Choose…</button></div>
@@ -4283,8 +4283,8 @@ function imForm() {  // show the fields of the chosen options; Align with Claude
   setTimeout(autoGrowAll);  // rows just shown
   $("imNoImgHint").textContent = imgMode() === "none" ? (imKind() === "xenium" ? "the DAPI image is shown when given, else a blank background"
     : imKind() === "stereoseq" ? "the registered image SAW wrote, when there is one" : vis ? "the output's tissue_hires_image.png (about 1 µm per pixel)" : "cells on a blank background") : "";
-  $("imNewReg").placeholder = isFlat() ? "affine CSV (a11,a12,a21,a22,tx,ty): cell µm to H&E pixels"
-    : "affine CSV (a11,a12,a21,a22,tx,ty) or Xenium Explorer alignment (3x3)";
+  $("imNewReg").placeholder = isFlat() ? "affine CSV (a11,a12,a21,a22,tx,ty): cell µm to H&E pixels, or cell positions saved by this app"
+    : "affine CSV (a11,a12,a21,a22,tx,ty), Xenium Explorer alignment (3x3), or cell positions saved by this app";
   const can = !vis && imgMode() === "file" && $("imNewImg").value.trim() && regMode() === "none";
   $("imNewAlign").disabled = !can;
   $("imNewAlign").title = can ? "Import, then let the agent align the image with the cells"
@@ -7574,7 +7574,7 @@ $("export").onclick = () => {
   $("xpCsv").title = $("xpNb").title = annotated ? "" : "Annotate the sample first";
   xpFillNotebooks(annotated);
   const placed = cellsPlaced();
-  const by = st.sample.registration_by || "file", local = /local correction|piece moves|nuclei correction/.test(by);
+  const by = st.sample.registration_by || "file", local = /local correction|piece moves|nuclei correction|cell positions/.test(by);
   $("xpReg").disabled = $("xpPos").disabled = !placed;
   $("xpRegInfo").textContent = placed
     ? `Registration: the affine that places the cells on the image (made by: ${placedBy(by)}): columns a11, a12, a21, a22, tx, ty (cell um to image pixels). It can be used again as the registration file of an import, or by other tools.`
@@ -7584,8 +7584,8 @@ $("export").onclick = () => {
   $("xpGeo").disabled = !st.sid || !nOut; $("xpGeo").title = nOut ? "" : st.sid ? "No outlines drawn in this version" : "No regions: open the sample's annotation";
   $("xpGeo").classList.toggle("primary", only);
   $("xpPosInfo").textContent = !placed ? "" : local
-    ? "This sample's registration was corrected in the app: the affine holds the overall part of the correction; local shifts and moved pieces are only in Cell positions, the complete placement: every cell's id, x and y (um) and its px and py on the image (full-resolution pixels), as the app shows them."
-    : "Cell positions: every cell's id, x and y (um) and its px and py on the image (full-resolution pixels), as the app shows them.";
+    ? "This sample's registration was corrected in the app: the affine holds the overall part of the correction; local shifts and moved pieces are only in Cell positions, the complete placement: every cell's id, x and y (um) and its px and py on the image (full-resolution pixels), as the app shows them. Given as the registration file of an import of the same cells, it puts every cell back where it is now."
+    : "Cell positions: every cell's id, x and y (um) and its px and py on the image (full-resolution pixels), as the app shows them; also usable as the registration file of an import of the same cells.";
   $("xpDlg").showModal();
 };
 $("xpClose").onclick = () => $("xpDlg").close();

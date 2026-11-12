@@ -646,8 +646,18 @@ print(f"{{1 / np.sqrt(abs(np.linalg.det(A[:, :2]))):.4f}} um per image pixel")''
     else:  # the registration as imported, then its corrections in order (local shifts and moved pieces are no affine)
         A0 = np.asarray(meta.get("placement_affine_import") or A, float)
         ids = s.cells.cell_id.to_numpy()  # a piece's cells as rows of the notebook's table (the same order)
+        def positions_fix():  # a cell positions file: the rows it places and where (the file is in the sample)
+            pos = importer._positions_of(s.sample_id)
+            if pos is None:
+                return {"positions": None}
+            at = pd.Index(pos.cell_id.astype(str)).get_indexer(pd.Index(ids).astype(str))
+            rows = np.flatnonzero(at >= 0)
+            xy_ = pos[["px", "py"]].to_numpy(float)[at[rows]]
+            return {"positions": {"rows_packed": _pack(rows, np.int32), "px_packed": _pack(xy_[:, 0], np.float64),
+                                  "py_packed": _pack(xy_[:, 1], np.float64)}}
         packed = [{"piece": dict({k: x for k, x in f["piece"].items() if k not in ("cells", "cell_ids")},
                                  cells_packed=_pack(importer.piece_rows(f["piece"], ids), np.int32))} if "piece" in f
+                  else positions_fix() if "positions" in f
                   else {"correction_px": f["correction_px"]} for f in fixes]
         off = _replay_error(s.cells, meta)
         out.append(_md(f"## {sec()}. Cells on the image\nThe registration as imported: an affine from cell coordinates "
@@ -683,6 +693,10 @@ pxy = xy @ A_IMPORT[:, :2].T + A_IMPORT[:, 2]
 for f in FIXES:
     if "correction_px" in f:
         pxy = pxy + displacement(pxy, f["correction_px"])
+    elif "positions" in f:                  # a cell positions file (the registration): its cells where it put them
+        if f["positions"]:
+            rows = unpack(f["positions"]["rows_packed"], np.int32)
+            pxy[rows, 0], pxy[rows, 1] = unpack(f["positions"]["px_packed"], np.float64), unpack(f["positions"]["py_packed"], np.float64)
     else:                                   # a torn piece: q = M (p - center) + center + t
         pc = f["piece"]; sel = np.isin(np.arange(len(pxy)), unpack(pc["cells_packed"], np.int32))
         M, c, t = (np.asarray(pc[k], float) for k in ("M", "center_px", "t_px"))

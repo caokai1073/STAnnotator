@@ -75,7 +75,7 @@ def main(argv=None):
     im.add_argument("--name", required=True, help="sample id used in the viewer and in Claude")
     im.add_argument("--h5ad", required=True, nargs="+", help="one or more h5ad files, or R files (.rds / .rda) with a Seurat or SpatialExperiment object (merged)")
     im.add_argument("--he", help="H&E image (pyramidal TIFF / OME-TIFF); without --registration it waits for an alignment")
-    im.add_argument("--registration", help="affine CSV (a11,a12,a21,a22,tx,ty) or Xenium Explorer 3x3 matrix")
+    im.add_argument("--registration", help="affine CSV (a11,a12,a21,a22,tx,ty), Xenium Explorer 3x3 matrix, or cell positions saved by the app")
     im.add_argument("--section-column", help="obs column that identifies the section (if the h5ad holds several)")
     im.add_argument("--section", help="value of --section-column to import")
     im.add_argument("--x-column"); im.add_argument("--y-column")
@@ -89,7 +89,7 @@ def main(argv=None):
     ix.add_argument("--xenium", required=True, nargs="+", help="Xenium output folder, or its files: cells.parquet (or "
                     "cells.csv.gz) and cell_feature_matrix.h5, optionally experiment.xenium and the DAPI ome.tif")
     ix.add_argument("--he", help="optional H&E image registered with Xenium Explorer")
-    ix.add_argument("--registration", help="the H&E's alignment file (Xenium Explorer) or an affine CSV")
+    ix.add_argument("--registration", help="the H&E's alignment file (Xenium Explorer), an affine CSV, or cell positions saved by the app")
     ix.add_argument("--description", default="")
     ix.add_argument("--overwrite", action="store_true")
     iv = sub.add_parser("import-visium", help="import a Visium HD (or Visium) Space Ranger output: cells from the cell "

@@ -496,9 +496,50 @@ def gene_columns(tree, panel):
     return [i for i, g in enumerate(panel) if g.upper() in names]
 
 
+_RECENT = {}  # the last few PCA and neighbor results by the content of their input (_recall)
+_RECENT_LOCK = __import__("threading").Lock()
+RECENT_KEEP = 3  # of each kind
+
+
+def _content(*arrays):
+    """A key of the arrays' exact content (shape, type and bytes)."""
+    import hashlib
+    h = hashlib.blake2b(digest_size=20)
+    for a in arrays:
+        a = np.ascontiguousarray(a)
+        h.update(f"{a.shape}{a.dtype.str}".encode())
+        h.update(memoryview(a).cast("B"))
+    return h.hexdigest()
+
+
+def _recall(kind, key, make):
+    """make(), or its result kept from an earlier call on the same input (e.g. the PCA of a sample's cells computed for
+    the annotation, then for PCA + UMAP and for a trajectory of all its cells): the same numbers, without computing
+    them again. Copies go out, so a caller that changes its arrays changes no one else's."""
+    copy = lambda r: tuple(np.array(x) for x in r) if isinstance(r, tuple) else np.array(r)
+    with _RECENT_LOCK:
+        hit = _RECENT.get((kind, key))
+        if hit is not None:
+            _RECENT[(kind, key)] = _RECENT.pop((kind, key))  # most recent last
+            return copy(hit)
+    r = make()
+    with _RECENT_LOCK:
+        _RECENT[(kind, key)] = r
+        mine = [k for k in _RECENT if k[0] == kind]
+        for k in mine[:max(0, len(mine) - RECENT_KEEP)]:
+            del _RECENT[k]
+    return copy(r)
+
+
 def pca(Xn, n_pcs=None):
-    """PCA of standardized genes on the sparse matrix (no dense copy): cell scores (cells x n_pcs, float32)."""
+    """PCA of standardized genes on the sparse matrix (no dense copy): cell scores (cells x n_pcs, float32). The last
+    few results are kept by the content of the matrix (_recall)."""
     X = sp.csr_matrix(Xn, dtype=np.float32)
+    key = _content(X.data, X.indices, X.indptr, np.array(X.shape)) + f":{n_pcs or N_PCS}:{MAX_PCA_GENES}:{N_HVG}"
+    return _recall("pca", key, lambda: _pca(X, n_pcs))
+
+
+def _pca(X, n_pcs=None):
     n = X.shape[0]
     mu = np.asarray(X.mean(0)).ravel()
     ex2 = np.asarray(X.multiply(X).mean(0)).ravel()
@@ -724,13 +765,15 @@ def knn(Z, k, mode="auto"):
     from . import timing
     n = len(Z)
     k = min(k, n - 1)
-    if mode == "exact":
-        return _exact(Z, k)
-    if mode == "auto" and (device() != "cpu" or n <= 20000):
-        return _exact(Z, k)
-    with timing.step("knn_approx", n / 1e6, warmup="approx_compile"):
-        nbr, dist = _nndescent(Z, k + 1)
-    return dist[:, 1:], nbr[:, 1:]
+    exact = mode == "exact" or (mode == "auto" and (device() != "cpu" or n <= 20000))
+    if exact:  # (the last few results are kept by the content of Z: _recall)
+        return _recall("knn", f"{_content(Z)}:{k}:exact:{KNN_EXTRA}", lambda: _exact(Z, k))
+
+    def approx():
+        with timing.step("knn_approx", n / 1e6, warmup="approx_compile"):
+            nbr, dist = _nndescent(Z, k + 1)
+        return dist[:, 1:], nbr[:, 1:]
+    return _recall("knn", f"{_content(Z)}:{k}:approx:{KNN_THREADS}", approx)
 
 
 _NUMBA_LOCK = __import__("threading").Lock()

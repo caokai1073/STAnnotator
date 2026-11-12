@@ -19,7 +19,9 @@ H&E: pyramidal TIFF / OME-TIFF.
 registration: either an affine CSV with columns a11,a12,a21,a22,tx,ty mapping cell (x, y) in um to H&E level-0 pixels
   (px = a11*x + a12*y + tx, py = a21*x + a22*y + ty; with several rows, the row whose other columns contain the
   section value is used), or a Xenium Explorer alignment matrix (3x3 CSV mapping H&E pixels to Xenium morphology
-  pixels of --xenium-px-um).
+  pixels of --xenium-px-um), or the cell positions the app exports (Export > Cell positions: cell_id, x_um, y_um, px,
+  py): every cell of the file goes where it was, local corrections and moved pieces included (the affine that fits
+  them best places the cells it does not list).
 Output: $STAGENT_HOME/samples/<name>/ with cells.parquet, counts.npz, genes.txt and meta.json.
 
 The cells, the image and the registration can come one at a time: a sample needs only its cells; set_image and
@@ -258,9 +260,43 @@ def _rows_matching(df, value):
     return df[df.astype(str).apply(lambda col: col == str(value)).any(axis=1)]
 
 
+POSITIONS_FILE = "align/registration_positions.parquet"  # a registration file of cell positions, kept in the sample
+POSITION_COLUMNS = ("cell_id", "x_um", "y_um", "px", "py")
+
+
+def read_positions(path):
+    """The cells of an exported cell positions file (cell_id, x_um, y_um, px, py), or None for another kind of file."""
+    try:
+        with open(path, "rb") as fh:
+            first = fh.readline(4096).decode("utf-8-sig", errors="replace").strip().lower()
+    except OSError:
+        return None
+    if not set(POSITION_COLUMNS) <= {c.strip().strip('"') for c in first.split(",")}:
+        return None
+    df = pd.read_csv(path, dtype={"cell_id": str}, encoding="utf-8-sig")
+    df.columns = [str(c).strip().lower() for c in df.columns]
+    df = df[list(POSITION_COLUMNS)].dropna()
+    if len(df) < 3:
+        raise ValueError("the cell positions file holds fewer than 3 cells")
+    return df
+
+
+def positions_affine(df):
+    """The affine (cell um -> image pixels) that fits the positions best (least squares)."""
+    U = np.c_[df.x_um.to_numpy(float), df.y_um.to_numpy(float), np.ones(len(df))]
+    sol = np.linalg.lstsq(U, df[["px", "py"]].to_numpy(float), rcond=None)[0]  # 3 x 2
+    return sol.T
+
+
 def load_registration(path, section=None, xenium_px_um=0.2125, candidates=(), progress=None):
     """Return a 2x3 affine mapping cell (x, y) in um to H&E level-0 pixels. An affine CSV with one row per section
-    needs the section; without one, a candidate value (e.g. the h5ad's donor id) that matches exactly one row is used."""
+    needs the section; without one, a candidate value (e.g. the h5ad's donor id) that matches exactly one row is used.
+    A cell positions file gives the affine that fits its cells best (keep_positions then puts its cells in place)."""
+    pos = read_positions(path)
+    if pos is not None:
+        if progress:
+            progress(f"registration: cell positions of {len(pos):,} cells")
+        return positions_affine(pos)
     raw = Path(path).read_bytes()
     try:  # UTF-8 (Excel's "CSV UTF-8" starts with a BOM); not the Windows code page, which garbles the header
         text = raw.decode("utf-8-sig").strip()
@@ -416,6 +452,8 @@ def _write_bundle(name, ids, xy, X, genes, image, A, regions, description, sourc
     finally:
         if tmp.exists():
             shutil.rmtree(tmp, ignore_errors=True)
+    if (source or {}).get("registration"):  # a cell positions file: its cells where it puts them
+        keep_positions(name, source["registration"], progress)
     progress(f"imported sample {name} into {out}")
     return json.load(open(out / "meta.json"))
 
@@ -1522,6 +1560,12 @@ def replay_placement(meta, xy, cell_ids):
     for f in meta.get("registration_fixes") or []:
         if "correction_px" in f:
             p = p + displacement(p, f["correction_px"])
+        elif "positions" in f:  # a cell positions file: its cells where it put them
+            pos = _positions_of(meta.get("sample_id"))
+            if pos is not None:
+                at = pd.Index(pos.cell_id.astype(str)).get_indexer(np.asarray(cell_ids).astype(str))
+                hit = at >= 0
+                p[hit] = pos[["px", "py"]].to_numpy(float)[at[hit]]
         else:
             pc = f["piece"]
             rows = piece_rows(pc, cell_ids)
@@ -1543,9 +1587,75 @@ def undo_registration_fix(sample_id):
     if meta.get("placement_affine_import"):
         meta["placement_affine"] = meta.pop("placement_affine_import")
     meta["registration_by"] = (meta.get("registration_by") or "file").replace(" + nuclei correction", "").replace(
-        " + local correction", "").replace(" + piece moves", "")
+        " + local correction", "").replace(" + piece moves", "").replace(" + cell positions", "")
     dump_json(meta, d / "meta.json", indent=1)
     return {"ok": True}
+
+
+def _positions_of(sample_id):
+    f = config.SAMPLES / str(sample_id) / POSITIONS_FILE
+    try:
+        return pd.read_parquet(f) if sample_id and f.exists() else None
+    except (OSError, ValueError):
+        return None
+
+
+def keep_positions(sample_id, path, progress=print):
+    """When the registration file `path` is an exported cell positions file: keep its positions in the sample and,
+    with the cells on an image, put the cells it lists where it says (apply_positions). Nothing for other files."""
+    pos = read_positions(path)
+    if pos is None:
+        return None
+    d = config.SAMPLES / sample_id
+    (d / POSITIONS_FILE).parent.mkdir(parents=True, exist_ok=True)
+    pos[["cell_id", "px", "py"]].astype({"cell_id": str}).to_parquet(d / POSITIONS_FILE)
+    m = _meta(sample_id)
+    m["registration_positions"] = {"file": str(Path(path).expanduser().resolve()), "n_cells": int(len(pos))}
+    dump_json(m, d / "meta.json", indent=1)
+    placed = m.get("he_path") and m.get("registration_affine") and m.get("placement_affine") and np.allclose(
+        m["placement_affine"], m["registration_affine"])  # (the cells on the image with this file, not e.g. on DAPI)
+    if placed:
+        return apply_positions(sample_id, progress)
+    progress("registration: the cell positions are used once the image is added")
+    return None
+
+
+def apply_positions(sample_id, progress=print):
+    """Put the cells listed in the sample's cell positions file where it says (the others stay on its best affine):
+    a correction of the placement (registration_fixes), like a local registration, so Undo correction and a filter
+    replay it."""
+    pos = _positions_of(sample_id)
+    if pos is None:
+        return None
+    d = config.SAMPLES / sample_id
+    cells = pd.read_parquet(d / "cells.parquet")
+    at = pd.Index(pos.cell_id.astype(str)).get_indexer(cells.cell_id.astype(str))
+    hit = at >= 0
+    if not hit.any():
+        progress("registration: no cell of the positions file is in this sample (cell ids differ): the best affine is used")
+        return {"matched": 0}
+    p = cells[["px", "py"]].to_numpy(float)
+    q = p.copy()
+    q[hit] = pos[["px", "py"]].to_numpy(float)[at[hit]]
+    m = _meta(sample_id)
+    mv = np.hypot(*(q - p).T) * m.get("he_um_per_px", 1)
+    out = {"matched": int(hit.sum()), "of": int(len(cells)), "moved_um_median": round(float(np.median(mv[hit])), 2),
+           "moved_um_max": round(float(mv.max()), 2)}
+    progress(f"registration: {hit.sum():,} of {len(cells):,} cells placed as in the positions file "
+             f"(off the best affine by {out['moved_um_median']} um median, {out['moved_um_max']} um at most)")
+    if float(mv.max()) < 1e-3:  # the file is one affine: nothing beyond it
+        return out
+    if "px_import" not in cells:
+        cells["px_import"], cells["py_import"] = p[:, 0], p[:, 1]
+        m["placement_affine_import"] = placement(sample_id).tolist()
+    cells["px"], cells["py"] = q[:, 0], q[:, 1]
+    cells.to_parquet(d / "cells.parquet")
+    if " + cell positions" not in (m.get("registration_by") or ""):
+        m["registration_by"] = (m.get("registration_by") or "file") + " + cell positions"
+    m.setdefault("registration_fixes", []).append({"positions": {"file": POSITIONS_FILE, "n_cells": int(hit.sum())},
+                                                   "time": time.strftime("%Y-%m-%dT%H:%M:%S")})
+    dump_json(m, d / "meta.json", indent=1)
+    return out
 
 
 # ---------------- adding the image and the registration later ----------------
@@ -1738,8 +1848,11 @@ def set_image(sample_id, path, kind="H&E", progress=print):
     _he_size(path)  # readable?
     m = _meta(sample_id)
     if m.get("registration_affine"):
-        return place_cells(sample_id, m["registration_affine"], path, kind, by=m.get("registration_by") or "file",
-                           progress=progress)
+        r = place_cells(sample_id, m["registration_affine"], path, kind, by=m.get("registration_by") or "file",
+                        progress=progress)
+        if m.get("registration_positions"):  # the registration was a cell positions file: its cells where it puts them
+            apply_positions(sample_id, progress)
+        return r
     m["image_pending"] = path
     m["image_pending_kind"] = kind
     dump_json(m, config.SAMPLES / sample_id / "meta.json", indent=1)
@@ -1754,6 +1867,7 @@ def set_registration(sample_id, path, section=None, progress=print):
     R = load_registration(Path(path).expanduser(), section if section else src.get("section"),
                           float(src.get("pixel_size_um") or 0.2125), src.get("candidates") or (), progress)
     m["registration_affine"], m["registration_by"] = R.tolist(), "file"
+    m.pop("registration_positions", None)  # (keep_positions sets it again for a cell positions file)
     src["registration"] = str(Path(path).expanduser().resolve())
     m["source"] = src
     dump_json(m, config.SAMPLES / sample_id / "meta.json", indent=1)
@@ -1764,6 +1878,7 @@ def set_registration(sample_id, path, section=None, progress=print):
     m = _meta(sample_id)  # undo goes back to before this file, registration included
     m["placement_previous"].update(before)
     dump_json(m, config.SAMPLES / sample_id / "meta.json", indent=1)
+    keep_positions(sample_id, path, progress)
     return r
 
 

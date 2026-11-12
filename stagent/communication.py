@@ -23,7 +23,7 @@ that express the ligand sit next to the B cells that express the receptor more t
 import numpy as np, pandas as pd
 from scipy.spatial import cKDTree
 from scipy.stats import norm
-from . import config
+from . import config, fastpar
 
 CONTACT_UM, SECRETED_UM = 15.0, 50.0
 MAX_NB = {"contact": 12, "secreted": 30}
@@ -128,9 +128,9 @@ class _Graph:
         self.W = self.w.sum()
 
     def score(self, L, R):
-        v = L[self.src] * R[self.dst]
-        wv = self.w * v
-        S = np.bincount(self.pair, wv, len(self.wsum)) / np.maximum(self.wsum, 1e-12)
+        # v = L[src] * R[dst], wv = w * v and np.bincount(pair, wv), in one loop that lets other threads run (fastpar)
+        v, wv, sums = fastpar.lr_edges(self.src, self.dst, self.w, self.pair, L, R, len(self.wsum))
+        S = sums / np.maximum(self.wsum, 1e-12)
         m = wv.sum() / self.W
         sd = np.sqrt(max((self.w * (v - m) ** 2).sum() / self.W, 1e-12))
         z = (S - m) / (sd / np.sqrt(np.maximum(self.n_eff, 1)))
@@ -160,12 +160,12 @@ def run(c, by="cell type", within=None, resource="all", contact_um=CONTACT_UM, s
         say(0.08 if kind == "contact" else 0.15, f"neighbors within {radius:g} µm ({kind})")
         graphs[kind] = _Graph(c, kind, radius, grp, keep, K)
     Xc = c.X.tocsc()
-    cache, rows = {}, []
+    cache = {}
     kf = keep.astype(float)
     A, B = np.divmod(np.arange(K * K), K)
-    for n, r in enumerate(lr.itertuples()):
-        if n % 25 == 0:
-            say(0.2 + 0.75 * n / len(lr), f"ligand-receptor pair {n + 1} of {len(lr)}")
+
+    def one(nr):  # the rows of one ligand-receptor pair (the pairs run on several threads: the same rows)
+        n, r = nr
         L, R = _expr(Xc, r.lig_idx, cache), _expr(Xc, r.rec_idx, cache)
         pl = np.bincount(grp, (L > 0) * kf, K) / np.maximum(size, 1)
         pr = np.bincount(grp, (R > 0) * kf, K) / np.maximum(size, 1)
@@ -174,12 +174,13 @@ def run(c, by="cell type", within=None, resource="all", contact_um=CONTACT_UM, s
         g = graphs["contact" if r.category == "Cell-Cell Contact" else "secreted"]
         test = (pl[A] >= min_pct) & (pr[B] >= min_pct) & (g.n >= MIN_PAIRS)
         if not test.any():
-            continue
+            return []
         S, m, z = g.score(L, R)
-        for k in np.where(test)[0]:
-            a, b = A[k], B[k]
-            rows.append((n, a, b, S[k], S[k] / max(m, 1e-12), S[k] / max(ml[a] * mr[b], 1e-12), pl[a], pr[b], int(g.n[k]),
-                         float(norm.sf(z[k]))))
+        return [(n, a, b, S[k], S[k] / max(m, 1e-12), S[k] / max(ml[a] * mr[b], 1e-12), pl[a], pr[b], int(g.n[k]),
+                 float(norm.sf(z[k]))) for k in np.where(test)[0] for a, b in [(A[k], B[k])]]
+    rows = [x for part in fastpar.pmap(one, list(enumerate(lr.itertuples())),
+                                       done=lambda k: say(0.2 + 0.75 * k / len(lr), f"ligand-receptor pair {k} of {len(lr)}"))
+            for x in part]
     if not rows:
         raise ValueError("no ligand-receptor pair passes the expression filter (ligand and receptor each detected in "
                          f"at least {min_pct:.0%} of a group); lower min_pct or use larger groups")

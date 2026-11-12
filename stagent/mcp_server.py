@@ -21,7 +21,8 @@ Getting started
   import_visium (cells from cell outlines when there are, the 2 um bins split by area; else bins at 8 um; no
   registration needed); a Stereo-seq SAW output with import_stereoseq (cells from its cell bins, else 8 um bins). Otherwise ask for: the h5ad file(s) or an R file (.rds / .rda with a Seurat or
   SpatialExperiment object; read without R) (raw counts, cell coordinates in um), the
-  registered H&E image, and the registration file (affine CSV or Xenium Explorer matrix); for an h5ad holding several
+  registered H&E image, and the registration file (affine CSV, Xenium Explorer matrix, or the app's exported cell
+  positions); for an h5ad holding several
   sections also the obs column and value of the section. Then call import_sample with those paths.
 - start_session(sample_id, markers_text) runs a marker-based annotation (no labeled reference is used; the data is
   treated as unlabeled). There is no default marker list: use the one the user gives (text or CSV with columns
@@ -885,7 +886,8 @@ def import_cosmx_merfish(kind: str, name: str, paths: list[str], he: Optional[st
     <slide>_metadata_file.csv) or one MERFISH region (kind "merfish": a MERSCOPE region's cell_by_gene.csv and
     cell_metadata.csv): paths = those two files or their folder; several slides or regions are imported one after the
     other. The instruments' own images are not used: the cells are shown on a blank background, or on the H&E given
-    with a registration file (affine CSV a11,a12,a21,a22,tx,ty from cell um to H&E pixels); an H&E without
+    with a registration file (affine CSV a11,a12,a21,a22,tx,ty from cell um to H&E pixels, or cell positions the app
+    exported: cell_id,x_um,y_um,px,py); an H&E without
     registration waits for Align with Claude. replace: an existing sample of this name goes to the trash first (only when the user asked to
     replace it; the review window says what goes)."""
     from . import importer
@@ -909,7 +911,8 @@ def import_sample(name: str, h5ad: list[str], he: str, registration: str, sectio
                   description: str = "", replace: bool = False) -> str:
     """Import one tissue section from files on this computer: h5ad file(s) with raw counts and cell coordinates in
     um (several files are merged; an .rds / .rda with a Seurat or SpatialExperiment object works too, read without R), the registered H&E image (pyramidal TIFF / OME-TIFF), and the registration file
-    (affine CSV a11,a12,a21,a22,tx,ty from cell um to H&E pixels, or a Xenium Explorer 3x3 matrix). For an h5ad with
+    (affine CSV a11,a12,a21,a22,tx,ty from cell um to H&E pixels, a Xenium Explorer 3x3 matrix, or cell positions the
+    app exported: cell_id,x_um,y_um,px,py). For an h5ad with
     several sections give section_column and section. region_column optionally imports region annotations.
     Cell type annotations in the h5ad are ignored. Takes from seconds to a few minutes for large files. replace: an existing sample of this name goes to the trash first (only when the user asked to
     replace it; the review window says what goes)."""

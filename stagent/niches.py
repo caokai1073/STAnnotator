@@ -25,14 +25,32 @@ def _dir(s):
     return d
 
 
+def _sample_cache(s, n_programs):
+    """The sample's NMF file (it depends on the counts only, not on the annotation) and the key of the counts it was
+    computed from (size and time of counts.npz: a filter writes them anew)."""
+    c = config.SAMPLES / s.sample_id / "counts.npz"
+    st = c.stat()
+    return config.SAMPLES / s.sample_id / "niches" / f"nmf_{n_programs}.npz", f"{st.st_size}:{st.st_mtime_ns}"
+
+
 def programs(s, n_programs=20, progress=None):
     """NMF of the sample's expression: cell weights (cells x n_programs) and program loadings (n_programs x genes);
-    cached in the session."""
+    kept in the session, and in the sample for its other annotations (the same counts give the same programs)."""
     say = progress or (lambda f, m: None)
     f = _dir(s) / f"nmf_{n_programs}.npz"
     if f.exists():
         z = np.load(f)
         return z["W"], z["H"]
+    try:
+        sf, key = _sample_cache(s, n_programs)
+        if sf.exists():
+            z = np.load(sf)
+            if str(z["key"]) == key and z["W"].shape[0] == len(s.cells):
+                say(0.4, "NMF: the programs of this sample's counts, computed before")
+                np.savez(f, W=z["W"], H=z["H"])
+                return z["W"], z["H"]
+    except (OSError, ValueError, KeyError):
+        sf = None
     from sklearn.decomposition import NMF
     X = model.lognorm(s.counts).astype(np.float32, copy=False).tocsr()  # float32 already: no second copy
     rng = np.random.default_rng(0)
@@ -44,6 +62,12 @@ def programs(s, n_programs=20, progress=None):
     W = np.vstack([nmf.transform(X[i:i + 50000]) for i in range(0, X.shape[0], 50000)]).astype(np.float32)
     H = nmf.components_.astype(np.float32)
     np.savez(f, W=W, H=H)
+    if sf is not None:
+        try:
+            sf.parent.mkdir(exist_ok=True)
+            np.savez(sf, W=W, H=H, key=np.array(key))
+        except OSError:
+            pass
     return W, H
 
 
