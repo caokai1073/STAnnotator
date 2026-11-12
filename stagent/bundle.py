@@ -83,7 +83,9 @@ def _sample_state(sample_id):
                               "image_name": PurePosixPath(m["he_path"].replace("\\", "/")).name, "image_size": size}
         from .importer import POSITIONS_FILE
         if m.get("registration_positions") and (config.SAMPLES / sample_id / POSITIONS_FILE).exists():
-            st["registration"]["registration_positions"] = m["registration_positions"]
+            rp = dict(m["registration_positions"])  # (the file's name, as image_name: not where it is on this computer)
+            rp["file"] = PurePosixPath(str(rp.get("file") or "").replace("\\", "/")).name
+            st["registration"]["registration_positions"] = rp
     return st
 
 

@@ -119,6 +119,7 @@ try:
     stannot = HOME / "pos3.stannot"
     info = bundle.save(sess.id, stannot)
     assert info["format"] == 3
+    assert info["sample_state"]["registration"]["registration_positions"]["file"] == reg.name  # (the name only)
     importer.remove_samples(["pos3"])
     shutil.rmtree(importer.config.SESSIONS / sess.id)
     importer.import_sample("pos3", str(h5), he=str(img), progress=lambda *a: None)  # the image, no registration file
@@ -145,6 +146,33 @@ try:
     assert not m3.get("registration_fixes") and "cell positions" not in (m3.get("registration_by") or "")
     assert np.abs(c3[["px", "py"]].to_numpy() - (c3[["x", "y"]].to_numpy() @ A3[:, :2].T + A3[:, 2])).max() < 1e-6
     print("undone cell positions stay undone when the image is added again")
+    # ---- 7. another registration replaces the cell positions: a .stannot of a plain affine loaded on a sample
+    # registered by positions; adding the image again keeps the loaded one, and a new save holds no positions
+    importer.import_sample("pos4", str(h5), he=str(img), registration=str(reg), progress=lambda *a: None)
+    importer.import_sample("aff", str(h5), he=str(img), progress=lambda *a: None)
+    A2 = np.array([[0.5, 0.0, 605.0], [0.0, 0.5, 597.0]])
+    importer.place_cells("aff", A2, str(img), progress=lambda *a: None)
+    s_aff = Session.create("aff", method="none")
+    aff_file = HOME / "aff.stannot"
+    assert bundle.save(s_aff.id, aff_file)["format"] == 2
+    pl = bundle.plan(aff_file, "pos4")
+    assert pl["target"] == "pos4" and pl["registration"] == "apply", pl
+    bundle.apply_sample(aff_file, pl)
+    bundle.load(aff_file, "pos4")
+    assert not importer._meta("pos4").get("registration_positions")
+    assert not (importer.config.SAMPLES / "pos4" / importer.POSITIONS_FILE).exists()
+    c4 = pd.read_parquet(importer.config.SAMPLES / "pos4" / "cells.parquet")
+    assert np.abs(c4[["px", "py"]].to_numpy() - (c4[["x", "y"]].to_numpy() @ A2[:, :2].T + A2[:, 2])).max() < 1e-6
+    importer.set_image("pos4", str(img), progress=lambda *a: None)  # (placed by the sample's registration affine)
+    m4 = importer._meta("pos4")
+    c4 = pd.read_parquet(importer.config.SAMPLES / "pos4" / "cells.parquet")
+    R4 = np.asarray(m4["registration_affine"])
+    assert np.abs(c4[["px", "py"]].to_numpy() - (c4[["x", "y"]].to_numpy() @ R4[:, :2].T + R4[:, 2])).max() < 1e-6, \
+        "the old cell positions came back"
+    assert not m4.get("registration_fixes") and "cell positions" not in (m4.get("registration_by") or "")
+    s4 = Session.create("pos4", method="none")
+    assert bundle.save(s4.id, HOME / "pos4.stannot")["format"] == 2
+    print("a loaded affine replaces the cell positions: they do not come back with the image, a new save holds none")
     print("ok")
 finally:
     shutil.rmtree(HOME, ignore_errors=True)

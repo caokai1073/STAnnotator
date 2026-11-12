@@ -1584,14 +1584,20 @@ def undo_registration_fix(sample_id):
     cells.drop(columns=["px_import", "py_import"]).to_parquet(d / "cells.parquet")
     meta = json.load(open(d / "meta.json"))
     meta.pop("registration_fixes", None)
-    if meta.pop("registration_positions", None):  # undone: adding the image again does not put it back
-        (d / POSITIONS_FILE).unlink(missing_ok=True)
+    _drop_positions(meta, sample_id)  # undone: adding the image again does not put it back
     if meta.get("placement_affine_import"):
         meta["placement_affine"] = meta.pop("placement_affine_import")
     meta["registration_by"] = (meta.get("registration_by") or "file").replace(" + nuclei correction", "").replace(
         " + local correction", "").replace(" + piece moves", "").replace(" + cell positions", "")
     dump_json(meta, d / "meta.json", indent=1)
     return {"ok": True}
+
+
+def _drop_positions(meta, sample_id):
+    """The registration is no longer the cell positions file: forget it in meta and remove the sample's copy (adding
+    the image again would put its cells back, and a saved annotation would carry it)."""
+    meta.pop("registration_positions", None)
+    (config.SAMPLES / str(sample_id) / POSITIONS_FILE).unlink(missing_ok=True)
 
 
 def _positions_of(sample_id):
@@ -1792,10 +1798,11 @@ def _move_outlines(sample_id, M):
             dump_json(a, f, indent=1)
 
 
-def place_cells(sample_id, A, image, image_kind="H&E", by="file", progress=print):
+def place_cells(sample_id, A, image, image_kind="H&E", by="file", progress=print, keep_positions=False):
     """Put the cells on `image` with the affine A (cell um -> image level-0 pixels): new pixel positions, outlines
     moved along, the previous placement kept for undo_placement. Refuses an A that puts fewer than MIN_INSIDE of
-    the cells inside the image."""
+    the cells inside the image. A new placement replaces a registration by a cell positions file (its copy goes,
+    _drop_positions) unless keep_positions: set_image, which puts them back on the new image."""
     d = config.SAMPLES / sample_id
     A = np.asarray(A, float)
     cells = pd.read_parquet(d / "cells.parquet")
@@ -1819,6 +1826,8 @@ def place_cells(sample_id, A, image, image_kind="H&E", by="file", progress=print
     cells.drop(columns=[c for c in ("px_import", "py_import") if c in cells]).to_parquet(d / "cells.parquet")
     m.pop("registration_fixes", None)
     m.pop("placement_affine_import", None)  # belonged to the corrections of the placement replaced here
+    if not keep_positions:
+        _drop_positions(m, sample_id)
     m.update(placement_affine=A.tolist(), he_path=str(Path(image).resolve()) if image else None,
              image_kind=image_kind if image else "none", he_um_per_px=float(1 / np.sqrt(abs(np.linalg.det(A[:, :2])))),
              registration_by=by)
@@ -1851,7 +1860,7 @@ def set_image(sample_id, path, kind="H&E", progress=print):
     m = _meta(sample_id)
     if m.get("registration_affine"):
         r = place_cells(sample_id, m["registration_affine"], path, kind, by=m.get("registration_by") or "file",
-                        progress=progress)
+                        progress=progress, keep_positions=True)
         if m.get("registration_positions"):  # the registration was a cell positions file: its cells where it puts them
             apply_positions(sample_id, progress)
         return r
@@ -1869,12 +1878,13 @@ def set_registration(sample_id, path, section=None, progress=print):
     R = load_registration(Path(path).expanduser(), section if section else src.get("section"),
                           float(src.get("pixel_size_um") or 0.2125), src.get("candidates") or (), progress)
     m["registration_affine"], m["registration_by"] = R.tolist(), "file"
-    m.pop("registration_positions", None)  # (keep_positions sets it again for a cell positions file)
+    _drop_positions(m, sample_id)  # (keep_positions sets it again for a cell positions file)
     src["registration"] = str(Path(path).expanduser().resolve())
     m["source"] = src
     dump_json(m, config.SAMPLES / sample_id / "meta.json", indent=1)
     image = m.get("image_pending") or (m.get("he_path") if m.get("image_kind") == "H&E" else None)
     if not image:
+        keep_positions(sample_id, path, progress)  # a cell positions file: kept until the image comes
         return {"stored": True, "note": "import the image to see the cells on it"}
     r = place_cells(sample_id, R, image, m.get("image_pending_kind") or "H&E", by="file", progress=progress)
     m = _meta(sample_id)  # undo goes back to before this file, registration included
