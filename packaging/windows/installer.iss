@@ -38,6 +38,12 @@ CloseApplications=yes
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"
 
+; An update first removes the program's libraries of the version it replaces: files the new version no longer has
+; would stay otherwise (a library's renamed or moved module could then be loaded, and two versions' metadata give the
+; bug report a wrong version). Not when the data folder was put inside it (DataInsideProgram).
+[InstallDelete]
+Type: filesandordirs; Name: "{app}\_internal"; Check: not DataInsideProgram
+
 [Files]
 Source: "..\..\dist\STAnnotator\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
@@ -56,6 +62,21 @@ var
 function SettingsFile: String;
 begin
   Result := ExpandConstant('{userappdata}\STAnnotator\settings.json');
+end;
+
+// The data folder of settings.json (JSON: backslashes doubled) inside the program's _internal folder: keep it
+function DataInsideProgram: Boolean;
+var
+  Text: AnsiString;
+  Inner: String;
+begin
+  Result := False;
+  if LoadStringFromFile(SettingsFile, Text) then
+  begin
+    Inner := ExpandConstant('{app}') + '\_internal';
+    StringChangeEx(Inner, '\', '\\', True);
+    Result := Pos(Lowercase(Inner), Lowercase(String(Text))) > 0;
+  end;
 end;
 
 procedure InitializeWizard;
