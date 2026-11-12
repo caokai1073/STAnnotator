@@ -1306,7 +1306,7 @@ def api_samples(req):
     for r in t.to_dict("records"):
         meta = json.load(open(config.SAMPLES / r["sample_id"] / "meta.json"))
         mine = ss[ss.sample_id == r["sample_id"]] if len(ss) else ss
-        rows.append(r | {"bundle_dir": meta.get("bundle_dir"), "source_dir": meta.get("source_dir"),
+        rows.append(r | {"bundle_dir": str(config.SAMPLES / r["sample_id"]), "source_dir": meta.get("source_dir"),
                          "he_path": meta.get("he_path"), "image_kind": meta.get("image_kind"),
                          "image_pending": meta.get("image_pending"), "image_pending_kind": meta.get("image_pending_kind"),
                          "registration_by": meta.get("registration_by"),

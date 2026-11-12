@@ -11,7 +11,7 @@ Comparing the slices (composition, DE genes) is in analysis.py.
 """
 import json, os, shutil, time
 import numpy as np, pandas as pd, scipy.sparse as sp
-from . import config, jobs, markers, model, projects
+from . import config, embedding, jobs, markers, model, projects
 from .osutil import dump_json
 
 
@@ -172,6 +172,7 @@ def embed(pid, n_pcs=30, n_neighbors=15, min_dist=0.3, resolution=1.0, harmony=T
     init = 10 * (init - init.mean(0)) / max(float(np.abs(init - init.mean(0)).max()), 1e-9)
     with markers.numba_parallel():  # not at the same time as another numba-parallel run (see there)
         Y = umap.UMAP(n_neighbors=n_neighbors + 1, min_dist=float(min_dist), init=init, n_jobs=-1, low_memory=True,
+                      **embedding.umap_options(umap),
                       precomputed_knn=(np.c_[np.arange(n), nbr].astype(np.int64),
                                        np.c_[np.zeros(n, np.float32), dist].astype(np.float32), None)).fit_transform(Z)
     run = time.strftime("%Y%m%d-%H%M%S")

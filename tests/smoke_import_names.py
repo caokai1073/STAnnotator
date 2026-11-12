@@ -13,8 +13,8 @@ quiet = lambda *a: None
 try:
     h5 = os.path.join(home, "two.h5ad")
     shutil.copy(os.path.join(EX, "cadinu_merfish_D0_m3a_1_slice_2.h5ad"), h5)
-    long = "a_section_name_that_is_long_enough_to_pass_the_old_eighty_character_limit_" + "x" * 20
-    secs = [long + "_left", long + "_right"]  # the same 95 first characters
+    long = "a_section_name_that_is_long_enough_to_pass_the_old_eighty_character_limit_" + "x" * 14
+    secs = [long + "_left", long + "_right"]  # the same 89 first characters: "demo_" + them, 98 and 99 (Windows: 100)
     with h5py.File(h5, "r+") as h:
         x = h["obs"]["x"][:]
         g = h["obs"].create_group("half")
@@ -49,7 +49,7 @@ try:
     assert not (config.SAMPLES / names[0] / "regcheck.json").exists()
     # 5. a name longer than the limit is refused with a message, not shortened
     try:
-        importer._check_name("y" * 201, False)
+        importer._check_name("y" * (importer.MAX_NAME + 1), False)
         raise AssertionError("expected a length error")
     except ValueError as e:
         print("refused:", e)

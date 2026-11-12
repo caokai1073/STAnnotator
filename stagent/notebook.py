@@ -315,6 +315,7 @@ print(leiden.max() + 1, "Leiden clusters; identical to the original:",
 n = len(Z)
 init = Z[:, :2].astype(np.float64); init = 10 * (init - init.mean(0)) / np.abs(init - init.mean(0)).max()
 umap_xy = umap.UMAP(n_neighbors=K + 1, min_dist=MIN_DIST, init=init, n_jobs=-1, low_memory=True,
+                    **(dict(compatibility_layout=True) if "compatibility_layout" in umap.UMAP.__init__.__code__.co_varnames else dict()),  # umap 0.6: the 0.5 layout
                     precomputed_knn=(np.c_[np.arange(n), nbr], np.c_[np.zeros(n, np.float32), dist].astype(np.float32), None)
                     ).fit_transform(Z)
 plot(umap_xy[:, 0], umap_xy[:, 1], labels, "UMAP, cell types", invert=False)''',
@@ -793,6 +794,7 @@ import umap
 n = len(Z)
 init = Z[:, :2].astype(np.float64); init = 10 * (init - init.mean(0)) / max(float(np.abs(init - init.mean(0)).max()), 1e-9)
 umap_xy = umap.UMAP(n_neighbors=K + 1, min_dist=MIN_DIST, init=init, n_jobs=-1, low_memory=True,
+                    **(dict(compatibility_layout=True) if "compatibility_layout" in umap.UMAP.__init__.__code__.co_varnames else dict()),  # umap 0.6: the 0.5 layout
                     precomputed_knn=(np.c_[np.arange(n), nbr], np.c_[np.zeros(n, np.float32), dist].astype(np.float32), None)
                     ).fit_transform(Z)
 for j, x in enumerate(EORDER):

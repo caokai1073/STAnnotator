@@ -15,6 +15,13 @@ from .osutil import dump_json
 FILES = ("umap.npy", "pca.npy", "leiden.npy", "meta.json")  # an embedding's files
 
 
+
+def umap_options(umap):
+    """umap-learn 0.6 warns that its default layout will change and keeps the 0.5 one with compatibility_layout=True:
+    that, said explicitly (0.5 has no such option)."""
+    import inspect
+    return {"compatibility_layout": True} if "compatibility_layout" in inspect.signature(umap.UMAP).parameters else {}
+
 def _dir(sample_id):
     d = config.SAMPLES / sample_id / "embedding"
     d.mkdir(exist_ok=True)
@@ -42,7 +49,7 @@ def run(s, n_pcs=30, n_neighbors=15, min_dist=0.3, resolution=1.0, progress=None
     init = 10 * (init - init.mean(0)) / max(float(np.abs(init - init.mean(0)).max()), 1e-9)
     with markers.numba_parallel():  # not at the same time as another numba-parallel run (see there)
         Y = umap.UMAP(n_neighbors=idx.shape[1], min_dist=float(min_dist), precomputed_knn=(idx, dd, None), init=init,
-                      n_jobs=-1, low_memory=True, verbose=False).fit_transform(Z)
+                      n_jobs=-1, low_memory=True, verbose=False, **umap_options(umap)).fit_transform(Z)
     d = _dir(s.sample_id)
     meta = {"run_id": time.strftime("%Y%m%d-%H%M%S"), "n_pcs": int(n_pcs), "n_neighbors": int(n_neighbors),
             "min_dist": float(min_dist), "resolution": float(resolution), "n_clusters": int(lab.max()) + 1,

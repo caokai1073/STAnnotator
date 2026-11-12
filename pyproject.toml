@@ -11,7 +11,10 @@ dependencies = [
   # the annotation's neighbor search and clustering: pinned, because another version gives other neighbors and
   # clusters (pynndescent 0.6.0 and 0.7.0 differ for a third of the cells), so every installation annotates alike
   "pynndescent==0.7.0", "numba==0.68.1", "igraph==1.0.0",
-  "starlette", "pillow", "scikit-learn", "umap-learn",
+  "starlette", "pillow", "scikit-learn",
+  # UMAP: 0.6 keeps the 0.5 layout with compatibility_layout=True (stagent/embedding.umap_options); 0.7 is to change
+  # its default, so it stays below that until checked
+  "umap-learn>=0.5.7,<0.7",
   "pydeseq2",  # Compare > DESeq2 (pseudobulk over a project's slices)
   # Harmony (joint embedding of several slices): 2.x is compiled and has no Windows build, so Windows uses
   # stagent/harmony.py, its NumPy version
