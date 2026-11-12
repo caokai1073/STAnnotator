@@ -1994,6 +1994,12 @@ def import_project(project, kind, sources, sections=None, section_column=None, h
     except BaseException:  # the slices imported so far go too: the import can be run again as it was
         remove_samples([n for n, _, _ in done])
         raise
+    try:  # the slices' genes in one order (CosMx and Xenium exports can list them in another)
+        for sid, like in projects.panel_plan(project, [n for n, _, _ in done]).items():
+            progress(f"{sid}: the genes in the order of {like}")
+            projects.reorder_genes(sid, like)
+    except ValueError as e:
+        raise ValueError(f"{e} (the slices were imported as samples of their own)") from None
     p = projects.save(project, project, done)
     progress(f"project {project}: {len(done)} slices")
     return p

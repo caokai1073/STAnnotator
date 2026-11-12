@@ -77,11 +77,12 @@ def drop_sample(sample_id, trash):
     return {"project": pid, "left": 0}
 
 
-def assign(groups):
+def assign(groups, reordered=None):
     """Put samples into projects: groups = {sample_id: project name, or "" for none}; samples not named keep their
     project. A project is matched by its name (or id), a new name makes a new project; the slices of a project must
     share one gene panel. A slice that leaves a project keeps its name as the sample's name; a project left without
-    slices goes away (its joint results to trash/). Returns the projects."""
+    slices goes away (its joint results to trash/). A slice with the project's genes in another order is put in the
+    project's order (reorder_genes; its id appended to the list reordered). Returns the projects."""
     import shutil
     metas = {}
     for sid in groups:
@@ -124,16 +125,13 @@ def assign(groups):
                 sec, i = f"{base}_{i}", i + 1
             projs[pid]["samples"].append(sid)
             projs[pid]["slices"][sid] = {"section": sec, "metadata": metas[sid].get("metadata") or {}}
-    for pid in set(x for x in target.values() if x):  # one gene panel per project
-        panels = {}
-        for sid in projs[pid]["samples"]:
-            g = config.SAMPLES / sid / "genes.txt"
-            if g.exists():
-                panels.setdefault(tuple(config.read_genes(g)), []).append(sid)
-        if len(panels) > 1:
-            sizes = "; ".join(f"{', '.join(v)}: {len(k)} genes" for k, v in panels.items())
-            raise ValueError(f"the slices of project {projs[pid]['name']} must share one gene panel; their gene lists "
-                             f"differ ({sizes})")
+    reorder = {}  # one gene panel per project: the same genes in another order are put in the project's order
+    for pid in set(x for x in target.values() if x):
+        reorder.update(panel_plan(projs[pid]["name"], projs[pid]["samples"]))
+    for sid, ref in reorder.items():
+        reorder_genes(sid, ref)
+    if reordered is not None:
+        reordered.extend(reorder)
     PROJECTS.mkdir(parents=True, exist_ok=True)
     for pid, p in projs.items():
         if p["samples"]:
@@ -152,6 +150,95 @@ def assign(groups):
             m.pop("project", None); m.pop("project_section", None)
         dump_json(m, config.SAMPLES / sid / "meta.json", indent=1)
     return list_projects()
+
+
+# ---------------- one gene panel per project ----------------
+LIST_DIFFERENT = 20  # differing gene names listed in the error below this many
+
+
+def _annotated(sample_id):
+    """The sample has annotations other than its placeholder (their models and analyses use its gene columns)."""
+    from .session import list_sessions
+    ss = list_sessions()
+    return bool(len(ss)) and bool(((ss.sample_id == sample_id) & (ss.method != "none")).any())
+
+
+def panel_plan(name, sample_ids):
+    """The slices of project `name` must share one gene panel, gene for gene in one order (the joint analyses stack
+    their counts). Returns {sample_id: the slice whose gene order to put it in} for the slices that have the same genes in another
+    order (as CosMx exports can list them); raises ValueError when gene names differ (how many, and which when fewer
+    than LIST_DIFFERENT), or when a slice to reorder is annotated in its own order. The order kept is that of the
+    annotated slices, else of the project's first slice."""
+    panels = {}
+    for sid in sample_ids:
+        g = config.SAMPLES / sid / "genes.txt"
+        if g.exists():
+            panels.setdefault(tuple(config.read_genes(g)), []).append(sid)
+    if len(panels) < 2:
+        return {}
+    annotated = {sid for sids in panels.values() for sid in sids if _annotated(sid)}
+    keep = [k for k, sids in panels.items() if annotated & set(sids)]
+    ref = keep[0] if keep else next(iter(panels))
+    rs, ref_set = ", ".join(panels[ref]), set(ref)
+    problems, plan = [], {}
+    for genes, sids in panels.items():
+        if genes == ref:
+            continue
+        here = ", ".join(sids)
+        only_ref = [g for g in ref if g not in set(genes)]
+        only_here = [g for g in genes if g not in ref_set]
+        if not only_ref and not only_here and len(set(genes)) == len(genes) == len(ref):
+            if genes in keep:
+                problems.append(f"{here} and {rs} have the same genes in another order, and both are annotated in "
+                                "their own order (an annotation's model uses the gene columns): join them without "
+                                "these annotations, or annotate the slices again after joining")
+            else:
+                plan.update({sid: panels[ref][0] for sid in sids})
+            continue
+        n = len(only_ref) + len(only_here)
+        msg = (f"{n} gene names differ between {here} ({len(genes)} genes) and {rs} ({len(ref)} genes)")
+        if n < LIST_DIFFERENT:
+            parts = ([f"only in {rs}: {', '.join(only_ref)}"] if only_ref else []) + \
+                    ([f"only in {here}: {', '.join(only_here)}"] if only_here else [])
+            msg += ": " + "; ".join(parts)
+        else:
+            msg += f" ({len(only_ref)} only in {rs}, {len(only_here)} only in {here})"
+        problems.append(msg)
+    if problems:
+        raise ValueError(f"the slices of project {name} must share one gene panel: " + ". ".join(problems))
+    return plan
+
+
+def reorder_genes(sample_id, like):
+    """Put the sample's gene columns in the order of sample `like` (the same genes): counts.npz and genes.txt, and the
+    data as imported (original/, kept by a filter) in the order of like's (genes like does not have stay after the
+    ones they followed). The counts are the same numbers in other columns."""
+    import numpy as np
+    import scipy.sparse as sp
+    from .osutil import save_counts
+    d, L = config.SAMPLES / sample_id, config.SAMPLES / like
+    for sub in (d / "original", d):  # (the data as imported first: the current files tell what still needs it)
+        if not (sub / "counts.npz").exists():
+            continue
+        genes = config.read_genes(sub / "genes.txt")
+        lf = L / "original" / "genes.txt" if sub.name == "original" and (L / "original" / "genes.txt").exists() \
+            else L / "genes.txt"
+        pos = {g: i for i, g in enumerate(config.read_genes(lf))}
+        # genes like does not have (its filter removed them, this slice's did not) after the ones before them
+        order = sorted(range(len(genes)), key=lambda j: (pos[genes[j]], 0) if genes[j] in pos else
+                       (max([pos[g] for g in genes[:j] if g in pos], default=-1), 1 + j))
+        if order == list(range(len(genes))):
+            continue
+        inv = np.empty(len(order), np.int64)
+        inv[order] = np.arange(len(order))
+        X = sp.load_npz(sub / "counts.npz").tocsr()  # (its own copy: the open annotations' shared one stays as it is)
+        X.indices = inv[X.indices].astype(X.indices.dtype)
+        X.has_sorted_indices = False
+        X.sort_indices()
+        save_counts(sub / "counts.npz", X)
+        tmp = sub / "genes.txt.part"
+        config.write_genes(tmp, [genes[j] for j in order])
+        tmp.replace(sub / "genes.txt")
 
 
 def slice_name(project, value):

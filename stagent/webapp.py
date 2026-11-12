@@ -2493,14 +2493,19 @@ async def api_refresh(req: Request):
 
 
 async def api_projects_assign(req: Request):
-    """{groups: {sample_id: project name, or "" for none}}: move samples between projects (projects.assign)."""
+    """{groups: {sample_id: project name, or "" for none}}: move samples between projects (projects.assign).
+    Returns {projects, reordered: the slices whose genes were put in their project's order}."""
     b = await req.json()
+    reordered = []
     try:
-        r = projects.assign(b.get("groups") or {})
+        r = await asyncio.to_thread(projects.assign, b.get("groups") or {}, reordered)  # (a reorder writes counts)
     except ValueError as e:
         return _json({"error": str(e)}, 400)
+    for sid in reordered:  # its gene columns in the project's order: its views and open annotations read again
+        _forget_sample(sid)
+        _reload_sample(sid)
     _cell_tables.clear()  # slices are labels of the analyses
-    return _json(r)
+    return _json({"projects": r, "reordered": reordered})
 
 
 async def api_sample_remove(req: Request):

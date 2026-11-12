@@ -6124,10 +6124,17 @@ $("pjSave").onclick = async () => {
   const groups = {};
   Object.entries(PJ.cur).forEach(([id, n]) => { if ((n || "") !== PJ.was[id]) groups[id] = n || ""; });
   if (!Object.keys(groups).length) { $("pjDlg").close(); return; }
-  try { await post("/api/projects/assign", { groups }); } catch (e) { $("pjErr").textContent = e.message; return; }
+  // (a slice with the project's genes in another order is rewritten in that order: up to a minute for a large one)
+  const btn = $("pjSave"); btn.disabled = true; $("pjErr").textContent = "";
+  const slow = setTimeout(() => { $("pjErr").textContent = "Putting the slices' genes in the project's order…"; }, 1500);
+  let r;
+  try { r = await post("/api/projects/assign", { groups }); }
+  catch (e) { $("pjErr").textContent = e.message; return; }
+  finally { clearTimeout(slow); btn.disabled = false; }
   $("pjDlg").close();
   await loadSamples(st.sample && st.sample.sample_id);
-  toast(`${Object.keys(groups).length} sample(s) moved`, 4000);
+  const re = (r && r.reordered) || [];
+  toast(`${Object.keys(groups).length} sample(s) moved` + (re.length ? `; the genes of ${re.join(", ")} put in the project's order` : ""), 6000);
 };
 
 // ---------------- filtering cells and genes ----------------
