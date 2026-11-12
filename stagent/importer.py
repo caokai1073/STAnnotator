@@ -1584,6 +1584,8 @@ def undo_registration_fix(sample_id):
     cells.drop(columns=["px_import", "py_import"]).to_parquet(d / "cells.parquet")
     meta = json.load(open(d / "meta.json"))
     meta.pop("registration_fixes", None)
+    if meta.pop("registration_positions", None):  # undone: adding the image again does not put it back
+        (d / POSITIONS_FILE).unlink(missing_ok=True)
     if meta.get("placement_affine_import"):
         meta["placement_affine"] = meta.pop("placement_affine_import")
     meta["registration_by"] = (meta.get("registration_by") or "file").replace(" + nuclei correction", "").replace(

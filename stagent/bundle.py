@@ -22,7 +22,9 @@ from pathlib import PurePosixPath
 from . import config
 from .osutil import dump_json
 
-FORMAT = 2  # 2: the sample's filter and registration (sample/); an older app asks to be updated
+FORMAT = 3  # 2: the sample's filter and registration (sample/); 3: with the cell positions file of a registration
+#   by cell positions (sample/registration_positions.parquet); a file is marked 3 only when it holds that one, so the
+#   others still load in an app of format 2; an older app asks to be updated
 SUFFIX = ".stannot"
 LEAVE_OUT = {"chat.jsonl", "chat_meta.json"}
 LEAVE_OUT_DIRS = {"chat_archive", "exports", "figures"}
@@ -79,6 +81,9 @@ def _sample_state(sample_id):
             size = None
         st["registration"] = {**{k: m.get(k) for k in REG_KEYS}, "image_kind": m.get("image_kind"),
                               "image_name": PurePosixPath(m["he_path"].replace("\\", "/")).name, "image_size": size}
+        from .importer import POSITIONS_FILE
+        if m.get("registration_positions") and (config.SAMPLES / sample_id / POSITIONS_FILE).exists():
+            st["registration"]["registration_positions"] = m["registration_positions"]
     return st
 
 
@@ -102,6 +107,8 @@ def save(session_id, out):
             "has_niches": (s.dir / "niches" / "run.json").exists(), "has_embedding": (emb / "umap.npy").exists(),
             "results": sorted(p.stem for p in (s.dir / "results").glob("*.json")) if (s.dir / "results").exists() else [],
             "sample_state": _sample_state(s.sample_id)}
+    if not (info["sample_state"]["registration"] or {}).get("registration_positions"):
+        info["format"] = 2  # (nothing of format 3 in it: an app of format 2 loads it)
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=4) as z:
         z.writestr("bundle.json", json.dumps(info, indent=1))
         if info["sample_state"]["registration"]:  # every cell's place on the image (corrections are no affine)
@@ -112,6 +119,9 @@ def save(session_id, out):
             pf = config.SAMPLES / s.sample_id / "pieces.json"
             if pf.exists():
                 z.write(pf, "sample/pieces.json")
+            if info["sample_state"]["registration"].get("registration_positions"):  # the whole file: a filter, Restore
+                from .importer import POSITIONS_FILE  # all and the notebook replay it for cells left out above
+                z.write(config.SAMPLES / s.sample_id / POSITIONS_FILE, "sample/registration_positions.parquet")
         for p, name in _files(s.dir, "annotation"):
             z.write(p, name)
         if info["has_embedding"]:
@@ -130,7 +140,8 @@ def _check(z):
         p = PurePosixPath(n)
         if n == "bundle.json" or n.endswith("/"):
             continue
-        if p.parts[0] == "sample" and len(p.parts) == 2 and p.name in ("positions.parquet", "pieces.json"):
+        if p.parts[0] == "sample" and len(p.parts) == 2 and p.name in ("positions.parquet", "pieces.json",
+                                                                         "registration_positions.parquet"):
             continue
         if p.is_absolute() or ".." in p.parts or p.parts[0] not in ("annotation", "embedding") or p.suffix not in TYPES:
             raise ValueError(f"unexpected file in the annotation file: {n}")
@@ -251,6 +262,11 @@ def apply_sample(src, p, progress=lambda *a: None):
                 cells.to_parquet(d / "cells.parquet")
                 if "sample/pieces.json" in z.namelist():
                     (d / "pieces.json").write_bytes(z.read("sample/pieces.json"))
+            if reg.get("registration_positions") and "sample/registration_positions.parquet" in z.namelist():
+                f = config.SAMPLES / target / importer.POSITIONS_FILE  # (the cells a filter left out placed by it later)
+                f.parent.mkdir(parents=True, exist_ok=True)
+                f.write_bytes(z.read("sample/registration_positions.parquet"))
+                m["registration_positions"] = reg["registration_positions"]
             dump_json(m, config.SAMPLES / target / "meta.json", indent=1)
 
 

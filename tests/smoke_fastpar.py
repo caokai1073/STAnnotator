@@ -108,6 +108,43 @@ try:
     c2 = pd.read_parquet(importer.config.SAMPLES / "pos2" / "cells.parquet").set_index("cell_id")
     assert np.abs(c2.loc[pos.cell_id, ["px", "py"]].to_numpy() - pos[["px", "py"]].to_numpy()).max() < 1e-9
     print("cell positions given before the image: applied when the image is added")
+
+    # ---- 5. a saved annotation (.stannot) carries the positions file: loaded on the same data imported again (as
+    # in another data folder), Restore all puts the cells a filter left out where the file says
+    from stagent import bundle
+    from stagent.session import Session
+    importer.import_sample("pos3", str(h5), he=str(img), registration=str(reg), progress=lambda *a: None)
+    qcfilter.apply(["pos3"], {"min_counts": int(np.percentile(cells.total_counts, 30))})
+    sess = Session.create("pos3", method="none")
+    stannot = HOME / "pos3.stannot"
+    info = bundle.save(sess.id, stannot)
+    assert info["format"] == 3
+    importer.remove_samples(["pos3"])
+    shutil.rmtree(importer.config.SESSIONS / sess.id)
+    importer.import_sample("pos3", str(h5), he=str(img), progress=lambda *a: None)  # the image, no registration file
+    pl = bundle.plan(stannot)
+    assert pl["target"] == "pos3" and pl["filter"] == "apply" and pl["registration"] == "apply", pl
+    bundle.apply_sample(stannot, pl)
+    bundle.load(stannot, "pos3")
+    assert (importer.config.SAMPLES / "pos3" / importer.POSITIONS_FILE).exists()
+    assert importer._meta("pos3").get("registration_positions")
+    qcfilter.apply(["pos3"], {})  # Restore all
+    c3 = pd.read_parquet(importer.config.SAMPLES / "pos3" / "cells.parquet").set_index("cell_id")
+    assert len(c3) == ncell
+    off = np.abs(c3.loc[pos.cell_id, ["px", "py"]].to_numpy() - pos[["px", "py"]].to_numpy()).max()
+    assert off < 1e-6, f"restored cells {off:.2f} px off the positions file"
+    print("a .stannot carries the positions file: loaded on the data imported again, Restore all puts every listed cell "
+          "where the file says")
+    # ---- 6. Undo correction of a positions registration: adding the image again does not put it back
+    importer.undo_registration_fix("pos3")
+    assert not importer._meta("pos3").get("registration_positions")
+    importer.set_image("pos3", str(img), progress=lambda *a: None)
+    m3 = importer._meta("pos3")
+    c3 = pd.read_parquet(importer.config.SAMPLES / "pos3" / "cells.parquet")
+    A3 = np.asarray(m3["placement_affine"])
+    assert not m3.get("registration_fixes") and "cell positions" not in (m3.get("registration_by") or "")
+    assert np.abs(c3[["px", "py"]].to_numpy() - (c3[["x", "y"]].to_numpy() @ A3[:, :2].T + A3[:, 2])).max() < 1e-6
+    print("undone cell positions stay undone when the image is added again")
     print("ok")
 finally:
     shutil.rmtree(HOME, ignore_errors=True)
