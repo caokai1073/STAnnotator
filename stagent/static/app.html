@@ -368,7 +368,9 @@ header .br { flex: 1 1 100%; height: 0; }
 #emKind { flex: 0 1 78px; } #emScope { flex: 0 1 92px; } #emColor { flex: 1 1 116px; max-width: 150px; }
 #empanel .lh select[hidden] { display: none; }
 #empanel .lh button { flex: none; }
-.emtools { display: flex; align-items: center; gap: 6px; padding: 6px 10px; font-size: 12px; }
+.emtools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 10px; font-size: 12px; }
+.emtools #emInfo { flex-basis: 100%; }  /* the count of selected cells on a line of its own, below the buttons */
+.emtools #emInfo:empty { display: none; }
 .emtools button { padding: 2px 9px; font-size: 12px; }
 #emcanvas { width: 100%; display: block; background: var(--panel); cursor: grab; touch-action: none; }  /* size: emResize() */
 #emcanvas.lasso { cursor: crosshair; }
@@ -386,7 +388,7 @@ header .br { flex: 1 1 100%; height: 0; }
 #composer { border-top: 1px solid var(--line); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
 #input { width: 100%; min-height: 64px; resize: vertical; }
 .row { display: flex; gap: 8px; align-items: center; }
-.toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--panel);
+.toast { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; background: var(--ink); color: var(--panel);
          padding: 8px 14px; border-radius: 6px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 20; max-width: 80vw; }
 .toast.show { opacity: .94; }
 dialog { width: min(1100px, 95vw); border: 1px solid var(--line); border-radius: 14px; padding: 0; background: var(--panel); color: var(--ink);
@@ -595,7 +597,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <button id="nRun" class="primary main" disabled title="Compute niches with these settings">Run niches</button>
   </div>
   <div class="pane" data-pane="compare">
-    <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-chart"/></svg><div id="aninfo">Open or make an annotation first</div></div>
+    <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-chart"/></svg><div><div id="aninfo">Open or make an annotation first</div>
+      <div class="progress" id="aprogress"><div class="pbar"><i id="afill"></i></div><span id="astage"></span></div></div></div>
     <div class="fld" id="aScopeWrap" hidden><span>Cells</span><select id="aScope" class="segsel" title="The cells compared">
       <option value="slice" data-short="This slice">This slice</option>
       <option value="project" data-short="All slices">All slices of the project, pooled (each slice's latest annotation)</option></select>
@@ -3620,6 +3623,14 @@ async function adviceRegistration(x, act) {
     ? `In ${act.n_areas} area${act.n_areas === 1 ? "" : "s"} the cells sit up to ${act.max_offset_um} µm off their nuclei on the image. Move the cells there onto their nuclei (up to ${act.moved_um_max} µm; elsewhere they stay)? Regions keep their cells; you can undo this.`
     : `The cells sit up to ${act.max_offset_um} µm off their nuclei on the image. Move every cell onto its nucleus? Regions keep their cells; you can undo this.`;
   if (!confirm(ask)) return;
+  if (act.mode === "local" && st.sample) {  // the run of Steps → Check registration: measured where the cells are now,
+    const sid = st.sid;                     // its progress shown, then the result to accept or undo
+    if (await localRegistration(st.sample.sample_id) && st.sid === sid) {
+      try { await post(`/api/s/${sid}/advice/status`, { id: x.id, status: "done", note: "registration corrected" }); } catch (e) { /* noted only */ }
+      await loadPlaus(false);
+    }
+    return;
+  }
   await adviceAct(x, "registration");
 }
 async function adviceStatus(id, status) {
@@ -4014,7 +4025,22 @@ $("refPick").onclick = async () => { const p = await pickFiles("h5ad"); if (p.le
 // ---------------- import ----------------
 const native = () => window.pywebview && window.pywebview.api;  // file dialogs in the desktop app
 function imKind() { return document.querySelector("input[name=imKind]:checked").value; }
+function imReset() {  // after an import: the dialog opens as at first (no files, names or choices of the last one)
+  document.querySelectorAll("#imDlg input, #imDlg textarea, #imDlg select").forEach((el) => {
+    if (el.type === "radio" || el.type === "checkbox") el.checked = el.defaultChecked;
+    else if (el.tagName === "SELECT") { const d = [...el.options].findIndex((o) => o.defaultSelected); el.selectedIndex = d >= 0 ? d : 0; }
+    else el.value = el.defaultValue;
+  });
+  Object.assign(st, { imXSlices: null, imXKey: null, imFSlices: null, imFKey: null, imHKey: null, imCols: null,
+                      imVSlices: null, imSSlices: null, imXPending: null, imFPending: null, imHPending: null,
+                      imVPending: null, imSPending: null });
+  ["imXinfo", "imFinfo", "imHinfo", "imVinfo", "imSinfo", "imStatus", "imSecList"].forEach((id) => ($(id).textContent = ""));
+  ["imSecCol", "imRegCol"].forEach((id) => ($(id).length = 1)); $("imSecRow").hidden = true;  // the columns of the last h5ad
+  const k = document.querySelector("input[name=imKind]:checked"); if (k) k.onchange();  // that kind's fields
+  imDefaultName(""); imSections(); st.imClear = false;
+}
 function openImport() {
+  if (st.imClear) imReset();
   imForm();
   document.querySelectorAll("#imDlg [data-pick]").forEach((b) => (b.hidden = !native()));
   $("imStatus").textContent = !native() ? "Paste full paths (files on the computer running this viewer)."
@@ -4422,7 +4448,7 @@ async function importSample() {  // returns true when the sample was imported
   try {
     const { job } = await post("/api/import", body);
     await pollJob(job, $("imStatus").parentElement, null, $("imStatus"), $("imGo"), 700);
-    $("imDlg").close();
+    $("imDlg").close(); st.imClear = true;
     const many = nSlices > 1;
     toast(many ? `Imported project ${name}` : `Imported ${name}`, 4000);
     await loadSamples(many ? null : name, many ? name : null);
@@ -4453,7 +4479,7 @@ async function importImageOnly(name) {  // H&E only: the image, its pixel size, 
                                                 he_kind: $("imIKind").value, description: $("imDesc").value,
                                                 replace: !$("imReplaceRow").hidden && $("imReplace").checked });
     await pollJob(job, $("imStatus").parentElement, null, $("imStatus"), $("imGo"), 700);
-    $("imDlg").close();
+    $("imDlg").close(); st.imClear = true;
     toast(`Imported ${name}: draw and name regions on the image`, 5000);
     await loadSamples(name, null);
     return true;
@@ -5718,7 +5744,7 @@ async function checkRegistration() {  // the cells against the nuclei over the w
   regDialog(sample, title, r.figure, `${what} (up to ${r.max_offset_um} µm). The local registration moves the cells onto their nuclei there (up to ${r.moves_um_max} µm; ${gain}); regions keep their cells. You see the result before you accept it.`,
     [["Close", false, async () => $("rgDlg").close()], ["Do local registration", true, async () => { $("rgDlg").close(); await localRegistration(sample); }]]);
 }
-async function localRegistration(sample) {  // the local correction measured, checked and applied at once (no review)
+async function localRegistration(sample) {  // the local correction measured, checked and applied at once (no review); true when applied
   const smp = (st.samples || []).find((x) => x.sample_id === sample), who = `Local registration of ${smp ? sampleName(smp) : sample}`;
   let job;
   try { ({ job } = await post(`/api/sample/${encodeURIComponent(sample)}/registration/local`, {})); }
@@ -5735,7 +5761,7 @@ async function localRegistration(sample) {  // the local correction measured, ch
     const r = j.result;
     if (!r.figure || st.reviewMode === "auto") {
       toast(`${who} done: the cells moved onto their nuclei where the tissue shifted (up to ${r.moved_um_max} µm, median ${r.moved_um_median} µm)`, 9000);
-      return;
+      return true;
     }
     toast("", 1);
     regDialog(sample, `${who}: the result`, r.figure,
@@ -5746,7 +5772,7 @@ async function localRegistration(sample) {  // the local correction measured, ch
         if (st.sample && st.sample.sample_id === sample) await afterPlacement();
         loadStepsSoon(); toast("The local registration was undone: the cells are back where they were", 6000);
       }], ["Accept", true, async () => { $("rgDlg").close(); toast("Local registration kept", 3000); }]]);
-    return;
+    return true;
   }
 }
 $("pcDismiss").onclick = async () => {
@@ -6637,12 +6663,16 @@ $("aRun").onclick = async () => {
   if (kind === "deseq2") b.replicate = $("aRep").value;
   else if (kind === "markers") b.by = $("aBy").value;
   else Object.assign(b, { rows: $("aRows").value, cols: $("aCols").value });
-  $("aRun").disabled = true; const label = $("aRun").textContent; setLabel($("aRun"), "Running…");
+  $("aRun").disabled = true; $("aprogress").classList.add("show");
   try {
-    AN.last = await post("/api/analysis/run", b); AN.req = { ...b, selection: undefined }; AN.sel = b.selection; AN.view = "";
-    AN.by[kind] = { last: AN.last, req: AN.req, sel: AN.sel }; syncLast(); await showAnalysis();
-  } catch (e) { toast(e.message, 7000); }
-  finally { $("aRun").disabled = false; setLabel($("aRun"), label); }
+    const { job } = await post("/api/analysis/run", b);
+    const j = await pollJob(job, $("aprogress"), $("afill"), $("astage"), $("aRun"), 500);  // (Stop under the button)
+    AN.last = j.result; AN.req = { ...b, selection: undefined }; AN.sel = b.selection; AN.view = "";
+    AN.by[kind] = { last: AN.last, req: AN.req, sel: AN.sel }; syncLast();
+    setTimeout(() => $("aprogress").classList.remove("show"), 800);
+    await showAnalysis();
+  } catch (e) { if (isStop(e)) stopped($("aprogress"), "Compare"); else { toast(e.message, 7000); $("aprogress").classList.remove("show"); } }
+  finally { $("aRun").disabled = false; }
 };
 async function loadResults(sid) {  // the last result of each analysis, kept with the annotation
   const r = await api(`/api/s/${sid}/results`);

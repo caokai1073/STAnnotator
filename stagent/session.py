@@ -940,6 +940,17 @@ class Session:
         used, ids, n, empty, per = {o.get("id") for o in ops}, [], 0, 0, {}
         cell_ids, px, py = self.cells.cell.to_numpy(), self.cells.px.to_numpy(), self.cells.py.to_numpy()
         keep_empty = bool(self.meta.get("image_only"))  # an image without cells: the outlines are the regions
+
+        def shape(outer, holes):  # an outline by its exact coordinates (a file loaded again gives the same numbers)
+            ring = lambda r: tuple(tuple(float(v) for v in pt) for pt in r)
+            return ring(outer), tuple(sorted(ring(h) for h in holes or []))
+        have = {shape(o.get("polygon") or [], o.get("holes")) for o in ops if o.get("op") == "polygon"}
+        new = [p for p in pieces if shape(p["outer"], p.get("holes")) not in have]
+        again = len(pieces) - len(new)
+        if pieces and not new:
+            raise vocab.VocabError(f"{'this outline was' if len(pieces) == 1 else f'these {len(pieces)} outlines were'} "
+                                   "imported already (the same coordinates): nothing new to import")
+        pieces = new
         for p in pieces:
             name = regmod.validate_name(p["name"])
             rows = regmod.cells_in_polygon(px, py, p["outer"])
@@ -965,9 +976,10 @@ class Session:
             if p.get("color") and p["name"] in per and p["name"] not in cols:
                 self.set_region_color(p["name"], p["color"]); cols[p["name"]] = p["color"]
         msg = (f"{len(ids)} outlines{f' from {source}' if source else ''} as {len(per)} region(s): "
-               + ", ".join(k if keep_empty else f"{k} ({v} cells)" for k, v in per.items()) + (f"; {empty} without cells left out" if empty else ""))
+               + ", ".join(k if keep_empty else f"{k} ({v} cells)" for k, v in per.items()) + (f"; {empty} without cells left out" if empty else "")
+               + (f"; {again} imported already (the same coordinates) left out" if again else ""))
         v = self._commit("import_regions", msg, regions=dict(cur["regions"], ops=ops), expected_parent=cur["version"])
-        return {"new_version": v, "regions": per, "n_outlines": len(ids), "n_empty": empty, "message": msg,
+        return {"new_version": v, "regions": per, "n_outlines": len(ids), "n_empty": empty, "n_again": again, "message": msg,
                 "n_smoothed": sum(1 for p in pieces if p.get("smoothed"))}
 
     def assign_region_cells(self, moves, author=None, text="", message=None):

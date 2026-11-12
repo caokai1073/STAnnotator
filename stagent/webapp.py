@@ -1099,7 +1099,7 @@ async def api_advice_status(req: Request):
     s = review_app._session(req.path_params["sid"])
     b = await req.json()
     try:
-        advice.set_status(s, b.get("id", ""), b.get("status", ""))
+        advice.set_status(s, b.get("id", ""), b.get("status", ""), str(b.get("note") or "")[:200])
     except ValueError as e:
         return _json({"error": str(e)}, 400)
     return _json({"ok": True})
@@ -1487,14 +1487,23 @@ async def api_analysis_options(req: Request):
 
 
 async def api_analysis_run(req: Request):
-    """kind "de" (by, group, reference, within), "deseq2" (the same and replicate; a project's slices), "markers" (by,
-    within) or "composition" (rows, cols, within)."""
+    """Compare in the background, a run the user can stop: kind "de" (by, group, reference, within), "deseq2" (the
+    same and replicate; a project's slices), "markers" (by, within) or "composition" (rows, cols, within); progress
+    and result under /api/job/an:<session>."""
     from . import analysis
     b = await req.json()
+    job = f"an:{b['session']}"
+    if job in JOBS and not JOBS[job]["done"]:
+        return _json({"error": "a comparison of this annotation is still running"}, 409)
+    JOBS[job] = {"stage": "starting", "progress": 0.0, "done": False, "error": None}
+    say = lambda f, m: JOBS[job].update(progress=f, stage=m)
 
-    def work():
+    def compute():
+        say(0.05, "reading the cells and their labels")
         c = _analysis_cells(b)
         within = {k: v for k, v in (b.get("within") or {}).items() if v not in (None, "", [])}
+        say(0.3, {"de": "testing every gene (Wilcoxon)", "deseq2": "DESeq2 on the pseudobulk counts",
+                  "markers": "the top genes of every group", "composition": "counting the cells"}.get(b["kind"], "computing"))
         if b["kind"] == "de":
             r = analysis.de(c, b["by"], b["group"], b.get("reference") or "rest", within, top=60, full=True)
             table = r.pop("table")
@@ -1514,13 +1523,19 @@ async def api_analysis_run(req: Request):
         ANALYSES[key] = table
         while len(ANALYSES) > ANALYSES.n:
             ANALYSES.popitem(last=False)
-        analysis.log_run(review_app._session(b["session"]), b, r)
-        _keep_result(b, b["kind"], {**r, "id": key}, table)
+        say(0.95, "keeping the result")
+        with jobs.critical():  # (the result's files: written whole)
+            analysis.log_run(review_app._session(b["session"]), b, r)
+            _keep_result(b, b["kind"], {**r, "id": key}, table)
         return {**r, "id": key}
-    try:
-        return _json(await asyncio.to_thread(work))
-    except (ValueError, KeyError) as e:
-        return _json({"error": str(e).strip("'")}, 400)
+
+    def work():
+        try:
+            JOBS[job].update(progress=1.0, stage="done", done=True, result=compute())
+        except Exception as e:
+            JOBS[job].update(error=f"{type(e).__name__}: {e}" if not isinstance(e, (ValueError, KeyError)) else str(e).strip("'"),
+                             done=True)
+    return await _spawn(job, work) or _json({"job": job})
 
 
 async def api_communication_run(req: Request):
