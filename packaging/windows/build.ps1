@@ -42,8 +42,14 @@ if (-not $uv) {
 Write-Host "== Python 3.12 environment (uv: $uv)"
 & $uv venv --allow-existing $venv --python 3.12      # uv downloads Python 3.12 when the computer has none
 if ($LASTEXITCODE -ne 0) { throw "uv could not create the Python 3.12 environment" }
-& $uv pip install --python $py --reinstall-package stagent ".[app]" pyinstaller
-if ($LASTEXITCODE -ne 0) { throw "installing the packages failed" }
+# exactly the packages of the lock file (versions and hashes: packaging/lock/update.sh updates them), then the app's
+# own code without its dependencies
+& $uv pip sync --python $py --require-hashes packaging\lock\win.txt
+if ($LASTEXITCODE -ne 0) { throw "installing the packages of packaging\lock\win.txt failed" }
+& $uv pip install --python $py --no-deps --reinstall-package stagent .
+if ($LASTEXITCODE -ne 0) { throw "installing the app's code failed" }
+& $uv pip check --python $py   # every requirement of pyproject.toml met by the lock file
+if ($LASTEXITCODE -ne 0) { throw "the lock file does not meet pyproject.toml: run packaging/lock/update.sh" }
 
 Write-Host "== PyInstaller"
 & $py -m PyInstaller --noconfirm --clean packaging\stannotator.spec
