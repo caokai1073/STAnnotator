@@ -307,7 +307,8 @@ plot(cells.px.to_numpy(), cells.py.to_numpy(), lineages, "lineages")''',
         nb.append(_code(f'''
 import umap
 N_PCS, K, RESOLUTION, MIN_DIST = {em['n_pcs']}, {em['n_neighbors']}, {em['resolution']}, {em['min_dist']}
-Z = sa.markers.pca(sa.model.lognorm(counts), N_PCS)[:, ::-1].copy()     # PC1 first
+FIT_MAX = {em.get('pca_fit_cells') or None}     # the cells the components were fitted on (None: every cell)
+Z = sa.markers.pca(sa.model.lognorm(counts), N_PCS, fit_max=FIT_MAX)[:, ::-1].copy()     # PC1 first
 dist, nbr = sa.markers.knn(Z, K)
 leiden = sa.markers._leiden(sa.markers.knn_graph(dist, nbr), nbr, RESOLUTION, 0)
 print(leiden.max() + 1, "Leiden clusters; identical to the original:",
@@ -790,8 +791,10 @@ print(sid, "labels identical to the app's" if same.all() else f"{{same.mean():.2
 PROJECT_EMBED = '''
 EORDER = {order}
 N_PCS, K, RESOLUTION, MIN_DIST, HARMONY = {n_pcs}, {k}, {resolution}, {min_dist}, {harmony}
+FIT_MAX = {fit_max}                      # the cells the components were fitted on (None: every cell)
 EOFF = np.cumsum([0] + [SLICES[x]["counts"].shape[0] for x in EORDER])
-Z = sa.markers.pca(sa.model.lognorm(sp.vstack([SLICES[x]["counts"] for x in EORDER]).tocsr()), N_PCS)[:, ::-1].copy()
+Z = sa.markers.pca(sa.model.lognorm(sp.vstack([SLICES[x]["counts"] for x in EORDER]).tocsr()), N_PCS,
+                   fit_max=FIT_MAX)[:, ::-1].copy()
 if HARMONY:                              # slice-to-slice differences removed from the PCA, as the app did
     batch = np.repeat(EORDER, np.diff(EOFF))
     if {numpy_harmony}:                  # the app ran on Windows: its NumPy Harmony
@@ -953,6 +956,7 @@ The outputs below are the results at export time."""))
                       + f", {em['n_neighbors']} nearest neighbors, Leiden (resolution {em['resolution']}: "
                       f"{em['n_clusters']} clusters) and UMAP on the same neighbors."))
         nb.append(_code(PROJECT_EMBED.format(order=_py(eorder), n_pcs=em["n_pcs"], k=em["n_neighbors"],
+                                             fit_max=em.get("pca_fit_cells") or None,
                                              resolution=em["resolution"], min_dist=em["min_dist"],
                                              harmony=bool(em.get("harmony")), numpy_harmony=os.name == "nt",
                                              leiden=_pack(lab, np.int32)),

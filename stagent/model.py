@@ -23,13 +23,29 @@ MIN_TRAIN = 10  # fewest labeled cells the expression model is trained on (10% o
 FT_STEPS, FT_LR, FT_REPLAY, FT_L2 = 100, 5e-4, 6144, 10.0
 
 
+LOGNORM_BLOCK = 20_000  # cells normalized at once (the repeated per-cell factors are one block long: keep it small)
+
+
 def lognorm(m):
+    """log1p of the counts per 100 per cell. The result SHARES the input's column indices (only the values are new),
+    so it costs half of what a copy would: a five-million-cell CosMx 6K matrix is some 13 GB, half of it the indices.
+    The values are the same to the bit as diags(100 / total) @ m with log1p over its data. The input is not changed;
+    nothing may sort or prune the result's indices in place, as that would reach the matrix it came from."""
     m = sp.csr_matrix(m, dtype=np.float32)
     tot = np.asarray(m.sum(1)).ravel()
     tot[tot == 0] = 1
-    m = sp.diags(100.0 / tot) @ m
-    m.data = np.log1p(m.data)
-    return m
+    if not m.has_canonical_format:  # duplicate entries for one cell and gene, which the product below adds up:
+        m = sp.diags(100.0 / tot) @ m      # (a sample's counts never have any -- shared_counts sums them at load)
+        m.data = np.log1p(m.data)
+        return m
+    inv = np.asarray(100.0 / tot, dtype=m.dtype)
+    out = np.empty_like(m.data)
+    for a in range(0, m.shape[0], LOGNORM_BLOCK):  # a block at a time: no temporary the size of the matrix
+        b = min(a + LOGNORM_BLOCK, m.shape[0])
+        lo, hi = m.indptr[a], m.indptr[b]
+        np.multiply(m.data[lo:hi], np.repeat(inv[a:b], np.diff(m.indptr[a:b + 1])), out=out[lo:hi])
+        np.log1p(out[lo:hi], out=out[lo:hi])
+    return m._with_data(out, copy=False)
 
 
 def build_reference():

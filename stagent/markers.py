@@ -481,6 +481,11 @@ def _within(Z, rows, bound, fn, threads=None):
 
 MAX_PCA_GENES, N_HVG = 6000, 3000  # above MAX_PCA_GENES genes (whole-transcriptome data such as Visium HD) the PCA
                                     # uses the N_HVG most variable ones; a panel (Xenium 5K too) uses all its genes
+PCA_FIT_MAX = None  # cells an embedding's PCA is fitted on when the sample has more; None fits on every cell.
+PCA_FIT_SEED = 0    # Measured (2026-11-12, 400,000 cells x 6,000 genes at the 100,000-of-5,000,000 ratio): sampling
+                    # saves no peak memory once GRAM_SLAB is small -- the Gram pass is no longer what the peak is --
+                    # and PC5/PC6 of the sample point elsewhere than those of a fit on all cells (|corr| 0.16, 0.12).
+                    # It does cut the Gram time by about two thirds, so it stays available for speed.
 
 
 def gene_columns(tree, panel):
@@ -531,39 +536,116 @@ def _recall(kind, key, make):
     return copy(r)
 
 
-def pca(Xn, n_pcs=None):
+def pca(Xn, n_pcs=None, fit_max=None):
     """PCA of standardized genes on the sparse matrix (no dense copy): cell scores (cells x n_pcs, float32). The last
-    few results are kept by the content of the matrix (_recall)."""
+    few results are kept by the content of the matrix (_recall).
+
+    fit_max: with more cells than this, the components are fitted on that many of them drawn at random (seed
+    PCA_FIT_SEED) and every cell is then projected onto them, which leaves out the heaviest part of the
+    computation -- the gene means and the Gram matrix over all the cells. The scores are then no longer those of a
+    fit on every cell, so the clusters and the UMAP change. None (the default) fits on every cell: the marker
+    annotation must not sample, and passes nothing."""
     X = sp.csr_matrix(Xn, dtype=np.float32)
-    key = _content(X.data, X.indices, X.indptr, np.array(X.shape)) + f":{n_pcs or N_PCS}:{MAX_PCA_GENES}:{N_HVG}"
-    return _recall("pca", key, lambda: _pca(X, n_pcs))
+    key = (_content(X.data, X.indices, X.indptr, np.array(X.shape))
+           + f":{n_pcs or N_PCS}:{MAX_PCA_GENES}:{N_HVG}:{int(fit_max or 0)}:{PCA_FIT_SEED}")
+    return _recall("pca", key, lambda: _pca(X, n_pcs, fit_max))
 
 
-def _pca(X, n_pcs=None):
+def _pca(X, n_pcs=None, fit_max=None):
     n = X.shape[0]
-    mu = np.asarray(X.mean(0)).ravel()
-    ex2 = np.asarray(X.multiply(X).mean(0)).ravel()
+    rows = None
+    if fit_max and n > fit_max:  # the components from a sample of the cells, all of them projected onto those
+        rows = np.sort(np.random.default_rng(PCA_FIT_SEED).choice(n, int(fit_max), replace=False))
+    F = X if rows is None else X[rows]  # the cells the components are fitted on
     if X.shape[1] > MAX_PCA_GENES:  # the most variable genes (of the log-normalized values)
+        mu, ex2 = _moments(F)
+        from . import csrutil
         keep = np.sort(np.argsort(-(ex2 - mu ** 2))[:N_HVG])
-        X, mu, ex2 = X[:, keep], mu[keep], ex2[keep]
-    sd = np.sqrt(np.maximum(ex2 - mu ** 2, 0) * n / max(n - 1, 1)) + 1e-3
-    cov = (gram(X) / n - np.outer(mu, mu)) / np.outer(sd, sd)  # covariance of standardized genes
+        X = csrutil.columns_f32(X, keep)  # block by block: not a second copy of the whole matrix
+        F = X if rows is None else csrutil.columns_f32(F, keep)
+    C, mu, ex2 = gram(F)  # the gene means and means of squares come from the same pass as the Gram matrix
+    m = F.shape[0]
+    del F
+    sd = np.sqrt(np.maximum(ex2 - mu ** 2, 0) * m / max(m - 1, 1)) + 1e-3
+    cov = (C / m - np.outer(mu, mu)) / np.outer(sd, sd)  # covariance of standardized genes
+    del C
     k = min(n_pcs or N_PCS, len(cov))
     import scipy.linalg
     V = scipy.linalg.eigh(cov, subset_by_index=[len(cov) - k, len(cov) - 1], driver="evr")[1]  # the top k only
     V *= np.where(V[np.abs(V).argmax(0), np.arange(k)] < 0, -1.0, 1.0)  # each one's largest entry positive: a sign
     V /= sd[:, None]  # that does not depend on the computer's LAPACK. Ascending variance: the last column is PC1
-    return np.asarray(X @ V - mu @ V, dtype=np.float32)  # = standardized X times the top components
+    return _scores(X, V, mu)  # = standardized X times the top components
 
 
 _GRAM = None
+GRAM_SLAB = 256  # genes whose cell lists (the transposed half of the matrix) are held at once; see _slabs. Every
+                 # size gives the same Gram matrix to the bit; 256 costs 3% more time than 1024 and holds a twelfth
+                 # as much (measured at 400,000 cells x 6,000 genes: 0.02 vs 0.34 times the matrix).
+
+
+def _slabs(X):
+    """The matrix column block by column block as (first gene, CSC of those genes with cells ascending, their CSR).
+    Only a slab of the transpose exists at a time: a whole X.tocsc() is a second copy of the matrix, which for a
+    five-million-cell CosMx 6K panel is some 13 GB beside the 13 GB of the matrix itself."""
+    R = sp.csr_matrix(X)
+    if not R.has_sorted_indices:  # (the log-normalized matrix shares the counts' sorted indices: no copy here)
+        R = R.sorted_indices()
+    for g0 in range(0, R.shape[1], GRAM_SLAB):
+        S = R[:, g0:g0 + GRAM_SLAB]
+        Cc = S.tocsc()
+        del S
+        Cc.sort_indices()
+        yield g0, Cc, R
+        del Cc
+
+
+def _slab_moments(Cc, mu, ex2, g0):
+    """The gene means and means of squares of a slab, into mu and ex2. A slab holds every cell, so each is exactly
+    the entry of X.mean(0) / X.multiply(X).mean(0) for that gene, to the bit: scipy's mean scales the values by
+    1 / cells and sums each column over the cells ascending, which a column block does the same way. What the slab
+    avoids is the copy of the whole matrix that both make (mean scales it; multiply allocates twice the nonzeros
+    before pruning them back)."""
+    g1 = g0 + Cc.shape[1]
+    mu[g0:g1] = np.asarray(Cc.mean(0)).ravel()
+    sq = Cc._with_data(Cc.data * Cc.data, copy=False)  # the same structure, the values squared (float32, as multiply)
+    ex2[g0:g1] = np.asarray(sq.mean(0)).ravel()
+
+
+def _moment_arrays(X):
+    """Empty gene means / means of squares, in the dtype scipy's mean returns for this matrix (float32 for a
+    float32 one): everything built from them -- sd, outer(mu, mu) -- is then computed in that same dtype."""
+    dt = np.asarray(X.data[:1]).dtype
+    return np.zeros(X.shape[1], dt), np.zeros(X.shape[1], dt)
+
+
+def _moments(X):
+    """The gene means and means of squares alone (for picking the most variable genes of whole-transcriptome data,
+    before the Gram matrix of the kept ones)."""
+    X = sp.csr_matrix(X)
+    g, mu, ex2 = X.shape[1], *_moment_arrays(X)
+    for g0, Cc, _ in _slabs(X):
+        _slab_moments(Cc, mu, ex2, g0)
+    return mu, ex2
+
+
+def _mirror(C):
+    """The upper half of C mirrored into the lower one, block by block: C + np.triu(C, 1).T needs three more
+    arrays the size of C (at 6,000 genes, 275 MB each)."""
+    g = len(C)
+    for a in range(0, g, 1024):
+        b = min(a + 1024, g)
+        blk = C[a:b, a:b]
+        C[a:b, a:b] = blk + np.triu(blk, 1).T  # the diagonal block
+        if b < g:
+            C[b:, a:b] = C[a:b, b:].T          # the block below it
+    return C
 
 
 def gram(X):
-    """X.T @ X of a sparse matrix as a dense float64 array, on up to 8 threads (numba): each entry summed over the
-    cells in their order, so the same on every computer and for any number of threads, and exact in float64 (scipy's
-    sparse product sums in float32 on one thread: 3 times slower on 8 cores for a 5,000-gene panel, 21.6 -> 6.3 s
-    on 188,644 cells, and off by 3e-5)."""
+    """(X.T @ X, gene means, gene means of squares): the first as a dense float64 array, on up to 8 threads (numba).
+    Each entry is summed over the cells in their order, so the same on every computer and for any number of threads,
+    and exact in float64 (scipy's sparse product sums in float32 on one thread: 3 times slower on 8 cores for a
+    5,000-gene panel, 21.6 -> 6.3 s on 188,644 cells, and off by 3e-5). The means come from the same pass."""
     global _GRAM
     import os
     import numba
@@ -572,30 +654,48 @@ def gram(X):
         cache = bool(globals().get("__file__")) and os.path.isfile(globals()["__file__"])  # (not in a notebook's sa)
 
         @njit(parallel=True, cache=cache)
-        def _upper(cp, ci, cv, rp, ri, rv, g):
-            C = np.zeros((g, g))
-            for i in prange(g):  # row i of the upper half from column i: cells ascending, one thread per row
-                for a in range(cp[i], cp[i + 1]):
+        def _upper(cp, ci, cv, rp, ri, rv, g0, C):
+            for t in prange(len(cp) - 1):  # row g0 + t of the upper half from column g0 + t: cells ascending,
+                i = g0 + t                 # one thread per row
+                for a in range(cp[t], cp[t + 1]):
                     c, v = ci[a], np.float64(cv[a])
                     lo, hi = rp[c], rp[c + 1]
                     s = lo + np.searchsorted(ri[lo:hi], i)  # (the row's genes are sorted: from gene i on)
                     for b in range(s, hi):
                         C[i, ri[b]] += v * np.float64(rv[b])
-            return C
         _GRAM = _upper
-    R = sp.csr_matrix(X)
-    if not R.has_sorted_indices:
-        R = R.sorted_indices()
-    Cc = R.tocsc()
-    Cc.sort_indices()
+    Xc = sp.csr_matrix(X)
+    g = Xc.shape[1]
+    C, (mu, ex2) = np.zeros((g, g)), _moment_arrays(Xc)
     with numba_parallel():
         before = numba.get_num_threads()
         try:
             numba.set_num_threads(max(1, min(KNN_THREADS, int(numba.config.NUMBA_NUM_THREADS))))
-            U = _GRAM(Cc.indptr, Cc.indices, Cc.data, R.indptr, R.indices, R.data, R.shape[1])
+            for g0, Cc, R in _slabs(X):
+                _slab_moments(Cc, mu, ex2, g0)
+                _GRAM(Cc.indptr, Cc.indices, Cc.data, R.indptr, R.indices, R.data, g0, C)
         finally:
             numba.set_num_threads(before)
-    return U + np.triu(U, 1).T  # the lower half mirrored
+    return _mirror(C), mu, ex2
+
+
+SCORE_BLOCK = 50_000  # cells whose principal-component scores are computed at once; see _scores
+
+
+def _scores(X, V, mu):
+    """The cells' scores on the components, cell block by cell block: X @ V upcasts the whole matrix to float64
+    (a second copy of the data) because V is float64. Each cell's scores are its own dot products, so the blocks
+    give the same numbers."""
+    X = sp.csr_matrix(X)
+    Z = np.empty((X.shape[0], V.shape[1]), np.float32)
+    off = mu @ V
+    for a in range(0, X.shape[0], SCORE_BLOCK):
+        b = min(a + SCORE_BLOCK, X.shape[0])
+        lo, hi = X.indptr[a], X.indptr[b]
+        blk = sp.csr_matrix((X.data[lo:hi], X.indices[lo:hi], X.indptr[a:b + 1] - lo),  # a view, not a copy
+                            shape=(b - a, X.shape[1]))
+        Z[a:b] = blk @ V - off
+    return Z
 
 
 KNN = "exact"  # neighbor search of the marker step: "exact" (default: the true neighbors, the same on every computer) or "approx" (see knn)

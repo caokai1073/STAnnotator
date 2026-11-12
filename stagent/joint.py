@@ -21,8 +21,10 @@ def _dir(pid):
     return d
 
 
-def _pooled(pid):
-    """Sample ids, row offsets and the pooled counts of a project's slices (they must share the gene panel)."""
+def _pooled(pid, pooled=True):
+    """Sample ids, row offsets and the pooled counts of a project's slices (they must share the gene panel).
+    pooled=False returns None instead of the counts: the stacking is a second copy of every slice's matrix (for
+    five million CosMx 6K cells some 13 GB), which a caller that only needs the offsets should not pay for."""
     p = projects.load(pid)
     ids = [s for s in p["samples"] if (config.SAMPLES / s / "meta.json").exists()]
     panels = [config.read_genes(config.SAMPLES / s / "genes.txt") for s in ids]
@@ -31,7 +33,7 @@ def _pooled(pid):
     from .session import shared_counts
     counts = [shared_counts(config.SAMPLES / s) for s in ids]  # the copies the slices' open annotations hold
     off = np.cumsum([0] + [c.shape[0] for c in counts])
-    return ids, off, sp.vstack(counts).tocsr(), panels[0]
+    return ids, off, sp.vstack(counts).tocsr() if pooled else None, panels[0]
 
 
 def _slice_mres(res, o, n):
@@ -97,12 +99,16 @@ def annotate(pid, markers_text, resolution=None, carry=False, progress=None, knn
     knn = knn_mode(knn)
     say = progress or (lambda f, m: None)
     ids, off, counts, panel = _pooled(pid)
-    with timing.run(counts.shape[0]):
-        return _annotate(pid, markers_text, resolution, carry, say, knn, ids, off, counts, panel)
+    hold = [counts]  # handed over in a list, so this frame stops owning the pooled matrix and _annotate can free it
+    del counts
+    with timing.run(int(off[-1])):
+        return _annotate(pid, markers_text, resolution, carry, say, knn, ids, off, hold, panel)
 
 
-def _annotate(pid, markers_text, resolution, carry, say, knn, ids, off, counts, panel):
+def _annotate(pid, markers_text, resolution, carry, say, knn, ids, off, hold, panel):
     from .session import Session
+    counts = hold.pop()  # (see annotate: this is now the only reference to the pooled matrix)
+    n_cells = counts.shape[0]
     previous = latest_sessions(pid) if carry else {}
     from .session import filtered_genes
     parsed = markers.parse(markers_text, panel, filtered_genes(ids[0]))
@@ -118,6 +124,7 @@ def _annotate(pid, markers_text, resolution, carry, say, knn, ids, off, counts, 
     say(0.55, "training one expression model on all slices")
     m = model.train_pseudo(counts, lab, len(types), progress=lambda f, msg: say(0.55 + 0.25 * f, msg),
                            keep=markers.gene_columns(parsed["tree"], panel))
+    del counts  # the marker step and the model are done; the slices below read their own counts
     run = time.strftime("%Y%m%d-%H%M%S")
     out = {}
     for i, sid in enumerate(ids):
@@ -134,7 +141,7 @@ def _annotate(pid, markers_text, resolution, carry, say, knn, ids, off, counts, 
         s.result()
         out[sid] = s.id
     with jobs.replacing(_dir(pid) / "annotation.json"):
-        dump_json({"run": run, "sessions": out, "n_cells": int(counts.shape[0]), "time": time.strftime("%Y-%m-%dT%H:%M:%S")}, _dir(pid) / "annotation.json", indent=1)
+        dump_json({"run": run, "sessions": out, "n_cells": int(n_cells), "time": time.strftime("%Y-%m-%dT%H:%M:%S")}, _dir(pid) / "annotation.json", indent=1)
     say(1.0, "done")
     return out
 
@@ -144,8 +151,12 @@ def embed(pid, n_pcs=30, n_neighbors=15, min_dist=0.3, resolution=1.0, harmony=T
     say = progress or (lambda f, m: None)
     ids, off, counts, panel = _pooled(pid)
     t0 = time.time()
-    say(0.05, f"PCA of {counts.shape[0]:,} cells of {len(ids)} slices")
-    Z = markers.pca(model.lognorm(counts), n_pcs)[:, ::-1].copy()
+    n_cells = counts.shape[0]
+    say(0.05, f"PCA of {n_cells:,} cells of {len(ids)} slices")
+    Xn = model.lognorm(counts)
+    del counts  # nothing below needs the pooled counts; the slices keep their own (its indices live on in Xn)
+    Z = markers.pca(Xn, n_pcs, fit_max=markers.PCA_FIT_MAX)[:, ::-1].copy()
+    del Xn      # from here on only the 30 components of each cell are needed
     if harmony and len(ids) > 1:
         say(0.15, "Harmony: removing slice-to-slice differences from the PCA")
         if os.name == "nt":  # harmonypy 2.x has no Windows build; harmony.py is its NumPy version
@@ -179,6 +190,8 @@ def embed(pid, n_pcs=30, n_neighbors=15, min_dist=0.3, resolution=1.0, harmony=T
     meta = {"run_id": run, "n_pcs": int(n_pcs), "n_neighbors": int(n_neighbors), "min_dist": float(min_dist),
             "resolution": float(resolution), "n_clusters": int(lab.max()) + 1, "seconds": round(time.time() - t0, 1),
             "project": pid, "slices": ids, "harmony": bool(harmony and len(ids) > 1)}
+    if markers.PCA_FIT_MAX and n_cells > markers.PCA_FIT_MAX:  # fitted on a sample (see markers.pca)
+        meta["pca_fit_cells"] = int(markers.PCA_FIT_MAX)
     from .embedding import FILES
     dirs = [config.SAMPLES / sid / "embedding" for sid in ids]
     for d in dirs:
@@ -202,7 +215,7 @@ def niches(pid, k=15, n_niches=8, identity="nmf", n_programs=20, progress=None, 
     from .session import Session
     say = progress or (lambda f, m: None)
     sess = latest_sessions(pid, sessions)
-    ids, off, counts, panel = _pooled(pid)
+    ids, off, counts, panel = _pooled(pid, pooled=identity == "nmf")  # only NMF reads the counts
     missing = [s for s in ids if s not in sess]
     if missing:
         raise ValueError(f"annotate every slice first (missing: {', '.join(missing[:4])})")
@@ -211,6 +224,7 @@ def niches(pid, k=15, n_niches=8, identity="nmf", n_programs=20, progress=None, 
         from sklearn.decomposition import NMF
         say(0.05, f"NMF: {n_programs} programs fitted on the pooled cells")
         X = model.lognorm(counts).astype(np.float32, copy=False).tocsr()  # float32 already: no second copy
+        del counts  # only the log-normalized matrix is used below (it keeps the counts' column indices alive)
         fit = np.sort(np.random.default_rng(0).choice(X.shape[0], min(60000, X.shape[0]), replace=False))
         nmf = NMF(n_components=n_programs, init="nndsvda", max_iter=300, random_state=0, tol=1e-4).fit(X[fit])
         W = np.vstack([nmf.transform(X[i:i + 50000]) for i in range(0, X.shape[0], 50000)]).astype(np.float32)
