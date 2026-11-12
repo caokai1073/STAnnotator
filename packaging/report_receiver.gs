@@ -108,11 +108,9 @@ function bostonDays() {
     if (d !== (day instanceof Date ? Utilities.formatDate(day, ZONE, "yyyy-MM-dd") : String(day))) changed++;
     return [d];
   });
-  const col = sh.getRange(2, 2, n, 1);
-  try {
-    col.setNumberFormat("@");  // plain text: a sheet would turn "2026-11-11" into a date
-  } catch (err) { /* a table's typed column keeps its own type (a date column shows the same day) */ }
-  col.setValues(days);
+  // (no number format: a table's typed column refuses one, and Apps Script raises it only when the changes are
+  // written, past any try; a date-typed column shows the same day)
+  sh.getRange(2, 2, n, 1).setValues(days);
   Logger.log(changed + " of " + n + " rows got another day");
 }
 
