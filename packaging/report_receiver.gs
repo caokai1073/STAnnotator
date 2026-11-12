@@ -109,7 +109,9 @@ function bostonDays() {
     return [d];
   });
   const col = sh.getRange(2, 2, n, 1);
-  col.setNumberFormat("@");  // plain text: a sheet would turn "2026-11-11" into a date
+  try {
+    col.setNumberFormat("@");  // plain text: a sheet would turn "2026-11-11" into a date
+  } catch (err) { /* a table's typed column keeps its own type (a date column shows the same day) */ }
   col.setValues(days);
   Logger.log(changed + " of " + n + " rows got another day");
 }
