@@ -19,6 +19,10 @@ marker score per child type (detection rate z-scored across the clusters of that
 averaged over the child's markers); a cluster goes to the best child only if the score and its margin over the
 runner-up are high enough, otherwise its cells stay at the parent level. Children are then annotated the same
 way inside their own cells. Cells no top-level type claims are "Unassigned".
+A child type no cluster went to is then looked for (RARE): in finer clusterings of the same graph, with smaller
+clusters, accepted only where the cells really show its markers; and, for cells too few or too scattered to form a
+cluster, in the single cells that show its markers clearly. A type still without cells is listed in "not_found" with
+the detection of its markers, and the expression model then gives it no cells (session._only_found).
 """
 import difflib, re
 import numpy as np, scipy.sparse as sp
@@ -210,6 +214,25 @@ def descendants(tree):
 # ---------------- clustering ----------------
 RESOLUTIONS = (0.5, 1.0, 2.0, 4.0)  # candidates tried per level when resolution is "auto"
 AUTO = "auto"
+# Rare-type search: a child type no cluster of its level went to is looked for in finer clusterings of the same
+# neighbor graph (RARE_RESOLUTIONS, clusters down to RARE_MIN_CLUSTER cells). A fine cluster becomes that type when it
+# scores best for it with the usual score and margin, and its cells really show the type's markers: at least one
+# positive marker is detected in RARE_MIN_DET of its cells and RARE_FOLD times as often as in the level's cells (or,
+# a common one, in RARE_COMMON_DET of them and RARE_COMMON_FOLD times as often), no
+# positive marker is rarer there than in the level's cells (a list often holds weak or common markers too), and no
+# negative marker is enriched there. Types still without cells are reported with the detection of their markers
+# (res["not_found"]).
+# A type found by no cluster even so (its cells too few or too scattered to form one: Paneth cells among stem cells,
+# ICC between muscle cells) gets the single cells that show its markers clearly: with one specific positive marker (a
+# gene detected in at most RARE_SPECIFIC of the level's cells), RARE_CELL_COUNTS of its transcripts; with several,
+# at least RARE_PAIR_COUNTS of each of two of them, in RARE_FOLD times as many cells as the two would meet by chance;
+# no negative marker detected; at least RARE_MIN_CELLS such cells.
+RARE = True
+RARE_RESOLUTIONS = (2.0, 4.0, 8.0)
+RARE_MIN_CLUSTER = 10
+RARE_MIN_DET, RARE_FOLD = 0.25, 3.0
+RARE_COMMON_DET, RARE_COMMON_FOLD = 0.4, 1.5  # (a catch-all type's markers are common in its level: e.g. KLRB1 in CD4 T)
+RARE_SPECIFIC, RARE_CELL_COUNTS, RARE_PAIR_COUNTS, RARE_MIN_CELLS = 0.05, 3, 2, 10
 
 
 def _topk_torch(Z, k, dev):
@@ -976,9 +999,11 @@ def _graph(Xn, knn_mode="auto", fp=None):
 _LEIDEN_LOCK = __import__("threading").Lock()
 
 
-def _leiden(g, nbr, resolution, seed):
+def _leiden(g, nbr, resolution, seed, min_cluster=None):
     """igraph's built-in Leiden (modularity objective; same algorithm as leidenalg, several times faster).
-    Clusters smaller than MIN_CLUSTER are merged into the cluster most of their neighbors belong to."""
+    Clusters smaller than min_cluster (default MIN_CLUSTER) are merged into the cluster most of their neighbors
+    belong to."""
+    MIN = MIN_CLUSTER if min_cluster is None else min_cluster
     import random
     import igraph
     with _LEIDEN_LOCK:  # igraph draws from Python's global random: two runs at once (an annotation and a PCA / UMAP
@@ -990,10 +1015,10 @@ def _leiden(g, nbr, resolution, seed):
         lab = np.array(g.community_leiden(objective_function="modularity", weights="weight", resolution=resolution,
                                           n_iterations=2).membership)
     sizes = np.bincount(lab)
-    small = sizes[lab] < MIN_CLUSTER
+    small = sizes[lab] < MIN
     if small.any() and (~small).any():
         for i in np.where(small)[0]:
-            cand = lab[nbr[i]][sizes[lab[nbr[i]]] >= MIN_CLUSTER]
+            cand = lab[nbr[i]][sizes[lab[nbr[i]]] >= MIN]
             if len(cand):
                 lab[i] = np.bincount(cand).argmax()
     return np.unique(lab, return_inverse=True)[1]
@@ -1028,6 +1053,7 @@ class _Annotator:
         with timing.step("prepare", counts.shape[0] / 1e6):
             counts = sp.csr_matrix(counts)
             self.Xn, self.det = lognorm(counts), _detected(counts)
+            self.counts = counts  # (the rare-type search reads transcript counts of a few marker genes)
         self.knn_mode = knn_mode
         self.gi = {g: i for i, g in enumerate(panel)}
         self.say = progress or (lambda f, m: None)
@@ -1069,6 +1095,7 @@ class _Annotator:
         from . import timing
         root = parent is None and len(idx) == self.n
         g, nbr = _graph(self.Xn if _all_rows(idx, self.n) else self.Xn[idx], self.knn_mode, self.fp if root else None)
+        self.graph = (g, nbr)  # (kept for the rare-type search of this level)
         cands = RESOLUTIONS if resolution == AUTO else (float(resolution),)
         best, tried = None, {}
         for r in cands:
@@ -1104,9 +1131,174 @@ class _Annotator:
                                    "resolution": r,
                                    "scores": {ch["name"]: round(float(ev["S"][c, j]), 2) for j, ch in enumerate(children)},
                                    "margin": round(float(ev["best"][c] - ev["second"][c]), 2) if len(children) > 1 else None})
+        if RARE:
+            self.rare(res, parent, idx, children, ev, r, prefix, context)
         self.done += 1
         for ch in children:
             self.run(res, ch["name"], idx[res["labels"][idx] == ch["name"]], ch["children"], resolution, prefix)
+
+    def _groups_det(self, idx, rows_by_cluster, groups):
+        """Detection rate (any gene of the group detected) of each marker group in each set of rows, and in idx."""
+        det = self.det if _all_rows(idx, self.n) else self.det[idx]
+        out = np.zeros((len(rows_by_cluster) + 1, len(groups)))
+        for j, gr in enumerate(groups):
+            hit = np.asarray(det[:, [self.gi[x] for x in gr["genes"]]].sum(1)).ravel() > 0
+            out[-1, j] = hit.mean()
+            for c, rows in enumerate(rows_by_cluster):
+                out[c, j] = hit[rows].mean()
+        return out
+
+    def not_found(self, res, tree):
+        """The cell types of the list no cell went to, each with the detection of its positive markers among the cells
+        of its parent (the level it was looked for in): [{type, parent, n_parent_cells, markers: {genes: [cells with
+        one or more transcripts, with two or more]}, reason}]."""
+        out = []
+        D = descendants(tree)
+        have = set(res["labels"].tolist())
+
+        def walk(nodes, parent):
+            for nd in nodes:
+                if nd["children"]:
+                    walk(nd["children"], nd["name"])
+                elif nd["name"] not in have:
+                    pool = np.flatnonzero(np.isin(res["labels"], list(D.get(parent, [])) + [parent])) if parent \
+                        else np.arange(self.n)
+                    item = {"type": nd["name"], "parent": parent, "n_parent_cells": int(len(pool)), "markers": {}}
+                    if not len(pool):
+                        item["reason"] = f"its parent {parent} has no cells"
+                        out.append(item)
+                        continue
+                    C = self.counts[pool]
+                    for m in nd["markers"]:
+                        if m["sign"] > 0:
+                            v = np.asarray(C[:, [self.gi[x] for x in m["genes"]]].max(1).todense()).ravel()
+                            item["markers"]["|".join(m["genes"])] = [int((v > 0).sum()), int((v >= 2).sum())]
+                    best = max(item["markers"].items(), key=lambda kv: kv[1][1], default=None)
+                    item["reason"] = ("no cluster went to it, also at finer resolutions, and no group of cells shows "
+                                      "its markers together" + (
+                        f"; among the {len(pool):,} {parent or 'cells'}: " + ", ".join(
+                            f"{g} in {a:,} cells ({b:,} with 2+ transcripts)" for g, (a, b) in item["markers"].items())
+                        if best else ""))
+                    out.append(item)
+        walk(tree, None)
+        return out
+
+    def _rare_cells(self, idx, ch):
+        """(rows of the level's cells that show ch's markers clearly, how) or (None, how); see RARE_SPECIFIC."""
+        pos = [m for m in ch["markers"] if m["sign"] > 0]
+        neg = [m for m in ch["markers"] if m["sign"] < 0]
+        if not pos:
+            return None, {"accepted": False, "rule": "no positive marker"}
+        C = self.counts if _all_rows(idx, self.n) else self.counts[idx]
+        V = np.column_stack([np.asarray(C[:, [self.gi[x] for x in m["genes"]]].max(1).todense()).ravel() for m in pos])
+        ok = np.ones(len(idx), bool)
+        for m in neg:
+            ok &= np.asarray(C[:, [self.gi[x] for x in m["genes"]]].sum(1)).ravel() == 0
+        det = (V > 0).mean(0)
+        if len(pos) == 1:
+            j = 0
+            if det[j] > RARE_SPECIFIC:
+                return None, {"accepted": False, "rule": f"{'|'.join(pos[j]['genes'])} is not specific here "
+                              f"(detected in {det[j]:.1%} of the cells)"}
+            hit = ok & (V[:, j] >= RARE_CELL_COUNTS)
+            rule = f"{'|'.join(pos[j]['genes'])} >= {RARE_CELL_COUNTS} transcripts"
+            expect = None
+        else:
+            hi = V >= RARE_PAIR_COUNTS
+            hit = ok & (hi.sum(1) >= 2)
+            p = hi.mean(0)
+            expect = float((np.sum(p) ** 2 - np.sum(p ** 2)) / 2 * len(idx))  # two markers at once by chance
+            rule = f"two of {', '.join('|'.join(m['genes']) for m in pos)} with >= {RARE_PAIR_COUNTS} transcripts each"
+        n = int(hit.sum())
+        how = {"rule": rule, "n_cells": n, "expected": None if expect is None else round(expect, 1)}
+        good = n >= RARE_MIN_CELLS and (expect is None or n >= RARE_FOLD * expect)
+        how["accepted"] = bool(good)
+        return (idx[hit] if good else None), how
+
+    def rare(self, res, parent, idx, children, ev, r0, prefix, context=None):
+        """The rare-type search of one level (see RARE): children no cluster went to, looked for in finer clusterings
+        of the same graph; the first resolution that finds a type with real marker evidence gives it its clusters."""
+        found = {children[ev["order"][c, 0]]["name"] for c in range(ev["k"]) if ev["ok"][c]}
+        missing = [j for j, ch in enumerate(children) if ch["name"] not in found]
+        if not missing or len(children) < 2 or len(idx) < 2 * RARE_MIN_CLUSTER:
+            return
+        g, nbr = self.graph
+        label = parent or "all cells"
+        tried = {}
+        for rr in [x for x in RARE_RESOLUTIONS if x > r0]:
+            if not missing:
+                break
+            self.say(self.done / self.total, f"looking for rare types of {label}: Leiden at resolution {rr:g}")
+            lab = _leiden(g, nbr, rr, self.seed, RARE_MIN_CLUSTER)
+            ev2 = self._evaluate(idx, lab, children, context)
+            got = {}
+            for c in range(ev2["k"]):
+                j = int(ev2["order"][c, 0])
+                if ev2["ok"][c] and j in missing:
+                    got.setdefault(j, []).append(c)
+            for j, cs in list(got.items()):
+                ch = children[j]
+                pos = [m for m in ch["markers"] if m["sign"] > 0]
+                neg = [m for m in ch["markers"] if m["sign"] < 0]
+                rows = [np.flatnonzero(lab == c) for c in cs]
+                dp = self._groups_det(idx, rows, pos) if pos else np.zeros((len(cs) + 1, 0))
+                dn = self._groups_det(idx, rows, neg) if neg else np.zeros((len(cs) + 1, 0))
+                keep = []
+                for k, c in enumerate(cs):
+                    strong = (((dp[k] >= RARE_MIN_DET) & (dp[k] >= RARE_FOLD * dp[-1]))  # a specific marker, or a
+                              | ((dp[k] >= RARE_COMMON_DET) & (dp[k] >= RARE_COMMON_FOLD * dp[-1])))  # common one, raised
+                    not_less = dp[k] >= 0.8 * dp[-1]
+                    okn = dn[k] <= np.maximum(1.5 * dn[-1], dn[-1] + 0.05)
+                    good = bool(pos) and bool(strong.any()) and bool(not_less.all()) and bool(okn.all())
+                    tried.setdefault(ch["name"], []).append(
+                        {"resolution": rr, "n_cells": int(len(rows[k])), "accepted": good,
+                         "positive": {"|".join(m["genes"]): [round(float(dp[k, i]), 3), round(float(dp[-1, i]), 3)]
+                                      for i, m in enumerate(pos)},
+                         "negative": {"|".join(m["genes"]): [round(float(dn[k, i]), 3), round(float(dn[-1, i]), 3)]
+                                      for i, m in enumerate(neg)}})
+                    if good:
+                        keep.append(k)
+                if not keep:
+                    continue
+                for k in keep:
+                    c = cs[k]
+                    cells = idx[rows[k]]
+                    cid = f"{prefix}{parent or 'root'}/rare{rr:g}c{c}"
+                    for old in set(res["cluster_of"][cells].tolist()):  # out of the clusters they were in
+                        if old in res["members"]:
+                            m = np.asarray(res["members"][old])
+                            res["members"][old] = m[~np.isin(m, cells)].astype(np.int32)
+                    res["labels"][cells] = ch["name"]
+                    res["cluster_of"][cells] = cid
+                    res["members"][cid] = cells.astype(np.int32)
+                    res["records"].append({"id": cid, "parent": parent, "n_cells": int(len(cells)), "assigned": ch["name"],
+                                           "resolution": rr, "rare": True,
+                                           "scores": {x["name"]: round(float(ev2["S"][c, i]), 2) for i, x in enumerate(children)},
+                                           "margin": round(float(ev2["best"][c] - ev2["second"][c]), 2)})
+                missing.remove(j)
+        for j in list(missing):  # still no cells: the single cells that show the type's markers clearly
+            ch = children[j]
+            cells, how = self._rare_cells(idx, ch)
+            tried.setdefault(ch["name"], []).append({"resolution": None, "single_cells": True, **how})
+            if cells is None:
+                continue
+            cid = f"{prefix}{parent or 'root'}/rare-cells:{ch['name']}"
+            for old in set(res["cluster_of"][cells].tolist()):
+                if old in res["members"]:
+                    m = np.asarray(res["members"][old])
+                    res["members"][old] = m[~np.isin(m, cells)].astype(np.int32)
+            res["labels"][cells] = ch["name"]
+            res["cluster_of"][cells] = cid
+            res["members"][cid] = cells.astype(np.int32)
+            res["records"].append({"id": cid, "parent": parent, "n_cells": int(len(cells)), "assigned": ch["name"],
+                                   "resolution": None, "rare": "cells", "scores": {}, "margin": None,
+                                   "evidence": how["rule"]})
+            missing.remove(j)
+        for rec in res["records"]:  # the clusters the rare cells left: their sizes now
+            if rec["id"] in res["members"] and not rec.get("rare"):
+                rec["n_cells"] = int(len(res["members"][rec["id"]]))
+        node = next(x for x in res["nodes"] if x["node"] == (parent or "root") and x.get("prefix") == prefix)
+        node["rare"] = tried
 
 
 def _n_levels(tree):
@@ -1122,6 +1314,7 @@ def annotate(counts, panel, tree, progress=None, seed=0, resolution=AUTO, knn=KN
     res = {"labels": np.full(A.n, UNASSIGNED, dtype=object), "cluster_of": np.full(A.n, "", dtype=object),
            "members": {}, "records": [], "nodes": []}
     A.run(res, None, np.arange(A.n), tree, resolution)
+    res["not_found"] = A.not_found(res, tree)
     res["knn"] = knn_backend(knn)[1] if knn != "auto" else "automatic"
     res["fingerprints"] = run_fingerprints(A.fp, res["labels"], knn)
     A.say(1.0, "marker annotation done")
@@ -1147,7 +1340,8 @@ def rerun(res, counts, panel, tree, target, resolution=AUTO, prefix="", progress
     """Re-annotate part of a result: target "root", a type name (its cells are split again into its subtypes) or a
     cluster id (only that cluster's cells are re-clustered at its level). Returns a new result; res is not modified."""
     out = {"labels": res["labels"].copy(), "cluster_of": res["cluster_of"].copy(), "members": dict(res["members"]),
-           "records": list(res["records"]), "nodes": list(res["nodes"]), "knn": res.get("knn")}
+           "records": list(res["records"]), "nodes": list(res["nodes"]), "knn": res.get("knn"),
+           "not_found": list(res.get("not_found") or [])}
     rec = {r["id"]: r for r in res["records"]}
     context = None
     if target == "root":
@@ -1203,6 +1397,7 @@ def rerun(res, counts, panel, tree, target, resolution=AUTO, prefix="", progress
     A = _Annotator(counts, panel, progress, seed, knn)
     A.total = _n_levels(children) if children else 1
     A.run(out, parent, idx, children, resolution, prefix, context)
+    out["not_found"] = A.not_found(out, tree)
     A.say(1.0, "re-clustering done")
     return out
 

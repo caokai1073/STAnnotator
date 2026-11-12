@@ -514,7 +514,8 @@ class Session:
                       member_rows=np.concatenate(rows).astype(np.int32) if rows else np.zeros(0, np.int32),
                       member_offsets=np.cumsum([0] + [len(r) for r in rows]))
         dump_json({"cluster_names": names, "member_ids": ids, "records": res["records"], "nodes": res["nodes"],
-                   "knn": res.get("knn")}, self.dir / "base" / f"markers_{mkey}.json")
+                   "knn": res.get("knn"), "not_found": res.get("not_found") or []},
+                  self.dir / "base" / f"markers_{mkey}.json")
         osutil.replace_atomic(self.dir / "base" / f"markers_{mkey}.npz", lambda t: np.savez(t, **arrays))
 
     def _load_mres(self, mkey):
@@ -530,7 +531,7 @@ class Session:
         return {"labels": np.array(self.node_names, dtype=object)[z["labels"]],
                 "cluster_of": np.array(j["cluster_names"], dtype=object)[z["cluster"]],
                 "members": {i: z["member_rows"][off[k]:off[k + 1]] for k, i in enumerate(j["member_ids"])},
-                "records": j["records"], "nodes": j["nodes"], "knn": j.get("knn")}
+                "records": j["records"], "nodes": j["nodes"], "knn": j.get("knn"), "not_found": j.get("not_found") or []}
 
     def marker_result(self, st=None, progress=None):
         """Marker-step result of a version: the full annotation, then each re-clustering op applied in order.
@@ -610,6 +611,20 @@ class Session:
         lp -= lp.max(1, keepdims=True)
         return (lp - np.log(np.exp(lp).sum(1, keepdims=True))).astype(np.float16)
 
+    def _only_found(self, logp, st, corrected=()):
+        """Marker mode: the cell types the marker step found no cell of (its clusters and its rare-type search looked
+        for them) are not predicted: the model never learned them, and the few cells it would give them are noise.
+        They are listed as not found (types_not_found), with why; a type the user corrected cells to stays."""
+        ml = self.marker_result(st)["labels"]
+        found = set(ml.tolist()) | {self.types[int(i)] for i in np.asarray(corrected, dtype=np.int64)}
+        off = np.array([t not in found for t in self.types])
+        if not off.any() or off.all():
+            return logp
+        lp = logp.astype(np.float32)
+        lp[:, off] = np.float32(-1e4)
+        lp -= lp.max(1, keepdims=True)
+        return (lp - np.log(np.exp(lp).sum(1, keepdims=True))).astype(np.float16)
+
     def _train_base(self, st, progress=None):
         """Model before corrections (see _init_model); hand corrections then fine-tune it."""
         say = progress or (lambda f, m: None)
@@ -634,6 +649,8 @@ class Session:
         logp = model.predict(m, counts)
         if self.scheme.get("leaf_types"):
             logp = self._within_parent(logp, st)
+        if self.scheme["kind"] == "markers":
+            logp = self._only_found(logp, st, labs)
         if self.scheme["kind"] == "existing":
             from . import existing as ex
             logp = ex.mix(logp, self.loaded_labels())
@@ -737,7 +754,18 @@ class Session:
                 "n_changed_since_first": int((r["pred"] != self.result(self.versions()[0])["pred"]).sum()),
                 "has_regions": bool(self.region_names(version)),
                 "n_conflicts": int(len(r["conflicts"])),
-                "top_labels": lab.value_counts().head(12).to_dict()}
+                "top_labels": lab.value_counts().head(12).to_dict(),
+                "not_found": self.types_not_found(version)}
+
+    def types_not_found(self, version=None):
+        """The cell types of the marker list without a cell in this version, with why (the marker step's evidence)."""
+        if self.scheme["kind"] != "markers":
+            return []
+        r = self.result(version)
+        have = set(np.unique(r["pred"]).tolist())
+        why = {x["type"]: x for x in (self.marker_result(r["state"]).get("not_found") or [])}
+        return [why.get(t, {"type": t, "reason": "the expression model gave it no cell"})
+                for i, t in enumerate(self.types) if i not in have]
 
     def diff(self, a, b):
         ra, rb = self.result(a), self.result(b)

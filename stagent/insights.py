@@ -426,4 +426,5 @@ def annotation_facts(s, version=None):
             "priors": [cmod.describe(c) + f'  ("{c.get("text", "")}")' for c in st["constraints"]],
             "corrections": [{"label": c["label"], "n_cells": len(c["cells"]), "text": c.get("text", "")}
                             for c in st.get("corrections", [])],
-            "regions": s.region_names(version), "history": s.history()[-15:]}
+            "regions": s.region_names(version), "history": s.history()[-15:],
+            "types_not_found": s.types_not_found(version)}

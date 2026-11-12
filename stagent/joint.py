@@ -48,7 +48,7 @@ def _slice_mres(res, o, n):
     # target and fail)
     records = [dict(r, n_cells=int(len(members[r["id"]]))) for r in res["records"] if r["id"] in members]
     return {"labels": res["labels"][o:o + n], "cluster_of": res["cluster_of"][o:o + n], "members": members,
-            "records": records, "nodes": res["nodes"], "knn": res.get("knn")}
+            "records": records, "nodes": res["nodes"], "knn": res.get("knn"), "not_found": res.get("not_found") or []}
 
 
 def latest_sessions(pid, chosen=None):

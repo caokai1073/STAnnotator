@@ -529,6 +529,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
   </div>
   <div class="pane" data-pane="annotate">
     <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-sparkle"/></svg><div><div id="ainfo">No annotation yet</div>
+      <div class="hint" id="aMissing" hidden></div>
       <div class="progress" id="progress"><div class="pbar"><i id="pfill"></i></div><span id="pstage"></span></div></div></div>
     <div class="fld"><span>Method</span><select id="method" class="segsel" title="How cell types are assigned">
       <option value="markers" data-short="Markers">Marker genes</option><option value="scref" data-short="Reference">Single-cell reference</option>
@@ -2370,6 +2371,10 @@ async function refreshVersion(force, infoPromise, infoSid) {  // infoPromise: /i
     : "Not annotated yet: draw regions and check the registration (Review); they stay when you Annotate";
   else $("ainfo").textContent = [`${how} · version ${v}`, sm.constraints.length ? `${sm.constraints.length} priors` : "",
     sm.corrections.length ? `${sm.corrections.length} corrections` : "", sm.n_conflicts ? `${sm.n_conflicts} conflicts` : ""].filter(Boolean).join(" · ");
+  const nf = (!st.placeholder && sm.not_found) || [];  // types of the marker list without a cell, and why
+  $("aMissing").hidden = !nf.length;
+  $("aMissing").textContent = nf.length ? `Not found (${nf.length} of the list): ${nf.map((x) => x.type).join(", ")} — hover for why` : "";
+  $("aMissing").title = nf.map((x) => `${x.type}: ${x.reason}`).join("\n\n");
   fillModes(sm);
   const counts = [[sm.constraints.length, "prior"], [sm.corrections.length, "correction"], [sm.n_conflicts, "conflict"]];
   $("vinfo").textContent = [`v${v}`, ...counts.filter(([n]) => n).map(([n, w]) => `${n} ${w}${n > 1 ? "s" : ""}`)].join(" · ");  // short on the map
@@ -4987,11 +4992,23 @@ checksums of its steps (PCA, neighbors, first clusters, labels) to compare runs.
   <li>Each cluster is scored per child type: the detection rate of each marker, z-scored across the parent's
     clusters, sign-flipped for negative markers, averaged over the child's markers (A|B: the strongest).</li>
   <li>A cluster goes to the best child when its score is at least 0.5 and 0.25 above the runner-up; otherwise its cells
-    stay at the parent. Cells no top-level type takes are Unassigned.</li></ul></li>
+    stay at the parent. Cells no top-level type takes are Unassigned.</li>
+  <li><b>Rare types</b>: a child no cluster went to is looked for in finer clusterings of the same neighbor graph
+    (resolutions 2, 4 and 8, clusters down to 10 cells). A fine cluster goes to it when it scores best for it (as
+    above) and its cells really show its markers: one positive marker detected in at least 25% of them and 3 times as
+    often as in the parent's cells (or, a common marker, in 40% and 1.5 times as often), no positive marker rarer than
+    in the parent's cells, no negative marker raised.</li>
+  <li>Cells too few or too scattered to form a cluster (Paneth cells among stem cells, ICC between muscle cells): a
+    type with one positive marker gets the cells with 3 or more of its transcripts, when that gene is detected in at
+    most 5% of the parent's cells; a type with several gets the cells with 2 or more transcripts of each of two of
+    them, when that happens at least 3 times as often as by chance; no negative marker detected; at least 10 cells.</li>
+  <li>A type still without cells is listed as <b>not found</b> (Annotate tab, under the annotation), with the
+    detection of its markers.</li></ul></li>
 <li><b>Expression model</b><ul>
   <li>Multinomial logistic regression on the standardized log-normalized genes, trained on the marker step's labels
     (class sizes corrected back to the sample's), so every cell gets a probability per cell type.</li>
   <li>It labels the cells the marker step left at a parent level, within their lineage.</li>
+  <li>It gives no cell to a type the marker step found none of (not found), unless you corrected cells to it.</li>
   <li>Hand corrections: the corrected cells (weight 20) fine-tune the model with the other cells replayed; only the
     classes involved change.</li></ul></li>
 <li><b>Single-cell reference</b> (as CellTypist): the same regression trained on up to 3,000 reference cells per label,
