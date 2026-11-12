@@ -71,6 +71,10 @@ table.an { width: 100%; border-collapse: collapse; font-size: 12px; font-variant
 table.an th { text-align: right; font-weight: 600; color: var(--muted); padding: 5px 8px; border-bottom: 1px solid var(--line);
   position: sticky; top: 0; background: var(--panel); white-space: nowrap; }
 table.an td { text-align: right; padding: 3px 8px; border-bottom: 1px solid var(--line); }
+table.an.coloc th { vertical-align: bottom; }
+table.an.coloc th .vlab { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; display: inline-block; }
+table.an.coloc td:first-child { text-align: left; white-space: nowrap; }
+table.an.coloc td.heat { min-width: 34px; }
 table.an th:first-child, table.an td:first-child { text-align: left; }
 table.an td { white-space: nowrap; }
 .trgenes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; } .trgenes b { display: block; margin: 2px 0 4px; }
@@ -580,6 +584,20 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
   <div class="pane" data-pane="niches">
     <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-grid"/></svg><div><div id="nicheinfo">No niches yet</div>
       <div class="progress" id="nprogress"><div class="pbar"><i id="nfill"></i></div><span id="nstage"></span></div></div></div>
+    <div class="fld"><span>Analysis</span><select id="nKind" class="segsel" title="What to find">
+      <option value="niches" data-short="Niches">Niches: neighborhoods of similar make-up, as a color of the map</option>
+      <option value="coloc" data-short="Co-localization">Co-localization: which groups of cells sit next to each other more (or less) than by chance</option></select>
+      <div class="seg" data-for="nKind"></div></div>
+    <label class="fld n-co" hidden title="The groups compared, pair by pair"><span>Groups</span><select id="nCoBy"></select></label>
+    <div class="fgrid n-co" hidden>
+      <label class="fld" title="Two cells are neighbors when their centers lie within this distance (µm; up to 100)"><span>Radius <span class="unit">µm</span></span><input type="number" id="nCoR" min="5" max="100" step="5" value="30"></label>
+      <label class="fld" title="Labels shuffled this often among the cells of each slice for the expected counts (seeded: the same numbers every run)"><span>Shuffles</span><input type="number" id="nCoPerm" min="20" max="2000" step="10" value="200"></label>
+    </div>
+    <div class="fgrid n-co" hidden>
+      <label class="fld" title="Use only these cells (e.g. one region or slice)"><span>Only within</span><select id="nCoWBy"></select></label>
+      <label class="fld"><span>&nbsp;</span><select id="nCoWVal" disabled></select></label>
+    </div>
+    <div class="n-ni">
     <div class="fld"><span>Cell identity</span><select id="nIdentity" class="segsel" title="What a cell is, before averaging over its neighbors">
       <option value="nmf" data-short="NMF programs">NMF programs</option><option value="cell types" data-short="Cell types">Cell types</option></select>
       <div class="seg" data-for="nIdentity"></div></div>
@@ -595,8 +613,10 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <details class="adv"><summary>Advanced</summary><div class="fgrid">
       <label class="fld" title="Number of NMF gene programs"><span>NMF programs</span><input type="number" id="nPrograms" min="4" max="60" value="20"></label>
     </div></details>
-    <label class="switch projall" hidden title="One set of niches over all slices of the project, so a niche means the same neighborhood in every slice"><input type="checkbox" id="projAllN" checked>
-      <span>All slices together<small>niches shared by the project's slices</small></span></label>
+    </div>
+    <label class="switch projall" hidden title="One set of niches over all slices of the project (or the co-localization of all slices pooled; neighbors never cross slices)"><input type="checkbox" id="projAllN" checked>
+      <span>All slices together<small id="projAllNSub">niches shared by the project's slices</small></span></label>
+    <div class="act2 n-co" hidden><button id="nLast" hidden title="Show the last co-localization again">Last result</button></div>
     <button id="nRun" class="primary main" disabled title="Compute niches with these settings">Run niches</button>
   </div>
   <div class="pane" data-pane="compare">
@@ -2247,6 +2267,7 @@ async function loadNiches(show) {
 }
 $("nIdentity").onchange = () => { $("nPrograms").disabled = $("nIdentity").value !== "nmf"; syncSeg("nIdentity"); };
 $("nRun").onclick = async () => {
+  if ($("nKind").value === "coloc") return runColoc();
   if ($("nKMode").value === "agent") return agentNiches();
   const body = { identity: $("nIdentity").value, n_programs: +$("nPrograms").value, k: +$("nK").value, n_niches: +$("nN").value };
   $("nRun").disabled = true; $("nprogress").classList.add("show");
@@ -2276,10 +2297,63 @@ function syncKMode() {  // "Agent chooses" needs an agent (the app's Claude Code
   if (ab) { ab.disabled = !ok; ab.title = ok ? "The agent chooses k per region" : "Needs the agent (the app's Agent button)"; }
   syncSeg("nKMode");
   $("nKWrap").hidden = agent; $("nKHint").hidden = !agent;
+  if ($("nKind").value === "coloc") return syncNKind();
   setLabel($("nRun"), agent ? "Ask the agent to run niches" : "Run niches"); setIcon($("nRun"), agent ? "sparkle" : "play");
   $("nRun").title = agent ? "The agent chooses k per region from cell density and cell types, runs the niches and names them" : "Compute niches with these settings";
 }
 $("nKMode").onchange = syncKMode;
+// ---------------- Niche → Co-localization: neighborhood enrichment of the groups of a grouping (coloc.py) ----------------
+const CO = { key: "", opts: null };
+const coScope = () => (projectMode("niches") ? "project" : "slice");
+const coBody = () => ({ session: st.sid, version: st.version, scope: coScope(), selection: anSelection(coScope()), sessions: projectSessions() });
+function syncNKind() {
+  const co = $("nKind").value === "coloc";
+  syncSeg("nKind");
+  document.querySelectorAll("[data-pane=niches] .n-co").forEach((e) => (e.hidden = !co));
+  document.querySelectorAll("[data-pane=niches] .n-ni").forEach((e) => (e.hidden = co));
+  $("projAllNSub").textContent = co ? "the project's slices pooled (neighbors stay within a slice)" : "niches shared by the project's slices";
+  if (!co) { syncKMode(); syncLast(); return; }
+  setLabel($("nRun"), "Find co-localization"); setIcon($("nRun"), "play");
+  $("nRun").title = "Count the neighbor pairs between every two groups and compare them with shuffled labels";
+  syncLast(); loadCoOptions();
+}
+async function loadCoOptions(force) {  // the groupings of the open annotation (or of the project's slices)
+  if ($("nKind").value !== "coloc" || !st.sid || st.placeholder) return;
+  const sel = anSelection(coScope());
+  const key = [st.sid, st.version, coScope(), sel ? Object.entries(sel).map(([s, r]) => `${s}:${r.length}`).join() : ""].join("|");
+  if (!force && key === CO.key) return;
+  CO.key = key;
+  try { CO.opts = await post("/api/analysis/options", coBody()); } catch (e) { CO.key = ""; toast(e.message, 6000); return; }
+  const g = CO.opts.groupings, many = Object.keys(g).filter((k) => g[k].length > 1 && k !== "selection");
+  const items = (ks) => ks.map((k) => [k, anLabel(k)]);
+  fillSelect("nCoBy", items(many), [$("nCoBy").value, "cell type"].find((x) => many.includes(x)));
+  fillSelect("nCoWBy", items(many), undefined, ["", "all cells"]); coWithin();
+}
+function coWithin() {
+  const by = $("nCoWBy").value, vals = by && CO.opts ? CO.opts.groupings[by] || [] : [];
+  fillSelect("nCoWVal", vals.map((v) => [v, v])); $("nCoWVal").disabled = !by;
+}
+$("nKind").onchange = syncNKind;
+$("nCoWBy").onchange = coWithin;
+$("projAllN").addEventListener("change", () => loadCoOptions(true));
+document.querySelector('#tabs .tab[data-tab="niches"]').addEventListener("click", () => loadCoOptions());
+async function runColoc() {
+  const w = $("nCoWBy").value;
+  const b = { ...coBody(), kind: "coloc", by: $("nCoBy").value, within: w ? { [w]: $("nCoWVal").value } : {},
+              radius_um: +$("nCoR").value, n_perm: +$("nCoPerm").value };
+  if (!b.by) { toast("Choose the groups first", 4000); return; }
+  $("nRun").disabled = true; $("nprogress").classList.add("show");
+  try {
+    const { job } = await post("/api/coloc/run", b);
+    const j = await pollJob(job, $("nprogress"), $("nfill"), $("nstage"), $("nRun"), 400);
+    AN.last = j.result; AN.req = { ...b, selection: undefined }; AN.sel = b.selection; AN.view = "";
+    AN.by.coloc = { last: AN.last, req: AN.req, sel: AN.sel }; syncLast();
+    setTimeout(() => $("nprogress").classList.remove("show"), 800);
+    await showAnalysis();
+  } catch (e) { if (isStop(e)) stopped($("nprogress"), "Co-localization"); else { toast(e.message, 8000); $("nprogress").classList.remove("show"); } }
+  finally { $("nRun").disabled = false; }
+}
+$("nLast").onclick = () => openLast("coloc");
 
 async function refreshVersion(force, infoPromise, infoSid) {  // infoPromise: /info of annotation infoSid, asked already
   if (!st.sid) return;
@@ -4662,7 +4736,11 @@ const HELP = `
 
 <h3>Niche</h3><ul>
 <li>Set the identity, k and number of niches, then <b>Run niches</b>.</li>
-<li>With <b>k: Agent chooses</b>, the agent picks k per region, runs and names them.</li></ul>
+<li>With <b>k: Agent chooses</b>, the agent picks k per region, runs and names them.</li>
+<li><b>Co-localization</b>: which groups (cell types, lineages, regions, niches…) sit next to each other more or less
+  often than by chance: neighbor pairs within a radius, against the labels shuffled within each slice. A table of
+  z-scores (red together, blue apart; the diagonal: how clustered a group is), observed / expected, and the strongest
+  pairs; Save CSV has every pair.</li></ul>
 
 <h3>Compare</h3><ul>
 <li>For this slice or all slices pooled. Four analyses:<ul>
@@ -6694,6 +6772,7 @@ function openLast(kind) { const x = AN.by[kind]; if (!x) return; AN.last = x.las
 function syncLast() {  // Last result shows the last result of the analysis chosen in the tab
   $("aLast").hidden = !AN.by[$("aKind").value]; $("sLast").hidden = !AN.by[$("sKind").value];
   $("tLast").hidden = !AN.by[`trajectory_${$("tMethod").value}`];  // the last result of the method chosen
+  $("nLast").hidden = !AN.by.coloc;
 }
 $("aLast").onclick = () => openLast($("aKind").value);
 function anSeg(opts, cur, on) {  // the dialog's toggle (up / down genes, shares / enrichment)
@@ -6731,6 +6810,13 @@ async function showAnalysis() {
   if (q.kind === "trajectory") {
     $("anAsk").hidden = !(st.desktop || st.chatAvailable);
     showTrajectory(r, q);
+    if (!$("anDlg").open) $("anDlg").showModal();
+    return;
+  }
+  if (q.kind === "coloc") {
+    $("anBody").textContent = ""; $("anLegend").textContent = ""; $("anNote").textContent = r.note || "";
+    $("anAsk").hidden = !(st.desktop || st.chatAvailable);
+    showColoc(r);
     if (!$("anDlg").open) $("anDlg").showModal();
     return;
   }
@@ -6902,12 +6988,43 @@ async function showAnalysis() {
   }
   if (!$("anDlg").open) $("anDlg").showModal();
 }
+function showColoc(r) {  // the groups x groups matrix (z, or observed / expected) and the strongest pairs
+  const within = Object.entries(r.within || {}).map(([k, v]) => `${anLabel(k)} ${v}`).join(", ");
+  $("anTitle").textContent = `Co-localization of ${anLabel(r.by)} within ${r.radius_um} µm`;
+  $("anSub").textContent = [r.scope === "project" ? "all slices pooled" : "this slice", within && `only ${within}`,
+    `${Object.values(r.n_cells).reduce((a, b) => a + b, 0).toLocaleString()} cells`, `${r.n_pairs.toLocaleString()} neighbor pairs`,
+    `${r.n_perm} shuffles`].filter(Boolean).join(" · ");
+  const view = AN.view || "z";
+  anSeg([["z", "z-score"], ["ratio", "Observed / expected"], ["pairs", "Strongest pairs"]], view, (v) => { AN.view = v; showAnalysis(); });
+  const G = r.groups, box = $("anBody");
+  if (view === "pairs") {
+    const rows = (list, how) => list.map((x) => [`${x.group_a} ${how} ${x.group_b}`, x.observed.toLocaleString(), fmt(x.expected, 0),
+      `${fmt(x.ratio)}×`, fmt(x.z, 1), x.fdr < 0.001 ? "< 0.001" : fmt(x.fdr, 3)]);
+    const head = ["Pair", "Neighbor pairs", "Expected", "Obs / exp", "z", "FDR"];
+    const h = (t) => { const e = document.createElement("div"); e.className = "cmpgroup"; e.textContent = t; return e; };
+    box.append(h("Together more than by chance"), r.together.length ? anTable(head, rows(r.together, "+")) : h("none (FDR < 0.05)"));
+    box.append(h("Apart more than by chance"), r.apart.length ? anTable(head, rows(r.apart, "/")) : h("none (FDR < 0.05)"));
+    return;
+  }
+  const M = view === "z" ? r.z : r.log2_ratio, lim = view === "z" ? 10 : 2;
+  const cell = (v) => (v === null ? "" : view === "z" ? fmt(v, 1) : `${fmt(Math.pow(2, v))}×`);
+  const tb = anTable(["", ...G.map((g) => `<span class="vlab">${qfEsc(g)}</span>`)], G.map((g, i) => [`${g} (${r.n_cells[g].toLocaleString()})`, ...M[i].map(cell)]));
+  tb.classList.add("coloc");
+  tb.querySelectorAll("tr").forEach((tr, i) => { if (!i) return; [...tr.children].slice(1).forEach((td, j) => {
+    const v = M[i - 1][j]; td.classList.add("heat"); if (v === null) return;
+    const a = Math.min(Math.abs(v) / lim, 1) * 0.6; td.style.background = v > 0 ? `rgba(200,60,40,${a})` : `rgba(40,90,200,${a})`;
+    td.title = `${G[i - 1]} next to ${G[j]}: ${r.observed[i - 1][j].toLocaleString()} neighbor pairs, ${fmt(r.expected[i - 1][j], 0)} expected (z ${fmt(r.z[i - 1][j], 1)})`; }); });
+  box.append(tb);
+  $("anNote").textContent = (view === "z" ? "z-score against the shuffled labels (red: together, blue: apart; colors saturate at ±10). "
+    : "Neighbor pairs over the shuffles' mean (red: more, blue: fewer; colors saturate at 4× and ¼). ") + r.note;
+}
 $("anClose").onclick = () => $("anDlg").close();
 $("anCsv").onclick = async () => {
   const r = AN.last, q = AN.req; if (!r) return;
   const part = q.kind === "de" ? (r.all ? `de_every_${r.by}` : `de_${r.group}_vs_${r.reference}`) : q.kind === "markers" ? `top_genes_by_${r.by}`
     : q.kind === "run" ? `communication_${r.by}` : q.kind === "compare" ? `communication_by_${r.split}`
-    : q.kind === "trajectory" ? `trajectory_genes_${r.label}` : `${r.cols}_per_${r.rows}`;
+    : q.kind === "trajectory" ? `trajectory_genes_${r.label}` : q.kind === "coloc" ? `colocalization_${r.by}_${r.radius_um}um`
+    : `${r.cols}_per_${r.rows}`;
   const name = `${st.sample.sample_id}_${part}`.replace(/[^A-Za-z0-9_.-]+/g, "_") + ".csv", url = `/api/analysis/${r.id}.csv?name=${encodeURIComponent(name)}`;
   if (st.remote) { await saveDownload(name, url); return; }
   if (native()) { const path = await native().save_path(name); if (!path) return;
@@ -7455,7 +7572,7 @@ function segmented(id) {  // a select shown as a row of buttons (the select keep
   syncSeg(id);
 }
 function syncSeg(id) { document.querySelectorAll(`.seg[data-for="${id}"] button`).forEach((b) => b.classList.toggle("on", b.dataset.v === $(id).value)); }
-segmented("method"); segmented("knn"); segmented("nIdentity"); segmented("nKMode"); segmented("aScope"); segmented("aKind"); segmented("sScope"); segmented("sKind"); segmented("tScope"); segmented("tMethod");
+segmented("method"); segmented("knn"); segmented("nKind"); segmented("nIdentity"); segmented("nKMode"); segmented("aScope"); segmented("aKind"); segmented("sScope"); segmented("sKind"); segmented("tScope"); segmented("tMethod");
 function heStateBtn() {  // Unload H&E (free its memory) / Load H&E (back, with its registration)
   const s = st.sample, has = s && (s.image_unloaded || (s.image_kind && s.image_kind !== "none"));
   $("heStateWrap").hidden = !has;

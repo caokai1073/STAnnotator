@@ -1575,6 +1575,39 @@ async def api_communication_run(req: Request):
     return await _spawn(job, work) or _json({"job": job})
 
 
+async def api_coloc_run(req: Request):
+    """Spatial co-localization of the groups of a grouping (coloc.run: neighborhood enrichment) in the background:
+    {session, version, scope, selection, sessions, by, within, radius_um, n_perm}; progress and result under
+    /api/job/coloc:<session>."""
+    from . import coloc, analysis
+    b = await req.json()
+    job = f"coloc:{b['session']}"
+    if job in JOBS and not JOBS[job]["done"]:
+        return _json({"error": "a co-localization of this annotation is still running"}, 409)
+    JOBS[job] = {"stage": "starting", "progress": 0.0, "done": False, "error": None}
+
+    def work():
+        try:
+            say = lambda f, m: JOBS[job].update(progress=round(f, 3), stage=m)
+            say(0.02, "reading the cells and their labels")
+            c = _analysis_cells(b)
+            within = {k: v for k, v in (b.get("within") or {}).items() if v not in (None, "", [])}
+            r, table = coloc.run(c, b.get("by") or "cell type", within, float(b.get("radius_um") or coloc.RADIUS_UM),
+                                 int(b.get("n_perm") or coloc.N_PERM), progress=say)
+            key = uuid.uuid4().hex[:12]
+            ANALYSES[key] = table
+            while len(ANALYSES) > ANALYSES.n:
+                ANALYSES.popitem(last=False)
+            with jobs.critical():  # (the result's files: written whole)
+                analysis.log_run(review_app._session(b["session"]), {**b, "kind": "coloc"}, r)
+                _keep_result({**b, "kind": "coloc"}, "coloc", {**r, "id": key}, table)
+            JOBS[job].update(progress=1.0, stage="done", done=True, result={**r, "id": key})
+        except Exception as e:
+            JOBS[job].update(error=f"{type(e).__name__}: {e}" if not isinstance(e, (ValueError, KeyError)) else str(e).strip("'"),
+                             done=True)
+    return await _spawn(job, work) or _json({"job": job})
+
+
 async def api_trajectory_run(req: Request):
     """A trajectory in the background (trajectory.run): {session, version, scope, selection, sessions, method,
     within, start, end, root, alpha, by}; progress and result under /api/job/traj:<session>. Each annotation keeps
@@ -1640,6 +1673,11 @@ ANALYSIS_ASK = {
                    "the order of the cells along it shows (rising, falling and transient genes, the composition along "
                    "it), what fits the tissue's known organization or differentiation, what may be an artifact "
                    "(spillover, a root or axis that forces the order, pooled slices), and what to check next."),
+    "coloc": ("Interpret the spatial co-localization I found in the app: colocalization(by={by}, within={within}, "
+              "scope={scope}, radius_um={radius_um}). Say in a few lines which groups sit together or apart, which fits "
+              "the tissue's layers and compartments (and so says little beyond them), which may point to contact or a "
+              "shared niche, what may be an artifact (segmentation, spillover, a grouping that follows the layers), and "
+              "what to check next (e.g. show_niches, niche_context, cell_communication between a pair)."),
     "compare": ("Interpret the comparison of cell-cell communication I made in the app: compare_communication("
                 "split={split}, by={by}, within={within}, scope={scope}, resource={resource}). Say in a few lines which "
                 "interactions differ between the groups, how much to trust it (replicate slices), and what it may mean."),
@@ -1653,7 +1691,7 @@ async def api_claude_analysis(req: Request):
     q = b["request"]
     args = {k: json.dumps(q.get(k), ensure_ascii=False) for k in ("by", "group", "reference", "rows", "cols", "scope",
                                                                   "split", "resource", "method", "start", "end",
-                                                                  "root", "alpha")}
+                                                                  "root", "alpha", "radius_um")}
     if q.get("group") == "__all__":  # every group against the other cells
         args["group"] = '"all"'
     args["within"] = json.dumps(q.get("within") or None, ensure_ascii=False)
@@ -3755,6 +3793,7 @@ def build_app(port):
         Route("/api/project/{pid}/niches", api_project_niches, methods=["POST"]),
         Route("/api/analysis/options", api_analysis_options, methods=["POST"]),
         Route("/api/analysis/run", api_analysis_run, methods=["POST"]),
+        Route("/api/coloc/run", api_coloc_run, methods=["POST"]),
         Route("/api/analysis/dots", api_analysis_dots, methods=["POST"]),
         Route("/api/analysis/{key}.csv", api_analysis_csv),
         Route("/api/communication/{key}/bubble", api_communication_bubble),

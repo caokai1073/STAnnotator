@@ -592,6 +592,10 @@ def headline(kind, r):
     if kind == "compare":
         return {"values": r["values"], "n_significant": r["n_significant"],
                 "top": [f'{x["interaction"]}: {x["sender"]} -> {x["receiver"]}' for x in r["interactions"][:8]]}
+    if kind == "coloc":
+        return {"by": r["by"], "radius_um": r["radius_um"],
+                "together": [f'{x["group_a"]} + {x["group_b"]} (z {x["z"]})' for x in r["together"][:8]],
+                "apart": [f'{x["group_a"]} / {x["group_b"]} (z {x["z"]})' for x in r["apart"][:8]]}
     if kind == "trajectory":
         return {"method": r["method"], "n_on_trajectory": r["n_on_trajectory"],
                 "rising": [x["gene"] for x in r["rising"][:8]], "falling": [x["gene"] for x in r["falling"][:8]],
@@ -611,7 +615,8 @@ def log_run(s, request, result):
         req["selection_cells"] = sum(len(v) for v in request["selection"].values())
     kind = request.get("kind")
     log.append({"time": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                "section": "signaling" if kind in ("run", "compare") else "trajectory" if kind == "trajectory" else "compare",
+                "section": "signaling" if kind in ("run", "compare") else "trajectory" if kind == "trajectory"
+                else "niches" if kind == "coloc" else "compare",
                 "request": req, "headline": headline(kind, result)})
     dump_json(log[-30:], f, indent=1)
 

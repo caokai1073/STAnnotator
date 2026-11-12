@@ -155,7 +155,9 @@ Reviewing (Review: the user picks one part of the analysis; or when asked what y
     over clusters, clusters that are another type), integration (clusters of one slice, batch), parameters
     (resolution, neighbors);
   niches: niche_summary, show_niches, group_markers(by="niche"), composition(rows="niche", cols="region"),
-    niche_context; niches (what each is on the H&E, names, niches to merge or split), parameters (k, number);
+    niche_context, colocalization (recent_analyses(section="niches") for the user's runs); niches (what each is on
+    the H&E, names, niches to merge or split), co-localization (pairs that fit the tissue or contradict it),
+    parameters (k, number, radius);
   compare: recent_analyses(section="compare"), then rerun them (de_genes, group_markers, composition); findings
     (what the genes or shares mean), design (replicate slices, spillover, confounded groups), next (the comparison
     that would settle it);
@@ -1746,6 +1748,20 @@ def cell_communication(by: str = "cell type", within: Optional[dict] = None, sco
 
 
 @mcp.tool()
+def colocalization(by: str = "cell type", within: Optional[dict] = None, scope: str = "slice", radius_um: float = 30,
+                   n_perm: int = 200) -> str:
+    """Spatial co-localization (neighborhood enrichment, the Niche tab's Co-localization): which groups of grouping
+    by sit next to each other (cell centers within radius_um) more or less often than with the labels shuffled among
+    the cells of each slice (n_perm seeded shuffles; the same numbers every run). Returns, per pair of groups, z
+    (> 0 together, < 0 apart; the diagonal: how clustered a group is), the observed / expected ratio and FDR, with the
+    strongest pairs together and apart. A shared layer or compartment also brings cells together."""
+    from . import coloc
+    c = _cells(scope, _uses_selection(by, within))
+    r, _ = coloc.run(c, by, within, radius_um, n_perm)
+    return _j(r)
+
+
+@mcp.tool()
 def compare_communication(split: str, by: str = "cell type", within: Optional[dict] = None, scope: str = "project",
                           resource: str = "all", top: int = 30) -> str:
     """The communication analysis in every group of split (e.g. a metadata column such as condition, slice, region,
@@ -2045,9 +2061,9 @@ def list_advice(scope: Optional[str] = None, status: Optional[str] = None) -> st
 @mcp.tool()
 def recent_analyses(section: Optional[str] = None) -> str:
     """The analyses the user ran in the app on this annotation, newest last: section "compare" (DE genes, top genes,
-    composition), "signaling" (cell-cell communication) or "trajectory", each with its settings and headline result.
-    Rerun one with de_genes, group_markers, composition, cell_communication, compare_communication or trajectory to
-    see it in full."""
+    composition), "signaling" (cell-cell communication), "niches" (co-localization) or "trajectory", each with its
+    settings and headline result. Rerun one with de_genes, group_markers, composition, cell_communication,
+    compare_communication, colocalization or trajectory to see it in full."""
     from . import analysis
     return _j(analysis.recent(_s(), section))
 
