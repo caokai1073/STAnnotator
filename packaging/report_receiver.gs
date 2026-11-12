@@ -90,6 +90,30 @@ function setup() {
   Logger.log("count sheet: " + sh.getParent().getUrl());
 }
 
+// Run once in the editor: the "day" of every row from the time it arrived, in Boston (ZONE). Apps before 0.2.57 sent
+// their UTC day, so a count made in a Boston evening shows the next day. Also names the first column for Boston time.
+// Rows whose arrival time is not a date (or a "yyyy-MM-dd ..." text) keep their day. Logs how many days it changed.
+function bostonDays() {
+  const sh = sheet(PropertiesService.getScriptProperties());
+  const n = sh.getLastRow() - 1;
+  sh.getRange(1, 1).setValue("received (Boston)");
+  if (n < 1) return;
+  const rows = sh.getRange(2, 1, n, 2).getValues();
+  let changed = 0;
+  const days = rows.map(([rec, day]) => {
+    let d = String(day);
+    if (rec instanceof Date && !isNaN(rec)) d = Utilities.formatDate(rec, ZONE, "yyyy-MM-dd");
+    else if (/^\d{4}-\d{2}-\d{2}/.test(String(rec))) d = String(rec).slice(0, 10);
+    else if (day instanceof Date) d = Utilities.formatDate(day, ZONE, "yyyy-MM-dd");
+    if (d !== (day instanceof Date ? Utilities.formatDate(day, ZONE, "yyyy-MM-dd") : String(day))) changed++;
+    return [d];
+  });
+  const col = sh.getRange(2, 2, n, 1);
+  col.setNumberFormat("@");  // plain text: a sheet would turn "2026-11-11" into a date
+  col.setValues(days);
+  Logger.log(changed + " of " + n + " rows got another day");
+}
+
 function folderFor(body) {
   const root = DriveApp.getFolderById(FOLDER_ID);
   if (!body.auto) return root;
