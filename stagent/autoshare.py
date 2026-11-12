@@ -9,8 +9,9 @@ share_sent (the last report sent).
 
 The daily count (every user, unless turned off in About): once a day the app sends the receiver its random
 installation id, its version and the system (macOS / Windows / Linux), nothing else, so the developers know how many
-installations are in use. The receiver adds a row to a sheet in their Drive folder. Settings: checkin ("off" turns it
-off), checkin_day (the last day counted, UTC).
+installations are in use. The receiver adds a row to a sheet in their Drive folder. The day is the developers' day
+(Boston, DAY_ZONE), the same for every user; an installation updated during the day is counted again with its new
+version. Settings: checkin ("off" turns it off), checkin_day and checkin_version (the last count).
 """
 import tempfile
 import threading
@@ -111,8 +112,28 @@ def checkin_set(on):
     return checkin_status()
 
 
+DAY_ZONE = "America/New_York"  # the developers' day (Boston), for every user
+
+
+def _day(now=None):
+    """Today in Boston (DAY_ZONE) as YYYY-MM-DD; US Eastern by its own rule where the time zone data is missing."""
+    import datetime as dt
+    now = now or dt.datetime.now(dt.timezone.utc)
+    try:
+        from zoneinfo import ZoneInfo
+        return now.astimezone(ZoneInfo(DAY_ZONE)).strftime("%Y-%m-%d")
+    except Exception:  # (no tz database: e.g. Windows without the tzdata package)
+        y = now.year
+        mar = dt.datetime(y, 3, 8, 7, tzinfo=dt.timezone.utc)   # 2 am EST on the second Sunday of March
+        nov = dt.datetime(y, 11, 1, 6, tzinfo=dt.timezone.utc)  # 2 am EDT on the first Sunday of November
+        mar += dt.timedelta(days=(6 - mar.weekday()) % 7)
+        nov += dt.timedelta(days=(6 - nov.weekday()) % 7)
+        return (now - dt.timedelta(hours=4 if mar <= now < nov else 5)).strftime("%Y-%m-%d")
+
+
 def checkin():
-    """Count this installation once a day (UTC): its random id, version and system. Never raises."""
+    """Count this installation once a day (Boston's day) and again when its version changed that day: its random id,
+    version and system. Never raises."""
     from . import __version__
     try:
         st = config.read_settings()
@@ -121,14 +142,14 @@ def checkin():
         url = report.upload_url()
         if not url:
             return {"skipped": "no upload link"}
-        day = time.strftime("%Y-%m-%d", time.gmtime())
-        if st.get("checkin_day") == day:
-            return {"skipped": "counted today"}
+        day = _day()
+        if st.get("checkin_day") == day and st.get("checkin_version") == __version__:  # (a version before 0.2.57 kept
+            return {"skipped": "counted today"}                                         # none: the update counts again)
         r = report._request(url, {"checkin": True, "install": report.install_id(), "version": __version__,
                                   "system": _system(), "day": day}, timeout=30)
         if not r.get("ok"):
             return {"error": r.get("error") or "not counted"}
-        config.write_settings(checkin_day=day)
+        config.write_settings(checkin_day=day, checkin_version=__version__)
         return {"counted": day}
     except Exception as e:  # offline, the receiver away: again at the next look
         return {"error": str(e)}

@@ -17,8 +17,9 @@
 const FOLDER_ID = "PASTE_THE_FOLDER_ID_HERE";
 const MAX_BYTES = 35 * 1024 * 1024;  // one request: Apps Script takes up to about 50 MB (the data is sent as base64);
                                      // with its screenshots apart, a report can be well over 100 MB in all
-const MAX_PER_DAY = 100;             // reports a day (UTC), whoever sends them; screenshots are not counted
-const MAX_CHECKINS_PER_DAY = 5000;  // rows a day (UTC) in the count sheet, whoever sends them
+const ZONE = "America/New_York";     // the developers' day and clock (Boston): the count's days, its times, the caps
+const MAX_PER_DAY = 100;             // reports a day, whoever sends them; screenshots are not counted
+const MAX_CHECKINS_PER_DAY = 5000;  // rows a day in the count sheet, whoever sends them
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp", "image/tiff", "image/heic"];
 
 function doPost(e) {
@@ -26,7 +27,7 @@ function doPost(e) {
   try {
     lock.waitLock(20000);
     const props = PropertiesService.getScriptProperties();
-    const key = "count_" + Utilities.formatDate(new Date(), "UTC", "yyyy-MM-dd");
+    const key = "count_" + Utilities.formatDate(new Date(), ZONE, "yyyy-MM-dd");
     const n = Number(props.getProperty(key) || 0);
     const body = JSON.parse(e.postData.contents);
     if (body.checkin) return checkin(body, props);
@@ -56,11 +57,13 @@ function doPost(e) {
 
 // The daily count: one row per installation and day (date, day the app counted, installation, version, system)
 function checkin(body, props) {
-  const key = "checkins_" + Utilities.formatDate(new Date(), "UTC", "yyyy-MM-dd");
+  const key = "checkins_" + Utilities.formatDate(new Date(), ZONE, "yyyy-MM-dd");
   const n = Number(props.getProperty(key) || 0);
   if (n >= MAX_CHECKINS_PER_DAY) return reply({ error: "too many today" });
   const clean = (v, k) => String(v || "").replace(/[^A-Za-z0-9_.+ -]/g, "").slice(0, k);
-  sheet(props).appendRow([new Date(), clean(body.day, 10), clean(body.install, 40), clean(body.version, 20), clean(body.system, 20)]);
+  // the time as text in Boston time (a date cell shows in the sheet's own time zone); day: the app's day (Boston from
+  // 0.2.57, UTC before); a row per day and installation, and another when it was updated that day
+  sheet(props).appendRow([Utilities.formatDate(new Date(), ZONE, "yyyy-MM-dd HH:mm:ss"), clean(body.day, 10), clean(body.install, 40), clean(body.version, 20), clean(body.system, 20)]);
   Object.keys(props.getProperties()).filter((k) => k.startsWith("checkins_") && k !== key).forEach((k) => props.deleteProperty(k));
   props.setProperty(key, String(n + 1));
   return reply({ ok: true });
@@ -73,7 +76,7 @@ function sheet(props) {
   }
   const ss = SpreadsheetApp.create("STAnnotator-checkins");
   const sh = ss.getSheets()[0];
-  sh.appendRow(["received (UTC)", "day", "installation", "version", "system"]);
+  sh.appendRow(["received (Boston)", "day", "installation", "version", "system"]);
   sh.setFrozenRows(1);
   DriveApp.getFileById(ss.getId()).moveTo(DriveApp.getFolderById(FOLDER_ID));
   props.setProperty("checkin_sheet", ss.getId());
