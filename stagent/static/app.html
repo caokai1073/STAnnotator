@@ -515,8 +515,6 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <div class="act2"><button id="qfBtn" class="primary main" disabled title="Delete cells with few transcripts or genes or a high mitochondrial share, and genes detected in few cells">Filter cells and genes</button></div>
     <div id="slNav" class="slnav" hidden>
       <div class="stepper"><button id="slPrev" title="Previous slice of the project ([)">◀</button><span id="slPos"></span><button id="slNext" title="Next slice of the project (])">▶</button></div>
-      <label class="switch" title="Annotate, embed and find niches for all slices of the project together, so labels, clusters and niches mean the same everywhere"><input type="checkbox" id="projAll" checked>
-        <span>All slices together<small>one annotation, embedding and set of niches for the project</small></span></label>
     </div>
     <div class="fld" id="sessWrap"><span>Annotation</span><div class="inrow"><select id="session" title="Earlier annotations of this sample"></select>
       <button id="sessRename" disabled title="Rename the annotation chosen in the box (only the name shown changes)">Rename</button>
@@ -542,6 +540,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <div class="seg" data-for="knn"></div><div class="hint" id="annEst"></div></div>
     <label class="switch" id="carryWrap" style="visibility:hidden" title="Start the new annotation with the regions (and their colors), priors and hand corrections of the one that is open; priors and corrections naming cell types the new annotation does not have are dropped"><input type="checkbox" id="carry" checked>
       <span>Keep my regions, priors &amp; corrections<small>carried into the new annotation</small></span></label>
+    <label class="switch projall" hidden title="Annotate all slices of the project at once (one marker step and one model), so a name means the same cells in every slice"><input type="checkbox" id="projAllA" checked>
+      <span>All slices together<small>one annotation of the project's slices (marker genes)</small></span></label>
     <button id="annotate" class="primary main">Annotate</button>
   </div>
   <div class="pane" data-pane="embed">
@@ -555,6 +555,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <label class="fld" title="Principal components used for the neighbors, UMAP and Leiden"><span>PCs</span><input type="number" id="eP" min="5" max="100" value="30"></label>
       <label class="fld" title="Neighbors per cell in the kNN graph (UMAP and Leiden)"><span>Neighbors</span><input type="number" id="eK" min="5" max="100" value="15"></label>
     </div></details>
+    <label class="switch projall" hidden title="One PCA, UMAP and set of Leiden clusters of all slices of the project, so a cluster means the same cells in every slice"><input type="checkbox" id="projAllE" checked>
+      <span>All slices together<small>one embedding of the project's slices</small></span></label>
     <label class="switch" id="eHarmonyWrap" hidden title="With all slices together: remove slice-to-slice differences (Harmony) from the PCA before neighbors, Leiden and UMAP"><input type="checkbox" id="eHarmony" checked>
       <span>Harmony<small>remove slice-to-slice differences before the clusters and UMAP</small></span></label>
     <div class="act2"><button id="eShow" disabled title="Show the embedding under this button">Show UMAP</button></div>
@@ -593,6 +595,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <details class="adv"><summary>Advanced</summary><div class="fgrid">
       <label class="fld" title="Number of NMF gene programs"><span>NMF programs</span><input type="number" id="nPrograms" min="4" max="60" value="20"></label>
     </div></details>
+    <label class="switch projall" hidden title="One set of niches over all slices of the project, so a niche means the same neighborhood in every slice"><input type="checkbox" id="projAllN" checked>
+      <span>All slices together<small>niches shared by the project's slices</small></span></label>
     <button id="nRun" class="primary main" disabled title="Compute niches with these settings">Run niches</button>
   </div>
   <div class="pane" data-pane="compare">
@@ -1983,7 +1987,7 @@ $("eRun").onclick = async () => {
   const body = { n_pcs: +$("eP").value, n_neighbors: +$("eK").value, min_dist: +$("eD").value, resolution: +$("eR").value };
   $("eRun").disabled = true; $("eprogress").classList.add("show");
   try {
-    if (projectMode()) {  // all slices at once (Harmony when ticked)
+    if (projectMode("embed")) {  // all slices at once (Harmony when ticked)
       await projectJob("embed", { ...body, harmony: $("eHarmony").checked }, $("efill"), $("estage"), $("eRun"));
       setSelection(null); await loadEmbedding(true);
       setTimeout(() => $("eprogress").classList.remove("show"), 800); return;
@@ -2247,7 +2251,7 @@ $("nRun").onclick = async () => {
   const body = { identity: $("nIdentity").value, n_programs: +$("nPrograms").value, k: +$("nK").value, n_niches: +$("nN").value };
   $("nRun").disabled = true; $("nprogress").classList.add("show");
   try {
-    if (projectMode()) {  // one set of niches over all slices
+    if (projectMode("niches")) {  // one set of niches over all slices
       await projectJob("niches", { ...body, sessions: projectSessions() }, $("nfill"), $("nstage"), $("nRun"));
       await loadNiches(true); setTimeout(() => $("nprogress").classList.remove("show"), 800); return;
     }
@@ -3956,7 +3960,8 @@ function showEstimate() {
 if (["exact", "approx"].includes(load("knn"))) $("knn").value = load("knn");
 $("knn").onchange = () => { syncSeg("knn"); store("knn", $("knn").value); showEstimate(); };
 $("mkDlg").addEventListener("close", estimateAnnotation);
-$("projAll").addEventListener("change", estimateAnnotation);
+$("projAllA").addEventListener("change", estimateAnnotation);
+$("projAllE").addEventListener("change", () => sliceNav());  // Harmony is for an embedding of all slices
 function openRef() { $("refPick").hidden = !native(); $("refDlg").showModal(); }
 function fillRefColumns(cols, label, group) {
   const names = Object.keys(cols || {});
@@ -4554,7 +4559,7 @@ const HELP = `
     hidden H&amp;E, the UMAP window and, on a UMAP of all slices, its zoom and selection.</li>
   <li><b>Overview of all samples</b> shows them side by side.</li>
   <li>The Compare tab compares them (scope: all slices, rows by slice).</li></ul></li>
-<li><b>All slices together</b> treats the project as one:<ul>
+<li><b>All slices together</b> (in the Annotate, Embed and Niche tabs, each for its own analysis) treats the project as one:<ul>
   <li><b>Annotate</b> annotates all slices at once (one marker step and one model, so a name means the same cells in
     every slice).</li>
   <li><b>Run PCA + UMAP</b> makes one embedding of all slices; <b>Harmony</b> removes the differences between slices.</li>
@@ -6300,12 +6305,12 @@ function metaText(md, n = 3) {  // a slice's metadata, condition-like columns fi
 function sliceNav() {
   const p = st.sample && projectOf(st.sample.sample_id);
   $("slNav").hidden = !p;
-  $("eHarmonyWrap").hidden = !p;
+  document.querySelectorAll(".switch.projall").forEach((e) => (e.hidden = !p));
+  $("eHarmonyWrap").hidden = !p || !$("projAllE").checked;
   if (!p) return;
   const i = p.samples.indexOf(st.sample.sample_id);
   $("slPrev").disabled = i <= 0; $("slNext").disabled = i >= p.samples.length - 1;
   $("slPos").textContent = `Slice ${i + 1} of ${p.samples.length}`;
-  $("eHarmonyWrap").hidden = false;
 }
 async function gotoSlice(id) {
   if (!id || (st.sample && id === st.sample.sample_id)) return;
@@ -6316,7 +6321,9 @@ function stepSlice(d) {
   const p = st.sample && projectOf(st.sample.sample_id); if (!p) return;
   gotoSlice(p.samples[p.samples.indexOf(st.sample.sample_id) + d]);
 }
-const projectMode = () => !!(st.sample && projectOf(st.sample.sample_id) && $("projAll").checked);
+// "All slices together" of each analysis (its switch in the Annotate, Embed and Niche tabs; shown for a project's slice)
+const PROJ_ALL = { annotate: "projAllA", embed: "projAllE", niches: "projAllN" };
+const projectMode = (what = "annotate") => !!(st.sample && projectOf(st.sample.sample_id) && $(PROJ_ALL[what]).checked);
 function projectSessions() {  // the annotation of each slice a project-wide analysis uses: the one open here (this
   // slice) or opened on that slice during this visit; the server takes the latest one for the others
   const p = st.sample && projectOf(st.sample.sample_id), out = {};
