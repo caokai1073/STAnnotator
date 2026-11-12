@@ -225,6 +225,15 @@ def sample_context(s, version=None):
 
 
 # ---------------- QC ----------------
+def _mixed(L):
+    """Cells the model gives two lineages >= 0.3 each (L: cells x lineages); none with a single lineage (a sample not
+    annotated yet, or a marker list of one lineage)."""
+    if L.shape[1] < 2:
+        return np.zeros(L.shape[0], bool)
+    top2 = np.sort(L, 1)[:, -2:]
+    return (top2[:, 0] >= 0.3) & (top2[:, 1] >= 0.3)
+
+
 def qc_overview(s, version=None):
     """Per tile: median transcripts per cell, cells per mm2, Unassigned and mixed-lineage shares; hotspots; and
     epithelial-marker spillover into nearby non-epithelial cells."""
@@ -235,9 +244,7 @@ def qc_overview(s, version=None):
     P = np.exp(s.base(r["state"])["logp"].astype(np.float32))
     lut = np.array([s.lineage_of_type.get(t, t) for t in s.types], dtype=object)
     names = sorted(set(lut))
-    L = np.stack([P[:, lut == n].sum(1) for n in names], 1)
-    top2 = np.sort(L, 1)[:, -2:]
-    mixed = (top2[:, 0] >= 0.3) & (top2[:, 1] >= 0.3)
+    mixed = _mixed(np.stack([P[:, lut == n].sum(1) for n in names], 1))
     df = pd.DataFrame({"tile": key, "counts": s.cells.total_counts.to_numpy(), "unassigned": types == markers.UNASSIGNED,
                        "low_conf": r["conf"] < 0.5, "mixed": mixed})
     agg = df.groupby("tile").agg(n=("counts", "size"), counts=("counts", "median"), unassigned=("unassigned", "mean"),
@@ -282,11 +289,10 @@ def fig_qc(s, version=None):
     ti, tj = plausibility.tile_index(s, g)
     P = np.exp(s.base(r["state"])["logp"].astype(np.float32))
     lut = np.array([s.lineage_of_type.get(t, t) for t in s.types], dtype=object)
-    L = np.stack([P[:, lut == n].sum(1) for n in sorted(set(lut))], 1)
-    top2 = np.sort(L, 1)[:, -2:]
+    mixed = _mixed(np.stack([P[:, lut == n].sum(1) for n in sorted(set(lut))], 1))
     vals = {"median transcripts per cell": s.cells.total_counts.to_numpy().astype(float),
             "cells per tile": np.ones(len(types)), "Unassigned share": (types == markers.UNASSIGNED).astype(float),
-            "mixed-lineage share": ((top2[:, 0] >= 0.3) & (top2[:, 1] >= 0.3)).astype(float)}
+            "mixed-lineage share": mixed.astype(float)}
     fig, axs = plt.subplots(2, 2, figsize=(12, 12 * g["ny"] / max(g["nx"], 1) * 0.55 + 1.5))
     n = np.zeros((g["ny"], g["nx"]))
     np.add.at(n, (ti, tj), 1)
