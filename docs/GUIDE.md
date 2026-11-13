@@ -296,9 +296,13 @@ A sample annotated with marker genes needs a marker list. **Markers…** edits, 
   of their markers in the panel, or one decisive marker such as INS) with their first markers, in the editor's
   indented format (`Name: GENE+ GENE-`), and lists what it left out. The built-in lists are in
   `stagent/data/organs/` (sources in its README).
-- **Refine with the agent** asks the agent to complete it for the tissue and panel (searching the literature for
-  types the built-in list lacks) and save it under "load a list…". For an organ that is not built in (**Other
-  organ…**) the agent starts from the immune and stromal cells and adds the organ's own.
+- **Refine with the agent** refines the list in the editor (imported, loaded or your own edits): the agent keeps
+  your cell types, names and structure, checks every marker against the panel, fixes what is wrong, adds types of
+  the tissue the panel can resolve that the list lacks, and saves the result as `<name>_refined` under "load a
+  list…". The organ is optional then (the agent infers it from the list; a built-in organ is used for comparison).
+  With the editor empty it completes the organ's built-in list for the tissue and panel (searching the literature
+  for types it lacks); for an organ that is not built in (**Other organ…**) the agent starts from the immune and
+  stromal cells and adds the organ's own.
 - You can also ask Claude Code "draft a marker list for this panel" and load it under "load a list…".
 - Imported and saved lists stay in that list for the next samples; **×** after a name removes a saved list (into the
   trash of the data folder).

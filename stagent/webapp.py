@@ -3513,13 +3513,52 @@ ORGAN_REQUEST = ("Draft a marker list for {label} for sample {sample} (I chose t
                  "(load a list…).")
 
 
+REVISE_REQUEST = ("Refine the marker list I have in Markers… for sample {sample}: read it with "
+                  "editor_marker_list(sample_id='{sample}'). {organ_line}It is my list: keep its cell types, names and "
+                  "structure unless something is wrong. Check every marker against the panel (get_panel_genes): genes "
+                  "not in the panel, markers that do not tell a type from its siblings, types the panel cannot "
+                  "separate, missing negative markers; add cell types of this tissue the panel can resolve that the "
+                  "list lacks. {builtin}For markers you are not sure of, search the literature online. Validate with "
+                  "check_marker_list, save the result with save_marker_list(name='{name}', sample_id='{sample}'), and "
+                  "tell me in a few lines what you changed and why; I load it in Markers… (load a list…).")
+
+
+def editor_list_path(sample):
+    """Where the list in the Markers… editor is put for the agent (editor_marker_list); not in the library."""
+    import re
+    return config.USER_MARKERS / ".editor" / (re.sub(r"[^A-Za-z0-9_.-]+", "_", sample).strip("_") + ".txt")
+
+
 async def api_claude_markers(req: Request):
-    """Ask the agent to draft the marker list of an organ for a sample, from the built-in list."""
+    """Ask the agent for the marker list of a sample: with "text" (the list in the Markers… editor) it refines that
+    list (the organ, optional, as context); without, it drafts the organ's list from the built-in one."""
     from . import organs
     b = await req.json()
     sample, organ = b.get("sample") or "", (b.get("organ") or "").strip()
+    text = (b.get("text") or "").strip()
+    if text and sample:
+        p = editor_list_path(sample)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text + "\n", encoding="utf-8")
+        built = {o["organ"]: o["label"] for o in organs.organs()}
+        label = built.get(organ, organ) if organ and organ != "other" else ""
+        organ_line = (f"The tissue is {label}. " if label else
+                      "Infer the tissue from the list's cell types (and tissue_priors if a session is open). ")
+        builtin = (f"Compare with the built-in list organ_marker_draft(organ='{organ}', sample_id='{sample}') for "
+                   f"types and markers mine lacks. " if organ in built and organ != "other" else "")
+        import re
+        base = re.sub(r"[^A-Za-z0-9_.-]+", "_", (b.get("name") or "").strip() or f"{sample}_markers").strip("_")
+        name = (base if base.endswith("_refined") else f"{base}_refined")[:60]
+        req_text = REVISE_REQUEST.format(sample=sample, organ_line=organ_line, builtin=builtin, name=name)
+        if not desktop_mode():  # the server viewer revises the editor's list itself (Markers… > Draft)
+            return _json({"message": (f"Tissue: {label}. " if label else "") + "Refine this list (my own): keep its cell "
+                          "types, names and structure unless something is wrong; check every marker against the panel "
+                          "(get_panel_genes): genes not in it, markers that do not tell a type from its siblings, types "
+                          "the panel cannot separate; add types of this tissue the panel can resolve that it lacks.",
+                          "revise": True})
+        return _json({"claude_code": claudelink.open_claude_code(sample, None, req_text, send_if_open=True)})
     if not sample or not organ:
-        return _json({"error": "choose a sample and an organ"}, 400)
+        return _json({"error": "choose a sample and an organ, or put a list in the editor"}, 400)
     built = {o["organ"]: o["label"] for o in organs.organs()}
     if organ in built and organ != "other":
         label, key, extra = built[organ], organ, ""

@@ -2284,6 +2284,22 @@ def save_marker_list(name: str, text: str, sample_id: Optional[str] = None) -> s
 
 
 @mcp.tool()
+def editor_marker_list(sample_id: str) -> str:
+    """The marker list the user has in the viewer's "Markers..." editor for a sample, as the app handed it over with
+    "Refine with the agent" (the user's own list: imported or edited, maybe not saved), checked against the panel."""
+    from .session import panel_genes, filtered_genes
+    from .webapp import editor_list_path
+    from . import markers
+    p = editor_list_path(sample_id)
+    if not p.exists():
+        return _j({"error": f"no list was handed over for {sample_id}: ask the user to click Refine with the agent "
+                            "in Markers... with the list in the editor"})
+    text = p.read_text(encoding="utf-8")
+    c = markers.parse(text, panel_genes(sample_id), filtered_genes(sample_id))
+    return _j({"text": text, "check": {k: c[k] for k in ("ok", "errors", "warnings", "n_types", "depth")}})
+
+
+@mcp.tool()
 def check_marker_list(text: str, sample_id: Optional[str] = None) -> str:
     """Validate a marker list (format: 'Name: GENE+ GENE- A|B+' per line, children indented two spaces) against a
     sample's panel (default: the active session's sample). Returns errors (with suggestions for genes not in the

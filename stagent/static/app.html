@@ -884,7 +884,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <div class="row"><select id="mkOrgan" title="Built-in marker lists of common organs" style="flex:1"></select></div>
       <input type="text" id="mkOrganOther" hidden placeholder="the organ, e.g. prostate" style="margin-top:4px">
       <div class="row" style="margin-top:4px"><button id="mkOrganUse" title="The organ's built-in list, keeping the cell types this panel can resolve">Use built-in list</button>
-        <button id="mkOrganAgent" title="The agent completes the list for this tissue and panel (searching the literature for what the built-in list lacks)">Refine with the agent</button></div>
+        <button id="mkOrganAgent" title="With a list in the editor (imported or your own): the agent refines that list for this panel and tissue, keeping your cell types. With the editor empty: it completes the organ's built-in list (searching the literature for what it lacks)">Refine with the agent</button></div>
       <div id="mkOrganMsg" class="hint"></div>
       <div class="h">Check</div><div id="mkMsgs" class="hint">Not checked yet.</div>
       <div id="mkDraftBox">
@@ -6095,6 +6095,7 @@ function openMarkers() { $("mkDlg").showModal(); loadLibrary(); loadOrgans(); }
 async function loadOrgans() {  // the built-in organ lists, and "other" for an organ the agent looks up
   const sel = $("mkOrgan"); if (sel.options.length) return;
   const r = await api("/api/markers/organs");
+  sel.append(Object.assign(document.createElement("option"), { value: "", textContent: "Organ… (optional with your own list)" }));
   r.organs.filter((o) => o.organ !== "other").forEach((o) => { const x = document.createElement("option"); x.value = o.organ; x.textContent = o.label; sel.append(x); });
   const x = document.createElement("option"); x.value = "other"; x.textContent = "Other organ… (the agent looks it up)"; sel.append(x);
   syncOrgan();
@@ -6103,6 +6104,7 @@ function syncOrgan() {
   const other = $("mkOrgan").value === "other";
   $("mkOrganOther").hidden = !other;
   setLabel($("mkOrganUse"), other ? "Immune and stromal cells" : "Use built-in list");
+  $("mkOrganUse").disabled = !$("mkOrgan").value;
   $("mkOrganAgent").disabled = !(st.desktop || st.chatAvailable);
 }
 $("mkOrgan").onchange = syncOrgan;
@@ -6117,16 +6119,18 @@ $("mkOrganUse").onclick = async () => {  // the organ's built-in list pruned to 
       (mer.length ? ` Only subtype left, so merged: ${mer.join(", ")}.` : "") + " Edit it, or let the agent complete it.";
   } catch (e) { msg.textContent = e.message; }
 };
-$("mkOrganAgent").onclick = async () => {  // the agent completes the list for this tissue (and looks up an organ not built in)
+$("mkOrganAgent").onclick = async () => {  // the list in the editor refined by the agent; with none, the organ's built-in list completed
   if (!st.sample) { toast("Import a sample first"); return; }
   const organ = $("mkOrgan").value === "other" ? $("mkOrganOther").value.trim() : $("mkOrgan").value;
-  if (!organ) { toast("Name the organ"); return; }
+  const text = $("mkText").value.trim();
+  if (!organ && !text) { toast("Put a list in the editor, or choose the organ"); return; }
   try {
-    const r = await post("/api/claude/markers", { sample: st.sample.sample_id, organ });
+    const r = await post("/api/claude/markers", { sample: st.sample.sample_id, organ, text, name: $("mkName").value.trim() });
     if (r.message && st.chatAvailable) {  // the server viewer: its own drafting, with the request as instructions
-      $("mkInstr").value = r.message; $("mkRevise").checked = false; $("mkDraft").click();
+      $("mkInstr").value = r.message; $("mkRevise").checked = !!r.revise; $("mkDraft").click();
     } else if (r.claude_code) {
-      $("mkOrganMsg").textContent = "The agent is drafting the list in Claude Code; when it is saved, choose it under “load a list…”.";
+      $("mkOrganMsg").textContent = text ? "The agent is refining your list in Claude Code; when it is saved (as …_refined), choose it under “load a list…”."
+        : "The agent is drafting the list in Claude Code; when it is saved, choose it under “load a list…”.";
       toast(r.claude_code.reused ? "Sent to the agent" : "The agent is opening", 4000);
     }
   } catch (e) { toast(e.message, 6000); }
