@@ -1259,18 +1259,47 @@ def review_markers(node: Optional[str] = None, version: Optional[int] = None) ->
     return _j(q)
 
 
+def _refine_session(session_id=None):
+    """The annotation of the Refine round: session_id (made the active session), else the active session unless its
+    last round is decided while the one open in the app has a round waiting (the app annotated again: a new
+    annotation carries the rounds), which then becomes the active session."""
+    from . import iterate, claudelink
+    if session_id and ("session" not in _active or _active["session"].id != session_id):
+        _active["session"] = Session(session_id)
+    elif not session_id:
+        cur = _active.get("session")
+        done = cur is None
+        if cur is not None:
+            try:
+                done = bool(iterate.current(cur)[1].get("decision"))
+            except ValueError:
+                done = True
+        if done:
+            vs = (claudelink.viewer_state() or {}).get("session")
+            if vs and (cur is None or vs != cur.id):
+                try:
+                    s = Session(vs)
+                    if not iterate.current(s)[1].get("decision"):
+                        _active["session"] = s
+                except (ValueError, FileNotFoundError):
+                    pass
+    return _s()
+
+
 @mcp.tool()
-def refine_report() -> str:
+def refine_report(session_id: Optional[str] = None) -> str:
     """The current round of refining the annotation with the user (the app's Refine window): the round's computed
     report (organ, cells and confidence per type, types with weak marker evidence, markers flagged weak or not
     specific, types not found, the cells the marker step could not type and what their marker genes made them, the
     changes since the round before), the marker list of the round, and the conversation with the user. The user's
-    own words come first: follow them before your own view and the priors."""
+    own words come first: follow them before your own view and the priors. session_id: the annotation named in the
+    request (each round after Accept is a new annotation); it becomes the active session."""
     from . import iterate
-    st, rd = iterate.current(_s())
+    s = _refine_session(session_id)
+    st, rd = iterate.current(s)
     rep = dict(rd["report"])
     rep["marker_flags"] = rep["marker_flags"][:60]
-    return _j({"round": rd["n"], "organ_confirmed": st.get("organ"), "report": rep, "marker_list": rd["marker_text"],
+    return _j({"session_id": s.id, "round": rd["n"], "decided": rd.get("decision"), "organ_confirmed": st.get("organ"), "report": rep, "marker_list": rd["marker_text"],
                "conversation": rd["messages"], "your_last_proposal": rd.get("proposal"),
                "earlier_rounds": [{"n": x["n"], "decision": x["decision"], "accepted": x["accepted"],
                                    "edits": (x.get("proposal") or {}).get("edits")} for x in st["rounds"][:-1]]})
@@ -1278,7 +1307,7 @@ def refine_report() -> str:
 
 @mcp.tool()
 def propose_refinement(summary: str, edits: list[dict], questions: Optional[list[str]] = None,
-                       organ: Optional[str] = None) -> str:
+                       organ: Optional[str] = None, session_id: Optional[str] = None) -> str:
     """Your proposal for the current Refine round, shown to the user edit by edit (they accept some and the app
     annotates again with them). summary: what you found and what you propose, in a few lines, in the user's
     language. edits: edits of the marker list, each {"kind", "type", ..., "reason", "evidence"}; kinds: add_marker /
@@ -1286,9 +1315,14 @@ def propose_refinement(summary: str, edits: list[dict], questions: Optional[list
     {type, parent (null: top level), markers}, remove_type {type}, rename_type {type, new_name}, move_type {type,
     parent}. Only genes of the panel; reason: why; evidence: the numbers or figure that show it. questions: what only
     the user can decide (the organ, whether a type should be there). organ: the organ you judged it to be, when the
-    user has not confirmed one. Returns the edits as checked (problems the edited list would have)."""
+    user has not confirmed one. session_id: the annotation named in the request. Returns the edits as checked
+    (problems the edited list would have)."""
     from . import iterate
-    rec = iterate.propose(_s(), summary, edits, organ, questions)
+    s = _refine_session(session_id)
+    if iterate.current(s)[1].get("decision"):
+        raise ValueError(f"round {iterate.current(s)[1]['n']} of {s.id} is already decided; the request names the "
+                         "annotation of the round waiting: pass its session_id")
+    rec = iterate.propose(s, summary, edits, organ, questions)
     return _j({"edits": rec["edits"], "problems_of_the_edited_list": rec["check"],
                "next": "the user decides in the Refine window; their reply or the next round comes as a new request"})
 
@@ -1299,8 +1333,15 @@ def propose_marker_list(text: str, summary: str) -> str:
     appears in the viewer's Review panel, from where the user opens it in "Markers..." and annotates again.
     summary: what changed and why, in a few lines. Returns the changed lines. While the user's Refine window waits
     for your review, use propose_refinement instead; a list sent here then goes to that window as edits."""
-    from . import markerqc, iterate
+    from . import markerqc, iterate, claudelink
     s = _s()
+    if not iterate.awaiting(s):  # the Refine round waiting may be on the annotation open in the app
+        vs = (claudelink.viewer_state() or {}).get("session")
+        try:
+            if vs and vs != s.id and iterate.awaiting(Session(vs)):
+                s = _active["session"] = Session(vs)
+        except (ValueError, FileNotFoundError):
+            pass
     if iterate.awaiting(s):  # the Refine window asked: the list becomes the round's edits, type by type
         st, rd = iterate.current(s)
         edits = iterate.edits_from_text(rd["marker_text"] or "", text)

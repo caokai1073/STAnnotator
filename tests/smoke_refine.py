@@ -5,6 +5,8 @@
 3. the agent's proposal (edits checked against the list), the user's message, some edits accepted: the next marker
    list has exactly those edits; a bad edit is refused;
 4. annotating with that list and carrying the rounds: the next round compares with the one before;
+6. the round after Accept is on a new annotation: refine_report / propose_refinement follow the session_id of the
+   request, or without it the annotation open in the app when the active one's round is decided;
 5. a whole revised list the agent sends with propose_marker_list while the round waits (Agent review) goes to the
    Refine window as edits, which applied give that list.
 Run: python tests/smoke_refine.py  (a temporary data folder removed at the end)."""
@@ -71,8 +73,26 @@ try:
     assert len(st2["rounds"]) == 2 and st2["organ"] == "Colon" and "changes" in st2["rounds"][-1]["report"]
     print(f"round 2 after accepting E1: {len(st2['rounds'][-1]['report']['changes'])} types changed")
 
-    from stagent import mcp_server, markerqc
+    from stagent import mcp_server, markerqc, claudelink
     import json
+    mcp_server._active["session"] = s  # the agent still on the annotation of round 1 (decided)
+    r = json.loads(mcp_server.refine_report(session_id=s2.id))
+    assert r["session_id"] == s2.id and r["round"] == 2 and not r["decided"], r["session_id"]
+    mcp_server._active["session"] = s
+    real = claudelink.viewer_state
+    claudelink.viewer_state = lambda: {"session": s2.id}
+    try:
+        r = json.loads(mcp_server.refine_report())
+        assert r["session_id"] == s2.id and r["round"] == 2, "did not follow the app to the new round"
+    finally:
+        claudelink.viewer_state = real
+    mcp_server._active["session"] = s
+    try:
+        mcp_server.propose_refinement("x", [], session_id=s.id)
+        raise AssertionError("a proposal went to a decided round")
+    except ValueError:
+        pass
+    print("the agent follows the round to the new annotation")
     old = st2["rounds"][-1]["marker_text"]
     tree = markers.parse(old, None)["tree"]
     epi = tree[0]["name"]

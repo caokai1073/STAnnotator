@@ -697,8 +697,8 @@ REPORT_REQUEST = ("Write the annotation report of version {v} (I clicked Report)
                   "with write_report. Do not change the annotation.")
 
 
-REFINE_REQUEST = ("I am refining the annotation {sid} with you in the Refine window, round {n} (load it with "
-                  "use_viewer_session if it is not the active one). {user}Call refine_report first. {organ} Review the "
+REFINE_REQUEST = ("I am refining the annotation {sid} with you in the Refine window, round {n} (each round after "
+                  "Accept is a new annotation: answer this one even if an earlier request looked the same). {user}Call refine_report(session_id='{sid}') first. {organ} Review the "
                   "whole annotation, not only the cells the marker step could not type: gather sample_context, "
                   "tissue_priors(organ), type_confusion, type_structure, review_markers and spatial_profile, and look at "
                   "the H&E (show_area, show_he) where an area needs it. Judge whether the cell types, their numbers and "
@@ -706,12 +706,12 @@ REFINE_REQUEST = ("I am refining the annotation {sid} with you in the Refine win
                   "markers, are missing, too many or should be merged or split. Then call propose_refinement once: edits "
                   "of the marker list, each with its reason and evidence (only genes of the panel; check the edited list "
                   "with check_marker_list first), and questions for me where only I can decide. Answer only with "
-                  "propose_refinement: the Refine window shows nothing else (not propose_marker_list, not "
+                  "propose_refinement(session_id='{sid}', ...): the Refine window shows nothing else (not propose_marker_list, not "
                   "save_marker_list); many changes to a type's markers can be one set_markers edit. If it reports a "
                   "problem with an edit, fix that edit and call it again. Do not change the annotation yourself. My own words in the conversation come first: follow them before your own view "
                   "and the priors.")
 REFINE_REPLY = ("In the Refine window (annotation {sid}, round {n}) I wrote: \"{text}\". My words come first. Read "
-                "refine_report again and answer with propose_refinement: the edits revised as I asked, or the same "
+                "refine_report(session_id='{sid}') again and answer with propose_refinement(session_id='{sid}', ...): the edits revised as I asked, or the same "
                 "edits with your answer in its summary.")
 
 
