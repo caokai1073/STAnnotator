@@ -567,6 +567,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <option value="approx" data-short="Approximate">Approximate (pynndescent): faster for very large samples (about a million cells or more); the same labels with the same versions of its packages</option>
       <option value="exact" data-short="Exact" selected>Exact (the default): the true neighbors, the same labels on every computer, with or without a GPU; about a minute for 450,000 cells</option></select>
       <div class="seg" data-for="knn"></div><div class="hint" id="annEst"></div></div>
+    <label class="switch" id="spillWrap" title="In imaging data a cell's outline also catches transcripts of its neighbors. On: a gene counts as detected in a cell only where its count is above a tenth of the mean count of its 6 nearest cells. It helped on a MERFISH slice (lineage agreement 0.785 → 0.816 against the authors' labels) and changed little on Xenium sections; try it when many cells stay untyped or markers of neighboring types show up where they should not"><input type="checkbox" id="spill">
+      <span>Leave out spillover<small>transcripts that come from neighboring cells</small></span></label>
     <label class="switch" id="carryWrap" style="visibility:hidden" title="Start the new annotation with the regions (and their colors), priors and hand corrections of the one that is open; priors and corrections naming cell types the new annotation does not have are dropped"><input type="checkbox" id="carry" checked>
       <span>Keep my regions, priors &amp; corrections<small>carried into the new annotation</small></span></label>
     <label class="switch" id="rfAutoWrap" title="After annotating with marker genes, the agent reviews the result with the tissue's priors and proposes edits of the marker list; you accept some and the app annotates again, round by round"><input type="checkbox" id="rfAuto" checked>
@@ -1805,7 +1807,7 @@ async function startAnnotation(mode, sid, token = st.switchToken) {
   const method = $("method").value;
   const body = { sample_id: st.sample.sample_id, region_source: "none", mode, method,
                  markers_text: $("mkText").value, resolution: $("mkAuto").checked ? "auto" : +$("mkRes").value,
-                 knn: $("knn").value, estimate_s: EST.last ? EST.last[$("knn").value].seconds : null,
+                 knn: $("knn").value, estimate_s: EST.last ? EST.last[$("knn").value].seconds : null, spillover: $("spill").checked,
                  carry_from: mode === "new" && st.sid && ($("carry").checked || st.placeholder) ? st.sid : null };
   if (mode === "new" && method === "existing") {
     body.existing = { path: $("exPath").value.trim(), id_column: $("exId").value, label_column: $("exLabel").value, lineage_column: $("exLin").value };
@@ -4057,6 +4059,7 @@ function showMethod() {
   const m = $("method").value; syncSeg("method");
   $("openMarkers").hidden = m !== "markers"; $("openRef").hidden = m !== "scref"; $("openEx").hidden = m !== "existing";
   $("knnWrap").hidden = m !== "markers";
+  $("spillWrap").hidden = m !== "markers";
   estimateAnnotation();
 }
 function duration(s) {  // as timing.words on the server
@@ -4099,6 +4102,8 @@ function showEstimate() {
 }
 if (["exact", "approx"].includes(load("knn"))) $("knn").value = load("knn");
 $("knn").onchange = () => { syncSeg("knn"); store("knn", $("knn").value); showEstimate(); };
+if (load("spill") === "on") $("spill").checked = true;
+$("spill").onchange = () => store("spill", $("spill").checked ? "on" : "off");
 $("mkDlg").addEventListener("close", estimateAnnotation);
 $("projAllA").addEventListener("change", estimateAnnotation);
 $("projAllE").addEventListener("change", () => sliceNav());  // Harmony is for an embedding of all slices
@@ -4919,6 +4924,10 @@ const HELP = `
   <li><i>Exact</i> finds the true neighbors; slow without a GPU for large samples.</li>
   <li>The line under it estimates how long the whole annotation takes on this computer for both (hover for the
     steps); it learns from every run here.</li></ul></li>
+<li><b>Leave out spillover</b> (marker genes, off by default): in imaging data a cell's outline also catches
+  transcripts of its neighbors; on, a gene counts as detected in a cell only where its count is above a tenth of the
+  mean count of its 6 nearest cells (of the same slice). Try it when many cells stay untyped, or markers of a
+  neighboring type show up where they should not.</li>
 <li><b>Refine with the agent</b> (marker genes; on by default, or <b>Refine cell types</b> later), round by round:<ul>
   <li>the app sums up what may be wrong (types with weak marker evidence, markers that are not specific, types not
     found, the cells the marker step could not type, the changes since the round before);</li>
@@ -5228,6 +5237,12 @@ checksums of its steps (PCA, neighbors, first clusters, labels) to compare runs.
     has not, compared with how often each is detected in the cells the marker step gave each type, times the type's
     share of cells (so one stray transcript does not make a cell a rare type). Only types the marker step found are
     candidates; their confidence says how sure. A cell with none of the marker genes detected stays Unassigned.</li>
+  <li>Then their neighbors: in rounds, each of these cells adds to its marker-gene score the log of the share of each
+    type among its 10 nearest cells (their labels of the round before), until nothing changes or a cell only flips
+    between two types (at most 10 rounds). The cells the marker step typed are not changed by their neighbors: on
+    human colon Xenium sections changing them too lost accuracy and small types. Against the authors' labels of a
+    mouse colon MERFISH slice: cell-type agreement 0.667 → 0.683, lineage 0.785 → 0.800 (0.687 and 0.833 with
+    <b>Leave out spillover</b>); on three human colon Xenium sections unchanged.</li>
   <li>It gives no cell to a type the marker step found none of (not found), unless you corrected cells to it.</li>
   <li>Hand corrections: the corrected cells (weight 20) fine-tune the model with the other cells replayed; only the
     classes involved change.</li></ul></li>
@@ -6716,7 +6731,7 @@ async function annotateProject() {  // one marker annotation of all slices; then
   try {
     await projectJob("annotate", { markers_text: text, resolution: $("mkAuto").checked ? "auto" : +$("mkRes").value,
                                    knn: $("knn").value, estimate_s: EST.last ? EST.last[$("knn").value].seconds : null,
-                                   carry: !!st.sid && $("carry").checked }, $("pfill"), $("pstage"), $("annotate"));
+                                   spillover: $("spill").checked, carry: !!st.sid && $("carry").checked }, $("pfill"), $("pstage"), $("annotate"));
     st.wantMode = st.mode !== "cells" ? st.mode : null; st.sliceSwitch = true; st.keepView = viewState();
     projectOf(st.sample.sample_id).samples.forEach((id) => forgetOpened(id));  // open the new joint annotations
     await loadSamples(st.sample.sample_id);

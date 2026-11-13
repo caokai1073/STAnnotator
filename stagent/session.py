@@ -202,11 +202,13 @@ class Session:
     # ---------- creation / persistence ----------
     @classmethod
     def create(cls, sample_id, region_source="none", method="markers", markers_text=None, resolution=None,
-               carry_from=None, reference=None, existing=None, knn=None):
+               carry_from=None, reference=None, existing=None, knn=None, spillover=False):
         """method 'markers' (default): hierarchical marker annotation (Leiden + marker scores) of this sample; the data
         is treated as having no cell type labels. markers_text: the marker list (indented text or CSV); required.
         knn: the marker step's neighbor search, "approx" (default; pynndescent on 8 threads: fast, and the same result
         on any computer) or "exact" (the true neighbors; slow without a GPU for large samples).
+        spillover: leave out transcripts spilled over from neighboring cells (markers.spill_detected) in the marker step.
+        The cells the marker step cannot type are typed with their neighbors' types too (markers.neighbor_rounds).
         method 'scref': a single-cell reference h5ad (reference = {"path", "label_column", optional "group_column",
         "majority_voting"}) trains a CellTypist-like classifier on the genes it shares with the panel.
         method 'existing': an annotation loaded from a CSV (existing = {"path", "id_column", "label_column",
@@ -237,7 +239,7 @@ class Session:
                       "nodes": parsed["types"], "leaf_types": True,
                       "parent": parsed["parent"], "top": parsed["top"],
                       "resolution": markers.AUTO if resolution in (None, "", markers.AUTO) else float(resolution),
-                      "knn": knn_mode(knn)}
+                      "knn": knn_mode(knn), "neighbors": True, "spillover": bool(spillover)}
         elif method == "scref":
             from . import scref
             ref = dict(reference or {})
@@ -551,7 +553,7 @@ class Session:
             if res is None:
                 res = markers.annotate(self.counts, self.panel, self.scheme["tree"], progress,
                                        resolution=self.scheme.get("resolution", markers.RESOLUTION),
-                                       knn=self.knn_mode())
+                                       knn=self.knn_mode(), spill=self._spill())
                 self._save_mres("init", res)
                 self._mres["init"] = res
                 if res.get("fingerprints"):  # checksums of this run, for telling whether two runs agree (bug reports carry it)
@@ -568,7 +570,15 @@ class Session:
 
     def _apply_recluster(self, res, op, ops_so_far, progress=None):
         return markers.rerun(res, self.counts, self.panel, self._marker_tree(ops_so_far), op["target"],
-                             op["resolution"], prefix=f"{op['id']}:", progress=progress, knn=self.knn_mode())
+                             op["resolution"], prefix=f"{op['id']}:", progress=progress, knn=self.knn_mode(),
+                             spill=self._spill())
+
+    def _xy(self):
+        return self.cells[["x", "y"]].to_numpy(float)
+
+    def _spill(self):
+        """The marker step's spillover option ({"xy"} or None)."""
+        return {"xy": self._xy()} if self.scheme.get("spillover") else None
 
     def knn_mode(self):
         """The marker step's neighbor search; annotations made before the choice existed keep the old automatic one
@@ -634,7 +644,8 @@ class Session:
         logp = model.predict(m, counts)
         if self.scheme["kind"] == "markers":  # the marker step's levels and the types it found no cell of
             logp = markers.restrict(logp, self.marker_result(st), self._marker_tree(st.get("marker_step", {}).get("ops", [])),
-                                    self.types, labs, counts=self.counts, panel=self.panel)
+                                    self.types, labs, counts=self.counts, panel=self.panel, xy=self._xy(),
+                                    neighbors=bool(self.scheme.get("neighbors")), spill=bool(self.scheme.get("spillover")))
         elif self.scheme.get("leaf_types"):
             logp = self._within_parent(logp, st)
         if self.scheme["kind"] == "existing":

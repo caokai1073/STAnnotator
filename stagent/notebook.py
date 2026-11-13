@@ -181,7 +181,8 @@ The annotation algorithm of the app is carried as source code in the folded cell
                             for c in st.get("corrections", [])],
             "marker_ops": st.get("marker_step", {}).get("ops", [])}
     scheme = {k: sch.get(k) for k in ("kind", "text", "tree", "types", "resolution", "top", "lineage_of_type",
-                                      "reference", "reference_counts", "existing", "leaf_types")}
+                                      "reference", "reference_counts", "existing", "leaf_types", "neighbors",
+                                      "spillover")}
     scheme["knn"] = s.knn_mode()
     types = list(s.types)
     lineage = {t: s.lineage_of_type.get(t, t) for t in types}
@@ -216,17 +217,20 @@ def marker_tree(ops):        # the marker list with the edits of re-clusterings 
         for t, mk in (op.get("markers") or {}).items():
             sa.markers._find(tree, t)["markers"] = sa.markers.parse(f"{t}: {mk}", genes)["tree"][0]["markers"]
     return tree
-res = sa.markers.annotate(counts, genes, SCHEME["tree"], resolution=SCHEME["resolution"], knn=SCHEME["knn"])   # marker step
+SPILL = {"xy": xy} if SCHEME.get("spillover") else None   # transcripts spilled over from neighbors left out (option)
+res = sa.markers.annotate(counts, genes, SCHEME["tree"], resolution=SCHEME["resolution"], knn=SCHEME["knn"], spill=SPILL)   # marker step
 for j, op in enumerate(STATE["marker_ops"]):
-    res = sa.markers.rerun(res, counts, genes, marker_tree(STATE["marker_ops"][:j + 1]), op["target"], op["resolution"], prefix=f"{op['id']}:", knn=SCHEME["knn"])
+    res = sa.markers.rerun(res, counts, genes, marker_tree(STATE["marker_ops"][:j + 1]), op["target"], op["resolution"], prefix=f"{op['id']}:", knn=SCHEME["knn"], spill=SPILL)
 marker_labels = sa.markers.training_labels(res, TYPES)   # -1: left at a lineage / parent level
 model = sa.model.train_pseudo(counts, marker_labels, T, keep=sa.markers.gene_columns(marker_tree(STATE["marker_ops"]), genes))   # expression model
 if len(lock_rows):
     rX, ry, _ = sa.model.pseudo_pool(counts, marker_labels, T)
     model = sa.model.finetune(model, counts[lock_rows], lock_labels, rX, ry)
 logp = sa.model.predict(model, counts)
-# cells left at a group get a type of that group; types the marker step found no cell of are not given
-logp = sa.markers.restrict(logp, res, marker_tree(STATE["marker_ops"]), TYPES, lock_labels, counts=counts, panel=genes)'''
+# cells left at a group get a type of that group; types the marker step found no cell of are not given; the cells it
+# could not type get one from their marker genes and their neighbors' types
+logp = sa.markers.restrict(logp, res, marker_tree(STATE["marker_ops"]), TYPES, lock_labels, counts=counts, panel=genes,
+                           xy=xy, neighbors=bool(SCHEME.get("neighbors")), spill=bool(SCHEME.get("spillover")))'''
     elif sch["kind"] == "existing":
         e = sch["existing"]
         base = f'''
@@ -717,7 +721,9 @@ genes = SLICES[ORDER[0]]["genes"]
 assert all(SLICES[x]["genes"] == genes for x in ORDER), "the slices must share one gene panel"
 OFF = np.cumsum([0] + [SLICES[x]["counts"].shape[0] for x in ORDER])
 pooled = sp.vstack([SLICES[x]["counts"] for x in ORDER]).tocsr()
-res = sa.markers.annotate(pooled, genes, SCHEME["tree"], resolution=SCHEME["resolution"], knn=SCHEME["knn"])  # one marker step
+SPILL = ({{"xy": np.vstack([SLICES[x]["xy"] for x in ORDER]), "group": np.repeat(np.arange(len(ORDER)), np.diff(OFF))}}
+         if SCHEME.get("spillover") else None)   # transcripts spilled over from neighbors (of the same slice) left out
+res = sa.markers.annotate(pooled, genes, SCHEME["tree"], resolution=SCHEME["resolution"], knn=SCHEME["knn"], spill=SPILL)  # one marker step
 index = {{t: i for i, t in enumerate(TYPES)}}
 pooled_labels = sa.markers.training_labels(res, TYPES)
 joint_model = sa.model.train_pseudo(pooled, pooled_labels, T, keep=sa.markers.gene_columns(SCHEME["tree"], genes))  # one model
@@ -755,7 +761,8 @@ for c in STATE["corrections"]:           # hand-labeled cells (a later correctio
 lock_rows = np.array(list(corr), int); lock_labels = np.array(list(corr.values()), int)
 r = slice_res(res, OFF[i], OFF[i + 1] - OFF[i])
 for j, op in enumerate(STATE["marker_ops"]):   # this slice's own re-clusterings
-    r = sa.markers.rerun(r, counts, genes, marker_tree(STATE["marker_ops"][:j + 1]), op["target"], op["resolution"], prefix=f"{{op['id']}}:", knn=SCHEME["knn"])
+    r = sa.markers.rerun(r, counts, genes, marker_tree(STATE["marker_ops"][:j + 1]), op["target"], op["resolution"], prefix=f"{{op['id']}}:", knn=SCHEME["knn"],
+                         spill={{"xy": xy}} if SCHEME.get("spillover") else None)
 marker_labels = sa.markers.training_labels(r, TYPES)
 model = joint_model if not STATE["marker_ops"] else sa.model.train_pseudo(
     counts, marker_labels, T, keep=sa.markers.gene_columns(marker_tree(STATE["marker_ops"]), genes))
@@ -763,7 +770,8 @@ if len(lock_rows):
     rX, ry, _ = sa.model.pseudo_pool(counts, marker_labels, T)
     model = sa.model.finetune(model, counts[lock_rows], lock_labels, rX, ry)
 logp = sa.markers.restrict(sa.model.predict(model, counts), r, marker_tree(STATE["marker_ops"]), TYPES, lock_labels,
-                           counts=counts, panel=genes)
+                           counts=counts, panel=genes, xy=xy, neighbors=bool(SCHEME.get("neighbors")),
+                           spill=bool(SCHEME.get("spillover")))
 base_pred, _ = sa.constraints.posterior(logp, [], None, TYPES)          # expression only
 region = sa.regions.assign(cells, STATE["regions"])                    # drawn regions
 nn = cKDTree(xy).query(xy, k=sa.constraints.NEIGHBORS_K + 1)[1][:, 1:]
@@ -908,7 +916,8 @@ The outputs below are the results at export time."""))
         nb.append(_code(PROJECT_SLICE.format(sid=_py(x)), [_text(f"{x} {len(S[x].cells):,} cells")]))
 
     # ---- the joint annotation
-    scheme = {k: sch.get(k) for k in ("kind", "text", "tree", "types", "resolution", "top", "lineage_of_type", "leaf_types")}
+    scheme = {k: sch.get(k) for k in ("kind", "text", "tree", "types", "resolution", "top", "lineage_of_type", "leaf_types",
+                                      "neighbors", "spillover")}
     scheme["knn"] = s0.knn_mode()
     lineage = {t: s0.lineage_of_type.get(t, t) for t in s0.types}
     n_all = sum(len(S[x].cells) for x in order)

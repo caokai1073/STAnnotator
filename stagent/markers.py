@@ -1024,6 +1024,57 @@ def _leiden(g, nbr, resolution, seed, min_cluster=None):
     return np.unique(lab, return_inverse=True)[1]
 
 
+# Spillover (an option of the annotation, off by default): in imaging data a cell's outline also catches transcripts of
+# its neighbors. With it, a gene counts as detected in a cell only where its count is above SPILL_FRACTION of the mean
+# count of the cell's SPILL_NEIGHBORS nearest cells (of the same slice). Measured against the authors' labels: on a
+# mouse colon MERFISH slice lineage agreement 0.785 -> 0.816 and 2,600 more cells typed; on three human colon Xenium
+# sections (SCP2927) about the same (one section -0.9 points agreement, +1.5 macro-F1).
+SPILL_FRACTION = 0.1
+SPILL_NEIGHBORS = 6
+
+
+def _spatial_neighbors(xy, k, group=None, query=None):
+    """For the cells query (default all): the indices of their k nearest other cells, within their group (slice)."""
+    from scipy.spatial import cKDTree
+    xy = np.asarray(xy, float)
+    q = np.arange(len(xy)) if query is None else np.asarray(query, np.int64)
+    out = np.zeros((len(q), k), np.int64)
+    g = np.zeros(len(xy), np.int64) if group is None else np.unique(np.asarray(group), return_inverse=True)[1]
+    for gi in np.unique(g[q]):
+        mine = np.where(g == gi)[0]
+        at = np.where(g[q] == gi)[0]
+        kk = min(k + 1, len(mine))
+        _, idx = cKDTree(xy[mine]).query(xy[q[at]], kk)
+        own = mine[np.asarray(idx).reshape(len(at), kk)]
+        own = np.take_along_axis(own, np.argsort(own == q[at][:, None], axis=1, kind="stable"), 1)  # the cell itself last
+        own = own[:, :min(k, kk - 1)] if kk > 1 else own
+        if own.shape[1] < k:  # a slice of fewer cells than k: the last neighbor repeated
+            own = np.hstack([own, np.repeat(own[:, -1:], k - own.shape[1], 1)])
+        out[at] = own
+    return out
+
+
+def spill_detected(counts, xy, group=None, block=50000):
+    """Cells x genes, 1.0 where the gene is detected in the cell and its count is above SPILL_FRACTION of the mean count
+    of the cell's SPILL_NEIGHBORS nearest cells of its group (slice): transcripts spilled over from neighbors are not
+    counted. A new matrix (it shares nothing with counts); computed block by block of cells (bounded memory)."""
+    C = sp.csr_matrix(counts, dtype=np.float32, copy=True)
+    C.sum_duplicates()
+    n, k = C.shape[0], SPILL_NEIGHBORS
+    nb = _spatial_neighbors(xy, k, group)
+    parts = []
+    for a in range(0, n, block):
+        b = min(n, a + block)
+        A = sp.csr_matrix((np.full((b - a) * k, 1.0 / k, np.float32), (np.repeat(np.arange(b - a), k), nb[a:b].ravel())),
+                          shape=(b - a, n))
+        Cb = C[a:b]
+        keep = (Cb - SPILL_FRACTION * (A @ C)) > 0           # above the neighbors' level ...
+        parts.append(keep.multiply(Cb > 0).astype(np.float32))  # ... where the cell has the gene
+    D = sp.vstack(parts).tocsr() if parts else sp.csr_matrix(C.shape, dtype=np.float32)
+    D.eliminate_zeros(); D.sort_indices()
+    return D
+
+
 def _detected(counts):
     """Cells x genes, 1.0 where the gene is detected (count > 0), float32. A counts matrix in canonical form without
     stored zeros (as samples are read) shares its index arrays (no copy of them: a CosMx 6K or Visium HD matrix is
@@ -1042,12 +1093,13 @@ def _all_rows(idx, n):
 class _Annotator:
     """Top-down marker annotation over one sample; also re-runs single levels or clusters in place."""
 
-    def __init__(self, counts, panel, progress=None, seed=0, knn_mode=KNN):
+    def __init__(self, counts, panel, progress=None, seed=0, knn_mode=KNN, spill=None):
         from .model import lognorm
         from . import timing
         with timing.step("prepare", counts.shape[0] / 1e6):
             counts = sp.csr_matrix(counts)
-            self.Xn, self.det = lognorm(counts), _detected(counts)
+            self.Xn = lognorm(counts)
+            self.det = spill_detected(counts, spill["xy"], spill.get("group")) if spill else _detected(counts)
             self.counts = counts  # (the rare-type search reads transcript counts of a few marker genes)
         self.knn_mode = knn_mode
         self.gi = {g: i for i, g in enumerate(panel)}
@@ -1310,13 +1362,14 @@ def training_labels(res, types):
 ASSIGN_ALL = True
 
 
-def marker_assign(counts, panel, tree, types, rows, train):
+def marker_assign(counts, panel, tree, types, rows, train, det=None):
     """The cell types of the cells rows (of counts, cells x genes of panel) from their marker genes alone, no trained
     model: which of the list's marker genes (of the types and the levels above them) the cell has (detected or not), compared with how often each is detected
     in the cells the marker step gave each type (train: type index per cell, -1 none), times the type's share of
     those cells (so one stray transcript does not make a cell a rare type). Only types the marker step gave cells to
     are candidates. Returns (log-scores as cells x types, -inf for types not candidates; the index of the best type,
-    -1 where the cell has none of the list's marker genes)."""
+    -1 where the cell has none of the list's marker genes). det: the detection matrix (cells x genes of panel) to
+    use, e.g. spill_detected; default count > 0."""
     types = list(types)
     rows = np.asarray(rows, np.int64)
     train = np.asarray(train, np.int64)
@@ -1328,7 +1381,8 @@ def marker_assign(counts, panel, tree, types, rows, train):
     S = np.full((len(rows), len(types)), -np.inf)
     if not len(rows) or not cand or not genes:
         return S, np.full(len(rows), -1, np.int64)
-    D = (sp.csr_matrix(counts)[:, [gi[g] for g in genes]] > 0).astype(np.float64).tocsr()
+    D = ((sp.csr_matrix(counts) > 0) if det is None else sp.csr_matrix(det))[:, [gi[g] for g in genes]]
+    D = (D > 0).astype(np.float64).tocsr()
     typed = np.where(train >= 0)[0]
     onehot = sp.csr_matrix((np.ones(len(typed)), (train[typed], typed)), shape=(len(types), D.shape[0]))
     n = np.asarray(onehot.sum(1)).ravel()                      # cells per type
@@ -1341,13 +1395,58 @@ def marker_assign(counts, panel, tree, types, rows, train):
     return S, best
 
 
-def restrict(logp, res, tree, types, corrected=(), counts=None, panel=None):
+# Neighbors (on for annotations made since 0.2.57): the cells the marker step could not type get their type in rounds:
+# round 1 from their marker genes alone (marker_assign), then each round adds NEIGHBOR_WEIGHT x the log of the share of
+# each type among their NEIGHBOR_K nearest cells (labels of the round before; plus the type's share of all cells as a
+# pseudo-count), until no cell changes, the labels repeat (a cell flipping between two types) or NEIGHBOR_ROUNDS. The
+# cells the marker step typed do not change: on human colon Xenium sections (SCP2927) changing low-confidence typed
+# cells too lost accuracy, changing every cell lost small types (macro-F1 -5 to -9 points). Measured against the
+# authors' labels: mouse colon MERFISH cell-type agreement 0.667 -> 0.683, lineage 0.785 -> 0.800 (with spillover
+# 0.687 / 0.833); SCP2927 three sections unchanged or +0.0003.
+NEIGHBOR_K = 10
+NEIGHBOR_WEIGHT = 1.0
+NEIGHBOR_ROUNDS = 10
+
+
+def neighbor_rounds(lp, rows, xy, k=None, w=None, rounds=None):
+    """lp (cells x types, log scores; changed in place for rows): the rounds described at NEIGHBOR_K for the cells rows.
+    Returns the number of cells changed per round."""
+    k, w, rounds = k or NEIGHBOR_K, NEIGHBOR_WEIGHT if w is None else w, rounds or NEIGHBOR_ROUNDS
+    rows = np.asarray(rows, np.int64)
+    n, T = lp.shape
+    if not len(rows) or n < 2:
+        return []
+    k = min(k, n - 1)
+    nb = _spatial_neighbors(xy, k, query=rows)
+    y = lp.argmax(1)
+    share = np.bincount(y, minlength=T) / n
+    L0 = lp[rows].astype(np.float64)
+    seen, hist, L = [y[rows].copy()], [], None
+    for _ in range(rounds):
+        cnt = np.zeros((len(rows), T))
+        for j in range(k):
+            np.add.at(cnt, (np.arange(len(rows)), y[nb[:, j]]), 1)
+        with np.errstate(divide="ignore"):
+            L = L0 + w * np.log((cnt + share[None, :]) / (k + 1))
+        new = L.argmax(1)
+        hist.append(int((new != y[rows]).sum()))
+        y[rows] = new
+        if not hist[-1] or any(np.array_equal(new, old) for old in seen[:-1]):
+            break
+        seen = (seen + [new.copy()])[-3:]
+    if L is not None:
+        lp[rows] = np.where(np.isfinite(L), L, -1e4).astype(lp.dtype)
+    return hist
+
+
+def restrict(logp, res, tree, types, corrected=(), counts=None, panel=None, xy=None, neighbors=False, spill=False):
     """The expression model's log-probabilities (cells x types) made to agree with the marker step, as float16 (the
     session and the exported notebook both use this): a cell left at a lineage or parent level gets a type below it
     (the others down-weighted by 1e-4); a type the model did not learn (no cell of it in the marker step) is not given,
     unless corrected holds it (type indices the user corrected cells to): its cells would be noise. With ASSIGN_ALL
     and counts (cells x genes of panel), the cells the marker step left Unassigned get their cell type from their
-    marker genes (marker_assign), not from the model."""
+    marker genes (marker_assign), not from the model; with neighbors and xy (um) also from their neighbors' types, in
+    rounds (neighbor_rounds); spill: their marker genes without transcripts spilled over from neighbors."""
     types = list(types)
     groups = descendants(tree)
     lp = np.asarray(logp, np.float32).copy()
@@ -1363,7 +1462,8 @@ def restrict(logp, res, tree, types, corrected=(), counts=None, panel=None):
     if ASSIGN_ALL and counts is not None and UNASSIGNED in types:  # the cells the marker step could not type: the
         rows = np.where(lab == UNASSIGNED)[0]                        # type from their marker genes (no model)
         if len(rows):
-            S, best = marker_assign(counts, panel, tree, types, rows, training_labels(res, types))
+            det = spill_detected(counts, xy) if spill and xy is not None else None
+            S, best = marker_assign(counts, panel, tree, types, rows, training_labels(res, types), det)
             u = types.index(UNASSIGNED)
             lp[:, u] = np.float32(-1e4)  # Unassigned only for the cells with no marker gene of the list
             lp[rows] = np.float32(-1e4)
@@ -1371,6 +1471,8 @@ def restrict(logp, res, tree, types, corrected=(), counts=None, panel=None):
             sc = S[has] - S[has].max(1, keepdims=True)  # the scores as probabilities: the confidence of the pick
             lp[rows[has]] = np.where(np.isfinite(sc), sc, np.float32(-1e4))
             lp[rows[~has], u] = 0.0  # no marker of the list detected: Unassigned
+            if neighbors and xy is not None and has.any():
+                neighbor_rounds(lp, rows[has], xy)
     lp -= lp.max(1, keepdims=True)
     return (lp - np.log(np.exp(lp).sum(1, keepdims=True))).astype(np.float16)
 
@@ -1379,11 +1481,12 @@ def _n_levels(tree):
     return 1 + sum(1 for nd in descendants(tree) if _find(tree, nd)["children"])
 
 
-def annotate(counts, panel, tree, progress=None, seed=0, resolution=AUTO, knn=KNN):
+def annotate(counts, panel, tree, progress=None, seed=0, resolution=AUTO, knn=KNN, spill=None):
     """Full top-down annotation. Returns {"labels" (type name per cell), "cluster_of" (deepest cluster id per cell),
     "members" (cluster id -> cell rows), "records" (one per cluster), "nodes" (resolution chosen per level)}.
-    knn: the neighbor search, "exact" or "approx" (see knn)."""
-    A = _Annotator(counts, panel, progress, seed, knn)
+    knn: the neighbor search, "exact" or "approx" (see knn). spill: {"xy" (um), "group" (slice per cell, or None)}
+    to leave out transcripts spilled over from neighboring cells (spill_detected), or None."""
+    A = _Annotator(counts, panel, progress, seed, knn, spill)
     A.total = _n_levels(tree)
     res = {"labels": np.full(A.n, UNASSIGNED, dtype=object), "cluster_of": np.full(A.n, "", dtype=object),
            "members": {}, "records": [], "nodes": []}
@@ -1410,7 +1513,7 @@ def run_fingerprints(fp, labels, knn):
             "machine": f"{platform.system()} {platform.machine()}", "cores": __import__("os").cpu_count(), "versions": ver}
 
 
-def rerun(res, counts, panel, tree, target, resolution=AUTO, prefix="", progress=None, seed=0, knn=KNN):
+def rerun(res, counts, panel, tree, target, resolution=AUTO, prefix="", progress=None, seed=0, knn=KNN, spill=None):
     """Re-annotate part of a result: target "root", a type name (its cells are split again into its subtypes) or a
     cluster id (only that cluster's cells are re-clustered at its level). Returns a new result; res is not modified."""
     out = {"labels": res["labels"].copy(), "cluster_of": res["cluster_of"].copy(), "members": dict(res["members"]),
@@ -1467,7 +1570,7 @@ def rerun(res, counts, panel, tree, target, resolution=AUTO, prefix="", progress
         kept.append(r)
     out["records"] = kept
     out["labels"][idx] = parent or UNASSIGNED
-    A = _Annotator(counts, panel, progress, seed, knn)
+    A = _Annotator(counts, panel, progress, seed, knn, spill)
     A.total = _n_levels(children) if children else 1
     A.run(out, parent, idx, children, resolution, prefix, context)
     out["not_found"] = A.not_found(out, tree)

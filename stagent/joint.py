@@ -91,9 +91,10 @@ def run_sessions(s):
     return [found[x] for x in order if x in found] + [v for k, v in found.items() if k not in order]
 
 
-def annotate(pid, markers_text, resolution=None, carry=False, progress=None, knn=None):
+def annotate(pid, markers_text, resolution=None, carry=False, progress=None, knn=None, spillover=False):
     """One marker annotation of all the project's slices together; returns {sample_id: new session id}.
-    knn: the neighbor search, "exact" (default) or "approx"."""
+    knn: the neighbor search, "exact" (default) or "approx". spillover: leave out transcripts spilled over from
+    neighboring cells of the same slice (markers.spill_detected)."""
     from .session import Session, knn_mode
     from . import timing
     knn = knn_mode(knn)
@@ -102,10 +103,10 @@ def annotate(pid, markers_text, resolution=None, carry=False, progress=None, knn
     hold = [counts]  # handed over in a list, so this frame stops owning the pooled matrix and _annotate can free it
     del counts
     with timing.run(int(off[-1])):
-        return _annotate(pid, markers_text, resolution, carry, say, knn, ids, off, hold, panel)
+        return _annotate(pid, markers_text, resolution, carry, say, knn, ids, off, hold, panel, spillover)
 
 
-def _annotate(pid, markers_text, resolution, carry, say, knn, ids, off, hold, panel):
+def _annotate(pid, markers_text, resolution, carry, say, knn, ids, off, hold, panel, spillover=False):
     from .session import Session
     counts = hold.pop()  # (see annotate: this is now the only reference to the pooled matrix)
     n_cells = counts.shape[0]
@@ -115,9 +116,15 @@ def _annotate(pid, markers_text, resolution, carry, say, knn, ids, off, hold, pa
     if not parsed["ok"]:
         raise ValueError("marker list has errors: " + "; ".join(parsed["errors"][:8]))
     say(0.02, f"marker step on {counts.shape[0]:,} cells of {len(ids)} slices")
+    spill = None
+    if spillover:  # the slices' positions, each slice its own group (their coordinates overlap)
+        xy = np.vstack([pd.read_parquet(config.SAMPLES / sid / "cells.parquet", columns=["x", "y"]).to_numpy(float)
+                        for sid in ids])
+        spill = {"xy": xy, "group": np.repeat(np.arange(len(ids)), np.diff(off))}
     res = markers.annotate(counts, panel, parsed["tree"], lambda f, m: say(0.02 + 0.5 * f, m),
                            resolution=markers.AUTO if resolution in (None, "", markers.AUTO) else float(resolution),
-                           knn=knn)
+                           knn=knn, spill=spill)
+    del spill
     types = parsed["leaves"]
     lab = markers.training_labels(res, types)  # -1: left at a parent level
     say(0.55, "training one expression model on all slices")
@@ -129,7 +136,7 @@ def _annotate(pid, markers_text, resolution, carry, say, knn, ids, off, hold, pa
     for i, sid in enumerate(ids):
         say(0.8 + 0.18 * i / len(ids), f"slice {i + 1} of {len(ids)}: {sid}")
         s = Session.create(sid, "none", method="markers", markers_text=markers_text, resolution=resolution,
-                           carry_from=previous.get(sid), knn=knn)
+                           carry_from=previous.get(sid), knn=knn, spillover=spillover)
         jobs.on_stop(lambda d=s.dir: shutil.rmtree(d, ignore_errors=True))  # stopped: the new annotations go
         s._save_mres("init", _slice_mres(res, off[i], off[i + 1] - off[i]))
         model.save(m, s.dir / "base" / "init_model.npz")

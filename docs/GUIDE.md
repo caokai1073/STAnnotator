@@ -515,7 +515,15 @@ Histograms show where each threshold cuts and the dialog counts what goes; empty
      seconds after the app starts.
    - Every annotation keeps checksums of its steps (PCA, neighbors, first clusters, labels) in `base/fingerprints.json`
      and in the app's log, so that two runs can be compared step by step (a bug report carries them).
-3. Click **Annotate**.
+3. Optionally **Leave out spillover** (marker genes, off by default): in imaging data a cell's outline also catches
+   transcripts of its neighbors; on, a gene counts as detected in a cell only where its count is above a tenth of the
+   mean count of its 6 nearest cells of the same slice. Try it when many cells stay untyped or markers of a
+   neighboring type show up where they should not.
+4. Click **Annotate**.
+
+The cells the marker step could not type get a type from their marker genes and then, round by round, from the cell
+types around them (their 10 nearest cells), until the labels settle; the cells the marker step typed keep their own
+expression. Annotations made before 0.2.57 keep their results.
 
 **Time estimate.** Under Neighbors the app estimates how long the whole annotation will take here, for both choices
 (hover for the steps), and the progress bar shows the time so far against that estimate. The estimate starts from a

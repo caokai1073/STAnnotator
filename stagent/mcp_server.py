@@ -992,7 +992,7 @@ def start_session(sample_id: str, markers_text: Optional[str] = None,
                   carry_from_current: bool = False, reference_h5ad: Optional[str] = None,
                   label_column: Optional[str] = None, group_column: Optional[str] = None,
                   majority_voting: bool = False, annotation_csv: Optional[str] = None, id_column: Optional[str] = None,
-                  lineage_column: Optional[str] = None, knn: Optional[str] = None) -> str:
+                  lineage_column: Optional[str] = None, knn: Optional[str] = None, spillover: bool = False) -> str:
     """Start a new annotation session on a sample. The data is treated as unlabeled: cell types come from a
     hierarchical marker gene list (markers_text: indented text as in check_marker_list, or CSV with columns
     cell_type, parent, positive_markers, negative_markers; required).
@@ -1007,6 +1007,10 @@ def start_session(sample_id: str, markers_text: Optional[str] = None,
     knn (marker list only): the neighbor search of the marker step, "approx" (default; pynndescent on 8 threads on
     every computer: fast, and the same result with the same app version) or "exact" (the true neighbors; slow
     without a GPU for large samples; GPU and CPU may differ for a few cells). Use "exact" only when the user asks.
+    spillover (marker list only): leave out transcripts spilled over from neighboring cells in the marker step (a
+    gene counts in a cell only above a tenth of its mean count in the 6 nearest cells); off by default, for imaging
+    data with many untyped cells or neighbors' markers showing up. The cells the marker step cannot type are always
+    typed with their marker genes and their neighbors' types.
     """
     carry = _active["session"].id if carry_from_current and _active.get("session") else None
     ref = ex = None
@@ -1018,7 +1022,7 @@ def start_session(sample_id: str, markers_text: Optional[str] = None,
                "majority_voting": majority_voting}
     method = "existing" if ex else "scref" if ref else "markers"
     _active["session"] = Session.create(sample_id, "none", method=method, markers_text=markers_text,
-                                        carry_from=carry, reference=ref, existing=ex, knn=knn)
+                                        carry_from=carry, reference=ref, existing=ex, knn=knn, spillover=spillover)
     return _j(_active["session"].summary())
 
 
