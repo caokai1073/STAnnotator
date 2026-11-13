@@ -230,6 +230,59 @@ def current(s):
     return st, st["rounds"][-1]
 
 
+def mark_asked(s):
+    """The agent was asked to review the current round (Agent review, or a message of the user)."""
+    st, rd = current(s)
+    rd["asked"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+    save(s, st)
+
+
+def awaiting(s):
+    """Whether the current round waits for the agent's proposal: asked, not decided, nothing proposed since."""
+    try:
+        st, rd = current(s)
+    except ValueError:
+        return False
+    p = rd.get("proposal") or {}
+    return bool(rd.get("asked")) and not rd.get("decision") and (p.get("time") or "") < rd["asked"]
+
+
+def edits_from_text(old, new):
+    """A whole revised marker list as edits of the old one, type by type (the Refine window shows edits): add_type
+    (parents first), move_type, set_markers where a type's markers changed, remove_type (only the topmost removed)."""
+    def flat(text):
+        out = {}
+        def walk(nodes, parent):
+            for n in nodes:
+                out[n["name"]] = (parent, n["markers"])
+                walk(n["children"], n["name"])
+        walk(markers.parse(text, None)["tree"], None)
+        return out
+    def mtext(ms):
+        return " ".join("|".join(m["genes"]) + ("-" if m["sign"] < 0 else "+") for m in ms)
+    def key(ms):
+        return {(frozenset(m["genes"]), m["sign"]) for m in ms}
+    a, b = flat(old or ""), flat(new or "")
+    adds, moves, sets, removes = [], [], [], []
+    for t, (par, ms) in b.items():  # in the new list's order: a parent before its children
+        if t not in a:
+            adds.append({"kind": "add_type", "type": t, "parent": par, "markers": mtext(ms)})
+            continue
+        if a[t][0] != par:
+            moves.append({"kind": "move_type", "type": t, "parent": par})
+        if key(a[t][1]) != key(ms):
+            gone = key(a[t][1]) - key(ms)
+            new_ = key(ms) - key(a[t][1])
+            fmt = lambda ks: ", ".join("|".join(sorted(g)) + ("-" if s_ < 0 else "+") for g, s_ in sorted(ks, key=str))
+            sets.append({"kind": "set_markers", "type": t, "markers": mtext(ms),
+                         "change": "; ".join(x for x in (f"added {fmt(new_)}" if new_ else "",
+                                                         f"removed {fmt(gone)}" if gone else "") if x)})
+    for t, (par, _) in a.items():
+        if t not in b and (par is None or par in b):
+            removes.append({"kind": "remove_type", "type": t})
+    return adds + moves + sets + removes
+
+
 def add_message(s, who, text):
     st, rd = current(s)
     rd["messages"].append({"from": who, "text": str(text)[:4000], "time": time.strftime("%Y-%m-%dT%H:%M:%S")})
@@ -247,7 +300,7 @@ def propose(s, summary, edits, organ=None, questions=None):
             raise ValueError(f"edit {i + 1}: kind must be one of {', '.join(EDIT_KINDS)}")
         clean.append({"id": f"E{i + 1}", **{k: e[k] for k in e if k != "id"}})
     text, problems = apply_edits(rd["marker_text"] or "", clean, s.panel) if clean else (rd["marker_text"], [])
-    rd["proposal"] = {"summary": str(summary or "")[:4000], "edits": clean, "questions": list(questions or [])[:5],
+    rd["proposal"] = {"summary": str(summary or "")[:6000], "edits": clean, "questions": list(questions or [])[:10],
                       "organ": organ, "check": problems, "time": time.strftime("%Y-%m-%dT%H:%M:%S")}
     if organ and not st.get("organ"):
         st["organ"] = organ

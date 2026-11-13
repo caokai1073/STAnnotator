@@ -1297,9 +1297,23 @@ def propose_refinement(summary: str, edits: list[dict], questions: Optional[list
 def propose_marker_list(text: str, summary: str) -> str:
     """Validate a revised marker list (full text, same format as the current one) and offer it to the user: it
     appears in the viewer's Review panel, from where the user opens it in "Markers..." and annotates again.
-    summary: what changed and why, in a few lines. Returns the changed lines."""
-    from . import markerqc
-    rec = markerqc.propose(_s(), text, summary)
+    summary: what changed and why, in a few lines. Returns the changed lines. While the user's Refine window waits
+    for your review, use propose_refinement instead; a list sent here then goes to that window as edits."""
+    from . import markerqc, iterate
+    s = _s()
+    if iterate.awaiting(s):  # the Refine window asked: the list becomes the round's edits, type by type
+        st, rd = iterate.current(s)
+        edits = iterate.edits_from_text(rd["marker_text"] or "", text)
+        for e in edits:
+            e.setdefault("reason", e.pop("change", "") or "in the revised list")
+            e.setdefault("evidence", "see the summary")
+        rec = iterate.propose(s, summary, edits)
+        return _j({"sent_to": "the Refine window (round %d) as %d edits" % (rd["n"], len(rec["edits"])),
+                   "edits": [{k: e[k] for k in ("id", "kind", "type")} for e in rec["edits"]],
+                   "problems_of_the_edited_list": rec["check"],
+                   "note": "next time answer the Refine window with propose_refinement: edits with their own reason "
+                           "and evidence, and questions for the user"})
+    rec = markerqc.propose(s, text, summary)
     return _j({k: rec[k] for k in ("diff", "warnings", "n_types", "status")})
 
 

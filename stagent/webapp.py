@@ -705,8 +705,10 @@ REFINE_REQUEST = ("I am refining the annotation {sid} with you in the Refine win
                   "where they lie fit the organ and its priors (name the rule), and which types have weak or unspecific "
                   "markers, are missing, too many or should be merged or split. Then call propose_refinement once: edits "
                   "of the marker list, each with its reason and evidence (only genes of the panel; check the edited list "
-                  "with check_marker_list first), and questions for me where only I can decide. Do not change the "
-                  "annotation yourself. My own words in the conversation come first: follow them before your own view "
+                  "with check_marker_list first), and questions for me where only I can decide. Answer only with "
+                  "propose_refinement: the Refine window shows nothing else (not propose_marker_list, not "
+                  "save_marker_list); many changes to a type's markers can be one set_markers edit. If it reports a "
+                  "problem with an edit, fix that edit and call it again. Do not change the annotation yourself. My own words in the conversation come first: follow them before your own view "
                   "and the priors.")
 REFINE_REPLY = ("In the Refine window (annotation {sid}, round {n}) I wrote: \"{text}\". My words come first. Read "
                 "refine_report again and answer with propose_refinement: the edits revised as I asked, or the same "
@@ -751,6 +753,7 @@ async def api_refine_ask(req: Request):
     except ValueError as e:
         return _json({"error": str(e)}, 400)
     user = f"I wrote: \"{msg}\" (this comes first). " if msg else ""
+    iterate.mark_asked(s)
     return _json({"round": rd} | _ask_claude(s, REFINE_REQUEST.format(
         sid=s.id, n=rd["n"], user=user, organ=_refine_organ_line(iterate.load(s), rd["report"]["organ"]))))
 
@@ -774,6 +777,7 @@ async def api_refine_start(req: Request):
         out = {"round": rd}
         if b.get("ask"):
             user = (f"I wrote: \"{b['message'].strip()}\" (this comes first). " if (b.get("message") or "").strip() else "")
+            iterate.mark_asked(s)
             out |= _ask_claude(s, REFINE_REQUEST.format(sid=s.id, n=rd["n"], user=user,
                                                         organ=_refine_organ_line(iterate.load(s), rd["report"]["organ"])))
         return _json(out)
@@ -793,6 +797,7 @@ async def api_refine_message(req: Request):
         rd = iterate.add_message(s, "user", text)
     except ValueError as e:
         return _json({"error": str(e)}, 400)
+    iterate.mark_asked(s)
     return _json({"round": rd} | _ask_claude(s, REFINE_REPLY.format(sid=s.id, n=rd["n"], text=text.replace('"', "'"))))
 
 
@@ -3548,7 +3553,7 @@ async def api_claude_markers(req: Request):
                    f"types and markers mine lacks. " if organ in built and organ != "other" else "")
         import re
         base = re.sub(r"[^A-Za-z0-9_.-]+", "_", (b.get("name") or "").strip() or f"{sample}_markers").strip("_")
-        name = (base if base.endswith("_refined") else f"{base}_refined")[:60]
+        name = base if base.endswith("_refined") else base[:52].rstrip("_.-") + "_refined"  # the suffix kept whole
         req_text = REVISE_REQUEST.format(sample=sample, organ_line=organ_line, builtin=builtin, name=name)
         if not desktop_mode():  # the server viewer revises the editor's list itself (Markers… > Draft)
             return _json({"message": (f"Tissue: {label}. " if label else "") + "Refine this list (my own): keep its cell "

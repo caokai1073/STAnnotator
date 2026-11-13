@@ -4,7 +4,9 @@
 2. a round's report: organ, types, weak evidence, marker flags, types not found;
 3. the agent's proposal (edits checked against the list), the user's message, some edits accepted: the next marker
    list has exactly those edits; a bad edit is refused;
-4. annotating with that list and carrying the rounds: the next round compares with the one before.
+4. annotating with that list and carrying the rounds: the next round compares with the one before;
+5. a whole revised list the agent sends with propose_marker_list while the round waits (Agent review) goes to the
+   Refine window as edits, which applied give that list.
 Run: python tests/smoke_refine.py  (a temporary data folder removed at the end)."""
 import os, shutil, tempfile
 from pathlib import Path
@@ -68,6 +70,31 @@ try:
     st2 = iterate.start_round(s2)
     assert len(st2["rounds"]) == 2 and st2["organ"] == "Colon" and "changes" in st2["rounds"][-1]["report"]
     print(f"round 2 after accepting E1: {len(st2['rounds'][-1]['report']['changes'])} types changed")
+
+    from stagent import mcp_server, markerqc
+    import json
+    old = st2["rounds"][-1]["marker_text"]
+    tree = markers.parse(old, None)["tree"]
+    epi = tree[0]["name"]
+    kids = tree[0]["children"]
+    g1, g2, g3 = [g for g in s2.panel if g not in old][:3]
+    new = old.replace(f"  {kids[0]['name']}:", f"  {kids[0]['name']}: {g1}+", 1)  # a marker added
+    new = "\n".join(l for l in new.splitlines() if not l.strip().startswith(kids[-1]["name"] + ":"))  # a type removed
+    new += f"\nTest top type: {g2}+ {g3}+"  # a type added at the top
+    mcp_server._active["session"] = s2
+    assert not iterate.awaiting(s2)
+    iterate.mark_asked(s2)
+    assert iterate.awaiting(s2)
+    r = json.loads(mcp_server.propose_marker_list(new, "a whole list"))
+    assert "Refine window" in r["sent_to"], r
+    assert not iterate.awaiting(s2) and markerqc.proposal(s2) is None, "the list went to the Review panel"
+    edits = iterate.current(s2)[1]["proposal"]["edits"]
+    got, _ = iterate.apply_edits(old, edits)
+    flat = lambda t: sorted(l.strip() for l in markers.to_text(markers.parse(t, None)["tree"]).splitlines())
+    assert flat(got) == flat(new), (flat(got), flat(new))
+    print("whole list during Agent review ->", ", ".join(f"{e['kind']} {e['type']}" for e in edits))
+    r = json.loads(mcp_server.propose_marker_list(new, "not asked"))  # not waiting: the Review panel as before
+    assert "sent_to" not in r and markerqc.proposal(s2) is not None
     print("ok")
 finally:
     shutil.rmtree(HOME, ignore_errors=True)
