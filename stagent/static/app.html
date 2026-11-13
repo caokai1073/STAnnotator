@@ -561,10 +561,10 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <span>Keep my regions, priors &amp; corrections<small>carried into the new annotation</small></span></label>
     <label class="switch" id="rfAutoWrap" title="After annotating with marker genes, the agent reviews the result with the tissue's priors and proposes edits of the marker list; you accept some and the app annotates again, round by round"><input type="checkbox" id="rfAuto" checked>
       <span>Refine with the agent<small>after annotating: review, edit the list, annotate again</small></span></label>
-    <label class="switch projall" hidden title="Annotate all slices of the project at once (one marker step and one model), so a name means the same cells in every slice"><input type="checkbox" id="projAllA" checked>
+    <label class="switch projall" hidden title="Annotate all slices of the project at once (one marker step and one model), so a name means the same cells in every slice"><input type="checkbox" id="projAllA">
       <span>All slices together<small>one annotation of the project's slices (marker genes)</small></span></label>
-    <div class="act2"><button id="rfOpen" disabled title="Refine this annotation with the agent: the computed problems, the agent's proposed edits of the marker list, your conversation with it">Refine…</button></div>
     <button id="annotate" class="primary main">Annotate</button>
+    <div class="act2"><button id="rfOpen" disabled title="Refine this annotation with the agent: the computed problems, the agent's proposed edits of the marker list, your conversation with it">Refine…</button></div>
   </div>
   <div class="pane" data-pane="embed">
     <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-scatter"/></svg><div><div id="einfo">No embedding yet</div>
@@ -4807,7 +4807,8 @@ const HELP = `
     hidden H&amp;E, the UMAP window and, on a UMAP of all slices, its zoom and selection.</li>
   <li><b>Overview of all samples</b> shows them side by side.</li>
   <li>The Compare tab compares them (scope: all slices, rows by slice).</li></ul></li>
-<li><b>All slices together</b> (in the Annotate, Embed and Niche tabs, each for its own analysis) treats the project as one:<ul>
+<li><b>All slices together</b> (in the Annotate, Embed and Niche tabs, each for its own analysis; off by default for
+  Annotate, on for Embed and Niche) treats the project as one:<ul>
   <li><b>Annotate</b> annotates all slices at once (one marker step and one model, so a name means the same cells in
     every slice).</li>
   <li><b>Run PCA + UMAP</b> makes one embedding of all slices; <b>Harmony</b> removes the differences between slices.</li>
