@@ -219,19 +219,14 @@ def marker_tree(ops):        # the marker list with the edits of re-clusterings 
 res = sa.markers.annotate(counts, genes, SCHEME["tree"], resolution=SCHEME["resolution"], knn=SCHEME["knn"])   # marker step
 for j, op in enumerate(STATE["marker_ops"]):
     res = sa.markers.rerun(res, counts, genes, marker_tree(STATE["marker_ops"][:j + 1]), op["target"], op["resolution"], prefix=f"{op['id']}:", knn=SCHEME["knn"])
-index = {t: i for i, t in enumerate(TYPES)}
-marker_labels = np.array([index.get(x, -1) for x in res["labels"]])   # -1: left at a lineage / parent level
+marker_labels = sa.markers.training_labels(res, TYPES)   # -1: left at a lineage / parent level
 model = sa.model.train_pseudo(counts, marker_labels, T, keep=sa.markers.gene_columns(marker_tree(STATE["marker_ops"]), genes))   # expression model
 if len(lock_rows):
     rX, ry, _ = sa.model.pseudo_pool(counts, marker_labels, T)
     model = sa.model.finetune(model, counts[lock_rows], lock_labels, rX, ry)
-logp = sa.model.predict(model, counts).astype(np.float32)
-groups = sa.markers.descendants(SCHEME["tree"])  # cells left at a group get a type of that group only
-for node in set(res["labels"].tolist()) - set(TYPES):
-    rows_ = np.where(res["labels"] == node)[0]
-    logp[np.ix_(rows_, np.where(~np.isin(TYPES, groups.get(node, [])))[0])] += np.float32(np.log(1e-4))
-logp -= logp.max(1, keepdims=True)
-logp = (logp - np.log(np.exp(logp).sum(1, keepdims=True))).astype(np.float16)'''
+logp = sa.model.predict(model, counts)
+# cells left at a group get a type of that group; types the marker step found no cell of are not given
+logp = sa.markers.restrict(logp, res, marker_tree(STATE["marker_ops"]), TYPES, lock_labels)'''
     elif sch["kind"] == "existing":
         e = sch["existing"]
         base = f'''
@@ -724,7 +719,7 @@ OFF = np.cumsum([0] + [SLICES[x]["counts"].shape[0] for x in ORDER])
 pooled = sp.vstack([SLICES[x]["counts"] for x in ORDER]).tocsr()
 res = sa.markers.annotate(pooled, genes, SCHEME["tree"], resolution=SCHEME["resolution"], knn=SCHEME["knn"])  # one marker step
 index = {{t: i for i, t in enumerate(TYPES)}}
-pooled_labels = np.array([index.get(x, -1) for x in res["labels"]])
+pooled_labels = sa.markers.training_labels(res, TYPES)
 joint_model = sa.model.train_pseudo(pooled, pooled_labels, T, keep=sa.markers.gene_columns(SCHEME["tree"], genes))  # one model
 
 def slice_res(res, o, n):                # the pooled marker step's part of one slice (rows made local)
@@ -761,19 +756,13 @@ lock_rows = np.array(list(corr), int); lock_labels = np.array(list(corr.values()
 r = slice_res(res, OFF[i], OFF[i + 1] - OFF[i])
 for j, op in enumerate(STATE["marker_ops"]):   # this slice's own re-clusterings
     r = sa.markers.rerun(r, counts, genes, marker_tree(STATE["marker_ops"][:j + 1]), op["target"], op["resolution"], prefix=f"{{op['id']}}:", knn=SCHEME["knn"])
-marker_labels = np.array([index.get(x, -1) for x in r["labels"]])
+marker_labels = sa.markers.training_labels(r, TYPES)
 model = joint_model if not STATE["marker_ops"] else sa.model.train_pseudo(
     counts, marker_labels, T, keep=sa.markers.gene_columns(marker_tree(STATE["marker_ops"]), genes))
 if len(lock_rows):
     rX, ry, _ = sa.model.pseudo_pool(counts, marker_labels, T)
     model = sa.model.finetune(model, counts[lock_rows], lock_labels, rX, ry)
-logp = sa.model.predict(model, counts).astype(np.float32)
-groups = sa.markers.descendants(SCHEME["tree"])  # cells left at a group get a type of that group only
-for node in set(r["labels"].tolist()) - set(TYPES):
-    rows_ = np.where(r["labels"] == node)[0]
-    logp[np.ix_(rows_, np.where(~np.isin(TYPES, groups.get(node, [])))[0])] += np.float32(np.log(1e-4))
-logp -= logp.max(1, keepdims=True)
-logp = (logp - np.log(np.exp(logp).sum(1, keepdims=True))).astype(np.float16)
+logp = sa.markers.restrict(sa.model.predict(model, counts), r, marker_tree(STATE["marker_ops"]), TYPES, lock_labels)
 base_pred, _ = sa.constraints.posterior(logp, [], None, TYPES)          # expression only
 region = sa.regions.assign(cells, STATE["regions"])                    # drawn regions
 nn = cKDTree(xy).query(xy, k=sa.constraints.NEIGHBORS_K + 1)[1][:, 1:]

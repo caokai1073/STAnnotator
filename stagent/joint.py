@@ -119,8 +119,7 @@ def _annotate(pid, markers_text, resolution, carry, say, knn, ids, off, hold, pa
                            resolution=markers.AUTO if resolution in (None, "", markers.AUTO) else float(resolution),
                            knn=knn)
     types = parsed["leaves"]
-    index = {t: i for i, t in enumerate(types)}
-    lab = np.array([index.get(x, -1) for x in res["labels"]], np.int64)
+    lab = markers.training_labels(res, types)  # -1: left at a parent level
     say(0.55, "training one expression model on all slices")
     m = model.train_pseudo(counts, lab, len(types), progress=lambda f, msg: say(0.55 + 0.25 * f, msg),
                            keep=markers.gene_columns(parsed["tree"], panel))

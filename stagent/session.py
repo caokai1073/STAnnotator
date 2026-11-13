@@ -577,8 +577,7 @@ class Session:
 
     def marker_labels(self, st=None, progress=None):
         """Marker-step label index per cell for a version."""
-        idx = {t: i for i, t in enumerate(self.types)}  # -1: left at a lineage / parent level, not a cell type
-        return np.array([idx.get(x, -1) for x in self.marker_result(st, progress)["labels"]], np.int64)
+        return markers.training_labels(self.marker_result(st, progress), self.types)  # -1: no cell type to learn from
 
     def clusters(self, version=None):
         """Marker-step clusters with their assignment, marker scores and current label composition."""
@@ -611,20 +610,6 @@ class Session:
         lp -= lp.max(1, keepdims=True)
         return (lp - np.log(np.exp(lp).sum(1, keepdims=True))).astype(np.float16)
 
-    def _only_found(self, logp, st, corrected=()):
-        """Marker mode: the cell types the marker step found no cell of (its clusters and its rare-type search looked
-        for them) are not predicted: the model never learned them, and the few cells it would give them are noise.
-        They are listed as not found (types_not_found), with why; a type the user corrected cells to stays."""
-        ml = self.marker_result(st)["labels"]
-        found = set(ml.tolist()) | {self.types[int(i)] for i in np.asarray(corrected, dtype=np.int64)}
-        off = np.array([t not in found for t in self.types])
-        if not off.any() or off.all():
-            return logp
-        lp = logp.astype(np.float32)
-        lp[:, off] = np.float32(-1e4)
-        lp -= lp.max(1, keepdims=True)
-        return (lp - np.log(np.exp(lp).sum(1, keepdims=True))).astype(np.float16)
-
     def _train_base(self, st, progress=None):
         """Model before corrections (see _init_model); hand corrections then fine-tune it."""
         say = progress or (lambda f, m: None)
@@ -647,10 +632,11 @@ class Session:
             m = model.finetune(m, counts[rows], labs, rX, ry, progress=lambda fr, msg: say(0.3 + 0.6 * fr, msg))
         say(0.92, "predicting all cells")
         logp = model.predict(m, counts)
-        if self.scheme.get("leaf_types"):
+        if self.scheme["kind"] == "markers":  # the marker step's levels and the types it found no cell of
+            logp = markers.restrict(logp, self.marker_result(st), self._marker_tree(st.get("marker_step", {}).get("ops", [])),
+                                    self.types, labs)
+        elif self.scheme.get("leaf_types"):
             logp = self._within_parent(logp, st)
-        if self.scheme["kind"] == "markers":
-            logp = self._only_found(logp, st, labs)
         if self.scheme["kind"] == "existing":
             from . import existing as ex
             logp = ex.mix(logp, self.loaded_labels())
@@ -765,7 +751,7 @@ class Session:
         have = set(np.unique(r["pred"]).tolist())
         why = {x["type"]: x for x in (self.marker_result(r["state"]).get("not_found") or [])}
         return [why.get(t, {"type": t, "reason": "the expression model gave it no cell"})
-                for i, t in enumerate(self.types) if i not in have]
+                for i, t in enumerate(self.types) if i not in have and t != markers.UNASSIGNED]
 
     def diff(self, a, b):
         ra, rb = self.result(a), self.result(b)

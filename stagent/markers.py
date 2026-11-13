@@ -1024,11 +1024,6 @@ def _leiden(g, nbr, resolution, seed, min_cluster=None):
     return np.unique(lab, return_inverse=True)[1]
 
 
-def _marker_z(det_frac, gene_idx):
-    f = det_frac[:, gene_idx]
-    return np.clip((f - f.mean(0)) / (f.std(0) + 0.02), -3, 3)
-
-
 def _detected(counts):
     """Cells x genes, 1.0 where the gene is detected (count > 0), float32. A counts matrix in canonical form without
     stored zeros (as samples are read) shares its index arrays (no copy of them: a CosMx 6K or Visium HD matrix is
@@ -1061,25 +1056,26 @@ class _Annotator:
         self.done, self.total = 0, 1
         self.fp = {}  # checksums of the root level (see annotate)
 
-    def score(self, children, frac):
-        S = np.zeros((frac.shape[0], len(children)))
-        for j, ch in enumerate(children):
-            parts = []
-            for m in ch["markers"]:
-                z = _marker_z(frac, [self.gi[g] for g in m["genes"]])
-                parts.append(m["sign"] * (z.max(1) if m["sign"] > 0 else z.min(1)))
-            S[:, j] = np.mean(parts, axis=0)
-        return S
-
     def _evaluate(self, idx, lab, children, context=None):
-        """context: detection rates (clusters x genes) of the level's other clusters, when only some of its cells are
-        clustered again (rerun of one cluster): the markers are z-scored over all of them, as in the first run, not
-        over the new sub-clusters alone (between near-identical sub-clusters the z-scores are noise)."""
+        """Score the clusters lab of the rows idx for each child type: the detection rate of each marker, z-scored
+        across the clusters, sign-adjusted, averaged over the child's markers (A|B: the strongest). context: the rows
+        of each of the level's other clusters, when only some of its cells are clustered again (rerun of one cluster):
+        the markers are z-scored over all of them, as in the first run, not over the new sub-clusters alone (between
+        near-identical sub-clusters the z-scores are noise)."""
         k = int(lab.max()) + 1
         onehot = sp.csr_matrix((np.ones(len(idx)), (lab, np.arange(len(idx)))), shape=(k, len(idx)))
         size = np.asarray(onehot.sum(1)).ravel()
         frac = np.asarray((onehot @ (self.det if _all_rows(idx, self.n) else self.det[idx])).todense()) / np.maximum(size, 1)[:, None]
-        S = self.score(children, frac if context is None or not len(context) else np.vstack([frac, context]))[:k]
+        if context:  # the level's other clusters
+            frac = np.vstack([frac] + [np.asarray(self.det[np.asarray(rows)].mean(0)).reshape(1, -1) for rows in context])
+        S = np.zeros((k, len(children)))
+        for j, ch in enumerate(children):
+            parts = []
+            for m in ch["markers"]:
+                f = frac[:, [self.gi[g] for g in m["genes"]]]
+                z = np.clip((f - f.mean(0)) / (f.std(0) + 0.02), -3, 3)[:k]
+                parts.append(m["sign"] * (z.max(1) if m["sign"] > 0 else z.min(1)))
+            S[:, j] = np.mean(parts, axis=0)
         order = np.argsort(-S, 1)
         best = S[np.arange(k), order[:, 0]]
         second = S[np.arange(k), order[:, 1]] if len(children) > 1 else np.full(k, -np.inf)
@@ -1127,10 +1123,10 @@ class _Annotator:
                 res["labels"][rows] = assigned
             res["cluster_of"][rows] = cid
             res["members"][cid] = rows.astype(np.int32)
-            res["records"].append({"id": cid, "parent": parent, "n_cells": int(ev["size"][c]), "assigned": assigned,
-                                   "resolution": r,
-                                   "scores": {ch["name"]: round(float(ev["S"][c, j]), 2) for j, ch in enumerate(children)},
-                                   "margin": round(float(ev["best"][c] - ev["second"][c]), 2) if len(children) > 1 else None})
+            rec = {"id": cid, "parent": parent, "n_cells": int(ev["size"][c]), "assigned": assigned, "resolution": r,
+                   "scores": {ch["name"]: round(float(ev["S"][c, j]), 2) for j, ch in enumerate(children)},
+                   "margin": round(float(ev["best"][c] - ev["second"][c]), 2) if len(children) > 1 else None}
+            res["records"].append(rec)
         if RARE:
             self.rare(res, parent, idx, children, ev, r, prefix, context)
         self.done += 1
@@ -1301,6 +1297,34 @@ class _Annotator:
         node["rare"] = tried
 
 
+def training_labels(res, types):
+    """The expression model's training label of every cell from a marker-step result: the index of its cell type, or
+    -1 for a cell left at a lineage or parent level (the session and the exported notebook both use this)."""
+    index = {t: i for i, t in enumerate(types)}
+    return np.array([index.get(x, -1) for x in res["labels"]], np.int64)
+
+
+def restrict(logp, res, tree, types, corrected=()):
+    """The expression model's log-probabilities (cells x types) made to agree with the marker step, as float16 (the
+    session and the exported notebook both use this): a cell left at a lineage or parent level gets a type below it
+    (the others down-weighted by 1e-4); a type the model did not learn (no cell of it in the marker step) is not given,
+    unless corrected holds it (type indices the user corrected cells to): its cells would be noise."""
+    types = list(types)
+    groups = descendants(tree)
+    lp = np.asarray(logp, np.float32).copy()
+    lab = res["labels"]
+    for node in set(lab.tolist()) - set(types):  # left at a group: a type of that group
+        rows = np.where(lab == node)[0]
+        lp[np.ix_(rows, np.where(~np.isin(types, groups.get(node, [])))[0])] += np.float32(np.log(1e-4))
+    found = {types[i] for i in np.unique(training_labels(res, types)) if i >= 0}
+    found |= {types[int(i)] for i in np.asarray(corrected, np.int64)}
+    off = np.array([t not in found for t in types])
+    if off.any() and not off.all():
+        lp[:, off] = np.float32(-1e4)
+    lp -= lp.max(1, keepdims=True)
+    return (lp - np.log(np.exp(lp).sum(1, keepdims=True))).astype(np.float16)
+
+
 def _n_levels(tree):
     return 1 + sum(1 for nd in descendants(tree) if _find(tree, nd)["children"])
 
@@ -1355,9 +1379,8 @@ def rerun(res, counts, panel, tree, target, resolution=AUTO, prefix="", progress
         # the level's other clusters, for z-scoring the markers as the first run did
         sib = [np.asarray(m) for r in res["records"] if r["parent"] == parent and r["id"] != target
                and len(m := res["members"].get(r["id"], ())) ]
-        if sib:
-            det = (sp.csr_matrix(counts) > 0).astype(np.float32).tocsr()
-            context = np.vstack([np.asarray(det[m].mean(0)).ravel() for m in sib])
+        if sib:  # the level's other clusters: the markers are z-scored over them too, as in the first run
+            context = sib
     else:
         node = _find(tree, target)
         if node is None:
