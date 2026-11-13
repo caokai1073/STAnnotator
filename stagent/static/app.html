@@ -1805,6 +1805,8 @@ function closeSession() {
 
 async function startAnnotation(mode, sid, token = st.switchToken) {
   const method = $("method").value;
+  const rfFrom = mode === "new" ? RF.from : null;  // the Refine round this annotation continues (taken here once)
+  if (mode === "new") RF.from = null;
   const body = { sample_id: st.sample.sample_id, region_source: "none", mode, method,
                  markers_text: $("mkText").value, resolution: $("mkAuto").checked ? "auto" : +$("mkRes").value,
                  knn: $("knn").value, estimate_s: EST.last ? EST.last[$("knn").value].seconds : null, spillover: $("spill").checked,
@@ -1859,8 +1861,8 @@ async function startAnnotation(mode, sid, token = st.switchToken) {
       fillSessions(session_id);
     }
     await openSession(session_id);
-    if (mode === "new" && method === "markers" && rfAgentOk() && (RF.from || $("rfAuto").checked)) {  // the next round
-      const f = RF.from; RF.from = null;
+    if (mode === "new" && method === "markers" && rfAgentOk() && (rfFrom || $("rfAuto").checked)) {  // the next round
+      const f = rfFrom;
       rfOpen(f).catch((e) => toast(`Refine: ${e.message}`, 6000));
     }
     if (!quiet) setTimeout(() => $("progress").classList.remove("show"), 800);
@@ -4217,7 +4219,7 @@ async function rfPoll() {
   if (key !== RF.seen) { RF.state = r; rfRender(); }
 }
 function rfOrgan() { return $("rfOrgan").value === "__other" ? $("rfOrganOther").value.trim() : $("rfOrgan").value; }
-const rfEsc = (x) => String(x ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const rfEsc = (x) => String(x ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 function rfEditText(e) {
   const t = `<b>${rfEsc(e.type)}</b>`;
   return { add_marker: `add ${rfEsc(e.marker)} to ${t}`, remove_marker: `remove ${rfEsc(e.marker)} from ${t}`,
@@ -4236,7 +4238,9 @@ function rfRender() {
   const opts = [["", "— which organ is this? —"], ...r.organs.map((o) => [o, o]), ["__other", "another organ…"]];
   const sel = $("rfOrgan"); sel.textContent = "";
   opts.forEach(([v, l]) => sel.append(new Option(l, v)));
-  if (organ && !r.organs.includes(organ)) { sel.value = "__other"; $("rfOrganOther").value = organ; } else sel.value = organ;
+  const mine = RF.organPick && RF.organPick.key === `${RF.sid}|${rd.n}` ? RF.organPick : null;  // chosen, not yet sent
+  if (mine) { sel.value = mine.value; $("rfOrganOther").value = mine.other; }
+  else if (organ && !r.organs.includes(organ)) { sel.value = "__other"; $("rfOrganOther").value = organ; } else sel.value = organ;
   $("rfOrganOther").hidden = sel.value !== "__other";
   $("rfOrganWhy").textContent = r.organ ? "confirmed" : g.organ ? `inferred: ${(g.evidence || []).join("; ")}; change it if wrong` : "not known: choose it, or let the agent infer it";
   // the computed report
@@ -4258,7 +4262,12 @@ function rfRender() {
   if (P && P.edits.length) {
     P.edits.forEach((e) => {
       const l = document.createElement("label"); const c = document.createElement("input"); c.type = "checkbox"; c.value = e.id;
-      c.checked = rd.decision !== "dismissed"; c.disabled = !!rd.decision;
+      const off = RF.unticked && RF.unticked.time === P.time ? RF.unticked.ids : null;
+      c.checked = rd.decision !== "dismissed" && !(off && off.has(e.id)); c.disabled = !!rd.decision;
+      c.onchange = () => {  // remembered for this proposal, so the next refresh of the window keeps it
+        if (!RF.unticked || RF.unticked.time !== P.time) RF.unticked = { time: P.time, ids: new Set() };
+        if (c.checked) RF.unticked.ids.delete(e.id); else RF.unticked.ids.add(e.id);
+      };
       const d = document.createElement("div");
       d.innerHTML = `${rfEsc(e.id)} · ${rfEditText(e)}` + (e.reason ? `<div class="why">${rfEsc(e.reason)}</div>` : "") + (e.evidence ? `<div class="why">${rfEsc(e.evidence)}</div>` : "");
       l.append(c, d); eb.append(l);
@@ -4271,7 +4280,12 @@ function rfRender() {
   setLabel($("rfAsk"), P ? "Agent review again" : "Agent review");
   $("rfAsk").hidden = rd.decision === "accepted" || rd.decision === "stopped";
 }
-$("rfOrgan").onchange = () => { $("rfOrganOther").hidden = $("rfOrgan").value !== "__other"; };
+const rfRememberOrgan = () => {
+  const rd = rfRound(); if (!rd) return;
+  RF.organPick = { key: `${RF.sid}|${rd.n}`, value: $("rfOrgan").value, other: $("rfOrganOther").value };
+};
+$("rfOrgan").onchange = () => { $("rfOrganOther").hidden = $("rfOrgan").value !== "__other"; rfRememberOrgan(); };
+$("rfOrganOther").addEventListener("input", rfRememberOrgan);
 $("rfPrior").onclick = async () => {  // the Prior window, on the organ chosen here (it opens over this one)
   if (!st.sample) return;
   $("prInfo").textContent = sampleName(st.sample);
@@ -4299,8 +4313,13 @@ $("rfSend").onclick = async () => {
 $("rfAccept").onclick = async () => {
   const ids = [...document.querySelectorAll("#rfEdits input:checked")].map((c) => c.value);
   if (!ids.length) { $("rfErr").textContent = "Tick at least one edit"; return; }
-  let r; try { r = await post(`/api/s/${RF.sid}/refine/decide`, { decision: "accepted", edits: ids }); }
-  catch (e) { $("rfErr").textContent = e.message; return; }
+  const rd = rfRound(), b = $("rfAccept");
+  if (b.disabled) return;
+  b.disabled = true;  // (a second click would start a second annotation)
+  let r;
+  try { r = await post(`/api/s/${RF.sid}/refine/decide`, { decision: "accepted", edits: ids, proposal_time: rd && rd.proposal ? rd.proposal.time : null }); }
+  catch (e) { $("rfErr").textContent = e.message; b.disabled = false; rfPoll(); return; }
+  b.disabled = false;
   $("mkText").value = r.marker_text; $("carry").checked = true; $("method").value = "markers"; syncSeg("method");
   RF.from = RF.sid; clearInterval(RF.timer); $("rfDlg").close();
   toast(`Annotating again with ${ids.length} edit(s); the next round opens when it is done`, 5000);

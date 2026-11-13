@@ -1323,7 +1323,7 @@ def propose_refinement(summary: str, edits: list[dict], questions: Optional[list
     (problems the edited list would have)."""
     from . import iterate
     s = _refine_session(session_id)
-    if iterate.current(s)[1].get("decision"):
+    if iterate.current(s)[1].get("decision") in ("accepted", "stopped"):
         raise ValueError(f"round {iterate.current(s)[1]['n']} of {s.id} is already decided; the request names the "
                          "annotation of the round waiting: pass its session_id")
     rec = iterate.propose(s, summary, edits, organ, questions)

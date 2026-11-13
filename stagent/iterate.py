@@ -165,10 +165,10 @@ def apply_edits(text, edits, panel=None):
                     nd["markers"].append(m)
         elif k == "remove_marker":
             nd = _node(tree, t)
-            gone = {g for m in _tokens(e.get("marker")) for g in m["genes"]}
+            gone = {(g, m["sign"]) for m in _tokens(e.get("marker")) for g in m["genes"]}
             keep = []
             for m in nd["markers"]:
-                genes = [g for g in m["genes"] if g not in gone]
+                genes = [g for g in m["genes"] if (g, m["sign"]) not in gone]
                 if genes:
                     keep.append(dict(m, genes=genes))
             nd["markers"] = keep
@@ -231,9 +231,13 @@ def current(s):
 
 
 def mark_asked(s):
-    """The agent was asked to review the current round (Agent review, or a message of the user)."""
+    """The agent was asked to review the current round (Agent review, or a message of the user). A dismissed round is
+    open again (the user asks for a new proposal); an accepted or stopped one stays decided."""
     st, rd = current(s)
     rd["asked"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+    rd["asked_t"] = time.time()
+    if rd.get("decision") == "dismissed":
+        rd["decision"], rd["accepted"] = None, []
     save(s, st)
 
 
@@ -244,12 +248,20 @@ def awaiting(s):
     except ValueError:
         return False
     p = rd.get("proposal") or {}
-    return bool(rd.get("asked")) and not rd.get("decision") and (p.get("time") or "") < rd["asked"]
+    if not rd.get("asked") or rd.get("decision"):
+        return False
+    if "asked_t" in rd:
+        return float(p.get("t") or 0) <= float(rd["asked_t"])
+    return (p.get("time") or "") < rd["asked"]
 
 
 def edits_from_text(old, new):
     """A whole revised marker list as edits of the old one, type by type (the Refine window shows edits): add_type
     (parents first), move_type, set_markers where a type's markers changed, remove_type (only the topmost removed)."""
+    pn = markers.parse(new or "", None)
+    if not pn["ok"]:
+        raise ValueError("the revised list has errors: " + "; ".join(pn["errors"][:5]))
+
     def flat(text):
         out = {}
         def walk(nodes, parent):
@@ -294,6 +306,9 @@ def propose(s, summary, edits, organ=None, questions=None):
     """The agent's proposal for the current round: a summary, the edits (each with an id, a reason and the evidence)
     and questions for the user; the edits are checked by applying them all to the list."""
     st, rd = current(s)
+    if rd.get("decision") in ("accepted", "stopped"):
+        raise ValueError(f"round {rd['n']} is already {rd['decision']}")
+    rd["decision"], rd["accepted"] = None, []  # (a dismissed round gets a new proposal)
     clean = []
     for i, e in enumerate(edits or []):
         if e.get("kind") not in EDIT_KINDS:
@@ -301,7 +316,8 @@ def propose(s, summary, edits, organ=None, questions=None):
         clean.append({"id": f"E{i + 1}", **{k: e[k] for k in e if k != "id"}})
     text, problems = apply_edits(rd["marker_text"] or "", clean, s.panel) if clean else (rd["marker_text"], [])
     rd["proposal"] = {"summary": str(summary or "")[:6000], "edits": clean, "questions": list(questions or [])[:10],
-                      "organ": organ, "check": problems, "time": time.strftime("%Y-%m-%dT%H:%M:%S")}
+                      "organ": organ, "check": problems, "time": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                      "t": time.time()}
     if organ and not st.get("organ"):
         st["organ"] = organ
     text_q = "".join(f"\n? {q}" for q in rd["proposal"]["questions"])
@@ -311,11 +327,16 @@ def propose(s, summary, edits, organ=None, questions=None):
     return rd["proposal"]
 
 
-def accept(s, edit_ids):
-    """The marker list of the next round: the current one with the chosen edits applied."""
+def accept(s, edit_ids, proposal_time=None):
+    """The marker list of the next round: the current one with the chosen edits applied. proposal_time: the time of
+    the proposal the user saw (refused when the agent has proposed again since)."""
     st, rd = current(s)
+    if rd.get("decision") in ("accepted", "stopped"):
+        raise ValueError(f"round {rd['n']} is already {rd['decision']}")
     if not rd.get("proposal"):
         raise ValueError("the agent has not proposed anything in this round yet")
+    if proposal_time and proposal_time != rd["proposal"].get("time"):
+        raise ValueError("the agent has proposed again since: look at the new edits and choose again")
     chosen = [e for e in rd["proposal"]["edits"] if e["id"] in set(edit_ids)]
     if not chosen:
         raise ValueError("choose at least one edit")
@@ -333,13 +354,18 @@ def decide(s, decision):
     st, rd = current(s)
     if decision not in ("dismissed", "stopped"):
         raise ValueError("decision: dismissed or stopped")
+    if rd.get("decision") == "accepted":
+        raise ValueError(f"round {rd['n']} is already accepted")
     rd["decision"] = decision
     save(s, st)
     return rd
 
 
 def carry(src, dst):
-    """The rounds so far go with the annotation made from the accepted edits (the chain of rounds)."""
+    """The rounds so far go with the annotation made from the accepted edits (the chain of rounds); only between
+    annotations of the same sample."""
+    if src.sample_id != dst.sample_id:
+        return
     st = load(src)
     if st["rounds"]:
         save(dst, st)

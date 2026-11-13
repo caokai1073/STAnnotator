@@ -845,7 +845,7 @@ async def api_refine_decide(req: Request):
     b = await req.json()
     try:
         if b.get("decision") == "accepted":
-            return _json(iterate.accept(s, b.get("edits") or []))
+            return _json(iterate.accept(s, b.get("edits") or [], b.get("proposal_time")))
         return _json({"round": iterate.decide(s, b.get("decision"))})
     except ValueError as e:
         return _json({"error": str(e)}, 400)

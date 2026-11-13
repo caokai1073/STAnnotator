@@ -117,6 +117,43 @@ try:
     print("whole list during Agent review ->", ", ".join(f"{e['kind']} {e['type']}" for e in edits))
     r = json.loads(mcp_server.propose_marker_list(new, "not asked"))  # not waiting: the Review panel as before
     assert "sent_to" not in r and markerqc.proposal(s2) is not None
+
+    # 7. the round's decisions: Dismiss, then asking again reopens it; accept only the proposal seen, and once
+    rd = iterate.current(s2)[1]
+    iterate.decide(s2, "dismissed")
+    assert not iterate.awaiting(s2)
+    iterate.mark_asked(s2)
+    assert iterate.awaiting(s2) and not iterate.current(s2)[1]["decision"], "asking again did not reopen the round"
+    p1 = iterate.propose(s2, "again", [{"kind": "remove_marker", "type": kid, "marker": gene + "+", "reason": "r", "evidence": "e"}])
+    try:
+        iterate.accept(s2, ["E1"], proposal_time="2000-01-01T00:00:00")
+        raise AssertionError("an edit of an older proposal was accepted")
+    except ValueError:
+        pass
+    iterate.accept(s2, ["E1"], proposal_time=p1["time"])
+    for bad in (lambda: iterate.accept(s2, ["E1"]), lambda: iterate.decide(s2, "dismissed"),
+                lambda: iterate.propose(s2, "late", [])):
+        try:
+            bad()
+            raise AssertionError("an accepted round was changed")
+        except ValueError:
+            pass
+    # rounds are not carried to another sample's annotation
+    importer.import_sample("N", str(EX / "cadinu_merfish_D0_m3a_1_slice_2.h5ad"), progress=lambda *a: None)
+    n = Session.create("N", method="markers", markers_text=text, knn="exact")
+    iterate.carry(s2, n)
+    assert not iterate.load(n)["rounds"], "rounds carried to another sample"
+    # remove_marker keeps the other sign; a malformed revised list is refused, not read as removals
+    neg = next((t, m["genes"][0]) for t in markers.descendants(tree) for m in markers._find(tree, t)["markers"] if m["sign"] < 0)
+    out, _ = iterate.apply_edits(old, [{"kind": "remove_marker", "type": neg[0], "marker": neg[1] + "+"}])
+    assert any(neg[1] in m["genes"] and m["sign"] < 0 for m in markers._find(markers.parse(out, None)["tree"], neg[0])["markers"]), \
+        "removing GENE+ removed GENE-"
+    try:
+        iterate.edits_from_text(old, old.replace(f"{kids[0]['name']}:", kids[0]["name"], 1))
+        raise AssertionError("a malformed list was read")
+    except ValueError:
+        pass
+    print("round decisions, carry and edits checked")
     print("ok")
 finally:
     shutil.rmtree(HOME, ignore_errors=True)
