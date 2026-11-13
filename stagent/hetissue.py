@@ -53,7 +53,7 @@ def _image(sample_id):
     path = image_of(sample_id)
     m = _meta(sample_id)
     if not path or m.get("image_kind") in (None, "none"):
-        raise ValueError("this sample shows no image (none, still waiting for its alignment, or unloaded)")
+        raise ValueError("this sample shows no image (none, or still waiting for its alignment)")
     return path, float(m.get("he_um_per_px") or 0.5), m.get("image_kind", "H&E"), m.get("um_per_px_known", True)
 
 

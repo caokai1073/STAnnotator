@@ -111,7 +111,7 @@ def windows(sample_id, progress=None, wait_s=300):
     if visium.is_bins(m):
         raise ValueError(visium.NO_REGISTRATION_CHECK)
     if not image or kind == "none":
-        raise ValueError("no image to check against (none, or unloaded: Load H&E in the Data tab)")
+        raise ValueError("no image to check against")
     key, f = _key(sample_id, image), _file(sample_id)
     busy = f.with_suffix(".computing")
     end = time.time() + wait_s

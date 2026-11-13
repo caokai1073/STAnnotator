@@ -445,9 +445,6 @@ The app's window, or the web viewer (`.venv/bin/stagent viewer`, then http://loc
     all** clears the ticks.
   - Click a sample to open it.
   - **Save figure** writes the overview as shown (every sample, its name, the legend) as a PDF.
-- **Unload H&E** frees the memory of the sample's image: the cells stay where they are on a blank background of the
-  image's size, and the image path and registration are kept, so **Load H&E** puts it back as it was (no new
-  registration or alignment). While unloaded, Claude's figures show the cells without the image.
 - **Memory**: the image itself takes little memory (tens of MB of tiles); an open annotation takes much more (its
   counts, model and results: a few hundred MB for 350k cells). The app keeps only the last 3 annotations and 4
   samples' cell positions in memory and reads older ones again from disk when they are opened

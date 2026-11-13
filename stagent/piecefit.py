@@ -145,7 +145,7 @@ def fit(s, region, max_shift_um=MAX_SHIFT_UM, mirror=True, progress=None):
     image = image_of(s.sample_id)
     kind = s.meta.get("image_kind", "H&E")
     if not image or kind == "none":
-        raise ValueError("no image to fit the piece on (none, or unloaded: Load H&E in the Data tab)")
+        raise ValueError("no image to fit the piece on")
     ids = s._cells_for(region, None, None)
     if len(ids) < MIN_CELLS:
         raise ValueError(f"region {region!r} holds {len(ids)} cells: outline a piece of {MIN_CELLS} cells or more")

@@ -341,7 +341,7 @@ def registration(s, n_windows=40, window_um=400.0, max_shift_um=25.0):
     if visium.is_bins(s.meta):
         return {"error": visium.NO_REGISTRATION_CHECK}
     if not image_of(s.sample_id) or kind == "none":
-        return {"error": "no image (or the image is unloaded: Load H&E in the app's Data tab)"}
+        return {"error": "this sample has no image"}
     sl = render.slide(image_of(s.sample_id))
     px, py = s.cells.px.to_numpy(), s.cells.py.to_numpy()
     g = plausibility.grid(s)

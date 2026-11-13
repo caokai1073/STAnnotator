@@ -113,10 +113,8 @@ class SampleView:
         meta = json.load(open(config.SAMPLES / sample_id / "meta.json"))
         self.sample_id = sample_id
         self.um_per_px = float(meta.get("he_um_per_px", config.HE_UM_PER_PX))
-        off = meta.get("image_unloaded")  # unloaded to free memory: a blank background of the image's size
-        self.slide = render.UnloadedSlide(*off["size"]) if off else render.slide(meta.get("he_path"))
-        self.image_kind = "none" if off else meta.get("image_kind", "H&E")
-        self.unloaded = meta.get("image_kind", "H&E") if off else None
+        self.slide = render.slide(meta.get("he_path"))
+        self.image_kind = meta.get("image_kind", "H&E")
         cells = pd.read_parquet(config.SAMPLES / sample_id / "cells.parquet", columns=["px", "py"])
         px, py = cells.px.to_numpy(), cells.py.to_numpy()
         self.px, self.py = px, py
@@ -1478,7 +1476,7 @@ def api_samples(req):
                          "spaceranger": visium.is_bins(meta),  # placed on a grid by its pipeline: no nuclei registration check
                          "platform": {"visium_hd": "Visium HD", "visium": "Visium", "stereoseq": "Stereo-seq"}.get(
                              (meta.get("source") or {}).get("kind")),
-                         "n_genes": meta.get("n_genes"), "image_unloaded": bool(meta.get("image_unloaded")),
+                         "n_genes": meta.get("n_genes"),
                          "image_only": bool(meta.get("image_only")), "um_per_px_known": meta.get("um_per_px_known", True),
                          "filter": {"params": f["params"], "n_cells_removed": f["n_cells_removed"],
                                     "n_genes_removed": len(f["genes_removed"])} if (f := meta.get("filter")) else None,
@@ -1948,7 +1946,7 @@ def api_he_info(req):
     v = view(req.path_params["sample"])
     m = importer._meta(req.path_params["sample"])
     return _json({"width": v.W, "height": v.H, "tile_size": TILE, "origin": [v.ox, v.oy], "um_per_px": v.um_per_px,
-                  "image_kind": v.image_kind, "image_unloaded": v.unloaded, "rev": int(v.rev),
+                  "image_kind": v.image_kind, "rev": int(v.rev),
                   "image_only": bool(m.get("image_only")), "um_per_px_known": m.get("um_per_px_known", True)})
 
 
@@ -2709,18 +2707,6 @@ async def api_session_delete(req: Request):
     for cache in (_colors, _cell_tables):
         cache.clear()
     return _json({"deleted": sid, "deleted_conversations": n_chats, "trash": str(trash)})
-
-
-async def api_sample_image_state(req: Request):
-    """{loaded: false}: unload the sample's image to free memory (registration kept); {loaded: true}: show it again."""
-    sample, b = req.path_params["sample"], await req.json()
-    try:
-        r = importer.load_image(sample) if b.get("loaded") else importer.unload_image(sample)
-    except (ValueError, OSError) as e:
-        return _json({"error": str(e)}, 400)
-    _drop_view(sample)  # its tiles go with the view
-    config.release_memory()
-    return _json(r)
 
 
 async def api_refresh(req: Request):
@@ -4115,7 +4101,6 @@ def build_app(port):
         Route("/api/session/{sid}/delete", api_session_delete, methods=["POST"]),
         Route("/api/session/{sid}/rename", api_session_rename, methods=["POST"]),
         Route("/api/projects/assign", api_projects_assign, methods=["POST"]),
-        Route("/api/sample/{sample}/image_state", api_sample_image_state, methods=["POST"]),
         Route("/api/samples/clear", api_samples_clear, methods=["POST"]),
         Route("/api/sample/{sample}/image", api_sample_image, methods=["POST"]),
         Route("/api/sample/{sample}/registration", api_sample_registration, methods=["POST"]),
