@@ -209,11 +209,12 @@ def level_sizes(n, tree, min_cells=60):
 # ---------------- memory ----------------
 # Peak memory of a marker annotation or of PCA + UMAP, measured (2026-11-13) in its own process on samples of 32,000 to
 # 790,000 cells (480 to 6,175 genes): 1.6 GB + 4.5 GB per million cells + 1.35 x the counts matrix (8 bytes per stored
-# value) fits them within 0.1 GB. On a Mac (Apple GPU, memory shared with it) the same runs took about 1.9 times as
-# much for an annotation (14-17 GB for the 790,000 cells) and 1.35 times for PCA + UMAP. All slices together: the slices'
-# counts are stacked into one more matrix.
+# value) fits them within 0.1 GB. On a Mac (the Apple GPU shares the memory) 0.2.57 took 1.3 times as much for an
+# annotation (10.6 GB for 790,000 cells x 6,175 genes) and 1.05 times for PCA + UMAP (10.9 GB for two slices of it). All
+# slices together: the slices' counts are stacked into one more matrix. (The Mac is told by the platform, not by
+# config.device(): the built app has no torch, so device() says "cpu" there.)
 MEM_BASE_GB, MEM_PER_MCELL_GB, MEM_PER_COUNTS = 1.6, 4.5, 1.35
-MEM_FACTOR = {"mps": {"annotate": 1.9, "embed": 1.35, "niches": 1.35}}
+MEM_FACTOR = {"darwin": {"annotate": 1.3, "embed": 1.05, "niches": 1.05}}
 
 
 def counts_nnz(sample_dir):
@@ -227,10 +228,11 @@ def counts_nnz(sample_dir):
 
 def memory_gb(n_cells, nnz, op="annotate", device=None, slices=1):
     """Estimated peak memory (GB) of an annotation ("annotate") or of PCA + UMAP / niches ("embed", "niches") of
-    n_cells cells with nnz stored counts (see MEM_BASE_GB)."""
+    n_cells cells with nnz stored counts (see MEM_BASE_GB). device: unused (kept for callers); the platform decides."""
+    import sys
     counts = nnz * 8 / 1e9
     gb = MEM_BASE_GB + MEM_PER_MCELL_GB * n_cells / 1e6 + MEM_PER_COUNTS * counts + (counts if slices > 1 else 0)
-    return round(gb * MEM_FACTOR.get(device or "", {}).get(op, 1.0), 1)
+    return round(gb * MEM_FACTOR.get(sys.platform, {}).get(op, 1.0), 1)
 
 
 def total_memory_gb():

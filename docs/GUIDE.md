@@ -530,7 +530,7 @@ expression. Annotations made before 0.2.57 keep their results.
 short speed test of the computer and learns from every annotation run on it.
 
 **Memory estimate.** The same line gives the memory the annotation needs at its peak (about 1.6 GB + 4.5 GB per
-million cells + 1.35 times the counts; about twice that on a Mac, whose GPU shares the memory). When an annotation,
+million cells + 1.35 times the counts; about 1.3 times that on a Mac, whose GPU shares the memory). When an annotation,
 PCA + UMAP or niche run (one slice or all slices together) would need more than 80% of the computer's memory, the
 app says so before it starts; running fewer slices at once keeps it within the memory.
 

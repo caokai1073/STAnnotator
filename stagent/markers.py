@@ -1038,10 +1038,14 @@ def _leiden(g, nbr, resolution, seed, min_cluster=None):
 # mouse colon MERFISH slice lineage agreement 0.785 -> 0.816 and 2,600 more cells typed; on three human colon Xenium
 # sections (SCP2927) about the same (one section -0.9 points agreement, +1.5 macro-F1).
 SPILL_FRACTION = 0.1
-# RARE_STRICT: a fine cluster becomes a rare type only when at least two of the type's positive markers (and at least
-# half of them) are raised in it; a type with one positive marker is looked for only in single cells. One raised
-# marker took Kit+ crypt epithelium as ICC (866 cells, none right) and STMN2+ fibroblasts as neurons (805, none).
+# RARE_STRICT: a fine cluster becomes a rare type only when at least half of the type's positive markers have a raised
+# gene (the genes of an OR group A|B|C count one by one), and a type whose markers name a single gene is looked for only
+# in single cells. Before: one raised gene took Kit+ crypt epithelium as ICC (866 cells, none right; the list's ICC is
+# "Kit+") and STMN2+ fibroblasts as neurons (805, none; 1 of its 3 markers). Measured against the authors' labels with
+# RARE_MIN_GENES 2 / 1 / 0 (this): SCP2927 146685 macro-F1 0.698 / 0.717 / 0.717; MERFISH lineage 0.782 / 0.769 /
+# 0.784 (with 1, 554 Kit+ epithelial cells were ICC again); SCP2927 167799 and 147328 the same in all three.
 RARE_STRICT = True
+RARE_MIN_GENES = 0  # (see RARE_STRICT) 0: two genes for a type of one gene (none: single cells), else one
 SPILL_NEIGHBORS = 6
 
 
@@ -1097,6 +1101,24 @@ def _spill_marker_columns(counts, spill):
     cols = np.asarray(sorted(cols), np.int64)
     D = spill_detected(sp.csr_matrix(counts)[:, cols], spill["xy"], spill.get("group"))
     return sp.csr_matrix((D.data, cols[D.indices], D.indptr), shape=counts.shape)
+
+
+def _why_missing(res, name):
+    """Why the rare-type search gave type `name` no cells, from its tries ("" when it was not looked for)."""
+    tries = [t for nd in res.get("nodes", []) for t in (nd.get("rare") or {}).get(name, [])]
+    if not tries:
+        return ""
+    cl = [t for t in tries if t.get("resolution") is not None]
+    sc = [t for t in tries if t.get("single_cells")]
+    parts = []
+    if cl:
+        best = max(cl, key=lambda t: t.get("n_cells", 0))
+        ev = ", ".join(f"{g} {a:.0%} vs {b:.0%}" for g, (a, b) in (best.get("positive") or {}).items())
+        parts.append(f"{len(cl)} fine clusters tried, none with a raised gene in half of its markers (the largest, "
+                     f"{best.get('n_cells', 0):,} cells: {ev})")
+    if sc and sc[-1].get("rule"):
+        parts.append(f"single cells: {sc[-1]['rule']}")
+    return f" ({name} itself was not found: " + "; ".join(parts) + ")" if parts else ""
 
 
 def _detected(counts):
@@ -1220,7 +1242,7 @@ class _Annotator:
                 out[c, j] = hit[rows].mean()
         return out
 
-    def not_found(self, res, tree):
+    def not_found(self, res, tree):  # (see _why_missing for a parent type no cell went to)
         """The cell types of the list no cell went to, each with the detection of its positive markers among the cells
         of its parent (the level it was looked for in): [{type, parent, n_parent_cells, markers: {genes: [cells with
         one or more transcripts, with two or more]}, reason}]."""
@@ -1237,7 +1259,7 @@ class _Annotator:
                         else np.arange(self.n)
                     item = {"type": nd["name"], "parent": parent, "n_parent_cells": int(len(pool)), "markers": {}}
                     if not len(pool):
-                        item["reason"] = f"its parent {parent} has no cells"
+                        item["reason"] = f"its parent {parent} has no cells" + _why_missing(res, parent)
                         out.append(item)
                         continue
                     for m in nd["markers"]:
@@ -1315,15 +1337,21 @@ class _Annotator:
                 rows = [np.flatnonzero(lab == c) for c in cs]
                 dp = self._groups_det(idx, rows, pos) if pos else np.zeros((len(cs) + 1, 0))
                 dn = self._groups_det(idx, rows, neg) if neg else np.zeros((len(cs) + 1, 0))
+                pos_genes = sorted({g for m in pos for g in m["genes"]})  # an OR group's genes count one by one
+                dg = (self._groups_det(idx, rows, [{"genes": [g]} for g in pos_genes]) if RARE_STRICT and pos_genes
+                      else np.zeros((len(cs) + 1, 0)))
                 keep = []
                 for k, c in enumerate(cs):
                     strong = (((dp[k] >= RARE_MIN_DET) & (dp[k] >= RARE_FOLD * dp[-1]))  # a specific marker, or a
                               | ((dp[k] >= RARE_COMMON_DET) & (dp[k] >= RARE_COMMON_FOLD * dp[-1])))  # common one, raised
                     not_less = dp[k] >= 0.8 * dp[-1]
                     okn = dn[k] <= np.maximum(1.5 * dn[-1], dn[-1] + 0.05)
-                    need = max(2, -(-len(pos) // 2)) if RARE_STRICT and len(pos) > 1 else 1  # (see RARE_STRICT)
-                    good = (bool(pos) and int(strong.sum()) >= need and bool(not_less.all()) and bool(okn.all())
-                            and not (RARE_STRICT and len(pos) == 1))
+                    good = bool(pos) and bool(strong.any()) and bool(not_less.all()) and bool(okn.all())
+                    if RARE_STRICT and good:  # two raised genes (an OR group's genes each), in half the markers
+                        sg = (((dg[k] >= RARE_MIN_DET) & (dg[k] >= RARE_FOLD * dg[-1]))
+                              | ((dg[k] >= RARE_COMMON_DET) & (dg[k] >= RARE_COMMON_FOLD * dg[-1])))
+                        need = RARE_MIN_GENES if RARE_MIN_GENES > 0 else (2 if len(pos_genes) == 1 else 1)
+                        good = int(sg.sum()) >= need and int(strong.sum()) >= -(-len(pos) // 2)
                     tried.setdefault(ch["name"], []).append(
                         {"resolution": rr, "n_cells": int(len(rows[k])), "accepted": good,
                          "positive": {"|".join(m["genes"]): [round(float(dp[k, i]), 3), round(float(dp[-1, i]), 3)]
