@@ -564,6 +564,13 @@ def _d_start_session(a):
         det.append(f"Neighbor search: {est['backend']}"
                    + (" (the true neighbors)" if knn == "exact" else " on 8 threads (the same result on any computer)")
                    + f". Estimated time for {n:,} cells: {timing.words(est['seconds'])} ({est['basis']}).")
+        mem = timing.memory_gb(n, timing.counts_nnz(config.SAMPLES / a["sample_id"]), "annotate", config.device())
+        ram = timing.total_memory_gb()
+        det.append(f"Memory: about {mem} GB at its peak" + (f" (this computer has {ram} GB)" if ram else "")
+                   + (": TOO MUCH for this computer, it may become very slow or stop" if ram and mem > 0.8 * ram else "")
+                   + ".")
+        if a.get("spillover", True):
+            det.append("Spillover from neighboring cells left out (on by default).")
     cur = _active.get("session")
     if a.get("carry_from_current") and cur:
         det.append(f"Copies the regions, priors and corrections of the open annotation {cur.id}")

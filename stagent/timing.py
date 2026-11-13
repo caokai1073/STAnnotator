@@ -8,6 +8,7 @@ scaled by a short speed test of this computer (under a second). The first run he
 """
 import json, platform, threading, time
 from contextlib import contextmanager
+from pathlib import Path
 import numpy as np
 from . import config
 from .osutil import dump_json
@@ -203,6 +204,54 @@ def level_sizes(n, tree, min_cells=60):
                 walk(nd["children"], share)
     walk(tree or [], n)
     return out
+
+
+# ---------------- memory ----------------
+# Peak memory of a marker annotation or of PCA + UMAP, measured (2026-11-13) in its own process on samples of 32,000 to
+# 790,000 cells (480 to 6,175 genes): 1.6 GB + 4.5 GB per million cells + 1.35 x the counts matrix (8 bytes per stored
+# value) fits them within 0.1 GB. On a Mac (Apple GPU, memory shared with it) the same runs took about 1.9 times as
+# much for an annotation (14-17 GB for the 790,000 cells) and 1.35 times for PCA + UMAP. All slices together: the slices'
+# counts are stacked into one more matrix.
+MEM_BASE_GB, MEM_PER_MCELL_GB, MEM_PER_COUNTS = 1.6, 4.5, 1.35
+MEM_FACTOR = {"mps": {"annotate": 1.9, "embed": 1.35, "niches": 1.35}}
+
+
+def counts_nnz(sample_dir):
+    """Stored values of a sample's counts matrix, read from its row pointers only (not the matrix)."""
+    try:
+        with np.load(Path(sample_dir) / "counts.npz") as z:
+            return int(z["indptr"][-1])
+    except (OSError, KeyError, ValueError):
+        return 0
+
+
+def memory_gb(n_cells, nnz, op="annotate", device=None, slices=1):
+    """Estimated peak memory (GB) of an annotation ("annotate") or of PCA + UMAP / niches ("embed", "niches") of
+    n_cells cells with nnz stored counts (see MEM_BASE_GB)."""
+    counts = nnz * 8 / 1e9
+    gb = MEM_BASE_GB + MEM_PER_MCELL_GB * n_cells / 1e6 + MEM_PER_COUNTS * counts + (counts if slices > 1 else 0)
+    return round(gb * MEM_FACTOR.get(device or "", {}).get(op, 1.0), 1)
+
+
+def total_memory_gb():
+    """This computer's memory (GB), or None when it cannot be read."""
+    import os, sys
+    try:
+        if sys.platform == "win32":
+            import ctypes
+
+            class MS(ctypes.Structure):
+                _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                            ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                            ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
+                            ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
+                            ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+            m = MS(); m.dwLength = ctypes.sizeof(MS)
+            ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m))
+            return round(m.ullTotalPhys / 1e9, 1)
+        return round(os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 1e9, 1)
+    except (OSError, ValueError, AttributeError):
+        return None
 
 
 def estimate(n, n_genes, tree, resolution="auto", knn="exact", n_types=None):

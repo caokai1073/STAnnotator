@@ -2076,7 +2076,31 @@ async def api_estimate(req: Request):
         return {k: timing.estimate(n, g, tree, b.get("resolution") or "auto", k, n_types) for k in ("exact", "approx")}
     est = await asyncio.to_thread(work)
     return _json(dict(est, n_cells=n, n_genes=g, slices=len(ids), device=config.device(),
-                      marker_list=tree is not None))
+                      marker_list=tree is not None, **_memory(ids, "annotate")))
+
+
+def _memory(ids, op):
+    """{memory_gb: the estimated peak of op ("annotate", "embed", "niches") on these samples together, ram_gb}."""
+    from . import timing
+    n = sum(int(json.load(open(config.SAMPLES / x / "meta.json")).get("n_cells") or 0) for x in ids)
+    nnz = sum(timing.counts_nnz(config.SAMPLES / x) for x in ids)
+    return {"memory_gb": timing.memory_gb(n, nnz, op, config.device(), len(ids)), "ram_gb": timing.total_memory_gb()}
+
+
+async def api_memory(req: Request):
+    """{sample_id, project, op}: the estimated peak memory of op on the sample (or all slices of its project) and this
+    computer's memory, for a warning before a large run."""
+    b = await req.json()
+    sample = str(b.get("sample_id", ""))
+    ids = [sample]
+    if b.get("project"):
+        p = projects.project_of(sample)
+        if p:
+            ids = [x for x in projects.load(p)["samples"] if (config.SAMPLES / x / "meta.json").exists()]
+    ids = [x for x in ids if (config.SAMPLES / x / "meta.json").exists()]
+    if not ids:
+        return _json({"error": f"unknown sample {sample}"}, 404)
+    return _json(await asyncio.to_thread(_memory, ids, b.get("op", "annotate")) | {"slices": len(ids)})
 
 
 def api_legend(req):
@@ -4046,6 +4070,7 @@ def build_app(port):
         Route("/api/sample/{sample}/he/{level:int}/{xy}", he_tile),
         Route("/api/annotate", api_annotate, methods=["POST"]),
         Route("/api/estimate", api_estimate, methods=["POST"]),
+        Route("/api/memory", api_memory, methods=["POST"]),
         Route("/api/job/{sid}", api_job),
         Route("/api/sample/{sample}/running", api_sample_running),
         Route("/api/job/{sid}/stop", api_job_stop, methods=["POST"]),

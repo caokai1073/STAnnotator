@@ -1830,6 +1830,7 @@ async function startAnnotation(mode, sid, token = st.switchToken) {
     const chk = await post("/api/markers/check", { text: body.markers_text, sample: body.sample_id });
     if (!chk.ok) { openMarkers(); showCheck(chk); toast("Fix the marker list first", 3000); return; }
   }
+  if (mode === "new" && method !== "none" && !(await memoryOk("annotate", false, "This annotation"))) return;
   if (mode === "continue") body.session_id = sid;
   // an annotation still running (e.g. on the sample left when the agent opened another): opening one leaves its
   // progress bar, Stop button and the Annotate button alone, and is followed without them
@@ -2069,6 +2070,7 @@ function stopped(prog, what) {  // after Stop: the bar goes, nothing of the run 
 }
 $("eRun").onclick = async () => {
   const body = { n_pcs: +$("eP").value, n_neighbors: +$("eK").value, min_dist: +$("eD").value, resolution: +$("eR").value };
+  if (!(await memoryOk("embed", projectMode("embed"), "PCA + UMAP"))) return;
   $("eRun").disabled = true; $("eprogress").classList.add("show");
   try {
     if (projectMode("embed")) {  // all slices at once (Harmony when ticked)
@@ -2334,6 +2336,7 @@ $("nRun").onclick = async () => {
   if ($("nKind").value === "coloc") return runColoc();
   if ($("nKMode").value === "agent") return agentNiches();
   const body = { identity: $("nIdentity").value, n_programs: +$("nPrograms").value, k: +$("nK").value, n_niches: +$("nN").value };
+  if (!(await memoryOk("niches", projectMode("niches"), "The niche analysis"))) return;
   $("nRun").disabled = true; $("nprogress").classList.add("show");
   try {
     if (projectMode("niches")) {  // one set of niches over all slices
@@ -4096,6 +4099,14 @@ function estimateAnnotation() {  // how long Annotate should take here, for both
     } catch (err) { box.textContent = ""; EST.last = null; }
   }, 300);
 }
+const MEM_WARN = 0.8;  // of the computer's memory: above, a run is asked about before it starts
+async function memoryOk(op, project, what) {  // false when the user decides not to start a run too large for this computer
+  if (!st.sample) return true;
+  let m; try { m = await post("/api/memory", { sample_id: st.sample.sample_id, project: !!project, op }); } catch (e) { return true; }
+  if (!m.memory_gb || !m.ram_gb || m.memory_gb <= MEM_WARN * m.ram_gb) return true;
+  return confirm(`${what}${m.slices > 1 ? ` of ${m.slices} slices together` : ""} needs about ${m.memory_gb} GB of memory at its peak; this computer has ${m.ram_gb} GB.\n\n`
+    + `It may become very slow or stop. Close other programs, or ${m.slices > 1 ? "run it on fewer slices at once (untick All slices together)" : "use a computer with more memory"}.\n\nStart anyway?`);
+}
 function showEstimate() {
   const e = EST.last, box = $("annEst");
   if (!e) { box.textContent = ""; return; }
@@ -4104,7 +4115,8 @@ function showEstimate() {
   const cap = (t) => t[0].toUpperCase() + t.slice(1);
   box.textContent = `${cap(duration(me.seconds))} for ${cells}: ${me.backend}. ${other === "exact" ? "Exact" : "Approximate"}: ${duration(e[other].seconds)}.`
     + (k === "exact" && me.seconds > 600 && e.approx.seconds < me.seconds / 2 ? " A sample this large: Approximate is much faster." : "")
-    + (e.marker_list ? "" : " Load the marker list for a closer estimate.");
+    + (e.marker_list ? "" : " Load the marker list for a closer estimate.")
+    + (e.memory_gb && e.ram_gb ? ` Memory: about ${e.memory_gb} GB (this computer has ${e.ram_gb} GB)` + (e.memory_gb > MEM_WARN * e.ram_gb ? ": too much for this computer; annotate fewer slices at once." : ".") : "");
   box.title = `Estimated ${me.basis}; every run here makes it more precise.\n`
     + me.steps.map(([s, t]) => `${s}: ${t < 1 ? "<1" : Math.round(t)} s`).join("\n");
 }
@@ -4950,7 +4962,9 @@ const HELP = `
     depends on the thread count), so a rerun gives the same labels, here or on another computer with this version.</li>
   <li><i>Exact</i> finds the true neighbors; slow without a GPU for large samples.</li>
   <li>The line under it estimates how long the whole annotation takes on this computer for both (hover for the
-    steps); it learns from every run here.</li></ul></li>
+    steps); it learns from every run here. It also gives the memory the run needs at its peak (measured on samples of
+    32,000 to 790,000 cells); an annotation, PCA + UMAP or niche run needing more than 80% of this computer's memory
+    is asked about before it starts (run fewer slices at once).</li></ul></li>
 <li><b>Leave out spillover</b> (marker genes, on by default): in imaging data a cell's outline also catches
   transcripts of its neighbors; on, a gene counts as detected in a cell only where its count is above a tenth of the
   mean count of its 6 nearest cells (of the same slice). Turn it off to count every transcript in a cell's outline.</li>
@@ -6762,6 +6776,7 @@ async function annotateProject() {  // one marker annotation of all slices; then
   if (!text.trim()) { openMarkers(); toast("Import a marker list first", 5000); return; }
   const chk = await post("/api/markers/check", { text, sample: st.sample.sample_id });
   if (!chk.ok) { openMarkers(); showCheck(chk); toast("Fix the marker list first", 3000); return; }
+  if (!(await memoryOk("annotate", true, "The annotation"))) return;
   $("annotate").disabled = true; $("progress").classList.add("show");
   try {
     await projectJob("annotate", { markers_text: text, resolution: $("mkAuto").checked ? "auto" : +$("mkRes").value,
