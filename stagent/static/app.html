@@ -4219,8 +4219,17 @@ async function rfOpen(from) {
   let r = await api(`/api/s/${sid}/refine`);
   const last = r.rounds[r.rounds.length - 1];
   if (!last || last.session !== sid || last.version !== st.version || (from && from !== sid)) {  // a round on this version
-    await post(`/api/s/${sid}/refine/start`, { from: from || null });
+    // the window opens at once; the round's summary (reading the counts of a large sample) follows
+    clearInterval(RF.timer); RF.sid = null; RF.state = null;
+    $("rfTitle").textContent = "Refine cell types"; $("rfWait").textContent = ""; $("rfErr").textContent = "";
+    $("rfReport").textContent = "Summing up this annotation for the new round…";
+    $("rfMsgs").textContent = ""; $("rfEdits").textContent = ""; $("rfEditsHint").textContent = "";
+    $("rfAccept").hidden = $("rfAsk").hidden = true;
+    if (!$("rfDlg").open) $("rfDlg").showModal();
+    try { await post(`/api/s/${sid}/refine/start`, { from: from || null }); }
+    catch (e) { $("rfReport").textContent = ""; $("rfErr").textContent = `Could not start the round: ${e.message}`; throw e; }
     r = await api(`/api/s/${sid}/refine`);
+    if (!$("rfDlg").open) return;  // closed meanwhile (the round is kept: the button reopens it)
   }
   RF.sid = sid; RF.state = r; RF.seen = "";
   rfRender();
@@ -4321,7 +4330,7 @@ $("rfAsk").onclick = async () => {
   catch (e) { $("rfErr").textContent = e.message; }
 };
 $("rfSend").onclick = async () => {
-  const text = $("rfText").value.trim(); if (!text) return;
+  const text = $("rfText").value.trim(); if (!text || !RF.sid) return;  // (no round yet: it is being prepared)
   const rd = rfRound();
   if (!rd || (!rd.proposal && !rd.messages.length)) { $("rfAsk").click(); return; }  // the first request of the round
   $("rfErr").textContent = "";

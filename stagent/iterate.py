@@ -46,8 +46,7 @@ def report(s, version=None):
         for d in markers.descendants(tree)[top["name"]]:
             lineage[d] = top["name"]
     lin = np.array([lineage.get(t, t) for t in lab], dtype=object)
-    X = markerqc._det(s).tocsc()
-    gi = {g: i for i, g in enumerate(s.panel)}
+    X, gi = markerqc.det_columns(s, markerqc.tree_genes(tree))  # (only the marker genes: fast on large samples)
     col = {}
 
     def det(g):

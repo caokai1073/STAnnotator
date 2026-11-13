@@ -27,6 +27,29 @@ def _det(s):
     return s._det_X
 
 
+def det_columns(s, genes):
+    """Detection (0/1) of genes in every cell as a column matrix (CSC) and each gene's column in it. Taking columns of
+    the whole cells x genes matrix one marker at a time costs about 0.2 s each on 800,000 cells; the marker genes
+    are taken once and kept (per set of genes)."""
+    genes = tuple(sorted({g for g in genes if g in set(s.panel)}))
+    cache = s.__dict__.setdefault("_det_cols", {})
+    if genes not in cache:
+        gi = {g: i for i, g in enumerate(s.panel)}
+        cache.clear()  # (one set kept: the marker genes of the version looked at)
+        cache[genes] = (_det(s)[:, [gi[g] for g in genes]].tocsc(), {g: k for k, g in enumerate(genes)})
+    return cache[genes]
+
+
+def tree_genes(tree):
+    out = set()
+    def walk(nodes):
+        for nd in nodes:
+            out.update(g for m in nd["markers"] for g in m["genes"])
+            walk(nd["children"])
+    walk(tree)
+    return out
+
+
 def _marker_text(m):
     return "|".join(m["genes"]) + ("-" if m["sign"] < 0 else "+")
 
@@ -46,7 +69,10 @@ def check(s, version=None):
     oh = sp.csr_matrix((np.ones(n, np.float32), (lab, np.arange(n))), shape=(T, n))
     det = np.asarray((oh @ Xb).todense())                      # cells of each type with each gene detected
     nt = np.bincount(lab, minlength=T).astype(float)
-    gi = {g: i for i, g in enumerate(s.panel)}
+    # the markers the marker step uses in this version: the list with the edits of its re-clusterings applied
+    tree = s._marker_tree(r["state"].get("marker_step", {}).get("ops", [])) if s.scheme.get("kind") == "markers" \
+        else s.scheme["tree"]
+    Xm, mi = det_columns(s, tree_genes(tree))
     leaves = {k: [s.types.index(t) for t in v] for k, v in s.type_groups.items()}
     for t in s.types:
         leaves.setdefault(t, [s.types.index(t)])
@@ -56,7 +82,7 @@ def check(s, version=None):
         """Share of cells of the types idx in which any of genes is detected."""
         key = tuple(genes)
         if key not in any_cache:
-            hit = np.asarray(Xb[:, [gi[g] for g in genes if g in gi]].sum(1)).ravel() > 0
+            hit = np.asarray(Xm[:, [mi[g] for g in genes if g in mi]].sum(1)).ravel() > 0
             any_cache[key] = np.bincount(lab, weights=hit, minlength=T)
         k = nt[idx].sum()
         return float(any_cache[key][idx].sum() / k) if k else float("nan")
@@ -102,9 +128,6 @@ def check(s, version=None):
             nodes.append(rec)
             walk(nd["children"], depth + 1, nd["name"])
 
-    # the markers the marker step uses in this version: the list with the edits of its re-clusterings applied
-    tree = s._marker_tree(r["state"].get("marker_step", {}).get("ops", [])) if s.scheme.get("kind") == "markers" \
-        else s.scheme["tree"]
     walk(tree, 1, None)
     ua = s.types.index(markers.UNASSIGNED) if markers.UNASSIGNED in s.types else None
     unassigned = None
