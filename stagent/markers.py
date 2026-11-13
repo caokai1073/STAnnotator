@@ -1216,10 +1216,9 @@ class _Annotator:
                         item["reason"] = f"its parent {parent} has no cells"
                         out.append(item)
                         continue
-                    C = self.counts[pool]
                     for m in nd["markers"]:
-                        if m["sign"] > 0:
-                            v = np.asarray(C[:, [self.gi[x] for x in m["genes"]]].max(1).todense()).ravel()
+                        if m["sign"] > 0:  # (the marker's columns first: rows of every column would copy the matrix)
+                            v = np.asarray(self.counts[:, [self.gi[x] for x in m["genes"]]][pool].max(1).todense()).ravel()
                             item["markers"]["|".join(m["genes"])] = [int((v > 0).sum()), int((v >= 2).sum())]
                     best = max(item["markers"].items(), key=lambda kv: kv[1][1], default=None)
                     item["reason"] = ("no cluster went to it, also at finer resolutions, and no group of cells shows "
@@ -1267,6 +1266,7 @@ class _Annotator:
         """The rare-type search of one level (see RARE): children no cluster went to, looked for in finer clusterings
         of the same graph; the first resolution that finds a type with real marker evidence gives it its clusters."""
         found = {children[ev["order"][c, 0]]["name"] for c in range(ev["k"]) if ev["ok"][c]}
+        found |= getattr(self, "found_elsewhere", set())  # (a re-clustering of part of a level: the types of the rest)
         missing = [j for j, ch in enumerate(children) if ch["name"] not in found]
         if not missing or len(children) < 2 or len(idx) < 2 * RARE_MIN_CLUSTER:
             return
@@ -1362,14 +1362,14 @@ def training_labels(res, types):
 ASSIGN_ALL = True
 
 
-def marker_assign(counts, panel, tree, types, rows, train, det=None):
+def marker_assign(counts, panel, tree, types, rows, train, det=None, spill_xy=None):
     """The cell types of the cells rows (of counts, cells x genes of panel) from their marker genes alone, no trained
     model: which of the list's marker genes (of the types and the levels above them) the cell has (detected or not), compared with how often each is detected
     in the cells the marker step gave each type (train: type index per cell, -1 none), times the type's share of
     those cells (so one stray transcript does not make a cell a rare type). Only types the marker step gave cells to
     are candidates. Returns (log-scores as cells x types, -inf for types not candidates; the index of the best type,
     -1 where the cell has none of the list's marker genes). det: the detection matrix (cells x genes of panel) to
-    use, e.g. spill_detected; default count > 0."""
+    use; default count > 0; spill_xy (um): spill_detected on the marker genes."""
     types = list(types)
     rows = np.asarray(rows, np.int64)
     train = np.asarray(train, np.int64)
@@ -1381,7 +1381,13 @@ def marker_assign(counts, panel, tree, types, rows, train, det=None):
     S = np.full((len(rows), len(types)), -np.inf)
     if not len(rows) or not cand or not genes:
         return S, np.full(len(rows), -1, np.int64)
-    D = ((sp.csr_matrix(counts) > 0) if det is None else sp.csr_matrix(det))[:, [gi[g] for g in genes]]
+    cols = [gi[g] for g in genes]
+    if det is not None:
+        D = sp.csr_matrix(det)[:, cols]
+    elif spill_xy is not None:  # only the marker genes' columns: the neighbors' means are per gene
+        D = spill_detected(sp.csr_matrix(counts)[:, cols], spill_xy)
+    else:
+        D = sp.csr_matrix(counts)[:, cols]
     D = (D > 0).astype(np.float64).tocsr()
     typed = np.where(train >= 0)[0]
     onehot = sp.csr_matrix((np.ones(len(typed)), (train[typed], typed)), shape=(len(types), D.shape[0]))
@@ -1439,14 +1445,16 @@ def neighbor_rounds(lp, rows, xy, k=None, w=None, rounds=None):
     return hist
 
 
-def restrict(logp, res, tree, types, corrected=(), counts=None, panel=None, xy=None, neighbors=False, spill=False):
+def restrict(logp, res, tree, types, corrected=(), counts=None, panel=None, xy=None, neighbors=False, spill=False,
+             legacy=False):
     """The expression model's log-probabilities (cells x types) made to agree with the marker step, as float16 (the
     session and the exported notebook both use this): a cell left at a lineage or parent level gets a type below it
     (the others down-weighted by 1e-4); a type the model did not learn (no cell of it in the marker step) is not given,
     unless corrected holds it (type indices the user corrected cells to): its cells would be noise. With ASSIGN_ALL
     and counts (cells x genes of panel), the cells the marker step left Unassigned get their cell type from their
     marker genes (marker_assign), not from the model; with neighbors and xy (um) also from their neighbors' types, in
-    rounds (neighbor_rounds); spill: their marker genes without transcripts spilled over from neighbors."""
+    rounds (neighbor_rounds); spill: their marker genes without transcripts spilled over from neighbors. legacy (an
+    annotation made before 0.2.57): only the first rule, as then, so its labels do not change when it is edited."""
     types = list(types)
     groups = descendants(tree)
     lp = np.asarray(logp, np.float32).copy()
@@ -1454,6 +1462,9 @@ def restrict(logp, res, tree, types, corrected=(), counts=None, panel=None, xy=N
     for node in set(lab.tolist()) - set(types):  # left at a group: a type of that group
         rows = np.where(lab == node)[0]
         lp[np.ix_(rows, np.where(~np.isin(types, groups.get(node, [])))[0])] += np.float32(np.log(1e-4))
+    if legacy:
+        lp -= lp.max(1, keepdims=True)
+        return (lp - np.log(np.exp(lp).sum(1, keepdims=True))).astype(np.float16)
     found = {types[i] for i in np.unique(training_labels(res, types)) if i >= 0}
     found |= {types[int(i)] for i in np.asarray(corrected, np.int64)}
     off = np.array([t not in found for t in types])
@@ -1462,8 +1473,8 @@ def restrict(logp, res, tree, types, corrected=(), counts=None, panel=None, xy=N
     if ASSIGN_ALL and counts is not None and UNASSIGNED in types:  # the cells the marker step could not type: the
         rows = np.where(lab == UNASSIGNED)[0]                        # type from their marker genes (no model)
         if len(rows):
-            det = spill_detected(counts, xy) if spill and xy is not None else None
-            S, best = marker_assign(counts, panel, tree, types, rows, training_labels(res, types), det)
+            S, best = marker_assign(counts, panel, tree, types, rows, training_labels(res, types),
+                                    spill_xy=xy if spill and xy is not None else None)
             u = types.index(UNASSIGNED)
             lp[:, u] = np.float32(-1e4)  # Unassigned only for the cells with no marker gene of the list
             lp[rows] = np.float32(-1e4)
@@ -1572,6 +1583,8 @@ def rerun(res, counts, panel, tree, target, resolution=AUTO, prefix="", progress
     out["labels"][idx] = parent or UNASSIGNED
     A = _Annotator(counts, panel, progress, seed, knn, spill)
     A.total = _n_levels(children) if children else 1
+    # the types the cells outside the re-clustered ones already have are not rare types to look for in them
+    A.found_elsewhere = set(np.unique(out["labels"][~inside]).tolist())
     A.run(out, parent, idx, children, resolution, prefix, context)
     out["not_found"] = A.not_found(out, tree)
     A.say(1.0, "re-clustering done")

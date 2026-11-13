@@ -663,7 +663,8 @@ class Session:
         if self.scheme["kind"] == "markers":  # the marker step's levels and the types it found no cell of
             logp = markers.restrict(logp, self.marker_result(st), self._marker_tree(st.get("marker_step", {}).get("ops", [])),
                                     self.types, labs, counts=self.counts, panel=self.panel, xy=self._xy(),
-                                    neighbors=bool(self.scheme.get("neighbors")), spill=bool(self.scheme.get("spillover")))
+                                    neighbors=bool(self.scheme.get("neighbors")), spill=bool(self.scheme.get("spillover")),
+                                    legacy=self.scheme.get("neighbors") is None)  # (made before 0.2.57: its rules then)
         elif self.scheme.get("leaf_types"):
             logp = self._within_parent(logp, st)
         if self.scheme["kind"] == "existing":

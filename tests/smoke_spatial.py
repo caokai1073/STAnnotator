@@ -57,6 +57,34 @@ try:
     assert s2.scheme["spillover"] is True
     lab2 = np.asarray(s2.labels())
     print(f"with spillover: {(lab2 != lab).sum():,} cells labeled otherwise; Unassigned {(lab2 == markers.UNASSIGNED).sum()}")
+
+    # an annotation made before 0.2.57 (no "neighbors" in its scheme) keeps the rules of then when it is edited:
+    # a one-cell correction changes about that cell, not the thousands the new rules would re-type
+    import json
+    old = Session.create("M", method="markers", markers_text=text, knn="exact", spillover=False)
+    info = json.load(open(old.dir / "session.json"))
+    for k in ("neighbors", "spillover"):
+        info["scheme"].pop(k, None)
+    json.dump(info, open(old.dir / "session.json", "w"))
+    old = Session(old.id)
+    v1 = np.asarray(old.labels())
+    un1 = int((v1 == markers.UNASSIGNED).sum())
+    assert un1 > 1000, f"the old rules leave the untyped cells Unassigned ({un1})"
+    target = s.types[0] if s.types[0] != markers.UNASSIGNED else s.types[1]
+    v = old.label_cells(target, cells=[int(np.where(v1 != target)[0][0])])
+    n_changed = old.diff(v - 1, v)["n_label_changes"]
+    assert n_changed < 50, f"one correction of an old annotation changed {n_changed} labels"
+    print(f"old annotation: {un1:,} Unassigned kept; a one-cell correction changed {n_changed} label(s)")
+
+    # re-clustering one cluster: the types its level has elsewhere are not searched for as rare types in it
+    rec = max((r for r in s.marker_result()["records"] if r["parent"] is None and r.get("assigned")),
+              key=lambda r: r["n_cells"])
+    assigned_elsewhere = {r.get("assigned") for r in s.marker_result()["records"] if r["parent"] is None and r["id"] != rec["id"]}
+    res2 = markers.rerun(s.marker_result(), s.counts, s.panel, s._marker_tree([]), rec["id"], knn="exact")
+    before = {r["id"] for r in s.marker_result()["records"]}
+    new_rare = {r["assigned"] for r in res2["records"] if r.get("rare") and r["parent"] is None and r["id"] not in before}
+    assert not (new_rare & assigned_elsewhere), f"re-clustering looked for types found elsewhere: {new_rare & assigned_elsewhere}"
+    print(f"re-clustering {rec['id']} ({rec['assigned']}): no rare search for the level's other types")
     print("ok")
 finally:
     shutil.rmtree(HOME, ignore_errors=True)

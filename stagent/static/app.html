@@ -1380,7 +1380,12 @@ async function localClaude(r) {  // on a server: Claude Code opens on this compu
   if (r.claude_code && r.claude_code.remote) r.claude_code = await native().open_claude(r.claude_code.args);
   return r;
 }
-function toast(msg, ms = 2200) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), ms); }
+function toastHost(t) {  // an open modal window sits above the page (the browser's top layer): the message goes into it
+  const open = [...document.querySelectorAll("dialog[open]")].filter((d) => { try { return d.matches(":modal"); } catch (e) { return true; } });
+  const host = open.length ? open[open.length - 1] : document.body;
+  if (t.parentElement !== host) host.append(t);
+}
+function toast(msg, ms = 2200) { const t = $("toast"); toastHost(t); t.textContent = msg; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), ms); }
 function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
 function load(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } }
 const rgb = (c) => `rgb(${c[0]},${c[1]},${c[2]})`;
@@ -3765,10 +3770,11 @@ async function adviceRegistration(x, act) {
   if (!confirm(ask)) return;
   if (act.mode === "local" && st.sample) {  // the run of Steps → Check registration: measured where the cells are now,
     const sid = st.sid;                     // its progress shown, then the result to accept or undo
-    if (await localRegistration(st.sample.sample_id) && st.sid === sid) {
+    await localRegistration(st.sample.sample_id, async () => {  // the advice is done once the result is kept
+      if (st.sid !== sid) return;
       try { await post(`/api/s/${sid}/advice/status`, { id: x.id, status: "done", note: "registration corrected" }); } catch (e) { /* noted only */ }
       await loadPlaus(false);
-    }
+    });
     return;
   }
   await adviceAct(x, "registration");
@@ -4321,6 +4327,8 @@ $("rfAccept").onclick = async () => {
   catch (e) { $("rfErr").textContent = e.message; b.disabled = false; rfPoll(); return; }
   b.disabled = false;
   $("mkText").value = r.marker_text; $("carry").checked = true; $("method").value = "markers"; syncSeg("method");
+  if (["exact", "approx"].includes(r.knn)) { $("knn").value = r.knn; syncSeg("knn"); }  // as the round before was made
+  $("spill").checked = !!r.spillover;
   RF.from = RF.sid; clearInterval(RF.timer); $("rfDlg").close();
   toast(`Annotating again with ${ids.length} edit(s); the next round opens when it is done`, 5000);
   await startAnnotation("new");
@@ -6096,7 +6104,8 @@ async function checkRegistration() {  // the cells against the nuclei over the w
   regDialog(sample, title, r.figure, `${what} (up to ${r.max_offset_um} µm). The local registration moves the cells onto their nuclei there (up to ${r.moves_um_max} µm; ${gain}); regions keep their cells. You see the result before you accept it.`,
     [["Close", false, async () => $("rgDlg").close()], ["Do local registration", true, async () => { $("rgDlg").close(); await localRegistration(sample); }]]);
 }
-async function localRegistration(sample) {  // the local correction measured, checked and applied at once (no review); true when applied
+async function localRegistration(sample, kept) {  // the local correction measured, checked and applied; true when applied.
+  // kept(): called once the result is kept (at once in auto mode or without a figure; else when the user clicks Accept)
   const smp = (st.samples || []).find((x) => x.sample_id === sample), who = `Local registration of ${smp ? sampleName(smp) : sample}`;
   let job;
   try { ({ job } = await post(`/api/sample/${encodeURIComponent(sample)}/registration/local`, {})); }
@@ -6113,6 +6122,7 @@ async function localRegistration(sample) {  // the local correction measured, ch
     const r = j.result;
     if (!r.figure || st.reviewMode === "auto") {
       toast(`${who} done: the cells moved onto their nuclei where the tissue shifted (up to ${r.moved_um_max} µm, median ${r.moved_um_median} µm)`, 9000);
+      if (kept) await kept();
       return true;
     }
     toast("", 1);
@@ -6123,7 +6133,7 @@ async function localRegistration(sample) {  // the local correction measured, ch
         $("rgDlg").close();
         if (st.sample && st.sample.sample_id === sample) await afterPlacement();
         loadStepsSoon(); toast("The local registration was undone: the cells are back where they were", 6000);
-      }], ["Accept", true, async () => { $("rgDlg").close(); toast("Local registration kept", 3000); }]]);
+      }], ["Accept", true, async () => { $("rgDlg").close(); toast("Local registration kept", 3000); if (kept) await kept(); }]]);
     return true;
   }
 }
@@ -6943,6 +6953,8 @@ function anRefresh() {  // the Compare and Signaling tabs follow the open annota
   if (document.querySelector('header .pane[data-pane="compare"]').classList.contains("on")) setTimeout(() => loadAnOptions(), 0);
   if (document.querySelector('header .pane[data-pane="signal"]').classList.contains("on")) setTimeout(() => loadSigOptions(), 0);
   if (document.querySelector('header .pane[data-pane="traj"]').classList.contains("on")) setTimeout(() => loadTrajOptions(), 0);
+  const np = document.querySelector('header .pane[data-pane="niches"]');  // Niche -> Co-localization's groupings
+  if (np && np.classList.contains("on")) setTimeout(() => loadCoOptions(), 0);
 }
 const anBody = () => ({ session: st.sid, version: st.version, scope: anScope(), selection: anSelection(), sessions: projectSessions() });
 function fillSelect(id, items, keep, first) {  // items: [value, label]; keeps the chosen value when it is still there

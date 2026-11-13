@@ -30,9 +30,12 @@ _K = {}
 
 def _kernel():
     if not _K:
+        import os
         from numba import njit
+        # numba's disk cache needs the module's source file: the built app carries only its bytecode (as fastpar)
+        cache = bool(globals().get("__file__")) and os.path.isfile(globals()["__file__"])
 
-        @njit(nogil=True, cache=True)
+        @njit(nogil=True, cache=cache)
         def count(a, b, lab, K):
             out = np.zeros(K * K, np.int64)
             for e in range(len(a)):
@@ -46,6 +49,24 @@ def _kernel():
     return _K["count"]
 
 
+MAX_PAIRS = 150_000_000  # neighbor pairs of one slice (16 bytes each, and copies): beyond, a smaller radius is asked for
+
+
+def _check_pairs(tree, xy, radius):
+    """Refuse a radius that would make more than MAX_PAIRS pairs (estimated from up to 2,000 cells): the pairs of a
+    large radius on a million cells would not fit in memory."""
+    n = len(xy)
+    if n < 20000:
+        return
+    probe = xy[np.random.default_rng(0).choice(n, 2000, replace=False)]
+    per_cell = float(np.mean([len(x) for x in tree.query_ball_point(probe, radius)])) - 1
+    est = n * per_cell / 2
+    if est > MAX_PAIRS:
+        ok = radius * (MAX_PAIRS / est) ** 0.5
+        raise ValueError(f"a radius of {radius:g} um makes about {est / 1e6:.0f} million neighbor pairs among {n:,} "
+                         f"cells, too many for memory: use {max(5, int(ok)):d} um or less")
+
+
 def _pairs(c, keep, radius):
     """Neighbor pairs (a, b), a < b, rows of the pooled table, slice by slice; and the row ranges of the slices."""
     A, B, ranges, off = [], [], [], 0
@@ -56,7 +77,9 @@ def _pairs(c, keep, radius):
             xy = s.cells[["x", "y"]].to_numpy(float)[rows]
             ok = np.isfinite(xy).all(1)
             rows, xy = rows[ok], xy[ok]
-            p = cKDTree(xy).query_pairs(radius, output_type="ndarray")
+            tree = cKDTree(xy)
+            _check_pairs(tree, xy, radius)
+            p = tree.query_pairs(radius, output_type="ndarray")
             if len(p):
                 A.append((rows[p[:, 0]] + off).astype(np.int64)); B.append((rows[p[:, 1]] + off).astype(np.int64))
         ranges.append((off, off + n))

@@ -35,8 +35,19 @@ def run(out=print):
         except Exception as e:
             out(f"  {c}: FAILED: {type(e).__name__}: {e}")
             bad.append(c)
+    # the compiled kernels (numba) of the analyses: a disk cache asked for where the built app has no source file
+    # fails only there (co-localization did, in a build of 0.2.57 before its release)
+    try:
+        from . import coloc, fastpar
+        n = coloc._kernel()(np.array([0, 1], np.int64), np.array([1, 2], np.int64), np.array([0, 1, 1], np.int64), 2)
+        assert int(n.sum()) == 2
+        fastpar._compiled()
+        out("  compiled kernels: ok")
+    except Exception as e:
+        out(f"  compiled kernels: FAILED: {type(e).__name__}: {e}")
+        bad.append("compiled kernels")
     if bad:
-        out("image compressions that do not work: " + ", ".join(bad))
+        out("what does not work: " + ", ".join(bad))
         return 1
     out("selfcheck ok")
     return 0

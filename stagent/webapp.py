@@ -845,7 +845,9 @@ async def api_refine_decide(req: Request):
     b = await req.json()
     try:
         if b.get("decision") == "accepted":
-            return _json(iterate.accept(s, b.get("edits") or [], b.get("proposal_time")))
+            out = iterate.accept(s, b.get("edits") or [], b.get("proposal_time"))
+            # the next round is annotated as this one was (only the accepted edits change)
+            return _json(out | {"knn": s.knn_mode(), "spillover": bool(s.scheme.get("spillover"))})
         return _json({"round": iterate.decide(s, b.get("decision"))})
     except ValueError as e:
         return _json({"error": str(e)}, 400)

@@ -227,7 +227,12 @@ const api = async (path, opts) => {
   return r.json();
 };
 const reviewer = () => $("reviewer").value.trim();
-function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 1600); }
+function toast(msg) {
+  const t = $("toast");
+  const open = [...document.querySelectorAll("dialog[open]")];  // a modal window is above the page: show it in there
+  const host = open.length ? open[open.length - 1] : document.body;
+  if (t.parentElement !== host) host.append(t);
+  t.textContent = msg; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 1600); }
 function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
 function load(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } }
 
