@@ -1260,6 +1260,40 @@ def review_markers(node: Optional[str] = None, version: Optional[int] = None) ->
 
 
 @mcp.tool()
+def refine_report() -> str:
+    """The current round of refining the annotation with the user (the app's Refine window): the round's computed
+    report (organ, cells and confidence per type, types with weak marker evidence, markers flagged weak or not
+    specific, types not found, the cells the marker step could not type and what their expression made them, the
+    changes since the round before), the marker list of the round, and the conversation with the user. The user's
+    own words come first: follow them before your own view and the priors."""
+    from . import iterate
+    st, rd = iterate.current(_s())
+    rep = dict(rd["report"])
+    rep["marker_flags"] = rep["marker_flags"][:60]
+    return _j({"round": rd["n"], "organ_confirmed": st.get("organ"), "report": rep, "marker_list": rd["marker_text"],
+               "conversation": rd["messages"], "your_last_proposal": rd.get("proposal"),
+               "earlier_rounds": [{"n": x["n"], "decision": x["decision"], "accepted": x["accepted"],
+                                   "edits": (x.get("proposal") or {}).get("edits")} for x in st["rounds"][:-1]]})
+
+
+@mcp.tool()
+def propose_refinement(summary: str, edits: list[dict], questions: Optional[list[str]] = None,
+                       organ: Optional[str] = None) -> str:
+    """Your proposal for the current Refine round, shown to the user edit by edit (they accept some and the app
+    annotates again with them). summary: what you found and what you propose, in a few lines, in the user's
+    language. edits: edits of the marker list, each {"kind", "type", ..., "reason", "evidence"}; kinds: add_marker /
+    remove_marker {type, marker: "GENE+", "GENE-" or "A|B+"}, set_markers {type, markers: "A+ B+ C-"}, add_type
+    {type, parent (null: top level), markers}, remove_type {type}, rename_type {type, new_name}, move_type {type,
+    parent}. Only genes of the panel; reason: why; evidence: the numbers or figure that show it. questions: what only
+    the user can decide (the organ, whether a type should be there). organ: the organ you judged it to be, when the
+    user has not confirmed one. Returns the edits as checked (problems the edited list would have)."""
+    from . import iterate
+    rec = iterate.propose(_s(), summary, edits, organ, questions)
+    return _j({"edits": rec["edits"], "problems_of_the_edited_list": rec["check"],
+               "next": "the user decides in the Refine window; their reply or the next round comes as a new request"})
+
+
+@mcp.tool()
 def propose_marker_list(text: str, summary: str) -> str:
     """Validate a revised marker list (full text, same format as the current one) and offer it to the user: it
     appears in the viewer's Review panel, from where the user opens it in "Markers..." and annotates again.

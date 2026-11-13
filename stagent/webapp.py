@@ -697,6 +697,96 @@ REPORT_REQUEST = ("Write the annotation report of version {v} (I clicked Report)
                   "with write_report. Do not change the annotation.")
 
 
+REFINE_REQUEST = ("I am refining the annotation {sid} with you in the Refine window, round {n} (load it with "
+                  "use_viewer_session if it is not the active one). {user}Call refine_report first. {organ} Review the "
+                  "whole annotation, not only the cells the marker step could not type: gather sample_context, "
+                  "tissue_priors(organ), type_confusion, type_structure, review_markers and spatial_profile, and look at "
+                  "the H&E (show_area, show_he) where an area needs it. Judge whether the cell types, their numbers and "
+                  "where they lie fit the organ and its priors (name the rule), and which types have weak or unspecific "
+                  "markers, are missing, too many or should be merged or split. Then call propose_refinement once: edits "
+                  "of the marker list, each with its reason and evidence (only genes of the panel; check the edited list "
+                  "with check_marker_list first), and questions for me where only I can decide. Do not change the "
+                  "annotation yourself. My own words in the conversation come first: follow them before your own view "
+                  "and the priors.")
+REFINE_REPLY = ("In the Refine window (annotation {sid}, round {n}) I wrote: \"{text}\". My words come first. Read "
+                "refine_report again and answer with propose_refinement: the edits revised as I asked, or the same "
+                "edits with your answer in its summary.")
+
+
+def _refine_organ_line(st, guess):
+    if st.get("organ"):
+        return f"The organ: {st['organ']}, confirmed by me."
+    if guess.get("organ"):
+        return (f"The organ: {guess['organ']}, inferred by the app ({'; '.join(guess.get('evidence') or [])}); check it "
+                "against the cell types, and ask me in questions if it looks like another one.")
+    return ("The organ is not known: infer it from the cell types and their expression, use that organ's priors if "
+            "you are confident and say so, and ask me in questions.")
+
+
+def api_refine(req):
+    """The Refine rounds of an annotation, with the organs the priors cover."""
+    from . import iterate, hetissue
+    s = review_app._session(req.path_params["sid"])
+    st = iterate.load(s)
+    covered = [o for o in hetissue.default_priors()["organs"] if not o.startswith("General")]
+    return _json(st | {"organs": covered + [o for o in hetissue.user_organs() if o not in covered]})
+
+
+async def api_refine_start(req: Request):
+    """{organ, message, ask, from}: a new round on the annotation's latest version (from: the annotation of the
+    round before, whose rounds this one continues); with ask the agent is asked to review and propose."""
+    from . import iterate, hetissue
+    s = review_app._session(req.path_params["sid"])
+    b = await req.json()
+    try:
+        if b.get("from") and b["from"] != s.id:
+            iterate.carry(review_app._session(b["from"]), s)
+        organ = (b.get("organ") or "").strip() or None
+        if organ:
+            hetissue._remember_organ(s.sample_id, organ)
+        st = await asyncio.to_thread(iterate.start_round, s, organ)
+        rd = st["rounds"][-1]
+        if (b.get("message") or "").strip():
+            rd = iterate.add_message(s, "user", b["message"].strip())
+        out = {"round": rd}
+        if b.get("ask"):
+            user = (f"I wrote: \"{b['message'].strip()}\" (this comes first). " if (b.get("message") or "").strip() else "")
+            out |= _ask_claude(s, REFINE_REQUEST.format(sid=s.id, n=rd["n"], user=user,
+                                                        organ=_refine_organ_line(iterate.load(s), rd["report"]["organ"])))
+        return _json(out)
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+
+
+async def api_refine_message(req: Request):
+    """{text}: the user's words to the agent in the Refine window (they come first); the agent revises its proposal."""
+    from . import iterate
+    s = review_app._session(req.path_params["sid"])
+    b = await req.json()
+    text = (b.get("text") or "").strip()
+    if not text:
+        return _json({"error": "write something first"}, 400)
+    try:
+        rd = iterate.add_message(s, "user", text)
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+    return _json({"round": rd} | _ask_claude(s, REFINE_REPLY.format(sid=s.id, n=rd["n"], text=text.replace('"', "'"))))
+
+
+async def api_refine_decide(req: Request):
+    """{decision: accepted (with edits) | dismissed | stopped}. accepted returns the marker list of the next round,
+    which the app annotates (carrying regions, priors and corrections)."""
+    from . import iterate
+    s = review_app._session(req.path_params["sid"])
+    b = await req.json()
+    try:
+        if b.get("decision") == "accepted":
+            return _json(iterate.accept(s, b.get("edits") or []))
+        return _json({"round": iterate.decide(s, b.get("decision"))})
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+
+
 def _ask_claude(s, text):
     """Send a request to the user's Claude Code (desktop app) or hand it to the server viewer's chat box."""
     if not desktop_mode():
@@ -3819,6 +3909,10 @@ def build_app(port):
         Route("/api/s/{sid}/advice", api_advice),
         Route("/api/s/{sid}/advice/act", api_advice_act, methods=["POST"]),
         Route("/api/s/{sid}/advice/status", api_advice_status, methods=["POST"]),
+        Route("/api/s/{sid}/refine", api_refine),
+        Route("/api/s/{sid}/refine/start", api_refine_start, methods=["POST"]),
+        Route("/api/s/{sid}/refine/message", api_refine_message, methods=["POST"]),
+        Route("/api/s/{sid}/refine/decide", api_refine_decide, methods=["POST"]),
         Route("/api/s/{sid}/report", api_report),
         Route("/api/s/{sid}/report.md", api_report_md),
         Route("/api/s/{sid}/report/save", api_report_save, methods=["POST"]),
