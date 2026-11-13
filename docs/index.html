@@ -239,11 +239,11 @@ section.band { padding-block: clamp(64px, 9vw, 112px) 0; }
 .diag .hd { fill: var(--muted); } .diag .hda { fill: var(--c-agent); }
 h3.sub { font-size: var(--s-3); line-height: 1.2; margin-top: 48px; }
 .subintro { color: var(--muted); max-width: 64ch; margin-top: 8px; }
-.how { list-style: none; margin: 20px 0 0; padding: 0; display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-.how li { background: var(--panel); padding: 16px 20px; display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 6px 20px; }
-.how b { font-family: var(--f-display); font-size: var(--s-2); }
-.how p { color: var(--muted); }
-@media (max-width: 640px) { .how li { grid-template-columns: minmax(0, 1fr); } }
+.found { list-style: none; margin: 20px 0 0; padding: 0; display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.found li { background: var(--panel); padding: 16px 20px; display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 6px 20px; }
+.found > li > b { font-family: var(--f-display); font-size: var(--s-2); }
+.found p { color: var(--muted); }
+@media (max-width: 640px) { .found li { grid-template-columns: minmax(0, 1fr); } }
 .facts { margin-top: 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 12px; }
 .fact { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 6px; align-content: start; min-width: 0; }
 .fact b { font-family: var(--f-display); font-size: var(--s-2); }
@@ -758,7 +758,7 @@ footer .counted { flex-basis: 100%; margin: 0; }
         <h3 class="sub">How the cell types are found</h3>
         <p class="subintro">The marker list is a hierarchy: lineages, and the types under them. <code>GENE+</code> should
           be expressed, <code>GENE-</code> should not, and <code>A|B|C+</code> means any one of these genes.</p>
-        <ol class="how">
+        <ol class="found">
           <li><b>Marker step</b><p>Top down: at each level the cells are clustered again (PCA, a neighbor graph, Leiden),
             and each cluster is scored on how often each type's markers are detected, compared with the other clusters.
             A cluster goes to a type only when its score and its lead over the runner-up are both clear; otherwise it
