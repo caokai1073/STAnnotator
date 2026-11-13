@@ -919,7 +919,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
   </div>
 </dialog>
 <dialog id="rfDlg" style="width:min(980px,96vw)">
-  <div class="dh"><svg class="ic" aria-hidden="true"><use href="#ic-sparkle"/></svg><b id="rfTitle">Refine with the agent</b><span class="spacer"></span>
+  <div class="dh"><svg class="ic" aria-hidden="true"><use href="#ic-sparkle"/></svg><b id="rfTitle">Refine cell types</b><span class="spacer"></span>
     <button id="rfClose" title="Close the window; the round stays, Refine cell types opens it again">Close</button></div>
   <div class="imbody rfbody">
     <div class="row rforgan"><b>Organ</b><select id="rfOrgan"></select><input id="rfOrganOther" placeholder="another organ (type it)" hidden>
@@ -4173,6 +4173,18 @@ function rfSync() {  // the Refine button and switch: a marker annotation open, 
   const marker = !!st.sid && !st.placeholder && !!st.vocab && st.vocab.method === "markers";
   $("rfOpen").disabled = !marker || !rfAgentOk();
   $("rfAutoWrap").hidden = $("method").value !== "markers" || !rfAgentOk();
+  rfButtonRound().catch(() => {});
+}
+async function rfButtonRound() {  // the button names the round it opens: this annotation's, or the next one
+  const sid = st.sid, v = st.version, key = `${sid}|${v}`;
+  if (!sid || $("rfOpen").disabled) { RF.btnKey = null; setLabel($("rfOpen"), "Refine cell types"); return; }
+  if (RF.btnKey === key) return;
+  RF.btnKey = key;
+  const r = await api(`/api/s/${sid}/refine`);
+  if (RF.btnKey !== key) return;  // another annotation opened meanwhile
+  const last = r.rounds[r.rounds.length - 1];
+  const n = !last ? 1 : last.session === sid && last.version === v ? last.n : last.n + 1;
+  setLabel($("rfOpen"), `Refine cell types round ${n}`);
 }
 if (load("rfAuto") === "off") $("rfAuto").checked = false;
 $("rfAuto").onchange = () => store("rfAuto", $("rfAuto").checked ? "on" : "off");
@@ -4212,7 +4224,8 @@ function rfRender() {
   const r = RF.state, rd = rfRound(); if (!rd) return;
   RF.seen = `${rd.n}|${rd.messages.length}|${rd.proposal ? rd.proposal.time : ""}|${rd.decision}`;
   const rep = rd.report, g = rep.organ || {};
-  $("rfTitle").textContent = `Refine with the agent · round ${rd.n}`;
+  $("rfTitle").textContent = `Refine cell types round ${rd.n}`;
+  if (RF.sid === st.sid) setLabel($("rfOpen"), `Refine cell types round ${rd.n}`);
   // the organ: confirmed, inferred, or asked
   const organ = r.organ || g.organ || "";
   const opts = [["", "— which organ is this? —"], ...r.organs.map((o) => [o, o]), ["__other", "another organ…"]];
