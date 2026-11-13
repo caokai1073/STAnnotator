@@ -41,6 +41,16 @@ try:
     assert set(untyped[want_lq]) == set(left), "Low quality is not the cells without marker evidence"
     print(f"{len(untyped):,} cells the marker step could not type: {len(untyped) - len(left):,} got a type from "
           f"their marker genes, {len(left):,} are Low quality ({int((best < 0).sum()):,} with no marker detected)")
+    # a root cluster of the marker step whose cells all went elsewhere (rare-type search) has no members: skipped
+    real = s.marker_result
+    def emptied(*a, **k):
+        ml = dict(real(*a, **k)); ml["members"] = dict(ml["members"])
+        r = next(x for x in ml["records"] if x["parent"] is None and not x["assigned"])
+        ml["members"][r["id"]] = np.zeros(0, np.int32)
+        return ml
+    s.marker_result = emptied
+    assert iterate.report(s)["untyped_by_markers"]["n_cells"] >= 0
+    del s.marker_result
     st = iterate.start_round(s, organ="Colon")
     rep = st["rounds"][-1]["report"]
     assert rep["n_cells"] == len(lab) and rep["types"] and "weak_types" in rep and "not_found" in rep

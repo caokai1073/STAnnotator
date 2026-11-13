@@ -4233,7 +4233,7 @@ async function rfPoll() {
   if (!$("rfDlg").open) { clearInterval(RF.timer); return; }
   let r; try { r = await api(`/api/s/${RF.sid}/refine`); } catch (e) { return; }
   const rd = r.rounds[r.rounds.length - 1];
-  const key = rd ? `${rd.n}|${rd.messages.length}|${rd.proposal ? rd.proposal.time : ""}|${rd.decision}` : "";
+  const key = rd ? `${rd.n}|${rd.messages.length}|${rd.proposal ? rd.proposal.time : ""}|${rd.decision}|${!!r.awaiting}` : "";
   if (key !== RF.seen) { RF.state = r; rfRender(); }
 }
 function rfOrgan() { return $("rfOrgan").value === "__other" ? $("rfOrganOther").value.trim() : $("rfOrgan").value; }
@@ -4247,9 +4247,10 @@ function rfEditText(e) {
 }
 function rfRender() {
   const r = RF.state, rd = rfRound(); if (!rd) return;
-  RF.seen = `${rd.n}|${rd.messages.length}|${rd.proposal ? rd.proposal.time : ""}|${rd.decision}`;
+  RF.seen = `${rd.n}|${rd.messages.length}|${rd.proposal ? rd.proposal.time : ""}|${rd.decision}|${!!r.awaiting}`;
   const rep = rd.report, g = rep.organ || {};
   $("rfTitle").textContent = `Refine cell types round ${rd.n}`;
+  $("rfWait").textContent = r.awaiting ? "The agent is reviewing (a few minutes)…" : "";
   if (RF.sid === st.sid) setLabel($("rfOpen"), `Refine cell types round ${rd.n}`);
   // the organ: confirmed, inferred, or asked
   const organ = r.organ || g.organ || "";
@@ -4342,8 +4343,10 @@ $("rfAccept").onclick = async () => {
   if (["exact", "approx"].includes(r.knn)) { $("knn").value = r.knn; syncSeg("knn"); }  // as the round before was made
   $("spill").checked = !!r.spillover;
   RF.from = RF.sid; clearInterval(RF.timer); $("rfDlg").close();
-  toast(`Annotating again with ${ids.length} edit(s); the next round opens when it is done`, 5000);
-  await startAnnotation("new");
+  const joint = r.joint && st.sample && projectOf(st.sample.sample_id);
+  if (joint) { $(PROJ_ALL.annotate).checked = true; $(PROJ_ALL.annotate).dispatchEvent(new Event("change")); }
+  toast(`Annotating ${joint ? "all slices together " : ""}again with ${ids.length} edit(s); the next round opens when it is done`, 5000);
+  await (joint ? annotateProject() : startAnnotation("new"));
 };
 $("rfDismiss").onclick = async () => {
   try { await post(`/api/s/${RF.sid}/refine/decide`, { decision: "dismissed" }); rfPoll(); } catch (e) { $("rfErr").textContent = e.message; }
@@ -6777,6 +6780,7 @@ async function annotateProject() {  // one marker annotation of all slices; then
   const chk = await post("/api/markers/check", { text, sample: st.sample.sample_id });
   if (!chk.ok) { openMarkers(); showCheck(chk); toast("Fix the marker list first", 3000); return; }
   if (!(await memoryOk("annotate", true, "The annotation"))) return;
+  const rfFrom = RF.from; RF.from = null;  // the Refine round this annotation continues (Accept in the Refine window)
   $("annotate").disabled = true; $("progress").classList.add("show");
   try {
     await projectJob("annotate", { markers_text: text, resolution: $("mkAuto").checked ? "auto" : +$("mkRes").value,
@@ -6787,6 +6791,8 @@ async function annotateProject() {  // one marker annotation of all slices; then
     await loadSamples(st.sample.sample_id);
     setTimeout(() => $("progress").classList.remove("show"), 800);
     toast("All slices of the project annotated together", 5000);
+    if (st.sid && st.vocab && st.vocab.method === "markers" && rfAgentOk() && (rfFrom || $("rfAuto").checked))  // the next round
+      rfOpen(rfFrom).catch((e) => toast(`Refine: ${e.message}`, 6000));
   } catch (e) {
     if (isStop(e)) stopped($("progress"), "Annotation");
     else { $("pstage").textContent = `Annotation failed: ${e.message}`; toast($("pstage").textContent, 8000); }

@@ -767,7 +767,8 @@ def api_refine(req):
     s = review_app._session(req.path_params["sid"])
     st = iterate.load(s)
     covered = [o for o in hetissue.default_priors()["organs"] if not o.startswith("General")]
-    return _json(st | {"organs": covered + [o for o in hetissue.user_organs() if o not in covered]})
+    return _json(st | {"organs": covered + [o for o in hetissue.user_organs() if o not in covered],
+                       "awaiting": iterate.awaiting(s)})
 
 
 async def api_refine_ask(req: Request):
@@ -847,7 +848,9 @@ async def api_refine_decide(req: Request):
         if b.get("decision") == "accepted":
             out = iterate.accept(s, b.get("edits") or [], b.get("proposal_time"))
             # the next round is annotated as this one was (only the accepted edits change)
-            return _json(out | {"knn": s.knn_mode(), "spillover": bool(s.scheme.get("spillover"))})
+            # an annotation of all slices together is annotated again with all slices together
+            return _json(out | {"knn": s.knn_mode(), "spillover": bool(s.scheme.get("spillover")),
+                                "joint": bool((s.scheme or {}).get("joint"))})
         return _json({"round": iterate.decide(s, b.get("decision"))})
     except ValueError as e:
         return _json({"error": str(e)}, 400)

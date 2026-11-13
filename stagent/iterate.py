@@ -94,7 +94,7 @@ def report(s, version=None):
                                                                                  key=lambda kv: -kv[1])[:3]),
                              "median_transcripts": int(np.median(tc[np.asarray(ml["members"][x["id"]])]))}
                             for x in sorted(ml["records"], key=lambda x: -x["n_cells"])
-                            if x["parent"] is None and not x["assigned"] and x["id"] in ml["members"]][:6]},
+                            if x["parent"] is None and not x["assigned"] and len(ml["members"].get(x["id"], ())) > 0][:6]},
            "note": ("fold = how many times as often a type's own positive markers are detected in its cells as in "
                     "the other cells of its lineage; marker_flags: markers that are weak, not specific (siblings "
                     "detect them about as often) or negative markers detected; untyped_by_markers: cells no "
