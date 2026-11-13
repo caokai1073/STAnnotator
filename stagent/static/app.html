@@ -414,6 +414,16 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .rfedits { max-height: 38vh; overflow: auto; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }
 .rfedits label { display: grid; grid-template-columns: auto 1fr; gap: 6px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; }
 .rfedits .why { color: var(--muted); }
+/* the edits' tick boxes drawn by the page, the same whether ticked by the app or by a click (the system draws them
+   differently: blue once clicked, grey before) */
+.rfedits input[type=checkbox] { appearance: none; -webkit-appearance: none; width: 16px; height: 16px; margin: 2px 0 0;
+  border: 1.5px solid var(--muted); border-radius: 4px; background: var(--panel); display: inline-grid; place-content: center;
+  cursor: pointer; }
+.rfedits input[type=checkbox]:checked { background: var(--accent); border-color: var(--accent); }
+.rfedits input[type=checkbox]:checked::after { content: ""; width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0;
+  transform: translateY(-1px) rotate(45deg); }
+.rfedits input[type=checkbox]:disabled { opacity: .5; cursor: default; }
+.rfedits input[type=checkbox]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (max-width: 760px) { .rfgrid { grid-template-columns: 1fr; } }
 .dbody { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 14px; padding: 12px 14px 14px; }
 .col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
