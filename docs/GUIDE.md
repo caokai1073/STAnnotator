@@ -417,7 +417,7 @@ The app's window, or the web viewer (`.venv/bin/stagent viewer`, then http://loc
     Spatial organization asks the agent for a wider look, with the organ's priors). Steps 5–7 are optional; a step the sample does not need is grayed (no image: no
     registration; Visium and Stereo-seq are placed by their software). An H&E only (no cells) shows no steps. A
     click on the title folds the list;
-  - two tabs, **Data** and **Analysis**. Analysis has the steps **Annotate**, **Embed**, **Niche**, **Compare**,
+  - two tabs, **Data** and **Analysis**. Analysis has the steps **Type**, **Embed**, **Niche**, **Compare**,
     **Signal** and **Trajectory** as a second row and reopens the one last used (a dot on a tab whose analysis is
     running);
   - at the bottom, **Reset** and **Remove all**.
@@ -492,7 +492,7 @@ Histograms show where each threshold cuts and the dialog counts what goes; empty
 - Annotations and the PCA / UMAP of the filtered samples go to the trash (they number the cells).
 - Marker genes the filter removed are left out of marker lists with a warning.
 
-### Annotating (Analysis → Annotate)
+### Annotating (Analysis → Type)
 
 1. Choose the **Method**:
    - *Marker genes*: a marker list (**Markers…**, see [Marker lists](#2-marker-lists));
@@ -791,7 +791,7 @@ asks now and always shows it. Without an internet connection nothing is shown.
 
 ## 5. Analyses
 
-The steps of the **Analysis** tab after Annotate. Each has **Ask Agent** to interpret its result.
+The steps of the **Analysis** tab after Type. Each has **Ask Agent** to interpret its result.
 
 ### Embedding (Embed)
 
@@ -1069,7 +1069,7 @@ to 98.6%.
   search uses an NVIDIA or Apple GPU (the same neighbors, only faster). The macOS app runs that search on the Apple
   GPU through MLX (macOS 14 or later), also with the same neighbors.
 - The exact neighbor search takes about 9 s for 188,644 cells and under a minute for 400,000 cells on 8 CPU cores.
-  The Annotate tab shows the estimate of the whole annotation for the sample and computer at hand.
+  The Type tab shows the estimate of the whole annotation for the sample and computer at hand.
 - A correction or a local re-clustering takes a few seconds.
 - The viewer draws the cells with WebGL, so panning, zooming and changing colors are immediate.
 

@@ -118,7 +118,7 @@ After updating STAnnotator on the server, reconnect once so that the server's vi
 1. **Import**: Xenium (`cells.parquet` and `cell_feature_matrix.h5`; optionally `experiment.xenium` and the DAPI
    image), or h5ad / RDS (Seurat, SpatialExperiment; read without R). Optionally the H&E and its registration;
    without a registration, **Align with Agent** aligns the H&E for you.
-2. **Annotate** tab: a marker list (**Markers…**: import a CSV, or **Start from an organ**: a built-in list for
+2. **Type** tab: a marker list (**Markers…**: import a CSV, or **Start from an organ**: a built-in list for
    12 common organs pruned to your gene panel, which the agent can complete) or a reference, then **Annotate**.
 3. Draw regions on the map; ask the agent with **Agent**, e.g. "epithelial cells are only in the mucosa".
 4. **Embed**, **Niche**, **Compare**, **Signal** and **Trajectory** (spatial axes, pseudotime) tabs for the

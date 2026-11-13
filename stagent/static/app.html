@@ -528,7 +528,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
   <div class="tabs main" id="mainTabs" role="tablist">
     <button class="tab" data-main="data" role="tab" title="The sample: import, its cells and image, its annotations">Data</button><button class="tab" data-main="analysis" role="tab" title="Annotate, Embed, Niche, Compare, Signal, Trajectory">Analysis</button></div>
   <div class="tabs sub" id="tabs" role="tablist">
-    <button class="tab" data-tab="data" role="tab" hidden>Data</button><button class="tab" data-tab="annotate" role="tab">Annotate</button>
+    <button class="tab" data-tab="data" role="tab" hidden>Data</button><button class="tab" data-tab="annotate" role="tab">Type</button>
     <button class="tab" data-tab="embed" role="tab" title="PCA, UMAP and Leiden clusters">Embed</button><button class="tab" data-tab="niches" role="tab" title="Niches: places where cells of similar make-up live together">Niche</button>
     <button class="tab" data-tab="compare" role="tab" title="DE genes, top genes per group, composition">Compare</button><button class="tab" data-tab="signal" role="tab" title="Cell-cell communication: ligand-receptor signaling between neighboring cells">Signal</button>
     <button class="tab" data-tab="traj" role="tab" title="Spatial axes and pseudotime: the order of cells in the tissue or along a differentiation, and the genes that change along it">Trajectory</button></div>
@@ -574,7 +574,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <label class="switch projall" hidden title="Annotate all slices of the project at once (one marker step and one model), so a name means the same cells in every slice"><input type="checkbox" id="projAllA">
       <span>All slices together<small>one annotation of the project's slices (marker genes)</small></span></label>
     <button id="annotate" class="primary main">Annotate</button>
-    <div class="act2"><button id="rfOpen" disabled title="Refine this annotation with the agent: the computed problems, the agent's proposed edits of the marker list, your conversation with it">Refine…</button></div>
+    <div class="act2"><button id="rfOpen" disabled title="Refine this annotation with the agent: the computed problems, the agent's proposed edits of the marker list, your conversation with it">Refine cell types</button></div>
   </div>
   <div class="pane" data-pane="embed">
     <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-scatter"/></svg><div><div id="einfo">No embedding yet</div>
@@ -920,7 +920,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
 </dialog>
 <dialog id="rfDlg" style="width:min(980px,96vw)">
   <div class="dh"><svg class="ic" aria-hidden="true"><use href="#ic-sparkle"/></svg><b id="rfTitle">Refine with the agent</b><span class="spacer"></span>
-    <button id="rfClose" title="Close the window; the round stays, Refine… opens it again">Close</button></div>
+    <button id="rfClose" title="Close the window; the round stays, Refine cell types opens it again">Close</button></div>
   <div class="imbody rfbody">
     <div class="row rforgan"><b>Organ</b><select id="rfOrgan"></select><input id="rfOrganOther" placeholder="another organ (type it)" hidden>
       <button id="rfPrior" title="The priors of this organ the agent's review uses: see, remove or add them (the Prior window)">Prior</button>
@@ -4894,7 +4894,7 @@ const HELP = `
   <li>It previews the change and asks before adding a prior.</li></ul></li>
 <li>Ask the agent which priors the annotation has, or to remove one; <b>Undo</b> takes back the last one added.</li></ul>
 
-<h3>Annotate</h3><ul>
+<h3>Type</h3><ul>
 <li><b>Method</b>:<ul>
   <li>marker genes (<b>Markers…</b>);</li>
   <li>a single-cell reference (<b>Reference…</b>);</li>
@@ -4906,7 +4906,7 @@ const HELP = `
   <li><i>Exact</i> finds the true neighbors; slow without a GPU for large samples.</li>
   <li>The line under it estimates how long the whole annotation takes on this computer for both (hover for the
     steps); it learns from every run here.</li></ul></li>
-<li><b>Refine with the agent</b> (marker genes; on by default, or <b>Refine…</b> later), round by round:<ul>
+<li><b>Refine with the agent</b> (marker genes; on by default, or <b>Refine cell types</b> later), round by round:<ul>
   <li>the app sums up what may be wrong (types with weak marker evidence, markers that are not specific, types not
     found, the cells the marker step could not type, the changes since the round before);</li>
   <li>the organ: inferred from the cell types and the sample's name, or asked; the agent reviews the whole
@@ -5186,7 +5186,7 @@ checksums of its steps (PCA, neighbors, first clusters, labels) to compare runs.
     0.05 mm² filled, small pieces dropped, then traced smoothly: the mask blurred and its half level followed between
     pixels, corners rounded (no pixel stairs).</li></ul></li></ul>
 
-<h3>Annotate</h3><ul>
+<h3>Type</h3><ul>
 <li><b>Marker genes</b> (hierarchical, top-down)<ul>
   <li>At each level the parent's cells are clustered: PCA of standardized genes (30 PCs; above 6,000 genes the 3,000
     most variable), 15 nearest neighbors, Leiden (modularity); with resolution <i>auto</i> 0.5, 1, 2 and 4 are tried
@@ -5204,7 +5204,7 @@ checksums of its steps (PCA, neighbors, first clusters, labels) to compare runs.
     type with one positive marker gets the cells with 3 or more of its transcripts, when that gene is detected in at
     most 5% of the parent's cells; a type with several gets the cells with 2 or more transcripts of each of two of
     them, when that happens at least 3 times as often as by chance; no negative marker detected; at least 10 cells.</li>
-  <li>A type still without cells is listed as <b>not found</b> (Annotate tab, under the annotation), with the
+  <li>A type still without cells is listed as <b>not found</b> (Type tab, under the annotation), with the
     detection of its markers.</li></ul></li>
 <li><b>Expression model</b><ul>
   <li>Multinomial logistic regression on the standardized log-normalized genes, trained on the marker step's labels
@@ -5758,7 +5758,7 @@ const STEPS = {
   import: ["Import", "The sample: its cells and genes, and its image and registration if it has them.", null],
   registration: ["Check registration", "Are the cells on their nuclei everywhere? The app measures the offsets over the whole tissue (about a minute) and, where the tissue shifted, offers the local registration. (Review → Spatial organization asks the agent for a wider review.)", ["Check", () => checkRegistration()]],
   filter: ["Filter cells and genes", "Leave out cells with few transcripts or genes and genes detected in few cells, before annotating. Seconds to a minute.", ["Filter", () => $("qfBtn").click()]],
-  annotate: ["Annotate", "Cell types from a marker list (or a reference, or a CSV of labels): Annotate tab → Markers… → Annotate. A few minutes.", ["Annotate", () => showTab("annotate")]],
+  annotate: ["Annotate", "Cell types from a marker list (or a reference, or a CSV of labels): Type tab → Markers… → Annotate. A few minutes.", ["Annotate", () => showTab("annotate")]],
   regions: ["Regions and priors", "Optional: outline tissue regions on the map (brush, polygon…), then tell the agent what holds there, e.g. “epithelial cells are only in the mucosa”.", ["Draw", () => { $("regpanel").hidden = false; $("regpanel").classList.remove("collapsed"); setTool("brush"); toast("Brush: paint a region on the map (or pick another tool in the Regions panel), then Save", 6000); }]],
   review: ["Review", "Optional: the agent checks the annotation (areas and marker genes that look wrong) and gives advice.", ["Review", () => { st.rvScope = "annotation"; openReviewChooser().catch((e) => toast(e.message, 6000)); }]],
   analyze: ["Analyze", "Optional: embedding (PCA, UMAP), niches, DE genes and DESeq2, composition, signaling, trajectories. Click to unfold them.", null],
