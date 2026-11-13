@@ -567,7 +567,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <option value="approx" data-short="Approximate">Approximate (pynndescent): faster for very large samples (about a million cells or more); the same labels with the same versions of its packages</option>
       <option value="exact" data-short="Exact" selected>Exact (the default): the true neighbors, the same labels on every computer, with or without a GPU; about a minute for 450,000 cells</option></select>
       <div class="seg" data-for="knn"></div><div class="hint" id="annEst"></div></div>
-    <label class="switch" id="spillWrap" title="In imaging data a cell's outline also catches transcripts of its neighbors. On: a gene counts as detected in a cell only where its count is above a tenth of the mean count of its 6 nearest cells. It helped on a MERFISH slice (lineage agreement 0.785 → 0.816 against the authors' labels) and changed little on Xenium sections; try it when many cells stay untyped or markers of neighboring types show up where they should not"><input type="checkbox" id="spill">
+    <label class="switch" id="spillWrap" title="In imaging data a cell's outline also catches transcripts of its neighbors. On: a gene counts as detected in a cell only where its count is above a tenth of the mean count of its 6 nearest cells. It helped on a MERFISH slice (lineage agreement 0.785 → 0.816 against the authors' labels) and changed little on Xenium sections; try it when many cells stay untyped or markers of neighboring types show up where they should not"><input type="checkbox" id="spill" checked>
       <span>Leave out spillover<small>transcripts that come from neighboring cells</small></span></label>
     <label class="switch" id="carryWrap" style="visibility:hidden" title="Start the new annotation with the regions (and their colors), priors and hand corrections of the one that is open; priors and corrections naming cell types the new annotation does not have are dropped"><input type="checkbox" id="carry" checked>
       <span>Keep my regions, priors &amp; corrections<small>carried into the new annotation</small></span></label>
@@ -4102,7 +4102,7 @@ function showEstimate() {
 }
 if (["exact", "approx"].includes(load("knn"))) $("knn").value = load("knn");
 $("knn").onchange = () => { syncSeg("knn"); store("knn", $("knn").value); showEstimate(); };
-if (load("spill") === "on") $("spill").checked = true;
+if (load("spill") === "off") $("spill").checked = false;
 $("spill").onchange = () => store("spill", $("spill").checked ? "on" : "off");
 $("mkDlg").addEventListener("close", estimateAnnotation);
 $("projAllA").addEventListener("change", estimateAnnotation);
@@ -4924,10 +4924,9 @@ const HELP = `
   <li><i>Exact</i> finds the true neighbors; slow without a GPU for large samples.</li>
   <li>The line under it estimates how long the whole annotation takes on this computer for both (hover for the
     steps); it learns from every run here.</li></ul></li>
-<li><b>Leave out spillover</b> (marker genes, off by default): in imaging data a cell's outline also catches
+<li><b>Leave out spillover</b> (marker genes, on by default): in imaging data a cell's outline also catches
   transcripts of its neighbors; on, a gene counts as detected in a cell only where its count is above a tenth of the
-  mean count of its 6 nearest cells (of the same slice). Try it when many cells stay untyped, or markers of a
-  neighboring type show up where they should not.</li>
+  mean count of its 6 nearest cells (of the same slice). Turn it off to count every transcript in a cell's outline.</li>
 <li><b>Refine with the agent</b> (marker genes; on by default, or <b>Refine cell types</b> later), round by round:<ul>
   <li>the app sums up what may be wrong (types with weak marker evidence, markers that are not specific, types not
     found, the cells the marker step could not type, the changes since the round before);</li>

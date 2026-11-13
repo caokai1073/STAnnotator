@@ -1024,7 +1024,7 @@ def _leiden(g, nbr, resolution, seed, min_cluster=None):
     return np.unique(lab, return_inverse=True)[1]
 
 
-# Spillover (an option of the annotation, off by default): in imaging data a cell's outline also catches transcripts of
+# Spillover (an option of the annotation, on by default since 0.2.57): in imaging data a cell's outline also catches transcripts of
 # its neighbors. With it, a gene counts as detected in a cell only where its count is above SPILL_FRACTION of the mean
 # count of the cell's SPILL_NEIGHBORS nearest cells (of the same slice). Measured against the authors' labels: on a
 # mouse colon MERFISH slice lineage agreement 0.785 -> 0.816 and 2,600 more cells typed; on three human colon Xenium

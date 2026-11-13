@@ -35,7 +35,9 @@ try:
              for m in markers._find(tree, a)["markers"] for g in m["genes"]}
     assert set(np.unique(lab[untyped])) - {markers.UNASSIGNED} <= found, "a type the marker step did not find got cells"
     cols = [i for i, g in enumerate(s.panel) if g in genes]
-    assert not np.asarray(s.counts[left][:, cols].sum(1)).ravel().any(), "a cell with a marker was left Unassigned"
+    det = (markers.spill_detected(s.counts, s.cells[["x", "y"]].to_numpy(float)) if s.scheme.get("spillover")
+           else s.counts)  # the detection the annotation used (spilled-over transcripts left out)
+    assert not np.asarray(det[left][:, cols].sum(1)).ravel().any(), "a cell with a marker was left Unassigned"
     print(f"{len(untyped):,} cells the marker step could not type: {len(untyped) - len(left):,} got a type from "
           f"their marker genes, {len(left):,} (no marker detected) stay Unassigned")
     st = iterate.start_round(s, organ="Colon")

@@ -91,7 +91,7 @@ def run_sessions(s):
     return [found[x] for x in order if x in found] + [v for k, v in found.items() if k not in order]
 
 
-def annotate(pid, markers_text, resolution=None, carry=False, progress=None, knn=None, spillover=False):
+def annotate(pid, markers_text, resolution=None, carry=False, progress=None, knn=None, spillover=True):
     """One marker annotation of all the project's slices together; returns {sample_id: new session id}.
     knn: the neighbor search, "exact" (default) or "approx". spillover: leave out transcripts spilled over from
     neighboring cells of the same slice (markers.spill_detected)."""
@@ -106,7 +106,7 @@ def annotate(pid, markers_text, resolution=None, carry=False, progress=None, knn
         return _annotate(pid, markers_text, resolution, carry, say, knn, ids, off, hold, panel, spillover)
 
 
-def _annotate(pid, markers_text, resolution, carry, say, knn, ids, off, hold, panel, spillover=False):
+def _annotate(pid, markers_text, resolution, carry, say, knn, ids, off, hold, panel, spillover=True):
     from .session import Session
     counts = hold.pop()  # (see annotate: this is now the only reference to the pooled matrix)
     n_cells = counts.shape[0]

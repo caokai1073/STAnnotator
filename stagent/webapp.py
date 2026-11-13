@@ -1470,7 +1470,7 @@ async def api_project_annotate(req: Request):
     pid, b = req.path_params["pid"], await req.json()
     return await _project_job(pid, lambda say: joint.annotate(pid, b.get("markers_text", ""), b.get("resolution"),
                                                         bool(b.get("carry")), say, b.get("knn"),
-                                                        spillover=bool(b.get("spillover"))),
+                                                        spillover=bool(b.get("spillover", True))),
                         estimate_s=b.get("estimate_s"), kind="annotate")
 
 
@@ -1922,7 +1922,7 @@ async def api_annotate(req: Request):
                                  markers_text=b.get("markers_text"), resolution=b.get("resolution"),
                                  carry_from=b.get("carry_from"), reference=b.get("reference"),
                                  existing=b.get("existing"), knn=b.get("knn"),
-                                 spillover=bool(b.get("spillover"))).id
+                                 spillover=bool(b.get("spillover", True))).id
         except (ValueError, OSError, KeyError) as e:
             return _json({"error": str(e)}, 400)
     run = jobs.RUNS.get(sid)

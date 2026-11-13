@@ -2,7 +2,7 @@
 1. a new annotation types the cells the marker step could not type with their neighbors too (scheme "neighbors"):
    only those cells can differ from the same annotation without it; the cells the marker step typed do not;
 2. the neighbor rounds stop (no change, or a cell flipping between two types);
-3. spillover (an option): a gene in a cell below a tenth of its neighbors' mean count is not counted; the marker
+3. spillover (on by default): a gene in a cell below a tenth of its neighbors' mean count is not counted; the marker
    step runs with it and stores the option; the neighbors of a project's slices stay within each slice.
 Run: python tests/smoke_spatial.py  (a temporary data folder removed at the end)."""
 import os, shutil, tempfile
@@ -18,7 +18,7 @@ EX = Path(__file__).resolve().parents[1] / "examples" / "cadinu_merfish"
 try:
     importer.import_sample("M", str(EX / "cadinu_merfish_D0_m3a_1_slice_2.h5ad"), progress=lambda *a: None)
     text = (EX / "mouse_colon_merfish_markers.txt").read_text()
-    s = Session.create("M", method="markers", markers_text=text, knn="exact")
+    s = Session.create("M", method="markers", markers_text=text, knn="exact", spillover=False)
     assert s.scheme["neighbors"] is True and s.scheme["spillover"] is False
     lab = np.asarray(s.labels())
     res = s.marker_result()
@@ -53,7 +53,7 @@ try:
     g = np.repeat([0, 1], [len(xy) // 2, len(xy) - len(xy) // 2])
     nb = markers._spatial_neighbors(np.vstack([xy[: len(xy) // 2], xy[: len(xy) - len(xy) // 2]]), 6, g)
     assert (g[nb] == g[:, None]).all(), "neighbors crossed slices"
-    s2 = Session.create("M", method="markers", markers_text=text, knn="exact", spillover=True)
+    s2 = Session.create("M", method="markers", markers_text=text, knn="exact")  # spillover on by default
     assert s2.scheme["spillover"] is True
     lab2 = np.asarray(s2.labels())
     print(f"with spillover: {(lab2 != lab).sum():,} cells labeled otherwise; Unassigned {(lab2 == markers.UNASSIGNED).sum()}")

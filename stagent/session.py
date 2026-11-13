@@ -202,12 +202,13 @@ class Session:
     # ---------- creation / persistence ----------
     @classmethod
     def create(cls, sample_id, region_source="none", method="markers", markers_text=None, resolution=None,
-               carry_from=None, reference=None, existing=None, knn=None, spillover=False):
+               carry_from=None, reference=None, existing=None, knn=None, spillover=True):
         """method 'markers' (default): hierarchical marker annotation (Leiden + marker scores) of this sample; the data
         is treated as having no cell type labels. markers_text: the marker list (indented text or CSV); required.
         knn: the marker step's neighbor search, "approx" (default; pynndescent on 8 threads: fast, and the same result
         on any computer) or "exact" (the true neighbors; slow without a GPU for large samples).
-        spillover: leave out transcripts spilled over from neighboring cells (markers.spill_detected) in the marker step.
+        spillover (default on): leave out transcripts spilled over from neighboring cells (markers.spill_detected) in
+        the marker step.
         The cells the marker step cannot type are typed with their neighbors' types too (markers.neighbor_rounds).
         method 'scref': a single-cell reference h5ad (reference = {"path", "label_column", optional "group_column",
         "majority_voting"}) trains a CellTypist-like classifier on the genes it shares with the panel.

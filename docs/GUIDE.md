@@ -515,10 +515,10 @@ Histograms show where each threshold cuts and the dialog counts what goes; empty
      seconds after the app starts.
    - Every annotation keeps checksums of its steps (PCA, neighbors, first clusters, labels) in `base/fingerprints.json`
      and in the app's log, so that two runs can be compared step by step (a bug report carries them).
-3. Optionally **Leave out spillover** (marker genes, off by default): in imaging data a cell's outline also catches
+3. **Leave out spillover** (marker genes, on by default): in imaging data a cell's outline also catches
    transcripts of its neighbors; on, a gene counts as detected in a cell only where its count is above a tenth of the
-   mean count of its 6 nearest cells of the same slice. Try it when many cells stay untyped or markers of a
-   neighboring type show up where they should not.
+   mean count of its 6 nearest cells of the same slice. Turn it off to count every transcript in a cell's
+   outline.
 4. Click **Annotate**.
 
 The cells the marker step could not type get a type from their marker genes and then, round by round, from the cell
