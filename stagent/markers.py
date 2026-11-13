@@ -213,11 +213,6 @@ def descendants(tree):
 
 # ---------------- clustering ----------------
 RESOLUTIONS = (0.5, 1.0, 2.0, 4.0)  # candidates tried per level when resolution is "auto"
-# (being evaluated, off: many child types at one level) CLUSTERS_PER_CHILD: with "auto", finer resolutions (x2 each)
-# are tried too until the level has at least this many clusters per child type; MARKER_WEIGHTS: a marker's weight in
-# a type's score is 1 / the number of the level's child types that list one of its genes
-CLUSTERS_PER_CHILD = 0
-MARKER_WEIGHTS = False
 AUTO = "auto"
 # Rare-type search: a child type no cluster of its level went to is looked for in finer clusterings of the same
 # neighbor graph (RARE_RESOLUTIONS, clusters down to RARE_MIN_CLUSTER cells). A fine cluster becomes that type when it
@@ -1074,18 +1069,13 @@ class _Annotator:
         if context:  # the level's other clusters
             frac = np.vstack([frac] + [np.asarray(self.det[np.asarray(rows)].mean(0)).reshape(1, -1) for rows in context])
         S = np.zeros((k, len(children)))
-        listed = {}  # gene -> the number of this level's child types that list it as a positive marker
-        for ch in children:
-            for g in {g for m in ch["markers"] if m["sign"] > 0 for g in m["genes"]}:
-                listed[g] = listed.get(g, 0) + 1
         for j, ch in enumerate(children):
-            parts, w = [], []
+            parts = []
             for m in ch["markers"]:
                 f = frac[:, [self.gi[g] for g in m["genes"]]]
                 z = np.clip((f - f.mean(0)) / (f.std(0) + 0.02), -3, 3)[:k]
                 parts.append(m["sign"] * (z.max(1) if m["sign"] > 0 else z.min(1)))
-                w.append(1.0 / max(listed.get(g, 1) for g in m["genes"]) if MARKER_WEIGHTS and m["sign"] > 0 else 1.0)
-            S[:, j] = np.average(parts, axis=0, weights=w) if MARKER_WEIGHTS else np.mean(parts, axis=0)
+            S[:, j] = np.mean(parts, axis=0)
         order = np.argsort(-S, 1)
         best = S[np.arange(k), order[:, 0]]
         second = S[np.arange(k), order[:, 1]] if len(children) > 1 else np.full(k, -np.inf)
@@ -1102,10 +1092,9 @@ class _Annotator:
         root = parent is None and len(idx) == self.n
         g, nbr = _graph(self.Xn if _all_rows(idx, self.n) else self.Xn[idx], self.knn_mode, self.fp if root else None)
         self.graph = (g, nbr)  # (kept for the rare-type search of this level)
-        cands = list(RESOLUTIONS) if resolution == AUTO else [float(resolution)]
+        cands = RESOLUTIONS if resolution == AUTO else (float(resolution),)
         best, tried = None, {}
-        while cands:
-            r = cands.pop(0)
+        for r in cands:
             self.say(self.done / self.total, f"Leiden on {label}, resolution {r:g}")
             with timing.step("leiden", len(idx) / 1e6):
                 lab = _leiden(g, nbr, r, self.seed)
@@ -1113,9 +1102,6 @@ class _Annotator:
             tried[f"{r:g}"] = round(ev["assigned_frac"], 3)
             if best is None or ev["assigned_frac"] > best[1]["assigned_frac"] + 0.01:
                 best = (r, ev, lab)
-            if (resolution == AUTO and not cands and CLUSTERS_PER_CHILD and ev["k"] < CLUSTERS_PER_CHILD * len(children)
-                    and r < 64):  # too few clusters for the level's types: finer
-                cands.append(r * 2)
         if root:
             self.fp.update(root_resolution=best[0], root_clusters=fingerprint(np.asarray(best[2], np.int64)))
         return best[0], best[1], best[2], tried
@@ -1318,17 +1304,50 @@ def training_labels(res, types):
     return np.array([index.get(x, -1) for x in res["labels"]], np.int64)
 
 
-# Since 0.2.57 the expression model gives every cell a cell type: the cells the marker step could not type (Unassigned,
-# often cells with few transcripts) get the type their expression is most like; their confidence tells how sure.
+# Since 0.2.57 the cells the marker step could not type (Unassigned, often cells with few transcripts) get a cell type
+# from their marker genes (marker_assign: the type whose cells most often show the same marker genes detected and not
+# detected, with its share of cells); a cell with none of the list's marker genes detected stays Unassigned.
 ASSIGN_ALL = True
 
 
-def restrict(logp, res, tree, types, corrected=()):
+def marker_assign(counts, panel, tree, types, rows, train):
+    """The cell types of the cells rows (of counts, cells x genes of panel) from their marker genes alone, no trained
+    model: which of the list's marker genes (of the types and the levels above them) the cell has (detected or not), compared with how often each is detected
+    in the cells the marker step gave each type (train: type index per cell, -1 none), times the type's share of
+    those cells (so one stray transcript does not make a cell a rare type). Only types the marker step gave cells to
+    are candidates. Returns (log-scores as cells x types, -inf for types not candidates; the index of the best type,
+    -1 where the cell has none of the list's marker genes)."""
+    types = list(types)
+    rows = np.asarray(rows, np.int64)
+    train = np.asarray(train, np.int64)
+    gi = {g: i for i, g in enumerate(panel)}
+    cand = [int(j) for j in np.unique(train) if j >= 0 and types[j] != UNASSIGNED and _find(tree, types[j]) is not None]
+    groups = descendants(tree)  # a type's markers and those of the levels above it (e.g. Epcam for epithelial types)
+    genes = sorted({g for j in cand for a, below in groups.items() if types[j] in below
+                    for m in _find(tree, a)["markers"] for g in m["genes"] if g in gi})
+    S = np.full((len(rows), len(types)), -np.inf)
+    if not len(rows) or not cand or not genes:
+        return S, np.full(len(rows), -1, np.int64)
+    D = (sp.csr_matrix(counts)[:, [gi[g] for g in genes]] > 0).astype(np.float64).tocsr()
+    typed = np.where(train >= 0)[0]
+    onehot = sp.csr_matrix((np.ones(len(typed)), (train[typed], typed)), shape=(len(types), D.shape[0]))
+    n = np.asarray(onehot.sum(1)).ravel()                      # cells per type
+    det = np.asarray((onehot @ D).todense())                   # cells of each type with each gene detected
+    Du = D[rows].toarray()
+    for j in cand:
+        p = (det[j] + 1) / (n[j] + 2)
+        S[:, j] = Du @ np.log(p) + (1 - Du) @ np.log(1 - p) + np.log(n[j] / n[cand].sum())
+    best = np.where(Du.any(1), S.argmax(1), -1)
+    return S, best
+
+
+def restrict(logp, res, tree, types, corrected=(), counts=None, panel=None):
     """The expression model's log-probabilities (cells x types) made to agree with the marker step, as float16 (the
     session and the exported notebook both use this): a cell left at a lineage or parent level gets a type below it
     (the others down-weighted by 1e-4); a type the model did not learn (no cell of it in the marker step) is not given,
-    unless corrected holds it (type indices the user corrected cells to): its cells would be noise; with ASSIGN_ALL,
-    Unassigned is not given either."""
+    unless corrected holds it (type indices the user corrected cells to): its cells would be noise. With ASSIGN_ALL
+    and counts (cells x genes of panel), the cells the marker step left Unassigned get their cell type from their
+    marker genes (marker_assign), not from the model."""
     types = list(types)
     groups = descendants(tree)
     lp = np.asarray(logp, np.float32).copy()
@@ -1338,11 +1357,20 @@ def restrict(logp, res, tree, types, corrected=()):
         lp[np.ix_(rows, np.where(~np.isin(types, groups.get(node, [])))[0])] += np.float32(np.log(1e-4))
     found = {types[i] for i in np.unique(training_labels(res, types)) if i >= 0}
     found |= {types[int(i)] for i in np.asarray(corrected, np.int64)}
-    if ASSIGN_ALL:  # no cell stays Unassigned: each gets its most likely cell type
-        found.discard(UNASSIGNED)
     off = np.array([t not in found for t in types])
     if off.any() and not off.all():
         lp[:, off] = np.float32(-1e4)
+    if ASSIGN_ALL and counts is not None and UNASSIGNED in types:  # the cells the marker step could not type: the
+        rows = np.where(lab == UNASSIGNED)[0]                        # type from their marker genes (no model)
+        if len(rows):
+            S, best = marker_assign(counts, panel, tree, types, rows, training_labels(res, types))
+            u = types.index(UNASSIGNED)
+            lp[:, u] = np.float32(-1e4)  # Unassigned only for the cells with no marker gene of the list
+            lp[rows] = np.float32(-1e4)
+            has = best >= 0
+            sc = S[has] - S[has].max(1, keepdims=True)  # the scores as probabilities: the confidence of the pick
+            lp[rows[has]] = np.where(np.isfinite(sc), sc, np.float32(-1e4))
+            lp[rows[~has], u] = 0.0  # no marker of the list detected: Unassigned
     lp -= lp.max(1, keepdims=True)
     return (lp - np.log(np.exp(lp).sum(1, keepdims=True))).astype(np.float16)
 

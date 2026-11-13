@@ -1263,7 +1263,7 @@ def review_markers(node: Optional[str] = None, version: Optional[int] = None) ->
 def refine_report() -> str:
     """The current round of refining the annotation with the user (the app's Refine window): the round's computed
     report (organ, cells and confidence per type, types with weak marker evidence, markers flagged weak or not
-    specific, types not found, the cells the marker step could not type and what their expression made them, the
+    specific, types not found, the cells the marker step could not type and what their marker genes made them, the
     changes since the round before), the marker list of the round, and the conversation with the user. The user's
     own words come first: follow them before your own view and the priors."""
     from . import iterate

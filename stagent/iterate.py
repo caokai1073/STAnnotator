@@ -28,7 +28,7 @@ EDIT_KINDS = ("add_marker", "remove_marker", "add_type", "remove_type", "rename_
 def report(s, version=None):
     """What may be wrong with a marker annotation, computed: the organ, cell counts and confidence per type, types
     with weak marker evidence, markers that do not tell a type from its siblings, types the list has but no cell
-    got, and the cells the marker step could not type (typed by their expression)."""
+    got, and the cells the marker step could not type (typed by their marker genes)."""
     from . import hetissue, markerqc
     if s.scheme["kind"] != "markers":
         raise ValueError("refining works on a marker-based annotation")
@@ -89,7 +89,7 @@ def report(s, version=None):
                "n_cells": int(untyped.sum()), "share": round(float(untyped.mean()), 4),
                "median_transcripts": int(np.median(tc[untyped])) if untyped.any() else None,
                "median_transcripts_others": int(np.median(tc[~untyped])) if (~untyped).any() else None,
-               "typed_by_expression_as": pd.Series(lab[untyped]).value_counts().head(8).to_dict(),
+               "typed_by_marker_genes_as": pd.Series(lab[untyped]).value_counts().head(8).to_dict(),
                "clusters": [{"n_cells": x["n_cells"], "best_scores": dict(sorted(x["scores"].items(),
                                                                                  key=lambda kv: -kv[1])[:3]),
                              "median_transcripts": int(np.median(tc[np.asarray(ml["members"][x["id"]])]))}
@@ -98,7 +98,9 @@ def report(s, version=None):
            "note": ("fold = how many times as often a type's own positive markers are detected in its cells as in "
                     "the other cells of its lineage; marker_flags: markers that are weak, not specific (siblings "
                     "detect them about as often) or negative markers detected; untyped_by_markers: cells no "
-                    "cluster of the marker step went to, which the expression model typed by their expression")}
+                    "cluster of the marker step went to, each typed by its marker genes (the found type whose cells most "
+                    "often show the same marker genes detected and not detected, with its share of cells; no "
+                    "marker gene detected: Unassigned)")}
     return out
 
 

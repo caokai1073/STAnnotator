@@ -4227,8 +4227,8 @@ function rfRender() {
   if ((rep.changes || []).length) lines.push("Since the round before: " + rep.changes.slice(0, 12).map((c) => `<span class="${c.big ? "big" : ""}">${rfEsc(c.type)} ${c.before.toLocaleString()} → ${c.after.toLocaleString()}</span>`).join(", "));
   if (weak.length) lines.push("Weak marker evidence: " + weak.map((x) => `${rfEsc(x.type)} (${x.fold}×)`).join(", "));
   if (nf.length) lines.push("Not found: " + nf.map((x) => `<span title="${rfEsc(x.reason)}">${rfEsc(x.type)}</span>`).join(", "));
-  if (un.n_cells) lines.push(`The marker step could not type ${un.n_cells.toLocaleString()} cells (${(100 * un.share).toFixed(1)}%, median ${un.median_transcripts} transcripts vs ${un.median_transcripts_others}); by their expression: ` +
-    Object.entries(un.typed_by_expression_as || {}).slice(0, 6).map(([k, v]) => `${rfEsc(k)} ${v.toLocaleString()}`).join(", "));
+  if (un.n_cells) lines.push(`The marker step could not type ${un.n_cells.toLocaleString()} cells (${(100 * un.share).toFixed(1)}%, median ${un.median_transcripts} transcripts vs ${un.median_transcripts_others}); by their marker genes: ` +
+    Object.entries(un.typed_by_marker_genes_as || {}).slice(0, 6).map(([k, v]) => `${rfEsc(k)} ${v.toLocaleString()}`).join(", "));
   if ((rep.marker_flags || []).length) lines.push(`${rep.marker_flags.length} markers flagged (weak or not specific), e.g. ` + rep.marker_flags.slice(0, 5).map((f) => `${rfEsc(f.node)}: ${rfEsc(f.marker)}`).join(", "));
   $("rfReport").innerHTML = lines.map((l) => `<div>${l}</div>`).join("");
   // the conversation
@@ -5209,9 +5209,12 @@ checksums of its steps (PCA, neighbors, first clusters, labels) to compare runs.
 <li><b>Expression model</b><ul>
   <li>Multinomial logistic regression on the standardized log-normalized genes, trained on the marker step's labels
     (class sizes corrected back to the sample's), so every cell gets a probability per cell type.</li>
-  <li>It labels the cells the marker step left at a parent level, within their lineage, and gives every cell a type:
-    the cells the marker step could not type at all (often of few transcripts) get the one their expression is most
-    like (their confidence says how sure).</li>
+  <li>It labels the cells the marker step left at a parent level, within their lineage.</li>
+  <li>The cells the marker step could not type at all (often of few transcripts) are typed by their marker genes,
+    without the model: which of the list's marker genes (of the types and the levels above them) the cell has and
+    has not, compared with how often each is detected in the cells the marker step gave each type, times the type's
+    share of cells (so one stray transcript does not make a cell a rare type). Only types the marker step found are
+    candidates; their confidence says how sure. A cell with none of the marker genes detected stays Unassigned.</li>
   <li>It gives no cell to a type the marker step found none of (not found), unless you corrected cells to it.</li>
   <li>Hand corrections: the corrected cells (weight 20) fine-tune the model with the other cells replayed; only the
     classes involved change.</li></ul></li>

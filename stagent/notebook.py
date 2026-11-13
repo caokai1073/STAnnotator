@@ -226,7 +226,7 @@ if len(lock_rows):
     model = sa.model.finetune(model, counts[lock_rows], lock_labels, rX, ry)
 logp = sa.model.predict(model, counts)
 # cells left at a group get a type of that group; types the marker step found no cell of are not given
-logp = sa.markers.restrict(logp, res, marker_tree(STATE["marker_ops"]), TYPES, lock_labels)'''
+logp = sa.markers.restrict(logp, res, marker_tree(STATE["marker_ops"]), TYPES, lock_labels, counts=counts, panel=genes)'''
     elif sch["kind"] == "existing":
         e = sch["existing"]
         base = f'''
@@ -762,7 +762,8 @@ model = joint_model if not STATE["marker_ops"] else sa.model.train_pseudo(
 if len(lock_rows):
     rX, ry, _ = sa.model.pseudo_pool(counts, marker_labels, T)
     model = sa.model.finetune(model, counts[lock_rows], lock_labels, rX, ry)
-logp = sa.markers.restrict(sa.model.predict(model, counts), r, marker_tree(STATE["marker_ops"]), TYPES, lock_labels)
+logp = sa.markers.restrict(sa.model.predict(model, counts), r, marker_tree(STATE["marker_ops"]), TYPES, lock_labels,
+                           counts=counts, panel=genes)
 base_pred, _ = sa.constraints.posterior(logp, [], None, TYPES)          # expression only
 region = sa.regions.assign(cells, STATE["regions"])                    # drawn regions
 nn = cKDTree(xy).query(xy, k=sa.constraints.NEIGHBORS_K + 1)[1][:, 1:]

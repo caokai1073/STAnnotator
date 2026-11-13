@@ -634,7 +634,7 @@ class Session:
         logp = model.predict(m, counts)
         if self.scheme["kind"] == "markers":  # the marker step's levels and the types it found no cell of
             logp = markers.restrict(logp, self.marker_result(st), self._marker_tree(st.get("marker_step", {}).get("ops", [])),
-                                    self.types, labs)
+                                    self.types, labs, counts=self.counts, panel=self.panel)
         elif self.scheme.get("leaf_types"):
             logp = self._within_parent(logp, st)
         if self.scheme["kind"] == "existing":
