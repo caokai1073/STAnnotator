@@ -37,12 +37,19 @@ def _json(obj, status=200):
     return review_app._json(obj, status)
 
 
+_FREED = threading.Event()  # something big was let go: the idle check hands the memory back to the system
+
+
 class LRU(OrderedDict):
-    """A cache of the last n results. Tile requests (threadpool), imports and the agent's replacements (their own
-    threads) use one at once: changes and sweeps hold its lock (an OrderedDict changed while another thread loops
-    over it raises)."""
-    def __init__(self, n):
-        super().__init__(); self.n = n; self.lock = threading.Lock()
+    """A cache of the last n results (and, with max_bytes, of at most that many bytes of bytes values). Tile requests
+    (threadpool), imports and the agent's replacements (their own threads) use one at once: changes and sweeps hold
+    its lock (an OrderedDict changed while another thread loops over it raises)."""
+    def __init__(self, n, max_bytes=None):
+        super().__init__(); self.n = n; self.max_bytes = max_bytes; self.nbytes = 0; self.lock = threading.Lock()
+
+    @staticmethod
+    def _size(v):
+        return len(v) if isinstance(v, (bytes, bytearray)) else 0
 
     def get_or(self, key, fn):
         with self.lock:
@@ -51,19 +58,48 @@ class LRU(OrderedDict):
                 return self[key]
         v = fn()
         with self.lock:
+            if key in self:
+                self.nbytes -= self._size(self[key])
             self[key] = v
-            if len(self) > self.n:
-                self.popitem(last=False)
+            self.nbytes += self._size(v)
+            while len(self) > 1 and (len(self) > self.n or (self.max_bytes and self.nbytes > self.max_bytes)):
+                _, old = self.popitem(last=False)
+                self.nbytes -= self._size(old)
+                _FREED.set()
         return v
 
     def drop(self, pred):
         """Remove the entries whose key pred(key) is true."""
         with self.lock:
             for k in [k for k in self if pred(k)]:
+                self.nbytes -= self._size(self[k])
                 del self[k]
+                _FREED.set()
+
+    def clear(self):
+        with self.lock:
+            super().clear()
+            self.nbytes = 0
+            _FREED.set()
 
 
-_tiles, _overlays, _colors = LRU(3000), LRU(3000), LRU(40)
+# image tiles and cell overlays: at most 3,000 each and 200 MB each (an H&E viewed at many places would otherwise keep
+# several hundred MB until Refresh)
+_tiles, _overlays, _colors = LRU(3000, 200 << 20), LRU(3000, 200 << 20), LRU(40)
+
+
+def _idle_release(every=120):
+    """Every `every` s: when something big was let go (tiles, an annotation, a finished run) and no run is going, the
+    memory is handed back to the system (as Refresh does), so the app does not stay as large as at its peak."""
+    while True:
+        time.sleep(every)
+        if not _FREED.is_set() or any(not j.get("done") for j in list(JOBS.values())):
+            continue
+        _FREED.clear()
+        try:
+            config.release_memory()
+        except Exception:
+            pass
 
 
 # ---------------- H&E pyramid and sample geometry ----------------
@@ -3933,6 +3969,7 @@ def build_app(port):
     async def lifespan(app):
         from . import cachemgr
         cachemgr.start()  # the caches stay under their limit while the app runs
+        threading.Thread(target=_idle_release, daemon=True, name="idle-release").start()
         if not os.environ.get("STAGENT_NO_PREWARM"):  # pynndescent compiled ahead, a few seconds after the start
             def prewarm():
                 time.sleep(5)

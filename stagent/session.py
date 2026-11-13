@@ -47,6 +47,17 @@ def _tag(s):
     return hashlib.md5(str(s).encode()).hexdigest()[:8]
 
 
+# Kept in memory per open annotation (the rest is on disk and read again when needed): the results of the last
+# KEEP_RESULTS versions viewed, the expression model output of the last KEEP_BASES, the marker steps of the last KEEP_MRES.
+KEEP_RESULTS, KEEP_BASES, KEEP_MRES = 4, 2, 3
+
+
+def _keep_last(d, n):
+    """Drop the oldest entries of an insertion-ordered dict beyond n."""
+    while len(d) > n:
+        d.pop(next(iter(d)))
+
+
 def _now():
     return datetime.now().isoformat(timespec="seconds")
 
@@ -410,8 +421,11 @@ class Session:
                     osutil.replace_atomic(f, lambda t: np.save(t, logp))
                 pred, conf = cmod.posterior(logp, [], None, self.types)
                 self._bases[key] = {"key": key, "logp": logp, "pred": pred, "conf": conf}
-            elif progress:
-                progress(1.0, "expression model ready")
+                _keep_last(self._bases, KEEP_BASES)  # (the others are on disk)
+            else:
+                self._bases[key] = self._bases.pop(key)  # most recently used last
+                if progress:
+                    progress(1.0, "expression model ready")
             return self._bases[key]
 
     def _init_model(self, st, say):
@@ -550,6 +564,7 @@ class Session:
                 res = self._mres.get(key) or self._load_mres(key)
                 if res is not None:
                     self._mres[key] = res
+                    _keep_last(self._mres, KEEP_MRES)
                     break
             if res is None:
                 res = markers.annotate(self.counts, self.panel, self.scheme["tree"], progress,
@@ -557,6 +572,7 @@ class Session:
                                        knn=self.knn_mode(), spill=self._spill())
                 self._save_mres("init", res)
                 self._mres["init"] = res
+                _keep_last(self._mres, KEEP_MRES)
                 if res.get("fingerprints"):  # checksums of this run, for telling whether two runs agree (bug reports carry it)
                     fp = {"session_id": self.id, "sample_id": self.sample_id, "time": _now(), **res["fingerprints"]}
                     (self.dir / "base" / "fingerprints.json").write_text(json.dumps(fp, indent=1), encoding="utf-8")
@@ -567,6 +583,7 @@ class Session:
                 key = self._mkey(ops[:j + 1])
                 self._save_mres(key, res)
                 self._mres[key] = res
+                _keep_last(self._mres, KEEP_MRES)
             return res
 
     def _apply_recluster(self, res, op, ops_so_far, progress=None):
@@ -705,6 +722,9 @@ class Session:
                 self._cache[v] = {"state": st, "region": c["region"], "pred": c["pred"], "conf": c["conf"],
                                   "top_idx": c["top_idx"], "top_p": c["top_p"], "base_pred": b["pred"],
                                   "base_conf": b["conf"], "locked_rows": c["locked_rows"], "conflicts": cf}
+                _keep_last(self._cache, KEEP_RESULTS)
+            else:
+                self._cache[v] = self._cache.pop(v)
             return self._cache[v]
 
     def lineage_labels(self, version=None):

@@ -130,6 +130,15 @@ def _settle(r):
             print(f"job {r.job}: could not {'take back' if stopped else 'clean up'}: {e}")
 
 
+def _release_if_idle(done):
+    """After a run: the memory its arrays took handed back to the system (the allocator keeps it otherwise, so the app
+    stays as large as at its peak) when no other run is still going."""
+    if any(x is not done and x.thread is not None and x.thread.is_alive() for x in list(RUNS.values())):
+        return
+    from . import config
+    config.release_memory()
+
+
 def spawn(job, work):
     """Run work() in a thread as the stoppable run `job` (work reports its progress and errors itself)."""
     prev = RUNS.get(job)
@@ -154,6 +163,7 @@ def spawn(job, work):
         finally:
             _settle(r)
             _local.run = None
+            _release_if_idle(r)
     r.thread = threading.Thread(target=body, daemon=True)
     r.thread.start()
     return r
