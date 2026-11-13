@@ -1,4 +1,4 @@
-/* STAnnotator interactive tutorial: the script (what the cursor does and what the captions say). Recorded with 0.2.57.
+/* STAnnotator interactive tutorial: the script (what the cursor does and what the captions say). Recorded with 0.2.58.
  *
  * chapter: { id, title, group, summary, scene (recorded scene the app starts from), sample?, pre[] (silent setup), steps[] }
  * step:    { title, say (caption, **bold**), pts[] (notes), tip, at (spotlight target), label, scene (switch first),
@@ -15,10 +15,10 @@
   const sel = (id) => ({ id });
   const btn = (text, nth) => ({ css: "button", text, nth });
   const ttl = (t) => ({ title: t });
-  const SID = "147328_20261113-122717_eda0";   // the annotation of 147328 (one per slice of the project, both slices together)
-  const SID2 = "167799_20261113-122717_4db3";  // and of 167799
-  const R1 = "147328_20261113-122410_d740";    // 147328 alone: Refine round 1
-  const R2 = "147328_20261113-122646_19d2";    // and round 2, after the agent's edits
+  const R1 = "147328_20261113-134402_1998";    // 147328: Refine round 1
+  const R2 = "147328_20261113-134602_8034";    // and round 2, after the agent's edits
+  const SID = R2;                              // the annotation of 147328 the later chapters use
+  const SID2 = "167799_20261113-135932_8bd6";  // and of 167799 (annotated on its own, with the refined list)
   // a chapter that starts later opens the sample and its annotation again, as the user does under Data
   const openSample = (smp) => [["click", ttl("The sample: import")], ["select", sel("sample"), smp],
                                ["until", `st.sample && st.sample.sample_id === '${smp}' && st.sid && st.sid.startsWith('${smp}_') && !st.busy`, 15000], ["wait", 800]];
@@ -35,7 +35,7 @@
       id: "import", title: "Import & align", group: "Getting started", scene: "s00-empty",
       summary: "Bring two Xenium sections of the SCP2927 IBD atlas into the app, then let the agent place the cells of both on their **H&E** images, each checked before you accept it.",
       steps: [
-        { title: "The app and the agent", say: "STAnnotator runs on your computer. On the left is **Claude Code**, your own agent, connected to the app on the right. Each step of this tutorial is the real app (0.2.57), replaying a recorded session.",
+        { title: "The app and the agent", say: "STAnnotator runs on your computer. On the left is **Claude Code**, your own agent, connected to the app on the right. Each step of this tutorial is the real app (0.2.58), replaying a recorded session.",
           pts: ["Right: the STAnnotator window", "Left: Claude Code, with the app's tools", "Press **Space** anytime to pause and try it yourself"],
           at: "body > header", label: "The app's panel", ms: 6000 },
         { title: "Open the import dialog", say: "Click **Import** to add a sample: Xenium, CosMx, MERFISH, Visium HD or Stereo-seq output, an **h5ad / RDS** object, or an H&E image only.",
@@ -66,8 +66,8 @@
         { title: "The agent aligns 147328", say: "Claude Code searches orientations and scales, compares the best candidates on their figures, refines one, and checks the close-ups before it proposes it.",
           pts: ["The agent sees each candidate on the H&E", "Nothing changes until you accept"],
           do: [["agent", "c02_align_both", { fromApp: true, stopAt: "apply_alignment#1", scenes: {
-                 "alignment_status#1": "c02-al-alignment_status-1", "search_alignment#1": "c02-al-search_alignment-1", "show_alignment#1": "c02-al-show_alignment-1",
-                 "refine_alignment#1": "c02-al-refine_alignment-1", "show_alignment#2": "c02-al-show_alignment-2", "apply_alignment#1": "c02-al-apply_alignment-1" } }]] },
+                 "alignment_status#2": "c02-al-alignment_status-2", "search_alignment#1": "c02-al-search_alignment-1", "show_alignment#1": "c02-al-show_alignment-1",
+                 "refine_alignment#1": "c02-al-refine_alignment-1", "show_alignment#2": "c02-al-show_alignment-2", "apply_alignment#1": "c02-al-search_alignment-2" } }]] },
         { title: "Checked before you accept", say: "The review window shows how far the cells sit from their nuclei, in 200 µm windows over the whole tissue: a median of **1 µm**, no area off. When areas are off, it offers **Do local registration**.",
           pts: ["Left: the deviation of each window", "Right: where on the tissue", "**Accept** moves the cells onto the H&E; Undo takes it back"],
           do: [...accept("c02-align1-accepted"), ["wait", 2500]] },
@@ -77,20 +77,20 @@
                ["click", sel("hideHE")], ["wait", 2200], ["click", sel("hideHE")], ["wait", 1500],
                ["click", sel("hide")], ["wait", 1800], ["click", sel("hide")], ["wait", 1800],
                ["zoom", "home", 1500]] },
-        { title: "Then 167799", say: "Meanwhile the agent goes on with **167799**: rotated 180°, refined, checked, proposed. **Accept**, and both sections sit on their images.",
+        { title: "Then 167799", say: "Meanwhile the agent goes on with **167799**: searched, refined, checked, proposed. **Accept**, and both sections sit on their images.",
           do: [["agent", "c02_align_both", { fromApp: true, startAt: "apply_alignment#1", scenes: {
-                 "search_alignment#2": "c02-al-search_alignment-2", "show_alignment#3": "c02-al-show_alignment-3", "refine_alignment#2": "c02-al-refine_alignment-2",
+                 "show_alignment#3": "c02-al-show_alignment-3", "refine_alignment#2": "c02-al-refine_alignment-2",
                  "show_alignment#4": "c02-al-show_alignment-4", "apply_alignment#2": "c02-al-apply_alignment-2" } }],
                ...accept("c02-align2-accepted"), ["wait", 3000]] },
       ],
     },
     {
       id: "filter", title: "Project & filter", group: "Getting started", scene: "c03-start", sample: "147328",
-      summary: "Put the two sections in one **project**, so they are filtered, annotated and analyzed together, then remove low-quality cells from both with one filter.",
+      summary: "Put the two sections in one **project**, so they are filtered and analyzed together, then remove low-quality cells from both with one filter.",
       pre: [["select", sel("sample"), "147328"], ["until", "st.sample && st.sample.sample_id === '147328' && !st.busy", 10000]],
       steps: [
-        { title: "One project for both sections", say: "**Projects** groups sections that share a gene panel: they are then filtered, annotated, embedded and analyzed **together**, so a cell type or a niche means the same in both.",
-          pts: ["Sections of a project step through together", "One annotation, one UMAP, one set of niches"],
+        { title: "One project for both sections", say: "**Projects** groups sections that share a gene panel: they are then filtered, embedded and analyzed **together**, so a cluster or a niche means the same in both.",
+          pts: ["Sections of a project step through together", "One filter, one UMAP, one set of niches"],
           do: [["click", sel("pjBtn")], ["wait", 800], ["type", sel("pjNewName"), "ileum_colon"],
                ["click", sel("pjNew")], ["select", { css: "#pjDlg select", nth: 0 }, "ileum_colon"], ["select", { css: "#pjDlg select", nth: 1 }, "ileum_colon"],
                ["scene", "c03-project"], ["click", sel("pjSave")], ["until", "!document.getElementById('pjDlg').open", 8000], ["wait", 1500]],
@@ -107,7 +107,7 @@
     },
     {
       id: "annotate", title: "Annotate", group: "Cell types", scene: "c04-markers", sample: "147328",
-      summary: "Build the **marker gene list** the annotation starts from (a built-in list for the organ, completed by the agent for this panel) and assign a **cell type** to every cell of the ileum section.",
+      summary: "Build the **marker gene list** the annotation starts from (a built-in list for the organ, completed by the agent for this panel) and assign a **cell type** to every cell of the ileum section. Each section is annotated on its own.",
       pre: [["select", sel("sample"), "147328"], ["until", "st.sample && st.sample.sample_id === '147328' && !st.busy", 10000]],
       steps: [
         { title: "Open the marker genes", say: "Annotation starts from a **marker gene list**. In **Analysis › Type**, open **Markers…**.",
@@ -117,24 +117,24 @@
           pts: ["One line per cell type: **GENE+** expressed, **GENE−** not", "Indentation makes the hierarchy (lineage › type)"],
           scene: "c04-si", do: [["select", sel("mkOrgan"), "small_intestine"], ["click", sel("mkOrganUse")], ["wait", 1200], ["click", sel("mkCheck")], ["wait", 1500]],
           after: sel("mkOrganMsg"), afterLabel: "Left out: no markers in the panel" },
-        { title: "Let the agent complete it", say: "**Refine with the agent**: Claude Code adds the cell types of this tissue the panel can resolve: **Paneth** cells from ITLN2, eosinophils and the **follicular dendritic cells** of Peyer's patches, and splits dendritic cells, fibroblasts and blood vessels into their kinds.",
+        { title: "Let the agent complete it", say: "**Refine with the agent**: Claude Code adds the cell types of this tissue the panel can resolve: **Paneth** cells from ITLN2, eosinophils, the **follicular dendritic cells** of Peyer's patches, two **fibroblast** types (telocytes, trophocytes), and arterial and venous endothelium.",
           do: [["click", sel("mkOrganAgent")], ["agent", "c04_refine_markers", { fromApp: true }]] },
-        { title: "Load the agent's list", say: "The agent saved the list. **load a list…** opens it in the editor; **Check** validates it: 46 cell types in 3 levels, 124 genes.",
+        { title: "Load the agent's list", say: "The agent saved the list. **load a list…** opens it in the editor; **Check** validates it: 43 cell types in 3 levels, 123 genes.",
           scene: "c05-markers-load",
           do: [["click", sel("mkLib")], ["wait", 700], ["click", { text: /^small_intestine_147328/ }], ["wait", 1000], ["click", sel("mkCheck")], ["wait", 1500]],
-          after: { css: "#mkDlg div,#mkDlg span", text: /^OK: 46 types/ }, afterLabel: "Checked" },
+          after: { css: "#mkDlg div,#mkDlg span", text: /^OK: 43 types/ }, afterLabel: "Checked" },
         { title: "Annotate the ileum", say: "**Annotate** runs the marker step on the 56,852 cells of 147328, then a model that refines every cell from its neighbors. Under 10 seconds here.",
           pts: ["Exact neighbors, the default: the same labels on every computer, every time", "**Leave out spillover** (on): transcripts a cell's outline caught from its neighbors do not count", "The estimate gives the time and the memory the run needs"],
           scene: "c05-annotate", do: [["click", sel("mkClose")], ["wait", 500], ["spot", sel("annEst"), "Time and memory"], ["wait", 2500], ["unspot"],
                                      ["click", sel("annotate")], ["until", "st.sid === '" + R1 + "' && document.getElementById('rfDlg').open", 90000], ["wait", 1500]] },
-        { title: "The Refine window opens", say: "After a marker annotation the **Refine** window opens by itself. The app sums up what may be wrong: 34 cell types have cells, **4 not found** (M cells, gd T cells, eosinophils, follicular dendritic cells), types with weak marker evidence, and 30 markers that are weak or not specific.",
+        { title: "The Refine window opens", say: "After a marker annotation the **Refine** window opens by itself. The app sums up what may be wrong: 31 cell types have cells, **4 not found** (Paneth cells, M cells, eosinophils, follicular dendritic cells), types with weak marker evidence, and 24 markers that are weak or not specific.",
           pts: ["The organ is inferred from the cell types and the sample's name", "**Refine with the agent** in the Type tab turns it off"],
           after: "#rfReport", afterLabel: "What may be wrong", ms: 9000 },
       ],
     },
     {
       id: "refine", title: "Refine with the agent", group: "Cell types", scene: "c05-annotate", sample: "147328",
-      summary: "Refine the annotation round by round: the agent reviews it with the organ's priors and proposes edits of the marker list, each with its reason and evidence; you choose what to accept and the app annotates again. Then annotate both sections together with the refined list.",
+      summary: "Refine the annotation round by round: the agent reviews it with the organ's priors and proposes edits of the marker list, each with its reason and evidence; you choose what to accept and the app annotates again. Then annotate the colon section with the refined list.",
       pre: [...openSample("147328"), ["select", sel("session"), R1], ["until", "st.sid === '" + R1 + "' && !st.busy", 10000],
             ["eval", "rfOpen()"], ["until", "document.getElementById('rfDlg').open", 8000], ["wait", 800]],
       steps: [
@@ -146,20 +146,26 @@
         { title: "The agent reviews the whole annotation", say: "Claude Code reads the round's report, the tissue's priors, which types get confused, the markers and where each type lies, then checks the edited list before it proposes it.",
           do: [["agent", "c05r_refine", { fromApp: true, scenes: { refine_report: "c05r-refine_report-1", check_marker_list: "c05r-check_marker_list-1",
                  propose_refinement: "c05r-propose_refinement-1", $done: "c05r-proposed" } }], ["eval", "rfPoll()"], ["wait", 2500]] },
-        { title: "Edits, each with its evidence", say: "**23 edits** of the marker list, each with its reason and the numbers behind it. The 'crypt-bottom fibroblasts' lie in the **submucosa**, 1,150 µm from the epithelium: rename them. Most 'arterial' cells are **capillaries**: add that type. And two questions only you can answer.",
+        { title: "Edits, each with its evidence", say: "**18 edits** of the marker list, each with its reason and the numbers behind it. Following your words: the **Paneth cells** are there, but went to the stem cells (ITLN2 in 95% of one sub-cluster). The 'NK cells' are mostly **γδ T cells** (TRDC 53%). And three questions only you can answer.",
           pts: ["Tick the edits you want", "**Dismiss edits** and write to the agent to ask again"],
           after: "#rfEdits", afterLabel: "Proposed edits", ms: 10000 },
-        { title: "Accept: the next round", say: "**Accept chosen and annotate**: the app annotates again with the edits, keeping your regions, priors and corrections, and round 2 opens with what changed: **submucosal fibroblasts**, **capillary EC**, and 2,285 stem cells instead of 1,210.",
+        { title: "Accept: the next round", say: "**Accept chosen and annotate**: the app annotates again with the edits, keeping your regions, priors and corrections, and round 2 opens with what changed: **γδ T cells** 6 → 395, the trophocytes renamed **submucosal fibroblasts**, mature dendritic cells 211 → 699. Paneth cells are still not found: another round could take them on.",
           scene: "c05r-accepted",
           do: [["click", sel("rfAccept")], ["until", "st.sid === '" + R2 + "' && document.getElementById('rfDlg').open", 90000], ["wait", 2500]],
           after: "#rfReport", afterLabel: "Changes since round 1" },
-        { title: "Both sections together", say: "**Stop refining** keeps this round. With the refined list, switch on **All slices together** and **Annotate**: one marker step and one model for all 98,650 cells of both sections, so a name means the same cells in both.",
-          pts: ["All slices together is a switch in the Type, Embed and Niche tabs", "Off by default for Type, on for Embed and Niche"],
+        { title: "Stop and keep the list", say: "**Stop refining** keeps this round. Under **Markers…**, **Save** keeps the refined list in your library, here as **small_intestine_147328_refined**.",
           scene: "c05r-stop",
-          do: [["click", sel("rfStop")], ["wait", 1500], ["scene", "c05-annotate-all"], ["click", ttl("Annotate, Embed, Niche")], ["wait", 500], ["click", tab("annotate")], ["wait", 600],
-               ["click", { css: "label", text: /^All slices together.*annotation/ }], ["wait", 1200],
-               ["click", sel("annotate")], ["until", "st.sid === '" + SID + "' && !st.busy", 90000], ["wait", 1500]],
-          after: "#legend", afterLabel: "Cell types" },
+          do: [["click", sel("rfStop")], ["wait", 1500], ["scene", "c05-save-list"], ["click", ttl("Annotate, Embed, Niche")], ["wait", 500], ["click", tab("annotate")], ["wait", 500],
+               ["click", sel("openMarkers")], ["wait", 1200], ["type", sel("mkName"), "small_intestine_147328_refined"], ["click", sel("mkSave")], ["wait", 1800], ["click", sel("mkClose")]] },
+        { title: "Then the colon section", say: "Each section is annotated on its own. On **167799**, **load a list…** opens the refined list, and **Annotate**: 41,798 cells. Refine is switched off for this one: the agent's Review looks at it later.",
+          pts: ["One list for both sections: the same names in both", "**All slices together** would annotate the project's slices in one run"],
+          scene: "c05-annotate-2",
+          do: [["click", ttl("The sample: import")], ["select", sel("sample"), "167799"], ["until", "st.sample && st.sample.sample_id === '167799' && st.sid && !st.busy", 15000], ["wait", 800],
+               ["click", ttl("Annotate, Embed, Niche")], ["wait", 500], ["click", tab("annotate")], ["wait", 500], ["click", sel("openMarkers")], ["wait", 1200],
+               ["click", sel("mkLib")], ["wait", 700], ["click", { text: /^small_intestine_147328_refined/ }], ["wait", 1000], ["click", sel("mkCheck")], ["wait", 1500], ["click", sel("mkClose")], ["wait", 500],
+               ["click", { css: "label", text: /^Refine with the agent/ }], ["wait", 600],
+               ["click", sel("annotate")], ["until", "st.sid === '" + SID2 + "' && !st.busy", 90000], ["wait", 1500]],
+          after: "#legend", afterLabel: "Cell types of the colon" },
         { title: "Color by lineage", say: "**Color by › lineage** groups the types: epithelium on top, then lamina propria, submucosa and the smooth muscle of the muscularis.",
           scene: "c05-explore", do: [["select", sel("mode"), "lineage"], ["wait", 1200], ["click", sel("hideHE")], ["wait", 2500]] },
         { title: "Back on the H&E", say: "Each dot sits on its cell on the H&E. **e** hides the image, **h** hides the cells.",
@@ -170,7 +176,7 @@
       ],
     },
     {
-      id: "niches", title: "UMAP & niches", group: "Tissue structure", scene: "c05-explore", sample: "147328",
+      id: "niches", title: "UMAP & niches", group: "Tissue structure", scene: "c06-pre", sample: "147328",
       summary: "Embed the cells (PCA, Harmony, UMAP, Leiden), find **niches**, places where cells of a similar make-up live together, and let the agent name them in both sections at once.",
       pre: [...openAnnot, ["click", ttl("Annotate, Embed, Niche")]],
       steps: [
@@ -188,7 +194,7 @@
           after: "#legend", afterLabel: "8 niches" },
         { title: "Ask the agent to name them", say: "In Claude Code: **name the niches**. The agent reads each niche's cell types, looks at them on the H&E, and proposes tissue names.",
           scene: "c07-naming", do: [["agent", "c07_name_niches", { scenes: { name_niches: "c07-name_niches-1" } }]] },
-        { title: "One Accept for both sections", say: "Muscularis, submucosa, lamina propria, villus epithelium, crypts, a goblet-rich crypt epithelium… and two niches only the colon has. The niches were computed on both sections, so **one Accept** names them in both.",
+        { title: "One Accept for both sections", say: "Muscularis propria, submucosa with its vessels, lamina propria, villus epithelium, crypt epithelium, goblet-rich crypts… and two niches only the colon has. The niches were computed on both sections, so **one Accept** names them in both.",
           do: [...accept("c07-named"), ["wait", 2000]],
           after: "#legend", afterLabel: "Named niches" },
         { title: "Niches and genes on the tissue", say: "Hide the H&E to see the layers. **Color by › gene expression…** shows one gene's transcripts per cell: **MYH11** marks the smooth muscle, **CD3E** the T cells.",
@@ -279,11 +285,11 @@
           after: "#anDlg", afterLabel: "MYH11 in the muscularis" },
         { title: "As a dot plot", say: "The same genes as a **dot plot**: dot size is the share of cells expressing the gene, color its mean.",
           do: [["click", { css: "#anDlg button", text: "Dot plot" }], ["wait", 3000]] },
-        { title: "DESeq2 across slices", say: "**All slices › DESeq2**: counts summed per slice, then DESeq2, as for bulk RNA-seq. **Lamina propria** against **submucosa**, paired within each section.",
+        { title: "DESeq2 across slices", say: "**All slices › DESeq2**: counts summed per slice, then DESeq2, as for bulk RNA-seq. **Lamina propria** against **submucosa (vessels)**, paired within each section.",
           pts: ["Replicates: the slices (or the patients)", "Needs 2 or more replicates with 30+ cells on each side"],
           scene: "c10-deseq2",
           do: [["eval", "document.getElementById('anDlg').close()"], ["click", seg("aScope", "project")], ["wait", 500], ["click", seg("aKind", "deseq2")], ["wait", 500],
-               ["select", sel("aBy"), "niche"], ["select", sel("aGroup"), "lamina propria"], ["select", sel("aRef"), "submucosa"],
+               ["select", sel("aBy"), "niche"], ["select", sel("aGroup"), "lamina propria"], ["select", sel("aRef"), "submucosa (vessels)"],
                ["click", sel("aRun")], ["until", "document.getElementById('anDlg').open", 30000], ["wait", 2500],
                ["click", { css: "#anDlg button", text: "Samples" }], ["wait", 2500]],
           after: "#anDlg", afterLabel: "2 vs 2 pseudobulk samples" },
@@ -303,9 +309,9 @@
         { title: "Bubble plot, network, circle plot", say: "The same result as a **bubble plot**, a **network** of the cell types and a **circle plot**, and grouped by pathway.",
           do: [["click", { css: "#anDlg button", text: "Bubble plot" }], ["wait", 2500], ["click", { css: "#anDlg button", text: "Network" }], ["wait", 2500],
                ["click", { css: "#anDlg button", text: "Circle plot" }], ["wait", 2500], ["click", { css: "#anDlg button", text: "Interactions" }], ["wait", 1200]] },
-        { title: "Map senders and receivers", say: "**show on map**: the submucosal fibroblasts that send **MMP2** (blue) and the capillaries that receive it through **PECAM1** (red).",
+        { title: "Map senders and receivers", say: "**show on map**: the submucosal fibroblasts that send **MMP2** (blue) and the venous endothelium that receives it through **PECAM1** (red).",
           scene: "c11-map",
-          do: [["click", (d) => { const r = [...d.querySelectorAll("#anDlg tr")].find((t) => /MMP2 → PECAM1/.test(t.innerText) && /Submucosal fibroblasts → Capillary EC/.test(t.innerText)); return r && r.querySelector("span.gene"); }],
+          do: [["click", (d) => { const r = [...d.querySelectorAll("#anDlg tr")].find((t) => /MMP2 → PECAM1/.test(t.innerText) && /Trophocytes \/ submucosal fibroblasts → Venous EC/.test(t.innerText)); return r && r.querySelector("span.gene"); }],
                ["wait", 1500], ["eval", "document.getElementById('anDlg').close()"], ["click", sel("hideHE")], ["wait", 3500], ["click", sel("hideHE")]],
           after: "#legend", afterLabel: "Sends · receives" },
       ],
@@ -315,9 +321,9 @@
       summary: "Order cells along an axis of the tissue, here from the **crypts** to the **villus** inside the mucosa, and find the genes that change along it.",
       pre: [...openAnnot, ["click", ttl("Annotate, Embed, Niche")]],
       steps: [
-        { title: "A spatial axis", say: "**Trajectory › Spatial axis**: each cell's place between two groups. From the **crypts** niche to the **villus epithelium**, only within the **mucosa** region.",
+        { title: "A spatial axis", say: "**Trajectory › Spatial axis**: each cell's place between two groups. From the **crypt epithelium** niche to the **villus epithelium**, only within the **mucosa** region.",
           pts: ["Spatial axis: distance in the tissue", "Pseudotime: along a differentiation in expression", "Expression + space: both"],
-          do: [["click", tab("traj")], ["wait", 600], ["select", sel("tFromBy"), "niche"], ["select", sel("tFromVal"), "crypts"], ["select", sel("tToBy"), "niche"],
+          do: [["click", tab("traj")], ["wait", 600], ["select", sel("tFromBy"), "niche"], ["select", sel("tFromVal"), "crypt epithelium"], ["select", sel("tToBy"), "niche"],
                ["select", sel("tToVal"), "villus epithelium"], ["select", sel("tWBy"), "region"], ["select", sel("tWVal"), "mucosa"]] },
         { title: "Genes along the axis", say: "**Find trajectory**: the genes that fall from crypt to villus (**OLFM4**, **MKI67**: stem and dividing cells) and those that rise (**APOB**, **FABP2**: absorptive enterocytes).",
           scene: "c12-traj", do: [["click", sel("tRun")], ["until", "document.getElementById('anDlg').open", 30000], ["wait", 3500]],
@@ -360,15 +366,15 @@
         { title: "Choose what to review", say: "On the colon section, **Review**: the annotation, the spatial organization, the embedding, the niches, your comparisons or the signaling. Each is reviewed on its own.",
           do: [["click", sel("plaus")], ["wait", 1500]], after: "#rvDlg", afterLabel: "One part at a time" },
         { title: "Review the annotation", say: "**Annotation**: the agent looks at every candidate area on the H&E, judges each marker check, reads the colon priors with your **U-1**, then drafts advice and checks it.",
-          do: [["click", sel("rvGo")], ["scene", "c14-reviewing"], ["agent", "c14_review_annotation", { fromApp: true, scenes: { "record_review#1": "c14-record_review-1", "draft_advice#1": "c14-draft_advice-1",
+          do: [["click", sel("rvGo")], ["scene", "c14-reviewing"], ["agent", "c14_review_annotation", { fromApp: true, scenes: { "show_area#3": "c14-show_area-3", "show_area#6": "c14-show_area-6", "record_review#1": "c14-record_review-1", "draft_advice#1": "c14-draft_advice-1",
                  "check_advice#1": "c14-check_advice-1", $done: "c14-reviewed" } }],
                ["call", "loadPlaus", true], ["wait", 2000]] },
-        { title: "It caught the wrong list", say: "The small-intestine list was used on a colon: 9,064 **Cycling TAs** (22%) are mostly not cycling, the 3,353 **BEST4+ enterocytes** are mature colonocytes, and only 79 goblet cells were found. Its advice: a colon list, without enterocytes, M cells and Paneth cells (your **U-1**).",
+        { title: "It caught the wrong list", say: "The small-intestine list was used on a colon: its 'enterocytes' are **colonocytes** (CEACAM7 90%, AQP8 66%; APOB 13%), and goblet cells are over-called, 42% of the epithelium where **COL-04** expects about 25%. Its advice: annotate again with a colon list.",
           pts: ["✓ checked: what the agent verified, with its evidence", "**ask the agent** to act on it, or **dismiss** it"],
           after: "#plpanel", afterLabel: "Checked advice", ms: 9000 },
-        { title: "Show it on the map", say: "Another advice: **draw the mucosa**, so the colon priors (COL-01, your U-1) can act. **show** draws the outline the agent checked on the map; **add region “mucosa”** adds it.",
-          scene: "c14-advice-map", do: [["click", { css: "#plpanel button", text: "show" }], ["wait", 3500]],
-          after: "#plpanel", afterLabel: "Checked by the agent" },
+        { title: "Show it on the map", say: "The second advice: 794 'villus fibroblasts' carry macrophage genes, the **lamina propria macrophages**. **show on map** colors the map by **MPEG1**: they lie right under the epithelium.",
+          scene: "c14-advice-map", do: [["click", { css: "#plpanel button", text: "show on map" }], ["wait", 3500]],
+          after: "#legend", afterLabel: "MPEG1" },
       ],
     },
     {
@@ -408,7 +414,7 @@
       steps: [
         { title: "Any interesting biology?", say: "In Claude Code: **is there anything biologically interesting here?** The agent looks at composition, the tissue overview and spatial profiles of both sections.",
           scene: "c16-ask", do: [["agent", "c16_biology", {}]] },
-        { title: "Read the answer", say: "A patch of interferon response in the colon's epithelium, NOS2 at its crypt bases, dividing dendritic cells, a possible lymphoid follicle in the ileum, and a warning: annotated together, the ileum lost its stem and Paneth cells.",
+        { title: "Read the answer", say: "An interferon response in the colon's absorptive cells, signs of injured epithelium (TFF1, NOS2), a lymphoid follicle in the ileum with tolerance-type dendritic cells next to Tregs, many γδ T cells in its epithelium, and a caveat: annotate the colon again first.",
           pts: ["Every claim comes from a tool call you can see on the left", "The agent proposes next steps; nothing changes until you ask"], ms: 9000 },
       ],
     },
@@ -426,14 +432,11 @@
     },
     {
       id: "export", title: "Export", group: "The agent", scene: "c18-export", sample: "147328",
-      summary: "Take the results out: the cell table, a **Jupyter notebook** that redoes every step (for one slice, or for the whole project), the registration, and the regions for QuPath.",
+      summary: "Take the results out: the cell table, a **Jupyter notebook** that redoes every step, the registration, and the regions for QuPath.",
       pre: [...openAnnot],
       steps: [
         { title: "Export", say: "**Export**: a **cells table** (CSV), an **analysis notebook** (Jupyter) that runs without the app and checks the labels come out the same, the **registration**, and the **regions** as GeoJSON for QuPath.",
           do: [["click", sel("export")], ["wait", 1500]], after: "#xpDlg", afterLabel: "Cells · notebook · registration · regions", ms: 8000 },
-        { title: "One notebook for the project", say: "**Save project…** writes one notebook that replays the whole project annotated together: every slice, the joint annotation, the PCA / UMAP and the niches of all slices, checked slice by slice.",
-          pts: ["A notebook installs its own Python packages in its first cell", "Choose which annotation it replays"],
-          do: [["spot", sel("xpNbAll"), "Save project…"], ["wait", 4000], ["unspot"]], ms: 7000 },
         { title: "That's the tour", say: "That's STAnnotator. Press **▶** to replay any chapter, or pause and explore these samples yourself. To use it on your own data, **download the app** from the website.",
           do: [["eval", "document.getElementById('xpDlg').close()"]], ms: 6000 },
       ],

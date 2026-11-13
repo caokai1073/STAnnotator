@@ -1,16 +1,16 @@
 {
- "about": "Scenes of the recorded session (0.2.57), in order (build.py). rewrite: local paths shown as generic ones. synthetic: answers for requests the recording could not make (the app would open a real Terminal). inject: such an answer for one scene.",
+ "about": "Scenes of the recorded session (0.2.58), in order (build.py). rewrite: local paths shown as generic ones. synthetic: answers for requests the recording could not make (the app would open a real Terminal). inject: such an answer for one scene.",
  "rewrite": [
   [
    "/Users/caokai/Documents/STAnnotator-repo/work/tut/data/",
    "/Users/me/Downloads/scp2927/"
   ],
   [
-   "/Users/caokai/Documents/STAnnotator-repo/work/tut/home57",
+   "/Users/caokai/Documents/STAnnotator-repo/work/tut/home58",
    "/Users/me/stagent"
   ],
   [
-   "/Users/caokai/.claude/projects/-Users-caokai-Documents-STAnnotator-repo-work-tut-home57-claude-workspace",
+   "/Users/caokai/.claude/projects/-Users-caokai-Documents-STAnnotator-repo-work-tut-home58-claude-workspace",
    "~/.claude/projects/stagent"
   ],
   [
@@ -30,7 +30,7 @@
    "/Users/me/"
   ],
   [
-   "work/tut/home57",
+   "work/tut/home58",
    "/Users/me/stagent"
   ]
  ],
@@ -63,7 +63,7 @@
     "reused": true
    }
   },
-  "GET /api/s/147328_20261113-121938_b0d7/advice": {
+  "GET /api/s/147328_20261113-134158_a47f/advice": {
    "items": [],
    "categories": {
     "taxonomy": "Cell types",
@@ -227,7 +227,7 @@
    "report": null,
    "registration_fixed": false
   },
-  "GET /api/s/147328_20261113-122410_d740/advice": {
+  "GET /api/s/147328_20261113-134402_1998/advice": {
    "items": [],
    "categories": {
     "taxonomy": "Cell types",
@@ -409,7 +409,7 @@
    "name": "c02-aligning"
   },
   {
-   "name": "c02-al-alignment_status-1"
+   "name": "c02-al-alignment_status-2"
   },
   {
    "name": "c02-al-search_alignment-1"
@@ -424,13 +424,10 @@
    "name": "c02-al-show_alignment-2"
   },
   {
-   "name": "c02-al-apply_alignment-1"
+   "name": "c02-al-search_alignment-2"
   },
   {
    "name": "c02-align1-accepted"
-  },
-  {
-   "name": "c02-al-search_alignment-2"
   },
   {
    "name": "c02-al-show_alignment-3"
@@ -474,12 +471,12 @@
   {
    "name": "c05r-ask",
    "inject": {
-    "POST /api/s/147328_20261113-122410_d740/refine/ask": {
+    "POST /api/s/147328_20261113-134402_1998/refine/ask": {
      "round": {
       "n": 1,
-      "session": "147328_20261113-122410_d740",
+      "session": "147328_20261113-134402_1998",
       "version": 2,
-      "marker_text": "Epithelial: EPCAM|KRT8+\n  Stem cells: LGR5+ OLFM4+ ASCL2+ SMOC2+ MKI67-\n  Cycling TAs: MKI67+ TOP2A+ PCLAF+ UBE2C+\n  Enterocytes: FABP2+ APOB+\n  BEST4+ enterocytes: BEST4+ OTOP2+ SPIB+\n  Goblet cells: SPINK4+ SPDEF+\n  Paneth cells: ITLN2+ SPINK4- FABP2-\n  Enteroendocrine cells: CHGB+ SCG5+ NEUROD1+ SCGN+\n  Tuft cells: TRPM5+ AVIL+ SH2D6+ HPGDS+\n  M cells: SPIB+ CCL20+ BEST4- OTOP2-\nT and NK cells: CD3E|CD2|CD247|NKG7|CD3D+ EPCAM-\n  CD4 T cells: CD4|CD40LG|IL7R+ CD8A- CD8B-\n    Tregs: FOXP3+ CTLA4+\n    Naive CD4 T cells: CCR7+ SELL+ FOXP3-\n    Effector/memory CD4 T cells: KLRB1+ GZMK+ CCL5+ CD40LG+ FOXP3- CCR7-\n  CD8 T cells: CD8A+ CD8B+ CD4-\n  gd T cells: TRDC+ CD4-\n  NK cells: KLRF1+ NKG7+ KLRD1+ NCAM1+ CD3E-\n  ILCs: RORC+ KIT+ IL1R1+ IL7R+ CD3E-\nB and plasma cells: MS4A1|CD79A|CD79B|MZB1+ EPCAM-\n  B cells: MS4A1+ BANK1+ CD79B+ TNFRSF17-\n  Plasma cells: MZB1+ TNFRSF17+ DERL3+ MS4A1-\nMyeloid: CD68|CD14|AIF1|TYROBP|CSF1R+ EPCAM-\n  Macrophages: C1QB+ C1QC+ CD68+ APOE+\n  Monocytes: FCN1+ CD14+ C1QB-\n  Neutrophils: CSF3R+ FCGR3B+ CXCR2+ S100A12+\n  Eosinophils: CLC+ CCR3+ CPA3-\n  cDC1: CLEC9A+ IRF8+\n  cDC2: CLEC10A+ C1QB-\n  Mature DCs: LAMP3+ CCR7+ FSCN1+\nMast cells: CPA3+ HDC+ KIT+ CMA1+ EPCAM-\nFibroblasts: PDGFRA|LUM|COL1A1|DPT+ MYH11-\n  Crypt-top fibroblasts (telocytes): PDGFRA+ BMP5+ F3+ SOX6+ WNT5A+\n  Crypt-bottom fibroblasts (trophocytes): GREM1+ RSPO3+ C7+ PDGFRA-\n  Inflammatory fibroblasts: IL11+ INHBA+ FAP+ CTHRC1+\nFollicular dendritic cells: FDCSP+ CLU+ EPCAM-\nSmooth muscle cells: MYH11+ ACTG2+ MYLK+ DES+ PDGFRA-\nPericytes: RGS5+ NOTCH3+ PDGFRB+ MYH11-\nEndothelial: PECAM1|VWF|CLDN5+ EPCAM-\n  Blood vessel EC: PLVAP+ VWF+ ACKR1+ PECAM1+ LYVE1-\n    Arterial EC: GJA4+ HEY1+ ACKR1-\n    Venous EC: ACKR1+ VWF+ GJA4-\n  Lymphatic EC: LYVE1+ PDPN+ MMRN1+ PLVAP-\nGlia: PLP1+ S100B+ CDH19+ SCN7A+\nNeurons: STMN2+ PHOX2B+ SNAP25+ UCHL1+\nICC: ANO1+ KIT+ CPA3-",
+      "marker_text": "Epithelial: EPCAM|KRT8+\n  Stem cells: LGR5+ OLFM4+ ASCL2+ SMOC2+ MKI67-\n  Cycling TAs: MKI67+ TOP2A+ PCLAF+ UBE2C+\n  Enterocytes: FABP2+ APOB+ CYP3A4+ MGAM+\n  BEST4+ enterocytes: BEST4+ OTOP2+ SPIB+\n  Goblet cells: SPINK4+ SPDEF+ ITLN1+ ITLN2-\n  Paneth cells: ITLN2+ SPINK4+ MKI67-\n  Enteroendocrine cells: CHGB+ SCG5+ NEUROD1+ SCGN+\n  Tuft cells: TRPM5+ AVIL+ SH2D6+ HPGDS+\n  M cells: SPIB+ CCL20+ BEST4- OTOP2-\nT and NK cells: CD3E|CD2|CD247|NKG7|CD3D+ EPCAM-\n  CD4 T cells: CD4|CD40LG|IL7R+ CD8A- CD8B-\n    Tregs: FOXP3+ CTLA4+\n    Naive CD4 T cells: CCR7+ SELL+ FOXP3-\n    Effector/memory CD4 T cells: KLRB1+ GZMK+ CCL5+ CD40LG+ FOXP3- CCR7-\n  CD8 T cells: CD8A+ CD8B+ CD4-\n  gd T cells: TRDC+ TRDV1+ CD4-\n  NK cells: KLRF1+ NKG7+ KLRD1+ NCAM1+ CD3E-\n  ILCs: RORC+ KIT+ IL1R1+ IL7R+ CD3E-\nB and plasma cells: MS4A1|CD79A|CD79B|MZB1+ EPCAM-\n  B cells: MS4A1+ BANK1+ CD79B+ TNFRSF17-\n  Plasma cells: MZB1+ TNFRSF17+ DERL3+ MS4A1-\nMyeloid: CD68|CD14|AIF1|TYROBP|CSF1R+ EPCAM-\n  Macrophages: C1QB+ C1QC+ CD68+ APOE+\n  Monocytes: FCN1+ CD14+ C1QB-\n  Neutrophils: CSF3R+ FCGR3B+ CXCR2+ S100A12+\n  Eosinophils: CLC+ CCR3+ CPA3-\n  Dendritic cells: CLEC9A+ CLEC10A+ LAMP3+ CCR7+\nMast cells: CPA3+ HDC+ KIT+ CMA1+ EPCAM-\nFibroblasts: PDGFRA+ LUM+ COL1A1+ DPT+ MYH11-\n  Villus fibroblasts (telocytes): F3+ BMP5+ SOX6+ WNT5A+\n  Crypt fibroblasts (trophocytes): GREM1+ RSPO3+ C7+ ADH1B+\nFollicular dendritic cells: FDCSP+ C7+ EPCAM-\nSmooth muscle cells: MYH11+ ACTG2+ MYLK+ DES+ PDGFRA-\nPericytes: RGS5+ NOTCH3+ PDGFRB+ MYH11-\nEndothelial: PECAM1|VWF|CLDN5+ EPCAM-\n  Blood vessel EC: PLVAP+ VWF+ PECAM1+ LYVE1-\n    Arterial EC: GJA4+ HEY1+ NOTCH4+ ACKR1-\n    Venous EC: ACKR1+ VWF+ GJA4-\n  Lymphatic EC: LYVE1+ PDPN+ MMRN1+ PLVAP-\nGlia: PLP1+ S100B+ CDH19+ SCN7A+\nNeurons: STMN2+ PHOX2B+ SNAP25+ UCHL1+\nICC: ANO1+ KIT+ CPA3-",
       "report": {
        "version": 2,
        "n_cells": 56852,
@@ -495,377 +492,325 @@
         {
          "type": "Smooth muscle cells",
          "lineage": "Smooth muscle cells",
-         "n_cells": 11193,
-         "share": 0.1969,
+         "n_cells": 11521,
+         "share": 0.2026,
          "median_confidence": 0.99,
-         "markers_in": 0.951,
+         "markers_in": 0.948,
          "markers_in_rest_of_lineage": null,
          "fold": null
         },
         {
          "type": "Enterocytes",
          "lineage": "Epithelial",
-         "n_cells": 9568,
-         "share": 0.1683,
-         "median_confidence": 0.97,
-         "markers_in": 0.884,
-         "markers_in_rest_of_lineage": 0.427,
-         "fold": 2.07
+         "n_cells": 10136,
+         "share": 0.1783,
+         "median_confidence": 0.99,
+         "markers_in": 0.767,
+         "markers_in_rest_of_lineage": 0.254,
+         "fold": 3.02
         },
         {
-         "type": "Crypt-top fibroblasts (telocytes)",
+         "type": "Crypt fibroblasts (trophocytes)",
          "lineage": "Fibroblasts",
-         "n_cells": 4165,
-         "share": 0.0733,
-         "median_confidence": 0.97,
-         "markers_in": 0.351,
-         "markers_in_rest_of_lineage": 0.164,
-         "fold": 2.14
+         "n_cells": 6103,
+         "share": 0.1073,
+         "median_confidence": 0.98,
+         "markers_in": 0.576,
+         "markers_in_rest_of_lineage": 0.095,
+         "fold": 6.08
         },
         {
          "type": "Cycling TAs",
          "lineage": "Epithelial",
-         "n_cells": 3678,
-         "share": 0.0647,
-         "median_confidence": 0.87,
-         "markers_in": 0.321,
-         "markers_in_rest_of_lineage": 0.029,
-         "fold": 11.0
+         "n_cells": 3285,
+         "share": 0.0578,
+         "median_confidence": 0.83,
+         "markers_in": 0.344,
+         "markers_in_rest_of_lineage": 0.032,
+         "fold": 10.87
         },
         {
-         "type": "Inflammatory fibroblasts",
+         "type": "Villus fibroblasts (telocytes)",
          "lineage": "Fibroblasts",
-         "n_cells": 2914,
-         "share": 0.0513,
-         "median_confidence": 0.77,
-         "markers_in": 0.088,
-         "markers_in_rest_of_lineage": 0.026,
-         "fold": 3.41
-        },
-        {
-         "type": "Arterial EC",
-         "lineage": "Endothelial",
-         "n_cells": 2896,
-         "share": 0.0509,
-         "median_confidence": 0.84,
-         "markers_in": 0.131,
-         "markers_in_rest_of_lineage": 0.112,
-         "fold": 1.17
+         "n_cells": 3069,
+         "share": 0.054,
+         "median_confidence": 0.96,
+         "markers_in": 0.378,
+         "markers_in_rest_of_lineage": 0.065,
+         "fold": 5.82
         },
         {
          "type": "Goblet cells",
          "lineage": "Epithelial",
-         "n_cells": 2790,
-         "share": 0.0491,
-         "median_confidence": 0.85,
-         "markers_in": 0.433,
-         "markers_in_rest_of_lineage": 0.134,
-         "fold": 3.23
+         "n_cells": 2549,
+         "share": 0.0448,
+         "median_confidence": 0.8,
+         "markers_in": 0.577,
+         "markers_in_rest_of_lineage": 0.209,
+         "fold": 2.77
+        },
+        {
+         "type": "Arterial EC",
+         "lineage": "Endothelial",
+         "n_cells": 2520,
+         "share": 0.0443,
+         "median_confidence": 0.92,
+         "markers_in": 0.365,
+         "markers_in_rest_of_lineage": 0.093,
+         "fold": 3.91
         },
         {
          "type": "Pericytes",
          "lineage": "Pericytes",
-         "n_cells": 2602,
-         "share": 0.0458,
-         "median_confidence": 0.94,
-         "markers_in": 0.725,
+         "n_cells": 2355,
+         "share": 0.0414,
+         "median_confidence": 0.92,
+         "markers_in": 0.743,
          "markers_in_rest_of_lineage": null,
          "fold": null
         },
         {
-         "type": "Crypt-bottom fibroblasts (trophocytes)",
-         "lineage": "Fibroblasts",
-         "n_cells": 2114,
-         "share": 0.0372,
-         "median_confidence": 0.8,
-         "markers_in": 0.689,
-         "markers_in_rest_of_lineage": 0.254,
-         "fold": 2.72
+         "type": "Stem cells",
+         "lineage": "Epithelial",
+         "n_cells": 2128,
+         "share": 0.0374,
+         "median_confidence": 0.94,
+         "markers_in": 0.548,
+         "markers_in_rest_of_lineage": 0.132,
+         "fold": 4.16
+        },
+        {
+         "type": "Venous EC",
+         "lineage": "Endothelial",
+         "n_cells": 1805,
+         "share": 0.0317,
+         "median_confidence": 0.93,
+         "markers_in": 0.804,
+         "markers_in_rest_of_lineage": 0.417,
+         "fold": 1.93
+        },
+        {
+         "type": "Macrophages",
+         "lineage": "Myeloid",
+         "n_cells": 1679,
+         "share": 0.0295,
+         "median_confidence": 0.93,
+         "markers_in": 0.392,
+         "markers_in_rest_of_lineage": 0.161,
+         "fold": 2.44
         },
         {
          "type": "Effector/memory CD4 T cells",
          "lineage": "T and NK cells",
-         "n_cells": 1608,
-         "share": 0.0283,
-         "median_confidence": 0.86,
-         "markers_in": 0.241,
-         "markers_in_rest_of_lineage": 0.23,
-         "fold": 1.05
+         "n_cells": 1591,
+         "share": 0.028,
+         "median_confidence": 0.81,
+         "markers_in": 0.236,
+         "markers_in_rest_of_lineage": 0.235,
+         "fold": 1.0
         },
         {
          "type": "Mast cells",
          "lineage": "Mast cells",
-         "n_cells": 1470,
-         "share": 0.0259,
+         "n_cells": 1444,
+         "share": 0.0254,
          "median_confidence": 1.0,
-         "markers_in": 0.746,
+         "markers_in": 0.747,
+         "markers_in_rest_of_lineage": null,
+         "fold": null
+        },
+        {
+         "type": "CD8 T cells",
+         "lineage": "T and NK cells",
+         "n_cells": 981,
+         "share": 0.0173,
+         "median_confidence": 0.84,
+         "markers_in": 0.565,
+         "markers_in_rest_of_lineage": 0.071,
+         "fold": 8.0
+        },
+        {
+         "type": "Glia",
+         "lineage": "Glia",
+         "n_cells": 910,
+         "share": 0.016,
+         "median_confidence": 0.96,
+         "markers_in": 0.77,
          "markers_in_rest_of_lineage": null,
          "fold": null
         },
         {
          "type": "Lymphatic EC",
          "lineage": "Endothelial",
-         "n_cells": 1339,
-         "share": 0.0236,
-         "median_confidence": 0.89,
-         "markers_in": 0.363,
-         "markers_in_rest_of_lineage": 0.094,
-         "fold": 3.86
-        },
-        {
-         "type": "Stem cells",
-         "lineage": "Epithelial",
-         "n_cells": 1210,
-         "share": 0.0213,
-         "median_confidence": 0.76,
-         "markers_in": 0.597,
-         "markers_in_rest_of_lineage": 0.15,
-         "fold": 3.98
-        },
-        {
-         "type": "Macrophages",
-         "lineage": "Myeloid",
-         "n_cells": 978,
-         "share": 0.0172,
+         "n_cells": 883,
+         "share": 0.0155,
          "median_confidence": 0.94,
-         "markers_in": 0.551,
-         "markers_in_rest_of_lineage": 0.166,
-         "fold": 3.32
-        },
-        {
-         "type": "Glia",
-         "lineage": "Glia",
-         "n_cells": 970,
-         "share": 0.0171,
-         "median_confidence": 0.99,
-         "markers_in": 0.765,
-         "markers_in_rest_of_lineage": null,
-         "fold": null
-        },
-        {
-         "type": "Venous EC",
-         "lineage": "Endothelial",
-         "n_cells": 955,
-         "share": 0.0168,
-         "median_confidence": 0.84,
-         "markers_in": 0.806,
-         "markers_in_rest_of_lineage": 0.492,
-         "fold": 1.64
-        },
-        {
-         "type": "CD8 T cells",
-         "lineage": "T and NK cells",
-         "n_cells": 949,
-         "share": 0.0167,
-         "median_confidence": 0.85,
-         "markers_in": 0.575,
-         "markers_in_rest_of_lineage": 0.073,
-         "fold": 7.9
-        },
-        {
-         "type": "Paneth cells",
-         "lineage": "Epithelial",
-         "n_cells": 721,
-         "share": 0.0127,
-         "median_confidence": 0.79,
-         "markers_in": 0.727,
-         "markers_in_rest_of_lineage": 0.07,
-         "fold": 10.41
-        },
-        {
-         "type": "Tregs",
-         "lineage": "T and NK cells",
-         "n_cells": 658,
-         "share": 0.0116,
-         "median_confidence": 0.9,
-         "markers_in": 0.619,
-         "markers_in_rest_of_lineage": 0.075,
-         "fold": 8.25
+         "markers_in": 0.497,
+         "markers_in_rest_of_lineage": 0.093,
+         "fold": 5.36
         },
         {
          "type": "Plasma cells",
          "lineage": "B and plasma cells",
-         "n_cells": 612,
-         "share": 0.0108,
+         "n_cells": 610,
+         "share": 0.0107,
          "median_confidence": 1.0,
-         "markers_in": 0.641,
-         "markers_in_rest_of_lineage": 0.079,
-         "fold": 8.16
+         "markers_in": 0.64,
+         "markers_in_rest_of_lineage": 0.077,
+         "fold": 8.33
         },
         {
-         "type": "cDC2",
-         "lineage": "Myeloid",
-         "n_cells": 575,
-         "share": 0.0101,
-         "median_confidence": 0.77,
-         "markers_in": 0.297,
-         "markers_in_rest_of_lineage": 0.221,
-         "fold": 1.34
-        },
-        {
-         "type": "Enteroendocrine cells",
-         "lineage": "Epithelial",
-         "n_cells": 498,
-         "share": 0.0088,
-         "median_confidence": 0.96,
-         "markers_in": 0.649,
-         "markers_in_rest_of_lineage": 0.026,
-         "fold": 25.37
-        },
-        {
-         "type": "cDC1",
-         "lineage": "Myeloid",
-         "n_cells": 446,
-         "share": 0.0078,
-         "median_confidence": 0.95,
-         "markers_in": 0.794,
-         "markers_in_rest_of_lineage": 0.232,
-         "fold": 3.43
-        },
-        {
-         "type": "B cells",
-         "lineage": "B and plasma cells",
-         "n_cells": 399,
-         "share": 0.007,
-         "median_confidence": 0.99,
-         "markers_in": 0.707,
-         "markers_in_rest_of_lineage": 0.071,
-         "fold": 9.91
-        },
-        {
-         "type": "NK cells",
+         "type": "Tregs",
          "lineage": "T and NK cells",
-         "n_cells": 351,
-         "share": 0.0062,
-         "median_confidence": 0.97,
-         "markers_in": 0.569,
-         "markers_in_rest_of_lineage": 0.072,
-         "fold": 7.87
+         "n_cells": 584,
+         "share": 0.0103,
+         "median_confidence": 0.86,
+         "markers_in": 0.628,
+         "markers_in_rest_of_lineage": 0.086,
+         "fold": 7.33
         },
         {
          "type": "Monocytes",
          "lineage": "Myeloid",
-         "n_cells": 256,
-         "share": 0.0045,
-         "median_confidence": 0.78,
-         "markers_in": 0.605,
-         "markers_in_rest_of_lineage": 0.177,
-         "fold": 3.43
+         "n_cells": 474,
+         "share": 0.0083,
+         "median_confidence": 0.84,
+         "markers_in": 0.374,
+         "markers_in_rest_of_lineage": 0.182,
+         "fold": 2.05
         },
         {
-         "type": "Tuft cells",
+         "type": "B cells",
+         "lineage": "B and plasma cells",
+         "n_cells": 412,
+         "share": 0.0072,
+         "median_confidence": 0.99,
+         "markers_in": 0.696,
+         "markers_in_rest_of_lineage": 0.073,
+         "fold": 9.57
+        },
+        {
+         "type": "Enteroendocrine cells",
          "lineage": "Epithelial",
-         "n_cells": 213,
+         "n_cells": 402,
+         "share": 0.0071,
+         "median_confidence": 0.92,
+         "markers_in": 0.662,
+         "markers_in_rest_of_lineage": 0.029,
+         "fold": 23.18
+        },
+        {
+         "type": "NK cells",
+         "lineage": "T and NK cells",
+         "n_cells": 339,
+         "share": 0.006,
+         "median_confidence": 0.95,
+         "markers_in": 0.571,
+         "markers_in_rest_of_lineage": 0.074,
+         "fold": 7.7
+        },
+        {
+         "type": "Dendritic cells",
+         "lineage": "Myeloid",
+         "n_cells": 211,
          "share": 0.0037,
-         "median_confidence": 0.98,
-         "markers_in": 0.818,
-         "markers_in_rest_of_lineage": 0.024,
-         "fold": 34.45
+         "median_confidence": 0.77,
+         "markers_in": 0.307,
+         "markers_in_rest_of_lineage": 0.114,
+         "fold": 2.69
         },
         {
          "type": "ILCs",
          "lineage": "T and NK cells",
-         "n_cells": 206,
-         "share": 0.0036,
+         "n_cells": 189,
+         "share": 0.0033,
          "median_confidence": 0.89,
-         "markers_in": 0.767,
-         "markers_in_rest_of_lineage": 0.264,
-         "fold": 2.9
+         "markers_in": 0.774,
+         "markers_in_rest_of_lineage": 0.266,
+         "fold": 2.91
+        },
+        {
+         "type": "Tuft cells",
+         "lineage": "Epithelial",
+         "n_cells": 183,
+         "share": 0.0032,
+         "median_confidence": 0.96,
+         "markers_in": 0.847,
+         "markers_in_rest_of_lineage": 0.025,
+         "fold": 34.22
         },
         {
          "type": "BEST4+ enterocytes",
          "lineage": "Epithelial",
-         "n_cells": 168,
-         "share": 0.003,
-         "median_confidence": 0.96,
-         "markers_in": 0.665,
-         "markers_in_rest_of_lineage": 0.014,
-         "fold": 48.56
+         "n_cells": 136,
+         "share": 0.0024,
+         "median_confidence": 0.92,
+         "markers_in": 0.703,
+         "markers_in_rest_of_lineage": 0.015,
+         "fold": 48.5
         },
         {
          "type": "Neutrophils",
          "lineage": "Myeloid",
-         "n_cells": 113,
-         "share": 0.002,
-         "median_confidence": 0.98,
-         "markers_in": 0.416,
-         "markers_in_rest_of_lineage": 0.093,
-         "fold": 4.46
+         "n_cells": 136,
+         "share": 0.0024,
+         "median_confidence": 0.99,
+         "markers_in": 0.375,
+         "markers_in_rest_of_lineage": 0.092,
+         "fold": 4.08
         },
         {
-         "type": "Mature DCs",
-         "lineage": "Myeloid",
-         "n_cells": 110,
+         "type": "Naive CD4 T cells",
+         "lineage": "T and NK cells",
+         "n_cells": 107,
          "share": 0.0019,
-         "median_confidence": 0.95,
-         "markers_in": 0.827,
+         "median_confidence": 0.59,
+         "markers_in": 0.234,
          "markers_in_rest_of_lineage": 0.049,
-         "fold": 16.94
+         "fold": 4.75
         },
         {
          "type": "Neurons",
          "lineage": "Neurons",
-         "n_cells": 66,
-         "share": 0.0012,
-         "median_confidence": 1.0,
-         "markers_in": 0.928,
+         "n_cells": 65,
+         "share": 0.0011,
+         "median_confidence": 0.99,
+         "markers_in": 0.938,
          "markers_in_rest_of_lineage": null,
          "fold": null
         },
         {
          "type": "ICC",
          "lineage": "ICC",
-         "n_cells": 40,
+         "n_cells": 39,
          "share": 0.0007,
-         "median_confidence": 0.93,
-         "markers_in": 0.988,
+         "median_confidence": 0.92,
+         "markers_in": 0.987,
          "markers_in_rest_of_lineage": null,
          "fold": null
         },
         {
-         "type": "Naive CD4 T cells",
+         "type": "gd T cells",
          "lineage": "T and NK cells",
-         "n_cells": 21,
-         "share": 0.0004,
-         "median_confidence": 0.52,
-         "markers_in": 0.143,
-         "markers_in_rest_of_lineage": 0.053,
-         "fold": 2.69
+         "n_cells": 6,
+         "share": 0.0001,
+         "median_confidence": 0.51,
+         "markers_in": 0.5,
+         "markers_in_rest_of_lineage": 0.041,
+         "fold": 12.15
         }
        ],
        "weak_types": [
         {
-         "type": "Arterial EC",
-         "lineage": "Endothelial",
-         "n_cells": 2896,
-         "share": 0.0509,
-         "median_confidence": 0.84,
-         "markers_in": 0.131,
-         "markers_in_rest_of_lineage": 0.112,
-         "fold": 1.17,
-         "why": "its markers are detected in 13% of its cells and 11% of the other Endothelial cells"
-        },
-        {
          "type": "Effector/memory CD4 T cells",
          "lineage": "T and NK cells",
-         "n_cells": 1608,
-         "share": 0.0283,
-         "median_confidence": 0.86,
-         "markers_in": 0.241,
-         "markers_in_rest_of_lineage": 0.23,
-         "fold": 1.05,
+         "n_cells": 1591,
+         "share": 0.028,
+         "median_confidence": 0.81,
+         "markers_in": 0.236,
+         "markers_in_rest_of_lineage": 0.235,
+         "fold": 1.0,
          "why": "its markers are detected in 24% of its cells and 23% of the other T and NK cells cells"
-        },
-        {
-         "type": "cDC2",
-         "lineage": "Myeloid",
-         "n_cells": 575,
-         "share": 0.0101,
-         "median_confidence": 0.77,
-         "markers_in": 0.297,
-         "markers_in_rest_of_lineage": 0.221,
-         "fold": 1.34,
-         "why": "its markers are detected in 30% of its cells and 22% of the other Myeloid cells"
         }
        ],
        "low_confidence_types": [],
@@ -873,22 +818,22 @@
         {
          "node": "Cycling TAs",
          "marker": "PCLAF+",
-         "in": 0.11,
+         "in": 0.12,
          "siblings": 0.01,
          "flag": "weak: detected in few of these cells"
         },
         {
          "node": "Cycling TAs",
          "marker": "UBE2C+",
-         "in": 0.17,
+         "in": 0.19,
          "siblings": 0.02,
          "flag": "weak: detected in few of these cells"
         },
         {
          "node": "Enterocytes",
          "marker": "FABP2+",
-         "in": 0.92,
-         "siblings": 0.69,
+         "in": 0.9,
+         "siblings": 0.7,
          "flag": "not specific: siblings detect it about as often"
         },
         {
@@ -907,59 +852,80 @@
         },
         {
          "node": "Naive CD4 T cells",
-         "marker": "CCR7+",
-         "in": 0.14,
-         "siblings": 0.07,
-         "flag": "weak: detected in few of these cells"
-        },
-        {
-         "node": "Naive CD4 T cells",
          "marker": "SELL+",
-         "in": 0.14,
-         "siblings": 0.06,
+         "in": 0.16,
+         "siblings": 0.05,
          "flag": "weak: detected in few of these cells"
         },
         {
          "node": "Effector/memory CD4 T cells",
          "marker": "GZMK+",
-         "in": 0.09,
-         "siblings": 0.04,
+         "in": 0.07,
+         "siblings": 0.05,
          "flag": "weak: detected in few of these cells"
         },
         {
          "node": "Effector/memory CD4 T cells",
          "marker": "CD40LG+",
-         "in": 0.14,
-         "siblings": 0.03,
+         "in": 0.15,
+         "siblings": 0.04,
          "flag": "weak: detected in few of these cells"
         },
         {
          "node": "NK cells",
          "marker": "CD3E-",
-         "in": 0.48,
+         "in": 0.47,
          "siblings": 0.52,
          "flag": "negative marker often detected in these cells"
         },
         {
          "node": "ILCs",
          "marker": "IL7R+",
-         "in": 0.94,
+         "in": 0.95,
          "siblings": 0.76,
+         "flag": "not specific: siblings detect it about as often"
+        },
+        {
+         "node": "Macrophages",
+         "marker": "APOE+",
+         "in": 0.22,
+         "siblings": 0.06,
+         "flag": "weak: detected in few of these cells"
+        },
+        {
+         "node": "Monocytes",
+         "marker": "CD14+",
+         "in": 0.33,
+         "siblings": 0.34,
          "flag": "not specific: siblings detect it about as often"
         },
         {
          "node": "Neutrophils",
          "marker": "CXCR2+",
-         "in": 0.19,
+         "in": 0.18,
          "siblings": 0.05,
          "flag": "weak: detected in few of these cells"
         },
         {
-         "node": "cDC2",
+         "node": "Neutrophils",
+         "marker": "S100A12+",
+         "in": 0.24,
+         "siblings": 0.01,
+         "flag": "weak: detected in few of these cells"
+        },
+        {
+         "node": "Dendritic cells",
+         "marker": "CLEC9A+",
+         "in": 0.1,
+         "siblings": 0.14,
+         "flag": "weak: detected in few of these cells"
+        },
+        {
+         "node": "Dendritic cells",
          "marker": "CLEC10A+",
-         "in": 0.3,
-         "siblings": 0.22,
-         "flag": "not specific: siblings detect it about as often"
+         "in": 0.06,
+         "siblings": 0.25,
+         "flag": "weak: detected in few of these cells"
         },
         {
          "node": "Mast cells",
@@ -971,117 +937,70 @@
         {
          "node": "Fibroblasts",
          "marker": "MYH11-",
-         "in": 0.36,
+         "in": 0.35,
          "siblings": 0.37,
          "flag": "negative marker often detected in these cells"
         },
         {
-         "node": "Crypt-top fibroblasts (telocytes)",
-         "marker": "PDGFRA+",
-         "in": 0.48,
-         "siblings": 0.63,
-         "flag": "not specific: siblings detect it about as often"
-        },
-        {
-         "node": "Crypt-top fibroblasts (telocytes)",
+         "node": "Villus fibroblasts (telocytes)",
          "marker": "SOX6+",
-         "in": 0.17,
+         "in": 0.22,
          "siblings": 0.01,
-         "flag": "weak: detected in few of these cells"
-        },
-        {
-         "node": "Crypt-top fibroblasts (telocytes)",
-         "marker": "WNT5A+",
-         "in": 0.23,
-         "siblings": 0.06,
-         "flag": "weak: detected in few of these cells"
-        },
-        {
-         "node": "Crypt-bottom fibroblasts (trophocytes)",
-         "marker": "PDGFRA-",
-         "in": 0.73,
-         "siblings": 0.52,
-         "flag": "negative marker often detected in these cells"
-        },
-        {
-         "node": "Inflammatory fibroblasts",
-         "marker": "IL11+",
-         "in": 0.0,
-         "siblings": 0.0,
-         "flag": "weak: detected in few of these cells"
-        },
-        {
-         "node": "Inflammatory fibroblasts",
-         "marker": "INHBA+",
-         "in": 0.04,
-         "siblings": 0.03,
-         "flag": "weak: detected in few of these cells"
-        },
-        {
-         "node": "Inflammatory fibroblasts",
-         "marker": "FAP+",
-         "in": 0.13,
-         "siblings": 0.03,
-         "flag": "weak: detected in few of these cells"
-        },
-        {
-         "node": "Inflammatory fibroblasts",
-         "marker": "CTHRC1+",
-         "in": 0.17,
-         "siblings": 0.04,
          "flag": "weak: detected in few of these cells"
         },
         {
          "node": "Pericytes",
          "marker": "MYH11-",
-         "in": 0.7,
+         "in": 0.69,
          "siblings": 0.35,
          "flag": "negative marker often detected in these cells"
         },
         {
          "node": "Blood vessel EC",
          "marker": "VWF+",
-         "in": 0.83,
-         "siblings": 0.72,
+         "in": 0.82,
+         "siblings": 0.7,
          "flag": "not specific: siblings detect it about as often"
         },
         {
          "node": "Blood vessel EC",
          "marker": "PECAM1+",
-         "in": 0.92,
-         "siblings": 0.84,
+         "in": 0.91,
+         "siblings": 0.82,
          "flag": "not specific: siblings detect it about as often"
         },
         {
          "node": "Arterial EC",
          "marker": "GJA4+",
-         "in": 0.06,
-         "siblings": 0.0,
-         "flag": "weak: detected in few of these cells"
-        },
-        {
-         "node": "Arterial EC",
-         "marker": "HEY1+",
-         "in": 0.2,
-         "siblings": 0.03,
+         "in": 0.1,
+         "siblings": 0.01,
          "flag": "weak: detected in few of these cells"
         },
         {
          "node": "Venous EC",
          "marker": "VWF+",
-         "in": 0.87,
-         "siblings": 0.82,
+         "in": 0.88,
+         "siblings": 0.78,
          "flag": "not specific: siblings detect it about as often"
-        },
-        {
-         "node": "Lymphatic EC",
-         "marker": "PDPN+",
-         "in": 0.23,
-         "siblings": 0.02,
-         "flag": "weak: detected in few of these cells"
         }
        ],
        "not_found": [
+        {
+         "type": "Paneth cells",
+         "parent": "Epithelial",
+         "n_parent_cells": 18792,
+         "markers": {
+          "ITLN2": [
+           1787,
+           1264
+          ],
+          "SPINK4": [
+           6365,
+           3707
+          ]
+         },
+         "reason": "no cluster went to it, also at finer resolutions, and no group of cells shows its markers together; among the 18,792 Epithelial: ITLN2 in 1,787 cells (1,264 with 2+ transcripts), SPINK4 in 6,365 cells (3,707 with 2+ transcripts)"
+        },
         {
          "type": "M cells",
          "parent": "Epithelial",
@@ -1097,18 +1016,6 @@
           ]
          },
          "reason": "no cluster went to it, also at finer resolutions, and no group of cells shows its markers together; among the 18,792 Epithelial: SPIB in 627 cells (258 with 2+ transcripts), CCL20 in 1,329 cells (424 with 2+ transcripts)"
-        },
-        {
-         "type": "gd T cells",
-         "parent": "T and NK cells",
-         "n_parent_cells": 3775,
-         "markers": {
-          "TRDC": [
-           303,
-           134
-          ]
-         },
-         "reason": "no cluster went to it, also at finer resolutions, and no group of cells shows its markers together; among the 3,775 T and NK cells: TRDC in 303 cells (134 with 2+ transcripts)"
         },
         {
          "type": "Eosinophils",
@@ -1135,12 +1042,12 @@
            168,
            23
           ],
-          "CLU": [
-           14326,
-           6627
+          "C7": [
+           8531,
+           4202
           ]
          },
-         "reason": "no cluster went to it, also at finer resolutions, and no group of cells shows its markers together; among the 56,852 cells: FDCSP in 168 cells (23 with 2+ transcripts), CLU in 14,326 cells (6,627 with 2+ transcripts)"
+         "reason": "no cluster went to it, also at finer resolutions, and no group of cells shows its markers together; among the 56,852 cells: FDCSP in 168 cells (23 with 2+ transcripts), C7 in 8,531 cells (4,202 with 2+ transcripts)"
         }
        ],
        "untyped_by_markers": {
@@ -1157,15 +1064,15 @@
        {
         "from": "user",
         "text": "This is terminal ileum: stem cells and Paneth cells sit at the crypt bases.",
-        "time": "2026-11-13T12:24:45"
+        "time": "2026-11-13T13:44:15"
        }
       ],
       "proposal": null,
       "decision": null,
       "accepted": [],
-      "time": "2026-11-13T12:24:15",
-      "asked": "2026-11-13T12:24:45",
-      "asked_t": 1794590685.364492
+      "time": "2026-11-13T13:44:07",
+      "asked": "2026-11-13T13:44:15",
+      "asked_t": 1794595455.045652
      },
      "claude_code": {
       "opened": true,
@@ -1193,10 +1100,19 @@
    "name": "c05r-stop"
   },
   {
-   "name": "c05-annotate-all"
+   "name": "c05-save-list"
+  },
+  {
+   "name": "c05-annotate-2"
   },
   {
    "name": "c05-explore"
+  },
+  {
+   "name": "c06-pre",
+   "source": "c06-embed",
+   "from": 1794596421.21,
+   "until": 1794596429.457
   },
   {
    "name": "c06-embed"
@@ -1459,8 +1375,8 @@
       "reused": true
      },
      "asked": true,
-     "asked_at": "2026-11-13T12:36:39",
-     "unchecked": 24,
+     "asked_at": "2026-11-13T14:05:46",
+     "unchecked": 21,
      "checked": 0,
      "checking": true,
      "advice": {
@@ -1470,7 +1386,7 @@
       "n_open": 0,
       "n_filtered": 0,
       "last_run": null,
-      "asked_at": "2026-11-13T12:36:39",
+      "asked_at": "2026-11-13T14:05:46",
       "n_runs": 0
      }
     }
@@ -1480,10 +1396,10 @@
    "name": "c14-reviewing"
   },
   {
-   "name": "c14-show_area-2"
+   "name": "c14-show_area-3"
   },
   {
-   "name": "c14-show_area-3"
+   "name": "c14-show_area-6"
   },
   {
    "name": "c14-record_review-1"

@@ -5260,11 +5260,11 @@ checksums of its steps (PCA, neighbors, first clusters, labels) to compare runs.
     stay at the parent. Cells no top-level type takes are Unassigned.</li>
   <li><b>Rare types</b>: a child no cluster went to is looked for in finer clusterings of the same neighbor graph
     (resolutions 2, 4 and 8, clusters down to 10 cells). A fine cluster goes to it when it scores best for it (as
-    above) and its cells really show its markers: at least two of its positive markers (and at least half of them)
-    raised, each detected in at least 25% of them and 3 times as often as in the parent's cells (or, a common marker,
+    above) and its cells really show its markers: a raised gene in at least half of its positive markers (the genes of
+    an OR group A|B|C count one by one), each detected in at least 25% of them and 3 times as often as in the parent's cells (or, a common marker,
     in 40% and 1.5 times as often), no positive marker rarer than in the parent's cells, no negative marker raised. A
-    type with one positive marker is looked for only in single cells (below): one raised marker took Kit+ crypt
-    epithelium as ICC and STMN2+ fibroblasts as neurons. Add a second marker to such a type to have it found.</li>
+    type of one marker gene is looked for only in single cells (below): one raised gene took Kit+ crypt epithelium as
+    ICC and STMN2+ fibroblasts as neurons. Add a second marker gene to such a type to have it found.</li>
   <li>Cells too few or too scattered to form a cluster (Paneth cells among stem cells, ICC between muscle cells): a
     type with one positive marker gets the cells with 3 or more of its transcripts, when that gene is detected in at
     most 5% of the parent's cells; a type with several gets the cells with 2 or more transcripts of each of two of
