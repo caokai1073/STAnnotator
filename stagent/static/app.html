@@ -923,6 +923,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <button id="rfClose" title="Close the window; the round stays, Refine… opens it again">Close</button></div>
   <div class="imbody rfbody">
     <div class="row rforgan"><b>Organ</b><select id="rfOrgan"></select><input id="rfOrganOther" placeholder="another organ (type it)" hidden>
+      <button id="rfPrior" title="The priors of this organ the agent's review uses: see, remove or add them (the Prior window)">Prior</button>
       <span class="hint" id="rfOrganWhy"></span></div>
     <div id="rfReport" class="rfreport"></div>
     <div class="rfgrid">
@@ -3955,7 +3956,14 @@ $("prDefault").onclick = async () => {
   if (await prPost({ reset: true })) toast("The app's priors again", 2500);
 };
 $("prClose").onclick = () => $("prDlg").close();
-$("prDlg").addEventListener("close", () => clearTimeout(PR.poll));
+$("prDlg").addEventListener("close", () => {
+  clearTimeout(PR.poll);
+  const o = PR.view && PR.view.organ;  // an organ chosen there is the Refine window's too
+  if (o && $("rfDlg").open && o !== rfOrgan()) {
+    if ([...$("rfOrgan").options].some((x) => x.value === o)) { $("rfOrgan").value = o; $("rfOrganOther").hidden = true; }
+    else { $("rfOrgan").value = "__other"; $("rfOrganOther").hidden = false; $("rfOrganOther").value = o; }
+  }
+});
 $("plaus").onclick = () => openReviewChooser().catch((e) => toast(e.message, 6000));
 async function openReviewChooser() {  // what the agent reviews: one part of the analysis
   const adv = await api(`/api/s/${st.sid}/advice`); st.advice = adv;
@@ -4246,6 +4254,12 @@ function rfRender() {
   $("rfAsk").hidden = rd.decision === "accepted" || rd.decision === "stopped";
 }
 $("rfOrgan").onchange = () => { $("rfOrganOther").hidden = $("rfOrgan").value !== "__other"; };
+$("rfPrior").onclick = async () => {  // the Prior window, on the organ chosen here (it opens over this one)
+  if (!st.sample) return;
+  $("prInfo").textContent = sampleName(st.sample);
+  try { await prLoad(rfOrgan()); } catch (e) { $("rfErr").textContent = e.message; return; }
+  $("prDlg").showModal(); prShow(PR.view);
+};
 function rfHanded(r) {  // the request went to the agent: Claude Code (desktop) or the server viewer's chat
   if (r.message && st.chatAvailable) { $("input").value = r.message; send(); }
   else if (r.claude_code) toast(r.claude_code.reused ? "Sent to the agent; its proposal appears here" : "The agent is opening; its proposal appears here", 5000);
