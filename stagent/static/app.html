@@ -401,6 +401,20 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .fbi:hover { background: var(--line); } .fbi.on { background: var(--accent); color: #fff; }
 .fbi .sz { margin-left: auto; color: var(--muted); font-size: 11.5px; } .fbi.on .sz { color: #fff; }
 .dh { display: flex; gap: 8px; align-items: center; padding: 12px 14px 12px 18px; border-bottom: 1px solid var(--line); }
+.rfbody { gap: 10px; }
+.rforgan { gap: 8px; flex-wrap: wrap; }
+.rfreport { font-size: 12.5px; line-height: 1.5; background: var(--bg2, rgba(0,0,0,.03)); border-radius: 8px; padding: 8px 10px; max-height: 26vh; overflow: auto; }
+.rfreport .big { color: #b3261e; font-weight: 600; }
+.rfgrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 14px; }
+.rfcol { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.rfmsgs { max-height: 30vh; overflow: auto; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }
+.rfmsgs .m { padding: 6px 8px; border-radius: 8px; white-space: pre-wrap; }
+.rfmsgs .m.user { background: rgba(30, 110, 200, .10); align-self: flex-end; }
+.rfmsgs .m.agent { background: rgba(0, 0, 0, .05); }
+.rfedits { max-height: 38vh; overflow: auto; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }
+.rfedits label { display: grid; grid-template-columns: auto 1fr; gap: 6px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; }
+.rfedits .why { color: var(--muted); }
+@media (max-width: 760px) { .rfgrid { grid-template-columns: 1fr; } }
 .dbody { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 14px; padding: 12px 14px 14px; }
 .col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .col.side { gap: 6px; }
@@ -545,8 +559,11 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <div class="seg" data-for="knn"></div><div class="hint" id="annEst"></div></div>
     <label class="switch" id="carryWrap" style="visibility:hidden" title="Start the new annotation with the regions (and their colors), priors and hand corrections of the one that is open; priors and corrections naming cell types the new annotation does not have are dropped"><input type="checkbox" id="carry" checked>
       <span>Keep my regions, priors &amp; corrections<small>carried into the new annotation</small></span></label>
+    <label class="switch" id="rfAutoWrap" title="After annotating with marker genes, the agent reviews the result with the tissue's priors and proposes edits of the marker list; you accept some and the app annotates again, round by round"><input type="checkbox" id="rfAuto" checked>
+      <span>Refine with the agent<small>after annotating: review, edit the list, annotate again</small></span></label>
     <label class="switch projall" hidden title="Annotate all slices of the project at once (one marker step and one model), so a name means the same cells in every slice"><input type="checkbox" id="projAllA" checked>
       <span>All slices together<small>one annotation of the project's slices (marker genes)</small></span></label>
+    <div class="act2"><button id="rfOpen" disabled title="Refine this annotation with the agent: the computed problems, the agent's proposed edits of the marker list, your conversation with it">Refine…</button></div>
     <button id="annotate" class="primary main">Annotate</button>
   </div>
   <div class="pane" data-pane="embed">
@@ -889,6 +906,28 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <label class="alrow alall"><input type="checkbox" id="alAll"><b>All samples</b></label>
     <div id="alList"></div>
     <div class="row" style="margin-top:4px"><span class="spacer"></span><button id="alCancel">Cancel</button><button id="alGo" class="primary">Align</button></div>
+  </div>
+</dialog>
+<dialog id="rfDlg" style="width:min(980px,96vw)">
+  <div class="dh"><svg class="ic" aria-hidden="true"><use href="#ic-sparkle"/></svg><b id="rfTitle">Refine with the agent</b><span class="spacer"></span>
+    <button id="rfClose" title="Close the window; the round stays, Refine… opens it again">Close</button></div>
+  <div class="imbody rfbody">
+    <div class="row rforgan"><b>Organ</b><select id="rfOrgan"></select><input id="rfOrganOther" placeholder="another organ (type it)" hidden>
+      <span class="hint" id="rfOrganWhy"></span></div>
+    <div id="rfReport" class="rfreport"></div>
+    <div class="rfgrid">
+      <div class="rfcol"><b>Conversation</b><div class="hint">Your words come first: the agent follows them before its own view and the priors.</div>
+        <div id="rfMsgs" class="rfmsgs"></div>
+        <textarea id="rfText" rows="3" placeholder="Tell the agent what to consider, e.g. this is a fibrotic lung; keep CD9 for neurons; add chondrocytes"></textarea>
+        <div class="row"><span class="hint" id="rfWait"></span><span class="spacer"></span><button id="rfSend">Send to the agent</button></div></div>
+      <div class="rfcol"><b>Proposed edits of the marker list</b><div class="hint" id="rfEditsHint">Ask the agent to review this round.</div>
+        <div id="rfEdits" class="rfedits"></div></div>
+    </div>
+    <div class="row" style="margin-top:4px"><span class="err" id="rfErr"></span><span class="spacer"></span>
+      <button id="rfStop" title="End refining: the annotation stays as it is">Stop refining</button>
+      <button id="rfDismiss" title="Drop these edits; you can write to the agent and ask again">Dismiss edits</button>
+      <button id="rfAsk" class="primary" title="The agent reviews the whole annotation with the tissue's priors and proposes edits">Ask the agent</button>
+      <button id="rfAccept" class="primary" hidden title="Apply the chosen edits to the marker list and annotate again (your regions, priors and corrections carry over)">Accept chosen and annotate</button></div>
   </div>
 </dialog>
 <dialog id="pcDlg" style="width:min(620px,95vw)">
@@ -1807,6 +1846,10 @@ async function startAnnotation(mode, sid, token = st.switchToken) {
       fillSessions(session_id);
     }
     await openSession(session_id);
+    if (mode === "new" && method === "markers" && rfAgentOk() && (RF.from || $("rfAuto").checked)) {  // the next round
+      const f = RF.from; RF.from = null;
+      rfOpen(f).catch((e) => toast(`Refine: ${e.message}`, 6000));
+    }
     if (!quiet) setTimeout(() => $("progress").classList.remove("show"), 800);
   } catch (e) {
     if (quiet) { toast(`Could not open this annotation: ${e.message}`, 8000); return; }
@@ -2375,7 +2418,7 @@ async function refreshVersion(force, infoPromise, infoSid) {  // infoPromise: /i
   $("aMissing").hidden = !nf.length;
   $("aMissing").textContent = nf.length ? `Not found (${nf.length} of the list): ${nf.map((x) => x.type).join(", ")} — hover for why` : "";
   $("aMissing").title = nf.map((x) => `${x.type}: ${x.reason}`).join("\n\n");
-  fillModes(sm);
+  fillModes(sm); rfSync();
   const counts = [[sm.constraints.length, "prior"], [sm.corrections.length, "correction"], [sm.n_conflicts, "conflict"]];
   $("vinfo").textContent = [`v${v}`, ...counts.filter(([n]) => n).map(([n, w]) => `${n} ${w}${n > 1 ? "s" : ""}`)].join(" · ");  // short on the map
   $("vinfo").title = `version ${v} · ` + counts.map(([n, w]) => `${n} ${w}s`).join(" · ");
@@ -4105,6 +4148,132 @@ $("refClose").onclick = () => $("refDlg").close();
 $("refPath").onchange = () => inspectRef();
 $("refPick").onclick = async () => { const p = await pickFiles("h5ad"); if (p.length) { $("refPath").value = p[0]; inspectRef(); } };
 
+// ---------------- Refine with the agent: review, edits of the marker list, annotation again, round by round ----------------
+const RF = { sid: null, state: null, timer: null, from: null, seen: "" };
+const rfAgentOk = () => !!(st.desktop || st.chatAvailable);
+function rfSync() {  // the Refine button and switch: a marker annotation open, an agent to ask
+  const marker = !!st.sid && !st.placeholder && !!st.vocab && st.vocab.method === "markers";
+  $("rfOpen").disabled = !marker || !rfAgentOk();
+  $("rfAutoWrap").hidden = $("method").value !== "markers" || !rfAgentOk();
+}
+if (load("rfAuto") === "off") $("rfAuto").checked = false;
+$("rfAuto").onchange = () => store("rfAuto", $("rfAuto").checked ? "on" : "off");
+$("method").addEventListener("change", rfSync);
+const rfRound = () => (RF.state && RF.state.rounds.length ? RF.state.rounds[RF.state.rounds.length - 1] : null);
+async function rfOpen(from) {
+  const sid = st.sid; if (!sid) return;
+  let r = await api(`/api/s/${sid}/refine`);
+  const last = r.rounds[r.rounds.length - 1];
+  if (!last || last.session !== sid || last.version !== st.version || (from && from !== sid)) {  // a round on this version
+    await post(`/api/s/${sid}/refine/start`, { from: from || null });
+    r = await api(`/api/s/${sid}/refine`);
+  }
+  RF.sid = sid; RF.state = r; RF.seen = "";
+  rfRender();
+  if (!$("rfDlg").open) $("rfDlg").showModal();
+  clearInterval(RF.timer);
+  RF.timer = setInterval(rfPoll, 3000);
+}
+async function rfPoll() {
+  if (!$("rfDlg").open) { clearInterval(RF.timer); return; }
+  let r; try { r = await api(`/api/s/${RF.sid}/refine`); } catch (e) { return; }
+  const rd = r.rounds[r.rounds.length - 1];
+  const key = rd ? `${rd.n}|${rd.messages.length}|${rd.proposal ? rd.proposal.time : ""}|${rd.decision}` : "";
+  if (key !== RF.seen) { RF.state = r; rfRender(); }
+}
+function rfOrgan() { return $("rfOrgan").value === "__other" ? $("rfOrganOther").value.trim() : $("rfOrgan").value; }
+const rfEsc = (x) => String(x ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+function rfEditText(e) {
+  const t = `<b>${rfEsc(e.type)}</b>`;
+  return { add_marker: `add ${rfEsc(e.marker)} to ${t}`, remove_marker: `remove ${rfEsc(e.marker)} from ${t}`,
+           set_markers: `markers of ${t}: ${rfEsc(e.markers)}`, add_type: `add the type ${t}${e.parent ? ` under ${rfEsc(e.parent)}` : " (top level)"}: ${rfEsc(e.markers)}`,
+           remove_type: `remove the type ${t}`, rename_type: `rename ${t} to <b>${rfEsc(e.new_name)}</b>`,
+           move_type: `move ${t} under ${e.parent ? rfEsc(e.parent) : "the top level"}` }[e.kind] || rfEsc(JSON.stringify(e));
+}
+function rfRender() {
+  const r = RF.state, rd = rfRound(); if (!rd) return;
+  RF.seen = `${rd.n}|${rd.messages.length}|${rd.proposal ? rd.proposal.time : ""}|${rd.decision}`;
+  const rep = rd.report, g = rep.organ || {};
+  $("rfTitle").textContent = `Refine with the agent · round ${rd.n}`;
+  // the organ: confirmed, inferred, or asked
+  const organ = r.organ || g.organ || "";
+  const opts = [["", "— which organ is this? —"], ...r.organs.map((o) => [o, o]), ["__other", "another organ…"]];
+  const sel = $("rfOrgan"); sel.textContent = "";
+  opts.forEach(([v, l]) => sel.append(new Option(l, v)));
+  if (organ && !r.organs.includes(organ)) { sel.value = "__other"; $("rfOrganOther").value = organ; } else sel.value = organ;
+  $("rfOrganOther").hidden = sel.value !== "__other";
+  $("rfOrganWhy").textContent = r.organ ? "confirmed" : g.organ ? `inferred: ${(g.evidence || []).join("; ")}; change it if wrong` : "not known: choose it, or let the agent infer it";
+  // the computed report
+  const typesWith = rep.types.length, nf = rep.not_found || [], weak = rep.weak_types || [], un = rep.untyped_by_markers || {};
+  const lines = [`<b>${rep.n_cells.toLocaleString()} cells</b> · ${typesWith} cell types have cells` + (nf.length ? `, ${nf.length} not found` : "")];
+  if ((rep.changes || []).length) lines.push("Since the round before: " + rep.changes.slice(0, 12).map((c) => `<span class="${c.big ? "big" : ""}">${rfEsc(c.type)} ${c.before.toLocaleString()} → ${c.after.toLocaleString()}</span>`).join(", "));
+  if (weak.length) lines.push("Weak marker evidence: " + weak.map((x) => `${rfEsc(x.type)} (${x.fold}×)`).join(", "));
+  if (nf.length) lines.push("Not found: " + nf.map((x) => `<span title="${rfEsc(x.reason)}">${rfEsc(x.type)}</span>`).join(", "));
+  if (un.n_cells) lines.push(`The marker step could not type ${un.n_cells.toLocaleString()} cells (${(100 * un.share).toFixed(1)}%, median ${un.median_transcripts} transcripts vs ${un.median_transcripts_others}); by their expression: ` +
+    Object.entries(un.typed_by_expression_as || {}).slice(0, 6).map(([k, v]) => `${rfEsc(k)} ${v.toLocaleString()}`).join(", "));
+  if ((rep.marker_flags || []).length) lines.push(`${rep.marker_flags.length} markers flagged (weak or not specific), e.g. ` + rep.marker_flags.slice(0, 5).map((f) => `${rfEsc(f.node)}: ${rfEsc(f.marker)}`).join(", "));
+  $("rfReport").innerHTML = lines.map((l) => `<div>${l}</div>`).join("");
+  // the conversation
+  const box = $("rfMsgs"); box.textContent = "";
+  rd.messages.forEach((m) => { const d = document.createElement("div"); d.className = `m ${m.from}`; d.textContent = m.text; box.append(d); });
+  box.scrollTop = box.scrollHeight;
+  // the edits
+  const P = rd.proposal, eb = $("rfEdits"); eb.textContent = "";
+  if (P && P.edits.length) {
+    P.edits.forEach((e) => {
+      const l = document.createElement("label"); const c = document.createElement("input"); c.type = "checkbox"; c.value = e.id;
+      c.checked = rd.decision !== "dismissed"; c.disabled = !!rd.decision;
+      const d = document.createElement("div");
+      d.innerHTML = `${rfEsc(e.id)} · ${rfEditText(e)}` + (e.reason ? `<div class="why">${rfEsc(e.reason)}</div>` : "") + (e.evidence ? `<div class="why">${rfEsc(e.evidence)}</div>` : "");
+      l.append(c, d); eb.append(l);
+    });
+  }
+  $("rfEditsHint").textContent = !P ? (rd.messages.some((m) => m.from === "user") ? "Waiting for the agent…" : "Ask the agent to review this round.")
+    : !P.edits.length ? "The agent proposes no edit (see its message)." : rd.decision === "accepted" ? `Accepted: ${rd.accepted.join(", ")}` :
+    rd.decision === "dismissed" ? "Dismissed: write to the agent and ask again" : (P.check || []).length ? `The edited list: ${P.check.slice(0, 3).join("; ")}` : "Untick what you do not want, then Accept.";
+  $("rfAccept").hidden = !(P && P.edits.length && !rd.decision);
+  setLabel($("rfAsk"), P ? "Ask again" : "Ask the agent");
+  $("rfAsk").hidden = rd.decision === "accepted" || rd.decision === "stopped";
+}
+$("rfOrgan").onchange = () => { $("rfOrganOther").hidden = $("rfOrgan").value !== "__other"; };
+function rfHanded(r) {  // the request went to the agent: Claude Code (desktop) or the server viewer's chat
+  if (r.message && st.chatAvailable) { $("input").value = r.message; send(); }
+  else if (r.claude_code) toast(r.claude_code.reused ? "Sent to the agent; its proposal appears here" : "The agent is opening; its proposal appears here", 5000);
+  $("rfWait").textContent = "The agent is reviewing (a few minutes)…";
+}
+$("rfAsk").onclick = async () => {
+  $("rfErr").textContent = "";
+  try { const r = await post(`/api/s/${RF.sid}/refine/ask`, { organ: rfOrgan(), message: $("rfText").value.trim() }); $("rfText").value = ""; rfHanded(r); rfPoll(); }
+  catch (e) { $("rfErr").textContent = e.message; }
+};
+$("rfSend").onclick = async () => {
+  const text = $("rfText").value.trim(); if (!text) return;
+  const rd = rfRound();
+  if (!rd || (!rd.proposal && !rd.messages.length)) { $("rfAsk").click(); return; }  // the first request of the round
+  $("rfErr").textContent = "";
+  try { const r = await post(`/api/s/${RF.sid}/refine/message`, { text }); $("rfText").value = ""; rfHanded(r); rfPoll(); }
+  catch (e) { $("rfErr").textContent = e.message; }
+};
+$("rfAccept").onclick = async () => {
+  const ids = [...document.querySelectorAll("#rfEdits input:checked")].map((c) => c.value);
+  if (!ids.length) { $("rfErr").textContent = "Tick at least one edit"; return; }
+  let r; try { r = await post(`/api/s/${RF.sid}/refine/decide`, { decision: "accepted", edits: ids }); }
+  catch (e) { $("rfErr").textContent = e.message; return; }
+  $("mkText").value = r.marker_text; $("carry").checked = true; $("method").value = "markers"; syncSeg("method");
+  RF.from = RF.sid; clearInterval(RF.timer); $("rfDlg").close();
+  toast(`Annotating again with ${ids.length} edit(s); the next round opens when it is done`, 5000);
+  await startAnnotation("new");
+};
+$("rfDismiss").onclick = async () => {
+  try { await post(`/api/s/${RF.sid}/refine/decide`, { decision: "dismissed" }); rfPoll(); } catch (e) { $("rfErr").textContent = e.message; }
+};
+$("rfStop").onclick = async () => {
+  try { await post(`/api/s/${RF.sid}/refine/decide`, { decision: "stopped" }); } catch (e) { /* (no round yet) */ }
+  RF.from = null; clearInterval(RF.timer); $("rfDlg").close(); toast("Refining stopped: the annotation stays as it is", 4000);
+};
+$("rfClose").onclick = () => { clearInterval(RF.timer); $("rfDlg").close(); };
+$("rfOpen").onclick = () => rfOpen().catch((e) => toast(e.message, 6000));
+
 // ---------------- import ----------------
 const native = () => window.pywebview && window.pywebview.api;  // file dialogs in the desktop app
 function imKind() { return document.querySelector("input[name=imKind]:checked").value; }
@@ -4711,7 +4880,15 @@ const HELP = `
     depends on the thread count), so a rerun gives the same labels, here or on another computer with this version.</li>
   <li><i>Exact</i> finds the true neighbors; slow without a GPU for large samples.</li>
   <li>The line under it estimates how long the whole annotation takes on this computer for both (hover for the
-    steps); it learns from every run here.</li></ul></li></ul>
+    steps); it learns from every run here.</li></ul></li>
+<li><b>Refine with the agent</b> (marker genes; on by default, or <b>Refine…</b> later), round by round:<ul>
+  <li>the app sums up what may be wrong (types with weak marker evidence, markers that are not specific, types not
+    found, the cells the marker step could not type, the changes since the round before);</li>
+  <li>the organ: inferred from the cell types and the sample's name, or asked; the agent reviews the whole
+    annotation with that organ's priors and proposes edits of the marker list, each with its reason and evidence;</li>
+  <li>you write to it at any time (your words come first), tick the edits you want and <b>Accept</b>: the app
+    annotates again with them (your regions, priors and corrections carry over) and the next round opens;
+    <b>Dismiss edits</b> or <b>Stop refining</b> end it.</li></ul></li></ul>
 
 <h3>Embedding</h3><ul>
 <li><b>Run PCA + UMAP</b> computes PCA, UMAP and Leiden clusters from the expression.<ul>
@@ -5007,7 +5184,9 @@ checksums of its steps (PCA, neighbors, first clusters, labels) to compare runs.
 <li><b>Expression model</b><ul>
   <li>Multinomial logistic regression on the standardized log-normalized genes, trained on the marker step's labels
     (class sizes corrected back to the sample's), so every cell gets a probability per cell type.</li>
-  <li>It labels the cells the marker step left at a parent level, within their lineage.</li>
+  <li>It labels the cells the marker step left at a parent level, within their lineage, and gives every cell a type:
+    the cells the marker step could not type at all (often of few transcripts) get the one their expression is most
+    like (their confidence says how sure).</li>
   <li>It gives no cell to a type the marker step found none of (not found), unless you corrected cells to it.</li>
   <li>Hand corrections: the corrected cells (weight 20) fine-tune the model with the other cells replayed; only the
     classes involved change.</li></ul></li>

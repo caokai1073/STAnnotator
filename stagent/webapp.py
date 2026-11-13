@@ -732,6 +732,29 @@ def api_refine(req):
     return _json(st | {"organs": covered + [o for o in hetissue.user_organs() if o not in covered]})
 
 
+async def api_refine_ask(req: Request):
+    """{organ, message}: ask the agent to review the current round and propose (the organ confirmed by the user, and
+    the user's words, which come first)."""
+    from . import iterate, hetissue
+    s = review_app._session(req.path_params["sid"])
+    b = await req.json()
+    try:
+        st, rd = iterate.current(s)
+        organ = (b.get("organ") or "").strip()
+        if organ:
+            st["organ"] = organ
+            iterate.save(s, st)
+            hetissue._remember_organ(s.sample_id, organ)
+        msg = (b.get("message") or "").strip()
+        if msg:
+            rd = iterate.add_message(s, "user", msg)
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+    user = f"I wrote: \"{msg}\" (this comes first). " if msg else ""
+    return _json({"round": rd} | _ask_claude(s, REFINE_REQUEST.format(
+        sid=s.id, n=rd["n"], user=user, organ=_refine_organ_line(iterate.load(s), rd["report"]["organ"]))))
+
+
 async def api_refine_start(req: Request):
     """{organ, message, ask, from}: a new round on the annotation's latest version (from: the annotation of the
     round before, whose rounds this one continues); with ask the agent is asked to review and propose."""
@@ -3911,6 +3934,7 @@ def build_app(port):
         Route("/api/s/{sid}/advice/status", api_advice_status, methods=["POST"]),
         Route("/api/s/{sid}/refine", api_refine),
         Route("/api/s/{sid}/refine/start", api_refine_start, methods=["POST"]),
+        Route("/api/s/{sid}/refine/ask", api_refine_ask, methods=["POST"]),
         Route("/api/s/{sid}/refine/message", api_refine_message, methods=["POST"]),
         Route("/api/s/{sid}/refine/decide", api_refine_decide, methods=["POST"]),
         Route("/api/s/{sid}/report", api_report),

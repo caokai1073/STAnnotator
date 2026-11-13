@@ -249,6 +249,9 @@ def propose(s, summary, edits, organ=None, questions=None):
                       "organ": organ, "check": problems, "time": time.strftime("%Y-%m-%dT%H:%M:%S")}
     if organ and not st.get("organ"):
         st["organ"] = organ
+    text_q = "".join(f"\n? {q}" for q in rd["proposal"]["questions"])
+    rd["messages"].append({"from": "agent", "text": (rd["proposal"]["summary"] + text_q).strip(),
+                           "time": rd["proposal"]["time"]})
     save(s, st)
     return rd["proposal"]
 
