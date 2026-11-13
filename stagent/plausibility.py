@@ -51,7 +51,7 @@ def check(s, version=None):
     by_type = pd.DataFrame({"t": r["pred"], "same": same, "iso": same < ISOLATED}).groupby("t").agg(
         same=("same", "median"), iso=("iso", "mean"), lin=("t", lambda x: names.tolist().index(lut[x.iloc[0]])))
     ok = (by_type.same >= COHESIVE) & (by_type.iso <= RARE) & (by_lin.reindex(by_type.lin).to_numpy() >= COHESIVE)
-    cohesive = [int(t) for t in by_type.index[ok] if lut[t] != markers.UNASSIGNED]
+    cohesive = [int(t) for t in by_type.index[ok] if lut[t] not in markers.NO_TYPE]
     locked = np.zeros(len(code), bool)
     locked[r["locked_rows"]] = True
     flag = np.isin(r["pred"], cohesive) & (same < ISOLATED) & ~locked
@@ -66,7 +66,7 @@ def check(s, version=None):
     pos = {n: i for i, n in enumerate(names)}
     type_lin = np.array([pos.get(l, -1) for l in lut])
     prior = np.log(np.where(type_lin >= 0, nbr[:, np.maximum(type_lin, 0)], 0.0) + 0.05)
-    banned = (type_lin[None, :] == code[rows][:, None]) | (types == markers.UNASSIGNED)[None, :]
+    banned = (type_lin[None, :] == code[rows][:, None]) | np.isin(types, markers.NO_TYPE)[None, :]
     alt = types[np.where(banned, -np.inf, logp + prior).argmax(1)] if len(rows) else np.zeros(0, dtype=object)
     suggested = np.full(len(code), "", dtype=object)
     suggested[rows] = alt

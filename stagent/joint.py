@@ -125,7 +125,7 @@ def _annotate(pid, markers_text, resolution, carry, say, knn, ids, off, hold, pa
                            resolution=markers.AUTO if resolution in (None, "", markers.AUTO) else float(resolution),
                            knn=knn, spill=spill)
     del spill
-    types = parsed["leaves"]
+    types = parsed["leaves"] + [markers.LOW_QUALITY]  # as Session.create makes them (the slices' annotations)
     lab = markers.training_labels(res, types)  # -1: left at a parent level
     say(0.55, "training one expression model on all slices")
     m = model.train_pseudo(counts, lab, len(types), progress=lambda f, msg: say(0.55 + 0.25 * f, msg),

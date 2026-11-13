@@ -5245,9 +5245,11 @@ checksums of its steps (PCA, neighbors, first clusters, labels) to compare runs.
     stay at the parent. Cells no top-level type takes are Unassigned.</li>
   <li><b>Rare types</b>: a child no cluster went to is looked for in finer clusterings of the same neighbor graph
     (resolutions 2, 4 and 8, clusters down to 10 cells). A fine cluster goes to it when it scores best for it (as
-    above) and its cells really show its markers: one positive marker detected in at least 25% of them and 3 times as
-    often as in the parent's cells (or, a common marker, in 40% and 1.5 times as often), no positive marker rarer than
-    in the parent's cells, no negative marker raised.</li>
+    above) and its cells really show its markers: at least two of its positive markers (and at least half of them)
+    raised, each detected in at least 25% of them and 3 times as often as in the parent's cells (or, a common marker,
+    in 40% and 1.5 times as often), no positive marker rarer than in the parent's cells, no negative marker raised. A
+    type with one positive marker is looked for only in single cells (below): one raised marker took Kit+ crypt
+    epithelium as ICC and STMN2+ fibroblasts as neurons. Add a second marker to such a type to have it found.</li>
   <li>Cells too few or too scattered to form a cluster (Paneth cells among stem cells, ICC between muscle cells): a
     type with one positive marker gets the cells with 3 or more of its transcripts, when that gene is detected in at
     most 5% of the parent's cells; a type with several gets the cells with 2 or more transcripts of each of two of
@@ -5262,7 +5264,12 @@ checksums of its steps (PCA, neighbors, first clusters, labels) to compare runs.
     without the model: which of the list's marker genes (of the types and the levels above them) the cell has and
     has not, compared with how often each is detected in the cells the marker step gave each type, times the type's
     share of cells (so one stray transcript does not make a cell a rare type). Only types the marker step found are
-    candidates; their confidence says how sure. A cell with none of the marker genes detected stays Unassigned.</li>
+    candidates; their confidence says how sure. A marker's chance to be detected is scaled to the cell's transcripts
+    (1 − (1 − p)^(cell's transcripts / the type's mean)), so a cell of few transcripts is not drawn to a type whose
+    markers are seldom detected.</li>
+  <li><b>Low quality</b>: a cell whose marker genes do not say what it is (none detected, or its best type is less
+    than 3 times as likely as a cell of no type with the same transcripts: Bayes factor below 3) is labeled Low quality
+    instead of being typed by force (annotations made since 0.2.57; before, Unassigned).</li>
   <li>Then their neighbors: in rounds, each of these cells adds to its marker-gene score the log of the share of each
     type among its 10 nearest cells (their labels of the round before), until nothing changes or a cell only flips
     between two types (at most 10 rounds). The cells the marker step typed are not changed by their neighbors: on

@@ -168,7 +168,8 @@ class Session:
             self.lineage_of_type = self.scheme["top"]
             self.type_groups = {k: [t for t in v if t in self.types]
                                 for k, v in markers.descendants(self.scheme["tree"]).items()}
-            self.lineages = [n["name"] for n in self.scheme["tree"]] + [markers.UNASSIGNED]
+            self.lineages = [n["name"] for n in self.scheme["tree"]] + [markers.UNASSIGNED] + \
+                ([markers.LOW_QUALITY] if markers.LOW_QUALITY in self.types else [])
         elif self.scheme["kind"] in ("scref", "existing", "none"):
             # cell types are the labels of a single-cell reference or of a loaded annotation; an optional group
             # (lineage) column gives their lineages
@@ -251,7 +252,10 @@ class Session:
                       "nodes": parsed["types"], "leaf_types": True,
                       "parent": parsed["parent"], "top": parsed["top"],
                       "resolution": markers.AUTO if resolution in (None, "", markers.AUTO) else float(resolution),
-                      "knn": knn_mode(knn), "neighbors": True, "spillover": bool(spillover)}
+                      "knn": knn_mode(knn), "neighbors": True, "spillover": bool(spillover), "low_quality": True}
+            scheme["types"] = scheme["types"] + [markers.LOW_QUALITY]  # (see markers.LOW_QUALITY)
+            scheme["top"] = dict(scheme["top"], **{markers.LOW_QUALITY: markers.LOW_QUALITY})
+            scheme["parent"] = dict(scheme["parent"], **{markers.LOW_QUALITY: None})
         elif method == "scref":
             from . import scref
             ref = dict(reference or {})
@@ -784,7 +788,7 @@ class Session:
         have = set(np.unique(r["pred"]).tolist())
         why = {x["type"]: x for x in (self.marker_result(r["state"]).get("not_found") or [])}
         return [why.get(t, {"type": t, "reason": "the expression model gave it no cell"})
-                for i, t in enumerate(self.types) if i not in have and t != markers.UNASSIGNED]
+                for i, t in enumerate(self.types) if i not in have and t not in markers.NO_TYPE]
 
     def diff(self, a, b):
         ra, rb = self.result(a), self.result(b)

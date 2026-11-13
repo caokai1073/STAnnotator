@@ -85,6 +85,35 @@ try:
     new_rare = {r["assigned"] for r in res2["records"] if r.get("rare") and r["parent"] is None and r["id"] not in before}
     assert not (new_rare & assigned_elsewhere), f"re-clustering looked for types found elsewhere: {new_rare & assigned_elsewhere}"
     print(f"re-clustering {rec['id']} ({rec['assigned']}): no rare search for the level's other types")
+
+    # cells of few transcripts are not drawn to a low-quality type whose markers are seldom detected (a 790,000-cell
+    # Xenium section gave 59,000 of them to such a "Mast cells" cluster): detection scaled to each cell's depth
+    rng = np.random.default_rng(0)
+    T, K = 6, 8
+    g = [f"g{t}_{k}" for t in range(T) for k in range(K)] + [f"m{k}" for k in range(4)]
+    tr = markers.parse("\n".join(f"T{t}: " + " ".join(f"g{t}_{k}+" for k in range(K)) for t in range(T))
+                       + "\nMast: " + " ".join(f"m{k}+" for k in range(4)), g)["tree"]
+    tys = [f"T{t}" for t in range(T)] + ["Mast", markers.UNASSIGNED]
+    def make(n, depth, own=None, p_own=0.5, p_bg=0.02, mast=0.0):
+        P = np.full((n, len(g)), p_bg * depth / 400)
+        if own is not None:
+            P[:, own * K:(own + 1) * K] = p_own
+        P[:, T * K:] = mast if mast else p_bg * depth / 400
+        return rng.binomial(1, np.clip(P, 0, 1)) * 1.0, np.full(n, depth)
+    blocks, lab_, dep, truth = [], [], [], []
+    for t in range(T):
+        x, d = make(1500, 400, t); blocks.append(x); lab_ += [t] * 1500; dep.append(d)
+    x, d = make(3000, 60, None, mast=0.09); blocks.append(x); lab_ += [T] * 3000; dep.append(d)
+    for t in range(T):
+        x, d = make(500, 60, t, p_own=0.12, p_bg=0.0); keep = x.sum(1) > 0
+        blocks.append(x[keep]); dep.append(d[keep]); lab_ += [-1] * int(keep.sum()); truth += [t] * int(keep.sum())
+    X = np.vstack(blocks); dep = np.concatenate(dep)
+    X = sp.csr_matrix(np.hstack([X, (dep - X.sum(1))[:, None]]))
+    rows = np.where(np.array(lab_) == -1)[0]
+    _, best = markers.marker_assign(X, g + ["filler"], tr, tys, rows, np.array(lab_))
+    right, mast = np.mean(best == np.array(truth)), np.mean(best == T)
+    assert mast < 0.05 and right > 0.9, (right, mast)
+    print(f"low-depth cells: {right:.0%} to their own type, {mast:.0%} to the low-quality type")
     print("ok")
 finally:
     shutil.rmtree(HOME, ignore_errors=True)

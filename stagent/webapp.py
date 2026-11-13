@@ -183,7 +183,7 @@ def lineage_hues(s: Session):
     """Hue range per lineage: fixed for the reference taxonomy, evenly spread for a user's marker tree."""
     if s.scheme["kind"] == "reference":
         return dict(LINEAGE_HUES)
-    lins = [l for l in s.lineages if l not in (markers.UNASSIGNED, NOT_ANNOTATED)]  # these stay gray
+    lins = [l for l in s.lineages if l not in (*markers.NO_TYPE, NOT_ANNOTATED)]  # these stay gray
     step = 1.0 / max(len(lins), 1)
     return {l: (i * step + 0.1 * step, i * step + 0.8 * step) for i, l in enumerate(lins)}
 
@@ -409,7 +409,7 @@ def legend_for(s: Session, version, mode):
     r = s.result(version)
     lin_of = s.lineage_of_type
     counts = np.bincount(r["pred"], minlength=len(s.types))
-    order = list(lineage_hues(s)) + [markers.UNASSIGNED]
+    order = list(lineage_hues(s)) + list(markers.NO_TYPE)
     if mode == "type":
         pal = type_palette(s)
         items = [{"key": t, "label": t, "color": pal[t], "count": int(counts[i]), "group": lineage_label(s, lin_of.get(t, t))}
@@ -2323,15 +2323,29 @@ async def api_constraint_delete(req: Request):
 
 
 DATA_JOB = "datafolder"
-# not copied: made again when needed (cache, the agent's workspaces, which name the old folder), unfinished imports,
-# and the running app's own state (which viewer, which port, which agent)
-SKIP_COPY = ("cache", "importing", "viewer.json", "viewer_request.json", "viewer_selection.json", "mcp_seen.json",
-             "remote_viewer.json", "chat_mcp.json")
+# copied: the app's own data only (a data folder can be a whole drive, e.g. E:\, with other programs' folders in it).
+# Not copied: what is made again when needed (cache, converted files, the agent's workspaces, which name the old
+# folder), unfinished imports, logs and the running app's own state (which viewer, which port, which agent).
+COPY_ITEMS = ("samples", "sessions", "projects", "marker_lists", "priors", "proposals", "trash",
+              "settings.json", "timings.json", "remote.json", "agent_calls.jsonl")
 
 
 def _folder_items(home):
-    return [p for p in sorted(Path(home).iterdir()) if p.name not in SKIP_COPY and not p.name.startswith("claude_workspace")
-            and not p.name.endswith(".log")] if Path(home).exists() else []
+    return [Path(home) / n for n in COPY_ITEMS if (Path(home) / n).exists()] if Path(home).exists() else []
+
+
+def _size(p):
+    """Bytes under p; files that cannot be read are left out (not a reason to fail)."""
+    if p.is_file():
+        return p.stat().st_size
+    total = 0
+    for root, _dirs, files in os.walk(p, onerror=lambda e: None):
+        for f in files:
+            try:
+                total += os.path.getsize(os.path.join(root, f))
+            except OSError:
+                pass
+    return total
 
 
 async def api_data_folder(req: Request):
@@ -2364,7 +2378,7 @@ async def api_data_folder(req: Request):
         config.write_settings(data_folder=str(new))
         return _json({"data_folder_next": str(new), "has_data": has_data, "restart": True})
     items = _folder_items(cur)
-    total = sum(f.stat().st_size for p in items for f in ([p] if p.is_file() else p.rglob("*")) if f.is_file()) or 1
+    total = await asyncio.to_thread(lambda: sum(_size(p) for p in items)) or 1  # (off the server's request loop)
     JOBS[DATA_JOB] = {"stage": "copying", "progress": 0.0, "done": False, "error": None}
 
     def work():

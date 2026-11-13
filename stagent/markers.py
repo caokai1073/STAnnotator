@@ -28,6 +28,14 @@ import difflib, re
 import numpy as np, scipy.sparse as sp
 
 UNASSIGNED = "Unassigned"
+# Since 0.2.57 (annotations whose scheme has "low_quality"): the cells the marker step could not type whose marker genes
+# do not say what they are (none detected, or the best type's Bayes factor against a cell of no type below
+# LOW_QUALITY_BF, Jeffreys' "substantial") are labeled this, not given a type by force. On a 790,000-cell CosMx
+# section this took 12,800 "Mast cells" (CPA3 in 2.8% of them, as in any cell) and kept 4,700 (9.3%, as the Mast
+# cluster); on a MERFISH slice such cells would have been typed right in 57% of cases (lineage).
+LOW_QUALITY = "Low quality"
+LOW_QUALITY_BF = 3.0
+NO_TYPE = (UNASSIGNED, LOW_QUALITY)  # labels that are not a cell type
 MIN_CELLS, N_PCS, N_NEIGHBORS, MIN_CLUSTER = 60, 30, 15, 30
 RESOLUTION = "auto"  # default; a number fixes the Leiden resolution for every level
 MIN_SCORE, MIN_MARGIN = 0.5, 0.25
@@ -1030,6 +1038,10 @@ def _leiden(g, nbr, resolution, seed, min_cluster=None):
 # mouse colon MERFISH slice lineage agreement 0.785 -> 0.816 and 2,600 more cells typed; on three human colon Xenium
 # sections (SCP2927) about the same (one section -0.9 points agreement, +1.5 macro-F1).
 SPILL_FRACTION = 0.1
+# RARE_STRICT: a fine cluster becomes a rare type only when at least two of the type's positive markers (and at least
+# half of them) are raised in it; a type with one positive marker is looked for only in single cells. One raised
+# marker took Kit+ crypt epithelium as ICC (866 cells, none right) and STMN2+ fibroblasts as neurons (805, none).
+RARE_STRICT = True
 SPILL_NEIGHBORS = 6
 
 
@@ -1075,6 +1087,18 @@ def spill_detected(counts, xy, group=None, block=50000):
     return D
 
 
+def _spill_marker_columns(counts, spill):
+    """The marker step's detection matrix with spillover left out, computed on the marker genes' columns only
+    (spill["cols"]; the step reads no other column, and spillover is per gene, so it is the same as on every column,
+    in a fraction of the time: 45 s -> about 2 s for 790,000 cells x 6,175 genes); the other columns stay empty."""
+    cols = spill.get("cols")
+    if cols is None:
+        return spill_detected(counts, spill["xy"], spill.get("group"))
+    cols = np.asarray(sorted(cols), np.int64)
+    D = spill_detected(sp.csr_matrix(counts)[:, cols], spill["xy"], spill.get("group"))
+    return sp.csr_matrix((D.data, cols[D.indices], D.indptr), shape=counts.shape)
+
+
 def _detected(counts):
     """Cells x genes, 1.0 where the gene is detected (count > 0), float32. A counts matrix in canonical form without
     stored zeros (as samples are read) shares its index arrays (no copy of them: a CosMx 6K or Visium HD matrix is
@@ -1099,7 +1123,7 @@ class _Annotator:
         with timing.step("prepare", counts.shape[0] / 1e6):
             counts = sp.csr_matrix(counts)
             self.Xn = lognorm(counts)
-            self.det = spill_detected(counts, spill["xy"], spill.get("group")) if spill else _detected(counts)
+            self.det = _spill_marker_columns(counts, spill) if spill else _detected(counts)
             self.counts = counts  # (the rare-type search reads transcript counts of a few marker genes)
         self.knn_mode = knn_mode
         self.gi = {g: i for i, g in enumerate(panel)}
@@ -1297,7 +1321,9 @@ class _Annotator:
                               | ((dp[k] >= RARE_COMMON_DET) & (dp[k] >= RARE_COMMON_FOLD * dp[-1])))  # common one, raised
                     not_less = dp[k] >= 0.8 * dp[-1]
                     okn = dn[k] <= np.maximum(1.5 * dn[-1], dn[-1] + 0.05)
-                    good = bool(pos) and bool(strong.any()) and bool(not_less.all()) and bool(okn.all())
+                    need = max(2, -(-len(pos) // 2)) if RARE_STRICT and len(pos) > 1 else 1  # (see RARE_STRICT)
+                    good = (bool(pos) and int(strong.sum()) >= need and bool(not_less.all()) and bool(okn.all())
+                            and not (RARE_STRICT and len(pos) == 1))
                     tried.setdefault(ch["name"], []).append(
                         {"resolution": rr, "n_cells": int(len(rows[k])), "accepted": good,
                          "positive": {"|".join(m["genes"]): [round(float(dp[k, i]), 3), round(float(dp[-1, i]), 3)]
@@ -1362,14 +1388,22 @@ def training_labels(res, types):
 ASSIGN_ALL = True
 
 
-def marker_assign(counts, panel, tree, types, rows, train, det=None, spill_xy=None):
+# marker_assign: a marker's detection probability scaled to the cell's transcripts, 1 - (1 - p)^(depth / type depth):
+# without it, a cell of few transcripts (nothing detected) matched the type whose markers are least often detected
+# (a low-quality "Mast cells" cluster took 59,000 such cells of a 790,000-cell Xenium section)
+DEPTH_ADJUST = True
+
+
+def marker_assign(counts, panel, tree, types, rows, train, det=None, spill_xy=None, evidence=False):
     """The cell types of the cells rows (of counts, cells x genes of panel) from their marker genes alone, no trained
     model: which of the list's marker genes (of the types and the levels above them) the cell has (detected or not), compared with how often each is detected
     in the cells the marker step gave each type (train: type index per cell, -1 none), times the type's share of
     those cells (so one stray transcript does not make a cell a rare type). Only types the marker step gave cells to
     are candidates. Returns (log-scores as cells x types, -inf for types not candidates; the index of the best type,
     -1 where the cell has none of the list's marker genes). det: the detection matrix (cells x genes of panel) to
-    use; default count > 0; spill_xy (um): spill_detected on the marker genes."""
+    use; default count > 0; spill_xy (um): spill_detected on the marker genes. evidence: also return, per cell, the
+    log Bayes factor of its best type against a cell of no type (the detection rates of all typed cells together, at
+    the cell's depth): below log(10) the cell's marker genes do not say what it is."""
     types = list(types)
     rows = np.asarray(rows, np.int64)
     train = np.asarray(train, np.int64)
@@ -1380,7 +1414,7 @@ def marker_assign(counts, panel, tree, types, rows, train, det=None, spill_xy=No
                     for m in _find(tree, a)["markers"] for g in m["genes"] if g in gi})
     S = np.full((len(rows), len(types)), -np.inf)
     if not len(rows) or not cand or not genes:
-        return S, np.full(len(rows), -1, np.int64)
+        return (S, np.full(len(rows), -1, np.int64)) + ((np.zeros(len(rows)),) if evidence else ())
     cols = [gi[g] for g in genes]
     if det is not None:
         D = sp.csr_matrix(det)[:, cols]
@@ -1394,11 +1428,27 @@ def marker_assign(counts, panel, tree, types, rows, train, det=None, spill_xy=No
     n = np.asarray(onehot.sum(1)).ravel()                      # cells per type
     det = np.asarray((onehot @ D).todense())                   # cells of each type with each gene detected
     Du = D[rows].toarray()
+    depth = np.asarray(sp.csr_matrix(counts).sum(1), np.float64).ravel()  # transcripts per cell
+    tdepth = np.asarray(onehot @ depth).ravel() / np.maximum(n, 1)      # their mean in each type's cells
+
+    def loglik(p, ref_depth):
+        if DEPTH_ADJUST:  # a cell with fewer transcripts than the type's cells detects each marker less often
+            r = np.clip(depth[rows] / max(ref_depth, 1.0), 0.02, 20.0)[:, None]
+            l0 = r * np.log1p(-p)[None, :]                              # log P(not detected) at this depth
+            l1 = np.log(-np.expm1(np.minimum(l0, -1e-12)))               # log P(detected)
+            return (Du * l1 + (1 - Du) * l0).sum(1)
+        return Du @ np.log(p) + (1 - Du) @ np.log(1 - p)
+    L = np.full((len(rows), len(types)), -np.inf)
     for j in cand:
-        p = (det[j] + 1) / (n[j] + 2)
-        S[:, j] = Du @ np.log(p) + (1 - Du) @ np.log(1 - p) + np.log(n[j] / n[cand].sum())
+        L[:, j] = loglik((det[j] + 1) / (n[j] + 2), tdepth[j])
+        S[:, j] = L[:, j] + np.log(n[j] / n[cand].sum())
     best = np.where(Du.any(1), S.argmax(1), -1)
-    return S, best
+    if not evidence:
+        return S, best
+    nt = n[cand].sum()  # a cell of no particular type: the detection of all typed cells together
+    null = loglik((det[cand].sum(0) + 1) / (nt + 2), float(tdepth[cand] @ n[cand] / nt))
+    ev = np.where(best >= 0, L[np.arange(len(rows)), np.maximum(best, 0)] - null, 0.0)
+    return S, best, ev
 
 
 # Neighbors (on for annotations made since 0.2.57): the cells the marker step could not type get their type in rounds:
@@ -1473,15 +1523,18 @@ def restrict(logp, res, tree, types, corrected=(), counts=None, panel=None, xy=N
     if ASSIGN_ALL and counts is not None and UNASSIGNED in types:  # the cells the marker step could not type: the
         rows = np.where(lab == UNASSIGNED)[0]                        # type from their marker genes (no model)
         if len(rows):
-            S, best = marker_assign(counts, panel, tree, types, rows, training_labels(res, types),
-                                    spill_xy=xy if spill and xy is not None else None)
-            u = types.index(UNASSIGNED)
-            lp[:, u] = np.float32(-1e4)  # Unassigned only for the cells with no marker gene of the list
+            S, best, ev = marker_assign(counts, panel, tree, types, rows, training_labels(res, types),
+                                        spill_xy=xy if spill and xy is not None else None, evidence=True)
+            u = types.index(LOW_QUALITY) if LOW_QUALITY in types else types.index(UNASSIGNED)
+            lp[:, types.index(UNASSIGNED)] = np.float32(-1e4)
+            lp[:, u] = np.float32(-1e4)  # (the no-type label) only for the cells their marker genes do not type
             lp[rows] = np.float32(-1e4)
             has = best >= 0
+            if LOW_QUALITY in types:  # too little marker evidence to say what they are: Low quality
+                has &= ev >= np.log(LOW_QUALITY_BF)
             sc = S[has] - S[has].max(1, keepdims=True)  # the scores as probabilities: the confidence of the pick
             lp[rows[has]] = np.where(np.isfinite(sc), sc, np.float32(-1e4))
-            lp[rows[~has], u] = 0.0  # no marker of the list detected: Unassigned
+            lp[rows[~has], u] = 0.0  # no marker of the list detected (or, with Low quality, too little evidence)
             if neighbors and xy is not None and has.any():
                 neighbor_rounds(lp, rows[has], xy)
     lp -= lp.max(1, keepdims=True)
@@ -1497,7 +1550,7 @@ def annotate(counts, panel, tree, progress=None, seed=0, resolution=AUTO, knn=KN
     "members" (cluster id -> cell rows), "records" (one per cluster), "nodes" (resolution chosen per level)}.
     knn: the neighbor search, "exact" or "approx" (see knn). spill: {"xy" (um), "group" (slice per cell, or None)}
     to leave out transcripts spilled over from neighboring cells (spill_detected), or None."""
-    A = _Annotator(counts, panel, progress, seed, knn, spill)
+    A = _Annotator(counts, panel, progress, seed, knn, dict(spill, cols=gene_columns(tree, panel)) if spill else None)
     A.total = _n_levels(tree)
     res = {"labels": np.full(A.n, UNASSIGNED, dtype=object), "cluster_of": np.full(A.n, "", dtype=object),
            "members": {}, "records": [], "nodes": []}
@@ -1581,7 +1634,7 @@ def rerun(res, counts, panel, tree, target, resolution=AUTO, prefix="", progress
         kept.append(r)
     out["records"] = kept
     out["labels"][idx] = parent or UNASSIGNED
-    A = _Annotator(counts, panel, progress, seed, knn, spill)
+    A = _Annotator(counts, panel, progress, seed, knn, dict(spill, cols=gene_columns(tree, panel)) if spill else None)
     A.total = _n_levels(children) if children else 1
     # the types the cells outside the re-clustered ones already have are not rare types to look for in them
     A.found_elsewhere = set(np.unique(out["labels"][~inside]).tolist())

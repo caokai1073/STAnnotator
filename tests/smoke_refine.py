@@ -1,6 +1,6 @@
 """Refining a marker annotation round by round (stagent/iterate.py), on the bundled mouse colon example:
-1. every cell the marker step could not type gets a type from its marker genes (markers.ASSIGN_ALL, no model): only
-   cells with none of the marker genes detected stay Unassigned;
+1. every cell the marker step could not type gets a type from its marker genes (markers.ASSIGN_ALL, no model), or
+   Low quality when its marker genes do not say what it is (none detected, or a Bayes factor below 3);
 2. a round's report: organ, types, weak evidence, marker flags, types not found;
 3. the agent's proposal (edits checked against the list), the user's message, some edits accepted: the next marker
    list has exactly those edits; a bad edit is refused;
@@ -25,21 +25,22 @@ try:
     text = (EX / "mouse_colon_merfish_markers.txt").read_text()
     s = Session.create("M", method="markers", markers_text=text, knn="exact")
     lab = np.asarray(s.labels())
-    left = np.where(lab == markers.UNASSIGNED)[0]
+    assert not (lab == markers.UNASSIGNED).any(), "a new annotation uses Low quality, not Unassigned"
+    left = np.where(lab == markers.LOW_QUALITY)[0]
     res = s.marker_result()
     untyped = np.where(np.asarray(res["labels"]) == markers.UNASSIGNED)[0]
-    assert set(left) <= set(untyped), "a cell typed by the marker step became Unassigned"
-    tree = markers.parse(text, s.panel)["tree"]
-    found = {s.types[j] for j in np.unique(markers.training_labels(res, s.types)) if j >= 0} - {markers.UNASSIGNED}
-    genes = {g for a, below in markers.descendants(tree).items() if set(below) & found
-             for m in markers._find(tree, a)["markers"] for g in m["genes"]}
-    assert set(np.unique(lab[untyped])) - {markers.UNASSIGNED} <= found, "a type the marker step did not find got cells"
-    cols = [i for i, g in enumerate(s.panel) if g in genes]
-    det = (markers.spill_detected(s.counts, s.cells[["x", "y"]].to_numpy(float)) if s.scheme.get("spillover")
-           else s.counts)  # the detection the annotation used (spilled-over transcripts left out)
-    assert not np.asarray(det[left][:, cols].sum(1)).ravel().any(), "a cell with a marker was left Unassigned"
+    assert set(left) <= set(untyped), "a cell typed by the marker step became Low quality"
+    found = {s.types[j] for j in np.unique(markers.training_labels(res, s.types)) if j >= 0} - set(markers.NO_TYPE)
+    assert set(np.unique(lab[untyped])) - set(markers.NO_TYPE) <= found, "a type the marker step did not find got cells"
+    # Low quality: exactly the untyped cells with no marker gene detected or too little evidence (Bayes factor < 3)
+    xy = s.cells[["x", "y"]].to_numpy(float)
+    _, best, ev = markers.marker_assign(s.counts, s.panel, s._marker_tree([]), s.types, untyped,
+                                        markers.training_labels(res, s.types),
+                                        spill_xy=xy if s.scheme.get("spillover") else None, evidence=True)
+    want_lq = (best < 0) | (ev < np.log(markers.LOW_QUALITY_BF))
+    assert set(untyped[want_lq]) == set(left), "Low quality is not the cells without marker evidence"
     print(f"{len(untyped):,} cells the marker step could not type: {len(untyped) - len(left):,} got a type from "
-          f"their marker genes, {len(left):,} (no marker detected) stay Unassigned")
+          f"their marker genes, {len(left):,} are Low quality ({int((best < 0).sum()):,} with no marker detected)")
     st = iterate.start_round(s, organ="Colon")
     rep = st["rounds"][-1]["report"]
     assert rep["n_cells"] == len(lab) and rep["types"] and "weak_types" in rep and "not_found" in rep

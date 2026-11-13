@@ -245,7 +245,7 @@ def qc_overview(s, version=None):
     lut = np.array([s.lineage_of_type.get(t, t) for t in s.types], dtype=object)
     names = sorted(set(lut))
     mixed = _mixed(np.stack([P[:, lut == n].sum(1) for n in names], 1))
-    df = pd.DataFrame({"tile": key, "counts": s.cells.total_counts.to_numpy(), "unassigned": types == markers.UNASSIGNED,
+    df = pd.DataFrame({"tile": key, "counts": s.cells.total_counts.to_numpy(), "unassigned": np.isin(types, markers.NO_TYPE),
                        "low_conf": r["conf"] < 0.5, "mixed": mixed})
     agg = df.groupby("tile").agg(n=("counts", "size"), counts=("counts", "median"), unassigned=("unassigned", "mean"),
                                  low_conf=("low_conf", "mean"), mixed=("mixed", "mean"))
@@ -291,7 +291,7 @@ def fig_qc(s, version=None):
     lut = np.array([s.lineage_of_type.get(t, t) for t in s.types], dtype=object)
     mixed = _mixed(np.stack([P[:, lut == n].sum(1) for n in sorted(set(lut))], 1))
     vals = {"median transcripts per cell": s.cells.total_counts.to_numpy().astype(float),
-            "cells per tile": np.ones(len(types)), "Unassigned share": (types == markers.UNASSIGNED).astype(float),
+            "cells per tile": np.ones(len(types)), "Unassigned share": np.isin(types, markers.NO_TYPE).astype(float),
             "mixed-lineage share": mixed.astype(float)}
     fig, axs = plt.subplots(2, 2, figsize=(12, 12 * g["ny"] / max(g["nx"], 1) * 0.55 + 1.5))
     n = np.zeros((g["ny"], g["nx"]))
