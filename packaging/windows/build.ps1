@@ -70,7 +70,21 @@ $version = (Select-String -Path stagent\__init__.py -Pattern '__version__ = "([^
 $zip = Join-Path $root "dist\STAnnotator-windows-$version.zip"
 if (Test-Path $zip) { Remove-Item $zip }
 Write-Host "== zip"
-Compress-Archive -Path $app -DestinationPath $zip -CompressionLevel Optimal
+# the checks above just ran stagent.exe: wait until no copy of it runs, and retry while Windows (or its virus scan)
+# still holds the file (0.2.57's first build failed here: "being used by another process")
+Get-Process -Name stagent -ErrorAction SilentlyContinue | Wait-Process -Timeout 120 -ErrorAction SilentlyContinue
+$zipped = $false
+for ($i = 1; $i -le 6 -and -not $zipped; $i++) {
+    try {
+        if (Test-Path $zip) { Remove-Item $zip }
+        Compress-Archive -Path $app -DestinationPath $zip -CompressionLevel Optimal -ErrorAction Stop
+        $zipped = $true
+    } catch {
+        Write-Host "zip attempt $i failed: $($_.Exception.Message); trying again in 10 s"
+        Start-Sleep -Seconds 10
+    }
+}
+if (-not $zipped) { throw "the app folder could not be zipped (a file stayed in use)" }
 $size = "{0:N0} MB" -f ((Get-ChildItem $app -Recurse | Measure-Object Length -Sum).Sum / 1MB)
 # the installer (Inno Setup 6): dist\STAnnotator-Setup-<version>.exe, which asks where to install and where to keep the data
 function Find-Iscc {
