@@ -217,7 +217,7 @@ section.band { padding-block: clamp(64px, 9vw, 112px) 0; }
 .btnchip { display: inline-block; font: 500 var(--s-0)/1 var(--f-body); padding: 5px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); white-space: nowrap; }
 
 /* under the hood: who does what, by color. hematoxylin = the app computes, eosin = the agent, teal = you */
-.inside { --c-prog: var(--hema); --c-agent: var(--eosin); --c-you: var(--accent); }
+.inside, #priors { --c-prog: var(--hema); --c-agent: var(--eosin); --c-you: var(--accent); }
 .legend { margin-top: 20px; display: flex; flex-wrap: wrap; gap: 8px; }
 .legend span { display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px; border-radius: 99px; font-size: var(--s-0); border: 1px solid var(--line); background: var(--panel); }
 .legend i { width: 10px; height: 10px; border-radius: 50%; }
@@ -237,8 +237,8 @@ section.band { padding-block: clamp(64px, 9vw, 112px) 0; }
 .diag .ar { stroke: var(--muted); stroke-width: 1.6; fill: none; }
 .diag .ara { stroke: var(--c-agent); stroke-width: 1.6; fill: none; stroke-dasharray: 5 4; }
 .diag .hd { fill: var(--muted); } .diag .hda { fill: var(--c-agent); }
-.inside h3.sub { font-size: var(--s-3); line-height: 1.2; margin-top: 48px; }
-.inside .subintro { color: var(--muted); max-width: 64ch; margin-top: 8px; }
+h3.sub { font-size: var(--s-3); line-height: 1.2; margin-top: 48px; }
+.subintro { color: var(--muted); max-width: 64ch; margin-top: 8px; }
 .how { list-style: none; margin: 20px 0 0; padding: 0; display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
 .how li { background: var(--panel); padding: 16px 20px; display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 6px 20px; }
 .how b { font-family: var(--f-display); font-size: var(--s-2); }
@@ -263,7 +263,7 @@ section.band { padding-block: clamp(64px, 9vw, 112px) 0; }
 .pb div span:last-child { font-family: var(--f-mono); font-variant-numeric: tabular-nums; text-align: right; }
 .verdict { font-size: var(--s-1); padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, var(--c-you) 12%, var(--panel)); }
 .verdict.kept { background: color-mix(in srgb, var(--c-agent) 12%, var(--panel)); }
-.inside .note { margin-top: 10px; font-size: var(--s-0); color: var(--muted); }
+.subnote { margin-top: 10px; font-size: var(--s-0); color: var(--muted); }
 
 /* analyses */
 .tools { margin-top: 32px; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 36px 40px; }
@@ -498,6 +498,52 @@ footer .counted { flex-basis: 100%; margin: 0; }
             </figure>
           </div>
         </div>
+        <h3 class="sub">How a rule meets the expression</h3>
+        <p class="subintro">A rule has a condition (one of the kinds above), a way it acts and a strength.</p>
+        <div class="facts">
+          <div class="fact"><b>only · exclude · enrich</b><p>The types belong only where the condition holds, never where it
+            holds, or more often where it holds.</p></div>
+          <div class="fact"><b>Strength</b><p>strong ×0.01 · moderate ×0.1 · weak ×0.5 <br>(enrich: ×10 · ×3 · ×1.5)</p></div>
+        </div>
+        <div class="formula">probability of each type in a cell ∝ expression model × the weights of the rules that apply there</div>
+        <p class="subintro">A rule weighs in; it does not overwrite. Where the expression is unsure, the rule changes the
+          label. Where the expression is very sure, the cell keeps its type and is listed as a <b>conflict</b> for you to
+          look at, never changed quietly.</p>
+        <div class="wexs">
+          <div class="wex">
+            <h4>The expression is unsure: the rule decides</h4>
+            <p class="ctx">A cell in the submucosa. Rule: goblet cells only in the mucosa, strong (×0.01).</p>
+            <div class="pb"><span class="h">Before</span>
+              <div><span>Goblet</span><s><i style="width:55%"></i></s><span>0.55</span></div>
+              <div><span>Fibroblast</span><s><i style="width:35%"></i></s><span>0.35</span></div>
+              <div><span>Smooth m.</span><s><i style="width:10%"></i></s><span>0.10</span></div>
+            </div>
+            <div class="pb after"><span class="h">After</span>
+              <div><span>Goblet</span><s><i style="width:1.2%"></i></s><span>0.01</span></div>
+              <div><span>Fibroblast</span><s><i style="width:76.8%"></i></s><span>0.77</span></div>
+              <div><span>Smooth m.</span><s><i style="width:22%"></i></s><span>0.22</span></div>
+            </div>
+            <p class="verdict">Labeled Fibroblast (the prior overrode the expression).</p>
+          </div>
+          <div class="wex">
+            <h4>The expression is sure: it keeps its type</h4>
+            <p class="ctx">Same place, same rule, but the cell's goblet markers are unmistakable.</p>
+            <div class="pb"><span class="h">Before</span>
+              <div><span>Goblet</span><s><i style="width:99.5%"></i></s><span>0.995</span></div>
+              <div><span>Fibroblast</span><s><i style="width:0.4%"></i></s><span>0.004</span></div>
+              <div><span>Smooth m.</span><s><i style="width:0.1%"></i></s><span>0.001</span></div>
+            </div>
+            <div class="pb after"><span class="h">After</span>
+              <div><span>Goblet</span><s><i style="width:66.6%"></i></s><span>0.67</span></div>
+              <div><span>Fibroblast</span><s><i style="width:26.8%"></i></s><span>0.27</span></div>
+              <div><span>Smooth m.</span><s><i style="width:6.7%"></i></s><span>0.07</span></div>
+            </div>
+            <p class="verdict kept">Still Goblet, listed as a conflict: is the rule wrong here (displaced epithelium in diseased
+              tissue), or is the cell?</p>
+          </div>
+        </div>
+        <p class="subnote">Illustrative numbers, computed with the formula above. Conflicts are also sorted by where they lie:
+          at a region's border, in a cluster, or alone (often a tissue edge or a segmentation problem).</p>
       </div>
     </div>
   </section>
@@ -605,11 +651,6 @@ footer .counted { flex-basis: 100%; margin: 0; }
                   <li><span class="btnchip">Show on map</span> colors the tissue by the gene or the signal</li>
                   <li>Review of Compare and Signaling explains the results you ran and names the caveats</li>
                 </ul></div>
-              <div class="result">
-                <h4>Who computes what</h4>
-                <p>The agent proposes the hypothesis and the test. The app's tools compute the result. Nothing in your
-                  data changes until you accept a change.</p>
-              </div>
             </div>
           </article>
 
@@ -642,8 +683,7 @@ footer .counted { flex-basis: 100%; margin: 0; }
       <div class="side"><p class="eyebrow">Under the hood</p></div>
       <div>
         <h2>The app computes, the agent reads and proposes, you decide</h2>
-        <p class="intro">Every number comes from the app's own code, and the same data and settings give the same
-          result. The agent reads those results, looks at the figures and proposes changes; it never computes a number
+        <p class="intro">Every number comes from the app's own code. The agent reads those results, looks at the figures and proposes changes; it never computes a number
           or invents a cell type. What changes is up to you.</p>
         <div class="legend" aria-label="Legend">
           <span class="lp"><i></i>The app: computes</span>
@@ -737,8 +777,7 @@ footer .counted { flex-basis: 100%; margin: 0; }
         </ol>
 
         <h3 class="sub">How a request reaches the agent</h3>
-        <p class="subintro">The agent is your own Claude Code; the app has no chat of its own and never signs you in.
-          The app runs an MCP server that offers about 100 of its functions to Claude as tools.</p>
+        <p class="subintro">The app runs an MCP server that offers about 100 of its functions to Claude as tools.</p>
         <div class="diag">
           <svg viewBox="0 0 960 270" role="img" aria-label="You, the app, Claude Code, the app's tools and your data, with requests going right and proposals coming back">
             <defs>
@@ -794,12 +833,8 @@ footer .counted { flex-basis: 100%; margin: 0; }
           <div class="fact"><b>What it sees</b><p>The facts the tools return: cells per type, how often each marker is detected
             in each type, types not found and why, registration offsets, conflicts; and the figures they draw (the H&amp;E,
             cells on it, the UMAP).</p></div>
-          <div class="fact"><b>What it does</b><p>Drafts or edits the marker list, turns a sentence into a rule and previews
-            what it would change, picks an alignment, outlines regions on the H&amp;E, writes reports.</p></div>
           <div class="fact"><b>What it does not</b><p>Compute numbers, invent types or values, or change your annotation
             behind your back. In <b>Auto</b> mode its changes apply as they come, and Undo takes one back.</p></div>
-          <div class="fact"><b>Priors, with care</b><p>Diseased tissue breaks textbook rules, so the agent does not force an
-            organ's healthy-tissue priors on your data; you keep or remove each one.</p></div>
         </div>
 
         <h3 class="sub">Refine cell types, round by round</h3>
@@ -853,54 +888,6 @@ footer .counted { flex-basis: 100%; margin: 0; }
             type. A small edit can shift many types, so every round shows the cell counts that changed.</p>
         </div>
 
-        <h3 class="sub">How a prior meets the expression</h3>
-        <p class="subintro">Priors come from three places: the organ's literature priors (where each type lies), the regions
-          you draw, and what you say. A rule has a condition (region, depth or neighborhood, see above), a way it acts and
-          a strength.</p>
-        <div class="facts">
-          <div class="fact"><b>only · exclude · enrich</b><p>The types belong only where the condition holds, never where it
-            holds, or more often where it holds.</p></div>
-          <div class="fact"><b>Strength</b><p>strong ×0.01 · moderate ×0.1 · weak ×0.5 <br>(enrich: ×10 · ×3 · ×1.5)</p></div>
-        </div>
-        <div class="formula">probability of each type in a cell ∝ expression model × the weights of the rules that apply there</div>
-        <p class="subintro">A rule weighs in; it does not overwrite. Where the expression is unsure, the rule changes the
-          label. Where the expression is very sure, the cell keeps its type and is listed as a <b>conflict</b> for you to
-          look at, never changed quietly.</p>
-        <div class="wexs">
-          <div class="wex">
-            <h4>The expression is unsure: the rule decides</h4>
-            <p class="ctx">A cell in the submucosa. Rule: goblet cells only in the mucosa, strong (×0.01).</p>
-            <div class="pb"><span class="h">Before</span>
-              <div><span>Goblet</span><s><i style="width:55%"></i></s><span>0.55</span></div>
-              <div><span>Fibroblast</span><s><i style="width:35%"></i></s><span>0.35</span></div>
-              <div><span>Smooth m.</span><s><i style="width:10%"></i></s><span>0.10</span></div>
-            </div>
-            <div class="pb after"><span class="h">After</span>
-              <div><span>Goblet</span><s><i style="width:1.2%"></i></s><span>0.01</span></div>
-              <div><span>Fibroblast</span><s><i style="width:76.8%"></i></s><span>0.77</span></div>
-              <div><span>Smooth m.</span><s><i style="width:22%"></i></s><span>0.22</span></div>
-            </div>
-            <p class="verdict">Labeled Fibroblast (the prior overrode the expression).</p>
-          </div>
-          <div class="wex">
-            <h4>The expression is sure: it keeps its type</h4>
-            <p class="ctx">Same place, same rule, but the cell's goblet markers are unmistakable.</p>
-            <div class="pb"><span class="h">Before</span>
-              <div><span>Goblet</span><s><i style="width:99.5%"></i></s><span>0.995</span></div>
-              <div><span>Fibroblast</span><s><i style="width:0.4%"></i></s><span>0.004</span></div>
-              <div><span>Smooth m.</span><s><i style="width:0.1%"></i></s><span>0.001</span></div>
-            </div>
-            <div class="pb after"><span class="h">After</span>
-              <div><span>Goblet</span><s><i style="width:66.6%"></i></s><span>0.67</span></div>
-              <div><span>Fibroblast</span><s><i style="width:26.8%"></i></s><span>0.27</span></div>
-              <div><span>Smooth m.</span><s><i style="width:6.7%"></i></s><span>0.07</span></div>
-            </div>
-            <p class="verdict kept">Still Goblet, listed as a conflict: is the rule wrong here (displaced epithelium in diseased
-              tissue), or is the cell?</p>
-          </div>
-        </div>
-        <p class="note">Illustrative numbers, computed with the formula above. Conflicts are also sorted by where they lie:
-          at a region's border, in a cluster, or alone (often a tissue edge or a segmentation problem).</p>
       </div>
     </div>
   </section>
@@ -994,8 +981,7 @@ footer .counted { flex-basis: 100%; margin: 0; }
         </div>
         <p class="privacy">The agent is your own <a href="https://code.claude.com/docs/en/setup">Claude Code</a>, running with your own Claude account:
           a Pro, Max, Ultra, Team, Enterprise or Console account (the free Claude plan does not include Claude Code).
-          STAnnotator never asks you to sign in. The agent works through the app's tools, which compute every number it
-          reports. Without Claude Code, or offline, everything but the agent works.</p>
+          STAnnotator never asks you to sign in. Without Claude Code, or offline, everything but the agent works.</p>
         <p class="privacy">Besides what the agent reads into your conversation with Claude, nothing leaves your computer
           unless you choose to send it: a bug report, and, while the app is being tested and only if you agree, a usage
           report every 3 days (your conversations with the agent, its tool calls and the app's log; never expression
