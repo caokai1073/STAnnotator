@@ -1085,6 +1085,10 @@ to 98.6%.
 - The exact neighbor search takes about 9 s for 188,644 cells and under a minute for 400,000 cells on 8 CPU cores.
   The Type tab shows the estimate of the whole annotation for the sample and computer at hand.
 - A correction or a local re-clustering takes a few seconds.
+- The Leiden clusterings a level tries run at once in separate processes when the memory free allows (about 1.8 GB
+  each for 700,000 cells; the same clusters as one after the other). In your own Python scripts this happens only
+  under `if __name__ == "__main__":` with `STAGENT_LEIDEN_PARALLEL=1` (a started process imports the script again);
+  `STAGENT_LEIDEN_PARALLEL=0` turns it off.
 - The viewer draws the cells with WebGL, so panning, zooming and changing colors are immediate.
 
 ## 8. Troubleshooting

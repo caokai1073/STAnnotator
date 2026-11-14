@@ -26,6 +26,8 @@ REF = {"prepare": 0.65,         # per 10^6 cells: normalize, detection matrix
        "approx_compile": 10.0,  # once per app start: numba compiles pynndescent (less once its cache is on disk)
        "graph": 3.1,            # per 10^6 cells
        "leiden": 13.0,          # per 10^6 cells, per resolution tried
+       "leiden_parallel": 39.0, # per 10^6 cells, per round of resolutions run at once in worker processes (each also
+                                # builds the graph again, and they share the memory bandwidth: 28 s for 708,983 cells)
        "model": 430.0,          # per 10^12 training cells x genes x cell types
        "finish": 5.7}           # per 10^6 cells: the expression model on every cell, regions, priors, conflicts and
                                 # whatever else is not timed separately
@@ -256,6 +258,45 @@ def total_memory_gb():
         return None
 
 
+def available_memory_gb():
+    """Memory this computer can give now without swapping (GB), or None when it cannot be read: Linux MemAvailable,
+    Windows ullAvailPhys, macOS the free, inactive, purgeable and speculative pages of vm_stat."""
+    import os, sys
+    try:
+        if sys.platform == "win32":
+            import ctypes
+
+            class MS(ctypes.Structure):
+                _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                            ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                            ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
+                            ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
+                            ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+            m = MS(); m.dwLength = ctypes.sizeof(MS)
+            ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m))
+            return round(m.ullAvailPhys / 1e9, 2)
+        if sys.platform == "darwin":
+            import re, subprocess
+            out = subprocess.run(["vm_stat"], capture_output=True, text=True, timeout=5).stdout
+            page = int(re.search(r"page size of (\d+)", out).group(1))
+            pages = sum(int(re.search(rf"{k}:\s+(\d+)", out).group(1)) for k in
+                        ("Pages free", "Pages inactive", "Pages purgeable", "Pages speculative") if re.search(rf"{k}:\s+(\d+)", out))
+            return round(pages * page / 1e9, 2)
+        for line in open("/proc/meminfo"):
+            if line.startswith("MemAvailable:"):
+                return round(int(line.split()[1]) * 1024 / 1e9, 2)
+    except Exception:
+        pass
+    return None
+
+
+def leiden_seconds(m, n_res, r):
+    """Leiden of one level of m cells at n_res resolutions: one by one, or in rounds of worker processes."""
+    from . import markers
+    k = markers.leiden_workers(m, m * markers.EDGES_PER_CELL, n_res)
+    return r("leiden_parallel") * -(-n_res // k) * m / 1e6 if k else r("leiden") * n_res * m / 1e6
+
+
 def estimate(n, n_genes, tree, resolution="auto", knn="exact", n_types=None):
     """Seconds a marker annotation of n cells should take here: {"seconds", "steps": [[name, seconds]], "basis",
     "backend"}. n_types: the number of cell types (leaves of the tree)."""
@@ -277,7 +318,7 @@ def estimate(n, n_genes, tree, resolution="auto", knn="exact", n_types=None):
     steps = [["reading the cells", r("prepare") * n / 1e6],
              ["PCA", sum(r("pca") * m * n_genes / 1e9 for m in sizes)],
              ["neighbor graph", nb + sum(r("graph") * m / 1e6 for m in sizes)],
-             ["Leiden clustering", sum(r("leiden") * n_res * m / 1e6 for m in sizes)],
+             ["Leiden clustering", sum(leiden_seconds(m, n_res, r) for m in sizes)],
              ["expression model", r("model") * pool * n_genes * T / 1e12],
              ["expression on every cell, regions, priors, conflicts", r("finish") * n / 1e6]]
     return {"seconds": round(sum(s for _, s in steps), 1), "steps": [[k, round(s, 1)] for k, s in steps],

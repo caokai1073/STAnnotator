@@ -967,16 +967,125 @@ def _nndescent(Z, k):
 
 
 def knn_graph(dist, nbr):
-    """Weighted undirected igraph graph from kNN lists (adaptive Gaussian weights)."""
+    """Weighted undirected igraph graph from kNN lists (adaptive Gaussian weights). The edge arrays it was built
+    from are kept as the graph attribute "edges" (_leiden_many rebuilds the same graph from them in other processes)."""
     import igraph
     n, k = nbr.shape
     w = np.exp(-(dist / np.maximum(dist[:, -1], 1e-6)[:, None]) ** 2).ravel()
     A = sp.csr_matrix((w, (np.repeat(np.arange(n), k), nbr.ravel())), shape=(n, n))
     A = A.maximum(A.T).tocoo()
     m = A.row < A.col
-    g = igraph.Graph(n=n, edges=np.c_[A.row[m], A.col[m]])
-    g.es["weight"] = A.data[m]
+    src, dst, wt = A.row[m], A.col[m], A.data[m]
+    g = igraph.Graph(n=n, edges=np.c_[src, dst])
+    g.es["weight"] = wt
+    g["edges"] = (src, dst, wt)
     return g
+
+
+# Leiden at several resolutions (the candidates of a level, the rare-type search's finer ones) runs in several
+# processes at once: igraph holds Python's lock while it clusters, so threads would run one after the other. Each
+# worker rebuilds the same graph from its edge arrays (shared memory, not copied) and seeds its own random generator
+# as _leiden does, so the clusters are those of running them one by one, to the bit. Levels smaller than
+# LEIDEN_PARALLEL_MIN cells run in this process (starting a worker costs about a second). A worker needs about
+# LEIDEN_WORKER_GB[0] + LEIDEN_WORKER_GB[1] x edges of memory; there are only as many as the memory available now
+# allows (none: one by one), and never more than the cores less one.
+LEIDEN_PARALLEL = True
+LEIDEN_PARALLEL_MIN = 50_000
+LEIDEN_WORKER_GB = (0.25, 172e-9)  # measured: 1.8 GB a worker at 9.0 million edges (708,983 cells)
+EDGES_PER_CELL = 12.7  # of the neighbor graph (measured on the same; for estimates before the graph exists)
+
+
+def _shared(arrays):
+    """Copies of numpy arrays in shared memory: ([SharedMemory], [(name, shape, dtype)])."""
+    from multiprocessing import shared_memory
+    blocks, specs = [], []
+    for a in arrays:
+        a = np.ascontiguousarray(a)
+        b = shared_memory.SharedMemory(create=True, size=max(a.nbytes, 1))
+        np.ndarray(a.shape, a.dtype, buffer=b.buf)[...] = a
+        blocks.append(b)
+        specs.append((b.name, a.shape, a.dtype.str))
+    return blocks, specs
+
+
+def _leiden_worker(specs, n, resolution, seed, min_cluster):
+    """One resolution in a worker process: the graph rebuilt from the shared edge arrays, then _leiden."""
+    from multiprocessing import shared_memory
+    import igraph
+    blocks = [shared_memory.SharedMemory(name=nm) for nm, _, _ in specs]
+    try:
+        src, dst, wt, nbr = [np.ndarray(shape, np.dtype(dt), buffer=b.buf) for b, (_, shape, dt) in zip(blocks, specs)]
+        g = igraph.Graph(n=n, edges=np.c_[src, dst])
+        g.es["weight"] = wt.copy()
+        return _leiden(g, nbr.copy(), resolution, seed, min_cluster)
+    finally:
+        for b in blocks:
+            b.close()
+
+
+def _spawn_safe():
+    """Whether worker processes may be started: a started process imports the main script again, so a script that
+    calls the annotation outside `if __name__ == "__main__":` would run again in every worker. Safe are the app
+    (frozen; its entry is guarded), the stagent command (guarded), Jupyter and the interactive prompt (no script),
+    and a script that says so with STAGENT_LEIDEN_PARALLEL=1."""
+    import os, sys
+    env = os.environ.get("STAGENT_LEIDEN_PARALLEL")
+    if env in ("0", "1"):
+        return env == "1"
+    if getattr(sys, "frozen", False):
+        return True
+    main = sys.modules.get("__main__")
+    f = getattr(main, "__file__", None)
+    if not f:
+        return True
+    from pathlib import Path
+    p = Path(f)
+    return p.stem in ("stagent", "stagent-script", "celltypeagent", "entry") or \
+        (p.parent.name == "stagent" and p.stem in ("cli", "__main__"))
+
+
+def leiden_workers(n_cells, n_edges, n_res):
+    """How many worker processes Leiden at n_res resolutions gets (0: in this process, one by one)."""
+    import os
+    if not LEIDEN_PARALLEL or n_res < 2 or n_cells < LEIDEN_PARALLEL_MIN or not _spawn_safe():
+        return 0
+    from . import timing
+    cores = max(1, (os.cpu_count() or 1) - 1)
+    avail = timing.available_memory_gb()
+    per = LEIDEN_WORKER_GB[0] + LEIDEN_WORKER_GB[1] * n_edges
+    by_mem = int(0.8 * avail // per) if avail else 0
+    k = min(n_res, cores, by_mem)
+    return k if k >= 2 else 0
+
+
+def _leiden_many(g, nbr, resolutions, seed, min_cluster=None, say=None):
+    """_leiden at each resolution: the same clusters as one by one, at once in worker processes when it pays."""
+    res = list(resolutions)
+    k = leiden_workers(g.vcount(), g.ecount(), len(res)) if "edges" in g.attributes() else 0
+    if not k:
+        out = []
+        for r in res:
+            if say:
+                say(r)
+            out.append(_leiden(g, nbr, r, seed, min_cluster))
+        return out
+    import multiprocessing
+    from concurrent.futures import ProcessPoolExecutor
+    if say:
+        say(res)
+    blocks, specs = _shared([*g["edges"], np.asarray(nbr)])
+    try:
+        with ProcessPoolExecutor(max_workers=k, mp_context=multiprocessing.get_context("spawn")) as ex:
+            futs = [ex.submit(_leiden_worker, specs, g.vcount(), r, seed, min_cluster) for r in res]
+            return [f.result() for f in futs]
+    except Exception as e:  # (a worker could not start or died, e.g. out of memory): one by one here
+        print(f"Leiden in worker processes failed ({type(e).__name__}: {e}); running the resolutions one by one",
+              flush=True)
+        return [_leiden(g, nbr, r, seed, min_cluster) for r in res]
+    finally:
+        for b in blocks:
+            b.close()
+            b.unlink()
 
 
 def fingerprint(a):
@@ -1192,11 +1301,16 @@ class _Annotator:
         self.graph = (g, nbr)  # (kept for the rare-type search of this level)
         cands = RESOLUTIONS if resolution == AUTO else (float(resolution),)
         best, tried = None, {}
-        for r in cands:
-            self.say(self.done / self.total, f"Leiden on {label}, resolution {r:g}")
-            with timing.step("leiden", len(idx) / 1e6):
-                lab = _leiden(g, nbr, r, self.seed)
-                ev = self._evaluate(idx, lab, children, context)
+
+        def say(r):
+            self.say(self.done / self.total, f"Leiden on {label}, resolution {r:g}" if not isinstance(r, list) else
+                     f"Leiden on {label}, resolutions {', '.join(f'{x:g}' for x in r)} at once")
+        k = leiden_workers(g.vcount(), g.ecount(), len(cands))
+        # (the time of a level's Leiden: per resolution one by one, per round of workers at once)
+        with timing.step("leiden_parallel" if k else "leiden", len(idx) / 1e6 * (-(-len(cands) // k) if k else len(cands))):
+            labs = _leiden_many(g, nbr, cands, self.seed, say=say)
+        for r, lab in zip(cands, labs):
+            ev = self._evaluate(idx, lab, children, context)
             tried[f"{r:g}"] = round(ev["assigned_frac"], 3)
             if best is None or ev["assigned_frac"] > best[1]["assigned_frac"] + 0.01:
                 best = (r, ev, lab)
@@ -1319,11 +1433,18 @@ class _Annotator:
         g, nbr = self.graph
         label = parent or "all cells"
         tried = {}
-        for rr in [x for x in RARE_RESOLUTIONS if x > r0]:
+        finer = [x for x in RARE_RESOLUTIONS if x > r0]
+        labs = {}
+        if leiden_workers(g.vcount(), g.ecount(), len(finer)):  # all at once (the search may stop before the last)
+            labs = dict(zip(finer, _leiden_many(g, nbr, finer, self.seed, RARE_MIN_CLUSTER, say=lambda r: self.say(
+                self.done / self.total, f"looking for rare types of {label}: Leiden at resolutions "
+                                        f"{', '.join(f'{x:g}' for x in r)} at once"))))
+        for rr in finer:
             if not missing:
                 break
-            self.say(self.done / self.total, f"looking for rare types of {label}: Leiden at resolution {rr:g}")
-            lab = _leiden(g, nbr, rr, self.seed, RARE_MIN_CLUSTER)
+            if rr not in labs:
+                self.say(self.done / self.total, f"looking for rare types of {label}: Leiden at resolution {rr:g}")
+            lab = labs[rr] if rr in labs else _leiden(g, nbr, rr, self.seed, RARE_MIN_CLUSTER)
             ev2 = self._evaluate(idx, lab, children, context)
             got = {}
             for c in range(ev2["k"]):
