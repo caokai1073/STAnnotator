@@ -2073,8 +2073,10 @@ async def api_estimate(req: Request):
         if parsed["ok"]:
             tree, n_types = parsed["tree"], len(parsed["leaves"])
 
+    nnz = sum(timing.counts_nnz(config.SAMPLES / x) for x in ids)
+
     def work():
-        return {k: timing.estimate(n, g, tree, b.get("resolution") or "auto", k, n_types) for k in ("exact", "approx")}
+        return {k: timing.estimate(n, g, tree, b.get("resolution") or "auto", k, n_types, nnz) for k in ("exact", "approx")}
     est = await asyncio.to_thread(work)
     return _json(dict(est, n_cells=n, n_genes=g, slices=len(ids), device=config.device(),
                       marker_list=tree is not None, **_memory(ids, "annotate")))

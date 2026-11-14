@@ -62,9 +62,11 @@ def _now():
     return datetime.now().isoformat(timespec="seconds")
 
 
-def knn_mode(knn):
+def knn_mode(knn, n_cells=None):
+    """The neighbor search of a marker annotation: the one asked for, else "exact", or "approx" from
+    markers.KNN_APPROX_CELLS cells."""
     if knn in (None, ""):
-        return markers.KNN
+        return "approx" if (n_cells or 0) >= markers.KNN_APPROX_CELLS else markers.KNN
     if knn not in ("exact", "approx"):
         raise vocab.VocabError("knn must be 'exact' or 'approx'")
     return knn
@@ -252,7 +254,7 @@ class Session:
                       "nodes": parsed["types"], "leaf_types": True,
                       "parent": parsed["parent"], "top": parsed["top"],
                       "resolution": markers.AUTO if resolution in (None, "", markers.AUTO) else float(resolution),
-                      "knn": knn_mode(knn), "neighbors": True, "spillover": bool(spillover), "low_quality": True}
+                      "knn": knn_mode(knn, meta.get("n_cells")), "neighbors": True, "spillover": bool(spillover), "low_quality": True}
             scheme["types"] = scheme["types"] + [markers.LOW_QUALITY]  # (see markers.LOW_QUALITY)
             scheme["top"] = dict(scheme["top"], **{markers.LOW_QUALITY: markers.LOW_QUALITY})
             scheme["parent"] = dict(scheme["parent"], **{markers.LOW_QUALITY: None})

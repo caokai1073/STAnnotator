@@ -93,13 +93,13 @@ def run_sessions(s):
 
 def annotate(pid, markers_text, resolution=None, carry=False, progress=None, knn=None, spillover=True):
     """One marker annotation of all the project's slices together; returns {sample_id: new session id}.
-    knn: the neighbor search, "exact" (default) or "approx". spillover: leave out transcripts spilled over from
+    knn: the neighbor search, "exact" or "approx" (default: exact, approx from markers.KNN_APPROX_CELLS cells). spillover: leave out transcripts spilled over from
     neighboring cells of the same slice (markers.spill_detected)."""
     from .session import Session, knn_mode
     from . import timing
-    knn = knn_mode(knn)
     say = progress or (lambda f, m: None)
     ids, off, counts, panel = _pooled(pid)
+    knn = knn_mode(knn, int(off[-1]))
     hold = [counts]  # handed over in a list, so this frame stops owning the pooled matrix and _annotate can free it
     del counts
     with timing.run(int(off[-1])):

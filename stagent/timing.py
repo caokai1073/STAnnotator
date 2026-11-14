@@ -14,7 +14,7 @@ from . import config
 from .osutil import dump_json
 
 # seconds per unit on the reference workstation; units in the comments
-REF = {"prepare": 0.65,         # per 10^6 cells: normalize, detection matrix
+REF = {"prepare": 6.9,          # per 10^6 cells: normalize, detection matrix (with the spillover left out)
        "pca": 11.0,             # per 10^9 cells x genes
        "knn_exact_gpu": 0.055,  # per 10^9 cell pairs
        "knn_exact_torch": 1.93,
@@ -25,18 +25,22 @@ REF = {"prepare": 0.65,         # per 10^6 cells: normalize, detection matrix
        "knn_approx": 9.2,       # per 10^6 cells (pynndescent)
        "approx_compile": 10.0,  # once per app start: numba compiles pynndescent (less once its cache is on disk)
        "graph": 3.1,            # per 10^6 cells
-       "leiden": 13.0,          # per 10^6 cells, per resolution tried
+       "leiden": 16.6,          # per 10^6 cells, per resolution tried
        "leiden_parallel": 39.0, # per 10^6 cells, per round of resolutions run at once in worker processes (each also
                                 # builds the graph again, and they share the memory bandwidth: 28 s for 708,983 cells)
        "model": 430.0,          # per 10^12 training cells x genes x cell types
-       "finish": 5.7}           # per 10^6 cells: the expression model on every cell, regions, priors, conflicts and
-                                # whatever else is not timed separately
+       "predict": 4.5,          # per 10^9 cells x genes of the model: the expression model on every cell (14.9 s for
+                                # 708,983 cells x 4,624 genes)
+       "finish": 25.0}          # per 10^6 cells: the rare-type search, the untyped cells typed by their markers
+                                # and neighbors, regions, priors, conflicts and whatever else is not timed
+                                # separately
 # which speed test scales each step: "cores" (matrix product on all cores), "one" (one core), or the neighbor
 # search itself on a small set ("torch", "numpy", "gpu", "mlx"; "mlx" has no reference run: its REF_PROBE is nominal)
 SCALE = {"knn_exact_torch": "torch", "knn_exact_numpy": "numpy", "knn_approx": "cores", "model": "cores",
          "knn_exact_gpu": "gpu", "knn_exact_mlx": "mlx"}
 REF_PROBE = {"cores": 0.135, "one": 0.0164, "torch": 0.23, "numpy": 0.21, "gpu": 0.0113, "mlx": 0.04}  # their seconds there
-VERSION = {"knn_exact_numpy": 2, "knn_rerank": 2, "knn_exact_mlx": 2}  # a step whose code changed: its rates timed before are dropped
+VERSION = {"knn_exact_numpy": 2, "knn_rerank": 2, "knn_exact_mlx": 2, "finish": 2}  # a step whose code changed: its rates
+# timed before are dropped ("finish" held predicting every cell until 0.2.59)
 MIN_SECONDS = 1.0  # shorter steps are not recorded: fixed overheads would dominate their rate
 DECAY = 0.8        # earlier records count this much less with every new one; the rate is seconds / units of what
                    # is kept, so large runs weigh more than small ones (whose fixed overheads differ)
@@ -215,6 +219,9 @@ def level_sizes(n, tree, min_cells=60):
 # annotation (10.6 GB for 790,000 cells x 6,175 genes) and 1.05 times for PCA + UMAP (10.9 GB for two slices of it). All
 # slices together: the slices' counts are stacked into one more matrix. (The Mac is told by the platform, not by
 # config.device(): the built app has no torch, so device() says "cpu" there.)
+# 0.2.59: predicting every cell read 65,536 cells at once with all their genes, which made it the peak of a large
+# panel (708,983 cells x 4,624 genes: 8.1 GB, 1.6 GB above the line); it reads fewer cells of a large panel now (6.8
+# GB; CosMx 960 genes 2.5 GB), and the line is within 0.35 GB of every sample measured (slightly low, never by more).
 MEM_BASE_GB, MEM_PER_MCELL_GB, MEM_PER_COUNTS = 1.6, 4.5, 1.35
 MEM_FACTOR = {"darwin": {"annotate": 1.3, "embed": 1.05, "niches": 1.05}}
 
@@ -290,16 +297,18 @@ def available_memory_gb():
     return None
 
 
-def leiden_seconds(m, n_res, r):
-    """Leiden of one level of m cells at n_res resolutions: one by one, or in rounds of worker processes."""
+def leiden_seconds(m, n_res, r, reserve_gb=0.0, avail=None):
+    """Leiden of one level of m cells at n_res resolutions: one by one, or in rounds of worker processes (as many as
+    the free memory avail allows beyond reserve_gb, the annotation's own peak)."""
     from . import markers
-    k = markers.leiden_workers(m, m * markers.EDGES_PER_CELL, n_res)
+    k = markers.leiden_workers(m, m * markers.EDGES_PER_CELL, n_res, reserve_gb, avail)
     return r("leiden_parallel") * -(-n_res // k) * m / 1e6 if k else r("leiden") * n_res * m / 1e6
 
 
-def estimate(n, n_genes, tree, resolution="auto", knn="exact", n_types=None):
+def estimate(n, n_genes, tree, resolution="auto", knn="exact", n_types=None, nnz=None):
     """Seconds a marker annotation of n cells should take here: {"seconds", "steps": [[name, seconds]], "basis",
-    "backend"}. n_types: the number of cell types (leaves of the tree)."""
+    "backend", "leiden_workers"}. n_types: the number of cell types (leaves of the tree). nnz: the stored counts (for
+    the memory the annotation needs, which the worker processes of Leiden must leave free)."""
     from . import markers, model
     mine = measured()
     sizes = level_sizes(n, tree, markers.MIN_CELLS)
@@ -315,14 +324,17 @@ def estimate(n, n_genes, tree, resolution="auto", knn="exact", n_types=None):
     nb = sum(r(key) * m * m / 1e9 + r("knn_rerank") * m / 1e6 for m in sizes) if knn != "approx" else \
         sum(r("knn_approx") * m / 1e6 for m in sizes) + (0 if "approx_compile" in _warm else r("approx_compile"))
     pool = min(n, model.CAP * T)
+    avail, reserve = available_memory_gb(), memory_gb(n, nnz or 0)
     steps = [["reading the cells", r("prepare") * n / 1e6],
              ["PCA", sum(r("pca") * m * n_genes / 1e9 for m in sizes)],
              ["neighbor graph", nb + sum(r("graph") * m / 1e6 for m in sizes)],
-             ["Leiden clustering", sum(leiden_seconds(m, n_res, r) for m in sizes)],
+             ["Leiden clustering", sum(leiden_seconds(m, n_res, r, reserve, avail) for m in sizes)],
              ["expression model", r("model") * pool * n_genes * T / 1e12],
-             ["expression on every cell, regions, priors, conflicts", r("finish") * n / 1e6]]
+             ["expression model on every cell", r("predict") * n * n_genes / 1e9],
+             ["rare types, untyped cells, regions, priors, conflicts", r("finish") * n / 1e6]]
     return {"seconds": round(sum(s for _, s in steps), 1), "steps": [[k, round(s, 1)] for k, s in steps],
             "levels": len(sizes), "backend": backend,
+            "leiden_workers": markers.leiden_workers(n, n * markers.EDGES_PER_CELL, n_res, reserve, avail),
             "basis": "from runs on this computer" if basis == {"timed here"} else
             "from a speed test of this computer" if basis == {"speed test"} else
             "partly from runs on this computer"}

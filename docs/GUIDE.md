@@ -500,15 +500,15 @@ Histograms show where each threshold cuts and the dialog counts what goes; empty
    - *Single-cell reference*: a labeled reference h5ad (**Reference…**);
    - *Load existing*: a CSV with one cell type per cell (**Annotation file…**).
 2. With marker genes, choose **Neighbors**, the neighbor search of the marker step:
-   - *Exact* (the default): the true neighbors, the same on every computer, with or without a GPU (cells at exactly
+   - *Exact* (the default below a million cells): the true neighbors, the same on every computer, with or without a GPU (cells at exactly
      the same distance are taken in their order, and every row is checked against rounding). The macOS app runs it on
      the Apple GPU (MLX, macOS 14 or later), with the same result. On the CPU it runs on up to 8 threads in small
      tiles: about 9 s for the 188,644 cells of a 5,000-gene Xenium section and under a minute for 400,000 cells on 8
      cores, in under 1 GB of memory;
-   - *Approximate* (pynndescent): faster for very large samples (about a million cells or more; the time estimate
-     suggests it when Exact would take over 10 minutes). Its result depends on the number of threads, so it always
-     runs on 8 (also with fewer cores): a rerun gives the same labels with the same app version (Intel / AMD and
-     Apple silicon may still differ slightly). Its code is compiled once per app start, in the background a few
+   - *Approximate* (pynndescent; the default from a million cells, all slices together counting): much faster for
+     very large samples (the exact search grows with the square of the cells). A choice you make for a sample is kept
+     for it. Its result depends on the number of threads, so it always runs on 8 (also with fewer cores): a rerun
+     gives the same labels with the same app version (Intel / AMD and Apple silicon may still differ slightly). Its code is compiled once per app start, in the background a few
      seconds after the app starts.
    - Every annotation keeps checksums of its steps (PCA, neighbors, first clusters, labels) in `base/fingerprints.json`
      and in the app's log, so that two runs can be compared step by step (a bug report carries them).
@@ -520,11 +520,12 @@ Histograms show where each threshold cuts and the dialog counts what goes; empty
      transcripts of its neighbors; on, a gene counts as detected in a cell only where its count is above a tenth of
      the mean count of its 6 nearest cells of the same slice. Turn it off to count every transcript in a cell's
      outline.
-   - **Parallel clustering** (marker genes, off by default; a setting of this computer, for the agent's annotations
-     too): the Leiden clusterings each level tries (4 resolutions) run at once in separate processes. The same cell
-     types, about 20% faster on large samples (708,983 cells: 227 s → 184 s), but each process needs its own memory
-     (about 1.8 GB for 700,000 cells, 4.6 GB for 2 million); only as many start as the free memory allows (none: one
-     after the other). Worth it on a computer with memory to spare; on 16 GB it gains little for a large sample.
+   - **Parallel clustering** (marker genes; automatic, on by default; a setting of this computer, for the agent's
+     annotations too): the Leiden clusterings each level tries (4 resolutions) run at once in separate processes, as
+     many as fit in the free memory left after what the annotation itself needs at its peak (each process about 1.8
+     GB for 700,000 cells, 4.6 GB for 2 million). With too little free memory they run one after the other, as with
+     the switch off. The same cell types either way; about 20% faster on large samples (708,983 cells: 227 s →
+     184 s). The time estimate's details (hover) give the number of processes.
 4. Click **Annotate**.
 
 The cells the marker step could not type get a type from their marker genes and then, round by round, from the cell
@@ -1094,9 +1095,9 @@ to 98.6%.
 - The exact neighbor search takes about 9 s for 188,644 cells and under a minute for 400,000 cells on 8 CPU cores.
   The Type tab shows the estimate of the whole annotation for the sample and computer at hand.
 - A correction or a local re-clustering takes a few seconds.
-- With **Parallel clustering** on (Type tab; off by default), the Leiden clusterings a level tries run at once in
-  separate processes when the memory free allows (about 1.8 GB each for 700,000 cells; the same clusters as one
-  after the other). `STAGENT_LEIDEN_PARALLEL=1` turns it on and `=0` off whatever the switch says; in your own Python
+- With **Parallel clustering** (Type tab; automatic, on by default), the Leiden clusterings a level tries run at
+  once in separate processes when the memory free allows (about 1.8 GB each for 700,000 cells; the same clusters as
+  one after the other). `STAGENT_LEIDEN_PARALLEL=1` turns it on and `=0` off whatever the switch says; in your own Python
   scripts it runs only with `STAGENT_LEIDEN_PARALLEL=1` and the annotation under `if __name__ == "__main__":` (a
   started process imports the script again).
 - The viewer draws the cells with WebGL, so panning, zooming and changing colors are immediate.

@@ -276,8 +276,15 @@ def load(path):
     return {k: (float(z[k]) if z[k].ndim == 0 else z[k]) for k in z.files}
 
 
-def _logits(model, Xn, chunk=65536):
+CHUNK_VALUES = 65536 * 480  # cells x genes made dense at once in _logits (with its temporaries about 0.8 GB): 65,536
+                            # cells of a 480-gene panel; fewer cells of larger panels (5,000 genes: 6,291), whose
+                            # 65,536-cell blocks made predicting all cells the peak of the annotation (+1.6 GB)
+
+
+def _logits(model, Xn, chunk=None):
     out, g = [], model.get("genes")
+    if chunk is None:
+        chunk = int(min(65536, max(1024, CHUNK_VALUES // max(1, Xn.shape[1] if g is None else len(g)))))
     for i in range(0, Xn.shape[0], chunk):
         part = Xn[i:i + chunk]
         a = ((part if g is None else part[:, g]).toarray() - model["mu"]) / model["sd"]
@@ -287,6 +294,10 @@ def _logits(model, Xn, chunk=65536):
 
 def predict(model, counts):
     """Calibrated log-probabilities (float16) for raw counts."""
-    z = _logits(model, lognorm(counts)) / model["temp"]
+    from . import timing
+    g = model.get("genes")
+    with timing.step("predict", counts.shape[0] * (counts.shape[1] if g is None else len(g)) / 1e9):  # (densifying
+        # every cell's genes dominates)
+        z = _logits(model, lognorm(counts)) / model["temp"]
     z -= z.max(1, keepdims=True)
     return (z - np.log(np.exp(z).sum(1, keepdims=True))).astype(np.float16)

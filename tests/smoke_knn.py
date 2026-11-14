@@ -63,5 +63,5 @@ assert (true == nb[:300]).all(), "exact neighbors differ from the float64 brute 
 print(f"exact neighbors identical on {len(got)} backends and to the brute force ({len(Z):,} cells)")
 
 e = timing.estimate(len(Z), 480, None, "auto", "exact")
-assert e["seconds"] > 0 and len(e["steps"]) == 6, e
+assert e["seconds"] > 0 and len(e["steps"]) == 7, e
 print("estimate:", e)

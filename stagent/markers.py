@@ -730,6 +730,8 @@ def _scores(X, V, mu):
 
 
 KNN = "exact"  # neighbor search of the marker step: "exact" (default: the true neighbors, the same on every computer) or "approx" (see knn)
+KNN_APPROX_CELLS = 1_000_000  # from this many cells (of an annotation; all slices together) the default is "approx":
+                              # the exact search grows with the square of the cells (2 million: over 4 min on a GPU)
 KNN_THREADS = 8  # the approximate search always runs on this many threads (its result depends on the count)
 KNN_EXTRA = 8  # candidates beyond k that the exact search re-ranks in float64
 
@@ -988,9 +990,13 @@ def knn_graph(dist, nbr):
 # as _leiden does, so the clusters are those of running them one by one, to the bit. Levels smaller than
 # LEIDEN_PARALLEL_MIN cells run in this process (starting a worker costs about a second). A worker needs about
 # LEIDEN_WORKER_GB[0] + LEIDEN_WORKER_GB[1] x edges of memory; there are only as many as the memory available now
-# allows (none: one by one), and never more than the cores less one. Off unless the user turns it on: the switch
-# "Parallel clustering" of the app (the setting leiden_parallel of this computer), or STAGENT_LEIDEN_PARALLEL=1.
+# allows (none: one by one), and never more than the cores less one. The memory they may take is the free memory less
+# what the annotation itself still needs at its peak (timing.memory_gb less what it took so far), so the workers
+# never push the annotation into swap: on a computer with little free memory the resolutions run one by one. On
+# unless the user turns it off: the switch "Parallel clustering" of the app (the setting leiden_parallel of this
+# computer), or STAGENT_LEIDEN_PARALLEL=0.
 LEIDEN_PARALLEL = True  # (False: never, whatever the setting)
+_RUN = __import__("threading").local()  # .mem = (free memory at the start of the annotation, its estimated peak) GB
 LEIDEN_PARALLEL_MIN = 50_000
 LEIDEN_WORKER_GB = (0.25, 172e-9)  # measured: 1.8 GB a worker at 9.0 million edges (708,983 cells)
 EDGES_PER_CELL = 12.7  # of the neighbor graph (measured on the same; for estimates before the graph exists)
@@ -1025,14 +1031,23 @@ def _leiden_worker(specs, n, resolution, seed, min_cluster):
 
 
 def parallel_on():
-    """Whether the user turned Leiden in worker processes on: STAGENT_LEIDEN_PARALLEL=1 / 0, else the setting
-    leiden_parallel of this computer (the app's switch "Parallel clustering"; off by default)."""
+    """Whether Leiden may run in worker processes: STAGENT_LEIDEN_PARALLEL=1 / 0, else the setting leiden_parallel of
+    this computer (the app's switch "Parallel clustering"; on by default: as many as the free memory allows)."""
     import os
     env = os.environ.get("STAGENT_LEIDEN_PARALLEL")
     if env in ("0", "1"):
         return env == "1"
     from . import config
-    return config.read_settings().get("leiden_parallel") is True
+    return config.read_settings().get("leiden_parallel") is not False
+
+
+def _still_needed(avail):
+    """Memory (GB) the annotation running in this thread may still add before its peak: its estimated peak less what
+    it took so far (the free memory then less now); None outside an annotation."""
+    mem = getattr(_RUN, "mem", None)
+    if not mem or mem[0] is None or avail is None:
+        return None
+    return max(0.0, mem[1] - max(0.0, mem[0] - avail))
 
 
 def _spawn_safe():
@@ -1055,17 +1070,22 @@ def _spawn_safe():
         (p.parent.name == "stagent" and p.stem in ("cli", "__main__"))
 
 
-def leiden_workers(n_cells, n_edges, n_res):
-    """How many worker processes Leiden at n_res resolutions gets (0: in this process, one by one)."""
+def leiden_workers(n_cells, n_edges, n_res, reserve_gb=None, avail=None):
+    """How many worker processes Leiden at n_res resolutions gets (0: in this process, one by one): at most the
+    cores less one, and as many as fit in 80% of the free memory left after reserve_gb, the memory the annotation
+    itself still needs (default: inside an annotation, what it may still add; see _still_needed). avail: the free
+    memory (default: now)."""
     import os
     if not LEIDEN_PARALLEL or n_res < 2 or n_cells < LEIDEN_PARALLEL_MIN or not parallel_on() or not _spawn_safe():
         return 0
     from . import timing
     cores = max(1, (os.cpu_count() or 1) - 1)
-    avail = timing.available_memory_gb()
+    avail = timing.available_memory_gb() if avail is None else avail
+    if not avail:
+        return 0
+    reserve = reserve_gb if reserve_gb is not None else (_still_needed(avail) or 0.0)
     per = LEIDEN_WORKER_GB[0] + LEIDEN_WORKER_GB[1] * n_edges
-    by_mem = int(0.8 * avail // per) if avail else 0
-    k = min(n_res, cores, by_mem)
+    k = min(n_res, cores, int(max(0.0, 0.8 * (avail - reserve)) // per))
     return k if k >= 2 else 0
 
 
@@ -1272,6 +1292,9 @@ class _Annotator:
         self.say = progress or (lambda f, m: None)
         self.seed, self.n = seed, counts.shape[0]
         self.done, self.total = 0, 1
+        # (what the worker processes of Leiden must leave free: see _still_needed; the free memory is read at the
+        # start, after the counts are read, and the peak counts them too)
+        _RUN.mem = (timing.available_memory_gb(), timing.memory_gb(counts.shape[0], counts.nnz))
         self.fp = {}  # checksums of the root level (see annotate)
 
     def _evaluate(self, idx, lab, children, context=None):

@@ -574,8 +574,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <details class="adv" id="annAdv"><summary>Advanced <span id="annAdvOn" class="advon"></span></summary><div class="advsw">
       <label class="switch" id="spillWrap" data-short="spillover out" title="In imaging data a cell's outline also catches transcripts of its neighbors. On: a gene counts as detected in a cell only where its count is above a tenth of the mean count of its 6 nearest cells. It helped on a MERFISH slice (lineage agreement 0.785 → 0.816 against the authors' labels) and changed little on Xenium sections; try it when many cells stay untyped or markers of neighboring types show up where they should not"><input type="checkbox" id="spill" checked>
         <span>Leave out spillover<small>transcripts that come from neighboring cells</small></span></label>
-      <label class="switch" id="parWrap" data-short="parallel" title="Runs the Leiden clusterings each level tries (4 resolutions) at once in separate processes: the same cell types, about 20% faster on large samples (708,983 cells: 227 s → 184 s), but each process needs its own memory (about 1.8 GB for 700,000 cells, 4.6 GB for 2 million); only as many start as the free memory allows. Off: one after the other. A setting of this computer, for the agent's annotations too"><input type="checkbox" id="leidenPar">
-        <span>Parallel clustering<small>faster on large samples; uses more memory</small></span></label>
+      <label class="switch" id="parWrap" data-short="parallel" title="Automatic (on by default): the Leiden clusterings each level tries (4 resolutions) run at once in separate processes, as many as the free memory allows after what the annotation itself needs at its peak (each process about 1.8 GB for 700,000 cells, 4.6 GB for 2 million); with too little free memory they run one after the other, as with the switch off. The same cell types either way; about 20% faster on large samples (708,983 cells: 227 s → 184 s). A setting of this computer, for the agent's annotations too"><input type="checkbox" id="leidenPar" checked>
+        <span>Parallel clustering<small>automatic: as many processes as the free memory allows</small></span></label>
       <label class="switch" id="carryWrap" data-short="keep my edits" style="visibility:hidden" title="Start the new annotation with the regions (and their colors), priors and hand corrections of the one that is open; priors and corrections naming cell types the new annotation does not have are dropped"><input type="checkbox" id="carry" checked>
         <span>Keep my regions, priors &amp; corrections<small>carried into the new annotation</small></span></label>
       <label class="switch" id="rfAutoWrap" data-short="refine" title="After annotating with marker genes, the agent reviews the result with the tissue's priors and proposes edits of the marker list; you accept some and the app annotates again, round by round"><input type="checkbox" id="rfAuto" checked>
@@ -4102,7 +4102,7 @@ function estimateAnnotation() {  // how long Annotate should take here, for both
     try {
       const e = await post("/api/estimate", JSON.parse(key));
       if (key !== body()) return;  // the sample or the settings changed meanwhile: a newer estimate follows
-      EST.last = e; showEstimate();
+      EST.last = e; defaultKnn(e); showEstimate();
     } catch (err) { box.textContent = ""; EST.last = null; }
   }, 300);
 }
@@ -4127,10 +4127,19 @@ function showEstimate() {  // one line each: Exact, Approximate, Memory (and a n
   if (!e.marker_list) lines.push("Load the marker list for a closer estimate.");
   box.textContent = lines.join("\n");
   box.title = `${cells}; estimated ${me.basis}; every run here makes it more precise.\n`
+    + (me.leiden_workers ? `Leiden: ${me.leiden_workers} processes at once (Parallel clustering, by the free memory now).\n` : "")
     + `${k === "exact" ? "Exact" : "Approximate"}, by step:\n` + me.steps.map(([s, t]) => `${s}: ${t < 1 ? "<1" : Math.round(t)} s`).join("\n");
 }
-if (["exact", "approx"].includes(load("knn"))) $("knn").value = load("knn");
-$("knn").onchange = () => { syncSeg("knn"); store("knn", $("knn").value); showEstimate(); };
+// Neighbors: Exact by default, Approximate from a million cells (as the server's default); a choice made for a sample
+// (or the project) is kept for it
+const KNN_APPROX_CELLS = 1e6;
+const knnKey = () => st.sample && `knn:${projectMode() ? "project:" : ""}${st.sample.sample_id}`;
+function defaultKnn(e) {
+  const mine = knnKey() && load(knnKey());
+  const k = ["exact", "approx"].includes(mine) ? mine : e && e.n_cells >= KNN_APPROX_CELLS ? "approx" : "exact";
+  if ($("knn").value !== k) { $("knn").value = k; syncSeg("knn"); }
+}
+$("knn").onchange = () => { syncSeg("knn"); if (knnKey()) store(knnKey(), $("knn").value); showEstimate(); };
 if (load("spill") === "off") $("spill").checked = false;
 $("spill").onchange = () => store("spill", $("spill").checked ? "on" : "off");
 // Type tab: the switches in Advanced; its summary names those on, and it is hidden when none applies
@@ -5011,10 +5020,11 @@ const HELP = `
 <li><b>Leave out spillover</b> (marker genes, on by default): in imaging data a cell's outline also catches
   transcripts of its neighbors; on, a gene counts as detected in a cell only where its count is above a tenth of the
   mean count of its 6 nearest cells (of the same slice). Turn it off to count every transcript in a cell's outline.</li>
-<li><b>Parallel clustering</b> (marker genes, off by default; a setting of this computer, for the agent's annotations
-  too): the Leiden clusterings each level tries run at once in separate processes. The same cell types, about 20%
-  faster on large samples, but each process needs its own memory (about 1.8 GB for 700,000 cells); only as many
-  start as the free memory allows.</li>
+<li><b>Parallel clustering</b> (marker genes; automatic, on by default; a setting of this computer, for the agent's
+  annotations too): the Leiden clusterings each level tries run at once in separate processes, as many as the free
+  memory allows after what the annotation itself needs at its peak (each about 1.8 GB for 700,000 cells); with too
+  little free memory they run one after the other. The same cell types either way, about 20% faster on large
+  samples. Off: always one after the other.</li>
 <li><b>Refine with the agent</b> (marker genes; on by default, or <b>Refine cell types</b> later), round by round:<ul>
   <li>the app sums up what may be wrong (types with weak marker evidence, markers that are not specific, types not
     found, the cells the marker step could not type, the changes since the round before);</li>
