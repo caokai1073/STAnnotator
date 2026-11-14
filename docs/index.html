@@ -301,12 +301,13 @@ h3.sub { font-size: var(--s-3); line-height: 1.2; margin-top: 48px; }
 
 /* download */
 .dl { margin-top: 32px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: stretch; }
-@media (max-width: 860px) { .dl { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 1000px) { .dl { grid-template-columns: minmax(0, 1fr); } }
 .on-win .dl [data-os="win"], .on-win .cta [data-os="win"] { order: -1; }
 .osc { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 28px; display: grid; gap: 18px; align-content: start; box-shadow: var(--shadow); min-width: 0; }
 .osc h3 { font-size: var(--s-4); line-height: 1.1; }
-.osc .req { display: flex; flex-wrap: wrap; gap: 8px; }
-.osc .req span { font: 400 var(--s-0)/1 var(--f-mono); padding: 6px 10px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+.osc .req { display: flex; flex-wrap: wrap; gap: 6px; }
+.osc .req span { font: 400 .75rem/1 var(--f-mono); padding: 4px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+@media (max-width: 420px) { .osc { padding: 22px 20px; } .osc .req span { font-size: .6875rem; padding: 3px 6px; } }
 .osc .btn { justify-self: start; }
 .osc ol { margin: 0; padding-left: 1.3em; display: grid; gap: 8px; }
 .osc ol li::marker { font-family: var(--f-mono); color: var(--accent); }
