@@ -568,6 +568,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <div class="seg" data-for="knn"></div><div class="hint" id="annEst"></div></div>
     <label class="switch" id="spillWrap" title="In imaging data a cell's outline also catches transcripts of its neighbors. On: a gene counts as detected in a cell only where its count is above a tenth of the mean count of its 6 nearest cells. It helped on a MERFISH slice (lineage agreement 0.785 → 0.816 against the authors' labels) and changed little on Xenium sections; try it when many cells stay untyped or markers of neighboring types show up where they should not"><input type="checkbox" id="spill" checked>
       <span>Leave out spillover<small>transcripts that come from neighboring cells</small></span></label>
+    <label class="switch" id="parWrap" title="Runs the Leiden clusterings each level tries (4 resolutions) at once in separate processes: the same cell types, about 20% faster on large samples (708,983 cells: 227 s → 184 s), but each process needs its own memory (about 1.8 GB for 700,000 cells, 4.6 GB for 2 million); only as many start as the free memory allows. Off: one after the other. A setting of this computer, for the agent's annotations too"><input type="checkbox" id="leidenPar">
+      <span>Parallel clustering<small>faster on large samples; uses more memory</small></span></label>
     <label class="switch" id="carryWrap" style="visibility:hidden" title="Start the new annotation with the regions (and their colors), priors and hand corrections of the one that is open; priors and corrections naming cell types the new annotation does not have are dropped"><input type="checkbox" id="carry" checked>
       <span>Keep my regions, priors &amp; corrections<small>carried into the new annotation</small></span></label>
     <label class="switch" id="rfAutoWrap" title="After annotating with marker genes, the agent reviews the result with the tissue's priors and proposes edits of the marker list; you accept some and the app annotates again, round by round"><input type="checkbox" id="rfAuto" checked>
@@ -4070,6 +4072,7 @@ function showMethod() {
   $("openMarkers").hidden = m !== "markers"; $("openRef").hidden = m !== "scref"; $("openEx").hidden = m !== "existing";
   $("knnWrap").hidden = m !== "markers";
   $("spillWrap").hidden = m !== "markers";
+  $("parWrap").hidden = m !== "markers";
   estimateAnnotation();
 }
 function duration(s) {  // as timing.words on the server
@@ -4123,6 +4126,12 @@ if (["exact", "approx"].includes(load("knn"))) $("knn").value = load("knn");
 $("knn").onchange = () => { syncSeg("knn"); store("knn", $("knn").value); showEstimate(); };
 if (load("spill") === "off") $("spill").checked = false;
 $("spill").onchange = () => store("spill", $("spill").checked ? "on" : "off");
+api("/api/leiden_parallel").then((r) => { $("leidenPar").checked = r.on; $("leidenPar").disabled = r.fixed; }).catch(() => {});
+$("leidenPar").onchange = async () => {  // a setting of this computer (the agent's annotations follow it too)
+  try { $("leidenPar").checked = (await post("/api/leiden_parallel", { on: $("leidenPar").checked })).on; }
+  catch (e) { $("leidenPar").checked = !$("leidenPar").checked; toast(e.message, 5000); }
+  estimateAnnotation();
+};
 $("mkDlg").addEventListener("close", estimateAnnotation);
 $("projAllA").addEventListener("change", estimateAnnotation);
 $("projAllE").addEventListener("change", () => sliceNav());  // Harmony is for an embedding of all slices
@@ -4969,9 +4978,10 @@ const HELP = `
   <li>or an existing annotation (<b>Annotation file…</b>).</li></ul></li>
 <li><b>Annotate</b> makes a new annotation; <b>keep my regions, priors &amp; corrections</b> carries them over.</li>
 <li><b>Neighbors</b> (marker genes):<ul>
-  <li><i>Approximate</i> (default) is much faster without a GPU. It runs on 8 threads on every computer (its result
-    depends on the thread count), so a rerun gives the same labels, here or on another computer with this version.</li>
-  <li><i>Exact</i> finds the true neighbors; slow without a GPU for large samples.</li>
+  <li><i>Exact</i> (default) finds the true neighbors: the same labels on every computer, with or without a GPU;
+    about a minute for 450,000 cells.</li>
+  <li><i>Approximate</i> is faster for very large samples (about a million cells or more). It runs on 8 threads on
+    every computer (its result depends on the thread count), so a rerun gives the same labels with this version.</li>
   <li>The line under it estimates how long the whole annotation takes on this computer for both (hover for the
     steps); it learns from every run here. It also gives the memory the run needs at its peak (measured on samples of
     32,000 to 790,000 cells); an annotation, PCA + UMAP or niche run needing more than 80% of this computer's memory
@@ -4979,6 +4989,10 @@ const HELP = `
 <li><b>Leave out spillover</b> (marker genes, on by default): in imaging data a cell's outline also catches
   transcripts of its neighbors; on, a gene counts as detected in a cell only where its count is above a tenth of the
   mean count of its 6 nearest cells (of the same slice). Turn it off to count every transcript in a cell's outline.</li>
+<li><b>Parallel clustering</b> (marker genes, off by default; a setting of this computer, for the agent's annotations
+  too): the Leiden clusterings each level tries run at once in separate processes. The same cell types, about 20%
+  faster on large samples, but each process needs its own memory (about 1.8 GB for 700,000 cells); only as many
+  start as the free memory allows.</li>
 <li><b>Refine with the agent</b> (marker genes; on by default, or <b>Refine cell types</b> later), round by round:<ul>
   <li>the app sums up what may be wrong (types with weak marker evidence, markers that are not specific, types not
     found, the cells the marker step could not type, the changes since the round before);</li>

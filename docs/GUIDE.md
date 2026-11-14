@@ -516,7 +516,12 @@ Histograms show where each threshold cuts and the dialog counts what goes; empty
    transcripts of its neighbors; on, a gene counts as detected in a cell only where its count is above a tenth of the
    mean count of its 6 nearest cells of the same slice. Turn it off to count every transcript in a cell's
    outline.
-4. Click **Annotate**.
+4. **Parallel clustering** (marker genes, off by default; a setting of this computer, for the agent's annotations
+   too): the Leiden clusterings each level tries (4 resolutions) run at once in separate processes. The same cell
+   types, about 20% faster on large samples (708,983 cells: 227 s → 184 s), but each process needs its own memory
+   (about 1.8 GB for 700,000 cells, 4.6 GB for 2 million); only as many start as the free memory allows (none: one
+   after the other). Worth it on a computer with memory to spare; on 16 GB it gains little for a large sample.
+5. Click **Annotate**.
 
 The cells the marker step could not type get a type from their marker genes and then, round by round, from the cell
 types around them (their 10 nearest cells), until the labels settle; the cells the marker step typed keep their own
@@ -1085,10 +1090,11 @@ to 98.6%.
 - The exact neighbor search takes about 9 s for 188,644 cells and under a minute for 400,000 cells on 8 CPU cores.
   The Type tab shows the estimate of the whole annotation for the sample and computer at hand.
 - A correction or a local re-clustering takes a few seconds.
-- The Leiden clusterings a level tries run at once in separate processes when the memory free allows (about 1.8 GB
-  each for 700,000 cells; the same clusters as one after the other). In your own Python scripts this happens only
-  under `if __name__ == "__main__":` with `STAGENT_LEIDEN_PARALLEL=1` (a started process imports the script again);
-  `STAGENT_LEIDEN_PARALLEL=0` turns it off.
+- With **Parallel clustering** on (Type tab; off by default), the Leiden clusterings a level tries run at once in
+  separate processes when the memory free allows (about 1.8 GB each for 700,000 cells; the same clusters as one
+  after the other). `STAGENT_LEIDEN_PARALLEL=1` turns it on and `=0` off whatever the switch says; in your own Python
+  scripts it runs only with `STAGENT_LEIDEN_PARALLEL=1` and the annotation under `if __name__ == "__main__":` (a
+  started process imports the script again).
 - The viewer draws the cells with WebGL, so panning, zooming and changing colors are immediate.
 
 ## 8. Troubleshooting

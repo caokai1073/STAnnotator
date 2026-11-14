@@ -3193,6 +3193,17 @@ async def api_review_mode(req: Request):
     return _json({"mode": review_mode()})
 
 
+async def api_leiden_parallel(req: Request):
+    """The switch "Parallel clustering" of this computer (off by default): the Leiden resolutions of a level run at once
+    in worker processes. GET reads it, POST {on} sets it (kept in the settings; STAGENT_LEIDEN_PARALLEL overrides)."""
+    if req.method == "POST":
+        on = (await req.json()).get("on")
+        if not isinstance(on, bool):
+            return _json({"error": "on is true or false"}, 400)
+        config.write_settings(leiden_parallel=on)
+    return _json({"on": markers.parallel_on(), "fixed": os.environ.get("STAGENT_LEIDEN_PARALLEL") in ("0", "1")})
+
+
 def review_mode():
     return "auto" if config.read_settings().get("review_mode") == "auto" else "manual"
 
@@ -4083,6 +4094,7 @@ def build_app(port):
         Route("/api/s/{sid}/regions/import", api_regions_import, methods=["POST"]),
         Route("/api/s/{sid}/regions/shape", api_region_shape, methods=["POST"]),
         Route("/api/review_mode", api_review_mode, methods=["GET", "POST"]),
+        Route("/api/leiden_parallel", api_leiden_parallel, methods=["GET", "POST"]),
         Route("/api/s/{sid}/steps", api_steps),
         Route("/api/sample/{sample}/steps", api_sample_steps),
         Route("/api/s/{sid}/regions/rename", api_region_rename, methods=["POST"]),

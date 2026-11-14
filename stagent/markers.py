@@ -988,8 +988,9 @@ def knn_graph(dist, nbr):
 # as _leiden does, so the clusters are those of running them one by one, to the bit. Levels smaller than
 # LEIDEN_PARALLEL_MIN cells run in this process (starting a worker costs about a second). A worker needs about
 # LEIDEN_WORKER_GB[0] + LEIDEN_WORKER_GB[1] x edges of memory; there are only as many as the memory available now
-# allows (none: one by one), and never more than the cores less one.
-LEIDEN_PARALLEL = True
+# allows (none: one by one), and never more than the cores less one. Off unless the user turns it on: the switch
+# "Parallel clustering" of the app (the setting leiden_parallel of this computer), or STAGENT_LEIDEN_PARALLEL=1.
+LEIDEN_PARALLEL = True  # (False: never, whatever the setting)
 LEIDEN_PARALLEL_MIN = 50_000
 LEIDEN_WORKER_GB = (0.25, 172e-9)  # measured: 1.8 GB a worker at 9.0 million edges (708,983 cells)
 EDGES_PER_CELL = 12.7  # of the neighbor graph (measured on the same; for estimates before the graph exists)
@@ -1023,15 +1024,25 @@ def _leiden_worker(specs, n, resolution, seed, min_cluster):
             b.close()
 
 
+def parallel_on():
+    """Whether the user turned Leiden in worker processes on: STAGENT_LEIDEN_PARALLEL=1 / 0, else the setting
+    leiden_parallel of this computer (the app's switch "Parallel clustering"; off by default)."""
+    import os
+    env = os.environ.get("STAGENT_LEIDEN_PARALLEL")
+    if env in ("0", "1"):
+        return env == "1"
+    from . import config
+    return config.read_settings().get("leiden_parallel") is True
+
+
 def _spawn_safe():
     """Whether worker processes may be started: a started process imports the main script again, so a script that
     calls the annotation outside `if __name__ == "__main__":` would run again in every worker. Safe are the app
     (frozen; its entry is guarded), the stagent command (guarded), Jupyter and the interactive prompt (no script),
     and a script that says so with STAGENT_LEIDEN_PARALLEL=1."""
     import os, sys
-    env = os.environ.get("STAGENT_LEIDEN_PARALLEL")
-    if env in ("0", "1"):
-        return env == "1"
+    if os.environ.get("STAGENT_LEIDEN_PARALLEL") == "1":
+        return True
     if getattr(sys, "frozen", False):
         return True
     main = sys.modules.get("__main__")
@@ -1047,7 +1058,7 @@ def _spawn_safe():
 def leiden_workers(n_cells, n_edges, n_res):
     """How many worker processes Leiden at n_res resolutions gets (0: in this process, one by one)."""
     import os
-    if not LEIDEN_PARALLEL or n_res < 2 or n_cells < LEIDEN_PARALLEL_MIN or not _spawn_safe():
+    if not LEIDEN_PARALLEL or n_res < 2 or n_cells < LEIDEN_PARALLEL_MIN or not parallel_on() or not _spawn_safe():
         return 0
     from . import timing
     cores = max(1, (os.cpu_count() or 1) - 1)
