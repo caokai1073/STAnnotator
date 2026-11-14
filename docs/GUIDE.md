@@ -425,7 +425,7 @@ The app's window, or the web viewer (`.venv/bin/stagent viewer`, then http://loc
   - two tabs, **Data** and **Analysis**. Analysis has the steps **Type**, **Embed**, **Niche**, **Compare**,
     **Signal** and **Trajectory** as a second row and reopens the one last used (a dot on a tab whose analysis is
     running);
-  - at the bottom, **Reset** and **Remove all**.
+  - at the bottom, **Reset analysis** and **Remove all samples**.
 - **On the map**: the **Color by** bar (with opacity, dot size, hide cells, hide H&E: struck through while hidden;
   then **Undo** and **Refresh**), and a bar with **Agent** (Claude Code), **Review**, **Report** and **Manual** /
   **Auto**.
@@ -436,7 +436,8 @@ The app's window, or the web viewer (`.venv/bin/stagent viewer`, then http://loc
 
 - **Pick a sample**; earlier annotations are under **Annotation**. **Project** (above) picks the project, or the
   samples in no project, and the box below (**Slice** in a project) lists only those; **Change** beside it sets which
-  samples form which project.
+  samples form which project, and the trash beside that removes the project with all its slices (to the data folder's
+  trash, as Remove does one sample).
 - **Rename** changes the name the app shows (a slice: its name in the project); the id, files
   and annotations stay.
 - **Rename** beside **Annotation** names the annotation chosen there (shown before its version and date, in the
@@ -801,19 +802,19 @@ asks now and always shows it. Without an internet connection nothing is shown.
 
 **Usage sharing** and **Daily count** (desktop app): see [Troubleshooting](#usage-sharing).
 
-### Storage, Reset and Remove all
+### Storage, Reset analysis and Remove all samples
 
 - **Caches** of the data folder (figures, exports, the expression model of earlier versions, saved files waiting for
   their download, converted R files, alignment figures: all made again when needed) stay under a limit, 5 GB by
   default: past it the oldest go first (checked every 10 minutes). About shows their size, sets the limit and clears
   them.
-- **Trash** (`trash/` of the data folder: what Reset, Remove, a replacing import and the cell filter moved away, one folder per
+- **Trash** (`trash/` of the data folder: what Reset analysis, Remove, Remove project, a replacing import and the cell filter moved away, one folder per
   removal) has a limit of its own, 10 GB by default: past it the oldest removals are deleted for good. About shows its
   size, sets the limit and empties it.
-- **Reset** removes every annotation and chat of the selected sample (moved to `<data folder>/trash/`); in a project,
+- **Reset analysis** removes every annotation and chat of the selected sample (moved to `<data folder>/trash/`); in a project,
   of this slice or of all slices, and optionally the PCA / UMAP and Leiden clusters too (they are computed from the
   expression alone and stay otherwise).
-- **Remove all** (bottom of the toolbar, desktop app) deletes every sample with all its annotations and chats for
+- **Remove all samples** (bottom of the toolbar, desktop app) deletes every sample with all its annotations and chats for
   good, to import from scratch (it cannot be undone); marker lists stay. The agent (Claude Code) the app opened is
   closed with them.
 

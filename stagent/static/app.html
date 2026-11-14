@@ -43,11 +43,11 @@ header.collapsed .hrow, header.collapsed .tabs, header.collapsed .pane { display
 .tabs .tab.busy::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 header .pane:not(.on) { display: none; }
 header .hrow.bottom { margin-top: auto; padding-bottom: 0; }
-header .hrow.bottom { flex-wrap: nowrap; gap: 6px; }  /* Reset, Remove all on one row */
+header .hrow.bottom { flex-wrap: nowrap; gap: 6px; }  /* Reset analysis, Remove all samples on one row */
 #pcBack { left: 50%; transform: translateX(-50%); top: calc(var(--maptop, 44px) + 12px); display: flex; gap: 10px; align-items: center;
   padding: 8px 12px; font-size: 13px; z-index: 30; }
 /* one analysis at a time: while one runs, the buttons that start another or change the data are grayed out */
-body.running :is(#annotate, #eRun, #nRun, #aRun, #sRun, #tRun, #qfBtn, #qfGo, #qfRestore, #reset, #rmSample, #clearAll, #anLoad, #importBtn, #refresh, #sessDel) {
+body.running :is(#annotate, #eRun, #nRun, #aRun, #sRun, #tRun, #qfBtn, #qfGo, #qfRestore, #reset, #rmSample, #rmProject, #clearAll, #anLoad, #importBtn, #refresh, #sessDel) {
   opacity: .4; filter: grayscale(1); cursor: not-allowed; }
 header .hrow.bottom button { padding: 5px 8px; font-size: 12px; gap: 4px; white-space: nowrap; flex: 0 1 auto; min-width: 0; }
 header.collapsed .hmini { display: flex; }
@@ -537,7 +537,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <button class="tab" data-tab="traj" role="tab" title="Spatial axes and pseudotime: the order of cells in the tissue or along a differentiation, and the genes that change along it">Trajectory</button></div>
   <div class="pane" data-pane="data">
     <div class="fld" id="projectWrap" hidden><span>Project</span><div class="inrow"><select id="project" aria-label="Project" title="A project (its slices are listed under Slice) or the samples in no project"></select>
-      <button id="pjBtn" disabled title="Choose which samples form which project (slices analyzed together)">Change</button></div></div>
+      <button id="pjBtn" disabled title="Choose which samples form which project (slices analyzed together)">Change</button>
+      <button id="rmProject" class="rmsample" disabled title="Remove this project with all its slices: their cells, annotations and chats go to the data folder's trash">Remove project</button></div></div>
     <div class="fld" id="sampleWrap"><span id="sampleLbl">Sample</span><div class="inrow"><select id="sample" aria-label="Sample"></select>
       <button id="sampleRename" disabled title="Rename the sample as the app shows it (a slice: its name in the project)">Rename</button>
       <button id="rmSample" class="rmsample" disabled title="Remove this sample only: its cells, annotations and chats go to the data folder's trash (to import it again under its name: Import, Replace the existing sample)">Remove</button></div></div>
@@ -758,8 +759,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <button id="tRun" class="primary main" disabled>Find trajectory</button>
   </div>
   <div class="hrow bottom">
-    <button id="reset" class="danger" disabled title="Remove every annotation and chat of this sample">Reset</button>
-    <button id="clearAll" class="danger" hidden title="Delete every sample with all its annotations and chats for good, to import from scratch">Remove all</button>
+    <button id="reset" class="danger" disabled title="Remove every annotation and chat of this sample (the sample stays)">Reset analysis</button>
+    <button id="clearAll" class="danger" hidden title="Delete every sample with all its annotations and chats for good, to import from scratch">Remove all samples</button>
   </div>
 </header>
 <main>
@@ -1179,7 +1180,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
   </div>
 </dialog>
 <dialog id="rsDlg" style="width:min(560px,95vw)">
-  <div class="dh"><b>Reset</b><span class="spacer"></span><button id="rsClose">Close</button></div>
+  <div class="dh"><b>Reset analysis</b><span class="spacer"></span><button id="rsClose">Close</button></div>
   <div class="imbody">
     <div class="hint" id="rsText" style="margin-bottom:8px"></div>
     <div id="rsScope" class="choice" style="flex-direction:column;align-items:flex-start;gap:4px;margin-bottom:8px">
@@ -1347,7 +1348,7 @@ function decorate(b, name, only) {  // icon + label, or the icon only (the label
   else { const t = document.createElement("span"); t.className = "bt"; t.textContent = text; b.append(t); }
   return b;
 }
-const ICON_ONLY = { rmSample: "trash", sessDel: "x", hdrShow: "chev-left", hdrHide: "chev-right", helpBtn: "help", bugBtn: "bug", slPrev: "chev-left", slNext: "chev-right",
+const ICON_ONLY = { rmSample: "trash", rmProject: "trash", sessDel: "x", hdrShow: "chev-left", hdrHide: "chev-right", helpBtn: "help", bugBtn: "bug", slPrev: "chev-left", slNext: "chev-right",
   lgtoggle: "chev-up", rgtoggle: "chev-up", stepsFold: "chev-up", plclose: "x", emClose: "x", imClose: "x", rcClose: "x", clClose: "x", rpClose: "x",
   xpClose: "x", glClose: "x", anClose: "x", rvClose: "x", hpClose: "x", anCsv: "download", rpSave: "download", mkExport: "download",
   fbUp: "arrow-up", fbHome: "home", rsClose: "x", hide: "cell", hideHE: "image" };
@@ -1658,6 +1659,7 @@ function fillSampleSelect(id) {  // the project of sample id (default: the one s
   if (loose) ps.append(Object.assign(document.createElement("option"),
     { value: "", textContent: `No project · ${loose} sample${loose === 1 ? "" : "s"}` }));
   ps.value = pid;
+  $("rmProject").disabled = !p;
   $("projectWrap").hidden = !st.samples.length;  // (with no project yet: "No project" and Change, to make one)
   $("sampleLbl").textContent = p ? "Slice" : "Sample";
   const cells = (s) => (s.image_only ? `${s.image_kind || "image"} only` : `${s.n_cells.toLocaleString()} ${s.unit || "cells"}`);
@@ -4552,7 +4554,7 @@ $("imVDir").oninput = soon(() => (st.imVPending = inspectVisium()));
 });
 // one analysis at a time (Annotate, Embed, Niches, Compare, Signaling, the cell filter, an import): the others'
 // buttons and Reset / Remove are grayed out (CSS body.running) and ignored until it is done
-const LOCKED = "#annotate, #eRun, #nRun, #aRun, #sRun, #tRun, #qfBtn, #qfGo, #qfRestore, #reset, #rmSample, #clearAll, #anLoad, #importBtn, #refresh, #sessDel";
+const LOCKED = "#annotate, #eRun, #nRun, #aRun, #sRun, #tRun, #qfBtn, #qfGo, #qfRestore, #reset, #rmSample, #rmProject, #clearAll, #anLoad, #importBtn, #refresh, #sessDel";
 async function exclusive(what, fn) {
   if (st.running) { toast(`${st.running} is running: wait until it is done`, 4000); return; }
   st.running = what; document.body.classList.add("running");
@@ -4984,7 +4986,7 @@ const HELP = `
   <li>Two tabs: <b>Data</b> and <b>Analysis</b>, whose steps (Annotate, Embed, Niche, Compare, Signal, Trajectory) are a
     second row; a dot marks a running analysis.</li>
   <li><b>›</b> at its top folds it to the right edge for a bigger map; <b>‹</b> or <kbd>t</kbd> brings it back.</li></ul></li>
-<li><b>Reset</b> (bottom): removes the annotations of this sample (in a project, of all its slices), optionally the
+<li><b>Reset analysis</b> (bottom): removes the annotations of this sample (in a project, of all its slices), optionally the
   PCA / UMAP too.</li></ul>
 
 <h3>Regions</h3><ul>
@@ -5838,6 +5840,26 @@ $("rmSample").onclick = async () => {
     await loadSamples(next || (rest[0] && rest[0].sample_id) || null);
     toast(`Removed ${s.sample_id}` + (r.deleted_sessions ? ` and its ${r.deleted_sessions} annotation(s)` : ""), 5000);
   } catch (e) { toast(e.message, 7000); }
+};
+$("rmProject").onclick = async () => {  // every slice of the project, as Remove does one sample; the project goes with its last
+  if (st.busy) { toast("Wait until the assistant has answered"); return; }
+  const p = (st.projects || []).find((x) => x.project_id === $("project").value); if (!p) return;
+  const ids = projectSamples(p.project_id);
+  const n = ids.reduce((a, id) => a + (((st.samples.find((x) => x.sample_id === id) || {}).sessions) || []).length, 0);
+  if (!confirm(`Remove project ${p.name} with its ${ids.length} slice(s)?\n\nEvery slice goes: its cells, ` +
+               `${n ? `${n} annotation(s) with their chats, ` : ""}regions, niches and PCA / UMAP are moved to the data folder's trash/ ` +
+               `(not shown in the app). The other samples stay. The image and source files stay where they are.`)) return;
+  let done = 0, sessions = 0;
+  try {
+    for (const id of ids) {
+      const r = await post(`/api/sample/${id}/remove`, {});
+      forgetOpened(id); done++; sessions += r.deleted_sessions || 0;
+    }
+  } catch (e) { toast(`Removed ${done} of ${ids.length} slices; then: ${e.message}`, 8000); }
+  store("sample", "");
+  const rest = st.samples.filter((x) => !ids.includes(x.sample_id));
+  await loadSamples((rest[0] && rest[0].sample_id) || null);
+  if (done === ids.length) toast(`Removed project ${p.name}: ${done} slice(s)` + (sessions ? ` and ${sessions} annotation(s)` : ""), 5000);
 };
 $("clearAll").onclick = async () => {
   const n = st.samples.length;
