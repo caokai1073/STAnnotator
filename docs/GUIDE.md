@@ -245,7 +245,8 @@ constant within the slice (condition, day, mouse, …).
 **Organizing.** **Projects** (Data tab) puts any samples into any project, moves a slice to another project or takes
 it out ("no project"). The slices of a project need one gene panel; a project left without slices goes away.
 
-**Browsing.** **◀ ▶** (or `[` `]`) step through the slices and keep what is shown (Color by, legend filters, hidden
+**Browsing.** **Project** (Data tab) picks the project, which opens at the slice last open in it; **Slice** below lists
+its slices. **◀ ▶** (or `[` `]`) step through the slices and keep what is shown (Color by, legend filters, hidden
 H&E, the UMAP window and, on a UMAP of all slices, its zoom and the cells selected on it). **Overview of all samples**
 shows them side by side, and the **Compare** tab compares them (all slices, by slice).
 
@@ -433,7 +434,8 @@ The app's window, or the web viewer (`.venv/bin/stagent viewer`, then http://loc
 
 ### Samples (Data tab)
 
-- **Pick a sample**; earlier annotations are under **Annotation**.
+- **Pick a sample**; earlier annotations are under **Annotation**. With projects, **Project** (above) picks the
+  project, or the samples in no project, and the box below (**Slice** in a project) lists only those.
 - **Rename** changes the name the app shows (a slice: its name in the project); the id, files
   and annotations stay.
 - **Rename** beside **Annotation** names the annotation chosen there (shown before its version and date, in the

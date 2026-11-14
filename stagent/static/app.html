@@ -536,7 +536,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <button class="tab" data-tab="compare" role="tab" title="DE genes, top genes per group, composition">Compare</button><button class="tab" data-tab="signal" role="tab" title="Cell-cell communication: ligand-receptor signaling between neighboring cells">Signal</button>
     <button class="tab" data-tab="traj" role="tab" title="Spatial axes and pseudotime: the order of cells in the tissue or along a differentiation, and the genes that change along it">Trajectory</button></div>
   <div class="pane" data-pane="data">
-    <div class="fld" id="sampleWrap"><span>Sample</span><div class="inrow"><select id="sample" aria-label="Sample"></select>
+    <div class="fld" id="projectWrap" hidden><span>Project</span><select id="project" aria-label="Project" title="A project (its slices are listed under Slice) or the samples in no project"></select></div>
+    <div class="fld" id="sampleWrap"><span id="sampleLbl">Sample</span><div class="inrow"><select id="sample" aria-label="Sample"></select>
       <button id="sampleRename" disabled title="Rename the sample as the app shows it (a slice: its name in the project)">Rename</button>
       <button id="rmSample" class="rmsample" disabled title="Remove this sample only: its cells, annotations and chats go to the data folder's trash (to import it again under its name: Import, Replace the existing sample)">Remove</button></div></div>
     <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-layers"/></svg><div id="sampleInfo">No sample yet</div></div>
@@ -1626,11 +1627,10 @@ async function loadSamples(select, project) {
   }
   $("annotate").disabled = false;
   $("empty").firstElementChild.innerHTML = "No cell types yet. Check the marker list (<b>Markers…</b>) and click <b>Annotate</b>.";
-  fillSampleSelect();
   if (project) { const p = st.projects.find((x) => x.project_id === project); if (p) select = p.samples[0]; }
   const url = new URLSearchParams(location.search);  // links from the agent: ?sample=...&session=...
   const want = select || url.get("sample") || load("sample");
-  if (st.samples.some((s) => s.sample_id === want)) sel.value = want;
+  fillSampleSelect(st.samples.some((s) => s.sample_id === want) ? want : sampleOrder()[0]);
   // the annotation in the link counts once, when the page opens: Refresh, Load…, the agent's and the user's later
   // choices must not be sent back to it; the link is then dropped from the address (a reload keeps what is open)
   if (!st.linkUsed && url.get("session") && url.get("sample") === sel.value) st.openedThisVisit[sel.value] = url.get("session");
@@ -1641,27 +1641,41 @@ async function loadSamples(select, project) {
   st.linkUsed = true;
   await selectSample(sel.value);
 }
-function fillSampleSelect() {  // the slices of each project, then the samples on their own
-  const sel = $("sample"), keep = sel.value; sel.textContent = "";
-  const label = (s) => [s.name || s.sample_id, s.description || [s.disease, s.location].filter(Boolean).join(" · "), s.image_only ? `${s.image_kind || "image"} only` : `${s.n_cells.toLocaleString()} ${s.unit || "cells"}`].filter(Boolean).join(" · ");
-  const inProject = new Set();
-  st.projects.forEach((p) => {  // the slices of a project together, with what distinguishes them
-    const g = document.createElement("optgroup"); g.label = `project ${p.name} (${p.samples.length} slices)`;
-    p.samples.forEach((id) => {
-      const s = st.samples.find((x) => x.sample_id === id); if (!s) return;
-      inProject.add(id);
-      const o = document.createElement("option"); o.value = id;
-      const md = metaText(s.metadata);
-      o.textContent = [p.slices[id] ? p.slices[id].section : id, md, s.image_only ? `${s.image_kind || "image"} only` : `${s.n_cells.toLocaleString()} ${s.unit || "cells"}`].filter(Boolean).join(" · ");
-      g.append(o);
-    });
-    sel.append(g);
+// The Project box (shown when there are projects) picks a project or the samples in no project; the Sample box
+// (Slice in a project) lists only those
+const looseSamples = () => st.samples.filter((s) => !projectOf(s.sample_id)).map((s) => s.sample_id);
+const projectSamples = (pid) => (pid ? ((st.projects || []).find((p) => p.project_id === pid) || { samples: [] }).samples
+  .filter((id) => st.samples.some((s) => s.sample_id === id)) : looseSamples());
+const sampleOrder = () => [...(st.projects || []).flatMap((p) => projectSamples(p.project_id)), ...looseSamples()];
+function fillSampleSelect(id) {  // the project of sample id (default: the one shown) and its slices, or the samples in no project
+  const sel = $("sample"), ps = $("project");
+  id = id || sel.value || (st.sample && st.sample.sample_id) || sampleOrder()[0];
+  const p = id && projectOf(id), pid = p ? p.project_id : "";
+  ps.textContent = "";
+  (st.projects || []).forEach((x) => ps.append(Object.assign(document.createElement("option"),
+    { value: x.project_id, textContent: `${x.name} · ${x.samples.length} slices` })));
+  const loose = looseSamples().length;
+  if (loose) ps.append(Object.assign(document.createElement("option"),
+    { value: "", textContent: `No project · ${loose} sample${loose === 1 ? "" : "s"}` }));
+  ps.value = pid;
+  $("projectWrap").hidden = !(st.projects || []).length;
+  $("sampleLbl").textContent = p ? "Slice" : "Sample";
+  const cells = (s) => (s.image_only ? `${s.image_kind || "image"} only` : `${s.n_cells.toLocaleString()} ${s.unit || "cells"}`);
+  sel.textContent = "";
+  projectSamples(pid).forEach((sid) => {
+    const s = st.samples.find((x) => x.sample_id === sid);
+    const o = document.createElement("option"); o.value = sid;
+    o.textContent = (p ? [p.slices[sid] ? p.slices[sid].section : sid, metaText(s.metadata), cells(s)]
+      : [s.name || s.sample_id, s.description || [s.disease, s.location].filter(Boolean).join(" · "), cells(s)]).filter(Boolean).join(" · ");
+    sel.append(o);
   });
-  st.samples.filter((s) => !inProject.has(s.sample_id)).forEach((s) => {
-    const o = document.createElement("option"); o.value = s.sample_id; o.textContent = label(s); sel.append(o);
-  });
-  if (keep) sel.value = keep;
+  if (id) sel.value = id;
 }
+$("project").onchange = (e) => {  // the slice of that project last open (else its first), or the last sample in no project
+  const ids = projectSamples(e.target.value), last = load(`projectSample:${e.target.value}`);
+  const id = ids.includes(last) ? last : ids[0];
+  if (id) { fillSampleSelect(id); selectSample(id); }
+};
 
 // Color-by options appear only when they have something to show: the data starts with no cell types, and
 // region / changes / conflicts appear once regions are drawn, labels change, or priors conflict with cells.
@@ -1724,7 +1738,8 @@ async function selectSample(id) {
   $("qfBtn").disabled = false; $("anLoad").disabled = false; $("rmSample").disabled = false; $("allSamples").disabled = false; $("pjBtn").disabled = false;
   $("reset").disabled = !st.sample.allSessions.length && !projectOf(id);  // in a project: also to reset the other slices
   imageOnlyUI();  // now, not only when an annotation opens: a sample whose annotations are not opened yet opens none
-  store("sample", id);
+  store("sample", id); store(`projectSample:${(projectOf(id) || {}).project_id || ""}`, id);
+  if ($("sample").value !== id || $("project").value !== ((projectOf(id) || {}).project_id || "")) fillSampleSelect(id);
   loadStepsSoon();  // its steps also while none of its annotations is open
   $("path").textContent = st.sample.bundle_dir;
   $("path").title = `bundle: ${st.sample.bundle_dir}\nsource: ${st.sample.source_dir}\nH&E: ${st.sample.he_path}`;
@@ -4934,6 +4949,8 @@ const HELP = `
   <li>Xenium: the files of several slices, one per line in each field.</li>
   <li>Several image files go to the slices whose section their file names hold.</li></ul></li>
 <li>Moving between slices:<ul>
+  <li><b>Project</b> (Data tab, above Slice) picks the project, or the samples in no project; <b>Slice</b> lists its
+    slices. A project opens at the slice last open in it.</li>
   <li><b>◀ ▶</b> or <kbd>[</kbd> <kbd>]</kbd> step through them and keep what is shown: Color by, legend filters,
     hidden H&amp;E, the UMAP window and, on a UMAP of all slices, its zoom and selection.</li>
   <li><b>Overview of all samples</b> shows them side by side.</li>
