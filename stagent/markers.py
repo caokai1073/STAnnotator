@@ -601,13 +601,17 @@ def _pca(X, n_pcs=None, fit_max=None):
     cov = (C / m - np.outer(mu, mu)) / np.outer(sd, sd)  # covariance of standardized genes
     del C
     k = min(n_pcs or N_PCS, len(cov))
+    V = None
     if k < len(cov) - 1:  # the top k by Lanczos iterations (ARPACK, from a fixed start, to machine precision): no
         # reduction of the whole matrix, which took most of the time of a large panel (4,624 genes: 3.4 s -> 0.8 s a
         # level; components within 1e-12 of eigh's, the labels the same)
-        from scipy.sparse.linalg import eigsh
-        w, V = eigsh(cov, k=k, which="LA", v0=np.ones(len(cov)), tol=0)
-        V = V[:, np.argsort(w, kind="stable")]
-    else:
+        from scipy.sparse.linalg import eigsh, ArpackError
+        try:
+            w, V = eigsh(cov, k=k, which="LA", v0=np.ones(len(cov)), tol=0)
+            V = V[:, np.argsort(w, kind="stable")]
+        except ArpackError:  # no direction to start from (e.g. cells without a transcript: the covariance is 0)
+            V = None
+    if V is None:
         import scipy.linalg
         V = scipy.linalg.eigh(cov, subset_by_index=[len(cov) - k, len(cov) - 1], driver="evr")[1]  # the top k only
     V *= np.where(V[np.abs(V).argmax(0), np.arange(k)] < 0, -1.0, 1.0)  # each one's largest entry positive: a sign
