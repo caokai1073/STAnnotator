@@ -512,16 +512,20 @@ Histograms show where each threshold cuts and the dialog counts what goes; empty
      seconds after the app starts.
    - Every annotation keeps checksums of its steps (PCA, neighbors, first clusters, labels) in `base/fingerprints.json`
      and in the app's log, so that two runs can be compared step by step (a bug report carries them).
-3. **Leave out spillover** (marker genes, on by default): in imaging data a cell's outline also catches
-   transcripts of its neighbors; on, a gene counts as detected in a cell only where its count is above a tenth of the
-   mean count of its 6 nearest cells of the same slice. Turn it off to count every transcript in a cell's
-   outline.
-4. **Parallel clustering** (marker genes, off by default; a setting of this computer, for the agent's annotations
-   too): the Leiden clusterings each level tries (4 resolutions) run at once in separate processes. The same cell
-   types, about 20% faster on large samples (708,983 cells: 227 s → 184 s), but each process needs its own memory
-   (about 1.8 GB for 700,000 cells, 4.6 GB for 2 million); only as many start as the free memory allows (none: one
-   after the other). Worth it on a computer with memory to spare; on 16 GB it gains little for a large sample.
-5. Click **Annotate**.
+3. **Advanced** (folded; its line names the switches that are on): **Leave out spillover**, **Parallel
+   clustering**, **Keep my regions, priors & corrections** (when an annotation is open: carried into the new one) and
+   **Refine with the agent** (on by default: after annotating, the agent reviews the result round by round).
+   **All slices together** (a project) stays outside it.
+   - **Leave out spillover** (marker genes, on by default): in imaging data a cell's outline also catches
+     transcripts of its neighbors; on, a gene counts as detected in a cell only where its count is above a tenth of
+     the mean count of its 6 nearest cells of the same slice. Turn it off to count every transcript in a cell's
+     outline.
+   - **Parallel clustering** (marker genes, off by default; a setting of this computer, for the agent's annotations
+     too): the Leiden clusterings each level tries (4 resolutions) run at once in separate processes. The same cell
+     types, about 20% faster on large samples (708,983 cells: 227 s → 184 s), but each process needs its own memory
+     (about 1.8 GB for 700,000 cells, 4.6 GB for 2 million); only as many start as the free memory allows (none: one
+     after the other). Worth it on a computer with memory to spare; on 16 GB it gains little for a large sample.
+4. Click **Annotate**.
 
 The cells the marker step could not type get a type from their marker genes and then, round by round, from the cell
 types around them (their 10 nearest cells), until the labels settle; the cells the marker step typed keep their own
@@ -1059,7 +1063,7 @@ Each works as `only`, `exclude` or `enrich` with strength `strong` / `moderate` 
 - Local re-clustering ("this cluster is mixed") re-clusters one cluster or level, is previewed, and keeps regions,
   priors and corrections. A cluster's markers are scored against the other clusters of its level, as in the first run;
   the clusters it replaces leave the list; a cluster under 60 cells is labeled rather than re-clustered.
-- To add or remove types, revise the marker list and Annotate again with "keep my regions, priors & corrections".
+- To add or remove types, revise the marker list and Annotate again with "Keep my regions, priors & corrections" (under Advanced).
 
 ### Review
 

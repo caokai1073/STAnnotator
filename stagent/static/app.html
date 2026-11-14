@@ -204,6 +204,8 @@ button.main { width: 100%; padding: 9px 12px; font-weight: 600; margin-top: 2px;
 details.adv > summary { font-size: 12px; color: var(--muted); cursor: pointer; user-select: none; }
 details.adv > summary:hover { color: var(--ink); }
 details.adv[open] > summary { margin-bottom: 10px; }
+.advsw { display: flex; flex-direction: column; gap: 12px; }
+details.adv > summary .advon { font-size: 11.5px; }
 .progress { display: flex; visibility: hidden; align-items: center; gap: 8px; min-width: 180px; flex: 1; max-width: 640px; }
 .progress.show { visibility: visible; }
 .pstop { color: #b42318; border-color: #e5a29b; }
@@ -566,16 +568,18 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <option value="approx" data-short="Approximate">Approximate (pynndescent): faster for very large samples (about a million cells or more); the same labels with the same versions of its packages</option>
       <option value="exact" data-short="Exact" selected>Exact (the default): the true neighbors, the same labels on every computer, with or without a GPU; about a minute for 450,000 cells</option></select>
       <div class="seg" data-for="knn"></div><div class="hint" id="annEst"></div></div>
-    <label class="switch" id="spillWrap" title="In imaging data a cell's outline also catches transcripts of its neighbors. On: a gene counts as detected in a cell only where its count is above a tenth of the mean count of its 6 nearest cells. It helped on a MERFISH slice (lineage agreement 0.785 → 0.816 against the authors' labels) and changed little on Xenium sections; try it when many cells stay untyped or markers of neighboring types show up where they should not"><input type="checkbox" id="spill" checked>
-      <span>Leave out spillover<small>transcripts that come from neighboring cells</small></span></label>
-    <label class="switch" id="parWrap" title="Runs the Leiden clusterings each level tries (4 resolutions) at once in separate processes: the same cell types, about 20% faster on large samples (708,983 cells: 227 s → 184 s), but each process needs its own memory (about 1.8 GB for 700,000 cells, 4.6 GB for 2 million); only as many start as the free memory allows. Off: one after the other. A setting of this computer, for the agent's annotations too"><input type="checkbox" id="leidenPar">
-      <span>Parallel clustering<small>faster on large samples; uses more memory</small></span></label>
-    <label class="switch" id="carryWrap" style="visibility:hidden" title="Start the new annotation with the regions (and their colors), priors and hand corrections of the one that is open; priors and corrections naming cell types the new annotation does not have are dropped"><input type="checkbox" id="carry" checked>
-      <span>Keep my regions, priors &amp; corrections<small>carried into the new annotation</small></span></label>
-    <label class="switch" id="rfAutoWrap" title="After annotating with marker genes, the agent reviews the result with the tissue's priors and proposes edits of the marker list; you accept some and the app annotates again, round by round"><input type="checkbox" id="rfAuto" checked>
-      <span>Refine with the agent<small>after annotating: review, edit the list, annotate again</small></span></label>
     <label class="switch projall" hidden title="Annotate all slices of the project at once (one marker step and one model), so a name means the same cells in every slice"><input type="checkbox" id="projAllA">
       <span>All slices together<small>one annotation of the project's slices (marker genes)</small></span></label>
+    <details class="adv" id="annAdv"><summary>Advanced <span id="annAdvOn" class="advon"></span></summary><div class="advsw">
+      <label class="switch" id="spillWrap" data-short="spillover out" title="In imaging data a cell's outline also catches transcripts of its neighbors. On: a gene counts as detected in a cell only where its count is above a tenth of the mean count of its 6 nearest cells. It helped on a MERFISH slice (lineage agreement 0.785 → 0.816 against the authors' labels) and changed little on Xenium sections; try it when many cells stay untyped or markers of neighboring types show up where they should not"><input type="checkbox" id="spill" checked>
+        <span>Leave out spillover<small>transcripts that come from neighboring cells</small></span></label>
+      <label class="switch" id="parWrap" data-short="parallel" title="Runs the Leiden clusterings each level tries (4 resolutions) at once in separate processes: the same cell types, about 20% faster on large samples (708,983 cells: 227 s → 184 s), but each process needs its own memory (about 1.8 GB for 700,000 cells, 4.6 GB for 2 million); only as many start as the free memory allows. Off: one after the other. A setting of this computer, for the agent's annotations too"><input type="checkbox" id="leidenPar">
+        <span>Parallel clustering<small>faster on large samples; uses more memory</small></span></label>
+      <label class="switch" id="carryWrap" data-short="keep my edits" style="visibility:hidden" title="Start the new annotation with the regions (and their colors), priors and hand corrections of the one that is open; priors and corrections naming cell types the new annotation does not have are dropped"><input type="checkbox" id="carry" checked>
+        <span>Keep my regions, priors &amp; corrections<small>carried into the new annotation</small></span></label>
+      <label class="switch" id="rfAutoWrap" data-short="refine" title="After annotating with marker genes, the agent reviews the result with the tissue's priors and proposes edits of the marker list; you accept some and the app annotates again, round by round"><input type="checkbox" id="rfAuto" checked>
+        <span>Refine with the agent<small>after annotating: review, edit the list, annotate again</small></span></label>
+    </div></details>
     <button id="annotate" class="primary main">Annotate</button>
     <div class="act2"><button id="rfOpen" disabled title="Refine this annotation with the agent: the computed problems, the agent's proposed edits of the marker list, your conversation with it">Refine cell types</button></div>
   </div>
@@ -3813,8 +3817,8 @@ async function adoptArea(body, proposed) {
 }
 function openProposal(prop) {
   $("mkText").value = prop.text; $("mkName").value = ""; openMarkers(); checkMarkers();
-  $("carry").checked = true;
-  toast("Proposed marker list loaded. Close the dialog and click Annotate (“keep my regions, priors & corrections” is checked).", 6000);
+  $("carry").checked = true; syncAnnAdv();
+  toast("Proposed marker list loaded. Close the dialog and click Annotate (“Keep my regions, priors & corrections” under Advanced is checked).", 6000);
   setProposal("opened");
 }
 async function setProposal(status) {
@@ -4126,10 +4130,22 @@ if (["exact", "approx"].includes(load("knn"))) $("knn").value = load("knn");
 $("knn").onchange = () => { syncSeg("knn"); store("knn", $("knn").value); showEstimate(); };
 if (load("spill") === "off") $("spill").checked = false;
 $("spill").onchange = () => store("spill", $("spill").checked ? "on" : "off");
-api("/api/leiden_parallel").then((r) => { $("leidenPar").checked = r.on; $("leidenPar").disabled = r.fixed; }).catch(() => {});
+// Type tab: the switches in Advanced; its summary names those on, and it is hidden when none applies
+function syncAnnAdv() {
+  const shown = [...$("annAdv").querySelectorAll(".advsw > .switch")].filter((w) => !w.hidden && w.style.visibility !== "hidden");
+  $("annAdv").hidden = !shown.length;
+  const on = shown.filter((w) => w.querySelector("input").checked).map((w) => w.dataset.short);
+  $("annAdvOn").textContent = on.length ? `· ${on.join(", ")}` : "";
+}
+new MutationObserver(syncAnnAdv).observe($("annAdv"), { subtree: true, attributes: true, attributeFilter: ["hidden", "style"] });
+$("annAdv").addEventListener("change", syncAnnAdv);
+if (load("annAdv") === "open") $("annAdv").open = true;
+$("annAdv").addEventListener("toggle", () => store("annAdv", $("annAdv").open ? "open" : ""));
+api("/api/leiden_parallel").then((r) => { $("leidenPar").checked = r.on; $("leidenPar").disabled = r.fixed; syncAnnAdv(); }).catch(() => {});
 $("leidenPar").onchange = async () => {  // a setting of this computer (the agent's annotations follow it too)
   try { $("leidenPar").checked = (await post("/api/leiden_parallel", { on: $("leidenPar").checked })).on; }
   catch (e) { $("leidenPar").checked = !$("leidenPar").checked; toast(e.message, 5000); }
+  syncAnnAdv();
   estimateAnnotation();
 };
 $("mkDlg").addEventListener("close", estimateAnnotation);
@@ -4220,6 +4236,7 @@ async function rfButtonRound() {  // the button names the round it opens: this a
   setLabel($("rfOpen"), `Refine cell types round ${n}`);
 }
 if (load("rfAuto") === "off") $("rfAuto").checked = false;
+syncAnnAdv();
 $("rfAuto").onchange = () => store("rfAuto", $("rfAuto").checked ? "on" : "off");
 $("method").addEventListener("change", rfSync);
 const rfRound = () => (RF.state && RF.state.rounds.length ? RF.state.rounds[RF.state.rounds.length - 1] : null);
@@ -4358,7 +4375,7 @@ $("rfAccept").onclick = async () => {
   b.disabled = false;
   $("mkText").value = r.marker_text; $("carry").checked = true; $("method").value = "markers"; syncSeg("method");
   if (["exact", "approx"].includes(r.knn)) { $("knn").value = r.knn; syncSeg("knn"); }  // as the round before was made
-  $("spill").checked = !!r.spillover;
+  $("spill").checked = !!r.spillover; syncAnnAdv();
   RF.from = RF.sid; clearInterval(RF.timer); $("rfDlg").close();
   const joint = r.joint && st.sample && projectOf(st.sample.sample_id);
   if (joint) { $(PROJ_ALL.annotate).checked = true; $(PROJ_ALL.annotate).dispatchEvent(new Event("change")); }
@@ -4976,7 +4993,9 @@ const HELP = `
   <li>marker genes (<b>Markers…</b>);</li>
   <li>a single-cell reference (<b>Reference…</b>);</li>
   <li>or an existing annotation (<b>Annotation file…</b>).</li></ul></li>
-<li><b>Annotate</b> makes a new annotation; <b>keep my regions, priors &amp; corrections</b> carries them over.</li>
+<li><b>Annotate</b> makes a new annotation; <b>Keep my regions, priors &amp; corrections</b> carries them over.</li>
+<li><b>Advanced</b> (folded; its line names the switches that are on): Leave out spillover, Parallel clustering, Keep my
+  regions, priors &amp; corrections and Refine with the agent. <b>All slices together</b> stays outside it.</li>
 <li><b>Neighbors</b> (marker genes):<ul>
   <li><i>Exact</i> (default) finds the true neighbors: the same labels on every computer, with or without a GPU;
     about a minute for 450,000 cells.</li>
