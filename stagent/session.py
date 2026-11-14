@@ -62,11 +62,17 @@ def _now():
     return datetime.now().isoformat(timespec="seconds")
 
 
-def knn_mode(knn, n_cells=None):
+def knn_mode(knn, n_cells=None, n_genes=None, tree=None, n_types=None, nnz=None):
     """The neighbor search of a marker annotation: the one asked for, else "exact", or "approx" from
-    markers.KNN_APPROX_CELLS cells."""
+    markers.KNN_APPROX_CELLS cells when this computer's estimate (timing.estimate) of the annotation with it is at
+    most 1 / markers.KNN_APPROX_SPEEDUP of the one with "exact"."""
     if knn in (None, ""):
-        return "approx" if (n_cells or 0) >= markers.KNN_APPROX_CELLS else markers.KNN
+        if (n_cells or 0) < markers.KNN_APPROX_CELLS:
+            return markers.KNN
+        from . import timing
+        sec = {k: timing.estimate(n_cells, n_genes or 0, tree, "auto", k, n_types, nnz)["seconds"]
+               for k in ("exact", "approx")}
+        return "approx" if markers.KNN_APPROX_SPEEDUP * sec["approx"] <= sec["exact"] else markers.KNN
     if knn not in ("exact", "approx"):
         raise vocab.VocabError("knn must be 'exact' or 'approx'")
     return knn
@@ -250,11 +256,14 @@ class Session:
             parsed = markers.parse(markers_text, panel_genes(sample_id), filtered_genes(sample_id))
             if not parsed["ok"]:
                 raise vocab.VocabError("marker list has errors: " + "; ".join(parsed["errors"][:8]))
+            from . import timing
             scheme = {"kind": "markers", "text": parsed["canonical"], "tree": parsed["tree"], "types": parsed["leaves"],
                       "nodes": parsed["types"], "leaf_types": True,
                       "parent": parsed["parent"], "top": parsed["top"],
                       "resolution": markers.AUTO if resolution in (None, "", markers.AUTO) else float(resolution),
-                      "knn": knn_mode(knn, meta.get("n_cells")), "neighbors": True, "spillover": bool(spillover), "low_quality": True}
+                      "knn": knn_mode(knn, meta.get("n_cells"), len(panel_genes(sample_id)), parsed["tree"],
+                                      len(parsed["leaves"]), timing.counts_nnz(sd)),
+                      "neighbors": True, "spillover": bool(spillover), "low_quality": True}
             scheme["types"] = scheme["types"] + [markers.LOW_QUALITY]  # (see markers.LOW_QUALITY)
             scheme["top"] = dict(scheme["top"], **{markers.LOW_QUALITY: markers.LOW_QUALITY})
             scheme["parent"] = dict(scheme["parent"], **{markers.LOW_QUALITY: None})

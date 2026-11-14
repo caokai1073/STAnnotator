@@ -601,8 +601,15 @@ def _pca(X, n_pcs=None, fit_max=None):
     cov = (C / m - np.outer(mu, mu)) / np.outer(sd, sd)  # covariance of standardized genes
     del C
     k = min(n_pcs or N_PCS, len(cov))
-    import scipy.linalg
-    V = scipy.linalg.eigh(cov, subset_by_index=[len(cov) - k, len(cov) - 1], driver="evr")[1]  # the top k only
+    if k < len(cov) - 1:  # the top k by Lanczos iterations (ARPACK, from a fixed start, to machine precision): no
+        # reduction of the whole matrix, which took most of the time of a large panel (4,624 genes: 3.4 s -> 0.8 s a
+        # level; components within 1e-12 of eigh's, the labels the same)
+        from scipy.sparse.linalg import eigsh
+        w, V = eigsh(cov, k=k, which="LA", v0=np.ones(len(cov)), tol=0)
+        V = V[:, np.argsort(w, kind="stable")]
+    else:
+        import scipy.linalg
+        V = scipy.linalg.eigh(cov, subset_by_index=[len(cov) - k, len(cov) - 1], driver="evr")[1]  # the top k only
     V *= np.where(V[np.abs(V).argmax(0), np.arange(k)] < 0, -1.0, 1.0)  # each one's largest entry positive: a sign
     V /= sd[:, None]  # that does not depend on the computer's LAPACK. Ascending variance: the last column is PC1
     return _scores(X, V, mu)  # = standardized X times the top components
@@ -730,8 +737,9 @@ def _scores(X, V, mu):
 
 
 KNN = "exact"  # neighbor search of the marker step: "exact" (default: the true neighbors, the same on every computer) or "approx" (see knn)
-KNN_APPROX_CELLS = 1_000_000  # from this many cells (of an annotation; all slices together) the default is "approx":
-                              # the exact search grows with the square of the cells (2 million: over 4 min on a GPU)
+KNN_APPROX_CELLS = 1_000_000  # from this many cells (of an annotation; all slices together) the default is "approx"
+KNN_APPROX_SPEEDUP = 2        # when its estimated time here is at most half of "exact"'s: the exact search grows with
+                              # the square of the cells (2 million: over 4 min on a GPU), the approximate one linearly
 KNN_THREADS = 8  # the approximate search always runs on this many threads (its result depends on the count)
 KNN_EXTRA = 8  # candidates beyond k that the exact search re-ranks in float64
 

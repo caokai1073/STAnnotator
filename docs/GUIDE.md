@@ -500,13 +500,14 @@ Histograms show where each threshold cuts and the dialog counts what goes; empty
    - *Single-cell reference*: a labeled reference h5ad (**Reference…**);
    - *Load existing*: a CSV with one cell type per cell (**Annotation file…**).
 2. With marker genes, choose **Neighbors**, the neighbor search of the marker step:
-   - *Exact* (the default below a million cells): the true neighbors, the same on every computer, with or without a GPU (cells at exactly
+   - *Exact* (the default): the true neighbors, the same on every computer, with or without a GPU (cells at exactly
      the same distance are taken in their order, and every row is checked against rounding). The macOS app runs it on
      the Apple GPU (MLX, macOS 14 or later), with the same result. On the CPU it runs on up to 8 threads in small
      tiles: about 9 s for the 188,644 cells of a 5,000-gene Xenium section and under a minute for 400,000 cells on 8
      cores, in under 1 GB of memory;
-   - *Approximate* (pynndescent; the default from a million cells, all slices together counting): much faster for
-     very large samples (the exact search grows with the square of the cells). A choice you make for a sample is kept
+   - *Approximate* (pynndescent): the default from a million cells (all slices together counting) when the time
+     estimate gives it at most half the time of Exact on this computer (the exact search grows with the square of
+     the cells). A choice you make for a sample is kept
      for it. Its result depends on the number of threads, so it always runs on 8 (also with fewer cores): a rerun
      gives the same labels with the same app version (Intel / AMD and Apple silicon may still differ slightly). Its code is compiled once per app start, in the background a few
      seconds after the app starts.

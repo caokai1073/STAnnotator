@@ -32,7 +32,7 @@ Getting started
   start_session(sample_id, annotation_csv=..., id_column=..., label_column=...) after inspect_annotation. Or
   resume_session from list_sessions. The review window of start_session shows how long the annotation should take
   on this computer (exact neighbors by default, the same on every computer: about a minute for 450,000 cells;
-  from a million cells approximate neighbors by default, much faster there).
+  from a million cells approximate neighbors by default when they are estimated at least twice as fast here).
 - The user usually has the STAnnotator app (or the web viewer) open: call use_viewer_session to load what they
   are looking at. After starting a new annotation call open_viewer: a running app switches to it by itself;
   otherwise give the user the link. The viewer shows the cell types on the H&E (or DAPI); the user draws and names
@@ -559,7 +559,8 @@ def _d_start_session(a):
         from . import config, timing
         from .session import knn_mode
         n = json.load(open(config.SAMPLES / a["sample_id"] / "meta.json")).get("n_cells") or 0
-        knn = knn_mode(a.get("knn"), n)
+        knn = knn_mode(a.get("knn"), n, len(panel_genes(a["sample_id"])), p["tree"], len(p["leaves"]),
+                       timing.counts_nnz(config.SAMPLES / a["sample_id"]))
         est = timing.estimate(n, len(panel_genes(a["sample_id"])), p["tree"], "auto", knn, len(p["leaves"]),
                               timing.counts_nnz(config.SAMPLES / a["sample_id"]))
         det.append(f"Neighbor search: {est['backend']}"
@@ -1012,9 +1013,9 @@ def start_session(sample_id: str, markers_text: Optional[str] = None,
     carry_from_current: copy the regions, priors and corrections of the active session of the same sample (use it
     when re-annotating with a revised marker list). The first call to any tool that needs labels runs the annotation
     (the review window shows how long it should take here). Give the user a new viewer link afterwards (open_viewer).
-    knn (marker list only): the neighbor search of the marker step, "exact" (the default below a million cells: the
-    true neighbors, the same labels on every computer) or "approx" (the default from a million cells: pynndescent on
-    8 threads, much faster for large samples, the same result with the same app version). Leave it out unless the
+    knn (marker list only): the neighbor search of the marker step, "exact" (the default: the true neighbors, the
+    same labels on every computer) or "approx" (the default from a million cells when it is estimated at least twice
+    as fast here: pynndescent on 8 threads, the same result with the same app version). Leave it out unless the
     user asks for one.
     spillover (marker list only): leave out transcripts spilled over from neighboring cells in the marker step (a
     gene counts in a cell only above a tenth of its mean count in the 6 nearest cells); on by default, turn it off

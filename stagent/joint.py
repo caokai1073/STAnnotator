@@ -95,11 +95,10 @@ def annotate(pid, markers_text, resolution=None, carry=False, progress=None, knn
     """One marker annotation of all the project's slices together; returns {sample_id: new session id}.
     knn: the neighbor search, "exact" or "approx" (default: exact, approx from markers.KNN_APPROX_CELLS cells). spillover: leave out transcripts spilled over from
     neighboring cells of the same slice (markers.spill_detected)."""
-    from .session import Session, knn_mode
+    from .session import Session
     from . import timing
     say = progress or (lambda f, m: None)
     ids, off, counts, panel = _pooled(pid)
-    knn = knn_mode(knn, int(off[-1]))
     hold = [counts]  # handed over in a list, so this frame stops owning the pooled matrix and _annotate can free it
     del counts
     with timing.run(int(off[-1])):
@@ -115,6 +114,8 @@ def _annotate(pid, markers_text, resolution, carry, say, knn, ids, off, hold, pa
     parsed = markers.parse(markers_text, panel, filtered_genes(ids[0]))
     if not parsed["ok"]:
         raise ValueError("marker list has errors: " + "; ".join(parsed["errors"][:8]))
+    from .session import knn_mode
+    knn = knn_mode(knn, n_cells, len(panel), parsed["tree"], len(parsed["leaves"]), counts.nnz)
     say(0.02, f"marker step on {counts.shape[0]:,} cells of {len(ids)} slices")
     spill = None
     if spillover:  # the slices' positions, each slice its own group (their coordinates overlap)
