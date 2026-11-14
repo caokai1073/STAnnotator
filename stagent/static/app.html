@@ -543,7 +543,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <button id="sampleRename" disabled title="Rename the sample as the app shows it (a slice: its name in the project)">Rename</button>
       <button id="rmSample" class="rmsample" disabled title="Remove this sample only: its cells, annotations and chats go to the data folder's trash (to import it again under its name: Import, Replace the existing sample)">Remove</button></div></div>
     <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-layers"/></svg><div id="sampleInfo">No sample yet</div></div>
-    <div class="act2"><button id="allSamples" disabled title="Every sample at a glance, colored the same way (cell type, lineage, Leiden, niche, region)">Overview of all samples</button></div>
+    <div class="act2"><button id="allSamples" disabled title="The slices of the project (or, with no project chosen, every sample) at a glance, colored the same way (cell type, lineage, Leiden, niche, region)">Overview of the project</button></div>
     <div class="act2"><button id="qfBtn" class="primary main" disabled title="Delete cells with few transcripts or genes or a high mitochondrial share, and genes detected in few cells">Filter cells and genes</button></div>
     <div id="slNav" class="slnav" hidden>
       <div class="stepper"><button id="slPrev" title="Previous slice of the project ([)">◀</button><span id="slPos"></span><button id="slNext" title="Next slice of the project (])">▶</button></div>
@@ -1660,6 +1660,7 @@ function fillSampleSelect(id) {  // the project of sample id (default: the one s
     { value: "", textContent: `No project · ${loose} sample${loose === 1 ? "" : "s"}` }));
   ps.value = pid;
   $("rmProject").disabled = !p;
+  const ov = $("allSamples").querySelector(".bt"); if (ov) ov.textContent = p ? "Overview of the project" : "Overview of all samples";
   $("projectWrap").hidden = !st.samples.length;  // (with no project yet: "No project" and Change, to make one)
   $("sampleLbl").textContent = p ? "Slice" : "Sample";
   const cells = (s) => (s.image_only ? `${s.image_kind || "image"} only` : `${s.n_cells.toLocaleString()} ${s.unit || "cells"}`);
@@ -4955,7 +4956,8 @@ const HELP = `
     slices. A project opens at the slice last open in it.</li>
   <li><b>◀ ▶</b> or <kbd>[</kbd> <kbd>]</kbd> step through them and keep what is shown: Color by, legend filters,
     hidden H&amp;E, the UMAP window and, on a UMAP of all slices, its zoom and selection.</li>
-  <li><b>Overview of all samples</b> shows them side by side.</li>
+  <li><b>Overview of the project</b> (Data tab) shows its slices side by side (with no project chosen: <b>Overview of
+    all samples</b>).</li>
   <li>The Compare tab compares them (scope: all slices, rows by slice).</li></ul></li>
 <li><b>All slices together</b> (in the Annotate, Embed and Niche tabs, each for its own analysis; off by default for
   Annotate, on for Embed and Niche) treats the project as one:<ul>
@@ -7054,7 +7056,7 @@ async function paintTile(t, mode, sel) {  // the image, then the cells: light gr
   }
   lc.putImageData(id, 0, 0); ctx.drawImage(lay, 0, 0);
 }
-$("allSamples").onclick = () => openGallery(true);
+$("allSamples").onclick = () => openGallery(!(st.sample && projectOf(st.sample.sample_id)));  // the project, or every sample
 // ---------------- Compare: DE genes, top genes per group, composition (one slice or all slices pooled) ----------------
 const AN = { opts: null, key: "", last: null, req: null, view: "", by: {}, n: { de: 20, deseq2: 20, deall: 5, markers: 5, run: 20, compare: 20, circle: 40 } };
 const AN_N = { de: [5, 60], deseq2: [5, 60], deall: [1, 30], markers: [1, 15], run: [5, 60], compare: [5, 80], circle: [5, 300] };  // the dialog's number: least, most

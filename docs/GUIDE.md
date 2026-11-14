@@ -247,7 +247,7 @@ it out ("no project"). The slices of a project need one gene panel; a project le
 
 **Browsing.** **Project** (Data tab) picks the project, which opens at the slice last open in it; **Slice** below lists
 its slices. **◀ ▶** (or `[` `]`) step through the slices and keep what is shown (Color by, legend filters, hidden
-H&E, the UMAP window and, on a UMAP of all slices, its zoom and the cells selected on it). **Overview of all samples**
+H&E, the UMAP window and, on a UMAP of all slices, its zoom and the cells selected on it). **Overview of the project**
 shows them side by side, and the **Compare** tab compares them (all slices, by slice).
 
 **All slices together.** With this ticked:
@@ -442,7 +442,8 @@ The app's window, or the web viewer (`.venv/bin/stagent viewer`, then http://loc
   and annotations stay.
 - **Rename** beside **Annotation** names the annotation chosen there (shown before its version and date, in the
   list and in Export); its id, versions and results stay. Leave the name empty for none.
-- **Overview of all samples** shows every sample side by side, each over its image (the **image** box) and colored the
+- **Overview of the project** shows the slices of the project chosen (with **No project** chosen: **Overview of all
+  samples**, every sample) side by side, each over its image (the **image** box) and colored the
   same way: cell type, lineage, Leiden clusters, niche or region (from the annotation open, else each sample's latest
   one), with one legend for all.
   - Tick legend entries to show only them (e.g. only ILCs; the other cells turn light gray on every sample); **Show
