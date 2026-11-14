@@ -536,13 +536,13 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <button class="tab" data-tab="compare" role="tab" title="DE genes, top genes per group, composition">Compare</button><button class="tab" data-tab="signal" role="tab" title="Cell-cell communication: ligand-receptor signaling between neighboring cells">Signal</button>
     <button class="tab" data-tab="traj" role="tab" title="Spatial axes and pseudotime: the order of cells in the tissue or along a differentiation, and the genes that change along it">Trajectory</button></div>
   <div class="pane" data-pane="data">
-    <div class="fld" id="projectWrap" hidden><span>Project</span><select id="project" aria-label="Project" title="A project (its slices are listed under Slice) or the samples in no project"></select></div>
+    <div class="fld" id="projectWrap" hidden><span>Project</span><div class="inrow"><select id="project" aria-label="Project" title="A project (its slices are listed under Slice) or the samples in no project"></select>
+      <button id="pjBtn" disabled title="Choose which samples form which project (slices analyzed together)">Change</button></div></div>
     <div class="fld" id="sampleWrap"><span id="sampleLbl">Sample</span><div class="inrow"><select id="sample" aria-label="Sample"></select>
       <button id="sampleRename" disabled title="Rename the sample as the app shows it (a slice: its name in the project)">Rename</button>
       <button id="rmSample" class="rmsample" disabled title="Remove this sample only: its cells, annotations and chats go to the data folder's trash (to import it again under its name: Import, Replace the existing sample)">Remove</button></div></div>
     <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-layers"/></svg><div id="sampleInfo">No sample yet</div></div>
-    <div class="act2"><button id="allSamples" disabled title="Every sample at a glance, colored the same way (cell type, lineage, Leiden, niche, region)">Overview of all samples</button>
-      <button id="pjBtn" disabled title="Choose which samples form which project (slices analyzed together)">Projects</button></div>
+    <div class="act2"><button id="allSamples" disabled title="Every sample at a glance, colored the same way (cell type, lineage, Leiden, niche, region)">Overview of all samples</button></div>
     <div class="act2"><button id="qfBtn" class="primary main" disabled title="Delete cells with few transcripts or genes or a high mitochondrial share, and genes detected in few cells">Filter cells and genes</button></div>
     <div id="slNav" class="slnav" hidden>
       <div class="stepper"><button id="slPrev" title="Previous slice of the project ([)">◀</button><span id="slPos"></span><button id="slNext" title="Next slice of the project (])">▶</button></div>
@@ -1641,7 +1641,7 @@ async function loadSamples(select, project) {
   st.linkUsed = true;
   await selectSample(sel.value);
 }
-// The Project box (shown when there are projects) picks a project or the samples in no project; the Sample box
+// The Project box picks a project or the samples in no project; the Sample box
 // (Slice in a project) lists only those
 const looseSamples = () => st.samples.filter((s) => !projectOf(s.sample_id)).map((s) => s.sample_id);
 const projectSamples = (pid) => (pid ? ((st.projects || []).find((p) => p.project_id === pid) || { samples: [] }).samples
@@ -1658,7 +1658,7 @@ function fillSampleSelect(id) {  // the project of sample id (default: the one s
   if (loose) ps.append(Object.assign(document.createElement("option"),
     { value: "", textContent: `No project · ${loose} sample${loose === 1 ? "" : "s"}` }));
   ps.value = pid;
-  $("projectWrap").hidden = !(st.projects || []).length;
+  $("projectWrap").hidden = !st.samples.length;  // (with no project yet: "No project" and Change, to make one)
   $("sampleLbl").textContent = p ? "Slice" : "Sample";
   const cells = (s) => (s.image_only ? `${s.image_kind || "image"} only` : `${s.n_cells.toLocaleString()} ${s.unit || "cells"}`);
   sel.textContent = "";
