@@ -100,13 +100,14 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 
 /* hero */
 .hero { padding-block: clamp(40px, 7vw, 88px) 0; }
-.hero-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 32px 56px; align-items: end; }
+.hero-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 32px; align-items: end; }
 .hero h1 { font-size: var(--s-5); line-height: 1.04; }
 .hero h1 em { font-style: normal; color: var(--eosin); }
 .hero h1 .nw { white-space: nowrap; }
 .hero .lede { font-size: clamp(var(--s-2), 1rem + .35vw, 1.25rem); line-height: 1.6; color: var(--muted); margin-top: clamp(28px, 4vw, 44px); }
 .hero .lede-wrap { display: grid; gap: 24px; }
-.cta { display: flex; flex-wrap: wrap; gap: 12px; }
+.cta { display: flex; flex-wrap: wrap; gap: 8px; }
+.hero .cta .btn { padding: 11px 14px; gap: 8px; }
 .hero-meta { font: 400 var(--s-0)/1.5 var(--f-mono); color: var(--muted); }
 @media (max-width: 860px) { .hero-grid { grid-template-columns: minmax(0, 1fr); } }
 
