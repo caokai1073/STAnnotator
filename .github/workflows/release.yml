@@ -2,7 +2,8 @@
 #
 # A tag v<version> that matches stagent/__init__.py starts it: git tag v0.2.49 && git push origin v0.2.49
 # The release notes come from packaging/release_notes/v<version>.md (the app shows them in its update window).
-# "Run workflow" (Actions tab) builds without publishing, to try the build.
+# "Run workflow" (Actions tab), or a push to the branch build (git push origin HEAD:build), builds without publishing,
+# to try the build: the release job runs only for a tag.
 #
 # Repository secrets (Settings > Secrets and variables > Actions):
 #   MACOS_CERT_P12        the "Developer ID Application" certificate with its key, exported as .p12, base64-encoded
@@ -17,6 +18,7 @@ name: release
 on:
   push:
     tags: ["v*"]
+    branches: ["build"]
   workflow_dispatch:
 
 permissions:
