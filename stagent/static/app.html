@@ -9,11 +9,11 @@
 <style>
 :root {
   --bg: #f4f4f2; --panel: #ffffff; --ink: #1d1f21; --muted: #6b6f73; --line: #e0e0dc;
-  --accent: #0f7c86; --accent-soft: #e3f2f3; --warn: #b5541c; --user: #eef3f8;
+  --accent: #0f7c86; --accent-soft: #e3f2f3; --warn: #b5541c; --user: #eef3f8; --stop: #c0392b;
 }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #17191b; --panel: #212427; --ink: #e8e8e6; --muted: #9a9ea3; --line: #33373b;
-          --accent: #4fb6bf; --accent-soft: #1f3638; --warn: #e08a55; --user: #26303a; }
+          --accent: #4fb6bf; --accent-soft: #1f3638; --warn: #e08a55; --user: #26303a; --stop: #c9443a; }
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -123,6 +123,8 @@ button.ib.flip .ic { transform: rotate(180deg); }
 .float button.ib, .dh button.ib, .lh button.ib { border-color: transparent; background: none; color: var(--muted); padding: 5px; }
 .float button.ib:hover, .dh button.ib:hover, .lh button.ib:hover { color: var(--ink); background-color: var(--accent-soft); }
 button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+button.stop { background: var(--stop); color: #fff; border-color: var(--stop); }  /* ends a loop (Stop refining) */
+button.stop:hover:not(:disabled) { background-color: var(--stop); filter: brightness(1.1); }
 button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
 button:disabled { opacity: .45; cursor: default; }
 .spacer { flex: 1; }
@@ -946,7 +948,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
         <div id="rfEdits" class="rfedits"></div></div>
     </div>
     <div class="row" style="margin-top:4px"><span class="err" id="rfErr"></span><span class="spacer"></span>
-      <button id="rfStop" title="End refining: the annotation stays as it is">Stop refining</button>
+      <button id="rfStop" class="stop" title="End refining: the annotation stays as it is">Stop refining</button>
       <button id="rfDismiss" title="Drop these edits; you can write to the agent and ask again">Dismiss edits</button>
       <button id="rfAsk" class="primary" title="The agent reviews the whole annotation with the tissue's priors and proposes edits">Agent review</button>
       <button id="rfAccept" class="primary" hidden title="Apply the chosen edits to the marker list and annotate again (your regions, priors and corrections carry over)">Accept chosen and annotate</button></div>
