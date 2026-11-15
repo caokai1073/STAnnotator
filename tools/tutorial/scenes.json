@@ -1,16 +1,16 @@
 {
- "about": "Scenes of the recorded session (0.2.58), in order (build.py). rewrite: local paths shown as generic ones. synthetic: answers for requests the recording could not make (the app would open a real Terminal). inject: such an answer for one scene.",
+ "about": "Scenes of the recorded session (0.2.59), in order (build.py). rewrite: local paths shown as generic ones. synthetic: answers no scene recorded (the agent's status). inject: an answer for one scene. The requests to the agent were recorded with work/tut/viewer59.py, which answers them without opening Terminal.",
  "rewrite": [
   [
    "/Users/caokai/Documents/STAnnotator-repo/work/tut/data/",
    "/Users/me/Downloads/scp2927/"
   ],
   [
-   "/Users/caokai/Documents/STAnnotator-repo/work/tut/home58",
+   "/Users/caokai/Documents/STAnnotator-repo/work/tut/home59",
    "/Users/me/stagent"
   ],
   [
-   "/Users/caokai/.claude/projects/-Users-caokai-Documents-STAnnotator-repo-work-tut-home58-claude-workspace",
+   "/Users/caokai/.claude/projects/-Users-caokai-Documents-STAnnotator-repo-work-tut-home59-claude-workspace",
    "~/.claude/projects/stagent"
   ],
   [
@@ -30,7 +30,7 @@
    "/Users/me/"
   ],
   [
-   "work/tut/home58",
+   "work/tut/home59",
    "/Users/me/stagent"
   ]
  ],
@@ -63,7 +63,7 @@
     "reused": true
    }
   },
-  "GET /api/s/147328_20261113-134158_a47f/advice": {
+  "GET /api/s/147328_20261115-154429_6892/advice": {
    "items": [],
    "categories": {
     "taxonomy": "Cell types",
@@ -227,7 +227,7 @@
    "report": null,
    "registration_fixed": false
   },
-  "GET /api/s/147328_20261113-134402_1998/advice": {
+  "GET /api/s/147328_20261115-154838_8389/advice": {
    "items": [],
    "categories": {
     "taxonomy": "Cell types",
@@ -265,7 +265,7 @@
       "qc": "Technical"
      },
      "what": "cell types and markers: the computed review candidates, types to merge, split or add, sample context, technical problems",
-     "unavailable": null,
+     "unavailable": "annotate the sample first",
      "status": {
       "current": false,
       "preparing": false,
@@ -285,7 +285,7 @@
       "organization": "Gradients and neighbors",
       "registration": "Registration"
      },
-     "what": "compartments on the H&E (proposed as regions), gradients and neighbors, the cells on their nuclei in all areas (crypts, vessels)",
+     "what": "the cells on their nuclei on the H&E (the registration), and torn pieces of tissue you outlined (not annotated yet: no cell types)",
      "unavailable": null,
      "status": {
       "current": false,
@@ -307,7 +307,7 @@
       "parameters": "Parameters"
      },
      "what": "Leiden clusters against the cell types, slices mixing (joint embedding), parameters",
-     "unavailable": null,
+     "unavailable": "annotate the sample first",
      "status": {
       "current": false,
       "preparing": false,
@@ -327,7 +327,7 @@
       "parameters": "Parameters"
      },
      "what": "what each niche is, names, k and number of niches",
-     "unavailable": "run the niches first (Niches tab)",
+     "unavailable": "annotate the sample first",
      "status": {
       "current": false,
       "preparing": false,
@@ -348,7 +348,7 @@
       "next": "Next analyses"
      },
      "what": "the 0 comparison(s) you ran: findings, caveats, next analyses",
-     "unavailable": "run a comparison first (Compare tab)",
+     "unavailable": "annotate the sample first",
      "status": {
       "current": false,
       "preparing": false,
@@ -369,7 +369,7 @@
       "next": "Next analyses"
      },
      "what": "the 0 communication analysis(es) you ran: interactions, caveats, next analyses",
-     "unavailable": "run the cell-cell communication first (Signaling tab)",
+     "unavailable": "annotate the sample first",
      "status": {
       "current": false,
       "preparing": false,
@@ -392,6 +392,17 @@
    "registration_fixed": false
   }
  },
+ "harvest": [
+  "GET /api/markers/organs",
+  "GET /api/markers/library",
+  "POST /api/analysis/options",
+  "GET /api/config",
+  "GET /api/sample/147328/genes",
+  "GET /api/sample/167799/genes",
+  "GET /api/claude/status",
+  "GET /api/leiden_parallel",
+  "GET /api/review_mode"
+ ],
  "scenes": [
   {
    "name": "s00-empty"
@@ -409,7 +420,7 @@
    "name": "c02-aligning"
   },
   {
-   "name": "c02-al-alignment_status-2"
+   "name": "c02-al-alignment_status-1"
   },
   {
    "name": "c02-al-search_alignment-1"
@@ -424,10 +435,16 @@
    "name": "c02-al-show_alignment-2"
   },
   {
-   "name": "c02-al-search_alignment-2"
+   "name": "c02-al-apply_alignment-1"
   },
   {
    "name": "c02-align1-accepted"
+  },
+  {
+   "name": "c02-al-alignment_status-2"
+  },
+  {
+   "name": "c02-al-search_alignment-2"
   },
   {
    "name": "c02-al-show_alignment-3"
@@ -463,623 +480,16 @@
    "name": "c04-si"
   },
   {
+   "name": "c04-agent"
+  },
+  {
    "name": "c05-markers-load"
   },
   {
    "name": "c05-annotate"
   },
   {
-   "name": "c05r-ask",
-   "inject": {
-    "POST /api/s/147328_20261113-134402_1998/refine/ask": {
-     "round": {
-      "n": 1,
-      "session": "147328_20261113-134402_1998",
-      "version": 2,
-      "marker_text": "Epithelial: EPCAM|KRT8+\n  Stem cells: LGR5+ OLFM4+ ASCL2+ SMOC2+ MKI67-\n  Cycling TAs: MKI67+ TOP2A+ PCLAF+ UBE2C+\n  Enterocytes: FABP2+ APOB+ CYP3A4+ MGAM+\n  BEST4+ enterocytes: BEST4+ OTOP2+ SPIB+\n  Goblet cells: SPINK4+ SPDEF+ ITLN1+ ITLN2-\n  Paneth cells: ITLN2+ SPINK4+ MKI67-\n  Enteroendocrine cells: CHGB+ SCG5+ NEUROD1+ SCGN+\n  Tuft cells: TRPM5+ AVIL+ SH2D6+ HPGDS+\n  M cells: SPIB+ CCL20+ BEST4- OTOP2-\nT and NK cells: CD3E|CD2|CD247|NKG7|CD3D+ EPCAM-\n  CD4 T cells: CD4|CD40LG|IL7R+ CD8A- CD8B-\n    Tregs: FOXP3+ CTLA4+\n    Naive CD4 T cells: CCR7+ SELL+ FOXP3-\n    Effector/memory CD4 T cells: KLRB1+ GZMK+ CCL5+ CD40LG+ FOXP3- CCR7-\n  CD8 T cells: CD8A+ CD8B+ CD4-\n  gd T cells: TRDC+ TRDV1+ CD4-\n  NK cells: KLRF1+ NKG7+ KLRD1+ NCAM1+ CD3E-\n  ILCs: RORC+ KIT+ IL1R1+ IL7R+ CD3E-\nB and plasma cells: MS4A1|CD79A|CD79B|MZB1+ EPCAM-\n  B cells: MS4A1+ BANK1+ CD79B+ TNFRSF17-\n  Plasma cells: MZB1+ TNFRSF17+ DERL3+ MS4A1-\nMyeloid: CD68|CD14|AIF1|TYROBP|CSF1R+ EPCAM-\n  Macrophages: C1QB+ C1QC+ CD68+ APOE+\n  Monocytes: FCN1+ CD14+ C1QB-\n  Neutrophils: CSF3R+ FCGR3B+ CXCR2+ S100A12+\n  Eosinophils: CLC+ CCR3+ CPA3-\n  Dendritic cells: CLEC9A+ CLEC10A+ LAMP3+ CCR7+\nMast cells: CPA3+ HDC+ KIT+ CMA1+ EPCAM-\nFibroblasts: PDGFRA+ LUM+ COL1A1+ DPT+ MYH11-\n  Villus fibroblasts (telocytes): F3+ BMP5+ SOX6+ WNT5A+\n  Crypt fibroblasts (trophocytes): GREM1+ RSPO3+ C7+ ADH1B+\nFollicular dendritic cells: FDCSP+ C7+ EPCAM-\nSmooth muscle cells: MYH11+ ACTG2+ MYLK+ DES+ PDGFRA-\nPericytes: RGS5+ NOTCH3+ PDGFRB+ MYH11-\nEndothelial: PECAM1|VWF|CLDN5+ EPCAM-\n  Blood vessel EC: PLVAP+ VWF+ PECAM1+ LYVE1-\n    Arterial EC: GJA4+ HEY1+ NOTCH4+ ACKR1-\n    Venous EC: ACKR1+ VWF+ GJA4-\n  Lymphatic EC: LYVE1+ PDPN+ MMRN1+ PLVAP-\nGlia: PLP1+ S100B+ CDH19+ SCN7A+\nNeurons: STMN2+ PHOX2B+ SNAP25+ UCHL1+\nICC: ANO1+ KIT+ CPA3-",
-      "report": {
-       "version": 2,
-       "n_cells": 56852,
-       "organ": {
-        "organ": "Small intestine",
-        "from": "marker list",
-        "covered": true,
-        "evidence": [
-         "the marker list has cell types only the built-in small_intestine list has: BEST4+ enterocytes, Enterocytes, M cells, Paneth cells"
-        ]
-       },
-       "types": [
-        {
-         "type": "Smooth muscle cells",
-         "lineage": "Smooth muscle cells",
-         "n_cells": 11521,
-         "share": 0.2026,
-         "median_confidence": 0.99,
-         "markers_in": 0.948,
-         "markers_in_rest_of_lineage": null,
-         "fold": null
-        },
-        {
-         "type": "Enterocytes",
-         "lineage": "Epithelial",
-         "n_cells": 10136,
-         "share": 0.1783,
-         "median_confidence": 0.99,
-         "markers_in": 0.767,
-         "markers_in_rest_of_lineage": 0.254,
-         "fold": 3.02
-        },
-        {
-         "type": "Crypt fibroblasts (trophocytes)",
-         "lineage": "Fibroblasts",
-         "n_cells": 6103,
-         "share": 0.1073,
-         "median_confidence": 0.98,
-         "markers_in": 0.576,
-         "markers_in_rest_of_lineage": 0.095,
-         "fold": 6.08
-        },
-        {
-         "type": "Cycling TAs",
-         "lineage": "Epithelial",
-         "n_cells": 3285,
-         "share": 0.0578,
-         "median_confidence": 0.83,
-         "markers_in": 0.344,
-         "markers_in_rest_of_lineage": 0.032,
-         "fold": 10.87
-        },
-        {
-         "type": "Villus fibroblasts (telocytes)",
-         "lineage": "Fibroblasts",
-         "n_cells": 3069,
-         "share": 0.054,
-         "median_confidence": 0.96,
-         "markers_in": 0.378,
-         "markers_in_rest_of_lineage": 0.065,
-         "fold": 5.82
-        },
-        {
-         "type": "Goblet cells",
-         "lineage": "Epithelial",
-         "n_cells": 2549,
-         "share": 0.0448,
-         "median_confidence": 0.8,
-         "markers_in": 0.577,
-         "markers_in_rest_of_lineage": 0.209,
-         "fold": 2.77
-        },
-        {
-         "type": "Arterial EC",
-         "lineage": "Endothelial",
-         "n_cells": 2520,
-         "share": 0.0443,
-         "median_confidence": 0.92,
-         "markers_in": 0.365,
-         "markers_in_rest_of_lineage": 0.093,
-         "fold": 3.91
-        },
-        {
-         "type": "Pericytes",
-         "lineage": "Pericytes",
-         "n_cells": 2355,
-         "share": 0.0414,
-         "median_confidence": 0.92,
-         "markers_in": 0.743,
-         "markers_in_rest_of_lineage": null,
-         "fold": null
-        },
-        {
-         "type": "Stem cells",
-         "lineage": "Epithelial",
-         "n_cells": 2128,
-         "share": 0.0374,
-         "median_confidence": 0.94,
-         "markers_in": 0.548,
-         "markers_in_rest_of_lineage": 0.132,
-         "fold": 4.16
-        },
-        {
-         "type": "Venous EC",
-         "lineage": "Endothelial",
-         "n_cells": 1805,
-         "share": 0.0317,
-         "median_confidence": 0.93,
-         "markers_in": 0.804,
-         "markers_in_rest_of_lineage": 0.417,
-         "fold": 1.93
-        },
-        {
-         "type": "Macrophages",
-         "lineage": "Myeloid",
-         "n_cells": 1679,
-         "share": 0.0295,
-         "median_confidence": 0.93,
-         "markers_in": 0.392,
-         "markers_in_rest_of_lineage": 0.161,
-         "fold": 2.44
-        },
-        {
-         "type": "Effector/memory CD4 T cells",
-         "lineage": "T and NK cells",
-         "n_cells": 1591,
-         "share": 0.028,
-         "median_confidence": 0.81,
-         "markers_in": 0.236,
-         "markers_in_rest_of_lineage": 0.235,
-         "fold": 1.0
-        },
-        {
-         "type": "Mast cells",
-         "lineage": "Mast cells",
-         "n_cells": 1444,
-         "share": 0.0254,
-         "median_confidence": 1.0,
-         "markers_in": 0.747,
-         "markers_in_rest_of_lineage": null,
-         "fold": null
-        },
-        {
-         "type": "CD8 T cells",
-         "lineage": "T and NK cells",
-         "n_cells": 981,
-         "share": 0.0173,
-         "median_confidence": 0.84,
-         "markers_in": 0.565,
-         "markers_in_rest_of_lineage": 0.071,
-         "fold": 8.0
-        },
-        {
-         "type": "Glia",
-         "lineage": "Glia",
-         "n_cells": 910,
-         "share": 0.016,
-         "median_confidence": 0.96,
-         "markers_in": 0.77,
-         "markers_in_rest_of_lineage": null,
-         "fold": null
-        },
-        {
-         "type": "Lymphatic EC",
-         "lineage": "Endothelial",
-         "n_cells": 883,
-         "share": 0.0155,
-         "median_confidence": 0.94,
-         "markers_in": 0.497,
-         "markers_in_rest_of_lineage": 0.093,
-         "fold": 5.36
-        },
-        {
-         "type": "Plasma cells",
-         "lineage": "B and plasma cells",
-         "n_cells": 610,
-         "share": 0.0107,
-         "median_confidence": 1.0,
-         "markers_in": 0.64,
-         "markers_in_rest_of_lineage": 0.077,
-         "fold": 8.33
-        },
-        {
-         "type": "Tregs",
-         "lineage": "T and NK cells",
-         "n_cells": 584,
-         "share": 0.0103,
-         "median_confidence": 0.86,
-         "markers_in": 0.628,
-         "markers_in_rest_of_lineage": 0.086,
-         "fold": 7.33
-        },
-        {
-         "type": "Monocytes",
-         "lineage": "Myeloid",
-         "n_cells": 474,
-         "share": 0.0083,
-         "median_confidence": 0.84,
-         "markers_in": 0.374,
-         "markers_in_rest_of_lineage": 0.182,
-         "fold": 2.05
-        },
-        {
-         "type": "B cells",
-         "lineage": "B and plasma cells",
-         "n_cells": 412,
-         "share": 0.0072,
-         "median_confidence": 0.99,
-         "markers_in": 0.696,
-         "markers_in_rest_of_lineage": 0.073,
-         "fold": 9.57
-        },
-        {
-         "type": "Enteroendocrine cells",
-         "lineage": "Epithelial",
-         "n_cells": 402,
-         "share": 0.0071,
-         "median_confidence": 0.92,
-         "markers_in": 0.662,
-         "markers_in_rest_of_lineage": 0.029,
-         "fold": 23.18
-        },
-        {
-         "type": "NK cells",
-         "lineage": "T and NK cells",
-         "n_cells": 339,
-         "share": 0.006,
-         "median_confidence": 0.95,
-         "markers_in": 0.571,
-         "markers_in_rest_of_lineage": 0.074,
-         "fold": 7.7
-        },
-        {
-         "type": "Dendritic cells",
-         "lineage": "Myeloid",
-         "n_cells": 211,
-         "share": 0.0037,
-         "median_confidence": 0.77,
-         "markers_in": 0.307,
-         "markers_in_rest_of_lineage": 0.114,
-         "fold": 2.69
-        },
-        {
-         "type": "ILCs",
-         "lineage": "T and NK cells",
-         "n_cells": 189,
-         "share": 0.0033,
-         "median_confidence": 0.89,
-         "markers_in": 0.774,
-         "markers_in_rest_of_lineage": 0.266,
-         "fold": 2.91
-        },
-        {
-         "type": "Tuft cells",
-         "lineage": "Epithelial",
-         "n_cells": 183,
-         "share": 0.0032,
-         "median_confidence": 0.96,
-         "markers_in": 0.847,
-         "markers_in_rest_of_lineage": 0.025,
-         "fold": 34.22
-        },
-        {
-         "type": "BEST4+ enterocytes",
-         "lineage": "Epithelial",
-         "n_cells": 136,
-         "share": 0.0024,
-         "median_confidence": 0.92,
-         "markers_in": 0.703,
-         "markers_in_rest_of_lineage": 0.015,
-         "fold": 48.5
-        },
-        {
-         "type": "Neutrophils",
-         "lineage": "Myeloid",
-         "n_cells": 136,
-         "share": 0.0024,
-         "median_confidence": 0.99,
-         "markers_in": 0.375,
-         "markers_in_rest_of_lineage": 0.092,
-         "fold": 4.08
-        },
-        {
-         "type": "Naive CD4 T cells",
-         "lineage": "T and NK cells",
-         "n_cells": 107,
-         "share": 0.0019,
-         "median_confidence": 0.59,
-         "markers_in": 0.234,
-         "markers_in_rest_of_lineage": 0.049,
-         "fold": 4.75
-        },
-        {
-         "type": "Neurons",
-         "lineage": "Neurons",
-         "n_cells": 65,
-         "share": 0.0011,
-         "median_confidence": 0.99,
-         "markers_in": 0.938,
-         "markers_in_rest_of_lineage": null,
-         "fold": null
-        },
-        {
-         "type": "ICC",
-         "lineage": "ICC",
-         "n_cells": 39,
-         "share": 0.0007,
-         "median_confidence": 0.92,
-         "markers_in": 0.987,
-         "markers_in_rest_of_lineage": null,
-         "fold": null
-        },
-        {
-         "type": "gd T cells",
-         "lineage": "T and NK cells",
-         "n_cells": 6,
-         "share": 0.0001,
-         "median_confidence": 0.51,
-         "markers_in": 0.5,
-         "markers_in_rest_of_lineage": 0.041,
-         "fold": 12.15
-        }
-       ],
-       "weak_types": [
-        {
-         "type": "Effector/memory CD4 T cells",
-         "lineage": "T and NK cells",
-         "n_cells": 1591,
-         "share": 0.028,
-         "median_confidence": 0.81,
-         "markers_in": 0.236,
-         "markers_in_rest_of_lineage": 0.235,
-         "fold": 1.0,
-         "why": "its markers are detected in 24% of its cells and 23% of the other T and NK cells cells"
-        }
-       ],
-       "low_confidence_types": [],
-       "marker_flags": [
-        {
-         "node": "Cycling TAs",
-         "marker": "PCLAF+",
-         "in": 0.12,
-         "siblings": 0.01,
-         "flag": "weak: detected in few of these cells"
-        },
-        {
-         "node": "Cycling TAs",
-         "marker": "UBE2C+",
-         "in": 0.19,
-         "siblings": 0.02,
-         "flag": "weak: detected in few of these cells"
-        },
-        {
-         "node": "Enterocytes",
-         "marker": "FABP2+",
-         "in": 0.9,
-         "siblings": 0.7,
-         "flag": "not specific: siblings detect it about as often"
-        },
-        {
-         "node": "Goblet cells",
-         "marker": "SPDEF+",
-         "in": 0.08,
-         "siblings": 0.01,
-         "flag": "weak: detected in few of these cells"
-        },
-        {
-         "node": "CD4 T cells",
-         "marker": "CD4|CD40LG|IL7R+",
-         "in": 0.9,
-         "siblings": 0.74,
-         "flag": "not specific: siblings detect it about as often"
-        },
-        {
-         "node": "Naive CD4 T cells",
-         "marker": "SELL+",
-         "in": 0.16,
-         "siblings": 0.05,
-         "flag": "weak: detected in few of these cells"
-        },
-        {
-         "node": "Effector/memory CD4 T cells",
-         "marker": "GZMK+",
-         "in": 0.07,
-         "siblings": 0.05,
-         "flag": "weak: detected in few of these cells"
-        },
-        {
-         "node": "Effector/memory CD4 T cells",
-         "marker": "CD40LG+",
-         "in": 0.15,
-         "siblings": 0.04,
-         "flag": "weak: detected in few of these cells"
-        },
-        {
-         "node": "NK cells",
-         "marker": "CD3E-",
-         "in": 0.47,
-         "siblings": 0.52,
-         "flag": "negative marker often detected in these cells"
-        },
-        {
-         "node": "ILCs",
-         "marker": "IL7R+",
-         "in": 0.95,
-         "siblings": 0.76,
-         "flag": "not specific: siblings detect it about as often"
-        },
-        {
-         "node": "Macrophages",
-         "marker": "APOE+",
-         "in": 0.22,
-         "siblings": 0.06,
-         "flag": "weak: detected in few of these cells"
-        },
-        {
-         "node": "Monocytes",
-         "marker": "CD14+",
-         "in": 0.33,
-         "siblings": 0.34,
-         "flag": "not specific: siblings detect it about as often"
-        },
-        {
-         "node": "Neutrophils",
-         "marker": "CXCR2+",
-         "in": 0.18,
-         "siblings": 0.05,
-         "flag": "weak: detected in few of these cells"
-        },
-        {
-         "node": "Neutrophils",
-         "marker": "S100A12+",
-         "in": 0.24,
-         "siblings": 0.01,
-         "flag": "weak: detected in few of these cells"
-        },
-        {
-         "node": "Dendritic cells",
-         "marker": "CLEC9A+",
-         "in": 0.1,
-         "siblings": 0.14,
-         "flag": "weak: detected in few of these cells"
-        },
-        {
-         "node": "Dendritic cells",
-         "marker": "CLEC10A+",
-         "in": 0.06,
-         "siblings": 0.25,
-         "flag": "weak: detected in few of these cells"
-        },
-        {
-         "node": "Mast cells",
-         "marker": "CMA1+",
-         "in": 0.23,
-         "siblings": 0.0,
-         "flag": "weak: detected in few of these cells"
-        },
-        {
-         "node": "Fibroblasts",
-         "marker": "MYH11-",
-         "in": 0.35,
-         "siblings": 0.37,
-         "flag": "negative marker often detected in these cells"
-        },
-        {
-         "node": "Villus fibroblasts (telocytes)",
-         "marker": "SOX6+",
-         "in": 0.22,
-         "siblings": 0.01,
-         "flag": "weak: detected in few of these cells"
-        },
-        {
-         "node": "Pericytes",
-         "marker": "MYH11-",
-         "in": 0.69,
-         "siblings": 0.35,
-         "flag": "negative marker often detected in these cells"
-        },
-        {
-         "node": "Blood vessel EC",
-         "marker": "VWF+",
-         "in": 0.82,
-         "siblings": 0.7,
-         "flag": "not specific: siblings detect it about as often"
-        },
-        {
-         "node": "Blood vessel EC",
-         "marker": "PECAM1+",
-         "in": 0.91,
-         "siblings": 0.82,
-         "flag": "not specific: siblings detect it about as often"
-        },
-        {
-         "node": "Arterial EC",
-         "marker": "GJA4+",
-         "in": 0.1,
-         "siblings": 0.01,
-         "flag": "weak: detected in few of these cells"
-        },
-        {
-         "node": "Venous EC",
-         "marker": "VWF+",
-         "in": 0.88,
-         "siblings": 0.78,
-         "flag": "not specific: siblings detect it about as often"
-        }
-       ],
-       "not_found": [
-        {
-         "type": "Paneth cells",
-         "parent": "Epithelial",
-         "n_parent_cells": 18792,
-         "markers": {
-          "ITLN2": [
-           1787,
-           1264
-          ],
-          "SPINK4": [
-           6365,
-           3707
-          ]
-         },
-         "reason": "no cluster went to it, also at finer resolutions, and no group of cells shows its markers together; among the 18,792 Epithelial: ITLN2 in 1,787 cells (1,264 with 2+ transcripts), SPINK4 in 6,365 cells (3,707 with 2+ transcripts)"
-        },
-        {
-         "type": "M cells",
-         "parent": "Epithelial",
-         "n_parent_cells": 18792,
-         "markers": {
-          "SPIB": [
-           627,
-           258
-          ],
-          "CCL20": [
-           1329,
-           424
-          ]
-         },
-         "reason": "no cluster went to it, also at finer resolutions, and no group of cells shows its markers together; among the 18,792 Epithelial: SPIB in 627 cells (258 with 2+ transcripts), CCL20 in 1,329 cells (424 with 2+ transcripts)"
-        },
-        {
-         "type": "Eosinophils",
-         "parent": "Myeloid",
-         "n_parent_cells": 2487,
-         "markers": {
-          "CLC": [
-           5,
-           2
-          ],
-          "CCR3": [
-           2,
-           0
-          ]
-         },
-         "reason": "no cluster went to it, also at finer resolutions, and no group of cells shows its markers together; among the 2,487 Myeloid: CLC in 5 cells (2 with 2+ transcripts), CCR3 in 2 cells (0 with 2+ transcripts)"
-        },
-        {
-         "type": "Follicular dendritic cells",
-         "parent": null,
-         "n_parent_cells": 56852,
-         "markers": {
-          "FDCSP": [
-           168,
-           23
-          ],
-          "C7": [
-           8531,
-           4202
-          ]
-         },
-         "reason": "no cluster went to it, also at finer resolutions, and no group of cells shows its markers together; among the 56,852 cells: FDCSP in 168 cells (23 with 2+ transcripts), C7 in 8,531 cells (4,202 with 2+ transcripts)"
-        }
-       ],
-       "untyped_by_markers": {
-        "n_cells": 0,
-        "share": 0.0,
-        "median_transcripts": null,
-        "median_transcripts_others": 89,
-        "typed_by_marker_genes_as": {},
-        "clusters": []
-       },
-       "note": "fold = how many times as often a type's own positive markers are detected in its cells as in the other cells of its lineage; marker_flags: markers that are weak, not specific (siblings detect them about as often) or negative markers detected; untyped_by_markers: cells no cluster of the marker step went to, each typed by its marker genes (the found type whose cells most often show the same marker genes detected and not detected, with its share of cells; no marker gene detected: Unassigned)"
-      },
-      "messages": [
-       {
-        "from": "user",
-        "text": "This is terminal ileum: stem cells and Paneth cells sit at the crypt bases.",
-        "time": "2026-11-13T13:44:15"
-       }
-      ],
-      "proposal": null,
-      "decision": null,
-      "accepted": [],
-      "time": "2026-11-13T13:44:07",
-      "asked": "2026-11-13T13:44:15",
-      "asked_t": 1794595455.045652
-     },
-     "claude_code": {
-      "opened": true,
-      "reused": true
-     }
-    }
-   }
+   "name": "c05r-ask"
   },
   {
    "name": "c05r-refine_report-1"
@@ -1094,7 +504,22 @@
    "name": "c05r-proposed"
   },
   {
+   "name": "c05r-map"
+  },
+  {
    "name": "c05r-accepted"
+  },
+  {
+   "name": "c05r2-refine_report-1"
+  },
+  {
+   "name": "c05r2-check_marker_list-1"
+  },
+  {
+   "name": "c05r2-propose_refinement-1"
+  },
+  {
+   "name": "c05r2-proposed"
   },
   {
    "name": "c05r-stop"
@@ -1111,8 +536,8 @@
   {
    "name": "c06-pre",
    "source": "c06-embed",
-   "from": 1794596421.21,
-   "until": 1794596429.457
+   "from": 1794776009.322,
+   "until": 1794776017.055
   },
   {
    "name": "c06-embed"
@@ -1166,171 +591,7 @@
    "name": "c09-prior-colon"
   },
   {
-   "name": "c09-prior-added",
-   "inject": {
-    "POST /api/sample/167799/priors": {
-     "organ": "Colon",
-     "guess": {
-      "organ": "Colon",
-      "from": "given",
-      "covered": true,
-      "evidence": [
-       "given for this sample: Colon"
-      ]
-     },
-     "organs": [
-      "Colon",
-      "Small intestine",
-      "Stomach",
-      "Liver",
-      "Pancreas",
-      "Kidney",
-      "Lung",
-      "Heart",
-      "Breast",
-      "Skin",
-      "Brain (cortex)",
-      "Lymph node and tonsil"
-     ],
-     "edited_organs": [
-      "Colon"
-     ],
-     "covered": true,
-     "priors": [
-      {
-       "id": "COL-01",
-       "title": "Epithelial cells (all subtypes) lie in the mucosa, not in the submucosa, muscularis propria or serosa.",
-       "short": "Epithelial cells (all subtypes) lie in the mucosa, not in the submucosa, muscularis propria or serosa.",
-       "rules": [
-        "kind=region, types=[Epithelial], regions=[mucosa], mode=only, strength=strong"
-       ]
-      },
-      {
-       "id": "COL-02",
-       "title": "Stem cells (LGR5+/OLFM4+) sit at the crypt base, and Cycling TAs sit in the lower half of the crypt.",
-       "short": "Stem cells (LGR5+/OLFM4+) sit at the crypt base, and Cycling TAs sit in the lower half of the crypt.",
-       "rules": [
-        "kind=region, types=[Stem cells], regions=[crypt base], mode=enrich, strength=moderate",
-        "kind=region, types=[Stem cells, Cycling TAs], regions=[surface epithelium], mode=exclude, strength=moderate"
-       ]
-      },
-      {
-       "id": "COL-03",
-       "title": "Differentiated, mature absorptive cells are at the crypt top and the luminal surface. This covers Colonocytes (CA1, SLC26A3, AQP8, CEACAM7) and especially BEST4+ colonocytes.",
-       "short": "Differentiated, mature absorptive cells are at the crypt top and the luminal surface.",
-       "rules": [
-        "kind=region, types=[BEST4+ colonocytes, Colonocytes], regions=[surface epithelium], mode=enrich, strength=moderate",
-        "kind=region, types=[BEST4+ colonocytes], regions=[crypt base], mode=exclude, strength=weak"
-       ]
-      },
-      {
-       "id": "COL-04",
-       "title": "Goblet cells, Enteroendocrine cells, Tuft cells and Cycling TAs are scattered inside the epithelium. The same call in a cell surrounded by stroma is usually spill-over or a mis-assigned immune cell.",
-       "short": "Goblet cells, Enteroendocrine cells, Tuft cells and Cycling TAs are scattered inside the epithelium.",
-       "rules": [
-        "kind=neighborhood, types=[Goblet cells, Enteroendocrine cells, Tuft cells, Cycling TAs], neighbor_types=[Epithelial], min_frac=0.3, mode=only, strength=moderate"
-       ]
-      },
-      {
-       "id": "COL-05",
-       "title": "Paneth cells (not in the built-in colon list) are normally present only in the proximal colon (caecum and ascending colon) of humans, at crypt bases. They are absent from the normal distal colon and from the mouse colon.",
-       "short": "Paneth cells (not in the built-in colon list) are normally present only in the proximal colon (caecum and ascending colon) of humans, at crypt bases.",
-       "rules": [
-        "kind=region, types=[Paneth cells], regions=[crypt base], mode=only, strength=moderate",
-        "kind=region, types=[Paneth cells], regions=[mucosa], mode=exclude, strength=weak"
-       ]
-      },
-      {
-       "id": "COL-06",
-       "title": "Plasma cells (mostly IgA) and most effector immune cells are concentrated in the lamina propria of the mucosa. They are sparse in the submucosa and the muscularis propria.",
-       "short": "Plasma cells (mostly IgA) and most effector immune cells are concentrated in the lamina propria of the mucosa.",
-       "rules": [
-        "kind=region, types=[Plasma cells], regions=[mucosa], mode=enrich, strength=moderate"
-       ]
-      },
-      {
-       "id": "COL-07",
-       "title": "B cells (naive, MS4A1+) are concentrated in lymphoid follicles. In the colon these are isolated lymphoid follicles and colonic patches, and they often straddle the muscularis mucosae. Outside follicles the lamina propria has few B cells but many Plasma cells.",
-       "short": "B cells (naive, MS4A1+) are concentrated in lymphoid follicles.",
-       "rules": [
-        "kind=region, types=[B cells], regions=[lymphoid follicle], mode=enrich, strength=strong"
-       ]
-      },
-      {
-       "id": "COL-08",
-       "title": "Naive CD4 T cells (CCR7+, SELL+) sit in the T-cell zones of lymphoid follicles and aggregates. The diffuse lamina propria holds mainly Effector/memory CD4 T cells and Tregs.",
-       "short": "Naive CD4 T cells (CCR7+, SELL+) sit in the T-cell zones of lymphoid follicles and aggregates.",
-       "rules": [
-        "kind=region, types=[Naive CD4 T cells], regions=[lymphoid follicle], mode=enrich, strength=moderate",
-        "kind=region, types=[Effector/memory CD4 T cells], regions=[lymphoid follicle], mode=enrich, strength=weak"
-       ]
-      },
-      {
-       "id": "COL-09",
-       "title": "Intraepithelial lymphocytes are almost exclusively T cells, mainly CD8 T cells and gd T cells. They sit between the epithelial cells. The colon has fewer of them than the small intestine.",
-       "short": "Intraepithelial lymphocytes are almost exclusively T cells, mainly CD8 T cells and gd T cells.",
-       "rules": [
-        "kind=neighborhood, types=[CD8 T cells, gd T cells], neighbor_types=[Epithelial], min_frac=0.6, mode=enrich, strength=weak"
-       ]
-      },
-      {
-       "id": "COL-10",
-       "title": "Smooth muscle cells form the muscularis propria (and the thin muscularis mucosae). Within the mucosa proper, only scattered muscularis mucosae fibres and vascular smooth muscle occur.",
-       "short": "Smooth muscle cells form the muscularis propria (and the thin muscularis mucosae).",
-       "rules": [
-        "kind=region, types=[Smooth muscle cells], regions=[muscularis propria, muscularis mucosae], mode=enrich, strength=moderate",
-        "kind=region, types=[Smooth muscle cells], regions=[mucosa], mode=exclude, strength=weak"
-       ]
-      },
-      {
-       "id": "COL-11",
-       "title": "Neurons (enteric neuronal cell bodies) are in the ganglia of the submucosal plexus and the myenteric plexus. The myenteric plexus lies between the circular and longitudinal muscle. The mucosa contains nerve fibres but no neuronal cell bodies. Glia occur in all layers, including the mucosa.",
-       "short": "Neurons (enteric neuronal cell bodies) are in the ganglia of the submucosal plexus and the myenteric plexus.",
-       "rules": [
-        "kind=region, types=[Neurons], regions=[submucosa, muscularis propria, myenteric plexus], mode=only, strength=moderate",
-        "kind=region, types=[Neurons, Glia], regions=[myenteric plexus], mode=enrich, strength=strong"
-       ]
-      },
-      {
-       "id": "COL-12",
-       "title": "ICC (interstitial cells of Cajal, KIT+ ANO1+) are part of the smooth-muscle syncytium of the muscularis propria: around the myenteric plexus, within the muscle layers, and, in the colon, at the submucosal border of the circular muscle. They are not in the mucosa.",
-       "short": "ICC (interstitial cells of Cajal, KIT+ ANO1+) are part of the smooth-muscle syncytium of the muscularis propria: around the myenteric plexus, within the muscle layers, and, in the colon, at the submucosal border of the circular muscle.",
-       "rules": [
-        "kind=region, types=[ICC], regions=[muscularis propria, myenteric plexus], mode=only, strength=moderate"
-       ]
-      },
-      {
-       "id": "COL-13",
-       "title": "Lymphatic EC are essentially absent from the normal colonic lamina propria above the muscularis mucosae. Colonic lymphatics start at or below the muscularis mucosae. This differs from the small intestine, which has lacteals.",
-       "short": "Lymphatic EC are essentially absent from the normal colonic lamina propria above the muscularis mucosae.",
-       "rules": [
-        "kind=region, types=[Lymphatic EC], regions=[mucosa], mode=exclude, strength=weak"
-       ]
-      },
-      {
-       "id": "COL-14",
-       "title": "Types deliberately left unconstrained across layers: Macrophages, Fibroblasts, Blood vessel EC, Pericytes and Mast cells.",
-       "short": "Types deliberately left unconstrained across layers: Macrophages, Fibroblasts, Blood vessel EC, Pericytes and Mast cells.",
-       "rules": []
-      }
-     ],
-     "removed": [],
-     "added": [
-      {
-       "id": "U-1",
-       "text": "Paneth cells do not occur in this section: it is sigmoid colon, far from the caecum."
-      }
-     ],
-     "edited": true,
-     "asked": [
-      "U-1"
-     ],
-     "claude_code": {
-      "opened": true,
-      "reused": true
-     }
-    }
-   }
+   "name": "c09-prior-added"
   },
   {
    "name": "c09-set_prior_rule-1"
@@ -1366,40 +627,22 @@
    "name": "c13-help"
   },
   {
-   "name": "c14-review",
-   "inject": {
-    "POST /api/claude/review": {
-     "needed": true,
-     "claude_code": {
-      "opened": true,
-      "reused": true
-     },
-     "asked": true,
-     "asked_at": "2026-11-13T14:05:46",
-     "unchecked": 21,
-     "checked": 0,
-     "checking": true,
-     "advice": {
-      "current": false,
-      "preparing": true,
-      "n_drafts": 0,
-      "n_open": 0,
-      "n_filtered": 0,
-      "last_run": null,
-      "asked_at": "2026-11-13T14:05:46",
-      "n_runs": 0
-     }
-    }
-   }
+   "name": "c14-review"
   },
   {
    "name": "c14-reviewing"
   },
   {
+   "name": "c14-show_area-2"
+  },
+  {
    "name": "c14-show_area-3"
   },
   {
-   "name": "c14-show_area-6"
+   "name": "c14-show_area-5"
+  },
+  {
+   "name": "c14-show_area-7"
   },
   {
    "name": "c14-record_review-1"
@@ -1443,14 +686,5 @@
   {
    "name": "c18-export"
   }
- ],
- "harvest": [
-  "GET /api/markers/organs",
-  "GET /api/markers/library",
-  "POST /api/analysis/options",
-  "GET /api/config",
-  "GET /api/sample/147328/genes",
-  "GET /api/sample/167799/genes",
-  "GET /api/claude/status"
  ]
 }

@@ -1,7 +1,7 @@
 """Color every recorded annotation version by the usual modes (cell type, lineage, niche, region, Leiden) and a batch of genes, into the recording (scene "_genes"), so viewers of
 the tutorial can pause and color the map by any of these genes (developer tool).
 
-    .venv/bin/python tools/tutorial/crawl_genes.py --server http://127.0.0.1:8765 --rec work/tut/rec --genes EPCAM,MYH11,...
+    .venv/bin/python tools/tutorial/crawl_genes.py --server http://127.0.0.1:8775 --rec work/tut/rec --genes EPCAM,MYH11,...
 """
 import argparse, hashlib, json, re, time
 from pathlib import Path
@@ -10,7 +10,7 @@ from urllib.parse import parse_qsl
 import httpx
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--server", default="http://127.0.0.1:8765")
+ap.add_argument("--server", default="http://127.0.0.1:8775")
 ap.add_argument("--rec", required=True)
 ap.add_argument("--genes", required=True)
 a = ap.parse_args()

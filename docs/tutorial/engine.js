@@ -689,7 +689,6 @@
       const c = CH[ci];
       termReset();
       // the agent's pane only in chapters where the agent works: elsewhere the app has the whole stage
-      $("#stage").classList.toggle("noTerm", !c.steps.some((st) => (st.do || []).some((a) => a[0] === "agent")));
       fitApp();
       await loadApp(c, run);
       await runActs(c.pre, run, true);
@@ -756,17 +755,19 @@
   track.addEventListener("pointerup", (ev) => { if (!drag) return; drag = false; const { x } = at(ev); jump(x.ci, x.si, false); });
 
   /* ---------------- the stage scales to the space it has ---------------- */
-  const APP_MIN_W = 1040;  // the app stacks its panels below 1000 px: it gets at least this width, scaled to fit
+  // the app is always the window it was recorded in (1500 x 950, as on the website's screenshots): the same panels
+  // and map at the same proportions in every chapter, scaled to the stage's height; Claude Code's pane is beside it
+  const APP = { w: 1500, h: 950 }, TERM_W = 380, STAGE_H = 820, STAGE_W = TERM_W + Math.round(STAGE_H * APP.w / APP.h);
   function fitApp() {
-    const win = $("#appwin"), sc = $("#appscale");
-    const w = win.clientWidth, h = win.clientHeight, k = w < APP_MIN_W ? w / APP_MIN_W : 1;
-    sc.style.width = w / k + "px"; sc.style.height = h / k + "px"; sc.style.transform = k === 1 ? "" : `scale(${k})`;
+    const sc = $("#appscale"), k = STAGE_H / APP.h;
+    sc.style.width = APP.w + "px"; sc.style.height = APP.h + "px"; sc.style.transform = `scale(${k})`;
   }
   function fit() {
-    fitApp();
     const wrap = $("#stageWrap"), stage = $("#stage");
-    const sw = 1320, sh = 820, aw = wrap.clientWidth - 28, ah = wrap.clientHeight - 20;
-    const k = Math.min(aw / sw, ah / sh);
+    const aw = wrap.clientWidth - 28, ah = wrap.clientHeight - 20;
+    const k = Math.min(aw / STAGE_W, ah / STAGE_H), sw = STAGE_W, sh = STAGE_H;
+    stage.style.width = sw + "px"; stage.style.height = sh + "px";
+    fitApp();
     stage.style.transform = `scale(${k})`;
     stage.style.left = (wrap.clientWidth - sw * k) / 2 + "px";
     stage.style.top = Math.max(10, (wrap.clientHeight - sh * k) / 2) + "px";

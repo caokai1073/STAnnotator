@@ -22,6 +22,14 @@
   // draws it for a moment, and the answer is yes, as in the recording
   window.confirm = (msg) => { T.confirm && T.confirm(String(msg || "")); return true; };
 
+  // the player scales the app down (CSS transforms); Safari then draws a native drop-down's arrow at its unscaled size,
+  // far too large. A drawn arrow scales with the rest (the app's look otherwise unchanged)
+  const css = document.createElement("style");
+  css.textContent = `select:not([multiple]) { -webkit-appearance: none !important; appearance: none !important; padding-right: 22px !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238a8f98' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") !important;
+    background-repeat: no-repeat !important; background-position: right 8px center !important; background-size: 10px 6px !important; }`;
+  (document.head || document.documentElement).appendChild(css);
+
   const realFetch = window.fetch.bind(window);
   window.fetch = async (input, init) => {
     const url = new URL(typeof input === "string" ? input : input.url, location.href);
