@@ -429,6 +429,8 @@ def _group(edits, text):
         prob = " ".join(str(e.get("problem") or "").split())[:160]
         if prob:
             e["problem"] = prob
+        else:
+            e.pop("problem", None)  # (a blank one: the edit goes under its lineage, on the page too)
         t = e.get("parent") if e.get("kind") == "add_type" and e.get("parent") else e.get("type")
         lin = top.get(t) or top.get(renamed.get(t)) or (e.get("type") if e.get("kind") == "add_type" else None)
         if e.get("kind") == "rename_type" and e.get("new_name"):

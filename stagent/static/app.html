@@ -4406,14 +4406,16 @@ function rfRender() {
   rd.messages.forEach((m) => { const d = document.createElement("div"); d.className = `m ${m.from}`; d.textContent = m.text; box.append(d); });
   box.scrollTop = box.scrollHeight;
   // the edits
-  const P = rd.proposal, eb = $("rfEdits"), keepTop = eb.scrollTop; eb.textContent = "";
+  const P = rd.proposal, eb = $("rfEdits"), keepTop = eb.scrollTop;
+  const opened = new Set([...eb.querySelectorAll("details[open]")].map((d) => d.dataset.k).filter(Boolean));  // (kept open)
+  eb.textContent = "";
   if (P && (P.findings || []).length) {
     // the agent's findings against the priors, apart from the edits: the user says real biology or mislabel
     const verdicts = r.prior_verdicts || {};
     const box = document.createElement("div"); box.className = "rfgroup rffind";
     box.append(Object.assign(document.createElement("div"), { className: "rfghead", innerHTML: `<b>Against the priors</b><span class="hint">${P.findings.length} found · real biology or a mislabel?</span>` }));
     P.findings.forEach((f) => {
-      const row = document.createElement("div"); row.className = "rffinding";
+      const row = document.createElement("div"); row.className = "rffinding"; row.dataset.key = f.key;
       const v = (verdicts[f.key] || {}).verdict;
       row.innerHTML = `<div><b>${rfEsc(f.cells)}</b> ${rfEsc(f.where)}` + (f.rule ? ` <span class="hint">· ${rfEsc(f.rule)}</span>` : "") +
         `<div class="why">agent: ${rfEsc(f.judgement)}</div>` + (f.evidence ? `<details class="why"><summary>evidence</summary><div>${rfEsc(f.evidence)}</div></details>` : "") +
@@ -4428,17 +4430,22 @@ function rfRender() {
           const cur = ((RF.state.prior_verdicts || {})[f.key] || {}).verdict, want = cur === k ? null : k;
           try { const out = await post(`/api/s/${RF.sid}/refine/finding`, { key: f.key, verdict: want }); RF.state.prior_verdicts = out.prior_verdicts; }
           catch (e) { $("rfErr").textContent = e.message; return; }
-          btns.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x.dataset.verdict === want));
+          const now = [...document.querySelectorAll("#rfEdits .rffinding")].find((x) => x.dataset.key === f.key);  // (redrawn meanwhile?)
+          (now || row).querySelectorAll(".rfverdict button").forEach((x) => x.classList.toggle("on", x.dataset.verdict === want));
         };
         btns.append(b);
       });
       let img = row.querySelector("img.rffig");
-      const had = RF.figs && RF.figs.get(img.src);  // the map already loaded: the same image, not loaded again
-      if (had) { img.replaceWith(had); img = had; }
-      RF.figs = RF.figs || new Map(); RF.figs.set(img.src, img);
-      img.onerror = () => img.remove();  // (a finding that names no cell type has no map)
+      if (!RF.figs || RF.figs.time !== P.time) { RF.figs = new Map(); RF.figs.time = P.time; }  // (this proposal's maps only)
+      const had = RF.figs.get(img.src);  // the map already loaded: the same image, not loaded again
+      if (had && had.complete && had.naturalWidth > 0) { img.replaceWith(had); img = had; }
+      RF.figs.set(img.src, img);
+      img.onerror = () => { RF.figs.delete(img.src); img.remove(); };  // (a finding that names no cell type has no map)
       img.onclick = () => {  // large, in a window of its own
-        $("figBig").src = img.src.replace("finding_fig?", "finding_fig?size=large&");
+        const big = $("figBig");
+        big.removeAttribute("src"); big.alt = "Drawing the map…";
+        big.onerror = () => { big.removeAttribute("src"); big.alt = "No map for this finding"; };
+        big.src = img.src.replace("finding_fig?", "finding_fig?size=large&");
         $("figTitle").textContent = `${f.cells}: ${f.where}`;
         $("figDlg").showModal();
       };
@@ -4457,9 +4464,11 @@ function rfRender() {
       if (!RF.ticks || RF.ticks.time !== P.time) RF.ticks = { time: P.time, on: {} };
       RF.ticks.on[id] = on;
     };
-    const named = new Map(), rest = new Map();  // the problems the agent named first, then the lineages, "Other edits" last
-    P.edits.forEach((e) => { const g = e.group || "Edits", m = e.problem ? named : rest; if (!m.has(g)) m.set(g, []); m.get(g).push(e); });
-    const groups = new Map([...named, ...[...rest].sort((a, b) => (a[0] === "Other edits") - (b[0] === "Other edits"))]);
+    // the problems the agent named first, then the lineages, "Other edits" last; a title in both gathers all its edits
+    const named = new Map(), rest = new Map();
+    P.edits.forEach((e) => { const g = e.group || "Edits", m = (e.problem || "").trim() ? named : rest; if (!m.has(g)) m.set(g, []); m.get(g).push(e); });
+    const groups = new Map(named);
+    [...rest].sort((a, b) => (a[0] === "Other edits") - (b[0] === "Other edits")).forEach(([g, l]) => groups.set(g, [...(groups.get(g) || []), ...l]));
     if (groups.size > 1) eb.append(Object.assign(document.createElement("div"), { className: "hint", textContent: `${P.edits.length} edits in ${groups.size} groups` }));
     groups.forEach((list, title) => {
       const box = document.createElement("div"); box.className = "rfgroup";
@@ -4500,6 +4509,7 @@ function rfRender() {
   }
   const prev = r.rounds.find((x) => x.n === rd.n - 1);  // what the round before changed, said at the top of this one
   const applied = prev && prev.decision === "accepted" ? `Round ${prev.n}: ${prev.accepted.length} edit${prev.accepted.length === 1 ? "" : "s"} applied (${prev.accepted.join(", ")}). ` : "";
+  eb.querySelectorAll("details").forEach((d, i) => { d.dataset.k = d.dataset.k || `d${i}`; if (opened.has(d.dataset.k)) d.open = true; });
   eb.scrollTop = keepTop;  // (a redraw keeps the place the user scrolled to)
   $("rfEditsHint").textContent = !P ? applied + (r.awaiting || rd.messages.some((m) => m.from === "user") ? "The agent is reviewing this round…" : "This round has not been sent to the agent yet: click Agent review.")
     : !P.edits.length ? "The agent proposes no edit (see its message)." : rd.decision === "accepted" ? `Accepted: ${rd.accepted.join(", ")}` :
@@ -4540,7 +4550,7 @@ $("rfSend").onclick = async () => {
   catch (e) { $("rfErr").textContent = e.message; }
 };
 $("rfAccept").onclick = async () => {
-  const ids = [...document.querySelectorAll("#rfEdits input:checked")].map((c) => c.value);
+  const ids = [...document.querySelectorAll("#rfEdits input[value]:checked")].map((c) => c.value);  // (not the groups' boxes)
   if (!ids.length) { $("rfErr").textContent = "Tick at least one edit"; return; }
   const rd = rfRound(), b = $("rfAccept");
   if (b.disabled) return;
@@ -4553,6 +4563,7 @@ $("rfAccept").onclick = async () => {
   if (["exact", "approx"].includes(r.knn)) { $("knn").value = r.knn; syncSeg("knn"); }  // as the round before was made
   $("spill").checked = !!r.spillover; syncAnnAdv();
   RF.from = RF.sid; clearInterval(RF.timer); $("rfDlg").close();
+  $("rfText").value = "";  // (words left unsent here would go to the next round's automatic review as the user's)
   const joint = r.joint && st.sample && projectOf(st.sample.sample_id);
   if (joint) { $(PROJ_ALL.annotate).checked = true; $(PROJ_ALL.annotate).dispatchEvent(new Event("change")); }
   toast(`Annotating ${joint ? "all slices together " : ""}again with ${ids.length} edit(s); the next round opens when it is done`, 5000);
@@ -6131,7 +6142,11 @@ async function loadSteps() {
     const a = x.open ? ["Open", () => { showTab("data"); $("session").focus(); toast("Choose an annotation in the Annotation box", 4000); }]
       : align ? ["Align", () => $("alignNow").click()] : act;
     if (x.key === "priors" && x.state !== "not needed") {  // Check (the Prior window), then Accept: only then ✓
-      const key = `${smp}|${x.organ || ""}`, seen = st.priorsChecked === key;
+      const key = `${smp}|${x.organ || ""}`;
+      // accepted, then changed (e.g. a rule the agent wrote): to be checked again before Accept
+      if (st.priorsState && st.priorsState.key === key && st.priorsState.state === "done" && x.state === "todo") st.priorsChecked = null;
+      st.priorsState = { key, state: x.state };
+      const seen = st.priorsChecked === key;
       const chk = Object.assign(document.createElement("button"), { textContent: "Check", title: "Open the Prior window: the priors of this organ the agent's review uses" });
       const acc = Object.assign(document.createElement("button"), { textContent: "Accept" });
       if (x.state === "todo" && x.key === r.next) (seen ? acc : chk).classList.add("primary");  // (as the other steps)
