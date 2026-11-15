@@ -37,8 +37,11 @@ def load(pid):
 
 
 def project_of(sample_id):
+    """The sample's project, or None (also when its meta.json names a project whose file is gone: the app shows such a
+    sample without a project, and every step then treats it as a slice on its own)."""
     m = config.SAMPLES / sample_id / "meta.json"
-    return json.load(open(m)).get("project") if m.exists() else None
+    pid = json.load(open(m, encoding="utf-8")).get("project") if m.exists() else None
+    return pid if pid and _file(pid).exists() else None
 
 
 def save(pid, name, slices):

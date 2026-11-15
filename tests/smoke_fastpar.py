@@ -10,6 +10,7 @@ from pathlib import Path
 
 HOME = Path(tempfile.mkdtemp(prefix="stagent_fastpar_"))
 os.environ["STAGENT_HOME"] = str(HOME)
+os.environ["STAGENT_SETTINGS_DIR"] = os.path.join(os.environ["STAGENT_HOME"], "cfg")  # (never the user's settings)
 import numpy as np, pandas as pd, scipy.sparse as sp  # noqa: E402
 from stagent import fastpar, markers, importer  # noqa: E402
 

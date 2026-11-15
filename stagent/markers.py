@@ -1079,7 +1079,7 @@ def _spawn_safe():
     from pathlib import Path
     p = Path(f)
     return p.stem in ("stagent", "stagent-script", "celltypeagent", "entry") or \
-        (p.parent.name == "stagent" and p.stem in ("cli", "__main__"))
+        (p.parent.stem in ("stagent", "celltypeagent") and p.stem in ("cli", "__main__"))  # (stem: pip's stagent.exe\__main__.py on Windows)
 
 
 def leiden_workers(n_cells, n_edges, n_res, reserve_gb=None, avail=None):

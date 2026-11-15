@@ -6,6 +6,7 @@ import numpy as np
 HERE = os.path.dirname(__file__)
 home = tempfile.mkdtemp(prefix="stagent_rds_")
 os.environ["STAGENT_HOME"] = home
+os.environ["STAGENT_SETTINGS_DIR"] = os.path.join(os.environ["STAGENT_HOME"], "cfg")  # (never the user's settings)
 from stagent import importer, rds
 try:
     ref = importer.read_h5ad(os.path.join(HERE, "..", "examples", "cadinu_merfish", "cadinu_merfish_D0_m3a_1_slice_2.h5ad"))

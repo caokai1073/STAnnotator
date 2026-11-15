@@ -17,8 +17,11 @@ PACKAGE = Path(__file__).parent
 
 def settings_file():
     """The app's own settings (the data folder chosen in the app), outside the data folder: %APPDATA%\\STAnnotator on
-    Windows (the installer writes it too), ~/Library/Application Support/STAnnotator on macOS, ~/.config/stagent."""
-    if os.name == "nt":
+    Windows (the installer writes it too), ~/Library/Application Support/STAnnotator on macOS, ~/.config/stagent.
+    STAGENT_SETTINGS_DIR: another folder (the tests: never the user's settings, on every system)."""
+    if os.environ.get("STAGENT_SETTINGS_DIR"):
+        base = Path(os.environ["STAGENT_SETTINGS_DIR"])
+    elif os.name == "nt":
         base = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming") / "STAnnotator"
     elif sys.platform == "darwin":
         base = Path.home() / "Library" / "Application Support" / "STAnnotator"

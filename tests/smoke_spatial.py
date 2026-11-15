@@ -10,6 +10,7 @@ from pathlib import Path
 
 HOME = Path(tempfile.mkdtemp(prefix="stagent_spatial_"))
 os.environ["STAGENT_HOME"] = str(HOME)
+os.environ["STAGENT_SETTINGS_DIR"] = os.path.join(os.environ["STAGENT_HOME"], "cfg")  # (never the user's settings)
 import numpy as np, scipy.sparse as sp  # noqa: E402
 from stagent import importer, markers  # noqa: E402
 from stagent.session import Session  # noqa: E402

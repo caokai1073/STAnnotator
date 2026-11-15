@@ -5,6 +5,7 @@ genes the draft drops what it cannot resolve and says why.
 Run: python tests/smoke_organs.py"""
 import os, tempfile
 os.environ.setdefault("STAGENT_HOME", tempfile.mkdtemp(prefix="stagent_organs_"))
+os.environ["STAGENT_SETTINGS_DIR"] = tempfile.mkdtemp(prefix="stagent_cfg_")  # (never the user's settings)
 from stagent import organs, markers  # noqa: E402
 
 names = [o["organ"] for o in organs.organs()]

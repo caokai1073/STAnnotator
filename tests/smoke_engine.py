@@ -1,5 +1,7 @@
 """End-to-end smoke test of the engine on one sample with user-drawn regions."""
 import json, shutil, time
+import os, tempfile
+os.environ.setdefault("STAGENT_SETTINGS_DIR", tempfile.mkdtemp(prefix="stagent_cfg_"))  # (never the user's settings)
 from pathlib import Path
 import numpy as np
 from stagent.session import Session, list_samples

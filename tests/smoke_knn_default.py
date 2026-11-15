@@ -3,7 +3,7 @@ follow the runs timed here (timings.json), the free memory or whether pynndescen
 estimate endpoint gives the app that same default. Run: python tests/smoke_knn_default.py (a temporary data folder)."""
 import os, tempfile
 home = tempfile.mkdtemp()
-os.environ["STAGENT_HOME"] = home; os.environ["XDG_CONFIG_HOME"] = home + "/cfg"
+os.environ["STAGENT_HOME"] = home; os.environ["STAGENT_SETTINGS_DIR"] = home + "/cfg"
 from stagent import markers, timing
 from stagent.session import knn_mode
 

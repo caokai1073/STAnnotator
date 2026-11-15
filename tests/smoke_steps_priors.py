@@ -4,7 +4,7 @@ they change; Regions stays optional (outlines drawn). Runs in a temporary data f
 import os, shutil, tempfile
 EX = os.path.join(os.path.dirname(__file__), "..", "examples", "cadinu_merfish")
 home = tempfile.mkdtemp(prefix="stagent_steps_")
-os.environ["STAGENT_HOME"] = home; os.environ["XDG_CONFIG_HOME"] = home + "/cfg"
+os.environ["STAGENT_HOME"] = home; os.environ["STAGENT_SETTINGS_DIR"] = home + "/cfg"
 from stagent import config, importer, hetissue
 from stagent.session import Session
 from starlette.testclient import TestClient

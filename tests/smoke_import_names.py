@@ -8,6 +8,7 @@ import numpy as np
 EX = os.path.join(os.path.dirname(__file__), "..", "examples", "cadinu_merfish")
 home = tempfile.mkdtemp(prefix="stagent_names_")
 os.environ["STAGENT_HOME"] = home
+os.environ["STAGENT_SETTINGS_DIR"] = os.path.join(os.environ["STAGENT_HOME"], "cfg")  # (never the user's settings)
 from stagent import config, importer, projects
 quiet = lambda *a: None
 try:

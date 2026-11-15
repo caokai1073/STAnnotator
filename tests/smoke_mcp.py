@@ -4,6 +4,8 @@ then reloads the session.
 
 Run: STAGENT_HOME=<a data folder with the sample> python tests/smoke_mcp.py   (SMOKE_SAMPLE: the sample, default 167799)"""
 import asyncio, json, os, shutil, sys
+import tempfile
+os.environ.setdefault("STAGENT_SETTINGS_DIR", tempfile.mkdtemp(prefix="stagent_cfg_"))  # (never the user's settings)
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 

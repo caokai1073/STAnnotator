@@ -11,7 +11,7 @@ from pathlib import Path
 def main():
     home = Path(tempfile.mkdtemp(prefix="stagent_leiden_"))
     os.environ["STAGENT_HOME"] = str(home)
-    os.environ["XDG_CONFIG_HOME"] = str(home / "cfg")  # (the settings of this run: not the user's)
+    os.environ["STAGENT_SETTINGS_DIR"] = str(home / "cfg")  # (the settings of this run: not the user's)
     os.environ.pop("STAGENT_LEIDEN_PARALLEL", None)
     import numpy as np
     from stagent import importer, markers, config
@@ -31,6 +31,16 @@ def main():
     os.environ["STAGENT_LEIDEN_PARALLEL"] = "0"
     assert markers.leiden_workers(700_000, 9e6, 4, 0.0, 64.0) == 0, "STAGENT_LEIDEN_PARALLEL=0 ignored"
     markers._spawn_safe = safe
+    # the stagent command (guarded): its entry as pip installs it, on Linux / macOS and on Windows (a stagent.exe
+    # with a __main__.py inside), and python -m stagent; a script of the user's: not safe
+    import sys
+    os.environ.pop("STAGENT_LEIDEN_PARALLEL", None)
+    main, f0 = sys.modules["__main__"], sys.modules["__main__"].__dict__.get("__file__")
+    for f, want in (("/usr/bin/stagent", True), (r"C:\py\Scripts\stagent.exe\__main__.py", True),
+                    ("/x/site-packages/stagent/__main__.py", True), ("/home/u/annotate.py", False)):
+        main.__file__ = str(Path(f.replace("\\", "/")))
+        assert markers._spawn_safe() is want, f
+    main.__file__ = f0
     os.environ["STAGENT_LEIDEN_PARALLEL"] = "1"  # (this script is guarded: workers may start)
     ex = Path(__file__).resolve().parents[1] / "examples" / "cadinu_merfish"
     try:

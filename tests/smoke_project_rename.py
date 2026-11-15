@@ -4,7 +4,7 @@ the dialog (new) is always a new project, also when its name is the id of anothe
 of the wrong shape (400, not 500)."""
 import json, os, sys, tempfile
 home = tempfile.mkdtemp()
-os.environ["STAGENT_HOME"] = home; os.environ["XDG_CONFIG_HOME"] = home + "/cfg"
+os.environ["STAGENT_HOME"] = home; os.environ["STAGENT_SETTINGS_DIR"] = home + "/cfg"
 from stagent import config, projects
 
 for sid in ("a1", "a2", "b1", "c1", "c2"):

@@ -159,17 +159,19 @@ def _numbers_of(sample_id):
     if key in _data:
         return _data[key]
     if key not in _light:
+        num = None
         try:
-            z = np.load(src / STATS)
-            if not np.array_equal(z["key"], _counts_key(src)):
-                raise ValueError("stale")
+            with np.load(src / STATS) as z:
+                if np.array_equal(z["key"], _counts_key(src)):
+                    num = {k: z[k] for k in ("counts", "n_genes", "mito_pct", "detected")}
             genes = config.read_genes(src / "genes.txt")
-            num = {k: z[k] for k in ("counts", "n_genes", "mito_pct", "detected")}
-            if len(num["detected"]) != len(genes):
-                raise ValueError("stale")
-            _light[key] = num | {"genes": genes, "mito": np.array([bool(MITO.match(g)) for g in genes])}
-        except Exception:  # (none saved, another file's, or damaged, e.g. cut short: read the matrix, which saves them)
-            return _load(sample_id)
+            if num is not None and len(num["detected"]) != len(genes):
+                num = None
+        except Exception:  # (none saved, or damaged, e.g. cut short)
+            num = None
+        if num is None:  # read the matrix, which saves them; outside the except: on Windows a file np.load failed on
+            return _load(sample_id)  # stays open while its error is handled, and the new numbers could not replace it
+        _light[key] = num | {"genes": genes, "mito": np.array([bool(MITO.match(g)) for g in genes])}
     return _light[key]
 
 

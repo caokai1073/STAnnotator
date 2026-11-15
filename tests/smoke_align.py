@@ -7,6 +7,7 @@ HE = os.environ.get("SMOKE_HE", "/data/kai/endothelial/data/SCP2927/HE/human_sli
 REG = os.path.join(os.path.dirname(__file__), "..", "examples", "scp2927", "registration.csv")
 home = tempfile.mkdtemp(prefix="stagent_align_")
 os.environ["STAGENT_HOME"] = home
+os.environ["STAGENT_SETTINGS_DIR"] = os.path.join(os.environ["STAGENT_HOME"], "cfg")  # (never the user's settings)
 from stagent import importer, align
 try:
     t = time.time()

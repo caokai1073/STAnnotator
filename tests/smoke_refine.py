@@ -15,6 +15,7 @@ from pathlib import Path
 
 HOME = Path(tempfile.mkdtemp(prefix="stagent_refine_"))
 os.environ["STAGENT_HOME"] = str(HOME)
+os.environ["STAGENT_SETTINGS_DIR"] = os.path.join(os.environ["STAGENT_HOME"], "cfg")  # (never the user's settings)
 import numpy as np  # noqa: E402
 from stagent import importer, iterate, markers  # noqa: E402
 from stagent.session import Session  # noqa: E402

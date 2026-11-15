@@ -7,7 +7,7 @@ import os, shutil, tempfile, json
 import numpy as np, scipy.sparse as sp
 EX = os.path.join(os.path.dirname(__file__), "..", "examples", "cadinu_merfish")
 home = tempfile.mkdtemp(prefix="stagent_qcstats_")
-os.environ["STAGENT_HOME"] = home; os.environ["XDG_CONFIG_HOME"] = home + "/cfg"
+os.environ["STAGENT_HOME"] = home; os.environ["STAGENT_SETTINGS_DIR"] = home + "/cfg"
 from stagent import config, importer, qcfilter, osutil
 
 quiet = lambda *a: None
@@ -67,6 +67,23 @@ try:
     assert sorted(done) == ["s1", "s2"] and len(waits) == 2, (done, waits)
     assert qcfilter._has_numbers(d) and qcfilter._has_numbers(config.SAMPLES / "s2")
     assert qcfilter.backfill() == [], "backfill did the samples again"
+    # a sample whose meta.json names a project whose file is gone: a slice on its own (the app shows it without a
+    # project), the filter dialog opens
+    from stagent import projects, webapp
+    from starlette.testclient import TestClient
+    m = json.load(open(d / "meta.json")); m["project"] = "gone"; json.dump(m, open(d / "meta.json", "w"))
+    assert projects.project_of("s1") is None
+    c = TestClient(webapp.build_app(8799), base_url="http://127.0.0.1:8799")
+    r = c.get("/api/sample/s1/qc")
+    assert r.status_code == 200 and r.json()["n_cells"] > 0, r.text
+    # About: the data folder's size counts the app's files only (the data folder may be a whole drive)
+    before = webapp._about()["data_size_mb"]
+    with open(os.path.join(home, "not_the_apps.bin"), "wb") as f:
+        f.write(b"0" * 50 * 2 ** 20)
+    os.makedirs(os.path.join(home, "other_program"), exist_ok=True)
+    with open(os.path.join(home, "other_program", "big.bin"), "wb") as f:
+        f.write(b"0" * 50 * 2 ** 20)
+    assert webapp._about()["data_size_mb"] == before, "counted files that are not the app's"
     print("ok")
 finally:
     shutil.rmtree(home, ignore_errors=True)

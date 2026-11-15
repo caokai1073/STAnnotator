@@ -2506,6 +2506,22 @@ def api_diagnostics(req):
     return _json(_about())
 
 
+APP_DIRS = ("samples", "sessions", "trash", "marker_lists", "cache", "converted", "importing", "priors", "projects",
+            "proposals", "reference")
+
+
+def _app_files():
+    """The files the app keeps in the data folder: its own folders and its files at the top (the data folder may be a
+    whole drive, e.g. E:\\, with the user's other files: those are not walked)."""
+    h = config.HOME
+    for d in [h / n for n in APP_DIRS] + sorted(h.glob("claude_workspace*")):
+        if d.is_dir():
+            yield from d.rglob("*")
+    for f in h.iterdir():
+        if f.suffix in (".json", ".jsonl", ".log", ".pid", ".txt") and f.is_file():
+            yield f
+
+
 def _about(sizes=True):
     """sizes: count the data folder's samples and bytes (slow on a large folder; a bug report leaves it out)."""
     import importlib.metadata as md, platform
@@ -2521,7 +2537,7 @@ def _about(sizes=True):
             return f.stat().st_size if f.is_file() else 0
         except OSError:  # removed meanwhile (a cache file, a download put in place)
             return 0
-    size = sum(size_of(f) for f in config.HOME.rglob("*")) if sizes and config.HOME.exists() else 0
+    size = sum(size_of(f) for f in _app_files()) if sizes and config.HOME.exists() else 0
     from . import __version__
     return {"version": __version__, "build": config.build(), "app": "desktop app" if desktop_mode() else "web viewer",
                   "standalone": bool(config.FROZEN), "system": f"{platform.system()} {platform.release()} ({platform.machine()})",

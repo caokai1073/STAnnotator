@@ -9,6 +9,7 @@ from pathlib import Path
 
 HOME = Path(tempfile.mkdtemp(prefix="stagent_panels_"))
 os.environ["STAGENT_HOME"] = str(HOME)
+os.environ["STAGENT_SETTINGS_DIR"] = os.path.join(os.environ["STAGENT_HOME"], "cfg")  # (never the user's settings)
 import numpy as np, scipy.sparse as sp  # noqa: E402
 from stagent import config, importer, projects, qcfilter  # noqa: E402
 
