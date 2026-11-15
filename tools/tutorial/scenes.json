@@ -403,6 +403,16 @@
   "GET /api/leiden_parallel",
   "GET /api/review_mode"
  ],
+ "steps_order": [
+  "import",
+  "registration",
+  "filter",
+  "priors",
+  "annotate",
+  "regions",
+  "review",
+  "analyze"
+ ],
  "scenes": [
   {
    "name": "s00-empty"

@@ -12,7 +12,7 @@ Nothing here is part of the app or its package.
 |---|---|
 | `record_proxy.py` | sits between a browser and a running viewer; records every request and answer, grouped by **scene** |
 | `crawl_tiles.py`, `crawl_genes.py` | add every H&E tile, and the map colored by a batch of genes, for the viewer's own exploring |
-| `scenes.json` | the scenes in order; per scene: `from` / `until` (time window), `source` (a slice of another scene), `skip`, `inject` (answers the recording could not make); `rewrite` (local paths shown as generic ones), `synthetic`, `harvest` |
+| `scenes.json` | the scenes in order; per scene: `from` / `until` (time window), `source` (a slice of another scene), `skip`, `inject` (answers the recording could not make); `rewrite` (local paths shown as generic ones), `synthetic`, `harvest`, `steps_order` (the Steps list in the order the app has now, when it changed after the recording) |
 | `build.py` | builds `docs/tutorial/` (the app page with `player/shim.js` first, the player) and the data (the recorded answers, each body once, and the agent's conversations) |
 | `player/shim.js` | in the app page: answers `fetch` and `<img src>` for `/api/...` from the recording; keeps the app's settings in memory |
 | `player/engine.js` | the player: scenes, cursor, spotlight, terminal replay, timeline, pause-and-try, the self-check |

@@ -63,22 +63,33 @@ def main():
     order = [s["name"] for s in cfg["scenes"]]
     stored, entries = {}, OrderedDict((n, OrderedDict()) for n in order + ["_tiles", "_genes"])
 
-    def store(sha, ctype):
-        if (sha, ctype) in stored:
-            return stored[(sha, ctype)]
+    steps_order = cfg.get("steps_order")  # the app's Steps in the order it has now (a recording made before a reorder)
+
+    def store(sha, ctype, path=""):
+        fix = bool(steps_order) and path.endswith("/steps")
+        if (sha, ctype, fix) in stored:
+            return stored[(sha, ctype, fix)]
         data = (rec / "blobs" / sha).read_bytes()
         ct = ctype.split(";")[0].strip()
         if ct in ("application/json", "text/plain", "text/markdown", "text/csv", "application/geo+json", "text/html"):
             txt = data.decode("utf-8", "replace")
             for x, y in rewrites:
                 txt = txt.replace(x, y)
+            if fix:
+                d = json.loads(txt)
+                if isinstance(d, dict) and isinstance(d.get("steps"), list):
+                    rank = {k: i for i, k in enumerate(steps_order)}
+                    d["steps"] = sorted(d["steps"], key=lambda x: rank.get(x.get("key"), len(rank)))  # (stable)
+                    if "next" in d:  # the first step to do, as webapp.steps_of
+                        d["next"] = next((x["key"] for x in d["steps"] if x.get("state") == "todo"), None)
+                    txt = json.dumps(d)
             data = txt.encode()
         h = hashlib.sha1(data).hexdigest()[:16]
         name = f"{h}.{EXT.get(ct, 'bin')}"
         p = dout / "b" / name
         if not p.exists():
             p.write_bytes(data)
-        stored[(sha, ctype)] = name
+        stored[(sha, ctype, fix)] = name
         return name
 
     entries["_static"] = OrderedDict()  # lists that do not change (organs, options): from any scene, dropped ones too
@@ -101,7 +112,7 @@ def main():
             key = r["method"] + " " + (r["path"] if rule["name"] == "_tiles" else norm(r["path"], r["query"]))
             if any(key.startswith(k) for k in rule.get("skip", [])):
                 continue
-            f = store(r["body"], r["ctype"])
+            f = store(r["body"], r["ctype"], r["path"])
             ans = [r["status"], r["ctype"].split(";")[0], f]
             if r["method"] != "GET":  # the request body picks among the answers of the same path
                 body = (rec / "blobs" / r["req"]).read_text("utf-8", "replace") if r.get("req") else ""
