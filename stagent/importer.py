@@ -464,6 +464,8 @@ def _write_files(d, out, name, cells, X, genes, image, A, description, source, i
     cells.to_parquet(d / "cells.parquet")
     osutil.save_counts(d / "counts.npz", X)   # (the fastest zip compression: seconds, not tens of seconds)
     config.write_genes(d / "genes.txt", genes)
+    from .qcfilter import save_numbers
+    save_numbers(d, X, genes)  # (the filter dialog opens without reading the counts again)
     meta = {"sample_id": name, "description": description, "n_cells": int(len(cells)), "n_genes": len(genes),
             "he_path": str(Path(image).resolve()) if image else None, "he_um_per_px": um_per_px,
             "image_kind": image_kind, "bundle_dir": str(out), "has_pathologist_regions": has_regions,

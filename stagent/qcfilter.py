@@ -27,7 +27,42 @@ def _src(sample_id):
     return d / "original" if (d / "original" / "counts.npz").exists() else d
 
 
+STATS = "qc_stats.npz"  # beside a counts file: its per-cell and per-gene numbers, so the dialog need not read it
+_light = {}  # (sample_id, counts file time) -> those numbers, without the matrix
+
+
+def _counts_key(src):
+    st = (src / "counts.npz").stat()
+    return np.array([st.st_mtime_ns, st.st_size], np.int64)
+
+
+def _numbers(X, genes):
+    """Per cell: transcripts, genes detected, mitochondrial share; per gene: the cells it is detected in (the
+    matrix holds no zeros: a stored entry is a detection)."""
+    mito = np.array([bool(MITO.match(g)) for g in genes])
+    counts = np.asarray(X.sum(1)).ravel()
+    return {"genes": genes, "mito": mito, "counts": counts, "n_genes": np.diff(X.indptr),
+            "mito_pct": 100 * np.asarray(X[:, mito].sum(1)).ravel() / np.maximum(counts, 1) if mito.any()
+            else np.zeros(X.shape[0]),
+            "detected": np.bincount(X.indices, minlength=X.shape[1])}
+
+
 def _load(sample_id):
+    """The data as imported with its numbers (the matrix and the cells: what filtering needs). Saves the numbers
+    beside the counts (STATS) for the dialog."""
+    with _lock(sample_id):  # (the dialog's read in the background and a filter started meanwhile: read once)
+        return _load_locked(sample_id)
+
+
+_locks = {}
+
+
+def _lock(sample_id):
+    import threading
+    return _locks.setdefault(sample_id, threading.Lock())
+
+
+def _load_locked(sample_id):
     src = _src(sample_id)
     key = (sample_id, (src / "counts.npz").stat().st_mtime)
     if key not in _data:
@@ -38,14 +73,66 @@ def _load(sample_id):
         if X.nnz and not X.data.all():  # stored zeros: dropped on a copy (the shared matrix is never changed)
             X = X.copy()
             X.eliminate_zeros()
-        genes = config.read_genes(src / "genes.txt")
-        mito = np.array([bool(MITO.match(g)) for g in genes])
-        counts = np.asarray(X.sum(1)).ravel()
-        _data[key] = {"X": X, "genes": genes, "mito": mito, "cells": pd.read_parquet(src / "cells.parquet"),
-                      "counts": counts, "n_genes": np.diff(X.indptr),
-                      "mito_pct": 100 * np.asarray(X[:, mito].sum(1)).ravel() / np.maximum(counts, 1) if mito.any()
-                      else np.zeros(X.shape[0])}
+        num = _numbers(X, config.read_genes(src / "genes.txt"))
+        _data[key] = num | {"X": X, "cells": pd.read_parquet(src / "cells.parquet")}
+        try:  # (a folder that cannot be written to: the numbers are computed again next time)
+            np.savez(src / STATS, key=_counts_key(src), **{k: num[k] for k in ("counts", "n_genes", "mito_pct", "detected")})
+        except OSError:
+            pass
     return _data[key]
+
+
+def save_numbers(folder, X, genes):
+    """At import: the numbers of the counts just written in folder, saved beside them (the filter dialog opens without
+    reading the matrix)."""
+    folder = Path(folder)
+    X = sp.csr_matrix(X)
+    if not X.has_canonical_format or (X.nnz and not X.data.all()):  # (as _load sees the matrix)
+        X = X.copy()
+        X.sum_duplicates()
+        X.eliminate_zeros()
+    num = _numbers(X, list(genes))
+    try:
+        np.savez(folder / STATS, key=_counts_key(folder), **{k: num[k] for k in ("counts", "n_genes", "mito_pct", "detected")})
+    except OSError:
+        pass
+
+
+def _numbers_of(sample_id):
+    """The per-cell and per-gene numbers of the data as imported, without reading the matrix when they were saved
+    (STATS, checked against the counts file's time and size); else read with the data (_load)."""
+    src = _src(sample_id)
+    key = (sample_id, (src / "counts.npz").stat().st_mtime)
+    if key in _data:
+        return _data[key]
+    if key not in _light:
+        try:
+            z = np.load(src / STATS)
+            if not np.array_equal(z["key"], _counts_key(src)):
+                raise ValueError("stale")
+            genes = config.read_genes(src / "genes.txt")
+            num = {k: z[k] for k in ("counts", "n_genes", "mito_pct", "detected")}
+            if len(num["detected"]) != len(genes):
+                raise ValueError("stale")
+            _light[key] = num | {"genes": genes, "mito": np.array([bool(MITO.match(g)) for g in genes])}
+        except (OSError, KeyError, ValueError):
+            return _load(sample_id)
+    return _light[key]
+
+
+def prefetch(ids):
+    """Read the data of these samples in the background (the dialog is open: the preview and the filter will need
+    it), slices at once (unzipping lets go of the GIL)."""
+    import threading
+    for s in ids:
+        threading.Thread(target=lambda x=s: _quiet(_load, x), daemon=True).start()
+
+
+def _quiet(fn, *a):
+    try:
+        fn(*a)
+    except Exception:
+        pass
 
 
 def params(p):
@@ -80,21 +167,41 @@ def _cell_masks(d, prm):
         fail["min_genes"] = d["n_genes"] < prm["min_genes"]
     if "max_mito_pct" in prm and d["mito"].any():
         fail["max_mito_pct"] = d["mito_pct"] > prm["max_mito_pct"]
-    keep = np.ones(d["X"].shape[0], bool)
+    keep = np.ones(len(d["counts"]), bool)
     for m in fail.values():
         keep &= ~m
     return keep, fail
 
 
-def _plan(ids, prm):
-    data = {s: _load(s) for s in ids}
+def _plan(ids, prm, full=False):
+    """What the thresholds keep. The matrix is read only when needed: full (to filter), or a minimum of cells per
+    gene that some cells removed may change (the genes' detection counted over the cells kept)."""
+    data = {s: _numbers_of(s) for s in ids}
     genes = data[ids[0]]["genes"]
     if any(data[s]["genes"] != genes for s in ids[1:]):
         raise ValueError("the slices of this project do not share one gene panel")
     keep = {s: _cell_masks(data[s], prm) for s in ids}
-    detected = sum(np.asarray((data[s]["X"][keep[s][0]] > 0).sum(0)).ravel() for s in ids)
+    if full or (prm.get("min_cells", 0) > 0 and not all(k[0].all() for k in keep.values())):
+        data = _load_all(ids)
+        detected = sum(_detected_in(data[s]["X"], keep[s][0]) for s in ids)
+    else:
+        detected = sum(data[s]["detected"] for s in ids)
     gkeep = detected >= prm.get("min_cells", 0)
     return data, genes, keep, gkeep, detected
+
+
+def _detected_in(X, rows):
+    """Per gene, the cells among rows (a mask) it is detected in."""
+    return np.bincount(X.indices[np.repeat(rows, np.diff(X.indptr))], minlength=X.shape[1])
+
+
+def _load_all(ids):
+    """_load of every slice, at once (unzipping lets go of the GIL)."""
+    if len(ids) == 1:
+        return {ids[0]: _load(ids[0])}
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(min(4, len(ids))) as ex:
+        return dict(zip(ids, ex.map(_load, ids)))
 
 
 def preview(ids, p):
@@ -122,11 +229,11 @@ def _hist(v, bins):
 def overview(ids):
     """The numbers the thresholds act on, over the cells as imported: histograms of transcripts and genes per cell
     (log scale), of the mitochondrial share, and of the cells each gene is detected in; the filter in use."""
-    data = {s: _load(s) for s in ids}
+    data = {s: _numbers_of(s) for s in ids}
     counts = np.concatenate([data[s]["counts"] for s in ids])
     ngenes = np.concatenate([data[s]["n_genes"] for s in ids])
     d0 = data[ids[0]]
-    detected = sum(np.asarray((data[s]["X"] > 0).sum(0)).ravel() for s in ids)
+    detected = sum(data[s]["detected"] for s in ids)
     def log(v, n):  # counts on a log scale, log10(1 + v), in bins that each hold whole numbers
         e = np.unique(np.floor(np.geomspace(1, max(float(np.max(v)), 9) + 2, n + 1))) - 1.5
         return _hist(np.log10(1 + np.asarray(v, float)), np.log10(1 + np.maximum(e, -0.5)))
@@ -184,7 +291,7 @@ def apply(ids, p, progress=lambda *a: None, genes_removed=None):
     for min_cells), instead of counting them here. Returns the preview of what was done."""
     prm = params(p)
     progress(0.02, "reading the cells and genes as imported")
-    data, genes, keep, gkeep, _ = _plan(ids, prm)
+    data, genes, keep, gkeep, _ = _plan(ids, prm, full=True)
     summary = _summary(ids, prm, genes, keep, gkeep)   # (from the plan above: the data is not read again)
     if genes_removed is not None:
         out = set(genes_removed)
@@ -211,8 +318,9 @@ def apply(ids, p, progress=lambda *a: None, genes_removed=None):
         o = d / "original"
         if prm and not (o / "counts.npz").exists():  # the data as imported, once
             o.mkdir(exist_ok=True)
-            for f in ("cells.parquet", "counts.npz", "genes.txt"):
-                shutil.copy2(d / f, o / f)
+            for f in ("cells.parquet", "counts.npz", "genes.txt", STATS):
+                if f != STATS or (d / f).exists():  # (the numbers stay valid: copy2 keeps the counts file's time)
+                    shutil.copy2(d / f, o / f)
         at(i, s, 0.25, "filtering the cells and genes")
         D, km = data[s], keep[s][0]
         X = D["X"][km][:, gkeep].tocsr()
