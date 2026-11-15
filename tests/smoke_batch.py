@@ -17,9 +17,9 @@ def write(rows, name="m.csv"):
     return p
 
 
-def batch(*args):
+def batch(*args, env=None):
     r = subprocess.run([sys.executable, "-m", "stagent.cli", "batch", *map(str, args)], capture_output=True, text=True,
-                       env=dict(os.environ, STAGENT_HOME=str(tmp / "unused")))
+                       env=dict(os.environ, STAGENT_HOME=str(tmp / "unused"), **(env or {})))
     return r.returncode, r.stdout + r.stderr
 
 
@@ -56,6 +56,31 @@ try:
     log = (o / "logs" / "s1.log").read_text()
     assert log.count("annotate: done before, kept") == 1 and log.count("annotate ...") == 1, log[-800:]
     assert {r["sample"]: r for r in csv.DictReader(open(o / "summary.csv"))}["s1"]["session"] == summ["s1"]["session"]
+    # the marker list changed: only annotate and export run again (not import, not register)
+    lst.write_text(lst.read_text() + "\n")
+    lst.write_text(lst.read_text().replace("\n\n", "\n# edited\n", 1))
+    rc, out = batch(m, "--out", o, "--organ", "colon", "--only", "s1")
+    log = (o / "logs" / "s1.log").read_text().split("==== ")[-2]
+    assert "import: done before, kept" in log and "register: done before, kept" in log and "annotate ..." in log, log
+    # a process that dies (as out of memory) fails its own sample only, and keeps its finished steps
+    rc, out = batch(m, "--out", tmp / "o4", "--jobs", "2", "--organ", "colon", "--only", "s1", "s2",
+                    env={"STAGENT_BATCH_TEST_CRASH": "s1"})
+    summ = {r["sample"]: r for r in csv.DictReader(open(tmp / "o4" / "summary.csv"))}
+    assert summ["s1"]["status"] == "failed" and "died" in summ["s1"]["error"] and summ["s2"]["status"] == "ok", summ
+    assert "import" in json.load(open(tmp / "o4" / "status" / "s1.json"))["steps"], "finished steps lost"
+    # --drop-data removes only the sample's own data (s2 and s2_b: one name the start of the other)
+    m2 = write([{"sample": "s2", "h5ad": str(EX), "markers": ""}, {"sample": "s2_b", "h5ad": str(EX), "markers": ""}], "m2.csv")
+    rc, out = batch(m2, "--out", tmp / "o5", "--jobs", "2", "--organ", "colon", "--drop-data")
+    summ = {r["sample"]: r for r in csv.DictReader(open(tmp / "o5" / "summary.csv"))}
+    assert summ["s2"]["status"] == summ["s2_b"]["status"] == "ok", summ
+    assert not list((tmp / "o5" / "data" / "sessions").glob("*")) and not list((tmp / "o5" / "data" / "samples").glob("*"))
+    rc, out = batch(m2, "--out", tmp / "o5", "--organ", "colon")  # (results there: nothing to do again)
+    assert "annotate ..." not in (tmp / "o5" / "logs" / "s2.log").read_text().split("==== ")[-2]
+    # names not in the manifest, a malformed shard: refused with a message
+    rc, out = batch(m, "--out", tmp / "o6", "--organ", "colon", "--only", "nope")
+    assert rc != 0 and "not in the manifest" in out, out
+    rc, out = batch(m, "--out", tmp / "o6", "--organ", "colon", "--shard", "x")
+    assert rc != 0 and "I/N" in out and "Traceback" not in out, out
     # shards: rows 0, 2 / row 1
     rc, out = batch(m, "--out", tmp / "o2", "--shard", "1/2", "--organ", "colon", "--only", "s2")
     assert [r["sample"] for r in csv.DictReader(open(tmp / "o2" / "summary.csv"))] == ["s2"], out

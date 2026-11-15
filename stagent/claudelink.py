@@ -214,28 +214,34 @@ class Offline(ValueError):
 
 OFFLINE = ("No internet connection: the agent (Claude Code) cannot be reached; nothing was sent. Everything else "
            "works offline; ask the agent again once you are online.")
-_reached = {"t": 0.0}
 
 
-def check_online(timeout=2.0):
-    """Raise Offline when the computer cannot reach the Claude API (a connection to its port only, nothing sent;
-    Claude Code itself shows its own error otherwise, in its window, which the app cannot see). A success is trusted
-    for a minute; a failure is checked again at every request (back online: works at once). Not checked where
-    Claude Code goes another way (a proxy, Amazon Bedrock, Google Vertex): it could be reachable."""
-    if any(os.environ.get(v) for v in ("HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy",
-                                       "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "STAGENT_SKIP_ONLINE_CHECK")):
-        return
-    if time.time() - _reached["t"] < 60:
-        return
+def _has_route():
+    """Whether this computer has a network to send to at all: a UDP socket "connected" to a public address gets a local
+    address only when a route exists (Wi-Fi off, cable out: none). Nothing is sent, nothing waits."""
     import socket
-    from urllib.parse import urlparse
-    u = urlparse(os.environ.get("ANTHROPIC_BASE_URL") or "https://api.anthropic.com")
-    try:
-        socket.create_connection((u.hostname or "api.anthropic.com", u.port or (80 if u.scheme == "http" else 443)),
-                                 timeout=timeout).close()
-    except OSError:  # (no network, no DNS, a firewall)
-        raise Offline(OFFLINE) from None
-    _reached["t"] = time.time()
+    for fam, addr in ((socket.AF_INET, ("8.8.8.8", 53)), (socket.AF_INET6, ("2001:4860:4860::8888", 53))):
+        try:
+            with socket.socket(fam, socket.SOCK_DGRAM) as so:
+                so.connect(addr)
+                ip = so.getsockname()[0]
+            if ip and not ip.startswith(("127.", "0.", "::1", "fe80")) and ip != "::":
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def check_online():
+    """Raise Offline when the computer has no network at all (Wi-Fi off, cable out): the agent's request would only
+    fail in Claude Code's window, which the app cannot see. Only that is checked, locally: a network that is up but
+    cannot reach Anthropic directly is not refused, since Claude Code may go through a proxy or relay the app does not
+    know of (set in the user's shell or Claude Code's settings); there the Refine window's 10-minute notice points to
+    Claude Code's window. STAGENT_SKIP_ONLINE_CHECK=1: never refused."""
+    if os.environ.get("STAGENT_SKIP_ONLINE_CHECK") == "1":
+        return
+    if not _has_route():
+        raise Offline(OFFLINE)
 
 
 def open_claude_code(sample=None, session=None, request=None, send_if_open=False, remote=None):

@@ -254,7 +254,7 @@ def _topk_torch(Z, k, dev):
         try:
             nbr.append(torch.topk(torch.cdist(Zt[i:i + chunk], Zt), k, largest=False)[1].cpu())
             i += chunk
-        except torch.OutOfMemoryError:  # (the GPU shared with other jobs: smaller blocks, the same neighbors)
+        except torch.cuda.OutOfMemoryError:  # (the GPU shared with other jobs: smaller blocks, the same neighbors)
             if chunk <= 64 or dev == "cpu":
                 raise
             chunk //= 2

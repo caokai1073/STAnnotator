@@ -972,6 +972,7 @@ async def api_claude_review(req: Request):
         want_advice = b.get("advice", True) and not advice.status(s, scope)["current"]
         if not st["unchecked"] and not want_advice:
             return _json({"needed": False, **st, "advice": advice.status(s, scope)})
+        _agent_online()  # (offline: nothing recorded as asked)
         if st["unchecked"]:
             claudereview.request(s)
             parts.append(REVIEW_REQUEST.format(v=v))
@@ -982,6 +983,7 @@ async def api_claude_review(req: Request):
     else:
         if s.scheme["kind"] == "none" and scope != "organization":
             return _json({"error": "annotate the sample first"}, 400)
+        _agent_online()
         advice.request(s, scope)
         what = (REGISTRATION_ONLY if s.scheme["kind"] == "none" else SCOPE_REQUEST[scope]).format(v=v)
         parts.append(SCOPE_LEAD.format(label=label, what=what) + SCOPE_CHECK.format(scope=scope))
@@ -2523,7 +2525,7 @@ def api_diagnostics(req):
 
 
 APP_DIRS = ("samples", "sessions", "trash", "marker_lists", "cache", "converted", "importing", "priors", "projects",
-            "proposals", "reference")
+            "proposals", "reference", "annotations")
 
 
 def _app_files():
@@ -3067,6 +3069,10 @@ async def api_sample_priors_save(req: Request):
     new = [a for a in r["added"] if a["id"] not in before and not a.get("rule") and not a.get("no_rule")]
     s = _open_session(b.get("session")) if new else None
     if s is not None:
+        try:
+            _agent_online()
+        except claudelink.Offline as e:  # (the priors are saved; their rules are asked for when online)
+            return _json(out | {"offline": str(e)})
         items = "; ".join(f"{a['id']}: \"{a['text']}\"" for a in new)
         # at the top level: on a server reached over SSH the page hands {"claude_code": {"remote"...}} to the app,
         # which opens Claude Code on the user's computer

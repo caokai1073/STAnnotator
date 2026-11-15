@@ -161,7 +161,10 @@ def main(argv=None):
         from . import batch
         shard = None
         if a.shard:
-            i, n = (int(x) for x in a.shard.split("/"))
+            try:
+                i, n = (int(x) for x in a.shard.split("/"))
+            except ValueError:
+                raise SystemExit("--shard takes I/N, e.g. 0/50")
             if not 0 <= i < n:
                 raise SystemExit("--shard I/N needs 0 <= I < N")
             shard = (i, n)

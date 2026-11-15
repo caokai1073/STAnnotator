@@ -37,7 +37,7 @@ COLUMNS = ("sample", "xenium", "h5ad", "section_column", "section", "x_column", 
            "organ", "markers")
 SUMMARY = ("sample", "status", "flags", "error", "n_cells", "n_genes", "median_transcripts", "registration",
            "registration_verdict", "median_offset_um", "p90_offset_um", "share_off", "local_correction",
-           "candidate", "n_types_with_cells", "types_without_cells", "low_quality_share", "seconds", "session")
+           "candidate", "n_types_with_cells", "types_without_cells", "unassigned_share", "seconds", "session")
 STEPS = ("import", "register", "annotate", "export")
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
@@ -94,7 +94,8 @@ def _input_key(r):
 
 def _write_atomic(path, text):
     path = Path(path)
-    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    import socket
+    tmp = path.with_name(f".{path.name}.{socket.gethostname()}.{os.getpid()}.tmp")
     tmp.write_text(text, encoding="utf-8")
     os.replace(tmp, path)
 
@@ -114,22 +115,25 @@ def _one(r, out, opts):
     print(f"==== {time.strftime('%Y-%m-%d %H:%M:%S')} sample {sid}", flush=True)
     t0 = time.time()
     try:
-        key = _input_key(r)
-        exported = "export" in st["steps"] and (out / "results" / sid / "annotation.csv").exists()  # (--drop-data)
+        keys = _keys(r, opts)
+        stale = {}
+        for step in STEPS:  # (a step runs again when what it reads changed, or a step it depends on runs again)
+            stale[step] = (opts["redo"] or st["steps"].get(step, {}).get("key") != keys[step]
+                           or any(stale[d] for d in DEPENDS[step]))
+        exported = not stale["export"] and (out / "results" / sid / "annotation.csv").exists()
+        if not _sample_there(sid) and not exported:  # (its data removed: --drop-data, or by hand) from the start
+            stale = dict.fromkeys(STEPS, True)
         for step in STEPS:
-            k = _hash(key, step, opts["auto"], opts["local_fix"], r.get("organ"), r.get("markers"),
-                      opts["knn"] if step in ("annotate", "export") else None,
-                      _marker_text_key(r) if step in ("annotate", "export") else None,
-                      st["steps"].get(STEPS[STEPS.index(step) - 1], {}).get("key") if step != "import" else None)
             done = st["steps"].get(step, {})
-            if done.get("key") == k and not opts["redo"] and (step != "import" or _sample_there(sid) or exported):
+            if not stale[step]:
                 print(f"{step}: done before, kept", flush=True)
                 st["flags"] += done.get("flags", [])
                 continue
+            st["steps"].pop(step, None)
             ts = time.time()
             print(f"{step} ...", flush=True)
             res = globals()[f"_step_{step}"](r, out, opts, st)
-            st["steps"][step] = {"key": k, "seconds": round(time.time() - ts), **res}
+            st["steps"][step] = {"key": keys[step], "seconds": round(time.time() - ts), **res}
             st["flags"] += res.get("flags", [])
             _write_atomic(stf, json.dumps(st, indent=1, default=str))
         st["status"] = "flagged" if st["flags"] else "ok"
@@ -141,6 +145,19 @@ def _one(r, out, opts):
     print(f"==== {st['status']} in {st['seconds']} s {('; '.join(st['flags']))}", flush=True)
     log.close()
     return {"sample": sid, "status": st["status"], "flags": st["flags"], "error": st["error"], "seconds": st["seconds"]}
+
+
+DEPENDS = {"import": (), "register": ("import",), "annotate": ("import",), "export": ("register", "annotate")}
+
+
+def _keys(r, opts):
+    """What each step reads: import the files; register those and the options of the decisions; annotate those and the
+    marker list's content; export both."""
+    k = {"import": _input_key(r)}
+    k["register"] = _hash(k["import"], opts["auto"], opts["local_fix"], opts["candidates"])
+    k["annotate"] = _hash(k["import"], _marker_text_key(r), opts["knn"] or "default")
+    k["export"] = _hash(k["register"], k["annotate"])
+    return k
 
 
 def _sample_there(sid):
@@ -185,7 +202,8 @@ def _pick(cands):
     ok = [c for c in cands if c["check"]["verdict"] != "far off"]
     if not ok:
         return None, False
-    ok.sort(key=lambda c: (-c["check"]["clear_reading_share"], c["check"]["median_um"] or 1e9))
+    ok.sort(key=lambda c: (-c["check"]["clear_reading_share"],
+                           1e9 if c["check"]["median_um"] is None else c["check"]["median_um"]))
     best = ok[0]
     return best, any(c["orientation"] != best["orientation"] for c in ok[1:])
 
@@ -196,6 +214,10 @@ def _step_register(r, out, opts, st):
     m = importer._meta(sid)
     if not r.get("he"):
         return {"registration": "none (no H&E)"}
+    try:  # (a correction of an earlier try is undone: this one starts from the cells as imported / placed)
+        importer.undo_registration_fix(sid)
+    except ValueError:
+        pass
     flags, res = [], {}
     if r.get("registration"):
         res["registration"] = "file"
@@ -225,12 +247,20 @@ def _step_register(r, out, opts, st):
         res |= {"registration": "auto", "candidate": f"{best['id']} {best['orientation']}"}
         if ambiguous:
             flags.append("registration: another orientation fits almost as well, check it")
-    chk = _check(sid)
+    try:
+        chk = _check(sid)
+    except (ValueError, OSError) as e:  # (e.g. too few cells on the image for a window): flagged, the annotation goes on
+        print(f"  registration check: {e}", flush=True)
+        return res | {"verdict": None, "flags": flags + [f"registration: the check could not run ({e})"]}
     res["check"] = chk
     if chk["verdict"] == "local shifts" and opts["local_fix"] and opts["auto"]:
-        res["local_correction"] = _local_fix(sid, chk)
-        if res["local_correction"].get("applied"):
-            chk = res["check_after"] = _check(sid)
+        try:
+            res["local_correction"] = _local_fix(sid)
+            if res["local_correction"].get("applied"):
+                chk = res["check_after"] = _check(sid)
+        except (ValueError, OSError) as e:
+            print(f"  local correction: {e}", flush=True)
+            res["local_correction"] = {"applied": False, "why": str(e)}
     if chk["verdict"] == "far off":
         flags.append("registration: the cells are far off their nuclei")
     elif chk["verdict"] == "local shifts":
@@ -238,15 +268,19 @@ def _step_register(r, out, opts, st):
     return res | {"verdict": chk["verdict"], "flags": flags}
 
 
-def _local_fix(sid, before):
+def _local_fix(sid):
     """The local correction, applied only when its own check (the windows measured again with the cells moved) puts
-    the cells closer to their nuclei than now (median offset and share of windows off)."""
+    the cells closer to their nuclei than now (median offset and share of windows off; the windows of large shifts,
+    which the fine windows cannot read, count as off before, as the app's check counts them). Applied as the app
+    applies it: the placement before kept for its Undo, the sample noting the correction."""
     import numpy as np
-    from . import importer, regcheck
+    from . import importer, regcheck, config
+    from .osutil import dump_json
     w = regcheck.windows(sid)
     fix = regcheck.correction(sid, w)
     a, mu, coef, aff, res, noise, D = regcheck._analyse(w)
-    tb = np.hypot(*D[~noise].T)
+    b, big, anchor = regcheck._large(w)
+    tb = np.r_[np.hypot(*D[~noise].T), np.hypot(b[big, 4], b[big, 5]) if big.any() else []]
     ta = np.hypot(*np.asarray(fix["after_um"])[np.asarray(fix["trusted_after"])].T)
     if not len(tb) or not len(ta):
         return {"applied": False, "why": "no trusted windows"}
@@ -254,10 +288,22 @@ def _local_fix(sid, before):
     ob, oa = float((tb >= regcheck.OFF_UM).mean()), float((ta >= regcheck.OFF_UM).mean())
     out = {"median_before_um": round(mb, 1), "median_after_um": round(ma, 1), "off_before": round(ob, 3),
            "off_after": round(oa, 3), "moved_median_um": fix["moved_um_median"], "moved_max_um": fix["moved_um_max"]}
-    if ma < mb and oa <= ob:
-        importer.apply_registration_fix(sid, {k: fix[k] for k in regcheck.FIX_KEYS if k in fix})
-        return out | {"applied": True}
-    return out | {"applied": False, "why": "it would not bring the cells closer to their nuclei"}
+    if not (ma < mb and oa <= ob):
+        return out | {"applied": False, "why": "it would not bring the cells closer to their nuclei"}
+    sd = config.SAMPLES / sid
+    keep = sd / "align" / "before_local"  # (the app's Undo of the local registration)
+    keep.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(sd / "cells.parquet", keep / "cells.parquet")
+    shutil.copy2(sd / "meta.json", keep / "meta.json")
+    if regcheck._file(sid).exists():
+        shutil.copy2(regcheck._file(sid), keep / "regcheck.json")
+    importer.apply_registration_fix(sid, {k: fix[k] for k in regcheck.FIX_KEYS if k in fix})
+    m = json.load(open(sd / "meta.json", encoding="utf-8"))
+    m["registration_local"] = {"key": regcheck._key(sid, importer.image_of(sid)), "time": time.strftime("%Y-%m-%d %H:%M"),
+                               "moved_um_max": fix["moved_um_max"], "moved_um_median": fix["moved_um_median"],
+                               "by": "batch"}
+    dump_json(m, sd / "meta.json", indent=1)
+    return out | {"applied": True}
 
 
 def _marker_text(r):
@@ -269,6 +315,8 @@ def _marker_text(r):
 
 
 def _step_annotate(r, out, opts, st):
+    if os.environ.get("STAGENT_BATCH_TEST_CRASH") == r["sample"]:  # (tests: a process that dies, as out of memory)
+        os._exit(9)
     import numpy as np
     from .session import Session
     s = Session.create(r["sample"], "none", method="markers", markers_text=_marker_text(r), knn=opts["knn"])
@@ -278,7 +326,7 @@ def _step_annotate(r, out, opts, st):
     have = set(lb.tolist())
     return {"session": s.id, "n_types_with_cells": len(have - set(markers.NO_TYPE)),
             "types_without_cells": [t for t in leaves if t not in have],
-            "low_quality_share": round(float(np.isin(lb, markers.NO_TYPE).mean()), 4)}
+            "unassigned_share": round(float(np.isin(lb, markers.NO_TYPE).mean()), 4)}
 
 
 def _step_export(r, out, opts, st):
@@ -294,7 +342,8 @@ def _step_export(r, out, opts, st):
     tab.to_csv(tmp, index=False)
     os.replace(tmp, d / "annotation.csv")
     _write_atomic(d / "cell_positions.csv", notebook.positions_csv(sid))
-    if r.get("he") and importer._meta(sid).get("image_kind") not in (None, "none"):
+    reg0 = st["steps"].get("register", {})
+    if r.get("he") and reg0.get("registration") in ("file", "auto"):  # (placed on the H&E: not waiting, not failed)
         reg = st["steps"].get("register", {})
         import pandas as pd, io
         t = pd.read_csv(io.StringIO(notebook.registration_csv(sid)))
@@ -310,7 +359,7 @@ def _step_export(r, out, opts, st):
     _write_atomic(d / "qc.json", json.dumps(qc, indent=1, default=str))
     if opts["drop_data"]:  # (results written: the sample's data folder and annotations go, to save disk)
         from . import config
-        for p in [config.SAMPLES / sid] + [x for x in config.SESSIONS.glob(f"{sid}_*")]:
+        for p in (config.SAMPLES / sid, config.SESSIONS / st["steps"]["annotate"]["session"]):
             shutil.rmtree(p, ignore_errors=True)
     return {"median_transcripts": qc["median_transcripts"]}
 
@@ -336,7 +385,7 @@ def summary(out):
                      "local_correction": (reg.get("local_correction") or {}).get("applied"),
                      "candidate": reg.get("candidate"), "n_types_with_cells": ann.get("n_types_with_cells"),
                      "types_without_cells": "; ".join(ann.get("types_without_cells") or []),
-                     "low_quality_share": ann.get("low_quality_share"), "seconds": st.get("seconds"),
+                     "unassigned_share": ann.get("unassigned_share"), "seconds": st.get("seconds"),
                      "session": ann.get("session")})
     import io
     buf = io.StringIO()
@@ -354,6 +403,10 @@ def run(manifest, out, jobs=1, shard=None, auto=True, redo=False, organ=None, ma
         i, n = shard
         rows = [r for k, r in enumerate(rows) if k % n == i]
     if only:
+        known = {r["sample"] for r in read_manifest(manifest, organ, markers)}
+        missing = sorted(set(only) - known)
+        if missing:
+            raise ValueError(f"--only: not in the manifest: {', '.join(missing)}")
         rows = [r for r in rows if r["sample"] in set(only)]
     out = Path(out).expanduser().resolve()
     for sub in ("data", "results", "status", "logs"):
@@ -361,35 +414,58 @@ def run(manifest, out, jobs=1, shard=None, auto=True, redo=False, organ=None, ma
     jobs = max(1, int(jobs))
     threads = max(1, (os.cpu_count() or 1) // jobs)
     env = {"STAGENT_HOME": str(out / "data"), "STAGENT_NO_QC_BACKFILL": "1"}
-    for v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMBA_NUM_THREADS"):
+    for v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
         env[v] = os.environ.get(v) or str(threads)
-    if jobs > 1:  # (several samples at once: no Leiden worker processes inside each)
-        env["STAGENT_LEIDEN_PARALLEL"] = "0"
+    if jobs > 1:  # several samples at once: their threads share the cores (numba's count is set by stagent itself,
+        env["NUMBA_NUM_THREADS"] = str(max(threads, 8))  # at least the 8 the approximate search needs), and no Leiden
+        env["STAGENT_LEIDEN_PARALLEL"] = "0"              # worker processes inside each
     os.environ.update(env)  # (inherited by the worker processes, before they import the app)
     opts = {"auto": auto, "redo": redo, "drop_data": drop_data, "local_fix": local_fix, "candidates": int(candidates),
             "knn": knn}
     print(f"{len(rows)} samples, {jobs} at a time ({threads} threads each); data folder {out / 'data'}; "
           f"auto {'on' if auto else 'off'}", flush=True)
     import multiprocessing
-    from concurrent.futures import ProcessPoolExecutor, as_completed
+    ctx = multiprocessing.get_context("spawn")
     t0, n_done, counts = time.time(), 0, {}
-    with ProcessPoolExecutor(max_workers=jobs, mp_context=multiprocessing.get_context("spawn"),
-                             max_tasks_per_child=1) as ex:  # (one sample per process: its memory is given back)
-        futs = {ex.submit(_one, r, str(out), opts): r["sample"] for r in rows}
-        for f in as_completed(futs):
+    todo, running = list(rows), {}
+    # one process per sample (its memory given back at its end); a process that dies (out of memory, a crash) fails
+    # only its own sample: the others go on
+    while todo or running:
+        while todo and len(running) < jobs:
+            r = todo.pop(0)
+            pr = ctx.Process(target=_one, args=(r, str(out), opts), name=f"batch-{r['sample']}")
+            pr.start()
+            running[r["sample"]] = pr
+        time.sleep(1)
+        for sid, pr in list(running.items()):
+            if pr.is_alive():
+                continue
+            pr.join()
+            del running[sid]
             n_done += 1
-            try:
-                x = f.result()
-            except Exception as e:  # (the worker itself died, e.g. out of memory)
-                x = {"sample": futs[f], "status": "failed", "flags": [], "error": f"worker died: {e}", "seconds": None}
-                _write_atomic(out / "status" / f"{futs[f]}.json", json.dumps(
-                    {"sample": futs[f], "steps": {}, "status": "failed", "error": x["error"], "flags": []}))
+            x = _result(out, sid, pr.exitcode)
             counts[x["status"]] = counts.get(x["status"], 0) + 1
             el = time.time() - t0
-            print(f"[{n_done}/{len(rows)}] {x['sample']}: {x['status']}"
+            print(f"[{n_done}/{len(rows)}] {sid}: {x['status']}"
                   + (f" ({'; '.join(x['flags'])})" if x["flags"] else "") + (f" {x['error']}" if x["error"] else "")
                   + f"  [{el / 60:.0f} min, about {el / n_done * (len(rows) - n_done) / 60:.0f} min left]", flush=True)
             summary(out)
     summary(out)
     print(f"done: {counts}; {out / 'summary.csv'}", flush=True)
     return counts
+
+
+def _result(out, sid, exitcode):
+    """A finished sample's outcome from its status file; a process that died before writing it (killed for memory, a
+    crash): failed, with the steps it had finished kept for the next run."""
+    f = out / "status" / f"{sid}.json"
+    try:
+        st = json.load(open(f))
+    except (OSError, ValueError):
+        st = {"sample": sid, "steps": {}}
+    if exitcode != 0 or st.get("status") not in ("ok", "flagged", "failed"):
+        why = (f"the process died (exit code {exitcode}: out of memory?)" if exitcode
+               else "the process ended without a result")
+        st |= {"status": "failed", "error": why, "flags": st.get("flags") or []}
+        _write_atomic(f, json.dumps(st, indent=1, default=str))
+    return {"status": st["status"], "flags": st.get("flags") or [], "error": st.get("error")}
