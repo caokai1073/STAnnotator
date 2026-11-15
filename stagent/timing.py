@@ -306,12 +306,15 @@ def leiden_seconds(m, n_res, r, reserve_gb=0.0, avail=None):
     return r("leiden_parallel") * -(-n_res // k) * m / 1e6 if k else r("leiden") * n_res * m / 1e6
 
 
-def estimate(n, n_genes, tree, resolution="auto", knn="exact", n_types=None, nnz=None):
+def estimate(n, n_genes, tree, resolution="auto", knn="exact", n_types=None, nnz=None, reference=False):
     """Seconds a marker annotation of n cells should take here: {"seconds", "steps": [[name, seconds]], "basis",
     "backend", "leiden_workers"}. n_types: the number of cell types (leaves of the tree). nnz: the stored counts (for
-    the memory the annotation needs, which the worker processes of Leiden must leave free)."""
+    the memory the annotation needs, which the worker processes of Leiden must leave free). reference: from the
+    reference workstation's rates for this computer's kind of neighbor search and its total memory only, nothing
+    measured here (no runs, speed test, free memory or compiled code): the same every time on this computer, for
+    choosing the default neighbor search (session.knn_mode)."""
     from . import markers, model
-    mine = measured()
+    mine = {} if reference else measured()
     sizes = level_sizes(n, tree, markers.MIN_CELLS)
     n_res = len(markers.RESOLUTIONS) if resolution in (None, "", markers.AUTO) else 1
     key, backend = markers.knn_backend(knn)
@@ -319,13 +322,16 @@ def estimate(n, n_genes, tree, resolution="auto", knn="exact", n_types=None, nnz
     basis = set()
 
     def r(k):
+        if reference:
+            basis.add("reference")
+            return REF[k]
         v, b = rate(k, mine)
         basis.add(b)
         return v
     nb = sum(r(key) * m * m / 1e9 + r("knn_rerank") * m / 1e6 for m in sizes) if knn != "approx" else \
-        sum(r("knn_approx") * m / 1e6 for m in sizes) + (0 if "approx_compile" in _warm else r("approx_compile"))
+        sum(r("knn_approx") * m / 1e6 for m in sizes) + (0 if "approx_compile" in _warm and not reference else r("approx_compile"))
     pool = min(n, model.CAP * T)
-    avail, reserve = available_memory_gb(), memory_gb(n, nnz or 0)
+    avail, reserve = (total_memory_gb() if reference else available_memory_gb()), memory_gb(n, nnz or 0)
     steps = [["reading the cells", r("prepare") * n / 1e6],
              ["PCA", sum(r("pca") * m * n_genes / 1e9 for m in sizes)],
              ["neighbor graph", nb + sum(r("graph") * m / 1e6 for m in sizes)],
@@ -336,7 +342,8 @@ def estimate(n, n_genes, tree, resolution="auto", knn="exact", n_types=None, nnz
     return {"seconds": round(sum(s for _, s in steps), 1), "steps": [[k, round(s, 1)] for k, s in steps],
             "levels": len(sizes), "backend": backend,
             "leiden_workers": markers.leiden_workers(n, n * markers.EDGES_PER_CELL, n_res, reserve, avail),
-            "basis": "from runs on this computer" if basis == {"timed here"} else
+            "basis": "from the reference workstation's rates" if reference else
+            "from runs on this computer" if basis == {"timed here"} else
             "from a speed test of this computer" if basis == {"speed test"} else
             "partly from runs on this computer"}
 

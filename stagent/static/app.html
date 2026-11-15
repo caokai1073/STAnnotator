@@ -4160,14 +4160,13 @@ function showEstimate() {  // one line each: Exact, Approximate, Memory (and a n
     + (me.leiden_workers ? `Leiden: ${me.leiden_workers} processes at once (Parallel clustering, by the free memory now).\n` : "")
     + `${k === "exact" ? "Exact" : "Approximate"}, by step:\n` + me.steps.map(([s, t]) => `${s}: ${t < 1 ? "<1" : Math.round(t)} s`).join("\n");
 }
-// Neighbors: Exact by default, Approximate from a million cells when its estimate here is at most half of Exact's (as
-// the server's default, session.knn_mode); a choice made for a sample (or the project) is kept for it
-const KNN_APPROX_CELLS = 1e6, KNN_APPROX_SPEEDUP = 2;
+// Neighbors: the server's default (session.knn_mode: Exact, Approximate from a million cells when it is estimated at
+// least twice as fast on this kind of computer; the same every time here, not from the timed runs); a choice made for
+// a sample (or the project) is kept for it
 const knnKey = () => st.sample && `knn:${projectMode() ? "project:" : ""}${st.sample.sample_id}`;
 function defaultKnn(e) {
   const mine = knnKey() && load(knnKey());
-  const k = ["exact", "approx"].includes(mine) ? mine
-    : e && e.n_cells >= KNN_APPROX_CELLS && KNN_APPROX_SPEEDUP * e.approx.seconds <= e.exact.seconds ? "approx" : "exact";
+  const k = ["exact", "approx"].includes(mine) ? mine : e && e.default_knn === "approx" ? "approx" : "exact";
   if ($("knn").value !== k) { $("knn").value = k; syncSeg("knn"); }
 }
 $("knn").onchange = () => { syncSeg("knn"); if (knnKey()) store(knnKey(), $("knn").value); showEstimate(); };

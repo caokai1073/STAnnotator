@@ -23,7 +23,7 @@ from .review_app import attachment
 mcp_server.SAME_PROCESS = True  # its tools served at /mcp run on this event loop: they cannot wait for a review
 from . import markers, markerqc, plausibility, claudelink, claudereview, importer, advice, niches, embedding
 from . import communication, jobs, projects, regcheck, visium, osutil, align
-from .session import Session, list_samples, list_sessions, panel_genes, filtered_genes, NOT_ANNOTATED
+from .session import Session, knn_mode, list_samples, list_sessions, panel_genes, filtered_genes, NOT_ANNOTATED
 from .osutil import dump_json
 
 STATIC = Path(__file__).parent / "static"
@@ -2052,7 +2052,8 @@ def api_job(req):
 
 async def api_estimate(req: Request):
     """How long a marker annotation should take on this computer, with exact and with approximate neighbors:
-    {sample_id, markers_text, resolution, project} -> {"n_cells", "n_genes", "slices", "exact", "approx", "device"}.
+    {sample_id, markers_text, resolution, project} -> {"n_cells", "n_genes", "slices", "exact", "approx", "device",
+    "default_knn": the neighbor search an annotation gets when none is chosen (session.knn_mode)}.
     project: all slices of the sample's project together (the Annotate button with "all slices" ticked)."""
     from . import timing
     b = await req.json()
@@ -2076,7 +2077,8 @@ async def api_estimate(req: Request):
     nnz = sum(timing.counts_nnz(config.SAMPLES / x) for x in ids)
 
     def work():
-        return {k: timing.estimate(n, g, tree, b.get("resolution") or "auto", k, n_types, nnz) for k in ("exact", "approx")}
+        out = {k: timing.estimate(n, g, tree, b.get("resolution") or "auto", k, n_types, nnz) for k in ("exact", "approx")}
+        return out | {"default_knn": knn_mode(None, n, g, tree, n_types, nnz)}  # (the same every time on this computer)
     est = await asyncio.to_thread(work)
     return _json(dict(est, n_cells=n, n_genes=g, slices=len(ids), device=config.device(),
                       marker_list=tree is not None, **_memory(ids, "annotate")))

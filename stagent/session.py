@@ -64,13 +64,15 @@ def _now():
 
 def knn_mode(knn, n_cells=None, n_genes=None, tree=None, n_types=None, nnz=None):
     """The neighbor search of a marker annotation: the one asked for, else "exact", or "approx" from
-    markers.KNN_APPROX_CELLS cells when this computer's estimate (timing.estimate) of the annotation with it is at
-    most 1 / markers.KNN_APPROX_SPEEDUP of the one with "exact"."""
+    markers.KNN_APPROX_CELLS cells when the estimate of the annotation with it is at most 1 / markers.KNN_APPROX_SPEEDUP
+    of the one with "exact". The estimate is timing.estimate(reference=True): from this computer's kind of exact
+    search (GPU or CPU) and memory only, not from its timed runs or free memory, so the default is the same every time
+    on this computer (an annotation run again gives the same labels)."""
     if knn in (None, ""):
         if (n_cells or 0) < markers.KNN_APPROX_CELLS:
             return markers.KNN
         from . import timing
-        sec = {k: timing.estimate(n_cells, n_genes or 0, tree, "auto", k, n_types, nnz)["seconds"]
+        sec = {k: timing.estimate(n_cells, n_genes or 0, tree, "auto", k, n_types, nnz, reference=True)["seconds"]
                for k in ("exact", "approx")}
         return "approx" if markers.KNN_APPROX_SPEEDUP * sec["approx"] <= sec["exact"] else markers.KNN
     if knn not in ("exact", "approx"):
@@ -225,8 +227,9 @@ class Session:
                carry_from=None, reference=None, existing=None, knn=None, spillover=True):
         """method 'markers' (default): hierarchical marker annotation (Leiden + marker scores) of this sample; the data
         is treated as having no cell type labels. markers_text: the marker list (indented text or CSV); required.
-        knn: the marker step's neighbor search, "approx" (default; pynndescent on 8 threads: fast, and the same result
-        on any computer) or "exact" (the true neighbors; slow without a GPU for large samples).
+        knn: the marker step's neighbor search, "exact" (the true neighbors) or "approx" (pynndescent on 8 threads:
+        the same result on any computer); None picks exact, or approx from 1M cells when it is estimated at least
+        twice as fast (knn_mode).
         spillover (default on): leave out transcripts spilled over from neighboring cells (markers.spill_detected) in
         the marker step.
         The cells the marker step cannot type are typed with their neighbors' types too (markers.neighbor_rounds).

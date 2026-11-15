@@ -512,8 +512,9 @@ Histograms show where each threshold cuts and the dialog counts what goes; empty
      tiles: about 9 s for the 188,644 cells of a 5,000-gene Xenium section and under a minute for 400,000 cells on 8
      cores, in under 1 GB of memory;
    - *Approximate* (pynndescent): the default from a million cells (all slices together counting) when the time
-     estimate gives it at most half the time of Exact on this computer (the exact search grows with the square of
-     the cells). A choice you make for a sample is kept
+     estimate gives it at most half the time of Exact on this kind of computer (the exact search grows with the square
+     of the cells). That default comes from the computer's kind of exact search (GPU or CPU) and its memory, not from
+     the runs timed on it, so it is the same every time on one computer. A choice you make for a sample is kept
      for it. Its result depends on the number of threads, so it always runs on 8 (also with fewer cores): a rerun
      gives the same labels with the same app version (Intel / AMD and Apple silicon may still differ slightly). Its code is compiled once per app start, in the background a few
      seconds after the app starts.

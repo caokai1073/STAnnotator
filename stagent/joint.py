@@ -93,7 +93,7 @@ def run_sessions(s):
 
 def annotate(pid, markers_text, resolution=None, carry=False, progress=None, knn=None, spillover=True):
     """One marker annotation of all the project's slices together; returns {sample_id: new session id}.
-    knn: the neighbor search, "exact" or "approx" (default: exact, approx from markers.KNN_APPROX_CELLS cells). spillover: leave out transcripts spilled over from
+    knn: the neighbor search, "exact" or "approx" (default: exact, approx from markers.KNN_APPROX_CELLS cells when estimated at least twice as fast). spillover: leave out transcripts spilled over from
     neighboring cells of the same slice (markers.spill_detected)."""
     from .session import Session
     from . import timing
