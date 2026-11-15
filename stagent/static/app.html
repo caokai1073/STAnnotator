@@ -600,6 +600,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <div class="seg" data-for="knn"></div><div class="hint" id="annEst"></div></div>
     <label class="switch projall" hidden title="Annotate all slices of the project at once (one marker step and one model), so a name means the same cells in every slice"><input type="checkbox" id="projAllA">
       <span>All slices together<small>one annotation of the project's slices (marker genes)</small></span></label>
+    <label class="switch" id="rfAutoWrap" data-short="refine" title="After annotating with marker genes the Refine window opens: Agent review has the agent review the result with the tissue's priors and propose edits of the marker list; you accept some, the app annotates again and sends the next round to the agent by itself, round by round"><input type="checkbox" id="rfAuto" checked>
+      <span>Refine with the agent<small>after annotating: review, edit the list, annotate again</small></span></label>
     <details class="adv" id="annAdv"><summary>Advanced <span id="annAdvOn" class="advon"></span></summary><div class="advsw">
       <label class="switch" id="spillWrap" data-short="spillover out" title="In imaging data a cell's outline also catches transcripts of its neighbors. On: a gene counts as detected in a cell only where its count is above a tenth of the mean count of its 6 nearest cells. It helped on a MERFISH slice (lineage agreement 0.785 → 0.816 against the authors' labels) and changed little on Xenium sections; try it when many cells stay untyped or markers of neighboring types show up where they should not"><input type="checkbox" id="spill" checked>
         <span>Leave out spillover<small>transcripts that come from neighboring cells</small></span></label>
@@ -607,8 +609,6 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
         <span>Parallel clustering<small>automatic: as many processes as the free memory allows</small></span></label>
       <label class="switch" id="carryWrap" data-short="keep my edits" style="visibility:hidden" title="Start the new annotation with the regions (and their colors), priors and hand corrections of the one that is open; priors and corrections naming cell types the new annotation does not have are dropped"><input type="checkbox" id="carry" checked>
         <span>Keep my regions, priors &amp; corrections<small>carried into the new annotation</small></span></label>
-      <label class="switch" id="rfAutoWrap" data-short="refine" title="After annotating with marker genes, the agent reviews the result with the tissue's priors and proposes edits of the marker list; you accept some and the app annotates again, round by round"><input type="checkbox" id="rfAuto" checked>
-        <span>Refine with the agent<small>after annotating: review, edit the list, annotate again</small></span></label>
     </div></details>
     <button id="annotate" class="primary main">Annotate</button>
     <div class="act2"><button id="rfOpen" disabled title="Refine this annotation with the agent: the computed problems, the agent's proposed edits of the marker list, your conversation with it">Refine cell types</button></div>
@@ -4334,6 +4334,11 @@ async function rfOpen(from) {
   if (!$("rfDlg").open) $("rfDlg").showModal();
   clearInterval(RF.timer);
   RF.timer = setInterval(rfPoll, 3000);
+  // the round after an Accept goes to the agent by itself (the user accepted edits to go on; the organ is known);
+  // the first round waits for Agent review (the organ to confirm, words to write first)
+  const rd = r.rounds[r.rounds.length - 1], prev = r.rounds[r.rounds.length - 2];
+  if (from && rd && rd.session === sid && prev && prev.decision === "accepted" && !rd.asked && !rd.proposal && !rd.messages.length && !rd.decision)
+    $("rfAsk").click();
 }
 async function rfPoll() {
   if (!$("rfDlg").open) { clearInterval(RF.timer); return; }
@@ -4462,7 +4467,9 @@ function rfRender() {
       sync(); eb.append(box);
     });
   }
-  $("rfEditsHint").textContent = !P ? (rd.messages.some((m) => m.from === "user") ? "Waiting for the agent…" : "Click Agent review to have this round reviewed.")
+  const prev = r.rounds.find((x) => x.n === rd.n - 1);  // what the round before changed, said at the top of this one
+  const applied = prev && prev.decision === "accepted" ? `Round ${prev.n}: ${prev.accepted.length} edit${prev.accepted.length === 1 ? "" : "s"} applied (${prev.accepted.join(", ")}). ` : "";
+  $("rfEditsHint").textContent = !P ? applied + (r.awaiting || rd.messages.some((m) => m.from === "user") ? "The agent is reviewing this round…" : "This round has not been sent to the agent yet: click Agent review.")
     : !P.edits.length ? "The agent proposes no edit (see its message)." : rd.decision === "accepted" ? `Accepted: ${rd.accepted.join(", ")}` :
     rd.decision === "dismissed" ? "Dismissed: write to the agent and ask again" : (P.check || []).length ? `The edited list: ${P.check.slice(0, 3).join("; ")}` : "Untick what you do not want, then Accept.";
   $("rfAccept").hidden = !(P && P.edits.length && !rd.decision);
@@ -5135,8 +5142,8 @@ const HELP = `
   <li>a single-cell reference (<b>Reference…</b>);</li>
   <li>or an existing annotation (<b>Annotation file…</b>).</li></ul></li>
 <li><b>Annotate</b> makes a new annotation; <b>Keep my regions, priors &amp; corrections</b> carries them over.</li>
-<li><b>Advanced</b> (folded; its line names the switches that are on): Leave out spillover, Parallel clustering, Keep my
-  regions, priors &amp; corrections and Refine with the agent. <b>All slices together</b> stays outside it.</li>
+<li><b>Advanced</b> (folded; its line names the switches that are on): Leave out spillover, Parallel clustering and Keep
+  my regions, priors &amp; corrections. <b>All slices together</b> and <b>Refine with the agent</b> stay outside it.</li>
 <li><b>Neighbors</b> (marker genes):<ul>
   <li><i>Exact</i> (default) finds the true neighbors: the same labels on every computer, with or without a GPU;
     about a minute for 450,000 cells.</li>
@@ -5157,15 +5164,16 @@ const HELP = `
 <li><b>Refine with the agent</b> (marker genes; on by default, or <b>Refine cell types</b> later), round by round:<ul>
   <li>the app sums up what may be wrong (types with weak marker evidence, markers that are not specific, types not
     found, the cells the marker step could not type, the changes since the round before);</li>
-  <li>the organ: inferred from the cell types and the sample's name, or asked; the agent reviews the whole
+  <li>the organ: inferred from the cell types and the sample's name, or asked; <b>Agent review</b> has the agent review the whole
     annotation with that organ's priors and proposes edits of the marker list, each with its reason and evidence,
     grouped by the problem they fix (one tick box for a whole problem; a group folds away with ▾). Apart from the
     edits it lists what goes against the organ's priors or your rules (the report shows which types lie mostly among
     another lineage), each with a small map of where its cells lie (red; click to enlarge); mark each
     <b>Real biology</b> (it is not raised again) or <b>Mislabel</b> (the list should change);</li>
   <li>you write to it at any time (your words come first), tick the edits you want and <b>Accept</b>: the app
-    annotates again with them (your regions, priors and corrections carry over) and the next round opens;
-    <b>Dismiss edits</b> or <b>Stop refining</b> end it.</li></ul></li></ul>
+    annotates again with them (your regions, priors and corrections carry over) and the next round opens, sent to the
+    agent by itself (its top says which edits the round before applied); <b>Dismiss edits</b> or <b>Stop refining</b>
+    end it.</li></ul></li></ul>
 
 <h3>Embedding</h3><ul>
 <li><b>Run PCA + UMAP</b> computes PCA, UMAP and Leiden clusters from the expression.<ul>
