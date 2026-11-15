@@ -70,8 +70,14 @@ if [ -z "${NOTARY_ID:-}" ]; then
   codesign --verify --deep --strict --verbose=2 "$APP"
   # one submission: the signed DMG; Apple notarizes the app inside it too
   rm -f "$DMG"
-  hdiutil create -volname "STAnnotator" -srcfolder "$APP" -ov -format ULMO "$DMG" \
-    || hdiutil create -volname "STAnnotator" -srcfolder "$APP" -ov -format UDZO "$DMG"
+  # LZMA (ULMO), tried three times: hdiutil fails now and then on CI runners ("Resource busy"), and the zlib (UDZO)
+  # fallback is about half again as large (0.2.59: 258 MB instead of 173 MB)
+  ok=""
+  for i in 1 2 3; do
+    if hdiutil create -volname "STAnnotator" -srcfolder "$APP" -ov -format ULMO "$DMG"; then ok=1; break; fi
+    echo "hdiutil (ULMO) failed, try $i of 3"; rm -f "$DMG"; sleep 10
+  done
+  [ -n "$ok" ] || hdiutil create -volname "STAnnotator" -srcfolder "$APP" -ov -format UDZO "$DMG"
   sign --sign "$DEVELOPER_ID" "$DMG"
   echo "uploading the DMG to Apple's notary service"
   xcrun notarytool submit "$DMG" --keychain-profile "$PROFILE" --output-format plist > dist/notary_submit.plist

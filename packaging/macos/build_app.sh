@@ -31,8 +31,12 @@ iconutil -c icns "$ICONSET" -o packaging/macos/AppIcon.icns
 codesign --force --deep --sign - "dist/STAnnotator.app"   # ad-hoc signature (replaced when notarizing)
 rm -f dist/STAnnotator.dmg
 # LZMA-compressed disk image (macOS 10.15+, smaller download); zlib where hdiutil does not know ULMO
-hdiutil create -volname "STAnnotator" -srcfolder "dist/STAnnotator.app" -ov -format ULMO dist/STAnnotator.dmg \
-  || hdiutil create -volname "STAnnotator" -srcfolder "dist/STAnnotator.app" -ov -format UDZO dist/STAnnotator.dmg
+ok=""
+for i in 1 2 3; do  # (hdiutil fails now and then on CI runners: tried again before the larger zlib image)
+  if hdiutil create -volname "STAnnotator" -srcfolder "dist/STAnnotator.app" -ov -format ULMO dist/STAnnotator.dmg; then ok=1; break; fi
+  echo "hdiutil (ULMO) failed, try $i of 3"; rm -f dist/STAnnotator.dmg; sleep 10
+done
+[ -n "$ok" ] || hdiutil create -volname "STAnnotator" -srcfolder "dist/STAnnotator.app" -ov -format UDZO dist/STAnnotator.dmg
 if [ -n "${DEVELOPER_ID:-}" ]; then bash packaging/macos/sign_and_notarize.sh; fi
 du -sh "dist/STAnnotator.app" dist/STAnnotator.dmg
 echo "built: $(cat stagent/data/build.txt)"
