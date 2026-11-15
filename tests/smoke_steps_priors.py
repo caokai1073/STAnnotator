@@ -1,4 +1,4 @@
-"""Steps: Priors apart from Regions. Priors is a step to do (not optional): the organ's tissue priors checked in the
+"""Steps: Priors apart from Regions, before Annotate. Priors is a step to do (not optional): the organ's tissue priors checked in the
 Prior window and accepted (POST /api/sample/<s>/priors/accept); done while they stay as accepted, to do again when
 they change; Regions stays optional (outlines drawn). Runs in a temporary data folder."""
 import os, shutil, tempfile
@@ -19,7 +19,8 @@ try:
     step = lambda r, k: next(x for x in r["steps"] if x["key"] == k)
     r = c.get("/api/sample/s1/steps").json()
     keys = [x["key"] for x in r["steps"]]
-    assert keys.index("annotate") < keys.index("priors") < keys.index("regions"), keys
+    assert keys.index("filter") < keys.index("priors") < keys.index("annotate") < keys.index("regions"), keys
+    assert r["next"] in ("filter", "priors"), r["next"]  # (Priors before Annotate: checked before annotating)
     assert step(r, "priors")["state"] == "todo", step(r, "priors")
     # the organ chosen in the Prior window (kept for the sample)
     assert c.post("/api/sample/s1/priors", json={"organ": "colon", "removed": [], "added": []}).status_code == 200

@@ -463,7 +463,8 @@ The app's window, or the web viewer (`.venv/bin/stagent viewer`, then http://loc
   - **Import**, **Export** and **Local** / **Remote** (where the data is: this computer or a server);
   - **Steps** (a panel at the map's top right; the panels opened there go under it): the usual flow for the open
     sample, and where it stands: 1 Import, 2 Check registration, 3 Filter
-    cells and genes, 4 Annotate, 5 Regions and priors, 6 Review, 7 Analyze (it lists Embed, Niche, Compare,
+    cells and genes, 4 Priors (checked and accepted before annotating: the agent's review of the annotation reads
+    them), 5 Annotate, 6 Regions, 7 Review, 8 Analyze (it lists Embed, Niche, Compare,
     Signal and Trajectory, each done or not with a button to its tab; folded when the app starts, its arrow unfolds it). Each step shows what was done
     (✓ and a line such as "5,799 cells removed" or "checked 2026-11-09"), or a button that goes where it is done; the
     next step stands out. **Check registration** is done by the app, without the agent: the cells against the
@@ -472,7 +473,7 @@ The app's window, or the web viewer (`.venv/bin/stagent viewer`, then http://loc
     measured again and a second window shows the result: **Accept** keeps it, **Undo** puts the cells back where
     they were. It also says when the cells already sit on their nuclei, or when only aligning the image again would
     help. An alignment whose check found the cells on their nuclei, once accepted, needs no further check (Review →
-    Spatial organization asks the agent for a wider look, with the organ's priors). Steps 5–7 are optional; a step the sample does not need is grayed (no image: no
+    Spatial organization asks the agent for a wider look, with the organ's priors). Steps 6–8 are optional; a step the sample does not need is grayed (no image: no
     registration; Visium and Stereo-seq are placed by their software). An H&E only (no cells) shows no steps. A
     click on the title folds the list;
   - two tabs, **Data** and **Analysis**. Analysis has the steps **Type**, **Embed**, **Niche**, **Compare**,

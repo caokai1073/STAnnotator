@@ -3272,7 +3272,8 @@ def _priors_step(sample, s=None):
 
 def steps_of(s, sample=None):
     """Where a sample stands in the usual flow, for the steps list on the map: import, registration (checked at the
-    cells' present place?), filter, annotate, priors (checked and accepted by the user), regions, agent review, analyses. Each: state "done" / "todo" /
+    cells' present place?), filter, priors (checked and accepted by the user, before annotating: the agent's review of
+    the annotation reads them), annotate, regions, agent review, analyses. Each: state "done" / "todo" /
     "optional" / "skipped" / "not needed" / "blocked", and a short detail. s: the annotation open (None: the
     sample's own steps; those of an annotation wait for one to be opened)."""
     from . import advice, embedding
@@ -3326,12 +3327,12 @@ def steps_of(s, sample=None):
                   f"{f['n_cells_removed']:,} cells, {len(f.get('genes_removed') or [])} genes removed" if f else
                   "not filtered (to filter now, filter, then annotate again)" if annotated or n_ann else
                   "not filtered yet (recommended before annotating)"})
+    steps.append(_priors_step(sid, s) if not image_only else {"key": "priors", "state": "not needed", "detail": ""})
     steps.append({"key": "annotate", "state": "not needed" if image_only else "done" if annotated else "todo",
                   "detail": "" if image_only else (f"{s.scheme.get('kind')} annotation open" + (f" · {n_ann} in all" if n_ann > 1 else ""))
                   if annotated else (f"{n_ann} annotation(s) here: open one (Data → Annotation), or annotate again" if s is None and n_ann
                                      else "no annotation yet"),
                   **({"open": True} if s is None and n_ann else {})})
-    steps.append(_priors_step(sid, s) if not image_only else {"key": "priors", "state": "not needed", "detail": ""})
     if s is None:  # the rest belongs to an annotation
         for k in ("regions", "review", "analyze"):
             steps.append({"key": k, "state": "blocked", "detail": "open an annotation first" if n_ann else "after annotating"})
