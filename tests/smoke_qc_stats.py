@@ -1,6 +1,7 @@
 """The filter dialog's numbers saved beside the counts (qcfilter.STATS): an import writes them, the dialog and a preview
 without a minimum of cells per gene then read no matrix, and every result is the same as from the matrix itself;
-the numbers follow the data as imported into original/ when a filter keeps it; changed counts are read again.
+the numbers follow the data as imported into original/ when a filter keeps it, and back when every cell is
+restored; changed counts are read again; samples imported before are filled in the background (backfill).
 Runs in a temporary data folder."""
 import os, shutil, tempfile, json
 import numpy as np, scipy.sparse as sp
@@ -44,6 +45,18 @@ try:
     osutil.save_counts(d / "original" / "counts.npz", X)
     qcfilter._data.clear(); qcfilter._light.clear()
     assert qcfilter.overview(["s1"])["n_cells"] == X.shape[0], "stale numbers used"
+    # restoring every cell and gene: the data as imported back in the sample folder, with valid numbers
+    qcfilter.apply(["s1"], {})
+    assert not (d / "original").exists() and qcfilter._has_numbers(d), "restore left no valid numbers"
+    # samples imported before the numbers were saved: filled in the background (waiting while busy), once
+    importer.import_sample("s2", h5, progress=quiet)
+    (config.SAMPLES / "s2" / qcfilter.STATS).unlink(); (d / qcfilter.STATS).unlink()
+    waits = []
+    busy = iter([True, True, False])
+    done = qcfilter.backfill(busy=lambda: next(busy, False), pause=waits.append)
+    assert sorted(done) == ["s1", "s2"] and len(waits) == 2, (done, waits)
+    assert qcfilter._has_numbers(d) and qcfilter._has_numbers(config.SAMPLES / "s2")
+    assert qcfilter.backfill() == [], "backfill did the samples again"
     print("ok")
 finally:
     shutil.rmtree(home, ignore_errors=True)

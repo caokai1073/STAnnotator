@@ -248,6 +248,8 @@ def reorder_genes(sample_id, like):
         tmp = sub / "genes.txt.part"
         config.write_genes(tmp, [genes[j] for j in order])
         tmp.replace(sub / "genes.txt")
+        from .qcfilter import save_numbers
+        save_numbers(sub, X, [genes[j] for j in order])  # (the filter dialog's numbers follow the new gene order)
 
 
 def rename_projects(names):

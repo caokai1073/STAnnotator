@@ -4098,6 +4098,12 @@ def build_app(port):
                 time.sleep(5)
                 markers.prewarm_approx()
             threading.Thread(target=prewarm, daemon=True, name="prewarm-approx").start()
+        if not os.environ.get("STAGENT_NO_QC_BACKFILL"):  # the filter dialog's numbers of samples imported before 0.2.59
+            def qc_backfill():
+                from . import qcfilter
+                time.sleep(20)  # (after the start's own work)
+                qcfilter.backfill(busy=lambda: any(not j.get("done") for j in list(JOBS.values())), pause=time.sleep)
+            threading.Thread(target=qc_backfill, daemon=True, name="qc-backfill").start()
         async with mcp_server.mcp.session_manager.run():
             yield
 

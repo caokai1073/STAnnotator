@@ -98,6 +98,37 @@ def save_numbers(folder, X, genes):
         pass
 
 
+def _has_numbers(src):
+    try:
+        return np.array_equal(np.load(src / STATS)["key"], _counts_key(src))
+    except (OSError, KeyError, ValueError):
+        return False
+
+
+def backfill(busy=lambda: False, pause=lambda s: None):
+    """The numbers of every sample imported before they were saved at import (once, in the background at the app's
+    start): one sample at a time, read on its own (not kept in memory), waiting while busy() (an annotation or
+    another job runs). Returns the samples done."""
+    import time
+    done = []
+    for d in sorted(p for p in config.SAMPLES.glob("*") if (p / "counts.npz").exists()) if config.SAMPLES.exists() else []:
+        src = _src(d.name)
+        if _has_numbers(src):
+            continue
+        while busy():
+            pause(5)
+        try:
+            X = sp.load_npz(src / "counts.npz")
+            save_numbers(src, X, config.read_genes(src / "genes.txt"))
+            done.append(d.name)
+        except Exception:  # (a sample being removed or rewritten meanwhile: next time)
+            continue
+        finally:
+            X = None
+        time.sleep(0.2)
+    return done
+
+
 def _numbers_of(sample_id):
     """The per-cell and per-gene numbers of the data as imported, without reading the matrix when they were saved
     (STATS, checked against the counts file's time and size); else read with the data (_load)."""
@@ -341,6 +372,8 @@ def apply(ids, p, progress=lambda *a: None, genes_removed=None):
         cells.to_parquet(d / "cells.parquet")
         osutil.save_counts(d / "counts.npz", X)   # (the fastest zip compression: seconds, not tens of seconds)
         config.write_genes(d / "genes.txt", g)
+        if not prm:  # every cell and gene back: the data as imported, its numbers beside it again
+            save_numbers(d, X, g)
         meta.update(n_cells=int(len(cells)), n_genes=len(g))
         if prm:
             sl = next(x for x in summary["slices"] if x["sample_id"] == s)
