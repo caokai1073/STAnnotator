@@ -74,6 +74,22 @@ try:
     assert lie and all(set(x) >= {"type", "lineage", "n_cells", "among", "mostly_among"} for x in lie), lie[:2]
     assert all(x["mostly_among"] is None or x["among"][x["mostly_among"]] > 0.5 for x in lie)
     assert rep["rule_conflicts"] == []
+    # a finding's map: its cells are those of the type lying among the lineage (as the report counts them)
+    from starlette.testclient import TestClient
+    from stagent import webapp
+    c1 = TestClient(webapp.build_app(8799), base_url="http://127.0.0.1:8799")
+    lt = next(x for x in lie if x["among"])
+    la = next(iter(lt["among"]))
+    pf = iterate.propose(s, "figs", [], findings=[{"cells": "x", "type": lt["type"], "among": la},
+                                                  {"cells": f"some {lt['type']} cells"}, {"cells": "nothing known"}])
+    rows, of_type, title = iterate.finding_cells(s, pf["findings"][0])
+    assert set(rows) <= set(of_type) and abs(len(rows) / len(of_type) - lt["among"][la]) < 0.002, (len(rows), len(of_type), lt)
+    assert len(iterate.finding_cells(s, pf["findings"][1])[0]) == lt["n_cells"]  # (the type found in the text)
+    r1 = c1.get(f"/api/s/{s.id}/refine/finding_fig", params={"key": pf["findings"][0]["key"]})
+    assert r1.status_code == 200 and r1.content[:4] == b"\x89PNG", r1.status_code
+    assert c1.get(f"/api/s/{s.id}/refine/finding_fig", params={"key": pf["findings"][2]["key"]}).status_code == 404
+    assert c1.get(f"/api/s/{s.id}/refine/finding_fig", params={"key": "nope"}).status_code == 404
+    print(f"finding map: {title}")
     # findings against the priors; the user's verdicts carry over to later rounds; a bad finding is refused
     p = iterate.propose(s, "findings", [], findings=[
         {"cells": "Neurons", "where": "71% among epithelial cells", "rule": "COLON-03 neurons in the plexus",
@@ -102,7 +118,7 @@ try:
         {"kind": "add_type", "type": "Test type", "parent": first["name"], "markers": "Epcam+", "reason": "r", "evidence": "e"}],
         questions=["Healthy or inflamed?"])
     rd = iterate.add_message(s, "user", "Keep the name")
-    assert [m["from"] for m in rd["messages"]] == ["agent", "agent", "agent", "user"], [m["from"] for m in rd["messages"]]  # (the groups and findings checks proposed too)
+    assert [m["from"] for m in rd["messages"]] == ["agent"] * 4 + ["user"], [m["from"] for m in rd["messages"]]  # (the groups, maps and findings checks proposed too)
     try:
         iterate.propose(s, "bad", [{"kind": "explode_type", "type": kid}])
         raise AssertionError("an unknown edit was accepted")

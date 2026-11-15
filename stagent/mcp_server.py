@@ -1340,8 +1340,10 @@ def propose_refinement(summary: str, edits: list[dict], questions: Optional[list
     annotation goes against the tissue's priors or the user's rules (compare the report's where_types_lie and
     rule_conflicts with tissue_priors), each {"cells": the type or cells, "where": where they lie (e.g. "71% among
     epithelial cells"), "rule": the prior or rule (its id and words), "judgement": "likely mislabel" | "may be real
-    biology" | "unsure", "evidence"}; the window lists them apart from the edits and the user marks each real biology or
-    mislabel. The user's data are often diseased: a finding can be real (e.g. epithelium in the submucosa where a tumor
+    biology" | "unsure", "evidence", and for its map in the window "type": the cell type of the annotation it is about,
+    "among": the lineage they lie among (as in where_types_lie), "rule_id": the id of the user's rule (as in
+    rule_conflicts) when it is about one}; the window lists them apart from the edits, each with a map of where its
+    cells lie, and the user marks each real biology or mislabel. The user's data are often diseased: a finding can be real (e.g. epithelium in the submucosa where a tumor
     invades); say so rather than fix it. Do not raise again a finding the user marked real biology
     (user_verdicts_on_prior_findings in refine_report); one marked mislabel needs an edit. Returns the edits as checked
     (problems the edited list would have)."""

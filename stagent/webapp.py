@@ -7,7 +7,7 @@ Everything runs on this server. The chat box calls the locally installed Claude 
 the logged-in account (no API key); its only tools are this app's MCP tools, served at /mcp by this same
 process, so the agent and the viewer share one session object. The conflict review page is at /review.
 """
-import argparse, asyncio, colorsys, contextlib, io, json, math, os, platform, re, shutil, sys, threading, time, uuid
+import argparse, asyncio, colorsys, contextlib, hashlib, io, json, math, os, platform, re, shutil, sys, threading, time, uuid
 from collections import OrderedDict
 from pathlib import Path
 import numpy as np, pandas as pd
@@ -871,6 +871,27 @@ async def api_refine_finding(req: Request):
         return _json({"prior_verdicts": iterate.set_verdict(s, b["key"], b.get("verdict"))})
     except ValueError as e:
         return _json({"error": str(e)}, 400)
+
+
+def api_refine_finding_fig(req):
+    """?key=: a small map of where the cells of a finding against the priors lie (the round's annotation): the
+    finding's cells red, the rest of its type blue, the other cells grey. 404 when the finding names no cell type."""
+    from . import iterate, render
+    s = review_app._session(req.path_params["sid"])
+    key = req.query_params.get("key") or ""
+    st, rd = iterate.current(s)
+    f = next((x for x in ((rd.get("proposal") or {}).get("findings") or []) if x["key"] == key), None)
+    if f is None:
+        return _json({"error": "no such finding in this round"}, 404)
+    ver = rd.get("version") if rd.get("session") == s.id else None
+    out = s.dir / "figures" / f"finding_v{ver}_{hashlib.sha1(json.dumps(f, sort_keys=True).encode()).hexdigest()[:12]}.png"
+    if not out.exists():
+        rows, of_type, title = iterate.finding_cells(s, f, ver)
+        if rows is None:
+            return _json({"error": "the finding names no cell type of the annotation"}, 404)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        render.finding_map(s.cells.x.to_numpy(), s.cells.y.to_numpy(), rows, of_type, out, title)
+    return FileResponse(out, media_type="image/png", headers={"Cache-Control": "no-cache"})
 
 
 def _ask_claude(s, text):
@@ -4121,6 +4142,7 @@ def build_app(port):
         Route("/api/s/{sid}/refine/message", api_refine_message, methods=["POST"]),
         Route("/api/s/{sid}/refine/decide", api_refine_decide, methods=["POST"]),
         Route("/api/s/{sid}/refine/finding", api_refine_finding, methods=["POST"]),
+        Route("/api/s/{sid}/refine/finding_fig", api_refine_finding_fig),
         Route("/api/s/{sid}/report", api_report),
         Route("/api/s/{sid}/report.md", api_report_md),
         Route("/api/s/{sid}/report/save", api_report_save, methods=["POST"]),

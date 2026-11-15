@@ -437,6 +437,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .rfedits .rffinding { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: start; padding: 3px 8px; border-top: 1px solid var(--line); }
 .rfedits .rffinding > div:first-child { min-width: 0; }
 .rfedits .rfverdict { display: flex; gap: 4px; }
+.rfedits img.rffig { display: block; width: 180px; margin-top: 4px; border: 1px solid var(--line); border-radius: 6px; background: #fff; cursor: zoom-in; }
+.rfedits img.rffig.big { width: 100%; max-width: 460px; cursor: zoom-out; }
 .rfedits .rfverdict button { font-size: 11.5px; padding: 2px 8px; }
 .rfedits .rfverdict button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .rfedits input[type=checkbox]:indeterminate { background: var(--accent); border-color: var(--accent); }
@@ -4395,7 +4397,10 @@ function rfRender() {
       const row = document.createElement("div"); row.className = "rffinding";
       const v = (verdicts[f.key] || {}).verdict;
       row.innerHTML = `<div><b>${rfEsc(f.cells)}</b> ${rfEsc(f.where)}` + (f.rule ? ` <span class="hint">· ${rfEsc(f.rule)}</span>` : "") +
-        `<div class="why">agent: ${rfEsc(f.judgement)}</div>` + (f.evidence ? `<details class="why"><summary>evidence</summary><div>${rfEsc(f.evidence)}</div></details>` : "") + `</div>`;
+        `<div class="why">agent: ${rfEsc(f.judgement)}</div>` + (f.evidence ? `<details class="why"><summary>evidence</summary><div>${rfEsc(f.evidence)}</div></details>` : "") +
+        // where they lie: the finding's cells red, the rest of the type blue (a click enlarges it)
+        `<img class="rffig" loading="lazy" alt="Where these cells lie" title="Red: these cells; blue: the other cells of the type; grey: all cells. Click to enlarge"
+          src="/api/s/${encodeURIComponent(RF.sid)}/refine/finding_fig?key=${encodeURIComponent(f.key)}&t=${encodeURIComponent(P.time)}"></div>`;
       const btns = document.createElement("div"); btns.className = "rfverdict";
       [["biology", "Real biology", "Leave it: the agent will not raise it again"], ["mislabel", "Mislabel", "The marker list should change: the agent proposes an edit for it"]].forEach(([k, label, tip]) => {
         const b = Object.assign(document.createElement("button"), { type: "button", textContent: label, title: tip + " (click again to clear)" });
@@ -4406,6 +4411,9 @@ function rfRender() {
         };
         btns.append(b);
       });
+      const img = row.querySelector("img.rffig");
+      img.onerror = () => img.remove();  // (a finding that names no cell type has no map)
+      img.onclick = () => img.classList.toggle("big");
       row.append(btns); box.append(row);
     });
     eb.append(box);
@@ -4459,6 +4467,7 @@ function rfRender() {
     rd.decision === "dismissed" ? "Dismissed: write to the agent and ask again" : (P.check || []).length ? `The edited list: ${P.check.slice(0, 3).join("; ")}` : "Untick what you do not want, then Accept.";
   $("rfAccept").hidden = !(P && P.edits.length && !rd.decision);
   setLabel($("rfAsk"), P ? "Agent review again" : "Agent review");
+  $("rfAsk").classList.toggle("primary", !P);  // (with edits to choose, Accept is the main action)
   $("rfAsk").hidden = rd.decision === "accepted" || rd.decision === "stopped";
 }
 const rfRememberOrgan = () => {
@@ -5152,8 +5161,8 @@ const HELP = `
     annotation with that organ's priors and proposes edits of the marker list, each with its reason and evidence,
     grouped by the problem they fix (one tick box for a whole problem; a group folds away with ▾). Apart from the
     edits it lists what goes against the organ's priors or your rules (the report shows which types lie mostly among
-    another lineage); mark each <b>Real biology</b> (it is not raised again) or <b>Mislabel</b> (the list should
-    change);</li>
+    another lineage), each with a small map of where its cells lie (red; click to enlarge); mark each
+    <b>Real biology</b> (it is not raised again) or <b>Mislabel</b> (the list should change);</li>
   <li>you write to it at any time (your words come first), tick the edits you want and <b>Accept</b>: the app
     annotates again with them (your regions, priors and corrections carry over) and the next round opens;
     <b>Dismiss edits</b> or <b>Stop refining</b> end it.</li></ul></li></ul>

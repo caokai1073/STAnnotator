@@ -108,12 +108,10 @@ def report(s, version=None):
 LIE_K = 15  # the nearest cells of another type looked at around each cell
 
 
-def where_types_lie(s, lab, lineage, k=LIE_K):
-    """Per cell type: among which lineage its cells lie. For each cell, its k nearest cells of another type (cells of
-    no type left out); the lineage of more than half of them, else "mixed". Per type the share of its cells in each,
-    the lineage most of its cells lie among ("mostly_among", when that is over half of them and not its own) and the
-    rest. Computed only, the priors not applied: the agent compares it with them (a mislabeled block, e.g. epithelial
-    cells called neurons, lies among the epithelium; interstitial cells among smooth muscle are expected)."""
+def _lie_majority(s, lab, lineage, k=LIE_K):
+    """Per cell: the index (in lineage names) of the lineage more than half of its k nearest cells of another type
+    belong to (cells of no type left out), -1 mixed, -2 too few cells of another type around. Returns (that, the
+    type names, each cell's type index, the lineage of each type, the lineage names)."""
     from scipy.spatial import cKDTree
     xy = s.cells[["x", "y"]].to_numpy()
     n = len(lab)
@@ -123,19 +121,28 @@ def where_types_lie(s, lab, lineage, k=LIE_K):
     lnames, lcode = np.unique(lin_of.astype(str), return_inverse=True)
     none = np.isin(names, markers.NO_TYPE)
     tree, kk = cKDTree(xy), min(3 * k + 1, n)
-    maj = np.full(n, -1, np.int32)  # lineage index, -1 mixed, -2 too few cells of another type around
+    maj = np.full(n, -1, np.int32)
     for a in range(0, n, 200000):  # (in blocks: 46 neighbors of a million cells would take 700 MB)
         nb = tree.query(xy[a:a + 200000], k=kk, workers=-1)[1][:, 1:].astype(np.int32)
         own = code[a:a + 200000]
         other = (code[nb] != own[:, None]) & ~none[code[nb]]
-        first = np.cumsum(other, 1) <= k
-        use = other & first
+        use = other & (np.cumsum(other, 1) <= k)
         cnt = np.zeros((len(nb), len(lnames)), np.int32)
         np.add.at(cnt, (np.repeat(np.arange(len(nb)), use.sum(1)), lcode[code[nb[use]]]), 1)
         tot = use.sum(1)
-        best = cnt.argmax(1)
-        m = np.where(cnt.max(1) * 2 > tot, best, -1)
+        m = np.where(cnt.max(1) * 2 > tot, cnt.argmax(1), -1)
         maj[a:a + 200000] = np.where(tot >= max(3, k // 3), m, -2)
+    return maj, names, code, lin_of, lnames
+
+
+def where_types_lie(s, lab, lineage, k=LIE_K):
+    """Per cell type: among which lineage its cells lie. For each cell, its k nearest cells of another type (cells of
+    no type left out); the lineage of more than half of them, else "mixed". Per type the share of its cells in each,
+    the lineage most of its cells lie among ("mostly_among", when that is over half of them and not its own) and the
+    rest. Computed only, the priors not applied: the agent compares it with them (a mislabeled block, e.g. epithelial
+    cells called neurons, lies among the epithelium; interstitial cells among smooth muscle are expected)."""
+    maj, names, code, lin_of, lnames = _lie_majority(s, lab, lineage, k)
+    none = np.isin(names, markers.NO_TYPE)
     rows = []
     for i, t in enumerate(names):
         idx = np.where(code == i)[0]
@@ -150,6 +157,44 @@ def where_types_lie(s, lab, lineage, k=LIE_K):
                      "among_own_lineage": sh.get(own_l, 0.0), "mixed": round(float((v == -1).mean()), 3),
                      "mostly_among": top[0] if top[1] > 0.5 else None})
     return sorted(rows, key=lambda x: -x["n_cells"])
+
+
+def _lineages(s, st):
+    """{type: its top-level type (lineage)} in the marker list of an annotation state."""
+    tree = s._marker_tree(st.get("marker_step", {}).get("ops", []))
+    return {d: top["name"] for top in tree for d in markers.descendants(tree)[top["name"]]}
+
+
+def finding_cells(s, f, version=None):
+    """The cells a finding against the priors is about (rows), the cells of its type (rows) and a title: the cells of
+    the finding's rule (rule_id, a rule of the user's that it goes against), else the cells of its type (type, or the
+    longest type name in its cells text; a group: all its types) lying among its lineage (among), else all of them."""
+    r = s.result(version)
+    st = r["state"]
+    types = np.array(s.types, dtype=object)
+    lab = types[r["pred"]]
+    lineage = _lineages(s, st)
+    groups = markers.descendants(s._marker_tree(st.get("marker_step", {}).get("ops", [])))
+    names = sorted({str(t) for t in lab if t not in markers.NO_TYPE} | set(groups), key=len, reverse=True)
+    t = f.get("type") if f.get("type") in names else next((x for x in names if x.lower() in str(f.get("cells", "")).lower()), None)
+    of_type = np.where(np.isin(lab, groups.get(t, [t])))[0] if t else np.zeros(0, int)
+    cf = r.get("conflicts")
+    if f.get("rule_id") and cf is not None and not cf.empty and (cf.constraint == f["rule_id"]).any():
+        g = cf[cf.constraint == f["rule_id"]]
+        if t:
+            g = g[g.base_label.isin(groups.get(t, [t]))]
+        rows = g.row.to_numpy(dtype=int)
+        return rows, of_type, f"{t or 'cells'} against your rule {f['rule_id']}: {len(rows):,}"
+    if not t:
+        return None, None, None
+    among = f.get("among")
+    if among:
+        maj, _, _, _, lnames = _lie_majority(s, lab, lineage)
+        j = np.where(lnames == among)[0]
+        if len(j):
+            rows = of_type[maj[of_type] == j[0]]
+            return rows, of_type, f"{t} among {among}: {len(rows):,} of {len(of_type):,}"
+    return of_type, of_type, f"{t}: {len(of_type):,} cells"
 
 
 def rule_conflicts(s, version=None):
@@ -408,6 +453,7 @@ def _findings(found):
         if not isinstance(f, dict) or not str(f.get("cells") or "").strip():
             raise ValueError(f"prior finding {i + 1}: give at least the cells it is about (cells)")
         g = {k: " ".join(str(f.get(k) or "").split())[:600] for k in ("cells", "where", "rule", "evidence")}
+        g |= {k: " ".join(str(f[k]).split())[:200] for k in ("type", "among", "rule_id") if f.get(k)}
         j = str(f.get("judgement") or "unsure").strip().lower()
         g["judgement"] = j if j in JUDGEMENTS else "unsure"
         g["key"] = finding_key(g)

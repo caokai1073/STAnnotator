@@ -336,6 +336,33 @@ def region_map(cells, region, out, title="", highlight=None, highlight_label="co
     return str(out)
 
 
+def finding_map(x, y, rows, of_type, out, title="", max_n=150000, seed=0):
+    """A small map of the whole sample: every cell grey, the other cells of the finding's type blue, the finding's
+    cells (rows) red (the Refine window's findings against the priors). Drawn without pyplot: the window asks for
+    several at once, in parallel threads, and pyplot's shared state is not thread-safe (it drew blank images)."""
+    from matplotlib.figure import Figure
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    w, h = float(np.ptp(x)) or 1.0, float(np.ptp(y)) or 1.0
+    fw = 4.6
+    fig = Figure(figsize=(fw, min(max(fw * h / w, 1.6), 5.0) + 0.3))
+    FigureCanvasAgg(fig)
+    ax = fig.add_subplot(111)
+    n = len(x)
+    keep = np.random.default_rng(seed).choice(n, max_n, replace=False) if n > max_n else slice(None)
+    base = max(0.1, min(1.5, 30000.0 / n))  # (dot size by the number of cells: the tissue reads as a grey shape)
+    ax.scatter(x[keep], y[keep], s=base, c="#b8b8b8", rasterized=True, linewidths=0)
+    rest = np.setdiff1d(of_type, rows) if of_type is not None and rows is not None else np.zeros(0, int)
+    if len(rest):
+        ax.scatter(x[rest], y[rest], s=max(1.0, 3 * base), c="#4a90c8", rasterized=True, linewidths=0)
+    if rows is not None and len(rows):
+        ax.scatter(x[rows], y[rows], s=max(2.0, 4 * base) if len(rows) > 500 else 8, c="#d62728", rasterized=True, linewidths=0)
+    ax.set_aspect("equal"); ax.invert_yaxis(); ax.axis("off")
+    ax.set_title(title, fontsize=8)
+    fig.tight_layout(pad=0.3)
+    fig.savefig(out, dpi=110)
+    return str(out)
+
+
 def conflict_sheet(cells, rows, he_path, labels, out, half_um=120.0, title="", lineage=None, palette=None, um_per_px=None):
     """Two panels per conflict cell: raw H&E (top) and the cells colored by their current lineage (bottom)."""
     half = half_um / (um_per_px or config.HE_UM_PER_PX)
