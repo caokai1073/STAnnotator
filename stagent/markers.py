@@ -1062,13 +1062,16 @@ def _still_needed(avail):
     return max(0.0, mem[1] - max(0.0, mem[0] - avail))
 
 
-def _spawn_safe():
+_NO_WORKERS = []  # a worker pool failed in a script of the user's (see _leiden_many): no more pools in this process
+
+
+def _spawn_safe(env=True):
     """Whether worker processes may be started: a started process imports the main script again, so a script that
     calls the annotation outside `if __name__ == "__main__":` would run again in every worker. Safe are the app
     (frozen; its entry is guarded), the stagent command (guarded), Jupyter and the interactive prompt (no script),
     and a script that says so with STAGENT_LEIDEN_PARALLEL=1."""
     import os, sys
-    if os.environ.get("STAGENT_LEIDEN_PARALLEL") == "1":
+    if env and os.environ.get("STAGENT_LEIDEN_PARALLEL") == "1":
         return True
     if getattr(sys, "frozen", False):
         return True
@@ -1082,13 +1085,31 @@ def _spawn_safe():
         (p.parent.stem in ("stagent", "celltypeagent") and p.stem in ("cli", "__main__"))  # (stem: pip's stagent.exe\__main__.py on Windows)
 
 
+def _refuse_rerun():
+    """In a worker process of parallel Leiden (spawn), a script whose annotation is not under
+    `if __name__ == "__main__":` is run again from its top (as __mp_main__) and would annotate again in every worker
+    (about 15 times as long): stop it there with the reason. The worker then fails and the resolutions run one by one
+    in the script's own process (_leiden_many). A worker of the user's own (a function called in a child process)
+    is not the top of __mp_main__ and is not stopped."""
+    import sys
+    f = sys._getframe(1)
+    while f is not None:
+        if f.f_code.co_name == "<module>" and f.f_globals.get("__name__") == "__mp_main__":
+            raise RuntimeError(
+                "this script was started again in a worker process of parallel clustering (STAGENT_LEIDEN_PARALLEL=1): "
+                "put its code under `if __name__ == \"__main__\":`, or leave STAGENT_LEIDEN_PARALLEL unset. The "
+                "clusterings now run one after the other in the script itself.")
+        f = f.f_back
+
+
 def leiden_workers(n_cells, n_edges, n_res, reserve_gb=None, avail=None):
     """How many worker processes Leiden at n_res resolutions gets (0: in this process, one by one): at most the
     cores less one, and as many as fit in 80% of the free memory left after reserve_gb, the memory the annotation
     itself still needs (default: inside an annotation, what it may still add; see _still_needed). avail: the free
     memory (default: now)."""
     import os
-    if not LEIDEN_PARALLEL or n_res < 2 or n_cells < LEIDEN_PARALLEL_MIN or not parallel_on() or not _spawn_safe():
+    if not LEIDEN_PARALLEL or n_res < 2 or n_cells < LEIDEN_PARALLEL_MIN or not parallel_on() or not _spawn_safe() \
+            or _NO_WORKERS:
         return 0
     from . import timing
     cores = max(1, (os.cpu_count() or 1) - 1)
@@ -1124,6 +1145,8 @@ def _leiden_many(g, nbr, resolutions, seed, min_cluster=None, say=None):
     except Exception as e:  # (a worker could not start or died, e.g. out of memory): one by one here
         print(f"Leiden in worker processes failed ({type(e).__name__}: {e}); running the resolutions one by one",
               flush=True)
+        if not _spawn_safe(env=False):  # (a script of the user's, maybe unguarded: its workers would run it again)
+            _NO_WORKERS.append(type(e).__name__)
         return [_leiden(g, nbr, r, seed, min_cluster) for r in res]
     finally:
         for b in blocks:
@@ -1745,6 +1768,7 @@ def annotate(counts, panel, tree, progress=None, seed=0, resolution=AUTO, knn=KN
     "members" (cluster id -> cell rows), "records" (one per cluster), "nodes" (resolution chosen per level)}.
     knn: the neighbor search, "exact" or "approx" (see knn). spill: {"xy" (um), "group" (slice per cell, or None)}
     to leave out transcripts spilled over from neighboring cells (spill_detected), or None."""
+    _refuse_rerun()
     A = _Annotator(counts, panel, progress, seed, knn, dict(spill, cols=gene_columns(tree, panel)) if spill else None)
     A.total = _n_levels(tree)
     res = {"labels": np.full(A.n, UNASSIGNED, dtype=object), "cluster_of": np.full(A.n, "", dtype=object),

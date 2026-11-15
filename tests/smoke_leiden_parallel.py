@@ -41,6 +41,16 @@ def main():
         main.__file__ = str(Path(f.replace("\\", "/")))
         assert markers._spawn_safe() is want, f
     main.__file__ = f0
+    # a script started again in a worker (its annotation not under `if __name__ == "__main__":`): stopped with the
+    # reason at the annotation; a function of the user's called in a child process: not stopped
+    try:
+        exec(compile("from stagent import markers\nmarkers._refuse_rerun()", "unguarded.py", "exec"), {"__name__": "__mp_main__"})
+        raise AssertionError("an unguarded script ran again in a worker")
+    except RuntimeError as e:
+        assert "__main__" in str(e), e
+    g = {"__name__": "__mp_main__"}
+    exec(compile("from stagent import markers\ndef work():\n    markers._refuse_rerun()", "guarded.py", "exec"), g)
+    g["work"]()
     os.environ["STAGENT_LEIDEN_PARALLEL"] = "1"  # (this script is guarded: workers may start)
     ex = Path(__file__).resolve().parents[1] / "examples" / "cadinu_merfish"
     try:
