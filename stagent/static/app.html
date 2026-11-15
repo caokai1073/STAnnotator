@@ -441,7 +441,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .rfedits .rffinding > div:first-child { min-width: 0; }
 .rfedits .rfverdict { display: flex; gap: 4px; }
 .rfedits img.rffig { display: block; width: 180px; margin-top: 4px; border: 1px solid var(--line); border-radius: 6px; background: #fff; cursor: zoom-in; }
-.rfedits img.rffig.big { width: 100%; max-width: 460px; cursor: zoom-out; }
+#figDlg { width: min(1100px, 95vw); }
+#figDlg img { display: block; max-width: 100%; max-height: calc(90vh - 70px); margin: 0 auto; background: #fff; }
 .rfedits .rfverdict button { font-size: 11.5px; padding: 2px 8px; }
 .rfedits .rfverdict button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .rfedits input[type=checkbox]:indeterminate { background: var(--accent); border-color: var(--accent); }
@@ -614,7 +615,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
         <span>Keep my regions, priors &amp; corrections<small>carried into the new annotation</small></span></label>
     </div></details>
     <button id="annotate" class="primary main">Annotate</button>
-    <div class="act2"><button id="rfOpen" disabled title="Refine this annotation with the agent: the computed problems, the agent's proposed edits of the marker list, your conversation with it">Refine cell types</button></div>
+    <div class="act2"><button id="rfOpen" disabled title="Refine this annotation with the agent: the computed problems, the agent's review results and suggested edits of the marker list, your conversation with it">Refine cell types</button></div>
   </div>
   <div class="pane" data-pane="embed">
     <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-scatter"/></svg><div><div id="einfo">No embedding yet</div>
@@ -971,7 +972,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
         <div id="rfMsgs" class="rfmsgs"></div>
         <textarea id="rfText" rows="3" placeholder="Tell the agent what to consider, e.g. this is a fibrotic lung; keep CD9 for neurons; add chondrocytes"></textarea>
         <div class="row"><span class="hint" id="rfWait"></span><span class="spacer"></span><button id="rfSend">Send to the agent</button></div></div>
-      <div class="rfcol"><b>Proposed edits</b><div class="hint" id="rfEditsHint">Click Agent review to have this round reviewed.</div>
+      <div class="rfcol"><b>Review results and suggestions</b><div class="hint" id="rfEditsHint">Click Agent review to have this round reviewed.</div>
         <div id="rfEdits" class="rfedits"></div></div>
     </div>
     <div class="row" style="margin-top:4px"><span class="err" id="rfErr"></span><span class="spacer"></span>
@@ -1016,6 +1017,12 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <div id="rgText" style="font-size:13.5px"></div>
     <div class="row"><span class="err" id="rgErr"></span><span class="spacer"></span><span id="rgBtns" class="row" style="gap:8px"></span></div>
   </div>
+</dialog>
+<dialog id="figDlg">
+  <div class="dh"><b>Where these cells lie</b><span class="hint" id="figTitle" style="margin-left:8px"></span><span class="spacer"></span>
+    <button id="figClose">Close</button></div>
+  <div style="padding:10px 14px 14px"><img id="figBig" alt="Where these cells lie">
+    <div class="hint" style="margin-top:6px">Red: these cells · blue: the other cells of the type · grey: all cells</div></div>
 </dialog>
 <dialog id="prDlg" style="width:min(760px,95vw)">
   <div class="dh"><b>Tissue priors</b><span class="hint" id="prInfo" style="margin-left:8px"></span><span class="spacer"></span>
@@ -4032,6 +4039,8 @@ $("prDefault").onclick = async () => {
   if (await prPost({ reset: true })) toast("The app's priors again", 2500);
 };
 $("prClose").onclick = () => $("prDlg").close();
+$("figClose").onclick = () => $("figDlg").close();
+$("figDlg").addEventListener("click", (e) => { if (e.target === $("figDlg")) $("figDlg").close(); });  // (a click beside it)
 $("prDlg").addEventListener("close", () => {
   clearTimeout(PR.poll);
   if (PR.view && st.sample) st.priorsChecked = `${st.sample.sample_id}|${PR.view.organ || ""}`;  // (seen: Accept in Steps)
@@ -4409,7 +4418,7 @@ function rfRender() {
       row.innerHTML = `<div><b>${rfEsc(f.cells)}</b> ${rfEsc(f.where)}` + (f.rule ? ` <span class="hint">· ${rfEsc(f.rule)}</span>` : "") +
         `<div class="why">agent: ${rfEsc(f.judgement)}</div>` + (f.evidence ? `<details class="why"><summary>evidence</summary><div>${rfEsc(f.evidence)}</div></details>` : "") +
         // where they lie: the finding's cells red, the rest of the type blue (a click enlarges it)
-        `<img class="rffig" loading="lazy" alt="Where these cells lie" title="Red: these cells; blue: the other cells of the type; grey: all cells. Click to enlarge"
+        `<img class="rffig" loading="lazy" alt="Where these cells lie" title="Red: these cells; blue: the other cells of the type; grey: all cells. Click for a large map"
           src="/api/s/${encodeURIComponent(RF.sid)}/refine/finding_fig?key=${encodeURIComponent(f.key)}&t=${encodeURIComponent(P.time)}"></div>`;
       const btns = document.createElement("div"); btns.className = "rfverdict";
       [["biology", "Real biology", "Leave it: the agent will not raise it again"], ["mislabel", "Mislabel", "The marker list should change: the agent proposes an edit for it"]].forEach(([k, label, tip]) => {
@@ -4423,7 +4432,11 @@ function rfRender() {
       });
       const img = row.querySelector("img.rffig");
       img.onerror = () => img.remove();  // (a finding that names no cell type has no map)
-      img.onclick = () => img.classList.toggle("big");
+      img.onclick = () => {  // large, in a window of its own
+        $("figBig").src = img.src.replace("finding_fig?", "finding_fig?size=large&");
+        $("figTitle").textContent = `${f.cells}: ${f.where}`;
+        $("figDlg").showModal();
+      };
       row.append(btns); box.append(row);
     });
     eb.append(box);
@@ -5185,7 +5198,7 @@ const HELP = `
     grouped by the problem they fix (one tick box for a whole problem; a group folds away with ▾); an edit the agent
     marks <i>optional</i> (e.g. splitting a type into subtypes) starts unticked, with its question beside it. Apart from the
     edits it lists what goes against the organ's priors or your rules (the report shows which types lie mostly among
-    another lineage), each with a small map of where its cells lie (red; click to enlarge); mark each
+    another lineage), each with a small map of where its cells lie (red; a click opens it large); mark each
     <b>Real biology</b> (it is not raised again) or <b>Mislabel</b> (the list should change);</li>
   <li>you write to it at any time (your words come first), tick the edits you want and <b>Accept</b>: the app
     annotates again with them (your regions, priors and corrections carry over) and the next round opens, sent to the

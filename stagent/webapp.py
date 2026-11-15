@@ -885,13 +885,16 @@ def api_refine_finding_fig(req):
     if f is None:
         return _json({"error": "no such finding in this round"}, 404)
     ver = rd.get("version") if rd.get("session") == s.id else None
-    out = s.dir / "figures" / f"finding_v{ver}_{hashlib.sha1(json.dumps(f, sort_keys=True).encode()).hexdigest()[:12]}.png"
+    large = req.query_params.get("size") == "large"  # (the map opened on its own: more pixels, smaller dots)
+    out = s.dir / "figures" / (f"finding_v{ver}_{hashlib.sha1(json.dumps(f, sort_keys=True).encode()).hexdigest()[:12]}"
+                               f"{'_large' if large else ''}.png")
     if not out.exists():
         rows, of_type, title = iterate.finding_cells(s, f, ver)
         if rows is None:
             return _json({"error": "the finding names no cell type of the annotation"}, 404)
         out.parent.mkdir(parents=True, exist_ok=True)
-        render.finding_map(s.cells.x.to_numpy(), s.cells.y.to_numpy(), rows, of_type, out, title)
+        render.finding_map(s.cells.x.to_numpy(), s.cells.y.to_numpy(), rows, of_type, out, title,
+                           **({"width_in": 10.0, "dpi": 120, "max_n": 400000} if large else {}))
     return FileResponse(out, media_type="image/png", headers={"Cache-Control": "no-cache"})
 
 

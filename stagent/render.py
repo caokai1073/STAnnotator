@@ -336,30 +336,32 @@ def region_map(cells, region, out, title="", highlight=None, highlight_label="co
     return str(out)
 
 
-def finding_map(x, y, rows, of_type, out, title="", max_n=150000, seed=0):
+def finding_map(x, y, rows, of_type, out, title="", max_n=150000, seed=0, width_in=4.6, dpi=110):
     """A small map of the whole sample: every cell grey, the other cells of the finding's type blue, the finding's
     cells (rows) red (the Refine window's findings against the priors). Drawn without pyplot: the window asks for
     several at once, in parallel threads, and pyplot's shared state is not thread-safe (it drew blank images)."""
     from matplotlib.figure import Figure
     from matplotlib.backends.backend_agg import FigureCanvasAgg
     w, h = float(np.ptp(x)) or 1.0, float(np.ptp(y)) or 1.0
-    fw = 4.6
-    fig = Figure(figsize=(fw, min(max(fw * h / w, 1.6), 5.0) + 0.3))
+    fw = width_in
+    fig = Figure(figsize=(fw, min(max(fw * h / w, 1.6 * fw / 4.6), 5.0 * fw / 4.6) + 0.3))
     FigureCanvasAgg(fig)
     ax = fig.add_subplot(111)
     n = len(x)
     keep = np.random.default_rng(seed).choice(n, max_n, replace=False) if n > max_n else slice(None)
-    base = max(0.1, min(1.5, 30000.0 / n))  # (dot size by the number of cells: the tissue reads as a grey shape)
+    k = (fw / 4.6) ** 2 * (110.0 / dpi) ** 2  # (a larger map: every dot as large on it)
+    b0 = max(0.1, min(1.5, 30000.0 / n))  # (dot size by the number of cells: the tissue reads as a grey shape)
+    base = b0 * k
     ax.scatter(x[keep], y[keep], s=base, c="#b8b8b8", rasterized=True, linewidths=0)
     rest = np.setdiff1d(of_type, rows) if of_type is not None and rows is not None else np.zeros(0, int)
     if len(rest):
-        ax.scatter(x[rest], y[rest], s=max(1.0, 3 * base), c="#4a90c8", rasterized=True, linewidths=0)
+        ax.scatter(x[rest], y[rest], s=max(1.0, 3 * b0) * k, c="#4a90c8", rasterized=True, linewidths=0)
     if rows is not None and len(rows):
-        ax.scatter(x[rows], y[rows], s=max(2.0, 4 * base) if len(rows) > 500 else 8, c="#d62728", rasterized=True, linewidths=0)
+        ax.scatter(x[rows], y[rows], s=(max(2.0, 4 * b0) if len(rows) > 500 else 8) * k, c="#d62728", rasterized=True, linewidths=0)
     ax.set_aspect("equal"); ax.invert_yaxis(); ax.axis("off")
-    ax.set_title(title, fontsize=8)
+    ax.set_title(title, fontsize=8 * max(1.0, fw / 6))
     fig.tight_layout(pad=0.3)
-    fig.savefig(out, dpi=110)
+    fig.savefig(out, dpi=dpi)
     return str(out)
 
 

@@ -91,6 +91,10 @@ try:
     assert len(iterate.finding_cells(s, pf["findings"][1])[0]) == lt["n_cells"]  # (the type found in the text)
     r1 = c1.get(f"/api/s/{s.id}/refine/finding_fig", params={"key": pf["findings"][0]["key"]})
     assert r1.status_code == 200 and r1.content[:4] == b"\x89PNG", r1.status_code
+    r2 = c1.get(f"/api/s/{s.id}/refine/finding_fig", params={"key": pf["findings"][0]["key"], "size": "large"})
+    from PIL import Image as _I
+    import io as _io
+    assert r2.status_code == 200 and _I.open(_io.BytesIO(r2.content)).width > 2 * _I.open(_io.BytesIO(r1.content)).width
     assert c1.get(f"/api/s/{s.id}/refine/finding_fig", params={"key": pf["findings"][2]["key"]}).status_code == 404
     assert c1.get(f"/api/s/{s.id}/refine/finding_fig", params={"key": "nope"}).status_code == 404
     print(f"finding map: {title}")
