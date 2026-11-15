@@ -5,9 +5,10 @@ keeps a status file, so a stopped run goes on where it stopped and a sample that
 
 The manifest (CSV, one row per sample; only `sample` and `xenium` or `h5ad` are needed):
   sample        the sample's id (letters, digits, - _ .)
-  xenium        a Xenium output folder              | or h5ad: an h5ad file (raw counts, x / y in um), with
-                                                    |   section_column / section when it holds several sections,
-                                                    |   x_column / y_column when the coordinates are not x / y
+  xenium        a Xenium output folder (or files)   | or h5ad: an h5ad file (raw counts, x / y in um), with
+  section       with xenium: the slice of a folder  |   section_column / section when it holds several sections,
+                holding several (its name prefix,   |   x_column / y_column when the coordinates are not x / y
+                e.g. GSM1 of GSM1_cells.parquet)    |
   he            the H&E image (optional; a pyramidal TIFF / OME-TIFF is read in place)
   registration  the H&E's alignment file (optional): Xenium Explorer's, an affine CSV, or cell positions saved by the
                 app. Without it the cells are aligned to the H&E by the app's search (auto) or left for the app.
@@ -26,8 +27,8 @@ Decisions in auto mode (--no-auto: no registration is chosen or corrected; those
 
 DIR/data is the batch's data folder (open flagged samples in the app: STAGENT_HOME=DIR/data stagent remote-serve),
 DIR/results/<sample>/ holds annotation.csv (one row per cell: cell type, lineage, levels, confidence, x_um / y_um),
-cell_positions.csv (cell_id, x_um, y_um and px, py on the H&E), registration.csv (the affine, how it was made, the
-check), qc.json; DIR/summary.csv one row per sample (status, flags, numbers); DIR/logs/<sample>.log.
+cell_positions.csv (cell_id, x_um, y_um; px, py on the H&E when the cells were placed on it), registration.csv
+(placed samples: the affine, how it was made, the check), qc.json; DIR/summary.csv one row per sample (status, flags, numbers); DIR/logs/<sample>.log.
 """
 import csv, hashlib, json, os, re, shutil, sys, time, traceback
 from pathlib import Path
@@ -64,6 +65,11 @@ def read_manifest(path, organ=None, markers=None):
         for k in ("xenium", "h5ad", "he", "registration", "markers"):
             if r.get(k) and not Path(r[k]).expanduser().exists():
                 errs.append(f"row {i}: {k} {r[k]} not found")
+        if r.get("xenium") and Path(r["xenium"]).expanduser().exists():
+            try:
+                _xenium_source(r)
+            except ValueError as e:
+                errs.append(f"row {i}: {e}")
         r["organ"] = r.get("organ") or ("" if r.get("markers") else (organ or ""))
         r["markers"] = r.get("markers") or ("" if r.get("organ") else (markers or ""))
         if not r["organ"] and not r["markers"]:
@@ -71,6 +77,21 @@ def read_manifest(path, organ=None, markers=None):
     if errs:
         raise ValueError("the manifest has problems:\n  " + "\n  ".join(errs))
     return rows
+
+
+def _xenium_source(r):
+    """The row's Xenium slice: the folder's only one, or the one `section` names."""
+    from . import importer
+    srcs = importer.xenium_sources([str(Path(r["xenium"]).expanduser())])
+    keys = [x["key"] for x in srcs]
+    if r.get("section"):
+        if r["section"] not in keys:
+            raise ValueError(f"xenium {r['xenium']}: no slice {r['section']!r} (slices: {', '.join(keys)})")
+        return srcs[keys.index(r["section"])]
+    if len(srcs) > 1:
+        raise ValueError(f"xenium {r['xenium']} holds {len(srcs)} slices ({', '.join(keys)}): name one in the "
+                         f"section column (one row per slice)")
+    return srcs[0]
 
 
 def _hash(*parts):
@@ -177,7 +198,7 @@ def _step_import(r, out, opts, st):
     he = str(Path(r["he"]).expanduser()) if r.get("he") else None
     reg = str(Path(r["registration"]).expanduser()) if r.get("registration") else None
     if r.get("xenium"):
-        importer.import_xenium(r["sample"], [str(Path(r["xenium"]).expanduser())], he, reg, overwrite=True, progress=say)
+        importer.import_xenium(r["sample"], _xenium_source(r), he, reg, overwrite=True, progress=say)
     else:
         importer.import_sample(r["sample"], str(Path(r["h5ad"]).expanduser()), he=he, registration=reg,
                                section_column=r.get("section_column") or None, section=r.get("section") or None,
@@ -243,7 +264,7 @@ def _step_register(r, out, opts, st):
         if best is None:
             return {"registration": "failed (no candidate fits)", "candidates": cands,
                     "flags": ["registration: no alignment found, align in the app"]}
-        align.apply(align.Sample(sid), best["id"])
+        align.apply(align.Sample(sid), best["id"], by="auto (batch)")
         res |= {"registration": "auto", "candidate": f"{best['id']} {best['orientation']}"}
         if ambiguous:
             flags.append("registration: another orientation fits almost as well, check it")
@@ -341,9 +362,14 @@ def _step_export(r, out, opts, st):
     tmp = d / ".annotation.csv.tmp"
     tab.to_csv(tmp, index=False)
     os.replace(tmp, d / "annotation.csv")
-    _write_atomic(d / "cell_positions.csv", notebook.positions_csv(sid))
     reg0 = st["steps"].get("register", {})
-    if r.get("he") and reg0.get("registration") in ("file", "auto"):  # (placed on the H&E: not waiting, not failed)
+    on_he = bool(r.get("he")) and reg0.get("registration") in ("file", "auto")  # (placed: not waiting, not failed)
+    pos = notebook.positions_csv(sid)
+    if not on_he:  # (px / py would be the place on a blank canvas or the DAPI image, not the H&E)
+        import pandas as pd, io
+        pos = pd.read_csv(io.StringIO(pos))[["cell_id", "x_um", "y_um"]].to_csv(index=False)
+    _write_atomic(d / "cell_positions.csv", pos)
+    if on_he:
         reg = st["steps"].get("register", {})
         import pandas as pd, io
         t = pd.read_csv(io.StringIO(notebook.registration_csv(sid)))
@@ -357,7 +383,8 @@ def _step_export(r, out, opts, st):
           "steps": {k: {x: y for x, y in v.items() if x not in ("key",)} for k, v in st["steps"].items()},
           "flags": st["flags"]}
     _write_atomic(d / "qc.json", json.dumps(qc, indent=1, default=str))
-    if opts["drop_data"]:  # (results written: the sample's data folder and annotations go, to save disk)
+    if opts["drop_data"] and not st["flags"]:  # (results written: its data go, to save disk; a flagged sample keeps
+        # them, to be opened in the app)
         from . import config
         for p in (config.SAMPLES / sid, config.SESSIONS / st["steps"]["annotate"]["session"]):
             shutil.rmtree(p, ignore_errors=True)

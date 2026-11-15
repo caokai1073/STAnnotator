@@ -471,12 +471,13 @@ def c_id(cid):
     return str(cid).upper()
 
 
-def apply(s, cid):
+def apply(s, cid, by="Claude"):
     """Put the cells on the image with candidate cid (refined if it was); its deviation check, when made for this
-    affine, becomes the registration check of the placement (and the sample notes its verdict for the steps)."""
+    affine, becomes the registration check of the placement (and the sample notes its verdict for the steps). by: who
+    chose the candidate (the agent, or "auto" for stagent batch), kept as the registration's made_by."""
     st, c = _get(s, cid)
     A = _affine(c)
-    r = importer.place_cells(s.sample_id, A.tolist(), st["image"], st["kind"], by="Claude", progress=lambda *a: None)
+    r = importer.place_cells(s.sample_id, A.tolist(), st["image"], st["kind"], by=by, progress=lambda *a: None)
     d = c.get("deviation")
     if d and d.get("A") == A.tolist() and _wfile(s, cid).exists():
         image = importer.image_of(s.sample_id)

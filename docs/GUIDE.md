@@ -243,8 +243,10 @@ s002,/data/run1/output-XETG...-s002,/data/he/s002.ome.tif,,colon
 s003,/data/run2/output-XETG...-s003,,,colon
 ```
 
-- `xenium`: a Xenium output folder; or `h5ad` (with `section_column` / `section` for an h5ad of several sections,
-  `x_column` / `y_column` when the coordinates are not `x` / `y`).
+- `xenium`: a Xenium output folder (for a folder holding several slices, e.g. `GSM1_cells.parquet`,
+  `GSM2_cells.parquet`, one row per slice with its name prefix in `section`); or `h5ad` (with `section_column` /
+  `section` for an h5ad of several sections, `x_column` / `y_column` when the coordinates are not `x` / `y`). The
+  manifest is checked before anything runs.
 - `he`, `registration`: optional. With an alignment file the cells are placed by it. Without one, the app's alignment
   search runs and the best candidates are checked over the whole tissue; the one whose cells sit on their nuclei is
   applied (never one the check finds far off). Where the check finds local shifts (tissue stretched or torn), the
@@ -262,8 +264,9 @@ s003,/data/run2/output-XETG...-s003,,,colon
 What it writes in `--out`:
 
 - `results/<sample>/annotation.csv`: one row per cell (cell type, lineage, levels, confidence, `x_um`, `y_um`);
-  `cell_positions.csv`: `cell_id`, `x_um`, `y_um` and `px`, `py` on the H&E (with corrections); `registration.csv`:
-  the affine, how it was made and its check; `qc.json`.
+  `cell_positions.csv`: `cell_id`, `x_um`, `y_um`, and `px`, `py` on the H&E (with corrections) when the cells were
+  placed on it; `registration.csv` (placed samples): the affine, how it was made (`file`, `auto (batch)`, plus a local
+  correction) and its check; `qc.json`.
 - `summary.csv`: one row per sample: status (`ok`, `flagged`, `failed`), flags (e.g. no alignment found, another
   orientation fits too, local shifts left), cells, median transcripts, the registration check (median and 90th
   percentile offset), types without cells, share of Unassigned cells.
@@ -273,7 +276,8 @@ A stopped run goes on where it stopped: run the same command again (steps done w
 `--redo` runs them again). A sample that fails does not stop the others. `--no-auto` chooses no alignment and
 applies no correction (those samples are flagged). `data/` is the batch's data folder: open flagged samples in the
 app with `STAGENT_HOME=/scratch/batch1/data stagent remote-serve` (Working on a server). It takes about 0.3-0.6 GB per
-sample; `--drop-data` removes each sample's data once its results are written. Each job needs the memory of one
+sample; `--drop-data` removes each sample's data once its results are written (not of flagged samples, to be
+opened in the app). Each job needs the memory of one
 annotation (about 11 GB for 800,000 cells): choose `--jobs` by the server's memory. The exact neighbor search runs
 on a GPU when there is one (jobs share it; a block that does not fit is split); on a server without a GPU,
 `--knn approx` is much faster for large sections. `stagent batch --help` lists every option.

@@ -132,7 +132,7 @@ def main(argv=None):
     bt.add_argument("--redo", action="store_true", help="run every step again (default: steps done with the same "
                     "inputs are kept)")
     bt.add_argument("--drop-data", action="store_true", help="remove each sample's data folder once its results are "
-                    "written (saves disk; the samples can then not be opened in the app)")
+                    "written (saves disk; flagged samples keep theirs, to be opened in the app)")
     bt.add_argument("--only", nargs="+", help="only these samples of the manifest")
     bt.add_argument("--knn", choices=["exact", "approx"], help="the marker step's neighbor search (default as in the "
                     "app: exact, approximate from a million cells); approx is much faster on a server without a GPU")
@@ -171,7 +171,7 @@ def main(argv=None):
         try:
             c = batch.run(a.manifest, a.out, a.jobs, shard, a.auto, a.redo, a.organ, a.markers, a.drop_data,
                           a.local_fix, a.candidates, a.only, a.knn)
-        except ValueError as e:
+        except (ValueError, OSError) as e:  # (a manifest with problems, or not found)
             raise SystemExit(str(e))
         raise SystemExit(1 if c.get("failed") else 0)
     elif a.cmd == "import-xenium":

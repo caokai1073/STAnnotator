@@ -187,6 +187,12 @@ try:
         before = advice.status(s2, "annotation")
         r = c.post("/api/claude/review", json={"session": s2.id, "scope": "annotation"})
         assert r.status_code == 503 and advice.status(s2, "annotation") == before, "the review recorded as asked"
+        # a prior added offline: saved, its rule not asked for, the reason returned for the Prior window
+        r = c.post("/api/sample/M/priors", json={"session": s2.id, "organ": "colon", "removed": [],
+                                                 "added": [{"text": "Goblet cells lie in the crypts"}]})
+        assert r.status_code == 200 and r.json().get("offline", "").startswith("No internet"), r.text
+        from stagent import hetissue
+        assert "Goblet cells lie in the crypts" in json.dumps(hetissue.organ_priors("colon")), "the prior was not saved"
         os.environ["STAGENT_SKIP_ONLINE_CHECK"] = "1"
         claudelink.check_online()
     finally:

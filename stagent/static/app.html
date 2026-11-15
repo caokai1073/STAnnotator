@@ -4007,6 +4007,7 @@ async function prPost(change) {
                        { session: st.sid || null, organ: v.organ, removed: v.removed || [], added: v.added || [], ...change }); }
   catch (e) { $("prErr").textContent = e.message; return false; }
   prShow(r);
+  if (r.offline) toast(`Saved. ${r.offline}`, 7000);  // (the priors are kept; their rules are asked for when online)
   if (r.asked && r.asked.length) {
     if (r.message && st.chatAvailable) { $("input").value = r.message; send(); }
     toast(r.claude_code ? (r.claude_code.reused ? "The agent is writing the rule" : "The agent is opening to write the rule")

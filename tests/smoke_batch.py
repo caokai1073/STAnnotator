@@ -46,7 +46,7 @@ try:
         a = list(csv.DictReader(open(o / "results" / s / "annotation.csv")))
         assert len(a) == int(summ[s]["n_cells"]) > 30000 and {"cell_id", "cell_type", "lineage", "x_um", "y_um"} <= set(a[0]), a[0]
         p = list(csv.DictReader(open(o / "results" / s / "cell_positions.csv")))
-        assert len(p) == len(a) and set(p[0]) == {"cell_id", "x_um", "y_um", "px", "py"}
+        assert len(p) == len(a) and set(p[0]) == {"cell_id", "x_um", "y_um"}  # (no H&E: no px / py)
         assert not (o / "results" / s / "registration.csv").exists()  # (no H&E)
         q = json.load(open(o / "results" / s / "qc.json"))
         assert q["n_cells"] == len(a) and summ[s]["registration"] == "none (no H&E)"
@@ -81,6 +81,39 @@ try:
     assert rc != 0 and "not in the manifest" in out, out
     rc, out = batch(m, "--out", tmp / "o6", "--organ", "colon", "--shard", "x")
     assert rc != 0 and "I/N" in out and "Traceback" not in out, out
+    rc, out = batch(tmp / "no_such.csv", "--out", tmp / "o6", "--organ", "colon")
+    assert rc != 0 and "no_such.csv" in out and "Traceback" not in out, out
+    # a Xenium folder holding two slices (GSM1_..., GSM2_...): refused before anything runs unless the section column
+    # names one; then that slice is imported. Without an H&E the positions are in um only (no px / py)
+    import anndata as ad, h5py, numpy as np, pandas as pd, scipy.sparse as sp
+    a0 = ad.read_h5ad(EX)
+    xf = tmp / "xen"; xf.mkdir()
+    for k, rows in (("GSM1", slice(0, 4000)), ("GSM2", slice(4000, 9000))):
+        sub = a0[rows]
+        ids = [f"{k}c{i}" for i in range(sub.n_obs)]
+        pd.DataFrame({"cell_id": ids, "x_centroid": sub.obs["x"].to_numpy(float),
+                      "y_centroid": sub.obs["y"].to_numpy(float)}).to_parquet(xf / f"{k}_cells.parquet")
+        X = sp.csc_matrix(sp.csr_matrix(sub.X).T.astype(np.int32))  # (10x: features x cells, CSC by cell)
+        with h5py.File(xf / f"{k}_cell_feature_matrix.h5", "w") as h:
+            g = h.create_group("matrix")
+            g["data"], g["indices"], g["indptr"] = X.data, X.indices, X.indptr
+            g["shape"] = np.array(X.shape, np.int64)
+            g["barcodes"] = np.array(ids, dtype="S")
+            f = g.create_group("features")
+            f["name"] = np.array(list(sub.var_names), dtype="S")
+            f["feature_type"] = np.array(["Gene Expression"] * sub.n_vars, dtype="S")
+    mx = write([{"sample": "x0", "xenium": str(xf), "section": ""}], "mx.csv")
+    rc, out = batch(mx, "--out", tmp / "o7", "--organ", "colon")
+    assert rc != 0 and "GSM1" in out and "GSM2" in out and "section" in out and not (tmp / "o7").exists(), out
+    mx = write([{"sample": "x1", "xenium": str(xf), "section": "GSM2"}, {"sample": "x9", "xenium": str(xf), "section": "GSM9"}], "mx.csv")
+    rc, out = batch(mx, "--out", tmp / "o7", "--organ", "colon")
+    assert rc != 0 and "GSM9" in out, out
+    mx = write([{"sample": "x1", "xenium": str(xf), "section": "GSM2"}], "mx.csv")
+    rc, out = batch(mx, "--out", tmp / "o7", "--organ", "colon")
+    summ = {r["sample"]: r for r in csv.DictReader(open(tmp / "o7" / "summary.csv"))}
+    assert summ["x1"]["status"] == "ok" and int(summ["x1"]["n_cells"]) == 5000, (summ, out)
+    p = list(csv.DictReader(open(tmp / "o7" / "results" / "x1" / "cell_positions.csv")))
+    assert set(p[0]) == {"cell_id", "x_um", "y_um"} and p[0]["cell_id"].startswith("GSM2"), p[0]
     # shards: rows 0, 2 / row 1
     rc, out = batch(m, "--out", tmp / "o2", "--shard", "1/2", "--organ", "colon", "--only", "s2")
     assert [r["sample"] for r in csv.DictReader(open(tmp / "o2" / "summary.csv"))] == ["s2"], out

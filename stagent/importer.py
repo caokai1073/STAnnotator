@@ -750,7 +750,8 @@ def import_xenium(name, xenium_dir, he=None, registration=None, description="", 
     elif info["morphology"]:
         A, image, kind = np.array([[1 / ps, 0, 0], [0, 1 / ps, 0]]), info["morphology"], "DAPI"
     else:
-        progress("  no H&E and no morphology image: the viewer shows the cells on a blank background")
+        progress("  no morphology image: until the H&E is aligned the cells are shown on a blank background" if he else
+                 "  no H&E and no morphology image: the viewer shows the cells on a blank background")
         A, image, kind = BLANK, None, "none"
     if he and R is None:
         progress("  the H&E waits for its alignment (a registration file, or Align with Claude)")
