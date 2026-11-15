@@ -496,6 +496,9 @@ def propose(s, summary, edits, organ=None, questions=None, findings=None):
         if e.get("kind") not in EDIT_KINDS:
             raise ValueError(f"edit {i + 1}: kind must be one of {', '.join(EDIT_KINDS)}")
         clean.append({"id": f"E{i + 1}", **{k: e[k] for k in e if k != "id"}})
+        clean[-1]["optional"] = bool(e.get("optional"))  # (shown unticked: the user chooses it)
+        if e.get("question"):
+            clean[-1]["question"] = " ".join(str(e["question"]).split())[:600]
     _group(clean, rd["marker_text"] or "")
     text, problems = apply_edits(rd["marker_text"] or "", clean, s.panel) if clean else (rd["marker_text"], [])
     found = _findings(findings)

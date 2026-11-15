@@ -741,7 +741,8 @@ REFINE_REQUEST = ("I am refining the annotation {sid} with you in the Refine win
                   "diseased: a finding may be real biology; do not raise again those I marked real biology), and which types have weak or unspecific "
                   "markers, are missing, too many or should be merged or split. Then call propose_refinement once: edits "
                   "of the marker list, each with its reason, evidence and problem (a short title of the problem it fixes, the "
-                  "same for all the edits of one problem; only genes of the panel; check the edited list "
+                  "same for all the edits of one problem; an edit I may not want, such as a split into subtypes, optional with its "
+                  "question; new types named by their markers, not by the layer they lie in; only genes of the panel; check the edited list "
                   "with check_marker_list first), and questions for me where only I can decide. Answer only with "
                   "propose_refinement(session_id='{sid}', ...): the Refine window shows nothing else (not propose_marker_list, not "
                   "save_marker_list); many changes to a type's markers can be one set_markers edit. If it reports a "
@@ -3352,6 +3353,7 @@ async def api_sample_qc(req: Request):
     try:
         ids = _filter_ids(req.path_params["sample"])
         r = await asyncio.to_thread(qcfilter.overview, ids)
+        qcfilter.prefetch(ids)  # (the preview and the filter will need the data itself: read meanwhile)
     except (ValueError, OSError) as e:
         return _json({"error": str(e)}, 400)
     sess = [d for x in ids for d in _sample_sessions(x)]
@@ -3470,7 +3472,7 @@ async def api_claude_align(req: Request):
 def _forget_all_data():
     """Every sample's data the app keeps between requests, dropped (Remove all), and the memory given back."""
     from . import qcfilter, trajectory, model
-    qcfilter._data.clear()
+    qcfilter._data.clear(); qcfilter._light.clear()
     trajectory._CACHE.clear()
     regcheck._moved.clear(); regcheck._checked.clear()
     for p in list(render._slides):

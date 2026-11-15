@@ -434,6 +434,9 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .rfedits details.why > div { margin: 2px 0 2px 12px; }
 .rfedits .rfgroup > label > div { min-width: 0; }
 .rfedits .rffind { border-color: var(--warn, #c77700); }
+.rfedits .rfopt { font-size: 10.5px; padding: 0 5px; border: 1px solid var(--muted); border-radius: 8px; color: var(--muted); }
+.rfedits .rfq { color: var(--warn); }
+.rfedits .rfgroup > .rfq { padding: 0 4px 2px 28px; }
 .rfedits .rffinding { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: start; padding: 3px 8px; border-top: 1px solid var(--line); }
 .rfedits .rffinding > div:first-child { min-width: 0; }
 .rfedits .rfverdict { display: flex; gap: 4px; }
@@ -4282,7 +4285,7 @@ $("refPath").onchange = () => inspectRef();
 $("refPick").onclick = async () => { const p = await pickFiles("h5ad"); if (p.length) { $("refPath").value = p[0]; inspectRef(); } };
 
 // ---------------- Refine with the agent: review, edits of the marker list, annotation again, round by round ----------------
-const RF = { sid: null, state: null, timer: null, from: null, seen: "", preparing: null, folded: null };
+const RF = { sid: null, state: null, timer: null, from: null, seen: "", preparing: null, folded: null, ticks: null };
 const rfAgentOk = () => !!(st.desktop || st.chatAvailable);
 function rfSync() {  // the Refine button and switch: a marker annotation open, an agent to ask
   const marker = !!st.sid && !st.placeholder && !!st.vocab && st.vocab.method === "markers";
@@ -4426,10 +4429,13 @@ function rfRender() {
   if (P && P.edits.length) {
     // the edits under the problem they fix (the agent's "problem", else their lineage), a tick box for each problem;
     // the evidence folded under each edit
-    const off = RF.unticked && RF.unticked.time === P.time ? RF.unticked.ids : null;
-    const untick = (id, on) => {  // remembered for this proposal, so the next refresh of the window keeps it
-      if (!RF.unticked || RF.unticked.time !== P.time) RF.unticked = { time: P.time, ids: new Set() };
-      if (on) RF.unticked.ids.delete(id); else RF.unticked.ids.add(id);
+    // ticked by default, an optional edit not (the user chooses it); the user's ticks are remembered for this
+    // proposal, so the next refresh of the window keeps them
+    const mine = RF.ticks && RF.ticks.time === P.time ? RF.ticks.on : null;
+    const ticked = (e) => rd.decision !== "dismissed" && (mine && e.id in mine ? mine[e.id] : !e.optional);
+    const untick = (id, on) => {
+      if (!RF.ticks || RF.ticks.time !== P.time) RF.ticks = { time: P.time, on: {} };
+      RF.ticks.on[id] = on;
     };
     const named = new Map(), rest = new Map();  // the problems the agent named first, then the lineages, "Other edits" last
     P.edits.forEach((e) => { const g = e.group || "Edits", m = e.problem ? named : rest; if (!m.has(g)) m.set(g, []); m.get(g).push(e); });
@@ -4448,18 +4454,23 @@ function rfRender() {
         box.classList.toggle("folded"); box.classList.contains("folded") ? RF.folded.add(fk) : RF.folded.delete(fk); foldText();
       };
       foldText();
+      const allOpt = list.every((e) => e.optional);
       head.append(gc, Object.assign(document.createElement("b"), { textContent: title }),
+                  ...(allOpt ? [Object.assign(document.createElement("span"), { className: "rfopt", textContent: "optional" })] : []),
                   Object.assign(document.createElement("span"), { className: "hint", textContent: list.length > 1 ? `${list.length} edits` : "1 edit" }), fold);
       box.append(head);
+      const gq = list[0].question && list.every((e) => e.question === list[0].question) ? list[0].question : "";  // (asked once)
+      if (gq) box.append(Object.assign(document.createElement("div"), { className: "rfq", textContent: `? ${gq}` }));
       const boxes = [];
       const sync = () => { const n = boxes.filter((c) => c.checked).length; gc.checked = n === boxes.length; gc.indeterminate = n > 0 && n < boxes.length; };
       list.forEach((e) => {
         const l = document.createElement("label"); const c = document.createElement("input"); c.type = "checkbox"; c.value = e.id;
-        c.checked = rd.decision !== "dismissed" && !(off && off.has(e.id)); c.disabled = !!rd.decision;
+        c.checked = ticked(e); c.disabled = !!rd.decision;
         c.onchange = () => { untick(e.id, c.checked); sync(); };
         const d = document.createElement("div");
         // the reason on one line, opened (with the evidence) by a click
-        d.innerHTML = `<span class="hint">${rfEsc(e.id)}</span> ${rfEditText(e)}` + (e.reason || e.evidence ?
+        d.innerHTML = `<span class="hint">${rfEsc(e.id)}</span> ${e.optional ? `<span class="rfopt">optional</span> ` : ""}${rfEditText(e)}` +
+          (e.question && !gq ? `<div class="rfq">? ${rfEsc(e.question)}</div>` : "") + (e.reason || e.evidence ?
           `<details class="why"><summary>${rfEsc(e.reason || "evidence")}</summary>${e.evidence ? `<div><i>Evidence:</i> ${rfEsc(e.evidence)}</div>` : ""}</details>` : "");
         l.append(c, d); box.append(l); boxes.push(c);
       });
@@ -5166,7 +5177,8 @@ const HELP = `
     found, the cells the marker step could not type, the changes since the round before);</li>
   <li>the organ: inferred from the cell types and the sample's name, or asked; <b>Agent review</b> has the agent review the whole
     annotation with that organ's priors and proposes edits of the marker list, each with its reason and evidence,
-    grouped by the problem they fix (one tick box for a whole problem; a group folds away with ▾). Apart from the
+    grouped by the problem they fix (one tick box for a whole problem; a group folds away with ▾); an edit the agent
+    marks <i>optional</i> (e.g. splitting a type into subtypes) starts unticked, with its question beside it. Apart from the
     edits it lists what goes against the organ's priors or your rules (the report shows which types lie mostly among
     another lineage), each with a small map of where its cells lie (red; click to enlarge); mark each
     <b>Real biology</b> (it is not raised again) or <b>Mislabel</b> (the list should change);</li>

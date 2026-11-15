@@ -1334,7 +1334,12 @@ def propose_refinement(summary: str, edits: list[dict], questions: Optional[list
     parent}. Only genes of the panel; reason: why; evidence: the numbers or figure that show it; problem: a short
     title of the problem the edit fixes, in the user's language, the same text for all the edits of one problem
     (e.g. "B cells hidden under Ionocytes and cDC1"): the window shows the edits problem by problem, with a tick box
-    for each problem (edits without one go under their lineage). Keep the edits of one problem together. questions: what only
+    for each problem (edits without one go under their lineage). Keep the edits of one problem together. optional:
+    true for an edit the data allows but the user may not want (e.g. splitting a type into subtypes), with question:
+    what the user decides by ticking it; the window shows it unticked, the question beside it. Name a new type by its
+    markers or its established identity, not by the layer or place it lies in (e.g. "ADAMDEC1+ fibroblasts", not
+    "Lamina propria fibroblasts"): where cells lie is evidence to check, not part of what they are, and in diseased
+    tissue they may lie elsewhere. questions: what only
     the user can decide (the organ, whether a type should be there). organ: the organ you judged it to be, when the
     user has not confirmed one. session_id: the annotation named in the request. prior_findings: where the
     annotation goes against the tissue's priors or the user's rules (compare the report's where_types_lie and
