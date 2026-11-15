@@ -69,17 +69,30 @@ def _load_locked(sample_id):
         for k in [k for k in _data if k[0] == sample_id or len(_data) > 2]:
             _data.pop(k)
         from .session import shared_counts
+        k0 = _counts_key(src)  # (before reading: the numbers are saved only for the file read)
+        genes = config.read_genes(src / "genes.txt")
         X = shared_counts(src)  # the copy the open annotations use (a CosMx 6K matrix is gigabytes)
         if X.nnz and not X.data.all():  # stored zeros: dropped on a copy (the shared matrix is never changed)
             X = X.copy()
             X.eliminate_zeros()
-        num = _numbers(X, config.read_genes(src / "genes.txt"))
+        num = _numbers(X, genes)
         _data[key] = num | {"X": X, "cells": pd.read_parquet(src / "cells.parquet")}
-        try:  # (a folder that cannot be written to: the numbers are computed again next time)
-            np.savez(src / STATS, key=_counts_key(src), **{k: num[k] for k in ("counts", "n_genes", "mito_pct", "detected")})
-        except OSError:
-            pass
+        _save_stats(src, num, k0)
     return _data[key]
+
+
+def _save_stats(src, num, key):
+    """The numbers saved beside the counts, written at a temporary name and renamed (a stopped write or a full disk
+    never leaves half a file), and only while the counts file is still the one they were computed from (key, taken
+    before it was read: rewritten meanwhile, e.g. by a gene reorder, they are not saved). A folder that cannot be
+    written to: computed again next time."""
+    from . import osutil
+    try:
+        if not np.array_equal(_counts_key(src), key):
+            return
+        osutil.replace_atomic(src / STATS, lambda t: np.savez(t, key=key, **{k: num[k] for k in ("counts", "n_genes", "mito_pct", "detected")}))
+    except Exception:
+        pass
 
 
 def save_numbers(folder, X, genes):
@@ -91,17 +104,18 @@ def save_numbers(folder, X, genes):
         X = X.copy()
         X.sum_duplicates()
         X.eliminate_zeros()
-    num = _numbers(X, list(genes))
     try:
-        np.savez(folder / STATS, key=_counts_key(folder), **{k: num[k] for k in ("counts", "n_genes", "mito_pct", "detected")})
+        key = _counts_key(folder)
     except OSError:
-        pass
+        return
+    _save_stats(folder, _numbers(X, list(genes)), key)
 
 
 def _has_numbers(src):
-    try:
-        return np.array_equal(np.load(src / STATS)["key"], _counts_key(src))
-    except (OSError, KeyError, ValueError):
+    try:  # (any damage, e.g. a file cut short: not there)
+        with np.load(src / STATS) as z:
+            return np.array_equal(z["key"], _counts_key(src))
+    except Exception:
         return False
 
 
@@ -112,19 +126,27 @@ def backfill(busy=lambda: False, pause=lambda s: None):
     import time
     done = []
     for d in sorted(p for p in config.SAMPLES.glob("*") if (p / "counts.npz").exists()) if config.SAMPLES.exists() else []:
-        src = _src(d.name)
-        if _has_numbers(src):
-            continue
-        while busy():
-            pause(5)
         try:
-            X = sp.load_npz(src / "counts.npz")
-            save_numbers(src, X, config.read_genes(src / "genes.txt"))
-            done.append(d.name)
+            if _has_numbers(_src(d.name)):
+                continue
+            while busy():
+                pause(5)
+            with _lock(d.name):  # (not while the dialog reads the same sample)
+                src = _src(d.name)
+                if _has_numbers(src):
+                    continue
+                k0 = _counts_key(src)  # (before reading: saved only for the file read)
+                genes = config.read_genes(src / "genes.txt")
+                X = sp.csr_matrix(sp.load_npz(src / "counts.npz"))
+                if not X.has_canonical_format or (X.nnz and not X.data.all()):  # (as _load sees the matrix)
+                    X.sum_duplicates()
+                    X.eliminate_zeros()
+                _save_stats(src, _numbers(X, genes), k0)
+                X = None
+            if _has_numbers(src):
+                done.append(d.name)
         except Exception:  # (a sample being removed or rewritten meanwhile: next time)
             continue
-        finally:
-            X = None
         time.sleep(0.2)
     return done
 
@@ -146,17 +168,21 @@ def _numbers_of(sample_id):
             if len(num["detected"]) != len(genes):
                 raise ValueError("stale")
             _light[key] = num | {"genes": genes, "mito": np.array([bool(MITO.match(g)) for g in genes])}
-        except (OSError, KeyError, ValueError):
+        except Exception:  # (none saved, another file's, or damaged, e.g. cut short: read the matrix, which saves them)
             return _load(sample_id)
     return _light[key]
 
 
 def prefetch(ids):
     """Read the data of these samples in the background (the dialog is open: the preview and the filter will need
-    it), slices at once (unzipping lets go of the GIL)."""
+    it), one after the other in one thread (the counts are read one at a time anyway, and the cache keeps its bound:
+    _load drops older entries beyond three)."""
     import threading
-    for s in ids:
-        threading.Thread(target=lambda x=s: _quiet(_load, x), daemon=True).start()
+
+    def run():
+        for s in ids:
+            _quiet(_load, s)
+    threading.Thread(target=run, daemon=True, name="qc-prefetch").start()
 
 
 def _quiet(fn, *a):
@@ -227,12 +253,8 @@ def _detected_in(X, rows):
 
 
 def _load_all(ids):
-    """_load of every slice, at once (unzipping lets go of the GIL)."""
-    if len(ids) == 1:
-        return {ids[0]: _load(ids[0])}
-    from concurrent.futures import ThreadPoolExecutor
-    with ThreadPoolExecutor(min(4, len(ids))) as ex:
-        return dict(zip(ids, ex.map(_load, ids)))
+    """_load of every slice, one after the other (counts files are read one at a time: session.shared_counts)."""
+    return {s: _load(s) for s in ids}
 
 
 def preview(ids, p):
@@ -349,9 +371,9 @@ def apply(ids, p, progress=lambda *a: None, genes_removed=None):
         o = d / "original"
         if prm and not (o / "counts.npz").exists():  # the data as imported, once
             o.mkdir(exist_ok=True)
-            for f in ("cells.parquet", "counts.npz", "genes.txt", STATS):
+            for f in ("cells.parquet", "genes.txt", STATS, "counts.npz"):  # (counts last: original/ counts then)
                 if f != STATS or (d / f).exists():  # (the numbers stay valid: copy2 keeps the counts file's time)
-                    shutil.copy2(d / f, o / f)
+                    osutil.replace_atomic(o / f, lambda t, f=f: shutil.copy2(d / f, t))
         at(i, s, 0.25, "filtering the cells and genes")
         D, km = data[s], keep[s][0]
         X = D["X"][km][:, gkeep].tocsr()
@@ -395,5 +417,7 @@ def apply(ids, p, progress=lambda *a: None, genes_removed=None):
         with ThreadPoolExecutor(min(4, n)) as ex:
             for f in [ex.submit(one, i, s) for i, s in enumerate(ids)]:
                 f.result()
+    for k in [k for k in _data if k[0] in ids]:  # (the matrices of the data as imported let go: the dialog's numbers stay)
+        _data.pop(k, None)
     progress(1.0, "done")
     return summary

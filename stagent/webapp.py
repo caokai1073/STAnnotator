@@ -880,21 +880,27 @@ def api_refine_finding_fig(req):
     from . import iterate, render
     s = review_app._session(req.path_params["sid"])
     key = req.query_params.get("key") or ""
-    st, rd = iterate.current(s)
-    f = next((x for x in ((rd.get("proposal") or {}).get("findings") or []) if x["key"] == key), None)
-    if f is None:
-        return _json({"error": "no such finding in this round"}, 404)
-    ver = rd.get("version") if rd.get("session") == s.id else None
-    large = req.query_params.get("size") == "large"  # (the map opened on its own: more pixels, smaller dots)
-    out = s.dir / "figures" / (f"finding_v{ver}_{hashlib.sha1(json.dumps(f, sort_keys=True).encode()).hexdigest()[:12]}"
-                               f"{'_large' if large else ''}.png")
-    if not out.exists():
-        rows, of_type, title = iterate.finding_cells(s, f, ver)
-        if rows is None:
-            return _json({"error": "the finding names no cell type of the annotation"}, 404)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        render.finding_map(s.cells.x.to_numpy(), s.cells.y.to_numpy(), rows, of_type, out, title,
-                           **({"width_in": 10.0, "dpi": 120, "max_n": 400000} if large else {}))
+    try:
+        st, rd = iterate.current(s)
+        f = next((x for x in ((rd.get("proposal") or {}).get("findings") or []) if x["key"] == key), None)
+        if f is None:
+            return _json({"error": "no such finding in this round"}, 404)
+        # (the round's annotation version; a round of another annotation: this one's latest, named in the file)
+        ver = rd.get("version") if rd.get("session") == s.id else s.state()["version"]
+        large = req.query_params.get("size") == "large"  # (the map opened on its own: more pixels, smaller dots)
+        out = s.dir / "figures" / (f"finding_v{ver}_{hashlib.sha1(json.dumps(f, sort_keys=True).encode()).hexdigest()[:12]}"
+                                   f"{'_large' if large else ''}.png")
+        if not out.exists():
+            rows, of_type, title = iterate.finding_cells(s, f, ver)
+            if rows is None:
+                return _json({"error": "the finding names no cell type of the annotation"}, 404)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            # (drawn at a temporary name: a request meanwhile, or a failed drawing, never finds half a picture)
+            osutil.replace_atomic(out, lambda t: render.finding_map(
+                s.cells.x.to_numpy(), s.cells.y.to_numpy(), rows, of_type, t, title,
+                **({"width_in": 10.0, "dpi": 120, "max_n": 400000} if large else {})))
+    except (ValueError, KeyError) as e:
+        return _json({"error": str(e)}, 404)
     return FileResponse(out, media_type="image/png", headers={"Cache-Control": "no-cache"})
 
 
@@ -2962,9 +2968,10 @@ def _priors_print(organ):
 
 def _priors_accepted(sample):
     try:
-        return json.load(open(config.SAMPLES / sample / "priors_accepted.json", encoding="utf-8"))
+        a = json.load(open(config.SAMPLES / sample / "priors_accepted.json", encoding="utf-8"))
     except (OSError, ValueError):
         return None
+    return a if isinstance(a, dict) and all(isinstance(a.get(k), str) for k in ("organ", "print", "time")) else None
 
 
 async def api_sample_priors_accept(req: Request):
@@ -2980,7 +2987,9 @@ async def api_sample_priors_accept(req: Request):
         return _json({"error": f"no sample {sample!r}"}, 404)
     if not organ:
         return _json({"error": "choose the organ of the tissue first (the Prior window)"}, 400)
-    try:
+    from . import hetissue
+    try:  # (the organ's name as the priors give it: "colon" is Colon)
+        organ = hetissue.organ_priors(organ)["organ"]
         rec = {"organ": organ, "print": _priors_print(organ), "time": time.strftime("%Y-%m-%dT%H:%M:%S")}
     except ValueError as e:
         return _json({"error": str(e)}, 400)

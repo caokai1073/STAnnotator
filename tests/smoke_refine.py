@@ -73,6 +73,9 @@ try:
     eo = iterate.propose(s, "optional", [{"kind": "add_type", "type": "Split A", "parent": first["name"], "markers": "Epcam+",
                                           "optional": "yes", "question": "  Split   it? "}])["edits"]
     assert eo[0]["optional"] is True and eo[0]["question"] == "Split it?", eo
+    ef = iterate.propose(s, "optional", [{"kind": "add_type", "type": "Split A", "parent": first["name"], "markers": "Epcam+",
+                                          "optional": "false"}])["edits"]
+    assert ef[0]["optional"] is False, ef
     # where the types lie (computed), the user's rules gone against (none here)
     lie = rep["where_types_lie"]
     assert lie and all(set(x) >= {"type", "lineage", "n_cells", "among", "mostly_among"} for x in lie), lie[:2]
@@ -126,7 +129,7 @@ try:
         {"kind": "add_type", "type": "Test type", "parent": first["name"], "markers": "Epcam+", "reason": "r", "evidence": "e"}],
         questions=["Healthy or inflamed?"])
     rd = iterate.add_message(s, "user", "Keep the name")
-    assert [m["from"] for m in rd["messages"]] == ["agent"] * 5 + ["user"], [m["from"] for m in rd["messages"]]  # (the groups, maps and findings checks proposed too)
+    assert [m["from"] for m in rd["messages"]] == ["agent"] * 6 + ["user"], [m["from"] for m in rd["messages"]]  # (the groups, maps and findings checks proposed too)
     try:
         iterate.propose(s, "bad", [{"kind": "explode_type", "type": kid}])
         raise AssertionError("an unknown edit was accepted")

@@ -120,8 +120,10 @@ def _lie_majority(s, lab, lineage, k=LIE_K):
     lin_of = np.array([lineage.get(t, t) for t in names], dtype=object)
     lnames, lcode = np.unique(lin_of.astype(str), return_inverse=True)
     none = np.isin(names, markers.NO_TYPE)
+    maj = np.full(n, -2, np.int32)
+    if n < 2:  # (no other cell to lie among)
+        return maj, names, code, lin_of, lnames
     tree, kk = cKDTree(xy), min(3 * k + 1, n)
-    maj = np.full(n, -1, np.int32)
     for a in range(0, n, 200000):  # (in blocks: 46 neighbors of a million cells would take 700 MB)
         nb = tree.query(xy[a:a + 200000], k=kk, workers=-1)[1][:, 1:].astype(np.int32)
         own = code[a:a + 200000]
@@ -165,6 +167,9 @@ def _lineages(s, st):
     return {d: top["name"] for top in tree for d in markers.descendants(tree)[top["name"]]}
 
 
+_LIE_CACHE = {}  # (session, version) -> _lie_majority of its labels
+
+
 def finding_cells(s, f, version=None):
     """The cells a finding against the priors is about (rows), the cells of its type (rows) and a title: the cells of
     the finding's rule (rule_id, a rule of the user's that it goes against), else the cells of its type (type, or the
@@ -189,7 +194,12 @@ def finding_cells(s, f, version=None):
         return None, None, None
     among = f.get("among")
     if among:
-        maj, _, _, _, lnames = _lie_majority(s, lab, lineage)
+        ck = (s.id, st["version"])  # (several maps of one round: the neighbors computed once)
+        if ck not in _LIE_CACHE:
+            if len(_LIE_CACHE) > 3:
+                _LIE_CACHE.clear()
+            _LIE_CACHE[ck] = _lie_majority(s, lab, lineage)
+        maj, _, _, _, lnames = _LIE_CACHE[ck]
         j = np.where(lnames == among)[0]
         if len(j):
             rows = of_type[maj[of_type] == j[0]]
@@ -444,8 +454,8 @@ VERDICTS = ("biology", "mislabel")
 
 
 def finding_key(f):
-    """The same finding in another round: the cells and the rule, case and spacing ignored."""
-    return " ".join(f"{f.get('cells', '')}|{f.get('rule', '')}".lower().split())
+    """The same finding in another round: its cells, rule, type and lineage, case and spacing ignored."""
+    return " ".join("|".join(str(f.get(k) or "") for k in ("cells", "rule", "type", "among")).lower().split())
 
 
 def _findings(found):
@@ -498,7 +508,8 @@ def propose(s, summary, edits, organ=None, questions=None, findings=None):
         if e.get("kind") not in EDIT_KINDS:
             raise ValueError(f"edit {i + 1}: kind must be one of {', '.join(EDIT_KINDS)}")
         clean.append({"id": f"E{i + 1}", **{k: e[k] for k in e if k != "id"}})
-        clean[-1]["optional"] = bool(e.get("optional"))  # (shown unticked: the user chooses it)
+        o = e.get("optional")  # (shown unticked: the user chooses it; "false" written as a word is false)
+        clean[-1]["optional"] = o.strip().lower() in ("true", "yes", "1") if isinstance(o, str) else bool(o)
         if e.get("question"):
             clean[-1]["question"] = " ".join(str(e["question"]).split())[:600]
     _group(clean, rd["marker_text"] or "")

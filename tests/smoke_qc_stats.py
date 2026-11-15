@@ -45,6 +45,16 @@ try:
     osutil.save_counts(d / "original" / "counts.npz", X)
     qcfilter._data.clear(); qcfilter._light.clear()
     assert qcfilter.overview(["s1"])["n_cells"] == X.shape[0], "stale numbers used"
+    # a numbers file cut short (a stopped write, a full disk): not trusted, read again and written whole
+    sf = d / "original" / qcfilter.STATS
+    b = sf.read_bytes(); sf.write_bytes(b[: len(b) // 2])
+    qcfilter._data.clear(); qcfilter._light.clear()
+    assert not qcfilter._has_numbers(d / "original")
+    assert qcfilter.overview(["s1"])["n_cells"] == X.shape[0] and qcfilter._has_numbers(d / "original"), "a cut file"
+    sf.write_bytes(b"")
+    qcfilter._data.clear(); qcfilter._light.clear()
+    assert qcfilter.preview(["s1"], {"min_counts": 20})["n_cells"] == X.shape[0]
+    assert not [f for f in (d / "original").iterdir() if f.name.startswith(".")], "a temporary file left behind"
     # restoring every cell and gene: the data as imported back in the sample folder, with valid numbers
     qcfilter.apply(["s1"], {})
     assert not (d / "original").exists() and qcfilter._has_numbers(d), "restore left no valid numbers"
