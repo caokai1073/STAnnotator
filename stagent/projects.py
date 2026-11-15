@@ -112,7 +112,8 @@ def assign(groups, reordered=None, new=()):
                 pid += "_p"
             projs[pid] = {"project_id": pid, "name": name, "samples": [], "slices": {},
                           "created_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
-            by_name[name] = by_name[pid] = pid
+            by_name[name] = pid
+            by_name.setdefault(pid, pid)  # (its id only where no project has that name)
             made.add(name)
         target[sid] = pid
     for sid, pid in target.items():  # leave the old project

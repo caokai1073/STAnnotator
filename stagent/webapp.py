@@ -2743,10 +2743,10 @@ async def api_projects_assign(req: Request):
         b = await req.json()
     except ValueError:
         b = None
-    groups, new = (b.get("groups"), b.get("new")) if isinstance(b, dict) else (None, None)
-    if not isinstance(groups or {}, dict) or not isinstance(new or [], list):
-        return _json({"error": "expected {groups: {sample_id: project}, new: [names]}"}, 400)
-    groups = groups or {}
+    groups, new = (b.get("groups"), b.get("new", [])) if isinstance(b, dict) else (None, None)
+    if not isinstance(groups, dict) or not isinstance(new, list) \
+            or not all(v is None or isinstance(v, str) for v in groups.values()) or not all(isinstance(v, str) for v in new):
+        return _json({"error": "expected {groups: {sample_id: project name or \"\"}, new: [names]}"}, 400)
     names = {str(v or "").strip() for v in groups.values()}
     concerned = set(groups)
     for p in projects.list_projects():

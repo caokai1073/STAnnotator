@@ -18,9 +18,14 @@ for key, units, sec in (("knn_exact_gpu", 1e14, 1.5), ("knn_exact_torch", 1e14, 
         timing.record(key, units, sec)
 assert {"knn_exact_gpu", "knn_approx"} <= set(timing.measured()), timing.measured()
 timing._warm.add("approx_compile")
+free, total = timing.available_memory_gb, timing.total_memory_gb
 timing.available_memory_gb = lambda: 0.5  # (the free memory now: not used by the default)
 after = [knn_mode(None, n, g, None, 20, n * 100) for n, g in cases]
 assert before == after, (before, after)
+timing.total_memory_gb = lambda: None  # (the memory cannot be read: still nothing measured, the free memory not read)
+timing.available_memory_gb = lambda: (_ for _ in ()).throw(AssertionError("free memory read"))
+assert [knn_mode(None, n, g, None, 20, n * 100) for n, g in cases]
+timing.available_memory_gb, timing.total_memory_gb = free, total
 # while the estimate shown does follow those runs
 est = timing.estimate(3_000_000, 5000, None, "auto", "exact", 20, 3e8)
 assert est["basis"] != "from the reference workstation's rates"

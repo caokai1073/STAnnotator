@@ -331,7 +331,7 @@ def estimate(n, n_genes, tree, resolution="auto", knn="exact", n_types=None, nnz
     nb = sum(r(key) * m * m / 1e9 + r("knn_rerank") * m / 1e6 for m in sizes) if knn != "approx" else \
         sum(r("knn_approx") * m / 1e6 for m in sizes) + (0 if "approx_compile" in _warm and not reference else r("approx_compile"))
     pool = min(n, model.CAP * T)
-    avail, reserve = (total_memory_gb() if reference else available_memory_gb()), memory_gb(n, nnz or 0)
+    avail, reserve = ((total_memory_gb() or 0.0) if reference else available_memory_gb()), memory_gb(n, nnz or 0)
     steps = [["reading the cells", r("prepare") * n / 1e6],
              ["PCA", sum(r("pca") * m * n_genes / 1e9 for m in sizes)],
              ["neighbor graph", nb + sum(r("graph") * m / 1e6 for m in sizes)],

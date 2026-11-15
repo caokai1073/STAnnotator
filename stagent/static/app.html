@@ -4258,7 +4258,7 @@ $("refPath").onchange = () => inspectRef();
 $("refPick").onclick = async () => { const p = await pickFiles("h5ad"); if (p.length) { $("refPath").value = p[0]; inspectRef(); } };
 
 // ---------------- Refine with the agent: review, edits of the marker list, annotation again, round by round ----------------
-const RF = { sid: null, state: null, timer: null, from: null, seen: "", preparing: null, stopWhenReady: false };
+const RF = { sid: null, state: null, timer: null, from: null, seen: "", preparing: null };
 const rfAgentOk = () => !!(st.desktop || st.chatAvailable);
 function rfSync() {  // the Refine button and switch: a marker annotation open, an agent to ask
   const marker = !!st.sid && !st.placeholder && !!st.vocab && st.vocab.method === "markers";
@@ -4294,12 +4294,11 @@ async function rfOpen(from) {
     $("rfMsgs").textContent = ""; $("rfEdits").textContent = ""; $("rfEditsHint").textContent = "";
     $("rfAccept").hidden = $("rfAsk").hidden = true;
     if (!$("rfDlg").open) $("rfDlg").showModal();
-    RF.preparing = sid; RF.stopWhenReady = false;
+    const prep = { sid, stop: false }; RF.preparing = prep;  // (one per preparation: an overlapping one has its own)
     try { await post(`/api/s/${sid}/refine/start`, { from: from || null }); }
     catch (e) { $("rfReport").textContent = ""; $("rfErr").textContent = `Could not start the round: ${e.message}`; throw e; }
-    finally { RF.preparing = null; }
-    if (RF.stopWhenReady) {  // Stop refining while the round was being prepared: the round is made, then stopped
-      RF.stopWhenReady = false;
+    finally { if (RF.preparing === prep) RF.preparing = null; }
+    if (prep.stop) {  // Stop refining while the round was being prepared: the round is made, then stopped
       await post(`/api/s/${sid}/refine/decide`, { decision: "stopped" }).catch(() => {});
       return;
     }
@@ -4435,7 +4434,7 @@ $("rfDismiss").onclick = async () => {
   try { await post(`/api/s/${RF.sid}/refine/decide`, { decision: "dismissed" }); rfPoll(); } catch (e) { $("rfErr").textContent = e.message; }
 };
 $("rfStop").onclick = async () => {
-  if (!RF.sid && RF.preparing) RF.stopWhenReady = true;  // (rfOpen stops the round once it is made)
+  if (!RF.sid && RF.preparing) RF.preparing.stop = true;  // (rfOpen stops the round once it is made)
   else try { await post(`/api/s/${RF.sid}/refine/decide`, { decision: "stopped" }); } catch (e) { /* (no round yet) */ }
   RF.from = null; clearInterval(RF.timer); $("rfDlg").close(); toast("Refining stopped: the annotation stays as it is", 4000);
 };

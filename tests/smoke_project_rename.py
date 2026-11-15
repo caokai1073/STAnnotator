@@ -31,6 +31,11 @@ assert r["pa"]["samples"] == ["a1", "a2"]
 # by name: "pa" is now the name of the new project, so it wins over the id pa
 r = {p["project_id"]: p for p in projects.assign({"b1": "pa"})}
 assert "b1" in r[newp[0]]["samples"] and "b1" not in r["pa"]["samples"]
+# a new project whose id would be the name of an existing project: that name still means the existing project
+r = {p["project_id"]: p for p in projects.rename_projects({newp[0]: "Lung_2"})}
+r = {p["project_id"]: p for p in projects.assign({"c1": "Lung 2", "c2": "Lung_2"}, new=["Lung 2"])}
+made2 = [pid for pid, p in r.items() if p["name"] == "Lung 2"][0]
+assert r[made2]["samples"] == ["c1"] and "c2" in r[newp[0]]["samples"], r
 try:  # a new project under the name of an existing one: refused
     projects.assign({"b1": "Project B"}, new=["Project B"]); raise SystemExit("accepted a second Project B")
 except ValueError:
@@ -39,9 +44,12 @@ except ValueError:
 from starlette.testclient import TestClient
 from stagent import webapp
 c = TestClient(webapp.build_app(8799), base_url="http://127.0.0.1:8799")
-for url, body in (("/api/projects/rename", {"names": ["x"]}), ("/api/projects/rename", ["x"]),
-                  ("/api/projects/assign", {"groups": ["c1"]}), ("/api/projects/assign", {"groups": {}, "new": "x"})):
+for url, body in (("/api/projects/rename", {"names": ["x"]}), ("/api/projects/rename", ["x"]), ("/api/projects/rename", None),
+                  ("/api/projects/assign", {"groups": ["c1"]}), ("/api/projects/assign", {"groups": {}, "new": "x"}),
+                  ("/api/projects/assign", None), ("/api/projects/assign", []), ("/api/projects/assign", {}),
+                  ("/api/projects/assign", {"groups": {"c1": ["a"]}}), ("/api/projects/assign", {"groups": {}, "new": [1]})):
     assert c.post(url, json=body).status_code == 400, (url, body)
+assert c.post("/api/projects/assign", content=b"not json").status_code == 400
 assert c.post("/api/sample/c1/remove", json={"check": True}).json() == {"ok": True}
 assert (config.SAMPLES / "c1" / "meta.json").exists()  # (a check removes nothing)
 print("ok")
