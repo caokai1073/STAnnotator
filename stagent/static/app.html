@@ -4296,7 +4296,7 @@ $("refPath").onchange = () => inspectRef();
 $("refPick").onclick = async () => { const p = await pickFiles("h5ad"); if (p.length) { $("refPath").value = p[0]; inspectRef(); } };
 
 // ---------------- Refine with the agent: review, edits of the marker list, annotation again, round by round ----------------
-const RF = { sid: null, state: null, timer: null, from: null, seen: "", preparing: null, folded: null, ticks: null };
+const RF = { sid: null, state: null, timer: null, from: null, seen: "", preparing: null, folded: null, ticks: null, figs: null };
 const rfAgentOk = () => !!(st.desktop || st.chatAvailable);
 function rfSync() {  // the Refine button and switch: a marker annotation open, an agent to ask
   const marker = !!st.sid && !st.placeholder && !!st.vocab && st.vocab.method === "markers";
@@ -4406,7 +4406,7 @@ function rfRender() {
   rd.messages.forEach((m) => { const d = document.createElement("div"); d.className = `m ${m.from}`; d.textContent = m.text; box.append(d); });
   box.scrollTop = box.scrollHeight;
   // the edits
-  const P = rd.proposal, eb = $("rfEdits"); eb.textContent = "";
+  const P = rd.proposal, eb = $("rfEdits"), keepTop = eb.scrollTop; eb.textContent = "";
   if (P && (P.findings || []).length) {
     // the agent's findings against the priors, apart from the edits: the user says real biology or mislabel
     const verdicts = r.prior_verdicts || {};
@@ -4423,14 +4423,19 @@ function rfRender() {
       const btns = document.createElement("div"); btns.className = "rfverdict";
       [["biology", "Real biology", "Leave it: the agent will not raise it again"], ["mislabel", "Mislabel", "The marker list should change: the agent proposes an edit for it"]].forEach(([k, label, tip]) => {
         const b = Object.assign(document.createElement("button"), { type: "button", textContent: label, title: tip + " (click again to clear)" });
-        b.classList.toggle("on", v === k);
-        b.onclick = async () => {
-          try { const out = await post(`/api/s/${RF.sid}/refine/finding`, { key: f.key, verdict: v === k ? null : k }); RF.state.prior_verdicts = out.prior_verdicts; RF.seen = ""; rfRender(); }
-          catch (e) { $("rfErr").textContent = e.message; }
+        b.classList.toggle("on", v === k); b.dataset.verdict = k;
+        b.onclick = async () => {  // the two buttons change in place: nothing else is drawn again (no flash)
+          const cur = ((RF.state.prior_verdicts || {})[f.key] || {}).verdict, want = cur === k ? null : k;
+          try { const out = await post(`/api/s/${RF.sid}/refine/finding`, { key: f.key, verdict: want }); RF.state.prior_verdicts = out.prior_verdicts; }
+          catch (e) { $("rfErr").textContent = e.message; return; }
+          btns.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x.dataset.verdict === want));
         };
         btns.append(b);
       });
-      const img = row.querySelector("img.rffig");
+      let img = row.querySelector("img.rffig");
+      const had = RF.figs && RF.figs.get(img.src);  // the map already loaded: the same image, not loaded again
+      if (had) { img.replaceWith(had); img = had; }
+      RF.figs = RF.figs || new Map(); RF.figs.set(img.src, img);
       img.onerror = () => img.remove();  // (a finding that names no cell type has no map)
       img.onclick = () => {  // large, in a window of its own
         $("figBig").src = img.src.replace("finding_fig?", "finding_fig?size=large&");
@@ -4495,6 +4500,7 @@ function rfRender() {
   }
   const prev = r.rounds.find((x) => x.n === rd.n - 1);  // what the round before changed, said at the top of this one
   const applied = prev && prev.decision === "accepted" ? `Round ${prev.n}: ${prev.accepted.length} edit${prev.accepted.length === 1 ? "" : "s"} applied (${prev.accepted.join(", ")}). ` : "";
+  eb.scrollTop = keepTop;  // (a redraw keeps the place the user scrolled to)
   $("rfEditsHint").textContent = !P ? applied + (r.awaiting || rd.messages.some((m) => m.from === "user") ? "The agent is reviewing this round…" : "This round has not been sent to the agent yet: click Agent review.")
     : !P.edits.length ? "The agent proposes no edit (see its message)." : rd.decision === "accepted" ? `Accepted: ${rd.accepted.join(", ")}` :
     rd.decision === "dismissed" ? "Dismissed: write to the agent and ask again" : (P.check || []).length ? `The edited list: ${P.check.slice(0, 3).join("; ")}` : "Untick what you do not want, then Accept.";
