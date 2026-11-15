@@ -1305,7 +1305,9 @@ def refine_report(session_id: Optional[str] = None) -> str:
     """The current round of refining the annotation with the user (the app's Refine window): the round's computed
     report (organ, cells and confidence per type, types with weak marker evidence, markers flagged weak or not
     specific, types not found, the cells the marker step could not type and what their marker genes made them, the
-    changes since the round before), the marker list of the round, and the conversation with the user. The user's
+    changes since the round before, where each type lies (where_types_lie: among which lineage its cells lie) and the
+    user's rules it goes against (rule_conflicts)), the marker list of the round, the conversation with the user and
+    the user's verdicts on earlier findings against the priors. The user's
     own words come first: follow them before your own view and the priors. session_id: the annotation named in the
     request (each round after Accept is a new annotation); it becomes the active session."""
     from . import iterate
@@ -1315,13 +1317,15 @@ def refine_report(session_id: Optional[str] = None) -> str:
     rep["marker_flags"] = rep["marker_flags"][:60]
     return _j({"session_id": s.id, "round": rd["n"], "decided": rd.get("decision"), "organ_confirmed": st.get("organ"), "report": rep, "marker_list": rd["marker_text"],
                "conversation": rd["messages"], "your_last_proposal": rd.get("proposal"),
+               "user_verdicts_on_prior_findings": list((st.get("prior_verdicts") or {}).values()),
                "earlier_rounds": [{"n": x["n"], "decision": x["decision"], "accepted": x["accepted"],
                                    "edits": (x.get("proposal") or {}).get("edits")} for x in st["rounds"][:-1]]})
 
 
 @mcp.tool()
 def propose_refinement(summary: str, edits: list[dict], questions: Optional[list[str]] = None,
-                       organ: Optional[str] = None, session_id: Optional[str] = None) -> str:
+                       organ: Optional[str] = None, session_id: Optional[str] = None,
+                       prior_findings: Optional[list[dict]] = None) -> str:
     """Your proposal for the current Refine round, shown to the user edit by edit (they accept some and the app
     annotates again with them). summary: what you found and what you propose, in a few lines, in the user's
     language. edits: edits of the marker list, each {"kind", "type", ..., "reason", "evidence"}; kinds: add_marker /
@@ -1332,14 +1336,21 @@ def propose_refinement(summary: str, edits: list[dict], questions: Optional[list
     (e.g. "B cells hidden under Ionocytes and cDC1"): the window shows the edits problem by problem, with a tick box
     for each problem (edits without one go under their lineage). Keep the edits of one problem together. questions: what only
     the user can decide (the organ, whether a type should be there). organ: the organ you judged it to be, when the
-    user has not confirmed one. session_id: the annotation named in the request. Returns the edits as checked
+    user has not confirmed one. session_id: the annotation named in the request. prior_findings: where the
+    annotation goes against the tissue's priors or the user's rules (compare the report's where_types_lie and
+    rule_conflicts with tissue_priors), each {"cells": the type or cells, "where": where they lie (e.g. "71% among
+    epithelial cells"), "rule": the prior or rule (its id and words), "judgement": "likely mislabel" | "may be real
+    biology" | "unsure", "evidence"}; the window lists them apart from the edits and the user marks each real biology or
+    mislabel. The user's data are often diseased: a finding can be real (e.g. epithelium in the submucosa where a tumor
+    invades); say so rather than fix it. Do not raise again a finding the user marked real biology
+    (user_verdicts_on_prior_findings in refine_report); one marked mislabel needs an edit. Returns the edits as checked
     (problems the edited list would have)."""
     from . import iterate
     s = _refine_session(session_id)
     if iterate.current(s)[1].get("decision") in ("accepted", "stopped"):
         raise ValueError(f"round {iterate.current(s)[1]['n']} of {s.id} is already decided; the request names the "
                          "annotation of the round waiting: pass its session_id")
-    rec = iterate.propose(s, summary, edits, organ, questions)
+    rec = iterate.propose(s, summary, edits, organ, questions, prior_findings)
     return _j({"edits": rec["edits"], "problems_of_the_edited_list": rec["check"],
                "next": "the user decides in the Refine window; their reply or the next round comes as a new request"})
 

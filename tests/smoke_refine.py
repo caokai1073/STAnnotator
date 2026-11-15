@@ -69,13 +69,40 @@ try:
         {"kind": "add_marker", "type": first["name"], "marker": gene + "+", "problem": "One problem"}])["edits"]
     assert [e["group"] for e in eds] == [first["name"], first["name"], "Top Y", "One problem", "One problem"], eds
     assert [e["id"] for e in eds] == ["E1", "E2", "E3", "E4", "E5"]
+    # where the types lie (computed), the user's rules gone against (none here)
+    lie = rep["where_types_lie"]
+    assert lie and all(set(x) >= {"type", "lineage", "n_cells", "among", "mostly_among"} for x in lie), lie[:2]
+    assert all(x["mostly_among"] is None or x["among"][x["mostly_among"]] > 0.5 for x in lie)
+    assert rep["rule_conflicts"] == []
+    # findings against the priors; the user's verdicts carry over to later rounds; a bad finding is refused
+    p = iterate.propose(s, "findings", [], findings=[
+        {"cells": "Neurons", "where": "71% among epithelial cells", "rule": "COLON-03 neurons in the plexus",
+         "judgement": "Likely mislabel", "evidence": "Nos1 in 23%"},
+        {"cells": "Epithelial", "where": "in the submucosa", "rule": "COLON-01", "judgement": "whatever"}])
+    assert [f["judgement"] for f in p["findings"]] == ["likely mislabel", "unsure"]
+    k0 = p["findings"][0]["key"]
+    assert iterate.finding_key({"cells": " neurons", "rule": "COLON-03  neurons in the PLEXUS"}) == k0
+    iterate.set_verdict(s, k0, "biology")
+    assert iterate.load(s)["prior_verdicts"][k0]["verdict"] == "biology"
+    for bad in ((k0, "maybe"), ("no such", "biology")):
+        try:
+            iterate.set_verdict(s, *bad); raise AssertionError(f"accepted {bad}")
+        except ValueError:
+            pass
+    try:
+        iterate.propose(s, "bad", [], findings=[{"where": "x"}]); raise AssertionError("a finding without cells")
+    except ValueError:
+        pass
+    iterate.set_verdict(s, k0, None)
+    assert k0 not in iterate.load(s)["prior_verdicts"]
+    iterate.set_verdict(s, k0, "mislabel")
     iterate.propose(s, "test", [
         {"kind": "remove_marker", "type": kid, "marker": gene + "+", "reason": "r", "evidence": "e"},
         {"kind": "rename_type", "type": kid, "new_name": kid + " (renamed)", "reason": "r", "evidence": "e"},
         {"kind": "add_type", "type": "Test type", "parent": first["name"], "markers": "Epcam+", "reason": "r", "evidence": "e"}],
         questions=["Healthy or inflamed?"])
     rd = iterate.add_message(s, "user", "Keep the name")
-    assert [m["from"] for m in rd["messages"]] == ["agent", "agent", "user"], [m["from"] for m in rd["messages"]]  # (the groups check proposed too)
+    assert [m["from"] for m in rd["messages"]] == ["agent", "agent", "agent", "user"], [m["from"] for m in rd["messages"]]  # (the groups and findings checks proposed too)
     try:
         iterate.propose(s, "bad", [{"kind": "explode_type", "type": kid}])
         raise AssertionError("an unknown edit was accepted")
@@ -101,6 +128,18 @@ try:
     mcp_server._active["session"] = s  # the agent still on the annotation of round 1 (decided)
     r = json.loads(mcp_server.refine_report(session_id=s2.id))
     assert r["session_id"] == s2.id and r["round"] == 2 and not r["decided"], r["session_id"]
+    # the verdict of round 1 is in round 2's report for the agent
+    assert [v["verdict"] for v in r["user_verdicts_on_prior_findings"]] == ["mislabel"], r["user_verdicts_on_prior_findings"]
+    from starlette.testclient import TestClient
+    from stagent import webapp
+    c = TestClient(webapp.build_app(8799), base_url="http://127.0.0.1:8799")
+    for body in (None, [], {"key": 3}, {"key": "x", "verdict": "maybe"}):
+        assert c.post(f"/api/s/{s2.id}/refine/finding", json=body).status_code == 400, body
+    assert c.post(f"/api/s/{s2.id}/refine/finding", json={"key": "nope", "verdict": "biology"}).status_code == 400
+    k = r["user_verdicts_on_prior_findings"] and iterate.load(s2)["prior_verdicts"]
+    k0 = next(iter(k))
+    out = c.post(f"/api/s/{s2.id}/refine/finding", json={"key": k0, "verdict": "biology"}).json()
+    assert out.get("prior_verdicts", {}).get(k0, {}).get("verdict") == "biology", out
     mcp_server._active["session"] = s
     real = claudelink.viewer_state
     claudelink.viewer_state = lambda: {"session": s2.id}

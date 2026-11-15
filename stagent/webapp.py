@@ -736,7 +736,9 @@ REFINE_REQUEST = ("I am refining the annotation {sid} with you in the Refine win
                   "whole annotation, not only the cells the marker step could not type: gather sample_context, "
                   "tissue_priors(organ), type_confusion, type_structure, review_markers and spatial_profile, and look at "
                   "the H&E (show_area, show_he) where an area needs it. Judge whether the cell types, their numbers and "
-                  "where they lie fit the organ and its priors (name the rule), and which types have weak or unspecific "
+                  "where they lie fit the organ and its priors (name the rule): compare the report's where_types_lie and "
+                  "rule_conflicts with the priors and list what goes against them in prior_findings (my data are often "
+                  "diseased: a finding may be real biology; do not raise again those I marked real biology), and which types have weak or unspecific "
                   "markers, are missing, too many or should be merged or split. Then call propose_refinement once: edits "
                   "of the marker list, each with its reason, evidence and problem (a short title of the problem it fixes, the "
                   "same for all the edits of one problem; only genes of the panel; check the edited list "
@@ -851,6 +853,22 @@ async def api_refine_decide(req: Request):
             return _json(out | {"knn": s.knn_mode(), "spillover": bool(s.scheme.get("spillover")),
                                 "joint": bool((s.scheme or {}).get("joint"))})
         return _json({"round": iterate.decide(s, b.get("decision"))})
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+
+
+async def api_refine_finding(req: Request):
+    """{key, verdict: biology | mislabel | null}: the user's verdict on a finding of the agent against the priors."""
+    from . import iterate
+    s = review_app._session(req.path_params["sid"])
+    try:
+        b = await req.json()
+    except ValueError:
+        b = None
+    if not isinstance(b, dict) or not isinstance(b.get("key"), str) or b.get("verdict") not in (*iterate.VERDICTS, None):
+        return _json({"error": "send {key, verdict: biology, mislabel or null}"}, 400)
+    try:
+        return _json({"prior_verdicts": iterate.set_verdict(s, b["key"], b.get("verdict"))})
     except ValueError as e:
         return _json({"error": str(e)}, 400)
 
@@ -4102,6 +4120,7 @@ def build_app(port):
         Route("/api/s/{sid}/refine/ask", api_refine_ask, methods=["POST"]),
         Route("/api/s/{sid}/refine/message", api_refine_message, methods=["POST"]),
         Route("/api/s/{sid}/refine/decide", api_refine_decide, methods=["POST"]),
+        Route("/api/s/{sid}/refine/finding", api_refine_finding, methods=["POST"]),
         Route("/api/s/{sid}/report", api_report),
         Route("/api/s/{sid}/report.md", api_report_md),
         Route("/api/s/{sid}/report/save", api_report_save, methods=["POST"]),

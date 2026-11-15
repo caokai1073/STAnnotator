@@ -100,7 +100,76 @@ def report(s, version=None):
                     "cluster of the marker step went to, each typed by its marker genes (the found type whose cells most "
                     "often show the same marker genes detected and not detected, with its share of cells; no "
                     "marker gene detected: Unassigned)")}
+    out["where_types_lie"] = where_types_lie(s, lab, lineage)
+    out["rule_conflicts"] = rule_conflicts(s, version)
     return out
+
+
+LIE_K = 15  # the nearest cells of another type looked at around each cell
+
+
+def where_types_lie(s, lab, lineage, k=LIE_K):
+    """Per cell type: among which lineage its cells lie. For each cell, its k nearest cells of another type (cells of
+    no type left out); the lineage of more than half of them, else "mixed". Per type the share of its cells in each,
+    the lineage most of its cells lie among ("mostly_among", when that is over half of them and not its own) and the
+    rest. Computed only, the priors not applied: the agent compares it with them (a mislabeled block, e.g. epithelial
+    cells called neurons, lies among the epithelium; interstitial cells among smooth muscle are expected)."""
+    from scipy.spatial import cKDTree
+    xy = s.cells[["x", "y"]].to_numpy()
+    n = len(lab)
+    lab = np.asarray(lab, dtype=object)
+    names, code = np.unique(lab.astype(str), return_inverse=True)
+    lin_of = np.array([lineage.get(t, t) for t in names], dtype=object)
+    lnames, lcode = np.unique(lin_of.astype(str), return_inverse=True)
+    none = np.isin(names, markers.NO_TYPE)
+    tree, kk = cKDTree(xy), min(3 * k + 1, n)
+    maj = np.full(n, -1, np.int32)  # lineage index, -1 mixed, -2 too few cells of another type around
+    for a in range(0, n, 200000):  # (in blocks: 46 neighbors of a million cells would take 700 MB)
+        nb = tree.query(xy[a:a + 200000], k=kk, workers=-1)[1][:, 1:].astype(np.int32)
+        own = code[a:a + 200000]
+        other = (code[nb] != own[:, None]) & ~none[code[nb]]
+        first = np.cumsum(other, 1) <= k
+        use = other & first
+        cnt = np.zeros((len(nb), len(lnames)), np.int32)
+        np.add.at(cnt, (np.repeat(np.arange(len(nb)), use.sum(1)), lcode[code[nb[use]]]), 1)
+        tot = use.sum(1)
+        best = cnt.argmax(1)
+        m = np.where(cnt.max(1) * 2 > tot, best, -1)
+        maj[a:a + 200000] = np.where(tot >= max(3, k // 3), m, -2)
+    rows = []
+    for i, t in enumerate(names):
+        idx = np.where(code == i)[0]
+        if none[i] or len(idx) < 20:
+            continue
+        v = maj[idx]
+        sh = {str(lnames[j]): round(float((v == j).mean()), 3) for j in np.unique(v[v >= 0])}
+        own_l = str(lin_of[i])
+        among = dict(sorted(((l, x) for l, x in sh.items() if l != own_l), key=lambda kv: -kv[1])[:3])
+        top = next(iter(among.items()), (None, 0.0))
+        rows.append({"type": str(t), "lineage": own_l, "n_cells": int(len(idx)), "among": among,
+                     "among_own_lineage": sh.get(own_l, 0.0), "mixed": round(float((v == -1).mean()), 3),
+                     "mostly_among": top[0] if top[1] > 0.5 else None})
+    return sorted(rows, key=lambda x: -x["n_cells"])
+
+
+def rule_conflicts(s, version=None):
+    """The user's rules (priors drawn on regions) the annotation goes against: per rule, the cells of the types it
+    names that lie where it does not allow them (confident cells), by how they lie (in a cluster, at the region's
+    boundary, isolated) and whether the rule changed their label."""
+    from . import constraints as cmod
+    r = s.result(version)
+    cf = r.get("conflicts")
+    rules = {c["id"]: c for c in r["state"].get("constraints", [])}
+    if cf is None or cf.empty:
+        return []
+    out = []
+    for cid, g in cf.groupby("constraint"):
+        c = rules.get(cid)
+        out.append({"rule": cid, "text": cmod.describe(c) if c else str(cid), "n_cells": int(len(g)),
+                    "by_how": {k: int(v) for k, v in g.category.value_counts().items()},
+                    "label_changed": int((g.status == "overridden").sum()),
+                    "types": {k: int(v) for k, v in g.base_label.value_counts().head(4).items()}})
+    return sorted(out, key=lambda x: -x["n_cells"])
 
 
 def changes(before, after):
@@ -323,9 +392,55 @@ def _group(edits, text):
     return edits
 
 
-def propose(s, summary, edits, organ=None, questions=None):
-    """The agent's proposal for the current round: a summary, the edits (each with an id, a reason and the evidence)
-    and questions for the user; the edits are checked by applying them all to the list."""
+JUDGEMENTS = ("likely mislabel", "may be real biology", "unsure")
+VERDICTS = ("biology", "mislabel")
+
+
+def finding_key(f):
+    """The same finding in another round: the cells and the rule, case and spacing ignored."""
+    return " ".join(f"{f.get('cells', '')}|{f.get('rule', '')}".lower().split())
+
+
+def _findings(found):
+    """The agent's findings against the priors, cleaned: {key, cells, where, rule, judgement, evidence}."""
+    out = []
+    for i, f in enumerate(found or []):
+        if not isinstance(f, dict) or not str(f.get("cells") or "").strip():
+            raise ValueError(f"prior finding {i + 1}: give at least the cells it is about (cells)")
+        g = {k: " ".join(str(f.get(k) or "").split())[:600] for k in ("cells", "where", "rule", "evidence")}
+        j = str(f.get("judgement") or "unsure").strip().lower()
+        g["judgement"] = j if j in JUDGEMENTS else "unsure"
+        g["key"] = finding_key(g)
+        out.append(g)
+    return out
+
+
+def set_verdict(s, key, verdict):
+    """The user's verdict on a finding against the priors: "biology" (real: leave it), "mislabel" (fix the list) or
+    None (cleared). Kept for all later rounds; the agent reads them (refine_report) and does not raise a finding the
+    user called real biology again."""
+    st, rd = current(s)
+    v = st.setdefault("prior_verdicts", {})
+    # (a finding of an earlier proposal, or one the user has given a verdict before: its proposal may be replaced)
+    found = {k: x for k, x in v.items()} | {f["key"]: f for r in st["rounds"] for f in ((r.get("proposal") or {}).get("findings") or [])}
+    if key not in found:
+        raise ValueError("no such finding in this refinement")
+    if verdict is None:
+        v.pop(key, None)
+    elif verdict in VERDICTS:
+        f = found[key]
+        v[key] = {"verdict": verdict, "cells": f["cells"], "where": f["where"], "rule": f["rule"], "round": rd["n"],
+                  "time": time.strftime("%Y-%m-%dT%H:%M:%S")}
+    else:
+        raise ValueError(f"verdict: {' or '.join(VERDICTS)}")
+    save(s, st)
+    return v
+
+
+def propose(s, summary, edits, organ=None, questions=None, findings=None):
+    """The agent's proposal for the current round: a summary, the edits (each with an id, a reason and the evidence),
+    questions for the user and findings against the priors (each the cells, where they lie, the rule, the agent's
+    judgement and the evidence); the edits are checked by applying them all to the list."""
     st, rd = current(s)
     if rd.get("decision") in ("accepted", "stopped"):
         raise ValueError(f"round {rd['n']} is already {rd['decision']}")
@@ -337,7 +452,9 @@ def propose(s, summary, edits, organ=None, questions=None):
         clean.append({"id": f"E{i + 1}", **{k: e[k] for k in e if k != "id"}})
     _group(clean, rd["marker_text"] or "")
     text, problems = apply_edits(rd["marker_text"] or "", clean, s.panel) if clean else (rd["marker_text"], [])
+    found = _findings(findings)
     rd["proposal"] = {"summary": str(summary or "")[:6000], "edits": clean, "questions": list(questions or [])[:10],
+                      "findings": found,
                       "organ": organ, "check": problems, "time": time.strftime("%Y-%m-%dT%H:%M:%S"),
                       "t": time.time()}
     if organ and not st.get("organ"):

@@ -420,9 +420,9 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .rfedits label { display: grid; grid-template-columns: auto 1fr; gap: 6px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; }
 .rfedits .why { color: var(--muted); }
 .rfedits .rfgroup { display: flex; flex-direction: column; gap: 4px; padding: 6px; border: 1px solid var(--line); border-radius: 10px; }
-.rfedits .rfgroup > label { margin-left: 18px; }
-.rfedits label.rfghead { display: flex; align-items: center; gap: 6px; border: none; padding: 2px 2px 0; margin: 0; }
-.rfedits label.rfghead .hint { margin-left: auto; }
+.rfedits .rfgroup > label:not(.rfghead) { margin-left: 18px; }
+.rfedits .rfghead { display: flex; align-items: center; gap: 6px; border: none; padding: 2px 2px 0; margin: 0; }
+.rfedits .rfghead .hint { margin-left: auto; }
 .rfedits .rfgroup > label { padding: 3px 8px; }
 .rfedits .rfgroup.folded > label:not(.rfghead) { display: none; }
 .rfedits .rffold { border: none; background: none; color: var(--muted); padding: 0 4px; font-size: 12px; cursor: pointer; min-width: 0; }
@@ -433,6 +433,12 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .rfedits details.why:not([open]) > summary { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rfedits details.why > div { margin: 2px 0 2px 12px; }
 .rfedits .rfgroup > label > div { min-width: 0; }
+.rfedits .rffind { border-color: var(--warn, #c77700); }
+.rfedits .rffinding { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: start; padding: 3px 8px; border-top: 1px solid var(--line); }
+.rfedits .rffinding > div:first-child { min-width: 0; }
+.rfedits .rfverdict { display: flex; gap: 4px; }
+.rfedits .rfverdict button { font-size: 11.5px; padding: 2px 8px; }
+.rfedits .rfverdict button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .rfedits input[type=checkbox]:indeterminate { background: var(--accent); border-color: var(--accent); }
 .rfedits input[type=checkbox]:indeterminate::after { content: ""; width: 8px; height: 0; border-top: 2px solid #fff; margin-top: 7px; }
 /* the edits' tick boxes drawn by the page, the same whether ticked by the app or by a click (the system draws them
@@ -4368,6 +4374,10 @@ function rfRender() {
   if (nf.length) lines.push("Not found: " + nf.map((x) => `<span title="${rfEsc(x.reason)}">${rfEsc(x.type)}</span>`).join(", "));
   if (un.n_cells) lines.push(`The marker step could not type ${un.n_cells.toLocaleString()} cells (${(100 * un.share).toFixed(1)}%, median ${un.median_transcripts} transcripts vs ${un.median_transcripts_others}); by their marker genes: ` +
     Object.entries(un.typed_by_marker_genes_as || {}).slice(0, 6).map(([k, v]) => `${rfEsc(k)} ${v.toLocaleString()}`).join(", "));
+  const lie = (rep.where_types_lie || []).filter((x) => x.mostly_among);
+  if (lie.length) lines.push("Mostly among another lineage: " + lie.map((x) => `<span title="${rfEsc(Object.entries(x.among).map(([k, v]) => `${k} ${Math.round(100 * v)}%`).join(", "))} of its cells lie among these">${rfEsc(x.type)} among ${rfEsc(x.mostly_among)} (${Math.round(100 * x.among[x.mostly_among])}%)</span>`).join(", "));
+  (rep.rule_conflicts || []).slice(0, 3).forEach((c) => lines.push(`Against your rule ${rfEsc(c.text)}: ${c.n_cells.toLocaleString()} cells (` +
+    Object.entries(c.by_how).map(([k, v]) => `${v.toLocaleString()} ${k === "clustered" ? "in clusters" : k === "boundary" ? "at the boundary" : k}`).join(", ") + ")"));
   if ((rep.marker_flags || []).length) lines.push(`${rep.marker_flags.length} markers flagged (weak or not specific), e.g. ` + rep.marker_flags.slice(0, 5).map((f) => `${rfEsc(f.node)}: ${rfEsc(f.marker)}`).join(", "));
   $("rfReport").innerHTML = lines.map((l) => `<div>${l}</div>`).join("");
   // the conversation
@@ -4376,6 +4386,30 @@ function rfRender() {
   box.scrollTop = box.scrollHeight;
   // the edits
   const P = rd.proposal, eb = $("rfEdits"); eb.textContent = "";
+  if (P && (P.findings || []).length) {
+    // the agent's findings against the priors, apart from the edits: the user says real biology or mislabel
+    const verdicts = r.prior_verdicts || {};
+    const box = document.createElement("div"); box.className = "rfgroup rffind";
+    box.append(Object.assign(document.createElement("div"), { className: "rfghead", innerHTML: `<b>Against the priors</b><span class="hint">${P.findings.length} found · real biology or a mislabel?</span>` }));
+    P.findings.forEach((f) => {
+      const row = document.createElement("div"); row.className = "rffinding";
+      const v = (verdicts[f.key] || {}).verdict;
+      row.innerHTML = `<div><b>${rfEsc(f.cells)}</b> ${rfEsc(f.where)}` + (f.rule ? ` <span class="hint">· ${rfEsc(f.rule)}</span>` : "") +
+        `<div class="why">agent: ${rfEsc(f.judgement)}</div>` + (f.evidence ? `<details class="why"><summary>evidence</summary><div>${rfEsc(f.evidence)}</div></details>` : "") + `</div>`;
+      const btns = document.createElement("div"); btns.className = "rfverdict";
+      [["biology", "Real biology", "Leave it: the agent will not raise it again"], ["mislabel", "Mislabel", "The marker list should change: the agent proposes an edit for it"]].forEach(([k, label, tip]) => {
+        const b = Object.assign(document.createElement("button"), { type: "button", textContent: label, title: tip + " (click again to clear)" });
+        b.classList.toggle("on", v === k);
+        b.onclick = async () => {
+          try { const out = await post(`/api/s/${RF.sid}/refine/finding`, { key: f.key, verdict: v === k ? null : k }); RF.state.prior_verdicts = out.prior_verdicts; RF.seen = ""; rfRender(); }
+          catch (e) { $("rfErr").textContent = e.message; }
+        };
+        btns.append(b);
+      });
+      row.append(btns); box.append(row);
+    });
+    eb.append(box);
+  }
   if (P && P.edits.length) {
     // the edits under the problem they fix (the agent's "problem", else their lineage), a tick box for each problem;
     // the evidence folded under each edit
@@ -5116,7 +5150,10 @@ const HELP = `
     found, the cells the marker step could not type, the changes since the round before);</li>
   <li>the organ: inferred from the cell types and the sample's name, or asked; the agent reviews the whole
     annotation with that organ's priors and proposes edits of the marker list, each with its reason and evidence,
-    grouped by the problem they fix (one tick box for a whole problem; a group folds away with ▾);</li>
+    grouped by the problem they fix (one tick box for a whole problem; a group folds away with ▾). Apart from the
+    edits it lists what goes against the organ's priors or your rules (the report shows which types lie mostly among
+    another lineage); mark each <b>Real biology</b> (it is not raised again) or <b>Mislabel</b> (the list should
+    change);</li>
   <li>you write to it at any time (your words come first), tick the edits you want and <b>Accept</b>: the app
     annotates again with them (your regions, priors and corrections carry over) and the next round opens;
     <b>Dismiss edits</b> or <b>Stop refining</b> end it.</li></ul></li></ul>
