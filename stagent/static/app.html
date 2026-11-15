@@ -439,7 +439,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .rfedits .rfgroup > .rfq { padding: 0 4px 2px 28px; }
 .rfedits .rffinding { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: start; padding: 3px 8px; border-top: 1px solid var(--line); }
 .rfedits .rffinding > div:first-child { min-width: 0; }
-.rfedits .rfverdict { display: flex; gap: 4px; }
+.rfedits .rfverdict { display: flex; flex-direction: column; gap: 4px; }  /* (one above the other: room for the text) */
 .rfedits img.rffig { display: block; width: 180px; margin-top: 4px; border: 1px solid var(--line); border-radius: 6px; background: #fff; cursor: zoom-in; }
 #figDlg { width: min(1100px, 95vw); }
 #figDlg img { display: block; max-width: 100%; max-height: calc(90vh - 70px); margin: 0 auto; background: #fff; }
