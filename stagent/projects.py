@@ -241,6 +241,33 @@ def reorder_genes(sample_id, like):
         tmp.replace(sub / "genes.txt")
 
 
+def rename_projects(names):
+    """{project_id: new name}: rename projects (the name the app shows; the id, files and annotations stay). Names are
+    checked all together first: none empty, longer than 80 characters or the same as another project's."""
+    projs = {p["project_id"]: p for p in list_projects()}
+    final = {pid: p["name"] for pid, p in projs.items()}
+    for pid, name in (names or {}).items():
+        if pid not in projs:
+            raise ValueError(f"no project {pid!r}")
+        name = str(name or "").strip()
+        if not name:
+            raise ValueError("a project needs a name")
+        if len(name) > 80:
+            raise ValueError("the name is longer than 80 characters")
+        final[pid] = name
+    seen = {}
+    for pid, name in final.items():
+        if name in seen:
+            raise ValueError(f"two projects would be called {name!r}")
+        seen[name] = pid
+    for pid, name in (names or {}).items():
+        p = load(pid)
+        if p["name"] != final[pid]:
+            p["name"] = final[pid]
+            dump_json(p, _file(pid), indent=1)
+    return list_projects()
+
+
 def slice_name(project, value):
     """Sample id of a section of a project: <project>_<section>, letters, digits, dot, dash, underscore only."""
     return f"{project}_{re.sub(r'[^A-Za-z0-9_.-]+', '_', str(value)).strip('_')}"  # never shortened: that made slices with a common prefix clash

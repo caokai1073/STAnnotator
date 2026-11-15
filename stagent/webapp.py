@@ -2748,6 +2748,17 @@ async def api_projects_assign(req: Request):
     return _json({"projects": r, "reordered": reordered})
 
 
+async def api_projects_rename(req: Request):
+    """{names: {project_id: new name}}: rename projects (projects.rename_projects). Returns {projects}."""
+    b = await req.json()
+    try:
+        r = projects.rename_projects((b or {}).get("names") or {})
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+    _cell_tables.clear()  # (project names label the analyses of all slices)
+    return _json({"projects": r})
+
+
 async def api_sample_remove(req: Request):
     """Remove one sample: its folder (cells, counts, image placement, PCA / UMAP), its annotations and their chats are
     moved to trash/<time>_<sample>_removed/ (recoverable by hand); a project keeps its other slices. {keep_project,
@@ -4115,6 +4126,7 @@ def build_app(port):
         Route("/api/session/{sid}/delete", api_session_delete, methods=["POST"]),
         Route("/api/session/{sid}/rename", api_session_rename, methods=["POST"]),
         Route("/api/projects/assign", api_projects_assign, methods=["POST"]),
+        Route("/api/projects/rename", api_projects_rename, methods=["POST"]),
         Route("/api/samples/clear", api_samples_clear, methods=["POST"]),
         Route("/api/sample/{sample}/image", api_sample_image, methods=["POST"]),
         Route("/api/sample/{sample}/registration", api_sample_registration, methods=["POST"]),

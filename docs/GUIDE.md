@@ -242,7 +242,8 @@ constant within the slice (condition, day, mouse, …).
 - The dialog lists which image and registration file each slice gets.
 - Without an image, the cells are drawn on a blank background wherever their coordinates are (negative ones too).
 
-**Organizing.** **Change** beside **Project** (Data tab) puts any samples into any project, moves a slice to another project or takes
+**Organizing.** **Change** beside **Project** (Data tab) renames projects (the id, files and annotations stay), puts
+any samples into any project, moves a slice to another project or takes
 it out ("no project"). The slices of a project need one gene panel; a project left without slices goes away.
 
 **Browsing.** **Project** (Data tab) picks the project, which opens at the slice last open in it; **Slice** below lists

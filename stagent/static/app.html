@@ -459,6 +459,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .alrow { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 5px 4px; border-radius: 6px; font-size: 13px; cursor: pointer; }
 .alrow:hover { background: var(--bg); } .alrow.alall { border-bottom: 1px solid var(--line); border-radius: 0; }
 #alList { max-height: 50vh; overflow-y: auto; overflow-x: hidden; }
+.pjnames { display: flex; flex-direction: column; gap: 4px; } .pjnames input.moved { border-color: var(--accent); }
 .inrow button.rmsample { color: #c0392b; } .inrow button.rmsample:hover:not(:disabled) { border-color: #c0392b; }
 .imreplace { display: flex; gap: 6px; align-items: flex-start; } .imreplace input { margin-top: 2px; }
 .xpchoose { flex-wrap: wrap; gap: 6px 10px; } .xpchoose label { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
@@ -973,6 +974,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <div class="hint">The slices of a project are stepped through together and can be annotated, embedded and analyzed
       together (All slices together); they need one gene panel. Choose the project of each sample; "no project" takes
       it out. A project without slices goes away.</div>
+    <div class="pjnames" id="pjNames"></div>
     <div class="row"><input type="text" id="pjNewName" placeholder="name of a new project" style="flex:1"><button id="pjNew">Add project</button></div>
     <div style="max-height:52vh;overflow:auto"><table class="pjtab" id="pjTab"></table></div>
     <div class="row"><span class="err" id="pjErr"></span><span class="spacer"></span><button id="pjCancel">Cancel</button><button id="pjSave" class="primary">Save</button></div>
@@ -1654,7 +1656,7 @@ function fillSampleSelect(id) {  // the project of sample id (default: the one s
   const p = id && projectOf(id), pid = p ? p.project_id : "";
   ps.textContent = "";
   (st.projects || []).forEach((x) => ps.append(Object.assign(document.createElement("option"),
-    { value: x.project_id, textContent: `${x.name} · ${x.samples.length} slices` })));
+    { value: x.project_id, textContent: `${x.name} · ${x.samples.length} slice${x.samples.length === 1 ? "" : "s"}` })));
   const loose = looseSamples().length;
   if (loose) ps.append(Object.assign(document.createElement("option"),
     { value: "", textContent: `No project · ${loose} sample${loose === 1 ? "" : "s"}` }));
@@ -6599,15 +6601,28 @@ $("anLoadFile").onchange = async () => {
 };
 
 // ---------------- projects: which samples are analyzed together ----------------
-const PJ = { names: [], was: {} };
+// PJ.list: the projects of the dialog, {key, name, pid (null for one added here), orig}; a sample's project is a key
+const PJ = { list: [], was: {}, cur: {} };
+function pjNames() {  // a name field per project: renamed on Save
+  const box = $("pjNames"); box.textContent = "";
+  if (!PJ.list.length) return;
+  const h = document.createElement("div"); h.className = "hint"; h.textContent = "Names of the projects (the id, files and annotations stay):";
+  box.append(h);
+  PJ.list.forEach((e) => {
+    const inp = Object.assign(document.createElement("input"), { type: "text", value: e.name, maxLength: 80 });
+    inp.setAttribute("aria-label", `Name of project ${e.orig || e.name}`);
+    inp.oninput = () => { e.name = inp.value; inp.classList.toggle("moved", !!e.pid && inp.value.trim() !== e.orig); $("pjErr").textContent = ""; pjTable(); };
+    box.append(inp);
+  });
+}
 function pjTable() {
   const tab = $("pjTab"); tab.innerHTML = "<tr><th>Sample</th><th>Cells</th><th>Genes</th><th>Project</th></tr>";
-  const opts = ["", ...PJ.names];
+  const opts = [{ key: "", name: "no project" }, ...PJ.list];
   st.samples.forEach((s) => {
     const tr = document.createElement("tr"); tr.dataset.id = s.sample_id;
     const p = projectOf(s.sample_id), name = p && p.slices[s.sample_id] ? `${p.slices[s.sample_id].section}` : sampleName(s);
     const sel = document.createElement("select");
-    opts.forEach((o) => { const x = document.createElement("option"); x.value = o; x.textContent = o || "no project"; sel.append(x); });
+    opts.forEach((o) => { const x = document.createElement("option"); x.value = o.key; x.textContent = o.key ? (o.name.trim() || "(no name)") : o.name; sel.append(x); });
     sel.value = PJ.cur[s.sample_id] || "";
     sel.onchange = () => { PJ.cur[s.sample_id] = sel.value; tr.classList.toggle("moved", sel.value !== PJ.was[s.sample_id]); $("pjErr").textContent = ""; };
     const td = (t, c) => { const e = document.createElement("td"); e.textContent = t; if (c) e.className = c; return e; };
@@ -6618,24 +6633,43 @@ function pjTable() {
   });
 }
 $("pjBtn").onclick = () => {
-  PJ.names = st.projects.map((p) => p.name); PJ.was = {}; PJ.cur = {};
-  st.samples.forEach((s) => { const p = projectOf(s.sample_id); PJ.was[s.sample_id] = PJ.cur[s.sample_id] = p ? p.name : ""; });
+  PJ.list = st.projects.map((p) => ({ key: `id:${p.project_id}`, name: p.name, pid: p.project_id, orig: p.name }));
+  PJ.was = {}; PJ.cur = {};
+  st.samples.forEach((s) => { const p = projectOf(s.sample_id); PJ.was[s.sample_id] = PJ.cur[s.sample_id] = p ? `id:${p.project_id}` : ""; });
   $("pjErr").textContent = ""; $("pjNewName").value = "";
-  pjTable(); $("pjDlg").showModal();
+  pjNames(); pjTable(); $("pjDlg").showModal();
 };
 $("pjNew").onclick = () => {
   const n = $("pjNewName").value.trim();
   if (!n) { $("pjErr").textContent = "Give the new project a name"; return; }
-  if (PJ.names.includes(n)) { $("pjErr").textContent = `There is a project ${n} already`; return; }
-  PJ.names.push(n); $("pjNewName").value = ""; pjTable();
+  if (PJ.list.some((e) => e.name.trim() === n)) { $("pjErr").textContent = `There is a project ${n} already`; return; }
+  PJ.list.push({ key: `new:${n}`, name: n, pid: null, orig: "" }); $("pjNewName").value = ""; pjNames(); pjTable();
   toast(`Project ${n} added: choose its samples in the list`, 3500);
 };
 $("pjNewName").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("pjNew").click(); } });
 $("pjCancel").onclick = $("pjClose").onclick = () => $("pjDlg").close();
 $("pjSave").onclick = async () => {
-  const groups = {};
-  Object.entries(PJ.cur).forEach(([id, n]) => { if ((n || "") !== PJ.was[id]) groups[id] = n || ""; });
-  if (!Object.keys(groups).length) { $("pjDlg").close(); return; }
+  const names = PJ.list.map((e) => e.name.trim());
+  if (names.some((n) => !n)) { $("pjErr").textContent = "A project needs a name"; return; }
+  const dup = names.find((n, i) => names.indexOf(n) !== i);
+  if (dup) { $("pjErr").textContent = `Two projects are called ${dup}`; return; }
+  const renames = {};  // the projects renamed here (a project added here is made under its name by the assignment)
+  PJ.list.forEach((e) => { if (e.pid && e.name.trim() !== e.orig) renames[e.pid] = e.name.trim(); });
+  const groups = {};  // an existing project by its id, a new one by its name
+  Object.entries(PJ.cur).forEach(([id, k]) => {
+    if ((k || "") === PJ.was[id]) return;
+    const e = PJ.list.find((x) => x.key === k);
+    groups[id] = e ? e.pid || e.name.trim() : "";
+  });
+  if (!Object.keys(groups).length && !Object.keys(renames).length) { $("pjDlg").close(); return; }
+  if (Object.keys(renames).length) {
+    try { await post("/api/projects/rename", { names: renames }); }
+    catch (e) { $("pjErr").textContent = e.message; return; }
+    if (!Object.keys(groups).length) {
+      $("pjDlg").close(); await loadSamples(st.sample && st.sample.sample_id);
+      toast(`${Object.keys(renames).length} project(s) renamed`, 4000); return;
+    }
+  }
   // (a slice with the project's genes in another order is rewritten in that order: up to a minute for a large one)
   const btn = $("pjSave"); btn.disabled = true; $("pjErr").textContent = "";
   const slow = setTimeout(() => { $("pjErr").textContent = "Putting the slices' genes in the project's order…"; }, 1500);
@@ -7993,8 +8027,10 @@ function sampleInfo() {  // the Data tab's card: what the open sample is
   }
   const img = s.image_pending ? "image waiting for its alignment" : !s.image_kind || s.image_kind === "none" ? "no image"
     : s.image_kind;
-  const filt = s.filter ? `filtered (${s.filter.n_cells_removed.toLocaleString()} cells, ${s.filter.n_genes_removed} genes removed)` : "";
-  $("sampleInfo").textContent = [`${s.n_cells.toLocaleString()} ${s.unit === "bins" ? "bins" : "cells"}${s.platform ? ` (${s.platform})` : ""}`, img, filt, s.description].filter(Boolean).join(" · ");
+  // the line: cells, image, filtered; the rest (platform, what the filter removed, description) on hover
+  $("sampleInfo").textContent = [`${s.n_cells.toLocaleString()} ${s.unit === "bins" ? "bins" : "cells"}`, img, s.filter ? "filtered" : ""].filter(Boolean).join(" · ");
+  $("sampleInfo").title = [s.platform, s.filter ? `filtered: ${s.filter.n_cells_removed.toLocaleString()} cells and ${s.filter.n_genes_removed} genes removed` : "",
+                           s.description].filter(Boolean).join("\n");
 }
 // Two tabs, Data and Analysis; Analysis shows its steps (Annotate ... Trajectory) as a second row and reopens the
 // step last used there
