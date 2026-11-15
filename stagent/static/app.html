@@ -4034,6 +4034,8 @@ $("prDefault").onclick = async () => {
 $("prClose").onclick = () => $("prDlg").close();
 $("prDlg").addEventListener("close", () => {
   clearTimeout(PR.poll);
+  if (PR.view && st.sample) st.priorsChecked = `${st.sample.sample_id}|${PR.view.organ || ""}`;  // (seen: Accept in Steps)
+  loadStepsSoon();  // (the priors may have changed, or the organ)
   const o = PR.view && PR.view.organ;  // an organ chosen there is the Refine window's too
   if (o && $("rfDlg").open && o !== rfOrgan()) {
     if ([...$("rfOrgan").options].some((x) => x.value === o)) { $("rfOrgan").value = o; $("rfOrganOther").hidden = true; }
@@ -5027,8 +5029,11 @@ $("importBtn").onclick = openImport;
 const HELP = `
 <h3>Steps</h3><ul>
 <li>The list at the map's top right is the usual flow for the open sample: <b>Import</b> → <b>Check registration</b>
-  → <b>Filter cells and genes</b> → <b>Annotate</b> → (optional) <b>Regions and priors</b>, <b>Review</b>,
+  → <b>Filter cells and genes</b> → <b>Annotate</b> → <b>Priors</b> → (optional) <b>Regions</b>, <b>Review</b>,
   <b>Analyze</b>.</li>
+<li><b>Priors</b> must be checked: <b>Check</b> opens the Prior window with the tissue priors of the sample's organ (what
+  the agent's review checks against; remove what does not hold, add your own), and <b>Accept</b> (after Check) marks
+  the step done. If the priors change later, the step asks for a check again.</li>
 <li>✓ marks what is done (with what came of it); the next step stands out, with a button that goes where it is done.
   Hover a step for what it does and why. A click on <b>Steps</b> folds the list.</li></ul>
 <h3>Import</h3><ul>
@@ -6068,7 +6073,8 @@ const STEPS = {
   registration: ["Check registration", "Are the cells on their nuclei everywhere? The app measures the offsets over the whole tissue (about a minute) and, where the tissue shifted, offers the local registration. (Review → Spatial organization asks the agent for a wider review.)", ["Check", () => checkRegistration()]],
   filter: ["Filter cells and genes", "Leave out cells with few transcripts or genes and genes detected in few cells, before annotating. Seconds to a minute.", ["Filter", () => $("qfBtn").click()]],
   annotate: ["Annotate", "Cell types from a marker list (or a reference, or a CSV of labels): Type tab → Markers… → Annotate. A few minutes.", ["Annotate", () => showTab("annotate")]],
-  regions: ["Regions and priors", "Optional: outline tissue regions on the map (brush, polygon…), then tell the agent what holds there, e.g. “epithelial cells are only in the mucosa”.", ["Draw", () => { $("regpanel").hidden = false; $("regpanel").classList.remove("collapsed"); setTool("brush"); toast("Brush: paint a region on the map (or pick another tool in the Regions panel), then Save", 6000); }]],
+  priors: ["Priors", "The tissue priors of this sample's organ: what the agent's review checks the annotation and regions against. Check opens the Prior window (remove what does not hold for your tissue, add your own); Accept when they fit. Done once accepted; to do again when they change.", null],
+  regions: ["Regions", "Optional: outline tissue regions on the map (brush, polygon…), then tell the agent what holds there, e.g. “epithelial cells are only in the mucosa”.", ["Draw", () => { $("regpanel").hidden = false; $("regpanel").classList.remove("collapsed"); setTool("brush"); toast("Brush: paint a region on the map (or pick another tool in the Regions panel), then Save", 6000); }]],
   review: ["Review", "Optional: the agent checks the annotation (areas and marker genes that look wrong) and gives advice.", ["Review", () => { st.rvScope = "annotation"; openReviewChooser().catch((e) => toast(e.message, 6000)); }]],
   analyze: ["Analyze", "Optional: embedding (PCA, UMAP), niches, DE genes and DESeq2, composition, signaling, trajectories. Click to unfold them.", null],
   // the analyses, under Analyze (their tab opens, as a click on it does)
@@ -6105,7 +6111,28 @@ async function loadSteps() {
     const align = x.key === "registration" && x.state === "blocked" && !$("alignbar").hidden;  // the image waits for its alignment
     const a = x.open ? ["Open", () => { showTab("data"); $("session").focus(); toast("Choose an annotation in the Annotation box", 4000); }]
       : align ? ["Align", () => $("alignNow").click()] : act;
-    if (a && (["todo", "optional", "skipped"].includes(x.state) || align)) {
+    if (x.key === "priors" && x.state !== "not needed") {  // Check (the Prior window), then Accept: only then ✓
+      const key = `${smp}|${x.organ || ""}`, seen = st.priorsChecked === key;
+      const chk = Object.assign(document.createElement("button"), { textContent: "Check", title: "Open the Prior window: the priors of this organ the agent's review uses" });
+      const acc = Object.assign(document.createElement("button"), { textContent: "Accept" });
+      if (x.state === "todo" && x.key === r.next) (seen ? acc : chk).classList.add("primary");  // (as the other steps)
+      acc.disabled = x.state === "done" || !seen || !x.organ;
+      acc.title = x.state === "done" ? "Accepted" : !x.organ ? "Choose the organ in the Prior window first" : seen ? "These priors fit this tissue" : "Check the priors first";
+      chk.onclick = async (e) => {
+        e.stopPropagation();
+        $("prInfo").textContent = sampleName(st.sample);
+        try { await prLoad(x.organ || ""); } catch (err) { toast(err.message, 6000); return; }
+        st.priorsChecked = `${smp}|${PR.view.organ || ""}`;
+        $("prDlg").showModal(); prShow(PR.view);
+      };
+      acc.onclick = async (e) => {
+        e.stopPropagation();
+        try { await post(`/api/sample/${encodeURIComponent(smp)}/priors/accept`, { organ: x.organ }); }
+        catch (err) { toast(err.message, 6000); return; }
+        loadSteps().catch(() => {});
+      };
+      right.append(...(x.state === "done" ? [chk] : [chk, acc]));  // (accepted: Check to look again)
+    } else if (a && (["todo", "optional", "skipped"].includes(x.state) || align)) {
       const b = Object.assign(document.createElement("button"), { textContent: a[0], title: x.open ? "Open one of this sample's annotations (Data → Annotation)" : help });
       if (x.key === r.next) b.classList.add("primary");
       b.onclick = (e) => { e.stopPropagation(); a[1](); };

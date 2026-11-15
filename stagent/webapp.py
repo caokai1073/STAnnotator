@@ -2948,6 +2948,43 @@ PRIOR_RULE_REQUEST = ("I added tissue priors for {organ} in the Prior window, in
                       "rule in one line.")
 
 
+def _priors_print(organ):
+    """A fingerprint of an organ's priors as the user has them (the app's, less those removed, plus those added with
+    their rules): an acceptance holds while it is the same."""
+    from . import hetissue
+    v = hetissue.organ_priors(organ)
+    return hashlib.sha1(json.dumps({k: v[k] for k in ("organ", "priors", "removed", "added")}, sort_keys=True,
+                                   default=str).encode()).hexdigest()[:16]
+
+
+def _priors_accepted(sample):
+    try:
+        return json.load(open(config.SAMPLES / sample / "priors_accepted.json", encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+async def api_sample_priors_accept(req: Request):
+    """{organ}: the user checked the sample's tissue priors (the Prior window) and accepts them: the Priors step is
+    done while they stay as they are."""
+    sample = req.path_params["sample"]
+    try:
+        b = await req.json()
+    except ValueError:
+        b = None
+    organ = str((b or {}).get("organ") or "").strip() if isinstance(b, dict) else ""
+    if not (config.SAMPLES / sample / "meta.json").exists():
+        return _json({"error": f"no sample {sample!r}"}, 404)
+    if not organ:
+        return _json({"error": "choose the organ of the tissue first (the Prior window)"}, 400)
+    try:
+        rec = {"organ": organ, "print": _priors_print(organ), "time": time.strftime("%Y-%m-%dT%H:%M:%S")}
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+    dump_json(rec, config.SAMPLES / sample / "priors_accepted.json")
+    return _json(rec)
+
+
 def api_sample_priors(req):
     q = req.query_params
     try:
@@ -3158,9 +3195,34 @@ def api_sample_steps(req):
     return _json(steps_of(None, sample))
 
 
+def _priors_step(sample, s=None):
+    """The Priors step: the tissue priors of the sample's organ, checked (the Prior window) and accepted by the user;
+    to do again when they changed since."""
+    try:
+        v = _priors_view(sample, s.id if s is not None else None)
+    except ValueError:
+        v = {"organ": None}
+    organ = v.get("organ")
+    if not organ:
+        return {"key": "priors", "state": "todo", "organ": None,
+                "detail": "the organ is not known: choose it in the Prior window, check its priors, then accept"}
+    n = len([p for p in v.get("priors", []) if p["id"] not in set(v.get("removed", []))]) + len(v.get("added", []))
+    what = f"{organ}: {n} prior(s)" + (" (changed by you)" if v.get("edited") else "")
+    acc = _priors_accepted(sample)
+    try:
+        now = _priors_print(organ)
+    except ValueError:
+        now = None
+    if acc and acc.get("organ") == organ and acc.get("print") == now:
+        return {"key": "priors", "state": "done", "organ": organ, "detail": f"{what} · accepted {acc['time'][:10]}"}
+    again = acc and acc.get("organ") == organ
+    return {"key": "priors", "state": "todo", "organ": organ,
+            "detail": f"{what} · {'changed since you accepted them: check' if again else 'check them'}, then accept"}
+
+
 def steps_of(s, sample=None):
     """Where a sample stands in the usual flow, for the steps list on the map: import, registration (checked at the
-    cells' present place?), filter, annotate, regions and priors, agent review, analyses. Each: state "done" / "todo" /
+    cells' present place?), filter, annotate, priors (checked and accepted by the user), regions, agent review, analyses. Each: state "done" / "todo" /
     "optional" / "skipped" / "not needed" / "blocked", and a short detail. s: the annotation open (None: the
     sample's own steps; those of an annotation wait for one to be opened)."""
     from . import advice, embedding
@@ -3219,6 +3281,7 @@ def steps_of(s, sample=None):
                   if annotated else (f"{n_ann} annotation(s) here: open one (Data → Annotation), or annotate again" if s is None and n_ann
                                      else "no annotation yet"),
                   **({"open": True} if s is None and n_ann else {})})
+    steps.append(_priors_step(sid, s) if not image_only else {"key": "priors", "state": "not needed", "detail": ""})
     if s is None:  # the rest belongs to an annotation
         for k in ("regions", "review", "analyze"):
             steps.append({"key": k, "state": "blocked", "detail": "open an annotation first" if n_ann else "after annotating"})
@@ -3227,9 +3290,9 @@ def steps_of(s, sample=None):
     st = s.state()
     n_poly = sum(1 for o in st["regions"].get("ops", []) if o.get("op") == "polygon")
     n_pri = len(st.get("constraints", []))
-    steps.append({"key": "regions", "state": "done" if n_poly or n_pri else "optional",
-                  "detail": ", ".join(x for x in [f"{n_poly} region outline(s)" if n_poly else "", f"{n_pri} prior(s)" if n_pri else ""] if x)
-                  or "optional: draw tissue regions, add priors"})
+    steps.append({"key": "regions", "state": "done" if n_poly else "optional",
+                  "detail": ", ".join(x for x in [f"{n_poly} region outline(s)" if n_poly else "", f"{n_pri} rule(s) on them" if n_pri else ""] if x)
+                  or "optional: draw tissue regions"})
     if annotated:
         runs = [(sc, advice.status(s, sc)) for sc in advice.SCOPES]
         done = [advice.SCOPES[sc]["label"] for sc, x in runs if x["n_runs"]]
@@ -4151,6 +4214,7 @@ def build_app(port):
         Route("/api/s/{sid}/refine/decide", api_refine_decide, methods=["POST"]),
         Route("/api/s/{sid}/refine/finding", api_refine_finding, methods=["POST"]),
         Route("/api/s/{sid}/refine/finding_fig", api_refine_finding_fig),
+        Route("/api/sample/{sample}/priors/accept", api_sample_priors_accept, methods=["POST"]),
         Route("/api/s/{sid}/report", api_report),
         Route("/api/s/{sid}/report.md", api_report_md),
         Route("/api/s/{sid}/report/save", api_report_save, methods=["POST"]),
