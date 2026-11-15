@@ -1,6 +1,7 @@
 """Refining a marker annotation round by round (stagent/iterate.py), on the bundled mouse colon example:
 1. every cell the marker step could not type gets a type from its marker genes (markers.ASSIGN_ALL, no model), or
-   Low quality when its marker genes do not say what it is (none detected, or a Bayes factor below 3);
+   stays Unassigned when its marker genes do not say what it is (none detected, or a Bayes factor below 3; 0.2.57-0.2.58
+   labeled these Low quality);
 2. a round's report: organ, types, weak evidence, marker flags, types not found;
 3. the agent's proposal (edits checked against the list), the user's message, some edits accepted: the next marker
    list has exactly those edits; a bad edit is refused;
@@ -26,22 +27,22 @@ try:
     text = (EX / "mouse_colon_merfish_markers.txt").read_text()
     s = Session.create("M", method="markers", markers_text=text, knn="exact")
     lab = np.asarray(s.labels())
-    assert not (lab == markers.UNASSIGNED).any(), "a new annotation uses Low quality, not Unassigned"
-    left = np.where(lab == markers.LOW_QUALITY)[0]
+    assert markers.LOW_QUALITY not in s.types and not (lab == markers.LOW_QUALITY).any(), "a new annotation uses Low quality"
+    left = np.where(lab == markers.UNASSIGNED)[0]
     res = s.marker_result()
     untyped = np.where(np.asarray(res["labels"]) == markers.UNASSIGNED)[0]
-    assert set(left) <= set(untyped), "a cell typed by the marker step became Low quality"
+    assert set(left) <= set(untyped), "a cell typed by the marker step became Unassigned"
     found = {s.types[j] for j in np.unique(markers.training_labels(res, s.types)) if j >= 0} - set(markers.NO_TYPE)
     assert set(np.unique(lab[untyped])) - set(markers.NO_TYPE) <= found, "a type the marker step did not find got cells"
-    # Low quality: exactly the untyped cells with no marker gene detected or too little evidence (Bayes factor < 3)
+    # Unassigned: exactly the untyped cells with no marker gene detected or too little evidence (Bayes factor < 3)
     xy = s.cells[["x", "y"]].to_numpy(float)
     _, best, ev = markers.marker_assign(s.counts, s.panel, s._marker_tree([]), s.types, untyped,
                                         markers.training_labels(res, s.types),
                                         spill_xy=xy if s.scheme.get("spillover") else None, evidence=True)
     want_lq = (best < 0) | (ev < np.log(markers.LOW_QUALITY_BF))
-    assert set(untyped[want_lq]) == set(left), "Low quality is not the cells without marker evidence"
+    assert set(untyped[want_lq]) == set(left), "Unassigned is not the cells without marker evidence"
     print(f"{len(untyped):,} cells the marker step could not type: {len(untyped) - len(left):,} got a type from "
-          f"their marker genes, {len(left):,} are Low quality ({int((best < 0).sum()):,} with no marker detected)")
+          f"their marker genes, {len(left):,} stay Unassigned ({int((best < 0).sum()):,} with no marker detected)")
     # a root cluster of the marker step whose cells all went elsewhere (rare-type search) has no members: skipped
     real = s.marker_result
     def emptied(*a, **k):
@@ -151,7 +152,7 @@ try:
     assert len(st2["rounds"]) == 2 and st2["organ"] == "Colon" and "changes" in st2["rounds"][-1]["report"]
     print(f"round 2 after accepting E1: {len(st2['rounds'][-1]['report']['changes'])} types changed")
 
-    from stagent import mcp_server, markerqc, claudelink
+    from stagent import mcp_server, markerqc, claudelink, advice
     import json
     mcp_server._active["session"] = s  # the agent still on the annotation of round 1 (decided)
     r = json.loads(mcp_server.refine_report(session_id=s2.id))
@@ -168,12 +169,12 @@ try:
     k0 = next(iter(k))
     out = c.post(f"/api/s/{s2.id}/refine/finding", json={"key": k0, "verdict": "biology"}).json()
     assert out.get("prior_verdicts", {}).get(k0, {}).get("verdict") == "biology", out
-    # offline (the desktop app; Claude Code cannot reach its API, here a closed port): nothing is sent, the round is not
-    # waiting for the agent, the user's words are not stored; any other request to the agent: the reason (503)
-    env0 = {v: os.environ.pop(v, None) for v in ("HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy",
-                                                  "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "ANTHROPIC_BASE_URL")}
-    os.environ["STAGENT_DESKTOP"] = "1"; os.environ["ANTHROPIC_BASE_URL"] = "http://127.0.0.1:9"
-    claudelink._reached["t"] = 0.0
+    # offline (the desktop app; the computer has no network at all): nothing is sent, the round is not waiting for the
+    # agent, the user's words are not stored; any other request to the agent: the reason (503). A network that is up
+    # is never refused (Claude Code may reach Anthropic through a proxy the app does not know of).
+    os.environ["STAGENT_DESKTOP"] = "1"
+    route = claudelink._has_route
+    claudelink._has_route = lambda: False
     try:
         n_msgs = len(iterate.current(s2)[1]["messages"])
         r = c.post(f"/api/s/{s2.id}/refine/ask", json={"message": "look at the B cells"})
@@ -183,21 +184,15 @@ try:
         assert not iterate.awaiting(s2) and len(iterate.current(s2)[1]["messages"]) == n_msgs, "recorded as sent"
         r = c.post("/api/claude/report", json={"session": s2.id})
         assert r.status_code == 503 and r.json()["offline"], r.text
-        # reachable (a port that listens): no error, trusted for a minute; a proxy: not checked
-        import socket
-        srv = socket.socket(); srv.bind(("127.0.0.1", 0)); srv.listen(1)
-        os.environ["ANTHROPIC_BASE_URL"] = f"http://127.0.0.1:{srv.getsockname()[1]}"
-        claudelink.check_online()
-        srv.close()
-        claudelink.check_online()  # (within the minute)
-        claudelink._reached["t"] = 0.0
-        os.environ["ANTHROPIC_BASE_URL"] = "http://127.0.0.1:9"
-        os.environ["HTTPS_PROXY"] = "http://127.0.0.1:9"
+        before = advice.status(s2, "annotation")
+        r = c.post("/api/claude/review", json={"session": s2.id, "scope": "annotation"})
+        assert r.status_code == 503 and advice.status(s2, "annotation") == before, "the review recorded as asked"
+        os.environ["STAGENT_SKIP_ONLINE_CHECK"] = "1"
         claudelink.check_online()
     finally:
-        os.environ.pop("STAGENT_DESKTOP", None); os.environ.pop("HTTPS_PROXY", None); os.environ.pop("ANTHROPIC_BASE_URL", None)
-        os.environ.update({k: v for k, v in env0.items() if v is not None})
-        claudelink._reached["t"] = 0.0
+        claudelink._has_route = route
+        os.environ.pop("STAGENT_DESKTOP", None); os.environ.pop("STAGENT_SKIP_ONLINE_CHECK", None)
+    assert claudelink._has_route() in (True, False)
     # the time the round has waited for the agent (the window points to Claude Code's window after 10 minutes)
     iterate.mark_asked(s2)
     st_, rd_ = iterate.current(s2); rd_["asked_t"] -= 700; iterate.save(s2, st_)

@@ -266,10 +266,7 @@ class Session:
                       "resolution": markers.AUTO if resolution in (None, "", markers.AUTO) else float(resolution),
                       "knn": knn_mode(knn, meta.get("n_cells"), len(panel_genes(sample_id)), parsed["tree"],
                                       len(parsed["leaves"]), timing.counts_nnz(sd)),
-                      "neighbors": True, "spillover": bool(spillover), "low_quality": True}
-            scheme["types"] = scheme["types"] + [markers.LOW_QUALITY]  # (see markers.LOW_QUALITY)
-            scheme["top"] = dict(scheme["top"], **{markers.LOW_QUALITY: markers.LOW_QUALITY})
-            scheme["parent"] = dict(scheme["parent"], **{markers.LOW_QUALITY: None})
+                      "neighbors": True, "spillover": bool(spillover), "untyped_bf": True}  # (markers.LOW_QUALITY)
         elif method == "scref":
             from . import scref
             ref = dict(reference or {})
@@ -682,7 +679,8 @@ class Session:
             logp = markers.restrict(logp, self.marker_result(st), self._marker_tree(st.get("marker_step", {}).get("ops", [])),
                                     self.types, labs, counts=self.counts, panel=self.panel, xy=self._xy(),
                                     neighbors=bool(self.scheme.get("neighbors")), spill=bool(self.scheme.get("spillover")),
-                                    legacy=self.scheme.get("neighbors") is None)  # (made before 0.2.57: its rules then)
+                                    legacy=self.scheme.get("neighbors") is None,  # (made before 0.2.57: its rules then)
+                                    untyped_bf=bool(self.scheme.get("untyped_bf")))
         elif self.scheme.get("leaf_types"):
             logp = self._within_parent(logp, st)
         if self.scheme["kind"] == "existing":

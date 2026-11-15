@@ -5536,9 +5536,10 @@ checksums of its steps (PCA, neighbors, first clusters, labels) to compare runs.
     candidates; their confidence says how sure. A marker's chance to be detected is scaled to the cell's transcripts
     (1 − (1 − p)^(cell's transcripts / the type's mean)), so a cell of few transcripts is not drawn to a type whose
     markers are seldom detected.</li>
-  <li><b>Low quality</b>: a cell whose marker genes do not say what it is (none detected, or its best type is less
-    than 3 times as likely as a cell of no type with the same transcripts: Bayes factor below 3) is labeled Low quality
-    instead of being typed by force (annotations made since 0.2.57; before, Unassigned).</li>
+  <li><b>Unassigned</b>: a cell whose marker genes do not say what it is (none detected, or its best type is less
+    than 3 times as likely as a cell of no type with the same transcripts: Bayes factor below 3) stays Unassigned
+    instead of being typed by force. Annotations made with 0.2.57 and 0.2.58 called these cells Low quality: they are
+    often not of low quality but of a type the marker list lacks (normal transcript counts).</li>
   <li>Then their neighbors: in rounds, each of these cells adds to its marker-gene score the log of the share of each
     type among its 10 nearest cells (their labels of the round before), until nothing changes or a cell only flips
     between two types (at most 10 rounds). The cells the marker step typed are not changed by their neighbors: on

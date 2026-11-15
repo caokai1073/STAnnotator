@@ -182,7 +182,7 @@ The annotation algorithm of the app is carried as source code in the folded cell
             "marker_ops": st.get("marker_step", {}).get("ops", [])}
     scheme = {k: sch.get(k) for k in ("kind", "text", "tree", "types", "resolution", "top", "lineage_of_type",
                                       "reference", "reference_counts", "existing", "leaf_types", "neighbors",
-                                      "spillover")}
+                                      "spillover", "untyped_bf")}
     scheme["knn"] = s.knn_mode()
     types = list(s.types)
     lineage = {t: s.lineage_of_type.get(t, t) for t in types}
@@ -231,7 +231,8 @@ logp = sa.model.predict(model, counts)
 # could not type get one from their marker genes and their neighbors' types
 logp = sa.markers.restrict(logp, res, marker_tree(STATE["marker_ops"]), TYPES, lock_labels, counts=counts, panel=genes,
                            xy=xy, neighbors=bool(SCHEME.get("neighbors")), spill=bool(SCHEME.get("spillover")),
-                           legacy=SCHEME.get("neighbors") is None)   # (an annotation made before 0.2.57: its rules then)'''
+                           legacy=SCHEME.get("neighbors") is None,   # (an annotation made before 0.2.57: its rules then)
+                           untyped_bf=bool(SCHEME.get("untyped_bf")))'''
     elif sch["kind"] == "existing":
         e = sch["existing"]
         base = f'''
@@ -772,7 +773,8 @@ if len(lock_rows):
     model = sa.model.finetune(model, counts[lock_rows], lock_labels, rX, ry)
 logp = sa.markers.restrict(sa.model.predict(model, counts), r, marker_tree(STATE["marker_ops"]), TYPES, lock_labels,
                            counts=counts, panel=genes, xy=xy, neighbors=bool(SCHEME.get("neighbors")),
-                           spill=bool(SCHEME.get("spillover")), legacy=SCHEME.get("neighbors") is None)
+                           spill=bool(SCHEME.get("spillover")), legacy=SCHEME.get("neighbors") is None,
+                           untyped_bf=bool(SCHEME.get("untyped_bf")))
 base_pred, _ = sa.constraints.posterior(logp, [], None, TYPES)          # expression only
 region = sa.regions.assign(cells, STATE["regions"])                    # drawn regions
 nn = cKDTree(xy).query(xy, k=sa.constraints.NEIGHBORS_K + 1)[1][:, 1:]
@@ -918,7 +920,7 @@ The outputs below are the results at export time."""))
 
     # ---- the joint annotation
     scheme = {k: sch.get(k) for k in ("kind", "text", "tree", "types", "resolution", "top", "lineage_of_type", "leaf_types",
-                                      "neighbors", "spillover")}
+                                      "neighbors", "spillover", "untyped_bf")}
     scheme["knn"] = s0.knn_mode()
     lineage = {t: s0.lineage_of_type.get(t, t) for t in s0.types}
     n_all = sum(len(S[x].cells) for x in order)

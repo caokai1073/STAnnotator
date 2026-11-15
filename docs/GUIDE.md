@@ -266,7 +266,7 @@ What it writes in `--out`:
   the affine, how it was made and its check; `qc.json`.
 - `summary.csv`: one row per sample: status (`ok`, `flagged`, `failed`), flags (e.g. no alignment found, another
   orientation fits too, local shifts left), cells, median transcripts, the registration check (median and 90th
-  percentile offset), types without cells, share of Low quality cells.
+  percentile offset), types without cells, share of Unassigned cells.
 - `logs/<sample>.log`, `status/<sample>.json`.
 
 A stopped run goes on where it stopped: run the same command again (steps done with the same inputs are kept;

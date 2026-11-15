@@ -772,7 +772,7 @@ footer .counted { flex-basis: 100%; margin: 0; }
             probability for each type. Only types the marker step actually found can get cells.</p></li>
           <li><b>Untyped cells</b><p>Cells the marker step could not type are typed by their marker genes: which ones are
             detected and which are not, scaled to the cell's transcripts. When the evidence is too weak (a Bayes factor
-            below 3), the cell is labeled <b>Low quality</b> instead of being forced into a type. Their neighbors are then
+            below 3), the cell stays <b>Unassigned</b> instead of being forced into a type. Their neighbors are then
             taken into account, round by round.</p></li>
           <li><b>Spillover</b><p>Transcripts a cell's outline caught from its neighbors are left out: a gene counts only
             above a tenth of the mean of the 6 nearest cells.</p></li>

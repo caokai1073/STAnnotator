@@ -28,9 +28,11 @@ import difflib, re
 import numpy as np, scipy.sparse as sp
 
 UNASSIGNED = "Unassigned"
-# Since 0.2.57 (annotations whose scheme has "low_quality"): the cells the marker step could not type whose marker genes
-# do not say what they are (none detected, or the best type's Bayes factor against a cell of no type below
-# LOW_QUALITY_BF, Jeffreys' "substantial") are labeled this, not given a type by force. On a 790,000-cell CosMx
+# The cells the marker step could not type whose marker genes do not say what they are (none detected, or the best
+# type's Bayes factor against a cell of no type below LOW_QUALITY_BF, Jeffreys' "substantial") are not given a type by
+# force. Annotations of 0.2.57-0.2.58 (scheme "low_quality") label them Low quality; since 0.2.59 (scheme
+# "untyped_bf") they stay Unassigned: on SCP2927 147328 most such cells were a fibroblast subtype missing from the
+# list, with normal transcript counts, not cells of low quality. On a 790,000-cell CosMx
 # section this took 12,800 "Mast cells" (CPA3 in 2.8% of them, as in any cell) and kept 4,700 (9.3%, as the Mast
 # cluster); on a MERFISH slice such cells would have been typed right in 57% of cases (lineage).
 LOW_QUALITY = "Low quality"
@@ -1725,7 +1727,7 @@ def neighbor_rounds(lp, rows, xy, k=None, w=None, rounds=None):
 
 
 def restrict(logp, res, tree, types, corrected=(), counts=None, panel=None, xy=None, neighbors=False, spill=False,
-             legacy=False):
+             legacy=False, untyped_bf=False):
     """The expression model's log-probabilities (cells x types) made to agree with the marker step, as float16 (the
     session and the exported notebook both use this): a cell left at a lineage or parent level gets a type below it
     (the others down-weighted by 1e-4); a type the model did not learn (no cell of it in the marker step) is not given,
@@ -1759,11 +1761,11 @@ def restrict(logp, res, tree, types, corrected=(), counts=None, panel=None, xy=N
             lp[:, u] = np.float32(-1e4)  # (the no-type label) only for the cells their marker genes do not type
             lp[rows] = np.float32(-1e4)
             has = best >= 0
-            if LOW_QUALITY in types:  # too little marker evidence to say what they are: Low quality
+            if LOW_QUALITY in types or untyped_bf:  # too little marker evidence to say what they are: no type
                 has &= ev >= np.log(LOW_QUALITY_BF)
             sc = S[has] - S[has].max(1, keepdims=True)  # the scores as probabilities: the confidence of the pick
             lp[rows[has]] = np.where(np.isfinite(sc), sc, np.float32(-1e4))
-            lp[rows[~has], u] = 0.0  # no marker of the list detected (or, with Low quality, too little evidence)
+            lp[rows[~has], u] = 0.0  # no marker of the list detected (or too little evidence: LOW_QUALITY_BF)
             if neighbors and xy is not None and has.any():
                 neighbor_rounds(lp, rows[has], xy)
     lp -= lp.max(1, keepdims=True)
