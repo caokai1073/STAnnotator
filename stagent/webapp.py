@@ -742,7 +742,7 @@ REFINE_REQUEST = ("I am refining the annotation {sid} with you in the Refine win
                   "markers, are missing, too many or should be merged or split. Then call propose_refinement once: edits "
                   "of the marker list, each with its reason, evidence and problem (a short title of the problem it fixes, the "
                   "same for all the edits of one problem; an edit I may not want, such as a split into subtypes, optional with its "
-                  "question; new types named by their markers, not by the layer they lie in; only genes of the panel; check the edited list "
+                  "question; new types named by their markers, not by the layer they lie in, and given markers detected in most of their cells and rarely in the other cells of their parent (check the shares, e.g. with type_structure, and give them in the evidence; not checked: optional); only genes of the panel; check the edited list "
                   "with check_marker_list first), and questions for me where only I can decide. Answer only with "
                   "propose_refinement(session_id='{sid}', ...): the Refine window shows nothing else (not propose_marker_list, not "
                   "save_marker_list); many changes to a type's markers can be one set_markers edit. If it reports a "

@@ -1339,7 +1339,12 @@ def propose_refinement(summary: str, edits: list[dict], questions: Optional[list
     what the user decides by ticking it; the window shows it unticked, the question beside it. Name a new type by its
     markers or its established identity, not by the layer or place it lies in (e.g. "ADAMDEC1+ fibroblasts", not
     "Lamina propria fibroblasts"): where cells lie is evidence to check, not part of what they are, and in diseased
-    tissue they may lie elsewhere. questions: what only
+    tissue they may lie elsewhere. A new type (add_type, or a split) takes the cells its markers mark, wherever they
+    are: give it markers detected in most of the cells you mean (a sub-cluster type_structure shows) and rarely in the
+    other cells of its parent, and say the shares in the evidence (e.g. "LAMP3 in 62% of the sub-cluster, 3% of the
+    other myeloid cells"); a marker in a minority of them, or common in the parent, pulls in cells that are not that
+    type (a "LAMP3+ DCs" type took 1,215 myeloid cells of which 9% had LAMP3). Not checked: make the edit optional.
+    questions: what only
     the user can decide (the organ, whether a type should be there). organ: the organ you judged it to be, when the
     user has not confirmed one. session_id: the annotation named in the request. prior_findings: where the
     annotation goes against the tissue's priors or the user's rules (compare the report's where_types_lie and
