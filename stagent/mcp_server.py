@@ -1327,7 +1327,10 @@ def propose_refinement(summary: str, edits: list[dict], questions: Optional[list
     language. edits: edits of the marker list, each {"kind", "type", ..., "reason", "evidence"}; kinds: add_marker /
     remove_marker {type, marker: "GENE+", "GENE-" or "A|B+"}, set_markers {type, markers: "A+ B+ C-"}, add_type
     {type, parent (null: top level), markers}, remove_type {type}, rename_type {type, new_name}, move_type {type,
-    parent}. Only genes of the panel; reason: why; evidence: the numbers or figure that show it. questions: what only
+    parent}. Only genes of the panel; reason: why; evidence: the numbers or figure that show it; problem: a short
+    title of the problem the edit fixes, in the user's language, the same text for all the edits of one problem
+    (e.g. "B cells hidden under Ionocytes and cDC1"): the window shows the edits problem by problem, with a tick box
+    for each problem (edits without one go under their lineage). Keep the edits of one problem together. questions: what only
     the user can decide (the organ, whether a type should be there). organ: the organ you judged it to be, when the
     user has not confirmed one. session_id: the annotation named in the request. Returns the edits as checked
     (problems the edited list would have)."""

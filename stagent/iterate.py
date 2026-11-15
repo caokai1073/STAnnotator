@@ -301,6 +301,28 @@ def add_message(s, who, text):
     return rd
 
 
+def _group(edits, text):
+    """Each edit's "group", the heading it is shown under in the Refine window: the problem it fixes as the agent named
+    it ("problem"), else the lineage (top-level type) it changes in the round's list; groups keep the order in which
+    they first come. The edits keep their order (they are applied in it: a rename before the edits of the new name)."""
+    try:
+        tree = markers.parse(text, None)["tree"]
+    except Exception:
+        tree = []
+    top = {d: n["name"] for n in tree for d in markers.descendants(tree)[n["name"]]}
+    renamed = {}
+    for e in edits:
+        prob = " ".join(str(e.get("problem") or "").split())[:160]
+        if prob:
+            e["problem"] = prob
+        t = e.get("parent") if e.get("kind") == "add_type" and e.get("parent") else e.get("type")
+        lin = top.get(t) or top.get(renamed.get(t)) or (e.get("type") if e.get("kind") == "add_type" else None)
+        if e.get("kind") == "rename_type" and e.get("new_name"):
+            renamed[e["new_name"]] = e.get("type")
+        e["group"] = prob or (f"{lin}" if lin else "Other edits")
+    return edits
+
+
 def propose(s, summary, edits, organ=None, questions=None):
     """The agent's proposal for the current round: a summary, the edits (each with an id, a reason and the evidence)
     and questions for the user; the edits are checked by applying them all to the list."""
@@ -313,6 +335,7 @@ def propose(s, summary, edits, organ=None, questions=None):
         if e.get("kind") not in EDIT_KINDS:
             raise ValueError(f"edit {i + 1}: kind must be one of {', '.join(EDIT_KINDS)}")
         clean.append({"id": f"E{i + 1}", **{k: e[k] for k in e if k != "id"}})
+    _group(clean, rd["marker_text"] or "")
     text, problems = apply_edits(rd["marker_text"] or "", clean, s.panel) if clean else (rd["marker_text"], [])
     rd["proposal"] = {"summary": str(summary or "")[:6000], "edits": clean, "questions": list(questions or [])[:10],
                       "organ": organ, "check": problems, "time": time.strftime("%Y-%m-%dT%H:%M:%S"),

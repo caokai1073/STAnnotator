@@ -419,6 +419,22 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .rfedits { max-height: 38vh; overflow: auto; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }
 .rfedits label { display: grid; grid-template-columns: auto 1fr; gap: 6px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; }
 .rfedits .why { color: var(--muted); }
+.rfedits .rfgroup { display: flex; flex-direction: column; gap: 4px; padding: 6px; border: 1px solid var(--line); border-radius: 10px; }
+.rfedits .rfgroup > label { margin-left: 18px; }
+.rfedits label.rfghead { display: flex; align-items: center; gap: 6px; border: none; padding: 2px 2px 0; margin: 0; }
+.rfedits label.rfghead .hint { margin-left: auto; }
+.rfedits .rfgroup > label { padding: 3px 8px; }
+.rfedits .rfgroup.folded > label:not(.rfghead) { display: none; }
+.rfedits .rffold { border: none; background: none; color: var(--muted); padding: 0 4px; font-size: 12px; cursor: pointer; min-width: 0; }
+.rfedits details.why > summary { cursor: pointer; display: block; list-style: none; }
+.rfedits details.why > summary::-webkit-details-marker { display: none; }
+.rfedits details.why > summary::before { content: "▸ "; }
+.rfedits details.why[open] > summary::before { content: "▾ "; }
+.rfedits details.why:not([open]) > summary { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rfedits details.why > div { margin: 2px 0 2px 12px; }
+.rfedits .rfgroup > label > div { min-width: 0; }
+.rfedits input[type=checkbox]:indeterminate { background: var(--accent); border-color: var(--accent); }
+.rfedits input[type=checkbox]:indeterminate::after { content: ""; width: 8px; height: 0; border-top: 2px solid #fff; margin-top: 7px; }
 /* the edits' tick boxes drawn by the page, the same whether ticked by the app or by a click (the system draws them
    differently: blue once clicked, grey before) */
 .rfedits input[type=checkbox] { appearance: none; -webkit-appearance: none; width: 16px; height: 16px; margin: 2px 0 0;
@@ -4258,7 +4274,7 @@ $("refPath").onchange = () => inspectRef();
 $("refPick").onclick = async () => { const p = await pickFiles("h5ad"); if (p.length) { $("refPath").value = p[0]; inspectRef(); } };
 
 // ---------------- Refine with the agent: review, edits of the marker list, annotation again, round by round ----------------
-const RF = { sid: null, state: null, timer: null, from: null, seen: "", preparing: null };
+const RF = { sid: null, state: null, timer: null, from: null, seen: "", preparing: null, folded: null };
 const rfAgentOk = () => !!(st.desktop || st.chatAvailable);
 function rfSync() {  // the Refine button and switch: a marker annotation open, an agent to ask
   const marker = !!st.sid && !st.placeholder && !!st.vocab && st.vocab.method === "markers";
@@ -4361,17 +4377,47 @@ function rfRender() {
   // the edits
   const P = rd.proposal, eb = $("rfEdits"); eb.textContent = "";
   if (P && P.edits.length) {
-    P.edits.forEach((e) => {
-      const l = document.createElement("label"); const c = document.createElement("input"); c.type = "checkbox"; c.value = e.id;
-      const off = RF.unticked && RF.unticked.time === P.time ? RF.unticked.ids : null;
-      c.checked = rd.decision !== "dismissed" && !(off && off.has(e.id)); c.disabled = !!rd.decision;
-      c.onchange = () => {  // remembered for this proposal, so the next refresh of the window keeps it
-        if (!RF.unticked || RF.unticked.time !== P.time) RF.unticked = { time: P.time, ids: new Set() };
-        if (c.checked) RF.unticked.ids.delete(e.id); else RF.unticked.ids.add(e.id);
+    // the edits under the problem they fix (the agent's "problem", else their lineage), a tick box for each problem;
+    // the evidence folded under each edit
+    const off = RF.unticked && RF.unticked.time === P.time ? RF.unticked.ids : null;
+    const untick = (id, on) => {  // remembered for this proposal, so the next refresh of the window keeps it
+      if (!RF.unticked || RF.unticked.time !== P.time) RF.unticked = { time: P.time, ids: new Set() };
+      if (on) RF.unticked.ids.delete(id); else RF.unticked.ids.add(id);
+    };
+    const named = new Map(), rest = new Map();  // the problems the agent named first, then the lineages, "Other edits" last
+    P.edits.forEach((e) => { const g = e.group || "Edits", m = e.problem ? named : rest; if (!m.has(g)) m.set(g, []); m.get(g).push(e); });
+    const groups = new Map([...named, ...[...rest].sort((a, b) => (a[0] === "Other edits") - (b[0] === "Other edits"))]);
+    if (groups.size > 1) eb.append(Object.assign(document.createElement("div"), { className: "hint", textContent: `${P.edits.length} edits in ${groups.size} groups` }));
+    groups.forEach((list, title) => {
+      const box = document.createElement("div"); box.className = "rfgroup";
+      const fk = `${P.time}|${title}`;  // folded groups stay folded when the window refreshes
+      box.classList.toggle("folded", !!(RF.folded && RF.folded.has(fk)));
+      const head = document.createElement("label"); head.className = "rfghead";
+      const gc = document.createElement("input"); gc.type = "checkbox"; gc.disabled = !!rd.decision;
+      const fold = Object.assign(document.createElement("button"), { type: "button", className: "rffold", title: "Fold or unfold this group's edits" });
+      const foldText = () => { fold.textContent = box.classList.contains("folded") ? "▸" : "▾"; };
+      fold.onclick = (ev) => {
+        ev.preventDefault(); RF.folded = RF.folded || new Set();
+        box.classList.toggle("folded"); box.classList.contains("folded") ? RF.folded.add(fk) : RF.folded.delete(fk); foldText();
       };
-      const d = document.createElement("div");
-      d.innerHTML = `${rfEsc(e.id)} · ${rfEditText(e)}` + (e.reason ? `<div class="why">${rfEsc(e.reason)}</div>` : "") + (e.evidence ? `<div class="why">${rfEsc(e.evidence)}</div>` : "");
-      l.append(c, d); eb.append(l);
+      foldText();
+      head.append(gc, Object.assign(document.createElement("b"), { textContent: title }),
+                  Object.assign(document.createElement("span"), { className: "hint", textContent: list.length > 1 ? `${list.length} edits` : "1 edit" }), fold);
+      box.append(head);
+      const boxes = [];
+      const sync = () => { const n = boxes.filter((c) => c.checked).length; gc.checked = n === boxes.length; gc.indeterminate = n > 0 && n < boxes.length; };
+      list.forEach((e) => {
+        const l = document.createElement("label"); const c = document.createElement("input"); c.type = "checkbox"; c.value = e.id;
+        c.checked = rd.decision !== "dismissed" && !(off && off.has(e.id)); c.disabled = !!rd.decision;
+        c.onchange = () => { untick(e.id, c.checked); sync(); };
+        const d = document.createElement("div");
+        // the reason on one line, opened (with the evidence) by a click
+        d.innerHTML = `<span class="hint">${rfEsc(e.id)}</span> ${rfEditText(e)}` + (e.reason || e.evidence ?
+          `<details class="why"><summary>${rfEsc(e.reason || "evidence")}</summary>${e.evidence ? `<div><i>Evidence:</i> ${rfEsc(e.evidence)}</div>` : ""}</details>` : "");
+        l.append(c, d); box.append(l); boxes.push(c);
+      });
+      gc.onchange = () => { boxes.forEach((c) => { c.checked = gc.checked; untick(c.value, gc.checked); }); sync(); };
+      sync(); eb.append(box);
     });
   }
   $("rfEditsHint").textContent = !P ? (rd.messages.some((m) => m.from === "user") ? "Waiting for the agent…" : "Click Agent review to have this round reviewed.")
@@ -5069,7 +5115,8 @@ const HELP = `
   <li>the app sums up what may be wrong (types with weak marker evidence, markers that are not specific, types not
     found, the cells the marker step could not type, the changes since the round before);</li>
   <li>the organ: inferred from the cell types and the sample's name, or asked; the agent reviews the whole
-    annotation with that organ's priors and proposes edits of the marker list, each with its reason and evidence;</li>
+    annotation with that organ's priors and proposes edits of the marker list, each with its reason and evidence,
+    grouped by the problem they fix (one tick box for a whole problem; a group folds away with ▾);</li>
   <li>you write to it at any time (your words come first), tick the edits you want and <b>Accept</b>: the app
     annotates again with them (your regions, priors and corrections carry over) and the next round opens;
     <b>Dismiss edits</b> or <b>Stop refining</b> end it.</li></ul></li></ul>

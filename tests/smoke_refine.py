@@ -59,13 +59,23 @@ try:
     first = next(n for n in markers.parse(text, None)["tree"] if n["children"])
     kid = first["children"][0]["name"]
     gene = first["children"][0]["markers"][0]["genes"][0]
+    # the edits' groups: the problem the agent named, else the lineage the edit changes (a renamed type's too)
+    other = next(n["name"] for n in markers.parse(text, None)["tree"] if n["name"] != first["name"])
+    eds = iterate.propose(s, "groups", [
+        {"kind": "rename_type", "type": kid, "new_name": "Renamed X"},
+        {"kind": "add_marker", "type": "Renamed X", "marker": gene + "-"},
+        {"kind": "add_type", "type": "Top Y", "parent": None, "markers": "Epcam+"},
+        {"kind": "remove_marker", "type": other, "marker": "X+", "problem": "  One   problem "},
+        {"kind": "add_marker", "type": first["name"], "marker": gene + "+", "problem": "One problem"}])["edits"]
+    assert [e["group"] for e in eds] == [first["name"], first["name"], "Top Y", "One problem", "One problem"], eds
+    assert [e["id"] for e in eds] == ["E1", "E2", "E3", "E4", "E5"]
     iterate.propose(s, "test", [
         {"kind": "remove_marker", "type": kid, "marker": gene + "+", "reason": "r", "evidence": "e"},
         {"kind": "rename_type", "type": kid, "new_name": kid + " (renamed)", "reason": "r", "evidence": "e"},
         {"kind": "add_type", "type": "Test type", "parent": first["name"], "markers": "Epcam+", "reason": "r", "evidence": "e"}],
         questions=["Healthy or inflamed?"])
     rd = iterate.add_message(s, "user", "Keep the name")
-    assert [m["from"] for m in rd["messages"]] == ["agent", "user"]
+    assert [m["from"] for m in rd["messages"]] == ["agent", "agent", "user"], [m["from"] for m in rd["messages"]]  # (the groups check proposed too)
     try:
         iterate.propose(s, "bad", [{"kind": "explode_type", "type": kid}])
         raise AssertionError("an unknown edit was accepted")
