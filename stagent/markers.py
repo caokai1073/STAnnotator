@@ -249,7 +249,18 @@ def _topk_torch(Z, k, dev):
     Zt = torch.tensor(Z, device=dev)
     n = len(Z)
     chunk = int(np.clip(1.2e9 / n, 256, 8192))  # rows per distance block, about 5 GB at most
-    nbr = [torch.topk(torch.cdist(Zt[i:i + chunk], Zt), k, largest=False)[1].cpu() for i in range(0, n, chunk)]
+    nbr, i = [], 0
+    while i < n:
+        try:
+            nbr.append(torch.topk(torch.cdist(Zt[i:i + chunk], Zt), k, largest=False)[1].cpu())
+            i += chunk
+        except torch.OutOfMemoryError:  # (the GPU shared with other jobs: smaller blocks, the same neighbors)
+            if chunk <= 64 or dev == "cpu":
+                raise
+            chunk //= 2
+            if dev == "cuda":
+                torch.cuda.empty_cache()
+            print(f"exact neighbors: GPU memory short, blocks of {chunk} rows", flush=True)
     del Zt
     return torch.cat(nbr).numpy().astype(np.int64)
 

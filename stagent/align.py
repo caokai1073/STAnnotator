@@ -312,6 +312,18 @@ def deviation(s, cid, progress=None):
                                             lambda f: say(0.8 + 0.2 * f), coarse=True)
     if not w["windows"]:
         raise ValueError("no window of dense tissue overlaps the image with this candidate: try another")
+    out = judge(w) | {"A": A.tolist()}
+    dump_json(w, _wfile(s, cid))
+    st, c = _get(s, cid)   # (as stored now)
+    c["deviation"] = out
+    dump_json(st, _file(s), indent=1)
+    return out
+
+
+def judge(w):
+    """The verdict on a placement from its registration-check windows (regcheck.windows, or deviation's): "fine",
+    "local shifts" (areas off their nuclei, or large shifts: the local registration helps), "far off" (too few
+    windows read clearly: not the right placement), with the numbers behind it."""
     a, mu, coef, aff, res, noise, D = regcheck._analyse(w)
     tot, raw = np.hypot(*D.T), np.hypot(a[:, 4], a[:, 5])
     trusted = ~noise
@@ -332,11 +344,7 @@ def deviation(s, cid, progress=None):
            "largest_area_windows": max((len(x) for x in areas), default=0),
            "large_shift_windows": int(big.sum()), "large_shift_um": round(float(np.hypot(b[big, 4], b[big, 5]).max()), 0) if big.any() else None,
            "beyond_search_share": round(beyond, 3), "clear_reading_share": round(read, 3), "affine_part_max_um": round(float(np.hypot(*aff.T).max()), 1),
-           "offsets_um": [round(float(x), 1) for x in t], "A": A.tolist()}
-    dump_json(w, _wfile(s, cid))
-    st, c = _get(s, cid)   # (as stored now)
-    c["deviation"] = out
-    dump_json(st, _file(s), indent=1)
+           "offsets_um": [round(float(x), 1) for x in t]}
     return out
 
 

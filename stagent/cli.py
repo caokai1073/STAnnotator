@@ -112,6 +112,30 @@ def main(argv=None):
     isq.add_argument("--unit", choices=["auto", "cells", "bins"], default="auto")
     isq.add_argument("--description", default="")
     isq.add_argument("--overwrite", action="store_true")
+    bt = sub.add_parser("batch", help="import, register and annotate the samples of a manifest CSV without the app, "
+                        "deciding by itself (auto); writes CSV files per sample and a summary",
+                        description=__import__("stagent.batch", fromlist=["x"]).__doc__,
+                        formatter_class=argparse.RawDescriptionHelpFormatter)
+    bt.add_argument("manifest", help="CSV: sample, xenium (or h5ad), he, registration, organ (or markers)")
+    bt.add_argument("--out", required=True, help="folder of the batch: data/, results/, status/, logs/, summary.csv")
+    bt.add_argument("--jobs", type=int, default=1, help="samples at once (each takes its memory: about 11 GB for "
+                    "800,000 cells)")
+    bt.add_argument("--shard", help="I/N: only the rows I, I+N, ... (0-based; one array job of a cluster each)")
+    bt.add_argument("--organ", help="built-in marker list for rows that name none (e.g. colon)")
+    bt.add_argument("--markers", help="marker list file for rows that name none")
+    bt.add_argument("--no-auto", dest="auto", action="store_false", help="choose no registration without a file and "
+                    "apply no local correction: such samples are flagged for the app")
+    bt.add_argument("--no-local-correction", dest="local_fix", action="store_false",
+                    help="never apply the local registration correction")
+    bt.add_argument("--candidates", type=int, default=3, help="alignment candidates checked when there is no "
+                    "registration file (default 3)")
+    bt.add_argument("--redo", action="store_true", help="run every step again (default: steps done with the same "
+                    "inputs are kept)")
+    bt.add_argument("--drop-data", action="store_true", help="remove each sample's data folder once its results are "
+                    "written (saves disk; the samples can then not be opened in the app)")
+    bt.add_argument("--only", nargs="+", help="only these samples of the manifest")
+    bt.add_argument("--knn", choices=["exact", "approx"], help="the marker step's neighbor search (default as in the "
+                    "app: exact, approximate from a million cells); approx is much faster on a server without a GPU")
     sub.add_parser("samples", help="list imported samples")
     ap_ = sub.add_parser("app", help="start the desktop app (native window)")
     ap_.add_argument("--browser", action="store_true", help="use the default browser instead of a window")
@@ -133,6 +157,20 @@ def main(argv=None):
         from .importer import import_sample
         import_sample(a.name, a.h5ad, a.he, a.registration, a.section_column, a.section, a.x_column, a.y_column,
                       a.counts_layer, a.region_column, a.xenium_px_um, a.description, a.overwrite)
+    elif a.cmd == "batch":
+        from . import batch
+        shard = None
+        if a.shard:
+            i, n = (int(x) for x in a.shard.split("/"))
+            if not 0 <= i < n:
+                raise SystemExit("--shard I/N needs 0 <= I < N")
+            shard = (i, n)
+        try:
+            c = batch.run(a.manifest, a.out, a.jobs, shard, a.auto, a.redo, a.organ, a.markers, a.drop_data,
+                          a.local_fix, a.candidates, a.only, a.knn)
+        except ValueError as e:
+            raise SystemExit(str(e))
+        raise SystemExit(1 if c.get("failed") else 0)
     elif a.cmd == "import-xenium":
         from .importer import import_xenium
         import_xenium(a.name, a.xenium, a.he, a.registration, a.description, a.overwrite)

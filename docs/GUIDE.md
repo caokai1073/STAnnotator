@@ -230,6 +230,54 @@ E.g. QuPath annotations on the H&E, exported as GeoJSON in the image's full-reso
   [--section-column donor_id --section 147328]
 ```
 
+### Many samples at once (batch, without the app)
+
+For hundreds or thousands of sections, `stagent batch` runs import, registration and annotation in a server's
+terminal and writes CSV files. It decides by itself where the app would ask you (auto mode, the default). The input
+is a manifest, one row per sample:
+
+```csv
+sample,xenium,he,registration,organ
+s001,/data/run1/output-XETG...-s001,/data/he/s001.ome.tif,/data/he/s001_imagealignment.csv,colon
+s002,/data/run1/output-XETG...-s002,/data/he/s002.ome.tif,,colon
+s003,/data/run2/output-XETG...-s003,,,colon
+```
+
+- `xenium`: a Xenium output folder; or `h5ad` (with `section_column` / `section` for an h5ad of several sections,
+  `x_column` / `y_column` when the coordinates are not `x` / `y`).
+- `he`, `registration`: optional. With an alignment file the cells are placed by it. Without one, the app's alignment
+  search runs and the best candidates are checked over the whole tissue; the one whose cells sit on their nuclei is
+  applied (never one the check finds far off). Where the check finds local shifts (tissue stretched or torn), the
+  local correction is applied when it brings the cells closer to their nuclei.
+- `organ` (a built-in list, pruned to the panel) or `markers` (your own list file); `--organ` / `--markers` set one
+  for every row that names none. No agent runs: the list is used as it is, so refine it first on a few samples in
+  the app and give that list to the batch.
+
+```bash
+.venv/bin/stagent batch manifest.csv --out /scratch/batch1 --jobs 4
+# a cluster: one array job per shard, e.g. Slurm with 50 jobs
+.venv/bin/stagent batch manifest.csv --out /scratch/batch1 --shard $SLURM_ARRAY_TASK_ID/50
+```
+
+What it writes in `--out`:
+
+- `results/<sample>/annotation.csv`: one row per cell (cell type, lineage, levels, confidence, `x_um`, `y_um`);
+  `cell_positions.csv`: `cell_id`, `x_um`, `y_um` and `px`, `py` on the H&E (with corrections); `registration.csv`:
+  the affine, how it was made and its check; `qc.json`.
+- `summary.csv`: one row per sample: status (`ok`, `flagged`, `failed`), flags (e.g. no alignment found, another
+  orientation fits too, local shifts left), cells, median transcripts, the registration check (median and 90th
+  percentile offset), types without cells, share of Low quality cells.
+- `logs/<sample>.log`, `status/<sample>.json`.
+
+A stopped run goes on where it stopped: run the same command again (steps done with the same inputs are kept;
+`--redo` runs them again). A sample that fails does not stop the others. `--no-auto` chooses no alignment and
+applies no correction (those samples are flagged). `data/` is the batch's data folder: open flagged samples in the
+app with `STAGENT_HOME=/scratch/batch1/data stagent remote-serve` (Working on a server). It takes about 0.3-0.6 GB per
+sample; `--drop-data` removes each sample's data once its results are written. Each job needs the memory of one
+annotation (about 11 GB for 800,000 cells): choose `--jobs` by the server's memory. The exact neighbor search runs
+on a GPU when there is one (jobs share it; a block that does not fit is split); on a server without a GPU,
+`--knn approx` is much faster for large sections. `stagent batch --help` lists every option.
+
 ### Several slices (projects)
 
 **Importing.** Tick several sections of an h5ad in **Import** (or give the Xenium files of several slices, one per
