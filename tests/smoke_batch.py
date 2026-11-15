@@ -51,6 +51,13 @@ try:
         q = json.load(open(o / "results" / s / "qc.json"))
         assert q["n_cells"] == len(a) and summ[s]["registration"] == "none (no H&E)"
     assert summ["s1"]["session"] != summ["s2"]["session"]
+    assert not (tmp / "unused").exists(), "the batch made folders in the default data folder"
+    # without STAGENT_HOME (and no data folder in the settings): nothing in ~/stagent either
+    env0 = {k: v for k, v in os.environ.items() if k not in ("STAGENT_HOME", "CELLTYPEAGENT_HOME")}
+    r = subprocess.run([sys.executable, "-m", "stagent.cli", "batch", str(m), "--out", str(tmp / "o8"), "--organ", "colon",
+                        "--only", "s2"], capture_output=True, text=True, env=env0 | {"HOME": str(tmp / "h"),
+                                                                                       "USERPROFILE": str(tmp / "h")})
+    assert r.returncode == 0 and not (tmp / "h" / "stagent").exists(), (r.stdout + r.stderr)[-2000:]
     # again: the steps done are kept (nothing annotated again); the failed one is tried again
     rc, out = batch(m, "--out", o, "--organ", "colon")
     log = (o / "logs" / "s1.log").read_text()

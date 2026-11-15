@@ -152,7 +152,8 @@ def main(argv=None):
     if a.cmd == "selfcheck":  # (before ensure_dirs: the release builds run it, with no data folder)
         from .selfcheck import run
         sys.exit(run())
-    config.ensure_dirs()
+    if a.cmd != "batch":  # (the batch's data folder is --out/data: nothing in the default one)
+        config.ensure_dirs()
     if a.cmd == "import":
         from .importer import import_sample
         import_sample(a.name, a.h5ad, a.he, a.registration, a.section_column, a.section, a.x_column, a.y_column,

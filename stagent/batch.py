@@ -436,7 +436,7 @@ def run(manifest, out, jobs=1, shard=None, auto=True, redo=False, organ=None, ma
             raise ValueError(f"--only: not in the manifest: {', '.join(missing)}")
         rows = [r for r in rows if r["sample"] in set(only)]
     out = Path(out).expanduser().resolve()
-    for sub in ("data", "results", "status", "logs"):
+    for sub in ("data", "data/samples", "data/sessions", "data/marker_lists", "results", "status", "logs"):
         (out / sub).mkdir(parents=True, exist_ok=True)
     jobs = max(1, int(jobs))
     threads = max(1, (os.cpu_count() or 1) // jobs)
