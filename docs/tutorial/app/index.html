@@ -10,11 +10,11 @@
 <style>
 :root {
   --bg: #f4f4f2; --panel: #ffffff; --ink: #1d1f21; --muted: #6b6f73; --line: #e0e0dc;
-  --accent: #0f7c86; --accent-soft: #e3f2f3; --warn: #b5541c; --user: #eef3f8;
+  --accent: #0f7c86; --accent-soft: #e3f2f3; --warn: #b5541c; --user: #eef3f8; --stop: #c0392b;
 }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #17191b; --panel: #212427; --ink: #e8e8e6; --muted: #9a9ea3; --line: #33373b;
-          --accent: #4fb6bf; --accent-soft: #1f3638; --warn: #e08a55; --user: #26303a; }
+          --accent: #4fb6bf; --accent-soft: #1f3638; --warn: #e08a55; --user: #26303a; --stop: #c9443a; }
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -44,11 +44,11 @@ header.collapsed .hrow, header.collapsed .tabs, header.collapsed .pane { display
 .tabs .tab.busy::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 header .pane:not(.on) { display: none; }
 header .hrow.bottom { margin-top: auto; padding-bottom: 0; }
-header .hrow.bottom { flex-wrap: nowrap; gap: 6px; }  /* Reset, Remove all on one row */
+header .hrow.bottom { flex-wrap: nowrap; gap: 6px; }  /* Reset analysis, Remove all samples on one row */
 #pcBack { left: 50%; transform: translateX(-50%); top: calc(var(--maptop, 44px) + 12px); display: flex; gap: 10px; align-items: center;
   padding: 8px 12px; font-size: 13px; z-index: 30; }
 /* one analysis at a time: while one runs, the buttons that start another or change the data are grayed out */
-body.running :is(#annotate, #eRun, #nRun, #aRun, #sRun, #tRun, #qfBtn, #qfGo, #qfRestore, #reset, #rmSample, #clearAll, #heState, #anLoad, #importBtn, #refresh, #sessDel) {
+body.running :is(#annotate, #eRun, #nRun, #aRun, #sRun, #tRun, #qfBtn, #qfGo, #qfRestore, #reset, #rmSample, #rmProject, #pjBtn, #clearAll, #anLoad, #importBtn, #refresh, #sessDel) {
   opacity: .4; filter: grayscale(1); cursor: not-allowed; }
 header .hrow.bottom button { padding: 5px 8px; font-size: 12px; gap: 4px; white-space: nowrap; flex: 0 1 auto; min-width: 0; }
 header.collapsed .hmini { display: flex; }
@@ -124,6 +124,8 @@ button.ib.flip .ic { transform: rotate(180deg); }
 .float button.ib, .dh button.ib, .lh button.ib { border-color: transparent; background: none; color: var(--muted); padding: 5px; }
 .float button.ib:hover, .dh button.ib:hover, .lh button.ib:hover { color: var(--ink); background-color: var(--accent-soft); }
 button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+button.stop { background: var(--stop); color: #fff; border-color: var(--stop); }  /* ends a loop (Stop refining) */
+button.stop:hover:not(:disabled) { background-color: var(--stop); filter: brightness(1.1); }
 button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
 button:disabled { opacity: .45; cursor: default; }
 .spacer { flex: 1; }
@@ -205,6 +207,9 @@ button.main { width: 100%; padding: 9px 12px; font-weight: 600; margin-top: 2px;
 details.adv > summary { font-size: 12px; color: var(--muted); cursor: pointer; user-select: none; }
 details.adv > summary:hover { color: var(--ink); }
 details.adv[open] > summary { margin-bottom: 10px; }
+.advsw { display: flex; flex-direction: column; gap: 12px; }
+#annEst { white-space: pre-line; }
+details.adv > summary .advon { font-size: 11.5px; }
 .progress { display: flex; visibility: hidden; align-items: center; gap: 8px; min-width: 180px; flex: 1; max-width: 640px; }
 .progress.show { visibility: visible; }
 .pstop { color: #b42318; border-color: #e5a29b; }
@@ -415,6 +420,34 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .rfedits { max-height: 38vh; overflow: auto; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }
 .rfedits label { display: grid; grid-template-columns: auto 1fr; gap: 6px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; }
 .rfedits .why { color: var(--muted); }
+.rfedits .rfgroup { display: flex; flex-direction: column; gap: 4px; padding: 6px; border: 1px solid var(--line); border-radius: 10px; }
+.rfedits .rfgroup > label:not(.rfghead) { margin-left: 18px; }
+.rfedits .rfghead { display: flex; align-items: center; gap: 6px; border: none; padding: 2px 2px 0; margin: 0; }
+.rfedits .rfghead .hint { margin-left: auto; }
+.rfedits .rfgroup > label { padding: 3px 8px; }
+.rfedits .rfgroup.folded > label:not(.rfghead) { display: none; }
+.rfedits .rffold { border: none; background: none; color: var(--muted); padding: 0 4px; font-size: 12px; cursor: pointer; min-width: 0; }
+.rfedits details.why > summary { cursor: pointer; display: block; list-style: none; }
+.rfedits details.why > summary::-webkit-details-marker { display: none; }
+.rfedits details.why > summary::before { content: "▸ "; }
+.rfedits details.why[open] > summary::before { content: "▾ "; }
+.rfedits details.why:not([open]) > summary { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rfedits details.why > div { margin: 2px 0 2px 12px; }
+.rfedits .rfgroup > label > div { min-width: 0; }
+.rfedits .rffind { border-color: var(--warn, #c77700); }
+.rfedits .rfopt { font-size: 10.5px; padding: 0 5px; border: 1px solid var(--muted); border-radius: 8px; color: var(--muted); }
+.rfedits .rfq { color: var(--warn); }
+.rfedits .rfgroup > .rfq { padding: 0 4px 2px 28px; }
+.rfedits .rffinding { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: start; padding: 3px 8px; border-top: 1px solid var(--line); }
+.rfedits .rffinding > div:first-child { min-width: 0; }
+.rfedits .rfverdict { display: flex; flex-direction: column; gap: 4px; }  /* (one above the other: room for the text) */
+.rfedits img.rffig { display: block; width: 180px; margin-top: 4px; border: 1px solid var(--line); border-radius: 6px; background: #fff; cursor: zoom-in; }
+#figDlg { width: min(1100px, 95vw); }
+#figDlg img { display: block; max-width: 100%; max-height: calc(90vh - 70px); margin: 0 auto; background: #fff; }
+.rfedits .rfverdict button { font-size: 11.5px; padding: 2px 8px; }
+.rfedits .rfverdict button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.rfedits input[type=checkbox]:indeterminate { background: var(--accent); border-color: var(--accent); }
+.rfedits input[type=checkbox]:indeterminate::after { content: ""; width: 8px; height: 0; border-top: 2px solid #fff; margin-top: 7px; }
 /* the edits' tick boxes drawn by the page, the same whether ticked by the app or by a click (the system draws them
    differently: blue once clicked, grey before) */
 .rfedits input[type=checkbox] { appearance: none; -webkit-appearance: none; width: 16px; height: 16px; margin: 2px 0 0;
@@ -457,6 +490,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .alrow { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 5px 4px; border-radius: 6px; font-size: 13px; cursor: pointer; }
 .alrow:hover { background: var(--bg); } .alrow.alall { border-bottom: 1px solid var(--line); border-radius: 0; }
 #alList { max-height: 50vh; overflow-y: auto; overflow-x: hidden; }
+.pjnames { display: flex; flex-direction: column; gap: 4px; } .pjnames input.moved { border-color: var(--accent); }
 .inrow button.rmsample { color: #c0392b; } .inrow button.rmsample:hover:not(:disabled) { border-color: #c0392b; }
 .imreplace { display: flex; gap: 6px; align-items: flex-start; } .imreplace input { margin-top: 2px; }
 .xpchoose { flex-wrap: wrap; gap: 6px 10px; } .xpchoose label { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
@@ -534,13 +568,14 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <button class="tab" data-tab="compare" role="tab" title="DE genes, top genes per group, composition">Compare</button><button class="tab" data-tab="signal" role="tab" title="Cell-cell communication: ligand-receptor signaling between neighboring cells">Signal</button>
     <button class="tab" data-tab="traj" role="tab" title="Spatial axes and pseudotime: the order of cells in the tissue or along a differentiation, and the genes that change along it">Trajectory</button></div>
   <div class="pane" data-pane="data">
-    <div class="fld" id="sampleWrap"><span>Sample</span><div class="inrow"><select id="sample" aria-label="Sample"></select>
+    <div class="fld" id="projectWrap" hidden><span>Project</span><div class="inrow"><select id="project" aria-label="Project" title="A project (its slices are listed under Slice) or the samples in no project"></select>
+      <button id="pjBtn" disabled title="Choose which samples form which project (slices analyzed together)">Change</button>
+      <button id="rmProject" class="rmsample" disabled title="Remove this project with all its slices: their cells, annotations and chats go to the data folder's trash">Remove project</button></div></div>
+    <div class="fld" id="sampleWrap"><span id="sampleLbl">Sample</span><div class="inrow"><select id="sample" aria-label="Sample"></select>
       <button id="sampleRename" disabled title="Rename the sample as the app shows it (a slice: its name in the project)">Rename</button>
       <button id="rmSample" class="rmsample" disabled title="Remove this sample only: its cells, annotations and chats go to the data folder's trash (to import it again under its name: Import, Replace the existing sample)">Remove</button></div></div>
     <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-layers"/></svg><div id="sampleInfo">No sample yet</div></div>
-    <div class="act2"><button id="allSamples" disabled title="Every sample at a glance, colored the same way (cell type, lineage, Leiden, niche, region)">Overview of all samples</button>
-      <button id="pjBtn" disabled title="Choose which samples form which project (slices analyzed together)">Projects</button></div>
-    <div class="act2" id="heStateWrap" hidden><button id="heState" title="Unload the H&amp;E to free memory; its registration is kept, so Load H&amp;E puts it back as it was">Unload H&amp;E</button></div>
+    <div class="act2"><button id="allSamples" disabled title="The slices of the project (or, with no project chosen, every sample) at a glance, colored the same way (cell type, lineage, Leiden, niche, region)">Overview of the project</button></div>
     <div class="act2"><button id="qfBtn" class="primary main" disabled title="Delete cells with few transcripts or genes or a high mitochondrial share, and genes detected in few cells">Filter cells and genes</button></div>
     <div id="slNav" class="slnav" hidden>
       <div class="stepper"><button id="slPrev" title="Previous slice of the project ([)">◀</button><span id="slPos"></span><button id="slNext" title="Next slice of the project (])">▶</button></div>
@@ -568,16 +603,20 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <option value="approx" data-short="Approximate">Approximate (pynndescent): faster for very large samples (about a million cells or more); the same labels with the same versions of its packages</option>
       <option value="exact" data-short="Exact" selected>Exact (the default): the true neighbors, the same labels on every computer, with or without a GPU; about a minute for 450,000 cells</option></select>
       <div class="seg" data-for="knn"></div><div class="hint" id="annEst"></div></div>
-    <label class="switch" id="spillWrap" title="In imaging data a cell's outline also catches transcripts of its neighbors. On: a gene counts as detected in a cell only where its count is above a tenth of the mean count of its 6 nearest cells. It helped on a MERFISH slice (lineage agreement 0.785 → 0.816 against the authors' labels) and changed little on Xenium sections; try it when many cells stay untyped or markers of neighboring types show up where they should not"><input type="checkbox" id="spill" checked>
-      <span>Leave out spillover<small>transcripts that come from neighboring cells</small></span></label>
-    <label class="switch" id="carryWrap" style="visibility:hidden" title="Start the new annotation with the regions (and their colors), priors and hand corrections of the one that is open; priors and corrections naming cell types the new annotation does not have are dropped"><input type="checkbox" id="carry" checked>
-      <span>Keep my regions, priors &amp; corrections<small>carried into the new annotation</small></span></label>
-    <label class="switch" id="rfAutoWrap" title="After annotating with marker genes, the agent reviews the result with the tissue's priors and proposes edits of the marker list; you accept some and the app annotates again, round by round"><input type="checkbox" id="rfAuto" checked>
-      <span>Refine with the agent<small>after annotating: review, edit the list, annotate again</small></span></label>
     <label class="switch projall" hidden title="Annotate all slices of the project at once (one marker step and one model), so a name means the same cells in every slice"><input type="checkbox" id="projAllA">
       <span>All slices together<small>one annotation of the project's slices (marker genes)</small></span></label>
+    <label class="switch" id="rfAutoWrap" data-short="refine" title="After annotating with marker genes the Refine window opens: Agent review has the agent review the result with the tissue's priors and propose edits of the marker list; you accept some, the app annotates again and sends the next round to the agent by itself, round by round"><input type="checkbox" id="rfAuto" checked>
+      <span>Refine with the agent<small>after annotating: review, edit the list, annotate again</small></span></label>
+    <details class="adv" id="annAdv"><summary>Advanced <span id="annAdvOn" class="advon"></span></summary><div class="advsw">
+      <label class="switch" id="spillWrap" data-short="spillover out" title="In imaging data a cell's outline also catches transcripts of its neighbors. On: a gene counts as detected in a cell only where its count is above a tenth of the mean count of its 6 nearest cells. It helped on a MERFISH slice (lineage agreement 0.785 → 0.816 against the authors' labels) and changed little on Xenium sections; try it when many cells stay untyped or markers of neighboring types show up where they should not"><input type="checkbox" id="spill" checked>
+        <span>Leave out spillover<small>transcripts that come from neighboring cells</small></span></label>
+      <label class="switch" id="parWrap" data-short="parallel" title="Automatic (on by default): the Leiden clusterings each level tries (4 resolutions) run at once in separate processes, as many as the free memory allows after what the annotation itself needs at its peak (each process about 1.8 GB for 700,000 cells, 4.6 GB for 2 million); with too little free memory they run one after the other, as with the switch off. The same cell types either way; about 20% faster on large samples (708,983 cells: 227 s → 184 s). A setting of this computer, for the agent's annotations too"><input type="checkbox" id="leidenPar" checked>
+        <span>Parallel clustering<small>automatic: as many processes as the free memory allows</small></span></label>
+      <label class="switch" id="carryWrap" data-short="keep my edits" style="visibility:hidden" title="Start the new annotation with the regions (and their colors), priors and hand corrections of the one that is open; priors and corrections naming cell types the new annotation does not have are dropped"><input type="checkbox" id="carry" checked>
+        <span>Keep my regions, priors &amp; corrections<small>carried into the new annotation</small></span></label>
+    </div></details>
     <button id="annotate" class="primary main">Annotate</button>
-    <div class="act2"><button id="rfOpen" disabled title="Refine this annotation with the agent: the computed problems, the agent's proposed edits of the marker list, your conversation with it">Refine cell types</button></div>
+    <div class="act2"><button id="rfOpen" disabled title="Refine this annotation with the agent: the computed problems, the agent's review results and suggested edits of the marker list, your conversation with it">Refine cell types</button></div>
   </div>
   <div class="pane" data-pane="embed">
     <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-scatter"/></svg><div><div id="einfo">No embedding yet</div>
@@ -752,8 +791,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <button id="tRun" class="primary main" disabled>Find trajectory</button>
   </div>
   <div class="hrow bottom">
-    <button id="reset" class="danger" disabled title="Remove every annotation and chat of this sample">Reset</button>
-    <button id="clearAll" class="danger" hidden title="Delete every sample with all its annotations and chats for good, to import from scratch">Remove all</button>
+    <button id="reset" class="danger" disabled title="Remove every annotation and chat of this sample (the sample stays)">Reset analysis</button>
+    <button id="clearAll" class="danger" hidden title="Delete every sample with all its annotations and chats for good, to import from scratch">Remove all samples</button>
   </div>
 </header>
 <main>
@@ -934,11 +973,11 @@ T and NK cells: CD3E|NKG7+ EPCAM-
         <div id="rfMsgs" class="rfmsgs"></div>
         <textarea id="rfText" rows="3" placeholder="Tell the agent what to consider, e.g. this is a fibrotic lung; keep CD9 for neurons; add chondrocytes"></textarea>
         <div class="row"><span class="hint" id="rfWait"></span><span class="spacer"></span><button id="rfSend">Send to the agent</button></div></div>
-      <div class="rfcol"><b>Proposed edits</b><div class="hint" id="rfEditsHint">Click Agent review to have this round reviewed.</div>
+      <div class="rfcol"><b>Review results and suggestions</b><div class="hint" id="rfEditsHint">Click Agent review to have this round reviewed.</div>
         <div id="rfEdits" class="rfedits"></div></div>
     </div>
     <div class="row" style="margin-top:4px"><span class="err" id="rfErr"></span><span class="spacer"></span>
-      <button id="rfStop" title="End refining: the annotation stays as it is">Stop refining</button>
+      <button id="rfStop" class="stop" title="End refining: the annotation stays as it is">Stop refining</button>
       <button id="rfDismiss" title="Drop these edits; you can write to the agent and ask again">Dismiss edits</button>
       <button id="rfAsk" class="primary" title="The agent reviews the whole annotation with the tissue's priors and proposes edits">Agent review</button>
       <button id="rfAccept" class="primary" hidden title="Apply the chosen edits to the marker list and annotate again (your regions, priors and corrections carry over)">Accept chosen and annotate</button></div>
@@ -966,6 +1005,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <div class="hint">The slices of a project are stepped through together and can be annotated, embedded and analyzed
       together (All slices together); they need one gene panel. Choose the project of each sample; "no project" takes
       it out. A project without slices goes away.</div>
+    <div class="pjnames" id="pjNames"></div>
     <div class="row"><input type="text" id="pjNewName" placeholder="name of a new project" style="flex:1"><button id="pjNew">Add project</button></div>
     <div style="max-height:52vh;overflow:auto"><table class="pjtab" id="pjTab"></table></div>
     <div class="row"><span class="err" id="pjErr"></span><span class="spacer"></span><button id="pjCancel">Cancel</button><button id="pjSave" class="primary">Save</button></div>
@@ -978,6 +1018,12 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <div id="rgText" style="font-size:13.5px"></div>
     <div class="row"><span class="err" id="rgErr"></span><span class="spacer"></span><span id="rgBtns" class="row" style="gap:8px"></span></div>
   </div>
+</dialog>
+<dialog id="figDlg">
+  <div class="dh"><b>Where these cells lie</b><span class="hint" id="figTitle" style="margin-left:8px"></span><span class="spacer"></span>
+    <button id="figClose">Close</button></div>
+  <div style="padding:10px 14px 14px"><img id="figBig" alt="Where these cells lie">
+    <div class="hint" style="margin-top:6px">Red: these cells · blue: the other cells of the type · grey: all cells</div></div>
 </dialog>
 <dialog id="prDlg" style="width:min(760px,95vw)">
   <div class="dh"><b>Tissue priors</b><span class="hint" id="prInfo" style="margin-left:8px"></span><span class="spacer"></span>
@@ -1173,7 +1219,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
   </div>
 </dialog>
 <dialog id="rsDlg" style="width:min(560px,95vw)">
-  <div class="dh"><b>Reset</b><span class="spacer"></span><button id="rsClose">Close</button></div>
+  <div class="dh"><b>Reset analysis</b><span class="spacer"></span><button id="rsClose">Close</button></div>
   <div class="imbody">
     <div class="hint" id="rsText" style="margin-bottom:8px"></div>
     <div id="rsScope" class="choice" style="flex-direction:column;align-items:flex-start;gap:4px;margin-bottom:8px">
@@ -1341,7 +1387,7 @@ function decorate(b, name, only) {  // icon + label, or the icon only (the label
   else { const t = document.createElement("span"); t.className = "bt"; t.textContent = text; b.append(t); }
   return b;
 }
-const ICON_ONLY = { rmSample: "trash", sessDel: "x", hdrShow: "chev-left", hdrHide: "chev-right", helpBtn: "help", bugBtn: "bug", slPrev: "chev-left", slNext: "chev-right",
+const ICON_ONLY = { rmSample: "trash", rmProject: "trash", sessDel: "x", hdrShow: "chev-left", hdrHide: "chev-right", helpBtn: "help", bugBtn: "bug", slPrev: "chev-left", slNext: "chev-right",
   lgtoggle: "chev-up", rgtoggle: "chev-up", stepsFold: "chev-up", plclose: "x", emClose: "x", imClose: "x", rcClose: "x", clClose: "x", rpClose: "x",
   xpClose: "x", glClose: "x", anClose: "x", rvClose: "x", hpClose: "x", anCsv: "download", rpSave: "download", mkExport: "download",
   fbUp: "arrow-up", fbHome: "home", rsClose: "x", hide: "cell", hideHE: "image" };
@@ -1408,7 +1454,7 @@ function openHE(sample) {
     $("hideHE").hidden = kind === "none";
     setLabel($("hideHE"), `Hide the ${kind === "H&E" ? "H&E" : "image"}: the cells only (e)`);
     viewer.addOnceHandler("open", applyHE);
-    viewer.open(tileSource((l, x, y) => `/api/sample/${sample}/he/${l}/${x}_${y}.jpg?r=${he.rev}${he.image_unloaded ? "&u=1" : ""}${st.epoch ? `&f=${st.epoch}` : ""}`));  // rev: new cell positions, new tiles
+    viewer.open(tileSource((l, x, y) => `/api/sample/${sample}/he/${l}/${x}_${y}.jpg?r=${he.rev}${st.epoch ? `&f=${st.epoch}` : ""}`));  // rev: new cell positions, new tiles
   });
 }
 function filt() {  // legend filter of the current color mode (empty = show all)
@@ -1617,15 +1663,20 @@ async function loadSamples(select, project) {
   if (!st.samples.length) {  // a fresh install: nothing imported yet
     $("empty").firstElementChild.textContent = "No samples yet. Click Import to add Xenium files (cells.parquet and cell_feature_matrix.h5), h5ad or RDS files (with or without an image).";
     $("empty").style.display = "flex"; $("annotate").disabled = true; $("sampleRename").disabled = true; $("priorBtn").disabled = true; $("qfBtn").disabled = true; $("rmSample").disabled = true; $("allSamples").disabled = true; $("pjBtn").disabled = true;
+    $("project").textContent = ""; $("projectWrap").hidden = true; $("rmProject").disabled = true;
+    if (st.sample) {  // the last sample was just removed: start afresh, as Remove all samples does (its annotation,
+      setTimeout(() => location.reload(), 1500);  // image and panels must not stay open)
+      return;
+    }
+    sampleInfo();
     return;
   }
   $("annotate").disabled = false;
   $("empty").firstElementChild.innerHTML = "No cell types yet. Check the marker list (<b>Markers…</b>) and click <b>Annotate</b>.";
-  fillSampleSelect();
   if (project) { const p = st.projects.find((x) => x.project_id === project); if (p) select = p.samples[0]; }
   const url = new URLSearchParams(location.search);  // links from the agent: ?sample=...&session=...
   const want = select || url.get("sample") || load("sample");
-  if (st.samples.some((s) => s.sample_id === want)) sel.value = want;
+  fillSampleSelect(st.samples.some((s) => s.sample_id === want) ? want : sampleOrder()[0]);
   // the annotation in the link counts once, when the page opens: Refresh, Load…, the agent's and the user's later
   // choices must not be sent back to it; the link is then dropped from the address (a reload keeps what is open)
   if (!st.linkUsed && url.get("session") && url.get("sample") === sel.value) st.openedThisVisit[sel.value] = url.get("session");
@@ -1636,27 +1687,43 @@ async function loadSamples(select, project) {
   st.linkUsed = true;
   await selectSample(sel.value);
 }
-function fillSampleSelect() {  // the slices of each project, then the samples on their own
-  const sel = $("sample"), keep = sel.value; sel.textContent = "";
-  const label = (s) => [s.name || s.sample_id, s.description || [s.disease, s.location].filter(Boolean).join(" · "), s.image_only ? `${s.image_kind || "image"} only` : `${s.n_cells.toLocaleString()} ${s.unit || "cells"}`].filter(Boolean).join(" · ");
-  const inProject = new Set();
-  st.projects.forEach((p) => {  // the slices of a project together, with what distinguishes them
-    const g = document.createElement("optgroup"); g.label = `project ${p.name} (${p.samples.length} slices)`;
-    p.samples.forEach((id) => {
-      const s = st.samples.find((x) => x.sample_id === id); if (!s) return;
-      inProject.add(id);
-      const o = document.createElement("option"); o.value = id;
-      const md = metaText(s.metadata);
-      o.textContent = [p.slices[id] ? p.slices[id].section : id, md, s.image_only ? `${s.image_kind || "image"} only` : `${s.n_cells.toLocaleString()} ${s.unit || "cells"}`].filter(Boolean).join(" · ");
-      g.append(o);
-    });
-    sel.append(g);
+// The Project box picks a project or the samples in no project; the Sample box
+// (Slice in a project) lists only those
+const looseSamples = () => st.samples.filter((s) => !projectOf(s.sample_id)).map((s) => s.sample_id);
+const projectSamples = (pid) => (pid ? ((st.projects || []).find((p) => p.project_id === pid) || { samples: [] }).samples
+  .filter((id) => st.samples.some((s) => s.sample_id === id)) : looseSamples());
+const sampleOrder = () => [...(st.projects || []).flatMap((p) => projectSamples(p.project_id)), ...looseSamples()];
+function fillSampleSelect(id) {  // the project of sample id (default: the one shown) and its slices, or the samples in no project
+  const sel = $("sample"), ps = $("project");
+  id = id || sel.value || (st.sample && st.sample.sample_id) || sampleOrder()[0];
+  const p = id && projectOf(id), pid = p ? p.project_id : "";
+  ps.textContent = "";
+  (st.projects || []).forEach((x) => ps.append(Object.assign(document.createElement("option"),
+    { value: x.project_id, textContent: `${x.name} · ${x.samples.length} slice${x.samples.length === 1 ? "" : "s"}` })));
+  const loose = looseSamples().length;
+  if (loose) ps.append(Object.assign(document.createElement("option"),
+    { value: "", textContent: `No project · ${loose} sample${loose === 1 ? "" : "s"}` }));
+  ps.value = pid;
+  $("rmProject").disabled = !p;
+  const ov = $("allSamples").querySelector(".bt"); if (ov) ov.textContent = p ? "Overview of the project" : "Overview of all samples";
+  $("projectWrap").hidden = !st.samples.length;  // (with no project yet: "No project" and Change, to make one)
+  $("sampleLbl").textContent = p ? "Slice" : "Sample";
+  const cells = (s) => (s.image_only ? `${s.image_kind || "image"} only` : `${s.n_cells.toLocaleString()} ${s.unit || "cells"}`);
+  sel.textContent = "";
+  projectSamples(pid).forEach((sid) => {
+    const s = st.samples.find((x) => x.sample_id === sid);
+    const o = document.createElement("option"); o.value = sid;
+    o.textContent = (p ? [p.slices[sid] ? p.slices[sid].section : sid, metaText(s.metadata), cells(s)]
+      : [s.name || s.sample_id, s.description || [s.disease, s.location].filter(Boolean).join(" · "), cells(s)]).filter(Boolean).join(" · ");
+    sel.append(o);
   });
-  st.samples.filter((s) => !inProject.has(s.sample_id)).forEach((s) => {
-    const o = document.createElement("option"); o.value = s.sample_id; o.textContent = label(s); sel.append(o);
-  });
-  if (keep) sel.value = keep;
+  if (id) sel.value = id;
 }
+$("project").onchange = (e) => {  // the slice of that project last open (else its first), or the last sample in no project
+  const ids = projectSamples(e.target.value), last = load(`projectSample:${e.target.value}`);
+  const id = ids.includes(last) ? last : ids[0];
+  if (id) { fillSampleSelect(id); selectSample(id); }
+};
 
 // Color-by options appear only when they have something to show: the data starts with no cell types, and
 // region / changes / conflicts appear once regions are drawn, labels change, or priors conflict with cells.
@@ -1710,7 +1777,9 @@ function fillSessions(selected) {
 
 async function selectSample(id) {
   const token = ++st.switchToken;  // ignore results of an earlier, still-running switch
-  st.samples = await api("/api/samples");
+  const samples = await api("/api/samples");
+  if (token !== st.switchToken) return;  // a later switch is under way (its sample, select and image win)
+  st.samples = samples;
   st.sample = st.samples.find((s) => s.sample_id === id);
   // only annotations made in the app (marker genes or a single-cell reference); the lab's benchmark ones are not shown
   st.sample.allSessions = st.sample.sessions;
@@ -1719,7 +1788,8 @@ async function selectSample(id) {
   $("qfBtn").disabled = false; $("anLoad").disabled = false; $("rmSample").disabled = false; $("allSamples").disabled = false; $("pjBtn").disabled = false;
   $("reset").disabled = !st.sample.allSessions.length && !projectOf(id);  // in a project: also to reset the other slices
   imageOnlyUI();  // now, not only when an annotation opens: a sample whose annotations are not opened yet opens none
-  store("sample", id);
+  store("sample", id); store(`projectSample:${(projectOf(id) || {}).project_id || ""}`, id);
+  if ($("sample").value !== id || $("project").value !== ((projectOf(id) || {}).project_id || "")) fillSampleSelect(id);
   loadStepsSoon();  // its steps also while none of its annotations is open
   $("path").textContent = st.sample.bundle_dir;
   $("path").title = `bundle: ${st.sample.bundle_dir}\nsource: ${st.sample.source_dir}\nH&E: ${st.sample.he_path}`;
@@ -3813,8 +3883,8 @@ async function adoptArea(body, proposed) {
 }
 function openProposal(prop) {
   $("mkText").value = prop.text; $("mkName").value = ""; openMarkers(); checkMarkers();
-  $("carry").checked = true;
-  toast("Proposed marker list loaded. Close the dialog and click Annotate (“keep my regions, priors & corrections” is checked).", 6000);
+  $("carry").checked = true; syncAnnAdv();
+  toast("Proposed marker list loaded. Close the dialog and click Annotate (“Keep my regions, priors & corrections” under Advanced is checked).", 6000);
   setProposal("opened");
 }
 async function setProposal(status) {
@@ -3938,6 +4008,7 @@ async function prPost(change) {
                        { session: st.sid || null, organ: v.organ, removed: v.removed || [], added: v.added || [], ...change }); }
   catch (e) { $("prErr").textContent = e.message; return false; }
   prShow(r);
+  if (r.offline) toast(`Saved. ${r.offline}`, 7000);  // (the priors are kept; their rules are asked for when online)
   if (r.asked && r.asked.length) {
     if (r.message && st.chatAvailable) { $("input").value = r.message; send(); }
     toast(r.claude_code ? (r.claude_code.reused ? "The agent is writing the rule" : "The agent is opening to write the rule")
@@ -3970,8 +4041,12 @@ $("prDefault").onclick = async () => {
   if (await prPost({ reset: true })) toast("The app's priors again", 2500);
 };
 $("prClose").onclick = () => $("prDlg").close();
+$("figClose").onclick = () => $("figDlg").close();
+$("figDlg").addEventListener("click", (e) => { if (e.target === $("figDlg")) $("figDlg").close(); });  // (a click beside it)
 $("prDlg").addEventListener("close", () => {
   clearTimeout(PR.poll);
+  if (PR.view && st.sample) st.priorsChecked = `${st.sample.sample_id}|${PR.view.organ || ""}`;  // (seen: Accept in Steps)
+  loadStepsSoon();  // (the priors may have changed, or the organ)
   const o = PR.view && PR.view.organ;  // an organ chosen there is the Refine window's too
   if (o && $("rfDlg").open && o !== rfOrgan()) {
     if ([...$("rfOrgan").options].some((x) => x.value === o)) { $("rfOrgan").value = o; $("rfOrganOther").hidden = true; }
@@ -4072,6 +4147,7 @@ function showMethod() {
   $("openMarkers").hidden = m !== "markers"; $("openRef").hidden = m !== "scref"; $("openEx").hidden = m !== "existing";
   $("knnWrap").hidden = m !== "markers";
   $("spillWrap").hidden = m !== "markers";
+  $("parWrap").hidden = m !== "markers";
   estimateAnnotation();
 }
 function duration(s) {  // as timing.words on the server
@@ -4096,7 +4172,7 @@ function estimateAnnotation() {  // how long Annotate should take here, for both
     try {
       const e = await post("/api/estimate", JSON.parse(key));
       if (key !== body()) return;  // the sample or the settings changed meanwhile: a newer estimate follows
-      EST.last = e; showEstimate();
+      EST.last = e; defaultKnn(e); showEstimate();
     } catch (err) { box.textContent = ""; EST.last = null; }
   }, 300);
 }
@@ -4108,23 +4184,52 @@ async function memoryOk(op, project, what) {  // false when the user decides not
   return confirm(`${what}${m.slices > 1 ? ` of ${m.slices} slices together` : ""} needs about ${m.memory_gb} GB of memory at its peak; this computer has ${m.ram_gb} GB.\n\n`
     + `It may become very slow or stop. Close other programs, or ${m.slices > 1 ? "run it on fewer slices at once (untick All slices together)" : "use a computer with more memory"}.\n\nStart anyway?`);
 }
-function showEstimate() {
+function showEstimate() {  // one line each: Exact, Approximate, Memory (and a note when one applies); details on hover
   const e = EST.last, box = $("annEst");
   if (!e) { box.textContent = ""; return; }
-  const k = $("knn").value, other = k === "exact" ? "approx" : "exact", me = e[k];
+  const k = $("knn").value, me = e[k];
   const cells = `${e.n_cells.toLocaleString()} cells` + (e.slices > 1 ? ` of ${e.slices} slices` : "");
-  const cap = (t) => t[0].toUpperCase() + t.slice(1);
-  box.textContent = `${cap(duration(me.seconds))} for ${cells}: ${me.backend}. ${other === "exact" ? "Exact" : "Approximate"}: ${duration(e[other].seconds)}.`
-    + (k === "exact" && me.seconds > 600 && e.approx.seconds < me.seconds / 2 ? " A sample this large: Approximate is much faster." : "")
-    + (e.marker_list ? "" : " Load the marker list for a closer estimate.")
-    + (e.memory_gb && e.ram_gb ? ` Memory: about ${e.memory_gb} GB (this computer has ${e.ram_gb} GB)` + (e.memory_gb > MEM_WARN * e.ram_gb ? ": too much for this computer; annotate fewer slices at once." : ".") : "");
-  box.title = `Estimated ${me.basis}; every run here makes it more precise.\n`
-    + me.steps.map(([s, t]) => `${s}: ${t < 1 ? "<1" : Math.round(t)} s`).join("\n");
+  const where = (e.exact.backend || "").replace(/^exact, on the /, "").replace(/^exact, /, "");
+  const lines = [`Exact: ${duration(e.exact.seconds)}` + (where ? ` (${where})` : ""), `Approximate: ${duration(e.approx.seconds)}`];
+  if (e.memory_gb && e.ram_gb) lines.push(`Memory: about ${e.memory_gb} GB (total ${e.ram_gb} GB)`);
+  if (e.memory_gb && e.ram_gb && e.memory_gb > MEM_WARN * e.ram_gb) lines.push("Too much for this computer: annotate fewer slices at once.");
+  if (k === "exact" && me.seconds > 600 && e.approx.seconds < me.seconds / 2) lines.push("A sample this large: Approximate is much faster.");
+  if (!e.marker_list) lines.push("Load the marker list for a closer estimate.");
+  box.textContent = lines.join("\n");
+  box.title = `${cells}; estimated ${me.basis}; every run here makes it more precise.\n`
+    + (me.leiden_workers ? `Leiden: ${me.leiden_workers} processes at once (Parallel clustering, by the free memory now).\n` : "")
+    + `${k === "exact" ? "Exact" : "Approximate"}, by step:\n` + me.steps.map(([s, t]) => `${s}: ${t < 1 ? "<1" : Math.round(t)} s`).join("\n");
 }
-if (["exact", "approx"].includes(load("knn"))) $("knn").value = load("knn");
-$("knn").onchange = () => { syncSeg("knn"); store("knn", $("knn").value); showEstimate(); };
+// Neighbors: the server's default (session.knn_mode: Exact, Approximate from a million cells when it is estimated at
+// least twice as fast on this kind of computer; the same every time here, not from the timed runs); a choice made for
+// a sample (or the project) is kept for it
+const knnKey = () => st.sample && `knn:${projectMode() ? "project:" : ""}${st.sample.sample_id}`;
+function defaultKnn(e) {
+  const mine = knnKey() && load(knnKey());
+  const k = ["exact", "approx"].includes(mine) ? mine : e && e.default_knn === "approx" ? "approx" : "exact";
+  if ($("knn").value !== k) { $("knn").value = k; syncSeg("knn"); }
+}
+$("knn").onchange = () => { syncSeg("knn"); if (knnKey()) store(knnKey(), $("knn").value); showEstimate(); };
 if (load("spill") === "off") $("spill").checked = false;
 $("spill").onchange = () => store("spill", $("spill").checked ? "on" : "off");
+// Type tab: the switches in Advanced; its summary names those on, and it is hidden when none applies
+function syncAnnAdv() {
+  const shown = [...$("annAdv").querySelectorAll(".advsw > .switch")].filter((w) => !w.hidden && w.style.visibility !== "hidden");
+  $("annAdv").hidden = !shown.length;
+  const on = shown.filter((w) => w.querySelector("input").checked).map((w) => w.dataset.short);
+  $("annAdvOn").textContent = on.length ? `· ${on.join(", ")}` : "";
+}
+new MutationObserver(syncAnnAdv).observe($("annAdv"), { subtree: true, attributes: true, attributeFilter: ["hidden", "style"] });
+$("annAdv").addEventListener("change", syncAnnAdv);
+if (load("annAdv") === "open") $("annAdv").open = true;
+$("annAdv").addEventListener("toggle", () => store("annAdv", $("annAdv").open ? "open" : ""));
+api("/api/leiden_parallel").then((r) => { $("leidenPar").checked = r.on; $("leidenPar").disabled = r.fixed; syncAnnAdv(); }).catch(() => {});
+$("leidenPar").onchange = async () => {  // a setting of this computer (the agent's annotations follow it too)
+  try { $("leidenPar").checked = (await post("/api/leiden_parallel", { on: $("leidenPar").checked })).on; }
+  catch (e) { $("leidenPar").checked = !$("leidenPar").checked; toast(e.message, 5000); }
+  syncAnnAdv();
+  estimateAnnotation();
+};
 $("mkDlg").addEventListener("close", estimateAnnotation);
 $("projAllA").addEventListener("change", estimateAnnotation);
 $("projAllE").addEventListener("change", () => sliceNav());  // Harmony is for an embedding of all slices
@@ -4193,7 +4298,7 @@ $("refPath").onchange = () => inspectRef();
 $("refPick").onclick = async () => { const p = await pickFiles("h5ad"); if (p.length) { $("refPath").value = p[0]; inspectRef(); } };
 
 // ---------------- Refine with the agent: review, edits of the marker list, annotation again, round by round ----------------
-const RF = { sid: null, state: null, timer: null, from: null, seen: "" };
+const RF = { sid: null, state: null, timer: null, from: null, seen: "", preparing: null, folded: null, ticks: null, figs: null };
 const rfAgentOk = () => !!(st.desktop || st.chatAvailable);
 function rfSync() {  // the Refine button and switch: a marker annotation open, an agent to ask
   const marker = !!st.sid && !st.placeholder && !!st.vocab && st.vocab.method === "markers";
@@ -4213,6 +4318,7 @@ async function rfButtonRound() {  // the button names the round it opens: this a
   setLabel($("rfOpen"), `Refine cell types round ${n}`);
 }
 if (load("rfAuto") === "off") $("rfAuto").checked = false;
+syncAnnAdv();
 $("rfAuto").onchange = () => store("rfAuto", $("rfAuto").checked ? "on" : "off");
 $("method").addEventListener("change", rfSync);
 const rfRound = () => (RF.state && RF.state.rounds.length ? RF.state.rounds[RF.state.rounds.length - 1] : null);
@@ -4221,21 +4327,49 @@ async function rfOpen(from) {
   let r = await api(`/api/s/${sid}/refine`);
   const last = r.rounds[r.rounds.length - 1];
   if (!last || last.session !== sid || last.version !== st.version || (from && from !== sid)) {  // a round on this version
-    await post(`/api/s/${sid}/refine/start`, { from: from || null });
+    // the window opens at once; the round's summary (reading the counts of a large sample) follows
+    clearInterval(RF.timer); RF.sid = null; RF.state = null;
+    $("rfTitle").textContent = "Refine cell types"; $("rfWait").textContent = ""; $("rfErr").textContent = "";
+    $("rfReport").textContent = "Summing up this annotation for the new round…";
+    $("rfMsgs").textContent = ""; $("rfEdits").textContent = ""; $("rfEditsHint").textContent = "";
+    $("rfAccept").hidden = $("rfAsk").hidden = true;
+    if (!$("rfDlg").open) $("rfDlg").showModal();
+    const prep = { sid, stop: false }; RF.preparing = prep;  // (one per preparation: an overlapping one has its own)
+    try { await post(`/api/s/${sid}/refine/start`, { from: from || null }); }
+    catch (e) { $("rfReport").textContent = ""; $("rfErr").textContent = `Could not start the round: ${e.message}`; throw e; }
+    finally { if (RF.preparing === prep) RF.preparing = null; }
+    if (prep.stop) {  // Stop refining while the round was being prepared: the round is made, then stopped
+      await post(`/api/s/${sid}/refine/decide`, { decision: "stopped" }).catch(() => {});
+      return;
+    }
     r = await api(`/api/s/${sid}/refine`);
+    if (!$("rfDlg").open) return;  // closed meanwhile (the round is kept: the button reopens it)
   }
   RF.sid = sid; RF.state = r; RF.seen = "";
   rfRender();
   if (!$("rfDlg").open) $("rfDlg").showModal();
   clearInterval(RF.timer);
   RF.timer = setInterval(rfPoll, 3000);
+  // the round after an Accept goes to the agent by itself (the user accepted edits to go on; the organ is known);
+  // the first round waits for Agent review (the organ to confirm, words to write first)
+  const rd = r.rounds[r.rounds.length - 1], prev = r.rounds[r.rounds.length - 2];
+  if (from && rd && rd.session === sid && prev && prev.decision === "accepted" && !rd.asked && !rd.proposal && !rd.messages.length && !rd.decision)
+    $("rfAsk").click();
 }
 async function rfPoll() {
   if (!$("rfDlg").open) { clearInterval(RF.timer); return; }
   let r; try { r = await api(`/api/s/${RF.sid}/refine`); } catch (e) { return; }
   const rd = r.rounds[r.rounds.length - 1];
-  const key = rd ? `${rd.n}|${rd.messages.length}|${rd.proposal ? rd.proposal.time : ""}|${rd.decision}` : "";
+  const key = rd ? `${rd.n}|${rd.messages.length}|${rd.proposal ? rd.proposal.time : ""}|${rd.decision}|${!!r.awaiting}` : "";
   if (key !== RF.seen) { RF.state = r; rfRender(); }
+  else $("rfWait").textContent = rfWaitText(r);  // (the time waited: after 10 minutes, where to look)
+}
+const RF_WAIT_S = 600;
+function rfWaitText(r) {  // the agent asked and no proposal yet; long after, it most likely stopped on an error
+  if (!r || !r.awaiting) return "";
+  return r.waited_s > RF_WAIT_S ? "No proposal after 10 minutes. Look at the Claude Code window: it shows an error there " +
+    "(no internet, not logged in, its limit reached) or is still working. Then click Agent review again."
+    : "The agent is reviewing (a few minutes)…";
 }
 function rfOrgan() { return $("rfOrgan").value === "__other" ? $("rfOrganOther").value.trim() : $("rfOrgan").value; }
 const rfEsc = (x) => String(x ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -4248,9 +4382,10 @@ function rfEditText(e) {
 }
 function rfRender() {
   const r = RF.state, rd = rfRound(); if (!rd) return;
-  RF.seen = `${rd.n}|${rd.messages.length}|${rd.proposal ? rd.proposal.time : ""}|${rd.decision}`;
+  RF.seen = `${rd.n}|${rd.messages.length}|${rd.proposal ? rd.proposal.time : ""}|${rd.decision}|${!!r.awaiting}`;
   const rep = rd.report, g = rep.organ || {};
   $("rfTitle").textContent = `Refine cell types round ${rd.n}`;
+  $("rfWait").textContent = rfWaitText(r);
   if (RF.sid === st.sid) setLabel($("rfOpen"), `Refine cell types round ${rd.n}`);
   // the organ: confirmed, inferred, or asked
   const organ = r.organ || g.organ || "";
@@ -4270,6 +4405,10 @@ function rfRender() {
   if (nf.length) lines.push("Not found: " + nf.map((x) => `<span title="${rfEsc(x.reason)}">${rfEsc(x.type)}</span>`).join(", "));
   if (un.n_cells) lines.push(`The marker step could not type ${un.n_cells.toLocaleString()} cells (${(100 * un.share).toFixed(1)}%, median ${un.median_transcripts} transcripts vs ${un.median_transcripts_others}); by their marker genes: ` +
     Object.entries(un.typed_by_marker_genes_as || {}).slice(0, 6).map(([k, v]) => `${rfEsc(k)} ${v.toLocaleString()}`).join(", "));
+  const lie = (rep.where_types_lie || []).filter((x) => x.mostly_among);
+  if (lie.length) lines.push("Mostly among another lineage: " + lie.map((x) => `<span title="${rfEsc(Object.entries(x.among).map(([k, v]) => `${k} ${Math.round(100 * v)}%`).join(", "))} of its cells lie among these">${rfEsc(x.type)} among ${rfEsc(x.mostly_among)} (${Math.round(100 * x.among[x.mostly_among])}%)</span>`).join(", "));
+  (rep.rule_conflicts || []).slice(0, 3).forEach((c) => lines.push(`Against your rule ${rfEsc(c.text)}: ${c.n_cells.toLocaleString()} cells (` +
+    Object.entries(c.by_how).map(([k, v]) => `${v.toLocaleString()} ${k === "clustered" ? "in clusters" : k === "boundary" ? "at the boundary" : k}`).join(", ") + ")"));
   if ((rep.marker_flags || []).length) lines.push(`${rep.marker_flags.length} markers flagged (weak or not specific), e.g. ` + rep.marker_flags.slice(0, 5).map((f) => `${rfEsc(f.node)}: ${rfEsc(f.marker)}`).join(", "));
   $("rfReport").innerHTML = lines.map((l) => `<div>${l}</div>`).join("");
   // the conversation
@@ -4277,26 +4416,117 @@ function rfRender() {
   rd.messages.forEach((m) => { const d = document.createElement("div"); d.className = `m ${m.from}`; d.textContent = m.text; box.append(d); });
   box.scrollTop = box.scrollHeight;
   // the edits
-  const P = rd.proposal, eb = $("rfEdits"); eb.textContent = "";
-  if (P && P.edits.length) {
-    P.edits.forEach((e) => {
-      const l = document.createElement("label"); const c = document.createElement("input"); c.type = "checkbox"; c.value = e.id;
-      const off = RF.unticked && RF.unticked.time === P.time ? RF.unticked.ids : null;
-      c.checked = rd.decision !== "dismissed" && !(off && off.has(e.id)); c.disabled = !!rd.decision;
-      c.onchange = () => {  // remembered for this proposal, so the next refresh of the window keeps it
-        if (!RF.unticked || RF.unticked.time !== P.time) RF.unticked = { time: P.time, ids: new Set() };
-        if (c.checked) RF.unticked.ids.delete(e.id); else RF.unticked.ids.add(e.id);
+  const P = rd.proposal, eb = $("rfEdits"), keepTop = eb.scrollTop;
+  const opened = new Set([...eb.querySelectorAll("details[open]")].map((d) => d.dataset.k).filter(Boolean));  // (kept open)
+  eb.textContent = "";
+  if (P && (P.findings || []).length) {
+    // the agent's findings against the priors, apart from the edits: the user says real biology or mislabel
+    const verdicts = r.prior_verdicts || {};
+    const box = document.createElement("div"); box.className = "rfgroup rffind";
+    box.append(Object.assign(document.createElement("div"), { className: "rfghead", innerHTML: `<b>Against the priors</b><span class="hint">${P.findings.length} found · real biology or a mislabel?</span>` }));
+    P.findings.forEach((f) => {
+      const row = document.createElement("div"); row.className = "rffinding"; row.dataset.key = f.key;
+      const v = (verdicts[f.key] || {}).verdict;
+      row.innerHTML = `<div><b>${rfEsc(f.cells)}</b> ${rfEsc(f.where)}` + (f.rule ? ` <span class="hint">· ${rfEsc(f.rule)}</span>` : "") +
+        `<div class="why">agent: ${rfEsc(f.judgement)}</div>` + (f.evidence ? `<details class="why"><summary>evidence</summary><div>${rfEsc(f.evidence)}</div></details>` : "") +
+        // where they lie: the finding's cells red, the rest of the type blue (a click enlarges it)
+        `<img class="rffig" loading="lazy" alt="Where these cells lie" title="Red: these cells; blue: the other cells of the type; grey: all cells. Click for a large map"
+          src="/api/s/${encodeURIComponent(RF.sid)}/refine/finding_fig?key=${encodeURIComponent(f.key)}&t=${encodeURIComponent(P.time)}"></div>`;
+      const btns = document.createElement("div"); btns.className = "rfverdict";
+      [["biology", "Real biology", "Leave it: the agent will not raise it again"], ["mislabel", "Mislabel", "The marker list should change: the agent proposes an edit for it"]].forEach(([k, label, tip]) => {
+        const b = Object.assign(document.createElement("button"), { type: "button", textContent: label, title: tip + " (click again to clear)" });
+        b.classList.toggle("on", v === k); b.dataset.verdict = k;
+        b.onclick = async () => {  // the two buttons change in place: nothing else is drawn again (no flash)
+          const cur = ((RF.state.prior_verdicts || {})[f.key] || {}).verdict, want = cur === k ? null : k;
+          try { const out = await post(`/api/s/${RF.sid}/refine/finding`, { key: f.key, verdict: want }); RF.state.prior_verdicts = out.prior_verdicts; }
+          catch (e) { $("rfErr").textContent = e.message; return; }
+          const now = [...document.querySelectorAll("#rfEdits .rffinding")].find((x) => x.dataset.key === f.key);  // (redrawn meanwhile?)
+          (now || row).querySelectorAll(".rfverdict button").forEach((x) => x.classList.toggle("on", x.dataset.verdict === want));
+        };
+        btns.append(b);
+      });
+      let img = row.querySelector("img.rffig");
+      if (!RF.figs || RF.figs.time !== P.time) { RF.figs = new Map(); RF.figs.time = P.time; }  // (this proposal's maps only)
+      const had = RF.figs.get(img.src);  // the map already loaded: the same image, not loaded again
+      if (had && had.complete && had.naturalWidth > 0) { img.replaceWith(had); img = had; }
+      RF.figs.set(img.src, img);
+      img.onerror = () => { RF.figs.delete(img.src); img.remove(); };  // (a finding that names no cell type has no map)
+      img.onclick = () => {  // large, in a window of its own
+        const big = $("figBig");
+        big.removeAttribute("src"); big.alt = "Drawing the map…";
+        big.onerror = () => { big.removeAttribute("src"); big.alt = "No map for this finding"; };
+        big.src = img.src.replace("finding_fig?", "finding_fig?size=large&");
+        $("figTitle").textContent = `${f.cells}: ${f.where}`;
+        $("figDlg").showModal();
       };
-      const d = document.createElement("div");
-      d.innerHTML = `${rfEsc(e.id)} · ${rfEditText(e)}` + (e.reason ? `<div class="why">${rfEsc(e.reason)}</div>` : "") + (e.evidence ? `<div class="why">${rfEsc(e.evidence)}</div>` : "");
-      l.append(c, d); eb.append(l);
+      row.append(btns); box.append(row);
+    });
+    eb.append(box);
+  }
+  if (P && P.edits.length) {
+    // the edits under the problem they fix (the agent's "problem", else their lineage), a tick box for each problem;
+    // the evidence folded under each edit
+    // ticked by default, an optional edit not (the user chooses it); the user's ticks are remembered for this
+    // proposal, so the next refresh of the window keeps them
+    const mine = RF.ticks && RF.ticks.time === P.time ? RF.ticks.on : null;
+    const ticked = (e) => rd.decision !== "dismissed" && (mine && e.id in mine ? mine[e.id] : !e.optional);
+    const untick = (id, on) => {
+      if (!RF.ticks || RF.ticks.time !== P.time) RF.ticks = { time: P.time, on: {} };
+      RF.ticks.on[id] = on;
+    };
+    // the problems the agent named first, then the lineages, "Other edits" last; a title in both gathers all its edits
+    const named = new Map(), rest = new Map();
+    P.edits.forEach((e) => { const g = e.group || "Edits", m = (e.problem || "").trim() ? named : rest; if (!m.has(g)) m.set(g, []); m.get(g).push(e); });
+    const groups = new Map(named);
+    [...rest].sort((a, b) => (a[0] === "Other edits") - (b[0] === "Other edits")).forEach(([g, l]) => groups.set(g, [...(groups.get(g) || []), ...l]));
+    if (groups.size > 1) eb.append(Object.assign(document.createElement("div"), { className: "hint", textContent: `${P.edits.length} edits in ${groups.size} groups` }));
+    groups.forEach((list, title) => {
+      const box = document.createElement("div"); box.className = "rfgroup";
+      const fk = `${P.time}|${title}`;  // folded groups stay folded when the window refreshes
+      box.classList.toggle("folded", !!(RF.folded && RF.folded.has(fk)));
+      const head = document.createElement("label"); head.className = "rfghead";
+      const gc = document.createElement("input"); gc.type = "checkbox"; gc.disabled = !!rd.decision;
+      const fold = Object.assign(document.createElement("button"), { type: "button", className: "rffold", title: "Fold or unfold this group's edits" });
+      const foldText = () => { fold.textContent = box.classList.contains("folded") ? "▸" : "▾"; };
+      fold.onclick = (ev) => {
+        ev.preventDefault(); RF.folded = RF.folded || new Set();
+        box.classList.toggle("folded"); box.classList.contains("folded") ? RF.folded.add(fk) : RF.folded.delete(fk); foldText();
+      };
+      foldText();
+      const allOpt = list.every((e) => e.optional);
+      head.append(gc, Object.assign(document.createElement("b"), { textContent: title }),
+                  ...(allOpt ? [Object.assign(document.createElement("span"), { className: "rfopt", textContent: "optional" })] : []),
+                  Object.assign(document.createElement("span"), { className: "hint", textContent: list.length > 1 ? `${list.length} edits` : "1 edit" }), fold);
+      box.append(head);
+      const gq = list[0].question && list.every((e) => e.question === list[0].question) ? list[0].question : "";  // (asked once)
+      if (gq) box.append(Object.assign(document.createElement("div"), { className: "rfq", textContent: `? ${gq}` }));
+      const boxes = [];
+      const sync = () => { const n = boxes.filter((c) => c.checked).length; gc.checked = n === boxes.length; gc.indeterminate = n > 0 && n < boxes.length; };
+      list.forEach((e) => {
+        const l = document.createElement("label"); const c = document.createElement("input"); c.type = "checkbox"; c.value = e.id;
+        c.checked = ticked(e); c.disabled = !!rd.decision;
+        c.onchange = () => { untick(e.id, c.checked); sync(); };
+        const d = document.createElement("div");
+        // the reason on one line, opened (with the evidence) by a click
+        d.innerHTML = `<span class="hint">${rfEsc(e.id)}</span> ${e.optional ? `<span class="rfopt">optional</span> ` : ""}${rfEditText(e)}` +
+          (e.question && !gq ? `<div class="rfq">? ${rfEsc(e.question)}</div>` : "") + (e.reason || e.evidence ?
+          `<details class="why"><summary>${rfEsc(e.reason || "evidence")}</summary>${e.evidence ? `<div><i>Evidence:</i> ${rfEsc(e.evidence)}</div>` : ""}</details>` : "");
+        l.append(c, d); box.append(l); boxes.push(c);
+      });
+      gc.onchange = () => { boxes.forEach((c) => { c.checked = gc.checked; untick(c.value, gc.checked); }); sync(); };
+      sync(); eb.append(box);
     });
   }
-  $("rfEditsHint").textContent = !P ? (rd.messages.some((m) => m.from === "user") ? "Waiting for the agent…" : "Click Agent review to have this round reviewed.")
+  const prev = r.rounds.find((x) => x.n === rd.n - 1);  // what the round before changed, said at the top of this one
+  const applied = prev && prev.decision === "accepted" ? `Round ${prev.n}: ${prev.accepted.length} edit${prev.accepted.length === 1 ? "" : "s"} applied (${prev.accepted.join(", ")}). ` : "";
+  eb.querySelectorAll("details").forEach((d, i) => { d.dataset.k = d.dataset.k || `d${i}`; if (opened.has(d.dataset.k)) d.open = true; });
+  eb.scrollTop = keepTop;  // (a redraw keeps the place the user scrolled to)
+  $("rfEditsHint").textContent = !P ? applied + (r.awaiting || rd.messages.some((m) => m.from === "user") ? "The agent is reviewing this round…" : "This round has not been sent to the agent yet: click Agent review.")
     : !P.edits.length ? "The agent proposes no edit (see its message)." : rd.decision === "accepted" ? `Accepted: ${rd.accepted.join(", ")}` :
     rd.decision === "dismissed" ? "Dismissed: write to the agent and ask again" : (P.check || []).length ? `The edited list: ${P.check.slice(0, 3).join("; ")}` : "Untick what you do not want, then Accept.";
   $("rfAccept").hidden = !(P && P.edits.length && !rd.decision);
   setLabel($("rfAsk"), P ? "Agent review again" : "Agent review");
+  $("rfAsk").classList.toggle("primary", !P);  // (with edits to choose, Accept is the main action)
   $("rfAsk").hidden = rd.decision === "accepted" || rd.decision === "stopped";
 }
 const rfRememberOrgan = () => {
@@ -4322,7 +4552,7 @@ $("rfAsk").onclick = async () => {
   catch (e) { $("rfErr").textContent = e.message; }
 };
 $("rfSend").onclick = async () => {
-  const text = $("rfText").value.trim(); if (!text) return;
+  const text = $("rfText").value.trim(); if (!text || !RF.sid) return;  // (no round yet: it is being prepared)
   const rd = rfRound();
   if (!rd || (!rd.proposal && !rd.messages.length)) { $("rfAsk").click(); return; }  // the first request of the round
   $("rfErr").textContent = "";
@@ -4330,7 +4560,7 @@ $("rfSend").onclick = async () => {
   catch (e) { $("rfErr").textContent = e.message; }
 };
 $("rfAccept").onclick = async () => {
-  const ids = [...document.querySelectorAll("#rfEdits input:checked")].map((c) => c.value);
+  const ids = [...document.querySelectorAll("#rfEdits input[value]:checked")].map((c) => c.value);  // (not the groups' boxes)
   if (!ids.length) { $("rfErr").textContent = "Tick at least one edit"; return; }
   const rd = rfRound(), b = $("rfAccept");
   if (b.disabled) return;
@@ -4341,16 +4571,20 @@ $("rfAccept").onclick = async () => {
   b.disabled = false;
   $("mkText").value = r.marker_text; $("carry").checked = true; $("method").value = "markers"; syncSeg("method");
   if (["exact", "approx"].includes(r.knn)) { $("knn").value = r.knn; syncSeg("knn"); }  // as the round before was made
-  $("spill").checked = !!r.spillover;
+  $("spill").checked = !!r.spillover; syncAnnAdv();
   RF.from = RF.sid; clearInterval(RF.timer); $("rfDlg").close();
-  toast(`Annotating again with ${ids.length} edit(s); the next round opens when it is done`, 5000);
-  await startAnnotation("new");
+  $("rfText").value = "";  // (words left unsent here would go to the next round's automatic review as the user's)
+  const joint = r.joint && st.sample && projectOf(st.sample.sample_id);
+  if (joint) { $(PROJ_ALL.annotate).checked = true; $(PROJ_ALL.annotate).dispatchEvent(new Event("change")); }
+  toast(`Annotating ${joint ? "all slices together " : ""}again with ${ids.length} edit(s); the next round opens when it is done`, 5000);
+  await (joint ? annotateProject() : startAnnotation("new"));
 };
 $("rfDismiss").onclick = async () => {
   try { await post(`/api/s/${RF.sid}/refine/decide`, { decision: "dismissed" }); rfPoll(); } catch (e) { $("rfErr").textContent = e.message; }
 };
 $("rfStop").onclick = async () => {
-  try { await post(`/api/s/${RF.sid}/refine/decide`, { decision: "stopped" }); } catch (e) { /* (no round yet) */ }
+  if (!RF.sid && RF.preparing) RF.preparing.stop = true;  // (rfOpen stops the round once it is made)
+  else try { await post(`/api/s/${RF.sid}/refine/decide`, { decision: "stopped" }); } catch (e) { /* (no round yet) */ }
   RF.from = null; clearInterval(RF.timer); $("rfDlg").close(); toast("Refining stopped: the annotation stays as it is", 4000);
 };
 $("rfClose").onclick = () => { clearInterval(RF.timer); $("rfDlg").close(); };
@@ -4488,7 +4722,7 @@ $("imVDir").oninput = soon(() => (st.imVPending = inspectVisium()));
 });
 // one analysis at a time (Annotate, Embed, Niches, Compare, Signaling, the cell filter, an import): the others'
 // buttons and Reset / Remove are grayed out (CSS body.running) and ignored until it is done
-const LOCKED = "#annotate, #eRun, #nRun, #aRun, #sRun, #tRun, #qfBtn, #qfGo, #qfRestore, #reset, #rmSample, #clearAll, #heState, #anLoad, #importBtn, #refresh, #sessDel";
+const LOCKED = "#annotate, #eRun, #nRun, #aRun, #sRun, #tRun, #qfBtn, #qfGo, #qfRestore, #reset, #rmSample, #rmProject, #pjBtn, #clearAll, #anLoad, #importBtn, #refresh, #sessDel";
 async function exclusive(what, fn) {
   if (st.running) { toast(`${st.running} is running: wait until it is done`, 4000); return; }
   st.running = what; document.body.classList.add("running");
@@ -4835,8 +5069,11 @@ $("importBtn").onclick = openImport;
 const HELP = `
 <h3>Steps</h3><ul>
 <li>The list at the map's top right is the usual flow for the open sample: <b>Import</b> → <b>Check registration</b>
-  → <b>Filter cells and genes</b> → <b>Annotate</b> → (optional) <b>Regions and priors</b>, <b>Review</b>,
+  → <b>Filter cells and genes</b> → <b>Annotate</b> → <b>Priors</b> → (optional) <b>Regions</b>, <b>Review</b>,
   <b>Analyze</b>.</li>
+<li><b>Priors</b> must be checked: <b>Check</b> opens the Prior window with the tissue priors of the sample's organ (what
+  the agent's review checks against; remove what does not hold, add your own), and <b>Accept</b> (after Check) marks
+  the step done. If the priors change later, the step asks for a check again.</li>
 <li>✓ marks what is done (with what came of it); the next step stands out, with a button that goes where it is done.
   Hover a step for what it does and why. A click on <b>Steps</b> folds the list.</li></ul>
 <h3>Import</h3><ul>
@@ -4885,9 +5122,12 @@ const HELP = `
   <li>Xenium: the files of several slices, one per line in each field.</li>
   <li>Several image files go to the slices whose section their file names hold.</li></ul></li>
 <li>Moving between slices:<ul>
+  <li><b>Project</b> (Data tab, above Slice) picks the project, or the samples in no project; <b>Slice</b> lists its
+    slices. A project opens at the slice last open in it.</li>
   <li><b>◀ ▶</b> or <kbd>[</kbd> <kbd>]</kbd> step through them and keep what is shown: Color by, legend filters,
     hidden H&amp;E, the UMAP window and, on a UMAP of all slices, its zoom and selection.</li>
-  <li><b>Overview of all samples</b> shows them side by side.</li>
+  <li><b>Overview of the project</b> (Data tab) shows its slices side by side (with no project chosen: <b>Overview of
+    all samples</b>).</li>
   <li>The Compare tab compares them (scope: all slices, rows by slice).</li></ul></li>
 <li><b>All slices together</b> (in the Annotate, Embed and Niche tabs, each for its own analysis; off by default for
   Annotate, on for Embed and Niche) treats the project as one:<ul>
@@ -4918,7 +5158,7 @@ const HELP = `
   <li>Two tabs: <b>Data</b> and <b>Analysis</b>, whose steps (Annotate, Embed, Niche, Compare, Signal, Trajectory) are a
     second row; a dot marks a running analysis.</li>
   <li><b>›</b> at its top folds it to the right edge for a bigger map; <b>‹</b> or <kbd>t</kbd> brings it back.</li></ul></li>
-<li><b>Reset</b> (bottom): removes the annotations of this sample (in a project, of all its slices), optionally the
+<li><b>Reset analysis</b> (bottom): removes the annotations of this sample (in a project, of all its slices), optionally the
   PCA / UMAP too.</li></ul>
 
 <h3>Regions</h3><ul>
@@ -4957,11 +5197,14 @@ const HELP = `
   <li>marker genes (<b>Markers…</b>);</li>
   <li>a single-cell reference (<b>Reference…</b>);</li>
   <li>or an existing annotation (<b>Annotation file…</b>).</li></ul></li>
-<li><b>Annotate</b> makes a new annotation; <b>keep my regions, priors &amp; corrections</b> carries them over.</li>
+<li><b>Annotate</b> makes a new annotation; <b>Keep my regions, priors &amp; corrections</b> carries them over.</li>
+<li><b>Advanced</b> (folded; its line names the switches that are on): Leave out spillover, Parallel clustering and Keep
+  my regions, priors &amp; corrections. <b>All slices together</b> and <b>Refine with the agent</b> stay outside it.</li>
 <li><b>Neighbors</b> (marker genes):<ul>
-  <li><i>Approximate</i> (default) is much faster without a GPU. It runs on 8 threads on every computer (its result
-    depends on the thread count), so a rerun gives the same labels, here or on another computer with this version.</li>
-  <li><i>Exact</i> finds the true neighbors; slow without a GPU for large samples.</li>
+  <li><i>Exact</i> (default) finds the true neighbors: the same labels on every computer, with or without a GPU;
+    about a minute for 450,000 cells.</li>
+  <li><i>Approximate</i> is faster for very large samples (about a million cells or more). It runs on 8 threads on
+    every computer (its result depends on the thread count), so a rerun gives the same labels with this version.</li>
   <li>The line under it estimates how long the whole annotation takes on this computer for both (hover for the
     steps); it learns from every run here. It also gives the memory the run needs at its peak (measured on samples of
     32,000 to 790,000 cells); an annotation, PCA + UMAP or niche run needing more than 80% of this computer's memory
@@ -4969,14 +5212,27 @@ const HELP = `
 <li><b>Leave out spillover</b> (marker genes, on by default): in imaging data a cell's outline also catches
   transcripts of its neighbors; on, a gene counts as detected in a cell only where its count is above a tenth of the
   mean count of its 6 nearest cells (of the same slice). Turn it off to count every transcript in a cell's outline.</li>
+<li><b>Parallel clustering</b> (marker genes; automatic, on by default; a setting of this computer, for the agent's
+  annotations too): the Leiden clusterings each level tries run at once in separate processes, as many as the free
+  memory allows after what the annotation itself needs at its peak (each about 1.8 GB for 700,000 cells); with too
+  little free memory they run one after the other. The same cell types either way, about 20% faster on large
+  samples. Off: always one after the other.</li>
 <li><b>Refine with the agent</b> (marker genes; on by default, or <b>Refine cell types</b> later), round by round:<ul>
   <li>the app sums up what may be wrong (types with weak marker evidence, markers that are not specific, types not
     found, the cells the marker step could not type, the changes since the round before);</li>
-  <li>the organ: inferred from the cell types and the sample's name, or asked; the agent reviews the whole
-    annotation with that organ's priors and proposes edits of the marker list, each with its reason and evidence;</li>
+  <li>the organ: inferred from the cell types and the sample's name, or asked; <b>Agent review</b> has the agent review the whole
+    annotation with that organ's priors and proposes edits of the marker list, each with its reason and evidence,
+    grouped by the problem they fix (one tick box for a whole problem; a group folds away with ▾); an edit the agent
+    marks <i>optional</i> (e.g. splitting a type into subtypes) starts unticked, with its question beside it. Apart from the
+    edits it lists what goes against the organ's priors or your rules (the report shows which types lie mostly among
+    another lineage), each with a small map of where its cells lie (red; a click opens it large); mark each
+    <b>Real biology</b> (it is not raised again) or <b>Mislabel</b> (the list should change);</li>
   <li>you write to it at any time (your words come first), tick the edits you want and <b>Accept</b>: the app
-    annotates again with them (your regions, priors and corrections carry over) and the next round opens;
-    <b>Dismiss edits</b> or <b>Stop refining</b> end it.</li></ul></li></ul>
+    annotates again with them (your regions, priors and corrections carry over) and the next round opens, sent to the
+    agent by itself (its top says which edits the round before applied); <b>Dismiss edits</b> or <b>Stop refining</b>
+    end it.</li>
+  <li>the agent needs the internet (offline the window says so and nothing is sent; the round itself is made
+    offline); no proposal after 10 minutes: the Claude Code window shows why.</li></ul></li></ul>
 
 <h3>Embedding</h3><ul>
 <li><b>Run PCA + UMAP</b> computes PCA, UMAP and Leiden clusters from the expression.<ul>
@@ -5282,9 +5538,10 @@ checksums of its steps (PCA, neighbors, first clusters, labels) to compare runs.
     candidates; their confidence says how sure. A marker's chance to be detected is scaled to the cell's transcripts
     (1 − (1 − p)^(cell's transcripts / the type's mean)), so a cell of few transcripts is not drawn to a type whose
     markers are seldom detected.</li>
-  <li><b>Low quality</b>: a cell whose marker genes do not say what it is (none detected, or its best type is less
-    than 3 times as likely as a cell of no type with the same transcripts: Bayes factor below 3) is labeled Low quality
-    instead of being typed by force (annotations made since 0.2.57; before, Unassigned).</li>
+  <li><b>Unassigned</b>: a cell whose marker genes do not say what it is (none detected, or its best type is less
+    than 3 times as likely as a cell of no type with the same transcripts: Bayes factor below 3) stays Unassigned
+    instead of being typed by force. Annotations made with 0.2.57 and 0.2.58 called these cells Low quality: they are
+    often not of low quality but of a type the marker list lacks (normal transcript counts).</li>
   <li>Then their neighbors: in rounds, each of these cells adds to its marker-gene score the log of the share of each
     type among its 10 nearest cells (their labels of the round before), until nothing changes or a cell only flips
     between two types (at most 10 rounds). The cells the marker step typed are not changed by their neighbors: on
@@ -5765,6 +6022,30 @@ $("rmSample").onclick = async () => {
     toast(`Removed ${s.sample_id}` + (r.deleted_sessions ? ` and its ${r.deleted_sessions} annotation(s)` : ""), 5000);
   } catch (e) { toast(e.message, 7000); }
 };
+$("rmProject").onclick = async () => {  // every slice of the project, as Remove does one sample; the project goes with its last
+  if (st.busy) { toast("Wait until the assistant has answered"); return; }
+  const p = (st.projects || []).find((x) => x.project_id === $("project").value); if (!p) return;
+  const ids = projectSamples(p.project_id);
+  const n = ids.reduce((a, id) => a + (((st.samples.find((x) => x.sample_id === id) || {}).sessions) || []).length, 0);
+  if (!confirm(`Remove project ${p.name} with its ${ids.length} slice(s)?\n\nEvery slice goes: its cells, ` +
+               `${n ? `${n} annotation(s) with their chats, ` : ""}regions, niches and PCA / UMAP are moved to the data folder's trash/ ` +
+               `(not shown in the app). The other samples stay. The image and source files stay where they are.`)) return;
+  await exclusive("Removing the project", async () => {
+    try { for (const id of ids) await post(`/api/sample/${id}/remove`, { check: true }); }  // all or none: none busy
+    catch (e) { toast(`Nothing removed: ${e.message}`, 8000); return; }
+    let done = 0, sessions = 0;
+    try {
+      for (const id of ids) {
+        const r = await post(`/api/sample/${id}/remove`, {});
+        forgetOpened(id); done++; sessions += r.deleted_sessions || 0;
+      }
+    } catch (e) { toast(`Removed ${done} of ${ids.length} slices; then: ${e.message}`, 8000); }
+    store("sample", "");
+    const rest = st.samples.filter((x) => !ids.includes(x.sample_id));
+    await loadSamples((rest[0] && rest[0].sample_id) || null);
+    if (done === ids.length) toast(`Removed project ${p.name}: ${done} slice(s)` + (sessions ? ` and ${sessions} annotation(s)` : ""), 5000);
+  });
+};
 $("clearAll").onclick = async () => {
   const n = st.samples.length;
   if (!n) { toast("There are no samples"); return; }
@@ -5835,7 +6116,8 @@ const STEPS = {
   registration: ["Check registration", "Are the cells on their nuclei everywhere? The app measures the offsets over the whole tissue (about a minute) and, where the tissue shifted, offers the local registration. (Review → Spatial organization asks the agent for a wider review.)", ["Check", () => checkRegistration()]],
   filter: ["Filter cells and genes", "Leave out cells with few transcripts or genes and genes detected in few cells, before annotating. Seconds to a minute.", ["Filter", () => $("qfBtn").click()]],
   annotate: ["Annotate", "Cell types from a marker list (or a reference, or a CSV of labels): Type tab → Markers… → Annotate. A few minutes.", ["Annotate", () => showTab("annotate")]],
-  regions: ["Regions and priors", "Optional: outline tissue regions on the map (brush, polygon…), then tell the agent what holds there, e.g. “epithelial cells are only in the mucosa”.", ["Draw", () => { $("regpanel").hidden = false; $("regpanel").classList.remove("collapsed"); setTool("brush"); toast("Brush: paint a region on the map (or pick another tool in the Regions panel), then Save", 6000); }]],
+  priors: ["Priors", "The tissue priors of this sample's organ: what the agent's review checks the annotation and regions against. Check opens the Prior window (remove what does not hold for your tissue, add your own); Accept when they fit. Done once accepted; to do again when they change.", null],
+  regions: ["Regions", "Optional: outline tissue regions on the map (brush, polygon…), then tell the agent what holds there, e.g. “epithelial cells are only in the mucosa”.", ["Draw", () => { $("regpanel").hidden = false; $("regpanel").classList.remove("collapsed"); setTool("brush"); toast("Brush: paint a region on the map (or pick another tool in the Regions panel), then Save", 6000); }]],
   review: ["Review", "Optional: the agent checks the annotation (areas and marker genes that look wrong) and gives advice.", ["Review", () => { st.rvScope = "annotation"; openReviewChooser().catch((e) => toast(e.message, 6000)); }]],
   analyze: ["Analyze", "Optional: embedding (PCA, UMAP), niches, DE genes and DESeq2, composition, signaling, trajectories. Click to unfold them.", null],
   // the analyses, under Analyze (their tab opens, as a click on it does)
@@ -5872,7 +6154,32 @@ async function loadSteps() {
     const align = x.key === "registration" && x.state === "blocked" && !$("alignbar").hidden;  // the image waits for its alignment
     const a = x.open ? ["Open", () => { showTab("data"); $("session").focus(); toast("Choose an annotation in the Annotation box", 4000); }]
       : align ? ["Align", () => $("alignNow").click()] : act;
-    if (a && (["todo", "optional", "skipped"].includes(x.state) || align)) {
+    if (x.key === "priors" && x.state !== "not needed") {  // Check (the Prior window), then Accept: only then ✓
+      const key = `${smp}|${x.organ || ""}`;
+      // accepted, then changed (e.g. a rule the agent wrote): to be checked again before Accept
+      if (st.priorsState && st.priorsState.key === key && st.priorsState.state === "done" && x.state === "todo") st.priorsChecked = null;
+      st.priorsState = { key, state: x.state };
+      const seen = st.priorsChecked === key;
+      const chk = Object.assign(document.createElement("button"), { textContent: "Check", title: "Open the Prior window: the priors of this organ the agent's review uses" });
+      const acc = Object.assign(document.createElement("button"), { textContent: "Accept" });
+      if (x.state === "todo" && x.key === r.next) (seen ? acc : chk).classList.add("primary");  // (as the other steps)
+      acc.disabled = x.state === "done" || !seen || !x.organ;
+      acc.title = x.state === "done" ? "Accepted" : !x.organ ? "Choose the organ in the Prior window first" : seen ? "These priors fit this tissue" : "Check the priors first";
+      chk.onclick = async (e) => {
+        e.stopPropagation();
+        $("prInfo").textContent = sampleName(st.sample);
+        try { await prLoad(x.organ || ""); } catch (err) { toast(err.message, 6000); return; }
+        st.priorsChecked = `${smp}|${PR.view.organ || ""}`;
+        $("prDlg").showModal(); prShow(PR.view);
+      };
+      acc.onclick = async (e) => {
+        e.stopPropagation();
+        try { await post(`/api/sample/${encodeURIComponent(smp)}/priors/accept`, { organ: x.organ }); }
+        catch (err) { toast(err.message, 6000); return; }
+        loadSteps().catch(() => {});
+      };
+      right.append(...(x.state === "done" ? [chk] : [chk, acc]));  // (accepted: Check to look again)
+    } else if (a && (["todo", "optional", "skipped"].includes(x.state) || align)) {
       const b = Object.assign(document.createElement("button"), { textContent: a[0], title: x.open ? "Open one of this sample's annotations (Data → Annotation)" : help });
       if (x.key === r.next) b.classList.add("primary");
       b.onclick = (e) => { e.stopPropagation(); a[1](); };
@@ -6501,15 +6808,28 @@ $("anLoadFile").onchange = async () => {
 };
 
 // ---------------- projects: which samples are analyzed together ----------------
-const PJ = { names: [], was: {} };
+// PJ.list: the projects of the dialog, {key, name, pid (null for one added here), orig}; a sample's project is a key
+const PJ = { list: [], was: {}, cur: {} };
+function pjNames() {  // a name field per project: renamed on Save
+  const box = $("pjNames"); box.textContent = "";
+  if (!PJ.list.length) return;
+  const h = document.createElement("div"); h.className = "hint"; h.textContent = "Names of the projects (the id, files and annotations stay):";
+  box.append(h);
+  PJ.list.forEach((e) => {
+    const inp = Object.assign(document.createElement("input"), { type: "text", value: e.name, maxLength: 80 });
+    inp.setAttribute("aria-label", `Name of project ${e.orig || e.name}`);
+    inp.oninput = () => { e.name = inp.value; inp.classList.toggle("moved", !!e.pid && inp.value.trim() !== e.orig); $("pjErr").textContent = ""; pjTable(); };
+    box.append(inp);
+  });
+}
 function pjTable() {
   const tab = $("pjTab"); tab.innerHTML = "<tr><th>Sample</th><th>Cells</th><th>Genes</th><th>Project</th></tr>";
-  const opts = ["", ...PJ.names];
+  const opts = [{ key: "", name: "no project" }, ...PJ.list];
   st.samples.forEach((s) => {
     const tr = document.createElement("tr"); tr.dataset.id = s.sample_id;
     const p = projectOf(s.sample_id), name = p && p.slices[s.sample_id] ? `${p.slices[s.sample_id].section}` : sampleName(s);
     const sel = document.createElement("select");
-    opts.forEach((o) => { const x = document.createElement("option"); x.value = o; x.textContent = o || "no project"; sel.append(x); });
+    opts.forEach((o) => { const x = document.createElement("option"); x.value = o.key; x.textContent = o.key ? (o.name.trim() || "(no name)") : o.name; sel.append(x); });
     sel.value = PJ.cur[s.sample_id] || "";
     sel.onchange = () => { PJ.cur[s.sample_id] = sel.value; tr.classList.toggle("moved", sel.value !== PJ.was[s.sample_id]); $("pjErr").textContent = ""; };
     const td = (t, c) => { const e = document.createElement("td"); e.textContent = t; if (c) e.className = c; return e; };
@@ -6520,30 +6840,58 @@ function pjTable() {
   });
 }
 $("pjBtn").onclick = () => {
-  PJ.names = st.projects.map((p) => p.name); PJ.was = {}; PJ.cur = {};
-  st.samples.forEach((s) => { const p = projectOf(s.sample_id); PJ.was[s.sample_id] = PJ.cur[s.sample_id] = p ? p.name : ""; });
+  PJ.list = st.projects.map((p) => ({ key: `id:${p.project_id}`, name: p.name, pid: p.project_id, orig: p.name }));
+  PJ.was = {}; PJ.cur = {};
+  st.samples.forEach((s) => { const p = projectOf(s.sample_id); PJ.was[s.sample_id] = PJ.cur[s.sample_id] = p ? `id:${p.project_id}` : ""; });
   $("pjErr").textContent = ""; $("pjNewName").value = "";
-  pjTable(); $("pjDlg").showModal();
+  pjNames(); pjTable(); $("pjDlg").showModal();
 };
 $("pjNew").onclick = () => {
   const n = $("pjNewName").value.trim();
   if (!n) { $("pjErr").textContent = "Give the new project a name"; return; }
-  if (PJ.names.includes(n)) { $("pjErr").textContent = `There is a project ${n} already`; return; }
-  PJ.names.push(n); $("pjNewName").value = ""; pjTable();
+  if (PJ.list.some((e) => e.name.trim() === n)) { $("pjErr").textContent = `There is a project ${n} already`; return; }
+  PJ.list.push({ key: `new:${n}`, name: n, pid: null, orig: "" }); $("pjNewName").value = ""; pjNames(); pjTable();
   toast(`Project ${n} added: choose its samples in the list`, 3500);
 };
 $("pjNewName").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("pjNew").click(); } });
 $("pjCancel").onclick = $("pjClose").onclick = () => $("pjDlg").close();
 $("pjSave").onclick = async () => {
-  const groups = {};
-  Object.entries(PJ.cur).forEach(([id, n]) => { if ((n || "") !== PJ.was[id]) groups[id] = n || ""; });
-  if (!Object.keys(groups).length) { $("pjDlg").close(); return; }
+  const names = PJ.list.map((e) => e.name.trim());
+  if (names.some((n) => !n)) { $("pjErr").textContent = "A project needs a name"; return; }
+  const dup = names.find((n, i) => names.indexOf(n) !== i);
+  if (dup) { $("pjErr").textContent = `Two projects are called ${dup}`; return; }
+  const renames = {};  // the projects renamed here (a project added here is made under its name by the assignment)
+  PJ.list.forEach((e) => { if (e.pid && e.name.trim() !== e.orig) renames[e.pid] = e.name.trim(); });
+  // every project by its name (unique; renamed first), the ones added here also in new: never an existing project
+  // whose id happens to be that name
+  const groups = {}, made = new Set();
+  Object.entries(PJ.cur).forEach(([id, k]) => {
+    if ((k || "") === PJ.was[id]) return;
+    const e = PJ.list.find((x) => x.key === k);
+    groups[id] = e ? e.name.trim() : "";
+    if (e && !e.pid) made.add(e.name.trim());
+  });
+  if (!Object.keys(groups).length && !Object.keys(renames).length) { $("pjDlg").close(); return; }
+  if (Object.keys(renames).length) {
+    try { await post("/api/projects/rename", { names: renames }); }
+    catch (e) { $("pjErr").textContent = e.message; return; }
+    PJ.list.forEach((e) => { if (e.pid) e.orig = e.name.trim(); });  // renamed now, whatever the assignment does
+    pjNames();
+    if (!Object.keys(groups).length) {
+      $("pjDlg").close(); await loadSamples(st.sample && st.sample.sample_id);
+      toast(`${Object.keys(renames).length} project(s) renamed`, 4000); return;
+    }
+  }
   // (a slice with the project's genes in another order is rewritten in that order: up to a minute for a large one)
   const btn = $("pjSave"); btn.disabled = true; $("pjErr").textContent = "";
   const slow = setTimeout(() => { $("pjErr").textContent = "Putting the slices' genes in the project's order…"; }, 1500);
   let r;
-  try { r = await post("/api/projects/assign", { groups }); }
-  catch (e) { $("pjErr").textContent = e.message; return; }
+  try { r = await post("/api/projects/assign", { groups, new: [...made] }); }
+  catch (e) {
+    $("pjErr").textContent = e.message;
+    if (Object.keys(renames).length) loadSamples(st.sample && st.sample.sample_id).catch(() => {});  // the new names
+    return;
+  }
   finally { clearTimeout(slow); btn.disabled = false; }
   $("pjDlg").close();
   await loadSamples(st.sample && st.sample.sample_id);
@@ -6773,6 +7121,7 @@ async function resumeRunning() {
   }
 }
 async function annotateProject() {  // one marker annotation of all slices; then the current slice's new annotation opens
+  const rfFrom = RF.from; RF.from = null;  // the Refine round this annotation continues (Accept in the Refine window)
   const text = $("mkText").value;
   if (!text.trim()) { openMarkers(); toast("Import a marker list first", 5000); return; }
   const chk = await post("/api/markers/check", { text, sample: st.sample.sample_id });
@@ -6788,6 +7137,8 @@ async function annotateProject() {  // one marker annotation of all slices; then
     await loadSamples(st.sample.sample_id);
     setTimeout(() => $("progress").classList.remove("show"), 800);
     toast("All slices of the project annotated together", 5000);
+    if (st.sid && st.vocab && st.vocab.method === "markers" && rfAgentOk() && (rfFrom || $("rfAuto").checked))  // the next round
+      rfOpen(rfFrom).catch((e) => toast(`Refine: ${e.message}`, 6000));
   } catch (e) {
     if (isStop(e)) stopped($("progress"), "Annotation");
     else { $("pstage").textContent = `Annotation failed: ${e.message}`; toast($("pstage").textContent, 8000); }
@@ -6955,7 +7306,7 @@ async function paintTile(t, mode, sel) {  // the image, then the cells: light gr
   }
   lc.putImageData(id, 0, 0); ctx.drawImage(lay, 0, 0);
 }
-$("allSamples").onclick = () => openGallery(true);
+$("allSamples").onclick = () => openGallery(!(st.sample && projectOf(st.sample.sample_id)));  // the project, or every sample
 // ---------------- Compare: DE genes, top genes per group, composition (one slice or all slices pooled) ----------------
 const AN = { opts: null, key: "", last: null, req: null, view: "", by: {}, n: { de: 20, deseq2: 20, deall: 5, markers: 5, run: 20, compare: 20, circle: 40 } };
 const AN_N = { de: [5, 60], deseq2: [5, 60], deall: [1, 30], markers: [1, 15], run: [5, 60], compare: [5, 80], circle: [5, 300] };  // the dialog's number: least, most
@@ -7882,22 +8233,9 @@ function segmented(id) {  // a select shown as a row of buttons (the select keep
 }
 function syncSeg(id) { document.querySelectorAll(`.seg[data-for="${id}"] button`).forEach((b) => b.classList.toggle("on", b.dataset.v === $(id).value)); }
 segmented("method"); segmented("knn"); segmented("nKind"); segmented("nIdentity"); segmented("nKMode"); segmented("aScope"); segmented("aKind"); segmented("sScope"); segmented("sKind"); segmented("tScope"); segmented("tMethod");
-function heStateBtn() {  // Unload H&E (free its memory) / Load H&E (back, with its registration)
-  const s = st.sample, has = s && (s.image_unloaded || (s.image_kind && s.image_kind !== "none"));
-  $("heStateWrap").hidden = !has;
-  if (has) setLabel($("heState"), s.image_unloaded ? `Load ${s.image_kind === "H&E" ? "H&E" : "image"}` : `Unload ${s.image_kind === "H&E" ? "H&E" : "image"}`);
-}
-$("heState").onclick = async () => {
-  const s = st.sample; if (!s) return;
-  try {
-    await post(`/api/sample/${s.sample_id}/image_state`, { loaded: !!s.image_unloaded });
-    const unloaded = !s.image_unloaded;
-    await afterPlacement(unloaded ? "Unloaded: its memory is free; the cells and the registration stay" : "Loaded again with its registration");
-    heStateBtn(); sampleInfo();
-  } catch (e) { toast(e.message, 7000); }
-};
 function sampleInfo() {  // the Data tab's card: what the open sample is
-  const s = st.sample; if (!s) { $("sampleInfo").textContent = "No sample yet"; return; }
+  const s = st.sample; $("sampleInfo").title = "";
+  if (!s) { $("sampleInfo").textContent = "No sample yet"; return; }
   if (s.image_only) {
     const upp = st.he && st.he.um_per_px;
     $("sampleInfo").textContent = [`${s.image_kind || "image"} only, no cells`, s.um_per_px_known === false ? "pixel size unknown"
@@ -7905,10 +8243,11 @@ function sampleInfo() {  // the Data tab's card: what the open sample is
     return;
   }
   const img = s.image_pending ? "image waiting for its alignment" : !s.image_kind || s.image_kind === "none" ? "no image"
-    : s.image_unloaded ? `${s.image_kind} unloaded` : s.image_kind;
-  heStateBtn();
-  const filt = s.filter ? `filtered (${s.filter.n_cells_removed.toLocaleString()} cells, ${s.filter.n_genes_removed} genes removed)` : "";
-  $("sampleInfo").textContent = [`${s.n_cells.toLocaleString()} ${s.unit === "bins" ? "bins" : "cells"}${s.platform ? ` (${s.platform})` : ""}`, img, filt, s.description].filter(Boolean).join(" · ");
+    : s.image_kind;
+  // the line: cells, image, filtered; the rest (platform, what the filter removed, description) on hover
+  $("sampleInfo").textContent = [`${s.n_cells.toLocaleString()} ${s.unit === "bins" ? "bins" : "cells"}`, img, s.filter ? "filtered" : ""].filter(Boolean).join(" · ");
+  $("sampleInfo").title = [s.platform, s.filter ? `filtered: ${s.filter.n_cells_removed.toLocaleString()} cells and ${s.filter.n_genes_removed} genes removed` : "",
+                           s.description].filter(Boolean).join("\n");
 }
 // Two tabs, Data and Analysis; Analysis shows its steps (Annotate ... Trajectory) as a second row and reopens the
 // step last used there

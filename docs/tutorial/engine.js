@@ -762,11 +762,16 @@
     const w = win.clientWidth, h = win.clientHeight, k = w < APP_MIN_W ? w / APP_MIN_W : 1;
     sc.style.width = w / k + "px"; sc.style.height = h / k + "px"; sc.style.transform = k === 1 ? "" : `scale(${k})`;
   }
+  // the stage fills the space it has: scaled so that at least 1320 x 760 fits, then as wide and as tall as the space
+  // (within limits), so a tall window or frame gives the app (its map) the extra height instead of empty margins
+  const STAGE = { w: 1320, h: 760, maxW: 1700, maxH: 1250 };
   function fit() {
-    fitApp();
     const wrap = $("#stageWrap"), stage = $("#stage");
-    const sw = 1320, sh = 820, aw = wrap.clientWidth - 28, ah = wrap.clientHeight - 20;
-    const k = Math.min(aw / sw, ah / sh);
+    const aw = wrap.clientWidth - 28, ah = wrap.clientHeight - 20;
+    const k = Math.min(aw / STAGE.w, ah / STAGE.h);
+    const sw = Math.min(STAGE.maxW, Math.max(STAGE.w, aw / k)), sh = Math.min(STAGE.maxH, Math.max(STAGE.h, ah / k));
+    stage.style.width = sw + "px"; stage.style.height = sh + "px";
+    fitApp();
     stage.style.transform = `scale(${k})`;
     stage.style.left = (wrap.clientWidth - sw * k) / 2 + "px";
     stage.style.top = Math.max(10, (wrap.clientHeight - sh * k) / 2) + "px";

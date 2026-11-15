@@ -1,7 +1,7 @@
 """Fetch every H&E tile of every sample from a running viewer into the recording (scene "_tiles"), so the tutorial
 can zoom anywhere on the image, not only where the recorded session looked (developer tool).
 
-    .venv/bin/python tools/tutorial/crawl_tiles.py --server http://127.0.0.1:8765 --out work/tut/rec
+    .venv/bin/python tools/tutorial/crawl_tiles.py --server http://127.0.0.1:8775 --out work/tut/rec
 """
 import argparse, hashlib, json, math, time
 from pathlib import Path
@@ -9,7 +9,7 @@ from pathlib import Path
 import httpx
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--server", default="http://127.0.0.1:8765")
+ap.add_argument("--server", default="http://127.0.0.1:8775")
 ap.add_argument("--out", required=True)
 a = ap.parse_args()
 out = Path(a.out)

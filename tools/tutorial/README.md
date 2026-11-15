@@ -26,11 +26,12 @@ call (or at its end) the step switches the scene, so the app shows the agent's r
 ## Record a session
 
 ```bash
-STAGENT_HOME=work/tut/home STAGENT_DESKTOP=1 .venv/bin/stagent viewer --port 8765
-.venv/bin/python tools/tutorial/record_proxy.py --upstream http://127.0.0.1:8765 --port 8766 --out work/tut/rec
-# open http://localhost:8766 in a browser; before each action:
-curl "localhost:8766/__rec/scene?name=c08-mucosa"     # what the app shows after this action
-curl "localhost:8766/__rec/off"                       # while the agent works (then a new scene for its result)
+STAGENT_HOME=work/tut/home STAGENT_DESKTOP=1 STAGENT_SETTINGS_DIR=work/tut/settings \
+  .venv/bin/python tools/tutorial/record_viewer.py 8775
+.venv/bin/python tools/tutorial/record_proxy.py --upstream http://127.0.0.1:8775 --port 8776 --out work/tut/rec
+# open http://localhost:8776 in a browser; before each action:
+curl "localhost:8776/__rec/scene?name=c08-mucosa"     # what the app shows after this action
+curl "localhost:8776/__rec/off"                       # while the agent works (then a new scene for its result)
 ```
 
 The agent runs as the desktop app would run it, in `$STAGENT_HOME/claude_workspace`, with the request the app sends
@@ -41,8 +42,13 @@ cd work/tut/home/claude_workspace && claude -p "<request>" --continue --mcp-conf
   --allowedTools mcp__stagent WebSearch WebFetch --output-format stream-json --verbose > work/tut/transcripts/<name>.jsonl
 ```
 
-Buttons that would open a Terminal (`/api/claude/...`) are not clicked while recording: their answer goes in
-`scenes.json` (`synthetic`, or `inject` for one scene).
+`record_viewer.py` is the app as is, except that a request to the agent (Align with Agent, Refine with the agent,
+Agent review and the rounds after an Accept, Review, a prior in your words) is written to `requests.jsonl` in the data
+folder instead of opening Claude Code in Terminal; the app answers as if it had opened. So these buttons are clicked
+while recording (their answers are recorded), and the agent runs from the saved `prompt`, as above, with `--continue`
+where Claude Code's window would have been reused. `STAGENT_SETTINGS_DIR` keeps the recording off your own settings
+(the agent's model, Manual / Auto). An answer no scene recorded can still go in `scenes.json` (`synthetic`, or `inject`
+for one scene).
 
 Demo data: two sections of SCP2927 (147328 terminal ileum, 167799 sigmoid colon), cropped to a window with mucosa,
 submucosa and muscle (cells and H&E; the crop keeps the H&E pixel size in its OME metadata): `demo_crop.py`, and

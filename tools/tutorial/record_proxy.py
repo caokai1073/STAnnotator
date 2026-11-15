@@ -3,8 +3,8 @@
 Sits between a browser and a running STAnnotator viewer and records every request the page makes, grouped by
 "scene" (a named checkpoint of the walkthrough), so the tutorial player can replay the real app offline:
 
-    STAGENT_HOME=work/tut/home .venv/bin/stagent viewer --port 8765
-    .venv/bin/python tools/tutorial/record_proxy.py --upstream http://127.0.0.1:8765 --port 8766 --out work/tut/rec
+    STAGENT_HOME=work/tut/home .venv/bin/stagent viewer --port 8775
+    .venv/bin/python tools/tutorial/record_proxy.py --upstream http://127.0.0.1:8775 --port 8776 --out work/tut/rec
 
 Control (from the shell or the browser):  GET /__rec/scene?name=<scene>   start recording into a scene
                                           GET /__rec/off | /__rec/on      pause / resume recording
@@ -66,8 +66,8 @@ def make_app(upstream, out):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--upstream", default="http://127.0.0.1:8765")
-    ap.add_argument("--port", type=int, default=8766)
+    ap.add_argument("--upstream", default="http://127.0.0.1:8775")
+    ap.add_argument("--port", type=int, default=8776)
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     uvicorn.run(make_app(a.upstream, a.out), host="127.0.0.1", port=a.port, log_level="warning")
