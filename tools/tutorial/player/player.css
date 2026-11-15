@@ -2,7 +2,7 @@
   --bg: #f4f5f7; --panel: #ffffff; --ink: #1d2433; --muted: #6b7280; --line: #e3e6eb;
   --accent: #e8a33d; --accent-ink: #8a5a12; --teal: #2f7f86; --dark: #12151c;
   --term-bg: #16181d; --term-ink: #d9dde4; --term-dim: #8b93a1; --claude: #d97757;
-  --stage-w: 1320; --stage-h: 820;
+  --stage-w: 1675; --stage-h: 820;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);

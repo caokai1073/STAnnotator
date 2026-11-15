@@ -129,10 +129,10 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 section.band { padding-block: clamp(64px, 9vw, 112px) 0; }
 .tutorial h2 { margin-top: 6px; font-size: var(--s-4); line-height: 1.15; }
 .tutorial .intro { color: var(--muted); max-width: 72ch; margin-top: 12px; font-size: var(--s-2); }
-/* the tutorial: wider than the text column (up to 1520 px) and as tall as the window allows, so the app's map is large */
-.video { margin: 28px calc(50% - min(760px, 50vw - 20px)) 0; border-radius: 10px; overflow: hidden; background: #f4f5f7; box-shadow: var(--shadow); border: 1px solid var(--line); }
-.video iframe { display: block; width: 100%; height: clamp(560px, calc(100vh - 64px), 1100px); border: 0; background: #f4f5f7; }
-@media (max-width: 760px) { .video iframe { height: auto; aspect-ratio: 4 / 5; } }
+/* the tutorial: the text column's width; its height follows the player (Claude Code's pane beside the app as recorded, 1500 x 950) */
+.video { margin: 28px 0 0; border-radius: 10px; overflow: hidden; background: #f4f5f7; box-shadow: var(--shadow); border: 1px solid var(--line); }
+.video iframe { display: block; width: 100%; aspect-ratio: 16 / 10; border: 0; background: #f4f5f7; }
+@media (max-width: 760px) { .video iframe { aspect-ratio: 4 / 3; } }
 .tutorial .intro.small { font-size: var(--s-1); margin-top: 14px; }
 .chapters { list-style: none; margin: 14px 0 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
 @media (max-width: 1100px) { .chapters { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
