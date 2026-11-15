@@ -168,6 +168,44 @@ try:
     k0 = next(iter(k))
     out = c.post(f"/api/s/{s2.id}/refine/finding", json={"key": k0, "verdict": "biology"}).json()
     assert out.get("prior_verdicts", {}).get(k0, {}).get("verdict") == "biology", out
+    # offline (the desktop app; Claude Code cannot reach its API, here a closed port): nothing is sent, the round is not
+    # waiting for the agent, the user's words are not stored; any other request to the agent: the reason (503)
+    env0 = {v: os.environ.pop(v, None) for v in ("HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy",
+                                                  "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "ANTHROPIC_BASE_URL")}
+    os.environ["STAGENT_DESKTOP"] = "1"; os.environ["ANTHROPIC_BASE_URL"] = "http://127.0.0.1:9"
+    claudelink._reached["t"] = 0.0
+    try:
+        n_msgs = len(iterate.current(s2)[1]["messages"])
+        r = c.post(f"/api/s/{s2.id}/refine/ask", json={"message": "look at the B cells"})
+        assert r.status_code == 400 and r.json()["error"].startswith("No internet"), r.text
+        r = c.post(f"/api/s/{s2.id}/refine/message", json={"text": "and the T cells"})
+        assert r.status_code == 400 and r.json()["error"].startswith("No internet"), r.text
+        assert not iterate.awaiting(s2) and len(iterate.current(s2)[1]["messages"]) == n_msgs, "recorded as sent"
+        r = c.post("/api/claude/report", json={"session": s2.id})
+        assert r.status_code == 503 and r.json()["offline"], r.text
+        # reachable (a port that listens): no error, trusted for a minute; a proxy: not checked
+        import socket
+        srv = socket.socket(); srv.bind(("127.0.0.1", 0)); srv.listen(1)
+        os.environ["ANTHROPIC_BASE_URL"] = f"http://127.0.0.1:{srv.getsockname()[1]}"
+        claudelink.check_online()
+        srv.close()
+        claudelink.check_online()  # (within the minute)
+        claudelink._reached["t"] = 0.0
+        os.environ["ANTHROPIC_BASE_URL"] = "http://127.0.0.1:9"
+        os.environ["HTTPS_PROXY"] = "http://127.0.0.1:9"
+        claudelink.check_online()
+    finally:
+        os.environ.pop("STAGENT_DESKTOP", None); os.environ.pop("HTTPS_PROXY", None); os.environ.pop("ANTHROPIC_BASE_URL", None)
+        os.environ.update({k: v for k, v in env0.items() if v is not None})
+        claudelink._reached["t"] = 0.0
+    # the time the round has waited for the agent (the window points to Claude Code's window after 10 minutes)
+    iterate.mark_asked(s2)
+    st_, rd_ = iterate.current(s2); rd_["asked_t"] -= 700; iterate.save(s2, st_)
+    w = c.get(f"/api/s/{s2.id}/refine").json()
+    assert w["awaiting"] and w["waited_s"] >= 700, (w["awaiting"], w["waited_s"])
+    st_, rd_ = iterate.current(s2); rd_.pop("asked"); rd_.pop("asked_t"); iterate.save(s2, st_)
+    assert c.get(f"/api/s/{s2.id}/refine").json()["waited_s"] is None
+    print("offline: nothing sent; the time waited")
     mcp_server._active["session"] = s
     real = claudelink.viewer_state
     claudelink.viewer_state = lambda: {"session": s2.id}

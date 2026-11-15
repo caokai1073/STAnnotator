@@ -208,6 +208,36 @@ end run
 """
 
 
+class Offline(ValueError):
+    """The agent cannot be reached: no internet connection (Claude Code runs on Anthropic's servers)."""
+
+
+OFFLINE = ("No internet connection: the agent (Claude Code) cannot be reached; nothing was sent. Everything else "
+           "works offline; ask the agent again once you are online.")
+_reached = {"t": 0.0}
+
+
+def check_online(timeout=2.0):
+    """Raise Offline when the computer cannot reach the Claude API (a connection to its port only, nothing sent;
+    Claude Code itself shows its own error otherwise, in its window, which the app cannot see). A success is trusted
+    for a minute; a failure is checked again at every request (back online: works at once). Not checked where
+    Claude Code goes another way (a proxy, Amazon Bedrock, Google Vertex): it could be reachable."""
+    if any(os.environ.get(v) for v in ("HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy",
+                                       "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "STAGENT_SKIP_ONLINE_CHECK")):
+        return
+    if time.time() - _reached["t"] < 60:
+        return
+    import socket
+    from urllib.parse import urlparse
+    u = urlparse(os.environ.get("ANTHROPIC_BASE_URL") or "https://api.anthropic.com")
+    try:
+        socket.create_connection((u.hostname or "api.anthropic.com", u.port or (80 if u.scheme == "http" else 443)),
+                                 timeout=timeout).close()
+    except OSError:  # (no network, no DNS, a firewall)
+        raise Offline(OFFLINE) from None
+    _reached["t"] = time.time()
+
+
 def open_claude_code(sample=None, session=None, request=None, send_if_open=False, remote=None):
     """Open the user's own Claude Code in Terminal (macOS), connected to this app; elsewhere return the command.
     request: the first message (otherwise Claude loads the session and waits); with send_if_open it is also typed into
@@ -216,6 +246,8 @@ def open_claude_code(sample=None, session=None, request=None, send_if_open=False
     if remote is None and os.environ.get("STAGENT_REMOTE") == "1":
         return {"remote": True, "args": {"sample": sample, "session": session, "request": request,
                                          "send_if_open": send_if_open}}
+    if request:  # (a request the agent cannot get: said here, not left to Claude Code's window)
+        check_online()
     prompt = None
     if session:
         prompt = (f"I am looking at sample {sample} (session {session}) in the STAnnotator app. "

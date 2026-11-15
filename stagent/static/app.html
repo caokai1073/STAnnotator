@@ -4360,6 +4360,14 @@ async function rfPoll() {
   const rd = r.rounds[r.rounds.length - 1];
   const key = rd ? `${rd.n}|${rd.messages.length}|${rd.proposal ? rd.proposal.time : ""}|${rd.decision}|${!!r.awaiting}` : "";
   if (key !== RF.seen) { RF.state = r; rfRender(); }
+  else $("rfWait").textContent = rfWaitText(r);  // (the time waited: after 10 minutes, where to look)
+}
+const RF_WAIT_S = 600;
+function rfWaitText(r) {  // the agent asked and no proposal yet; long after, it most likely stopped on an error
+  if (!r || !r.awaiting) return "";
+  return r.waited_s > RF_WAIT_S ? "No proposal after 10 minutes. Look at the Claude Code window: it shows an error there " +
+    "(no internet, not logged in, its limit reached) or is still working. Then click Agent review again."
+    : "The agent is reviewing (a few minutes)…";
 }
 function rfOrgan() { return $("rfOrgan").value === "__other" ? $("rfOrganOther").value.trim() : $("rfOrgan").value; }
 const rfEsc = (x) => String(x ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -4375,7 +4383,7 @@ function rfRender() {
   RF.seen = `${rd.n}|${rd.messages.length}|${rd.proposal ? rd.proposal.time : ""}|${rd.decision}|${!!r.awaiting}`;
   const rep = rd.report, g = rep.organ || {};
   $("rfTitle").textContent = `Refine cell types round ${rd.n}`;
-  $("rfWait").textContent = r.awaiting ? "The agent is reviewing (a few minutes)…" : "";
+  $("rfWait").textContent = rfWaitText(r);
   if (RF.sid === st.sid) setLabel($("rfOpen"), `Refine cell types round ${rd.n}`);
   // the organ: confirmed, inferred, or asked
   const organ = r.organ || g.organ || "";
@@ -5220,7 +5228,9 @@ const HELP = `
   <li>you write to it at any time (your words come first), tick the edits you want and <b>Accept</b>: the app
     annotates again with them (your regions, priors and corrections carry over) and the next round opens, sent to the
     agent by itself (its top says which edits the round before applied); <b>Dismiss edits</b> or <b>Stop refining</b>
-    end it.</li></ul></li></ul>
+    end it.</li>
+  <li>the agent needs the internet (offline the window says so and nothing is sent; the round itself is made
+    offline); no proposal after 10 minutes: the Claude Code window shows why.</li></ul></li></ul>
 
 <h3>Embedding</h3><ul>
 <li><b>Run PCA + UMAP</b> computes PCA, UMAP and Leiden clusters from the expression.<ul>

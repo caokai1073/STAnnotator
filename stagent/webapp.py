@@ -769,8 +769,10 @@ def api_refine(req):
     s = review_app._session(req.path_params["sid"])
     st = iterate.load(s)
     covered = [o for o in hetissue.default_priors()["organs"] if not o.startswith("General")]
-    return _json(st | {"organs": covered + [o for o in hetissue.user_organs() if o not in covered],
-                       "awaiting": iterate.awaiting(s)})
+    aw = iterate.awaiting(s)
+    asked = (st["rounds"][-1].get("asked_t") if st.get("rounds") else None) if aw else None
+    return _json(st | {"organs": covered + [o for o in hetissue.user_organs() if o not in covered], "awaiting": aw,
+                       "waited_s": round(time.time() - float(asked)) if asked else None})
 
 
 async def api_refine_ask(req: Request):
@@ -780,6 +782,7 @@ async def api_refine_ask(req: Request):
     s = review_app._session(req.path_params["sid"])
     b = await req.json()
     try:
+        await asyncio.to_thread(_agent_online)  # (offline: nothing recorded as asked, the words stay in the box)
         st, rd = iterate.current(s)
         organ = (b.get("organ") or "").strip()
         if organ:
@@ -815,6 +818,10 @@ async def api_refine_start(req: Request):
             rd = iterate.add_message(s, "user", b["message"].strip())
         out = {"round": rd}
         if b.get("ask"):
+            try:
+                await asyncio.to_thread(_agent_online)
+            except claudelink.Offline as e:  # (the round is made; the agent is asked later)
+                return _json(out | {"offline": str(e)})
             user = (f"I wrote: \"{b['message'].strip()}\" (this comes first). " if (b.get("message") or "").strip() else "")
             iterate.mark_asked(s)
             out |= _ask_claude(s, REFINE_REQUEST.format(sid=s.id, n=rd["n"], user=user,
@@ -833,6 +840,7 @@ async def api_refine_message(req: Request):
     if not text:
         return _json({"error": "write something first"}, 400)
     try:
+        await asyncio.to_thread(_agent_online)
         rd = iterate.add_message(s, "user", text)
     except ValueError as e:
         return _json({"error": str(e)}, 400)
@@ -902,6 +910,14 @@ def api_refine_finding_fig(req):
     except (ValueError, KeyError) as e:
         return _json({"error": str(e)}, 404)
     return FileResponse(out, media_type="image/png", headers={"Cache-Control": "no-cache"})
+
+
+def _agent_online():
+    """Before a request is recorded as sent to the agent: raise claudelink.Offline when Claude Code on this computer
+    cannot reach the internet (the server viewer's chat and a remote viewer, whose Claude Code runs on the user's
+    computer, are not checked here)."""
+    if desktop_mode() and os.environ.get("STAGENT_REMOTE") != "1":
+        claudelink.check_online()
 
 
 def _ask_claude(s, text):
@@ -4356,7 +4372,9 @@ def build_app(port):
         Route("/api/markers/organ_draft", api_markers_organ_draft, methods=["POST"]),
         Route("/api/claude/markers", api_claude_markers, methods=["POST"]),
     ] + [r for r in review_app.app.routes if r.path != "/"] + list(mcp_http.routes)
-    return SameOrigin(Starlette(routes=routes, lifespan=lifespan))
+    async def offline(req, exc):  # (any request to the agent made offline: the reason, not a server error)
+        return _json({"error": str(exc), "offline": True}, 503)
+    return SameOrigin(Starlette(routes=routes, lifespan=lifespan, exception_handlers={claudelink.Offline: offline}))
 
 
 LOOPBACK = {"127.0.0.1", "localhost", "[::1]", "::1"}
