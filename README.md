@@ -29,12 +29,13 @@ and comparisons across regions, slices and conditions, with an AI agent at your 
 The agent is your own [Claude Code](https://code.claude.com/docs/en/setup), with your own Claude account.
 Your images and expression data stay on your computer (or your server).
 
-Two ways to run it:
+Three ways to run it:
 
 | | Data and computation | Window and agent |
 |---|---|---|
 | [A. Local computer](#a-local-computer) | your computer | your computer |
 | [B. Remote server over SSH](#b-remote-server-over-ssh) | the server | your computer |
+| [C. Many samples in a terminal](#c-many-samples-in-a-terminal-batch) | a server or cluster | none: it decides by itself; review flagged samples with A or B |
 
 ## A. Local computer
 
@@ -113,6 +114,49 @@ window reaches it through an SSH tunnel.
 
 After updating STAnnotator on the server, reconnect once so that the server's viewer restarts with the new version.
 
+## C. Many samples in a terminal (batch)
+
+For tens to thousands of sections, `stagent batch` imports, registers and annotates every sample of a list in a
+server's terminal, without the app or the agent, and writes CSV files. Where the app would ask you, it decides by
+itself (auto mode, the default) and flags what it could not settle.
+
+Install as on the server in section B. Then write a manifest, one row per sample:
+
+```csv
+sample,xenium,he,registration,organ
+s001,/data/run1/output-XETG...-s001,/data/he/s001.ome.tif,/data/he/s001_imagealignment.csv,colon
+s002,/data/run1/output-XETG...-s002,/data/he/s002.ome.tif,,colon
+s003,/data/run2/output-XETG...-s003,,,colon
+```
+
+- `xenium`: a Xenium output folder (a folder of several slices: one row per slice, its name prefix in `section`), or
+  `h5ad` (with `section_column` / `section` for an h5ad of several sections).
+- `he`, `registration`: optional. Without an alignment file the app's alignment search runs, the best candidates are
+  checked against the nuclei over the whole tissue and the best is applied (never one that is far off); where the
+  tissue is shifted locally (stretched or torn), the local correction is applied when it brings the cells closer to
+  their nuclei.
+- `organ` (a built-in marker list, pruned to the panel) or `markers` (your own list file). No agent runs: refine the
+  list on a few samples in the app first, then give it to the batch.
+
+```bash
+~/STAnnotator/.venv/bin/stagent batch manifest.csv --out /scratch/batch1 --jobs 4
+# on a cluster, one array job per shard (e.g. Slurm with 50 jobs):
+~/STAnnotator/.venv/bin/stagent batch manifest.csv --out /scratch/batch1 --shard $SLURM_ARRAY_TASK_ID/50
+```
+
+In `--out`:
+- `results/<sample>/annotation.csv` (one row per cell: cell type, lineage, confidence, `x_um`, `y_um`),
+  `cell_positions.csv` (with `px`, `py` on the H&E when the cells were placed on it), `registration.csv`, `qc.json`;
+- `summary.csv`: one row per sample with its status (`ok`, `flagged`, `failed`), the reason of a flag (e.g. no
+  alignment found, another orientation fits too), the registration check and the share of Unassigned cells;
+- `data/`: the batch's data folder. Open flagged samples in the app over SSH (section B) with this folder as the data
+  folder.
+
+Run the same command again after a stop: steps already done with the same inputs are kept, and a sample that fails
+never stops the others. Each job needs the memory of one annotation (about 11 GB for 800,000 cells). Options
+(`--no-auto`, `--drop-data`, `--knn approx` on a server without a GPU, ...): `stagent batch --help` and the
+[user guide](docs/GUIDE.md#many-samples-at-once-batch-without-the-app).
+
 ## Getting started
 
 1. **Import**: Xenium (`cells.parquet` and `cell_feature_matrix.h5`; optionally `experiment.xenium` and the DAPI
@@ -136,6 +180,7 @@ Every control and method is described in the [user guide](docs/GUIDE.md).
 ```bash
 stagent import-xenium --name s1 --xenium cells.parquet cell_feature_matrix.h5 [--he he.ome.tif --registration reg.csv]
 stagent import --name s1 --h5ad cells.h5ad [--he he.ome.tif --registration reg.csv --section-column donor --section 147328]
+stagent batch manifest.csv --out DIR [--jobs 4]   # many samples without the app (section C)
 stagent viewer              # the viewer in a browser, http://localhost:8765
 stagent mcp                 # the agent's tools, for Claude Code without the app
 ```
