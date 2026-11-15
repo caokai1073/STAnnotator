@@ -47,7 +47,7 @@ header .hrow.bottom { flex-wrap: nowrap; gap: 6px; }  /* Reset analysis, Remove 
 #pcBack { left: 50%; transform: translateX(-50%); top: calc(var(--maptop, 44px) + 12px); display: flex; gap: 10px; align-items: center;
   padding: 8px 12px; font-size: 13px; z-index: 30; }
 /* one analysis at a time: while one runs, the buttons that start another or change the data are grayed out */
-body.running :is(#annotate, #eRun, #nRun, #aRun, #sRun, #tRun, #qfBtn, #qfGo, #qfRestore, #reset, #rmSample, #rmProject, #clearAll, #anLoad, #importBtn, #refresh, #sessDel) {
+body.running :is(#annotate, #eRun, #nRun, #aRun, #sRun, #tRun, #qfBtn, #qfGo, #qfRestore, #reset, #rmSample, #rmProject, #pjBtn, #clearAll, #anLoad, #importBtn, #refresh, #sessDel) {
   opacity: .4; filter: grayscale(1); cursor: not-allowed; }
 header .hrow.bottom button { padding: 5px 8px; font-size: 12px; gap: 4px; white-space: nowrap; flex: 0 1 auto; min-width: 0; }
 header.collapsed .hmini { display: flex; }
@@ -1628,6 +1628,12 @@ async function loadSamples(select, project) {
   if (!st.samples.length) {  // a fresh install: nothing imported yet
     $("empty").firstElementChild.textContent = "No samples yet. Click Import to add Xenium files (cells.parquet and cell_feature_matrix.h5), h5ad or RDS files (with or without an image).";
     $("empty").style.display = "flex"; $("annotate").disabled = true; $("sampleRename").disabled = true; $("priorBtn").disabled = true; $("qfBtn").disabled = true; $("rmSample").disabled = true; $("allSamples").disabled = true; $("pjBtn").disabled = true;
+    $("project").textContent = ""; $("projectWrap").hidden = true; $("rmProject").disabled = true;
+    if (st.sample) {  // the last sample was just removed: start afresh, as Remove all samples does (its annotation,
+      setTimeout(() => location.reload(), 1500);  // image and panels must not stay open)
+      return;
+    }
+    sampleInfo();
     return;
   }
   $("annotate").disabled = false;
@@ -1736,7 +1742,9 @@ function fillSessions(selected) {
 
 async function selectSample(id) {
   const token = ++st.switchToken;  // ignore results of an earlier, still-running switch
-  st.samples = await api("/api/samples");
+  const samples = await api("/api/samples");
+  if (token !== st.switchToken) return;  // a later switch is under way (its sample, select and image win)
+  st.samples = samples;
   st.sample = st.samples.find((s) => s.sample_id === id);
   // only annotations made in the app (marker genes or a single-cell reference); the lab's benchmark ones are not shown
   st.sample.allSessions = st.sample.sessions;
@@ -4251,7 +4259,7 @@ $("refPath").onchange = () => inspectRef();
 $("refPick").onclick = async () => { const p = await pickFiles("h5ad"); if (p.length) { $("refPath").value = p[0]; inspectRef(); } };
 
 // ---------------- Refine with the agent: review, edits of the marker list, annotation again, round by round ----------------
-const RF = { sid: null, state: null, timer: null, from: null, seen: "" };
+const RF = { sid: null, state: null, timer: null, from: null, seen: "", preparing: null, stopWhenReady: false };
 const rfAgentOk = () => !!(st.desktop || st.chatAvailable);
 function rfSync() {  // the Refine button and switch: a marker annotation open, an agent to ask
   const marker = !!st.sid && !st.placeholder && !!st.vocab && st.vocab.method === "markers";
@@ -4287,8 +4295,15 @@ async function rfOpen(from) {
     $("rfMsgs").textContent = ""; $("rfEdits").textContent = ""; $("rfEditsHint").textContent = "";
     $("rfAccept").hidden = $("rfAsk").hidden = true;
     if (!$("rfDlg").open) $("rfDlg").showModal();
+    RF.preparing = sid; RF.stopWhenReady = false;
     try { await post(`/api/s/${sid}/refine/start`, { from: from || null }); }
     catch (e) { $("rfReport").textContent = ""; $("rfErr").textContent = `Could not start the round: ${e.message}`; throw e; }
+    finally { RF.preparing = null; }
+    if (RF.stopWhenReady) {  // Stop refining while the round was being prepared: the round is made, then stopped
+      RF.stopWhenReady = false;
+      await post(`/api/s/${sid}/refine/decide`, { decision: "stopped" }).catch(() => {});
+      return;
+    }
     r = await api(`/api/s/${sid}/refine`);
     if (!$("rfDlg").open) return;  // closed meanwhile (the round is kept: the button reopens it)
   }
@@ -4421,7 +4436,8 @@ $("rfDismiss").onclick = async () => {
   try { await post(`/api/s/${RF.sid}/refine/decide`, { decision: "dismissed" }); rfPoll(); } catch (e) { $("rfErr").textContent = e.message; }
 };
 $("rfStop").onclick = async () => {
-  try { await post(`/api/s/${RF.sid}/refine/decide`, { decision: "stopped" }); } catch (e) { /* (no round yet) */ }
+  if (!RF.sid && RF.preparing) RF.stopWhenReady = true;  // (rfOpen stops the round once it is made)
+  else try { await post(`/api/s/${RF.sid}/refine/decide`, { decision: "stopped" }); } catch (e) { /* (no round yet) */ }
   RF.from = null; clearInterval(RF.timer); $("rfDlg").close(); toast("Refining stopped: the annotation stays as it is", 4000);
 };
 $("rfClose").onclick = () => { clearInterval(RF.timer); $("rfDlg").close(); };
@@ -4559,7 +4575,7 @@ $("imVDir").oninput = soon(() => (st.imVPending = inspectVisium()));
 });
 // one analysis at a time (Annotate, Embed, Niches, Compare, Signaling, the cell filter, an import): the others'
 // buttons and Reset / Remove are grayed out (CSS body.running) and ignored until it is done
-const LOCKED = "#annotate, #eRun, #nRun, #aRun, #sRun, #tRun, #qfBtn, #qfGo, #qfRestore, #reset, #rmSample, #rmProject, #clearAll, #anLoad, #importBtn, #refresh, #sessDel";
+const LOCKED = "#annotate, #eRun, #nRun, #aRun, #sRun, #tRun, #qfBtn, #qfGo, #qfRestore, #reset, #rmSample, #rmProject, #pjBtn, #clearAll, #anLoad, #importBtn, #refresh, #sessDel";
 async function exclusive(what, fn) {
   if (st.running) { toast(`${st.running} is running: wait until it is done`, 4000); return; }
   st.running = what; document.body.classList.add("running");
@@ -5855,17 +5871,21 @@ $("rmProject").onclick = async () => {  // every slice of the project, as Remove
   if (!confirm(`Remove project ${p.name} with its ${ids.length} slice(s)?\n\nEvery slice goes: its cells, ` +
                `${n ? `${n} annotation(s) with their chats, ` : ""}regions, niches and PCA / UMAP are moved to the data folder's trash/ ` +
                `(not shown in the app). The other samples stay. The image and source files stay where they are.`)) return;
-  let done = 0, sessions = 0;
-  try {
-    for (const id of ids) {
-      const r = await post(`/api/sample/${id}/remove`, {});
-      forgetOpened(id); done++; sessions += r.deleted_sessions || 0;
-    }
-  } catch (e) { toast(`Removed ${done} of ${ids.length} slices; then: ${e.message}`, 8000); }
-  store("sample", "");
-  const rest = st.samples.filter((x) => !ids.includes(x.sample_id));
-  await loadSamples((rest[0] && rest[0].sample_id) || null);
-  if (done === ids.length) toast(`Removed project ${p.name}: ${done} slice(s)` + (sessions ? ` and ${sessions} annotation(s)` : ""), 5000);
+  await exclusive("Removing the project", async () => {
+    try { for (const id of ids) await post(`/api/sample/${id}/remove`, { check: true }); }  // all or none: none busy
+    catch (e) { toast(`Nothing removed: ${e.message}`, 8000); return; }
+    let done = 0, sessions = 0;
+    try {
+      for (const id of ids) {
+        const r = await post(`/api/sample/${id}/remove`, {});
+        forgetOpened(id); done++; sessions += r.deleted_sessions || 0;
+      }
+    } catch (e) { toast(`Removed ${done} of ${ids.length} slices; then: ${e.message}`, 8000); }
+    store("sample", "");
+    const rest = st.samples.filter((x) => !ids.includes(x.sample_id));
+    await loadSamples((rest[0] && rest[0].sample_id) || null);
+    if (done === ids.length) toast(`Removed project ${p.name}: ${done} slice(s)` + (sessions ? ` and ${sessions} annotation(s)` : ""), 5000);
+  });
 };
 $("clearAll").onclick = async () => {
   const n = st.samples.length;
@@ -6657,16 +6677,21 @@ $("pjSave").onclick = async () => {
   if (dup) { $("pjErr").textContent = `Two projects are called ${dup}`; return; }
   const renames = {};  // the projects renamed here (a project added here is made under its name by the assignment)
   PJ.list.forEach((e) => { if (e.pid && e.name.trim() !== e.orig) renames[e.pid] = e.name.trim(); });
-  const groups = {};  // an existing project by its id, a new one by its name
+  // every project by its name (unique; renamed first), the ones added here also in new: never an existing project
+  // whose id happens to be that name
+  const groups = {}, made = new Set();
   Object.entries(PJ.cur).forEach(([id, k]) => {
     if ((k || "") === PJ.was[id]) return;
     const e = PJ.list.find((x) => x.key === k);
-    groups[id] = e ? e.pid || e.name.trim() : "";
+    groups[id] = e ? e.name.trim() : "";
+    if (e && !e.pid) made.add(e.name.trim());
   });
   if (!Object.keys(groups).length && !Object.keys(renames).length) { $("pjDlg").close(); return; }
   if (Object.keys(renames).length) {
     try { await post("/api/projects/rename", { names: renames }); }
     catch (e) { $("pjErr").textContent = e.message; return; }
+    PJ.list.forEach((e) => { if (e.pid) e.orig = e.name.trim(); });  // renamed now, whatever the assignment does
+    pjNames();
     if (!Object.keys(groups).length) {
       $("pjDlg").close(); await loadSamples(st.sample && st.sample.sample_id);
       toast(`${Object.keys(renames).length} project(s) renamed`, 4000); return;
@@ -6676,8 +6701,12 @@ $("pjSave").onclick = async () => {
   const btn = $("pjSave"); btn.disabled = true; $("pjErr").textContent = "";
   const slow = setTimeout(() => { $("pjErr").textContent = "Putting the slices' genes in the project's order…"; }, 1500);
   let r;
-  try { r = await post("/api/projects/assign", { groups }); }
-  catch (e) { $("pjErr").textContent = e.message; return; }
+  try { r = await post("/api/projects/assign", { groups, new: [...made] }); }
+  catch (e) {
+    $("pjErr").textContent = e.message;
+    if (Object.keys(renames).length) loadSamples(st.sample && st.sample.sample_id).catch(() => {});  // the new names
+    return;
+  }
   finally { clearTimeout(slow); btn.disabled = false; }
   $("pjDlg").close();
   await loadSamples(st.sample && st.sample.sample_id);
@@ -6907,12 +6936,12 @@ async function resumeRunning() {
   }
 }
 async function annotateProject() {  // one marker annotation of all slices; then the current slice's new annotation opens
+  const rfFrom = RF.from; RF.from = null;  // the Refine round this annotation continues (Accept in the Refine window)
   const text = $("mkText").value;
   if (!text.trim()) { openMarkers(); toast("Import a marker list first", 5000); return; }
   const chk = await post("/api/markers/check", { text, sample: st.sample.sample_id });
   if (!chk.ok) { openMarkers(); showCheck(chk); toast("Fix the marker list first", 3000); return; }
   if (!(await memoryOk("annotate", true, "The annotation"))) return;
-  const rfFrom = RF.from; RF.from = null;  // the Refine round this annotation continues (Accept in the Refine window)
   $("annotate").disabled = true; $("progress").classList.add("show");
   try {
     await projectJob("annotate", { markers_text: text, resolution: $("mkAuto").checked ? "auto" : +$("mkRes").value,
@@ -8020,7 +8049,8 @@ function segmented(id) {  // a select shown as a row of buttons (the select keep
 function syncSeg(id) { document.querySelectorAll(`.seg[data-for="${id}"] button`).forEach((b) => b.classList.toggle("on", b.dataset.v === $(id).value)); }
 segmented("method"); segmented("knn"); segmented("nKind"); segmented("nIdentity"); segmented("nKMode"); segmented("aScope"); segmented("aKind"); segmented("sScope"); segmented("sKind"); segmented("tScope"); segmented("tMethod");
 function sampleInfo() {  // the Data tab's card: what the open sample is
-  const s = st.sample; if (!s) { $("sampleInfo").textContent = "No sample yet"; return; }
+  const s = st.sample; $("sampleInfo").title = "";
+  if (!s) { $("sampleInfo").textContent = "No sample yet"; return; }
   if (s.image_only) {
     const upp = st.he && st.he.um_per_px;
     $("sampleInfo").textContent = [`${s.image_kind || "image"} only, no cells`, s.um_per_px_known === false ? "pixel size unknown"

@@ -2733,12 +2733,29 @@ async def api_refresh(req: Request):
 
 
 async def api_projects_assign(req: Request):
-    """{groups: {sample_id: project name, or "" for none}}: move samples between projects (projects.assign).
-    Returns {projects, reordered: the slices whose genes were put in their project's order}."""
-    b = await req.json()
+    """{groups: {sample_id: project name, or "" for none}, new: [names of projects added in the app]}: move samples
+    between projects (projects.assign). Refused while a slice concerned (moved, or of a project it leaves or joins)
+    is being imported, annotated or analyzed. Returns {projects, reordered: the slices whose genes were put in their
+    project's order}."""
+    try:
+        b = await req.json()
+    except ValueError:
+        b = None
+    groups, new = (b.get("groups"), b.get("new")) if isinstance(b, dict) else (None, None)
+    if not isinstance(groups or {}, dict) or not isinstance(new or [], list):
+        return _json({"error": "expected {groups: {sample_id: project}, new: [names]}"}, 400)
+    groups = groups or {}
+    names = {str(v or "").strip() for v in groups.values()}
+    concerned = set(groups)
+    for p in projects.list_projects():
+        if p["name"] in names or p["project_id"] in names or concerned & set(p["samples"]):
+            concerned |= set(p["samples"])
+    busy = sorted(s for s in concerned if _busy(s))
+    if busy:
+        return _json({"error": f"{', '.join(busy)}: an import, annotation or analysis is still running; wait until it finishes"}, 409)
     reordered = []
     try:
-        r = await asyncio.to_thread(projects.assign, b.get("groups") or {}, reordered)  # (a reorder writes counts)
+        r = await asyncio.to_thread(projects.assign, groups, reordered, new or ())  # (a reorder writes counts)
     except ValueError as e:
         return _json({"error": str(e)}, 400)
     for sid in reordered:  # its gene columns in the project's order: its views and open annotations read again
@@ -2750,9 +2767,15 @@ async def api_projects_assign(req: Request):
 
 async def api_projects_rename(req: Request):
     """{names: {project_id: new name}}: rename projects (projects.rename_projects). Returns {projects}."""
-    b = await req.json()
     try:
-        r = projects.rename_projects((b or {}).get("names") or {})
+        b = await req.json()
+    except ValueError:
+        b = None
+    names = b.get("names") if isinstance(b, dict) else None
+    if not isinstance(names, dict):
+        return _json({"error": "expected {names: {project_id: name}}"}, 400)
+    try:
+        r = projects.rename_projects(names)
     except ValueError as e:
         return _json({"error": str(e)}, 400)
     _cell_tables.clear()  # (project names label the analyses of all slices)
@@ -2762,7 +2785,8 @@ async def api_projects_rename(req: Request):
 async def api_sample_remove(req: Request):
     """Remove one sample: its folder (cells, counts, image placement, PCA / UMAP), its annotations and their chats are
     moved to trash/<time>_<sample>_removed/ (recoverable by hand); a project keeps its other slices. {keep_project,
-    why}: for a replacement (the agent's import with replace)."""
+    why}: for a replacement (the agent's import with replace). {check: true}: only whether it can be removed now
+    (the app checks every slice of a project before removing the first)."""
     sample = req.path_params["sample"]
     try:
         b = await req.json()
@@ -2773,6 +2797,8 @@ async def api_sample_remove(req: Request):
         return _json({"error": f"no sample {sample!r}"}, 404)
     if _busy(sample):
         return _json({"error": "an import, annotation or analysis of this sample is still running; wait until it finishes"}, 409)
+    if b.get("check"):
+        return _json({"ok": True})
     try:
         info = _remove_sample(sample, keep_project=bool(b.get("keep_project")),
                               why="replaced" if b.get("keep_project") else "removed")

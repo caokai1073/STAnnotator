@@ -77,9 +77,11 @@ def drop_sample(sample_id, trash):
     return {"project": pid, "left": 0}
 
 
-def assign(groups, reordered=None):
+def assign(groups, reordered=None, new=()):
     """Put samples into projects: groups = {sample_id: project name, or "" for none}; samples not named keep their
-    project. A project is matched by its name (or id), a new name makes a new project; the slices of a project must
+    project. A project is matched by its name (or, when no project has that name, its id), a new name makes a new
+    project; a name in new always makes a new project (the app's Add project: never an existing one whose id it
+    happens to be; a name an existing project has is refused). The slices of a project must
     share one gene panel. A slice that leaves a project keeps its name as the sample's name; a project left without
     slices goes away (its joint results to trash/). A slice with the project's genes in another order is put in the
     project's order (reorder_genes; its id appended to the list reordered). Returns the projects."""
@@ -91,14 +93,19 @@ def assign(groups, reordered=None):
             raise ValueError(f"no sample {sid!r}")
         metas[sid] = json.load(open(mf))
     projs = {p["project_id"]: p for p in (json.load(open(f)) for f in sorted(PROJECTS.glob("*.json")))} if PROJECTS.exists() else {}
-    by_name = {p["name"]: pid for pid, p in projs.items()} | {pid: pid for pid in projs}
+    by_name = {pid: pid for pid in projs} | {p["name"]: pid for pid, p in projs.items()}  # a name before an id
+    new = {str(n).strip()[:80] for n in (new or ())}
+    for n in new:
+        if any(p["name"] == n for p in projs.values()):
+            raise ValueError(f"there is a project {n!r} already")
+    made = set()  # the new projects made here (the other samples of the same new name join it)
     target = {}  # sample -> project id (None: on its own)
     for sid, name in groups.items():
         name = str(name or "").strip()[:80]
         if not name:
             target[sid] = None
             continue
-        pid = by_name.get(name)
+        pid = by_name.get(name) if name not in new or name in made else None
         if pid is None:
             pid = re.sub(r"[^A-Za-z0-9_.-]+", "_", name).strip("_") or "project"
             while pid in projs or (config.SAMPLES / pid).exists():
@@ -106,6 +113,7 @@ def assign(groups, reordered=None):
             projs[pid] = {"project_id": pid, "name": name, "samples": [], "slices": {},
                           "created_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
             by_name[name] = by_name[pid] = pid
+            made.add(name)
         target[sid] = pid
     for sid, pid in target.items():  # leave the old project
         old = metas[sid].get("project")
