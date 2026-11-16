@@ -938,10 +938,10 @@ footer .counted { flex-basis: 100%; margin: 0; }
         <p class="intro">Numbers from the validation runs in the user guide. Dataset labels were used only to score the results afterwards, never as input.</p>
         <div class="measures">
           <div class="measure">
-            <p class="big num">~1<small>minute</small></p>
-            <p class="what">to annotate a 356,629-cell section</p>
-            <p class="how">On a 12-core CPU with approximate neighbors and 3.3 GB of memory. Exact neighbors, the default and the same on every computer, add seconds to a minute (on a Mac, on its GPU). A correction or a local re-clustering takes a few seconds.</p>
-            <p class="src">SCP2927 IBD Xenium atlas, section 147328</p>
+            <p class="big num">~5<small>minutes</small></p>
+            <p class="what">to annotate a million cells</p>
+            <p class="how">1,081,532 cells of two Xenium 5K sections (4,624 genes) imported side by side as one sample, on a 20-core CPU: 4.5 minutes with approximate neighbors and 7.2 GB of memory; 5.5 minutes with exact neighbors on an NVIDIA GPU, the app's choice there (8.4 GB).</p>
+            <p class="src">10x Xenium Prime 5K human lymph node + Xenium 5K colitis colon (GSE282123)</p>
           </div>
           <div class="measure">
             <p class="big num">0.5<small>µm</small></p>
