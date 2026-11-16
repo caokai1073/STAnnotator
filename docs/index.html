@@ -110,6 +110,9 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .cta { display: flex; flex-wrap: wrap; gap: 8px; }
 .hero .cta .btn { padding: 11px 12px; gap: 8px; }
 .hero-meta { font: 400 var(--s-0)/1.5 var(--f-mono); color: var(--muted); }
+/* the one thing to set up besides the app: Claude Code (the agent) */
+.agentneed { background: var(--accent-soft); border-left: 4px solid var(--accent); border-radius: 8px; padding: 10px 14px; font-size: var(--s-0); line-height: 1.55; color: var(--ink); }
+.agentneed a { color: var(--accent); font-weight: 600; white-space: nowrap; }
 /* the heading and the three buttons side by side only where they fit in one row (about 1,130 px); else the buttons
    go under the heading, still in one row */
 .hero .cta .btn { white-space: nowrap; }
@@ -390,6 +393,8 @@ footer .counted { flex-basis: 100%; margin: 0; }
             </a>
           </div>
           <p class="hero-meta">Version <span data-version>0.2.59</span> · free for noncommercial use, source on GitHub · runs on your computer or your server · the agent is your own Claude Code</p>
+          <p class="agentneed"><b>To use the agent</b>, install <b>Claude Code</b> and log in with a Claude plan that
+            includes it (Pro or higher; the free plan does not). <a href="https://github.com/caokai1073/STAnnotator/blob/main/docs/CLAUDE_CODE.md">How to set it up, step by step →</a></p>
         </div>
       </div>
       <p class="lede">STAnnotator takes spatial transcriptomics (Xenium, CosMx, MERSCOPE, Visium HD, Stereo-seq and more)
@@ -1039,7 +1044,7 @@ footer .counted { flex-basis: 100%; margin: 0; }
             </a>
             <ol>
               <li>Open the downloaded <code>.dmg</code> and drag STAnnotator to Applications.</li>
-              <li>Install <a href="https://code.claude.com/docs/en/setup">Claude Code</a> and log in once, so that <code>claude</code> works in Terminal.</li>
+              <li>Install <a href="https://code.claude.com/docs/en/setup">Claude Code</a> and log in once, so that <code>claude</code> works in Terminal (<a href="https://github.com/caokai1073/STAnnotator/blob/main/docs/CLAUDE_CODE.md">step by step</a>).</li>
               <li>Start STAnnotator and click <b>Import</b>. Data and annotations go to <code>~/stagent</code>.</li>
             </ol>
           </div>
@@ -1052,7 +1057,7 @@ footer .counted { flex-basis: 100%; margin: 0; }
             </a>
             <ol>
               <li>Run the downloaded installer (<code>.exe</code>). Choose where to install (any drive, no administrator rights needed) and where to keep the data.</li>
-              <li>Install <a href="https://code.claude.com/docs/en/setup">Claude Code</a> and log in once, so that <code>claude</code> works in PowerShell.</li>
+              <li>Install <a href="https://code.claude.com/docs/en/setup">Claude Code</a> and log in once, so that <code>claude</code> works in PowerShell (<a href="https://github.com/caokai1073/STAnnotator/blob/main/docs/CLAUDE_CODE.md">step by step</a>).</li>
               <li>Start STAnnotator from the Start menu and click <b>Import</b>.</li>
             </ol>
             <p class="note">Uninstalling keeps your data.</p>
