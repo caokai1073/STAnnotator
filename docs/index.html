@@ -355,12 +355,12 @@ footer .counted { flex-basis: 100%; margin: 0; }
       STAnnotator
     </a>
     <nav aria-label="Sections">
-      <a href="#tutorial">Tutorial</a>
       <a href="#workflow">How it works</a>
+      <a href="#tutorial">Tutorial</a>
       <a href="#agent">Agent</a>
-      <a href="#inside">Under the hood</a>
       <a href="#analyses">Analyses</a>
       <a href="#measured">Measured</a>
+      <a href="#inside">Under the hood</a>
       <a class="keep" href="#download">Download</a>
       <a class="keep" href="https://github.com/caokai1073/STAnnotator">GitHub</a>
     </nav>
@@ -407,6 +407,31 @@ footer .counted { flex-basis: 100%; margin: 0; }
     </div>
   </section>
 
+  <section class="band" id="workflow">
+    <div class="wrap sec">
+      <div class="side"><p class="eyebrow">How it works</p></div>
+      <div>
+        <h2>From the instrument's output to a notebook you can rerun</h2>
+        <p class="intro">Every step happens in one window, on the image. Each change becomes a version you can go back to.
+          A <b>Steps</b> panel on the map shows where the sample stands and takes you to the next step.</p>
+        <ol class="steps">
+          <li><span class="n">1</span><h3>Import</h3>
+            <p>Xenium, CosMx (AtoMx flat files), MERSCOPE, Visium HD and Stereo-seq output, h5ad, or Seurat and SpatialExperiment <code>.rds</code> files, read without R. Add the H&amp;E and its registration, or let the agent align it without a registration file. Before you accept an alignment the whole tissue is checked, and areas where the tissue shifted are corrected in one click. Bring regions drawn in QuPath; filter cells and genes. An H&amp;E alone works too, for a pathologist to outline regions before the expression data exist.</p></li>
+          <li><span class="n">2</span><h3>Annotate</h3>
+            <p>From a marker gene list, a labeled single-cell reference, or an annotation you already have. No marker list? Start from a built-in list for 12 organs, pruned to your gene panel and checked against single-cell atlases. Then the agent reviews the result round by round (Refine cell types). The same data gives the same annotation on every computer.</p></li>
+          <li><span class="n">3</span><h3>Refine in words</h3>
+            <p>Draw regions on the tissue with QuPath's tools (rectangle, ellipse, polygon, pen, brush) and say what you know: priors, corrections, a cluster to split. Each change opens in a review window with the cells it affects; you accept or dismiss it.</p></li>
+          <li><span class="n">4</span><h3>Analyze</h3>
+            <p>PCA, UMAP and Leiden, niches, composition, DE genes (also DESeq2 on pseudobulk), cell–cell communication and trajectories, for one slice or several together.</p></li>
+          <li><span class="n">5</span><h3>Review</h3>
+            <p>Review checks one part of the analysis against the organ's literature priors, tests its own advice against the data and the H&amp;E, and shows only what holds up.</p></li>
+          <li><span class="n">6</span><h3>Export</h3>
+            <p>The cell table, the registration, the regions as GeoJSON, figures as PDF, the agent's annotation report, a Jupyter notebook that reproduces the analysis without the app (one slice, or a whole project), or the whole annotation as one <code>.stannot</code> file to share.</p></li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
   <section class="band tutorial" id="tutorial">
     <div class="wrap">
       <p class="eyebrow">Tutorial</p>
@@ -436,125 +461,6 @@ footer .counted { flex-basis: 100%; margin: 0; }
           <li><button type="button" data-ch="export"><time>13:40</time>Export</button></li>
       </ol>
       <p class="intro small"><a href="tutorial/">Open the tutorial on its own page</a>, with the chapter list and the notes of each step.</p>
-    </div>
-  </section>
-
-  <section class="band" id="workflow">
-    <div class="wrap sec">
-      <div class="side"><p class="eyebrow">How it works</p></div>
-      <div>
-        <h2>From the instrument's output to a notebook you can rerun</h2>
-        <p class="intro">Every step happens in one window, on the image. Each change becomes a version you can go back to.
-          A <b>Steps</b> panel on the map shows where the sample stands and takes you to the next step.</p>
-        <ol class="steps">
-          <li><span class="n">1</span><h3>Import</h3>
-            <p>Xenium, CosMx (AtoMx flat files), MERSCOPE, Visium HD and Stereo-seq output, h5ad, or Seurat and SpatialExperiment <code>.rds</code> files, read without R. Add the H&amp;E and its registration, or let the agent align it without a registration file. Before you accept an alignment the whole tissue is checked, and areas where the tissue shifted are corrected in one click. Bring regions drawn in QuPath; filter cells and genes. An H&amp;E alone works too, for a pathologist to outline regions before the expression data exist.</p></li>
-          <li><span class="n">2</span><h3>Annotate</h3>
-            <p>From a marker gene list, a labeled single-cell reference, or an annotation you already have. No marker list? Start from a built-in list for 12 organs, pruned to your gene panel and checked against single-cell atlases. Then the agent reviews the result round by round (Refine cell types). The same data gives the same annotation on every computer.</p></li>
-          <li><span class="n">3</span><h3>Refine in words</h3>
-            <p>Draw regions on the tissue with QuPath's tools (rectangle, ellipse, polygon, pen, brush) and say what you know: priors, corrections, a cluster to split. Each change opens in a review window with the cells it affects; you accept or dismiss it.</p></li>
-          <li><span class="n">4</span><h3>Analyze</h3>
-            <p>PCA, UMAP and Leiden, niches, composition, DE genes (also DESeq2 on pseudobulk), cell–cell communication and trajectories, for one slice or several together.</p></li>
-          <li><span class="n">5</span><h3>Review</h3>
-            <p>Review checks one part of the analysis against the organ's literature priors, tests its own advice against the data and the H&amp;E, and shows only what holds up.</p></li>
-          <li><span class="n">6</span><h3>Export</h3>
-            <p>The cell table, the registration, the regions as GeoJSON, figures as PDF, the agent's annotation report, a Jupyter notebook that reproduces the analysis without the app (one slice, or a whole project), or the whole annotation as one <code>.stannot</code> file to share.</p></li>
-        </ol>
-      </div>
-    </div>
-  </section>
-
-  <section class="band" id="priors">
-    <div class="wrap sec">
-      <div class="side"><p class="eyebrow">Plain-language priors</p></div>
-      <div>
-        <h2>Say what a pathologist would say</h2>
-        <p class="intro">Knowledge about where cells belong becomes a rule the model can use. The agent reads your sentence
-          and proposes the change; the app shows it to you, and nothing happens until you accept it.</p>
-        <p class="intro">The app also knows what the literature says for 12 organs: where each cell type lies, with its
-          exceptions and references. <b>Prior</b> shows them for your tissue, chosen from your annotation; remove the ones
-          that do not hold for it, or add your own in plain words and the agent writes the rule. The agent's Review
-          checks your annotation and regions against them.</p>
-        <div class="priors">
-          <div>
-            <div class="talk" aria-label="Example exchange">
-              <div class="turn you"><span class="who">You</span>
-                <div class="say">“Epithelial cells are only in the mucosa.”</div></div>
-              <div class="turn agent"><span class="who">Agent</span>
-                <div class="say">
-                  <p><span class="pill">region</span><span class="pill">only</span> Epithelial lineage, inside the region you drew and named <code>mucosa</code>.</p>
-                  <p>The change is waiting in the app with the cells it would relabel.</p>
-                </div></div>
-              <div class="turn you"><span class="who">App</span>
-                <div class="say review"><b>Review Claude's change</b><span>Nothing changes until you click Accept.</span>
-                  <span class="acts"><span class="fake">Dismiss</span><span class="fake on">Accept</span></span></div></div>
-            </div>
-            <div class="kinds">
-              <table>
-                <thead><tr><th>Kind</th><th>Condition</th><th>Example</th></tr></thead>
-                <tbody>
-                  <tr><td>region</td><td>The cell lies in one of the regions you drew</td><td>Epithelial cells only in the mucosa</td></tr>
-                  <tr><td>depth</td><td>Within a distance of the epithelium</td><td>Goblet cells within 30 µm of the epithelium</td></tr>
-                  <tr><td>neighborhood</td><td>A share of the 15 nearest cells are given types</td><td>Tfh cells next to B cells</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-          <div class="detail">
-            <figure>
-              <img src="assets/mucosa-detail.jpg?v=0.2.44" width="640" height="1120" loading="lazy"
-                   alt="Close-up of colon crypts and lymphoid follicles on the H&amp;E, with each cell drawn as a small colored dot on its nucleus.">
-              <figcaption>The mucosa of the same section, closer: crypts in red, lymphoid follicles of B cells in olive. Each dot is one cell, colored by its type and placed on its nucleus.</figcaption>
-            </figure>
-          </div>
-        </div>
-        <h3 class="sub">How a rule meets the expression</h3>
-        <p class="subintro">A rule has a condition (one of the kinds above), a way it acts and a strength.</p>
-        <div class="facts">
-          <div class="fact"><b>only · exclude · enrich</b><p>The types belong only where the condition holds, never where it
-            holds, or more often where it holds.</p></div>
-          <div class="fact"><b>Strength</b><p>strong ×0.01 · moderate ×0.1 · weak ×0.5 <br>(enrich: ×10 · ×3 · ×1.5)</p></div>
-        </div>
-        <div class="formula">probability of each type in a cell ∝ expression model × the weights of the rules that apply there</div>
-        <p class="subintro">A rule weighs in; it does not overwrite. Where the expression is unsure, the rule changes the
-          label. Where the expression is very sure, the cell keeps its type and is listed as a <b>conflict</b> for you to
-          look at, never changed quietly.</p>
-        <div class="wexs">
-          <div class="wex">
-            <h4>The expression is unsure: the rule decides</h4>
-            <p class="ctx">A cell in the submucosa. Rule: goblet cells only in the mucosa, strong (×0.01).</p>
-            <div class="pb"><span class="h">Before</span>
-              <div><span>Goblet</span><s><i style="width:55%"></i></s><span>0.55</span></div>
-              <div><span>Fibroblast</span><s><i style="width:35%"></i></s><span>0.35</span></div>
-              <div><span>Smooth m.</span><s><i style="width:10%"></i></s><span>0.10</span></div>
-            </div>
-            <div class="pb after"><span class="h">After</span>
-              <div><span>Goblet</span><s><i style="width:1.2%"></i></s><span>0.01</span></div>
-              <div><span>Fibroblast</span><s><i style="width:76.8%"></i></s><span>0.77</span></div>
-              <div><span>Smooth m.</span><s><i style="width:22%"></i></s><span>0.22</span></div>
-            </div>
-            <p class="verdict">Labeled Fibroblast (the prior overrode the expression).</p>
-          </div>
-          <div class="wex">
-            <h4>The expression is sure: it keeps its type</h4>
-            <p class="ctx">Same place, same rule, but the cell's goblet markers are unmistakable.</p>
-            <div class="pb"><span class="h">Before</span>
-              <div><span>Goblet</span><s><i style="width:99.5%"></i></s><span>0.995</span></div>
-              <div><span>Fibroblast</span><s><i style="width:0.4%"></i></s><span>0.004</span></div>
-              <div><span>Smooth m.</span><s><i style="width:0.1%"></i></s><span>0.001</span></div>
-            </div>
-            <div class="pb after"><span class="h">After</span>
-              <div><span>Goblet</span><s><i style="width:66.6%"></i></s><span>0.67</span></div>
-              <div><span>Fibroblast</span><s><i style="width:26.8%"></i></s><span>0.27</span></div>
-              <div><span>Smooth m.</span><s><i style="width:6.7%"></i></s><span>0.07</span></div>
-            </div>
-            <p class="verdict kept">Still Goblet, listed as a conflict: is the rule wrong here (displaced epithelium in diseased
-              tissue), or is the cell?</p>
-          </div>
-        </div>
-        <p class="subnote">Illustrative numbers, computed with the formula above. Conflicts are also sorted by where they lie:
-          at a region's border, in a cluster, or alone (often a tissue edge or a segmentation problem).</p>
-      </div>
     </div>
   </section>
 
@@ -688,6 +594,118 @@ footer .counted { flex-basis: 100%; margin: 0; }
     </div>
   </section>
 
+  <section class="band" id="priors">
+    <div class="wrap sec">
+      <div class="side"><p class="eyebrow">Plain-language priors</p></div>
+      <div>
+        <h2>Say what a pathologist would say</h2>
+        <p class="intro">Knowledge about where cells belong becomes a rule the model can use. The agent reads your sentence
+          and proposes the change; the app shows it to you, and nothing happens until you accept it.</p>
+        <p class="intro">The app also knows what the literature says for 12 organs: where each cell type lies, with its
+          exceptions and references. <b>Prior</b> shows them for your tissue, chosen from your annotation; remove the ones
+          that do not hold for it, or add your own in plain words and the agent writes the rule. The agent's Review
+          checks your annotation and regions against them.</p>
+        <div class="priors">
+          <div>
+            <div class="talk" aria-label="Example exchange">
+              <div class="turn you"><span class="who">You</span>
+                <div class="say">“Epithelial cells are only in the mucosa.”</div></div>
+              <div class="turn agent"><span class="who">Agent</span>
+                <div class="say">
+                  <p><span class="pill">region</span><span class="pill">only</span> Epithelial lineage, inside the region you drew and named <code>mucosa</code>.</p>
+                  <p>The change is waiting in the app with the cells it would relabel.</p>
+                </div></div>
+              <div class="turn you"><span class="who">App</span>
+                <div class="say review"><b>Review Claude's change</b><span>Nothing changes until you click Accept.</span>
+                  <span class="acts"><span class="fake">Dismiss</span><span class="fake on">Accept</span></span></div></div>
+            </div>
+            <div class="kinds">
+              <table>
+                <thead><tr><th>Kind</th><th>Condition</th><th>Example</th></tr></thead>
+                <tbody>
+                  <tr><td>region</td><td>The cell lies in one of the regions you drew</td><td>Epithelial cells only in the mucosa</td></tr>
+                  <tr><td>depth</td><td>Within a distance of the epithelium</td><td>Goblet cells within 30 µm of the epithelium</td></tr>
+                  <tr><td>neighborhood</td><td>A share of the 15 nearest cells are given types</td><td>Tfh cells next to B cells</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="detail">
+            <figure>
+              <img src="assets/mucosa-detail.jpg?v=0.2.44" width="640" height="1120" loading="lazy"
+                   alt="Close-up of colon crypts and lymphoid follicles on the H&amp;E, with each cell drawn as a small colored dot on its nucleus.">
+              <figcaption>The mucosa of the same section, closer: crypts in red, lymphoid follicles of B cells in olive. Each dot is one cell, colored by its type and placed on its nucleus.</figcaption>
+            </figure>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="analyses">
+    <div class="wrap sec">
+      <div class="side"><p class="eyebrow">Analyses</p></div>
+      <div>
+        <h2>The analyses you would run next, in the same window</h2>
+        <div class="tools">
+          <div class="tool"><span class="tab">Embed</span><h3>PCA, UMAP, Leiden</h3>
+            <p>Select cells on the UMAP and see them light up on the tissue. Harmony integration for several slices.</p></div>
+          <div class="tool"><span class="tab">Niche</span><h3>Cellular neighborhoods</h3>
+            <p>Niches shared across slices, which the agent names from the H&amp;E and their composition.</p></div>
+          <div class="tool"><span class="tab">Compare</span><h3>Composition and DE genes</h3>
+            <p>Compare regions, niches, slices or conditions, with dot plots of the top genes; DESeq2 on pseudobulk counts per slice or patient.</p></div>
+          <div class="tool"><span class="tab">Signal</span><h3>Cell–cell communication</h3>
+            <p>Ligand–receptor interactions as bubble and circle plots. Senders and receivers shown together on the map.</p></div>
+          <div class="tool"><span class="tab">Trajectory</span><h3>Spatial axes and pseudotime</h3>
+            <p>Order cells from the crypt base to the surface, or by diffusion pseudotime from a root, with tissue neighbors mixed in if you like. The genes that rise, fall or peak along it, and the cells colored by their place on the map.</p></div>
+          <div class="tool"><span class="tab">Project</span><h3>Several slices at once</h3>
+            <p>Healthy and disease, time courses, replicates: one annotation model and one embedding for all slices. Niche names and priors go to every slice with one Accept. Put any samples into a project, or move slices between projects.</p></div>
+          <div class="tool"><span class="tab">Overview of all samples</span><h3>Every sample side by side</h3>
+            <p>Each sample over its image, colored the same way. Tick legend entries to show only those cells on all samples, and save the panel as one PDF.</p></div>
+          <div class="tool"><span class="tab">Report</span><h3>An annotation report</h3>
+            <p>Written by the agent from the tools' numbers: sample, method and inputs, composition, compartments, quality and open questions. Saved as Markdown.</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="measured">
+    <div class="wrap sec">
+      <div class="side"><p class="eyebrow">Measured</p></div>
+      <div>
+        <h2>Tested on published atlases</h2>
+        <p class="intro">Numbers from the validation runs in the user guide. Dataset labels were used only to score the results afterwards, never as input.</p>
+        <div class="measures">
+          <div class="measure">
+            <p class="big num">~5<small>minutes</small></p>
+            <p class="what">to annotate a million cells</p>
+            <p class="how">1,081,532 cells of two Xenium 5K sections (4,624 genes) imported side by side as one sample, on a 20-core CPU: 4.5 minutes with approximate neighbors and 7.2 GB of memory; 5.5 minutes with exact neighbors on an NVIDIA GPU, the app's choice there (8.4 GB).</p>
+            <p class="src">10x Xenium Prime 5K human lymph node + Xenium 5K colitis colon (GSE282123)</p>
+          </div>
+          <div class="measure">
+            <p class="big num">0.5<small>µm</small></p>
+            <p class="what">median distance to the reference registration</p>
+            <p class="how">Align with Agent searched the slide in 8 s and refined in 3 s, on a slide with two sections rotated 180°. The registration file shipped with the data was 13 µm off.</p>
+            <p class="src">SCP2927, section 147328</p>
+          </div>
+          <div class="measure">
+            <p class="big num">97<small>%</small></p>
+            <p class="what">lineage agreement from a single-cell reference</p>
+            <p class="how">A reference built from three other sections labeled section 147328: 97% on the five lineages
+              (98% with majority voting), 80% on 56 fine cell types.</p>
+            <p class="src">SCP2927 IBD Xenium atlas, section 147328</p>
+          </div>
+          <div class="measure">
+            <p class="big num">88–92<small>%</small></p>
+            <p class="what">lineage agreement across a mouse colitis time course</p>
+            <p class="how">Four MERFISH slices (healthy, DSS day 3, 9 and 21; 66,818 cells), each annotated with the built-in colon list in about 10 s. The day-21 slice, with few transcripts per cell, agreed less (51%).</p>
+            <p class="src">Cadinu et al., Cell 2024, MERFISH, 990 genes</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="band inside" id="inside">
     <div class="wrap sec">
       <div class="side"><p class="eyebrow">Under the hood</p></div>
@@ -786,6 +804,52 @@ footer .counted { flex-basis: 100%; margin: 0; }
             above a tenth of the mean of the 6 nearest cells.</p></li>
         </ol>
 
+        <h3 class="sub">How a rule meets the expression</h3>
+        <p class="subintro">A rule has a condition (one of the kinds under Plain-language priors), a way it acts and a strength.</p>
+        <div class="facts">
+          <div class="fact"><b>only · exclude · enrich</b><p>The types belong only where the condition holds, never where it
+            holds, or more often where it holds.</p></div>
+          <div class="fact"><b>Strength</b><p>strong ×0.01 · moderate ×0.1 · weak ×0.5 <br>(enrich: ×10 · ×3 · ×1.5)</p></div>
+        </div>
+        <div class="formula">probability of each type in a cell ∝ expression model × the weights of the rules that apply there</div>
+        <p class="subintro">A rule weighs in; it does not overwrite. Where the expression is unsure, the rule changes the
+          label. Where the expression is very sure, the cell keeps its type and is listed as a <b>conflict</b> for you to
+          look at, never changed quietly.</p>
+        <div class="wexs">
+          <div class="wex">
+            <h4>The expression is unsure: the rule decides</h4>
+            <p class="ctx">A cell in the submucosa. Rule: goblet cells only in the mucosa, strong (×0.01).</p>
+            <div class="pb"><span class="h">Before</span>
+              <div><span>Goblet</span><s><i style="width:55%"></i></s><span>0.55</span></div>
+              <div><span>Fibroblast</span><s><i style="width:35%"></i></s><span>0.35</span></div>
+              <div><span>Smooth m.</span><s><i style="width:10%"></i></s><span>0.10</span></div>
+            </div>
+            <div class="pb after"><span class="h">After</span>
+              <div><span>Goblet</span><s><i style="width:1.2%"></i></s><span>0.01</span></div>
+              <div><span>Fibroblast</span><s><i style="width:76.8%"></i></s><span>0.77</span></div>
+              <div><span>Smooth m.</span><s><i style="width:22%"></i></s><span>0.22</span></div>
+            </div>
+            <p class="verdict">Labeled Fibroblast (the prior overrode the expression).</p>
+          </div>
+          <div class="wex">
+            <h4>The expression is sure: it keeps its type</h4>
+            <p class="ctx">Same place, same rule, but the cell's goblet markers are unmistakable.</p>
+            <div class="pb"><span class="h">Before</span>
+              <div><span>Goblet</span><s><i style="width:99.5%"></i></s><span>0.995</span></div>
+              <div><span>Fibroblast</span><s><i style="width:0.4%"></i></s><span>0.004</span></div>
+              <div><span>Smooth m.</span><s><i style="width:0.1%"></i></s><span>0.001</span></div>
+            </div>
+            <div class="pb after"><span class="h">After</span>
+              <div><span>Goblet</span><s><i style="width:66.6%"></i></s><span>0.67</span></div>
+              <div><span>Fibroblast</span><s><i style="width:26.8%"></i></s><span>0.27</span></div>
+              <div><span>Smooth m.</span><s><i style="width:6.7%"></i></s><span>0.07</span></div>
+            </div>
+            <p class="verdict kept">Still Goblet, listed as a conflict: is the rule wrong here (displaced epithelium in diseased
+              tissue), or is the cell?</p>
+          </div>
+        </div>
+        <p class="subnote">Illustrative numbers, computed with the formula above. Conflicts are also sorted by where they lie:
+          at a region's border, in a cluster, or alone (often a tissue edge or a segmentation problem).</p>
         <h3 class="sub">How a request reaches the agent</h3>
         <p class="subintro">The app runs an MCP server that offers about 100 of its functions to Claude as tools.</p>
         <div class="diag">
@@ -903,70 +967,6 @@ footer .counted { flex-basis: 100%; margin: 0; }
             <b>Agent review</b>, so you can confirm the organ and write to the agent first.</p>
         </div>
 
-      </div>
-    </div>
-  </section>
-
-  <section class="band" id="analyses">
-    <div class="wrap sec">
-      <div class="side"><p class="eyebrow">Analyses</p></div>
-      <div>
-        <h2>The analyses you would run next, in the same window</h2>
-        <div class="tools">
-          <div class="tool"><span class="tab">Embed</span><h3>PCA, UMAP, Leiden</h3>
-            <p>Select cells on the UMAP and see them light up on the tissue. Harmony integration for several slices.</p></div>
-          <div class="tool"><span class="tab">Niche</span><h3>Cellular neighborhoods</h3>
-            <p>Niches shared across slices, which the agent names from the H&amp;E and their composition.</p></div>
-          <div class="tool"><span class="tab">Compare</span><h3>Composition and DE genes</h3>
-            <p>Compare regions, niches, slices or conditions, with dot plots of the top genes; DESeq2 on pseudobulk counts per slice or patient.</p></div>
-          <div class="tool"><span class="tab">Signal</span><h3>Cell–cell communication</h3>
-            <p>Ligand–receptor interactions as bubble and circle plots. Senders and receivers shown together on the map.</p></div>
-          <div class="tool"><span class="tab">Trajectory</span><h3>Spatial axes and pseudotime</h3>
-            <p>Order cells from the crypt base to the surface, or by diffusion pseudotime from a root, with tissue neighbors mixed in if you like. The genes that rise, fall or peak along it, and the cells colored by their place on the map.</p></div>
-          <div class="tool"><span class="tab">Project</span><h3>Several slices at once</h3>
-            <p>Healthy and disease, time courses, replicates: one annotation model and one embedding for all slices. Niche names and priors go to every slice with one Accept. Put any samples into a project, or move slices between projects.</p></div>
-          <div class="tool"><span class="tab">Overview of all samples</span><h3>Every sample side by side</h3>
-            <p>Each sample over its image, colored the same way. Tick legend entries to show only those cells on all samples, and save the panel as one PDF.</p></div>
-          <div class="tool"><span class="tab">Report</span><h3>An annotation report</h3>
-            <p>Written by the agent from the tools' numbers: sample, method and inputs, composition, compartments, quality and open questions. Saved as Markdown.</p></div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section class="band" id="measured">
-    <div class="wrap sec">
-      <div class="side"><p class="eyebrow">Measured</p></div>
-      <div>
-        <h2>Tested on published atlases</h2>
-        <p class="intro">Numbers from the validation runs in the user guide. Dataset labels were used only to score the results afterwards, never as input.</p>
-        <div class="measures">
-          <div class="measure">
-            <p class="big num">~5<small>minutes</small></p>
-            <p class="what">to annotate a million cells</p>
-            <p class="how">1,081,532 cells of two Xenium 5K sections (4,624 genes) imported side by side as one sample, on a 20-core CPU: 4.5 minutes with approximate neighbors and 7.2 GB of memory; 5.5 minutes with exact neighbors on an NVIDIA GPU, the app's choice there (8.4 GB).</p>
-            <p class="src">10x Xenium Prime 5K human lymph node + Xenium 5K colitis colon (GSE282123)</p>
-          </div>
-          <div class="measure">
-            <p class="big num">0.5<small>µm</small></p>
-            <p class="what">median distance to the reference registration</p>
-            <p class="how">Align with Agent searched the slide in 8 s and refined in 3 s, on a slide with two sections rotated 180°. The registration file shipped with the data was 13 µm off.</p>
-            <p class="src">SCP2927, section 147328</p>
-          </div>
-          <div class="measure">
-            <p class="big num">97<small>%</small></p>
-            <p class="what">lineage agreement from a single-cell reference</p>
-            <p class="how">A reference built from three other sections labeled section 147328: 97% on the five lineages
-              (98% with majority voting), 80% on 56 fine cell types.</p>
-            <p class="src">SCP2927 IBD Xenium atlas, section 147328</p>
-          </div>
-          <div class="measure">
-            <p class="big num">88–92<small>%</small></p>
-            <p class="what">lineage agreement across a mouse colitis time course</p>
-            <p class="how">Four MERFISH slices (healthy, DSS day 3, 9 and 21; 66,818 cells), each annotated with the built-in colon list in about 10 s. The day-21 slice, with few transcripts per cell, agreed less (51%).</p>
-            <p class="src">Cadinu et al., Cell 2024, MERFISH, 990 genes</p>
-          </div>
-        </div>
       </div>
     </div>
   </section>
