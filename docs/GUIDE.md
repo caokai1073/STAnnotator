@@ -576,6 +576,10 @@ Histograms show where each threshold cuts and the dialog counts what goes; empty
 3. **Advanced** (folded; its line names the switches that are on): **Leave out spillover**, **Parallel
    clustering**, **Keep my regions, priors & corrections** (when an annotation is open: carried into the new one) and
    **Refine with the agent** (on by default: after annotating, the agent reviews the result round by round).
+   While a round is summed up, the agent reviews it, or the sample is annotated again after **Accept**, a window in
+   the middle of the screen says so and keeps the rest of the app from being used (changing regions or priors
+   meanwhile would change the annotation under the round); a message says when it is done. After 10 minutes without
+   a proposal it offers **Stop waiting**; the annotation can be stopped from it.
    **All slices together** (a project) stays outside it.
    - **Leave out spillover** (marker genes, on by default): in imaging data a cell's outline also catches
      transcripts of its neighbors; on, a gene counts as detected in a cell only where its count is above a tenth of

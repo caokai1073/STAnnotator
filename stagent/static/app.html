@@ -410,6 +410,17 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .rforgan { gap: 8px; flex-wrap: wrap; }
 .rfreport { font-size: 12.5px; line-height: 1.5; background: var(--bg2, rgba(0,0,0,.03)); border-radius: 8px; padding: 8px 10px; max-height: 26vh; overflow: auto; }
 .rfreport .big { color: #b3261e; font-weight: 600; }
+/* a run of the Refine loop: in the middle of the screen until it ends (nothing else meanwhile) */
+#busyDlg { width: min(460px, 92vw); }
+#busyDlg::backdrop { background: rgba(0,0,0,.45); }
+.busybody { padding: 26px 26px 20px; display: grid; gap: 10px; justify-items: center; text-align: center; }
+.busybody b { font-size: 16px; }
+.busybody p { margin: 0; }
+.busybody .pbar { width: 100%; }
+.busybody .busywarn { font-weight: 600; color: var(--accent); }
+.busyspin { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--line); border-top-color: var(--accent); animation: busyspin 1s linear infinite; }
+@keyframes busyspin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .busyspin { animation-duration: 4s; } }
 .rfgrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 14px; }
 .rfcol { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .rfmsgs { max-height: 30vh; overflow: auto; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }
@@ -957,6 +968,17 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <label class="alrow alall"><input type="checkbox" id="alAll"><b>All samples</b></label>
     <div id="alList"></div>
     <div class="row" style="margin-top:4px"><span class="spacer"></span><button id="alCancel">Cancel</button><button id="alGo" class="primary">Align</button></div>
+  </div>
+</dialog>
+<dialog id="busyDlg" aria-live="polite">
+  <div class="busybody">
+    <div class="busyspin" aria-hidden="true"></div>
+    <b id="busyTitle">Working…</b>
+    <p id="busyText"></p>
+    <div class="pbar" id="busyBar" hidden><i id="busyFill"></i></div>
+    <p class="hint" id="busyStage"></p>
+    <p class="busywarn">Please do not do anything else in the app until it finishes: a message says when.</p>
+    <div class="row"><span class="spacer"></span><button id="busyStop" hidden></button><span class="spacer"></span></div>
   </div>
 </dialog>
 <dialog id="rfDlg" style="width:min(980px,96vw)">
@@ -1939,7 +1961,8 @@ async function startAnnotation(mode, sid, token = st.switchToken) {
     await openSession(session_id);
     if (mode === "new" && method === "markers" && rfAgentOk() && (rfFrom || $("rfAuto").checked)) {  // the next round
       const f = rfFrom;
-      rfOpen(f).catch((e) => toast(`Refine: ${e.message}`, 6000));
+      if (BUSY.kind === "annotate") busyShow("prepare", "Refine cell types: the next round", "Summing up the new annotation for the next round.");
+      rfOpen(f).catch((e) => { if (BUSY.kind === "prepare") busyHide(); toast(`Refine: ${e.message}`, 6000); });
     }
     if (!quiet) setTimeout(() => $("progress").classList.remove("show"), 800);
   } catch (e) {
@@ -4321,6 +4344,65 @@ syncAnnAdv();
 $("rfAuto").onchange = () => store("rfAuto", $("rfAuto").checked ? "on" : "off");
 $("method").addEventListener("change", rfSync);
 const rfRound = () => (RF.state && RF.state.rounds.length ? RF.state.rounds[RF.state.rounds.length - 1] : null);
+// ---- while the Refine loop runs (a round summed up, the agent reviewing, annotating again after Accept): a window in
+// the middle of the screen, over everything, until it ends; then a message. Doing something else meanwhile (e.g.
+// importing regions) changed the annotation under the round.
+const BUSY = { kind: null, t0: 0, timer: null, sid: null, n: null, polling: false, asked: false };
+const busyClock = () => { const s = Math.round((Date.now() - BUSY.t0) / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+function busyShow(kind, title, text) {
+  BUSY.kind = kind; BUSY.t0 = Date.now(); BUSY.polling = false;
+  $("busyTitle").textContent = title; $("busyText").textContent = text; $("busyStage").textContent = "";
+  $("busyBar").hidden = kind !== "annotate"; $("busyFill").style.width = "0%"; $("busyStop").hidden = true;
+  const d = $("busyDlg"); if (d.open) d.close();
+  d.showModal();  // (shown last: on top of the Refine window)
+  clearInterval(BUSY.timer); BUSY.timer = setInterval(busyTick, 1000); busyTick();
+}
+function busyHide(done) {
+  if (!BUSY.kind) return;
+  BUSY.kind = null; clearInterval(BUSY.timer);
+  if ($("busyDlg").open) $("busyDlg").close();
+  if (done) toast(done, 7000);
+}
+async function busyTick() {
+  const kind = BUSY.kind; if (!kind) return;
+  if (kind === "annotate") {  // the annotation's own progress, mirrored; its Stop
+    $("busyFill").style.width = $("pfill").style.width || "0%";
+    $("busyStage").textContent = $("pstage").textContent;
+    const ps = $("annotate").nextElementSibling;
+    const can = ps && ps.classList.contains("pstop") && !ps.hidden && !ps.disabled;
+    $("busyStop").hidden = !can; setLabel($("busyStop"), "Stop annotating");
+    return;
+  }
+  if (kind === "prepare") { $("busyStage").textContent = busyClock(); return; }
+  // the agent: until its proposal arrives (asked of the server, not of the window)
+  const waited = (Date.now() - BUSY.t0) / 1000;
+  $("busyStage").textContent = `waiting ${busyClock()}` + (waited > RF_WAIT_S ? " · no proposal after 10 minutes: look at the Claude Code window " +
+    "(an error there: no internet, not logged in, its limit reached), then Stop waiting and click Agent review again" : "");
+  $("busyStop").hidden = waited <= RF_WAIT_S; setLabel($("busyStop"), "Stop waiting");
+  if (!BUSY.asked || BUSY.polling || Math.round(waited) % 3) return;  // (asked: the request reached the server)
+  BUSY.polling = true;
+  try {
+    const r = await api(`/api/s/${BUSY.sid}/refine`);
+    if (BUSY.kind !== "agent") return;
+    if (!r.awaiting) {
+      const rd = r.rounds[r.rounds.length - 1];
+      busyHide(rd && rd.proposal ? `The agent's review of round ${rd.n} is ready` : "The agent has answered");
+      if (RF.sid === BUSY.sid && $("rfDlg").open) { RF.state = r; rfRender(); }
+    }
+  } catch (e) { /* (tried again) */ } finally { BUSY.polling = false; }
+}
+function busyAgent(asked = false) {
+  const rd = rfRound(); BUSY.sid = RF.sid; BUSY.asked = asked;
+  busyShow("agent", `The agent is reviewing round ${rd ? rd.n : ""}`,
+           "Its edits and findings appear in the Refine window when it is done (a few minutes). You can follow it in " +
+           (st.desktop ? "its Claude Code window." : "the chat column."));
+}
+$("busyDlg").addEventListener("cancel", (e) => e.preventDefault());  // (Esc does not close it)
+$("busyStop").onclick = () => {
+  if (BUSY.kind === "annotate") { const ps = $("annotate").nextElementSibling; if (ps && ps.classList.contains("pstop")) ps.click(); return; }
+  busyHide("Stopped waiting: the agent may still answer; its proposal then appears in the Refine window");
+  rfPoll();
+};
 async function rfOpen(from) {
   const sid = st.sid; if (!sid) return;
   let r = await api(`/api/s/${sid}/refine`);
@@ -4334,9 +4416,10 @@ async function rfOpen(from) {
     $("rfAccept").hidden = $("rfAsk").hidden = true;
     if (!$("rfDlg").open) $("rfDlg").showModal();
     const prep = { sid, stop: false }; RF.preparing = prep;  // (one per preparation: an overlapping one has its own)
+    busyShow("prepare", "Refine cell types: a new round", "Summing up this annotation for the new round (a few seconds; longer on a large sample).");
     try { await post(`/api/s/${sid}/refine/start`, { from: from || null }); }
     catch (e) { $("rfReport").textContent = ""; $("rfErr").textContent = `Could not start the round: ${e.message}`; throw e; }
-    finally { if (RF.preparing === prep) RF.preparing = null; }
+    finally { if (RF.preparing === prep) RF.preparing = null; if (BUSY.kind === "prepare") busyHide(); }
     if (prep.stop) {  // Stop refining while the round was being prepared: the round is made, then stopped
       await post(`/api/s/${sid}/refine/decide`, { decision: "stopped" }).catch(() => {});
       return;
@@ -4344,11 +4427,13 @@ async function rfOpen(from) {
     r = await api(`/api/s/${sid}/refine`);
     if (!$("rfDlg").open) return;  // closed meanwhile (the round is kept: the button reopens it)
   }
+  if (BUSY.kind === "prepare") busyHide();  // (the round there already)
   RF.sid = sid; RF.state = r; RF.seen = "";
   rfRender();
   if (!$("rfDlg").open) $("rfDlg").showModal();
   clearInterval(RF.timer);
   RF.timer = setInterval(rfPoll, 3000);
+  if (r.awaiting && !BUSY.kind) busyAgent(true);  // (the agent still reviews this round)
   // the round after an Accept goes to the agent by itself (the user accepted edits to go on; the organ is known);
   // the first round waits for Agent review (the organ to confirm, words to write first)
   const rd = r.rounds[r.rounds.length - 1], prev = r.rounds[r.rounds.length - 2];
@@ -4544,19 +4629,23 @@ function rfHanded(r) {  // the request went to the agent: Claude Code (desktop) 
   if (r.message && st.chatAvailable) { $("input").value = r.message; send(); }
   else if (r.claude_code) toast(r.claude_code.reused ? "Sent to the agent; its proposal appears here" : "The agent is opening; its proposal appears here", 5000);
   $("rfWait").textContent = "The agent is reviewing (a few minutes)…";
+  if (BUSY.kind !== "agent") busyAgent();
+  BUSY.asked = true;
 }
 $("rfAsk").onclick = async () => {
   $("rfErr").textContent = "";
+  busyAgent();  // (at once: nothing else meanwhile)
   try { const r = await post(`/api/s/${RF.sid}/refine/ask`, { organ: rfOrgan(), message: $("rfText").value.trim() }); $("rfText").value = ""; rfHanded(r); rfPoll(); }
-  catch (e) { $("rfErr").textContent = e.message; }
+  catch (e) { busyHide(); $("rfErr").textContent = e.message; }
 };
 $("rfSend").onclick = async () => {
   const text = $("rfText").value.trim(); if (!text || !RF.sid) return;  // (no round yet: it is being prepared)
   const rd = rfRound();
   if (!rd || (!rd.proposal && !rd.messages.length)) { $("rfAsk").click(); return; }  // the first request of the round
   $("rfErr").textContent = "";
+  busyAgent();
   try { const r = await post(`/api/s/${RF.sid}/refine/message`, { text }); $("rfText").value = ""; rfHanded(r); rfPoll(); }
-  catch (e) { $("rfErr").textContent = e.message; }
+  catch (e) { busyHide(); $("rfErr").textContent = e.message; }
 };
 $("rfAccept").onclick = async () => {
   const ids = [...document.querySelectorAll("#rfEdits input[value]:checked")].map((c) => c.value);  // (not the groups' boxes)
@@ -4575,8 +4664,10 @@ $("rfAccept").onclick = async () => {
   $("rfText").value = "";  // (words left unsent here would go to the next round's automatic review as the user's)
   const joint = r.joint && st.sample && projectOf(st.sample.sample_id);
   if (joint) { $(PROJ_ALL.annotate).checked = true; $(PROJ_ALL.annotate).dispatchEvent(new Event("change")); }
-  toast(`Annotating ${joint ? "all slices together " : ""}again with ${ids.length} edit(s); the next round opens when it is done`, 5000);
-  await (joint ? annotateProject() : startAnnotation("new"));
+  busyShow("annotate", `Annotating ${joint ? "all slices together " : ""}again with ${ids.length} edit${ids.length === 1 ? "" : "s"}`,
+           "Your regions, priors and corrections carry over; the next round opens when it is done.");
+  try { await (joint ? annotateProject() : startAnnotation("new")); }
+  finally { if (BUSY.kind === "annotate") busyHide(); }  // (failed or stopped: the annotation's own message says so)
 };
 $("rfDismiss").onclick = async () => {
   try { await post(`/api/s/${RF.sid}/refine/decide`, { decision: "dismissed" }); rfPoll(); } catch (e) { $("rfErr").textContent = e.message; }
@@ -7136,8 +7227,10 @@ async function annotateProject() {  // one marker annotation of all slices; then
     await loadSamples(st.sample.sample_id);
     setTimeout(() => $("progress").classList.remove("show"), 800);
     toast("All slices of the project annotated together", 5000);
-    if (st.sid && st.vocab && st.vocab.method === "markers" && rfAgentOk() && (rfFrom || $("rfAuto").checked))  // the next round
-      rfOpen(rfFrom).catch((e) => toast(`Refine: ${e.message}`, 6000));
+    if (st.sid && st.vocab && st.vocab.method === "markers" && rfAgentOk() && (rfFrom || $("rfAuto").checked)) {  // the next round
+      if (BUSY.kind === "annotate") busyShow("prepare", "Refine cell types: the next round", "Summing up the new annotation for the next round.");
+      rfOpen(rfFrom).catch((e) => { if (BUSY.kind === "prepare") busyHide(); toast(`Refine: ${e.message}`, 6000); });
+    }
   } catch (e) {
     if (isStop(e)) stopped($("progress"), "Annotation");
     else { $("pstage").textContent = `Annotation failed: ${e.message}`; toast($("pstage").textContent, 8000); }
