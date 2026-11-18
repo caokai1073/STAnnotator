@@ -802,6 +802,16 @@ class Session:
         return [why.get(t, {"type": t, "reason": "the expression model gave it no cell"})
                 for i, t in enumerate(self.types) if i not in have and t not in markers.NO_TYPE]
 
+    def not_found_table(self, version=None):
+        """types_not_found as a table (written with every export, so that a script reading only the files sees the
+        types of the list that got no cell, and why): type, parent, cells of the parent, reason, and per positive
+        marker the cells of the parent with 1+ and 2+ transcripts."""
+        rows = [{"cell_type": x["type"], "parent": x.get("parent") or "", "n_parent_cells": x.get("n_parent_cells", ""),
+                 "reason": x.get("reason", ""),
+                 "marker_detection": "; ".join(f"{g}: {a} cells (2+: {b})" for g, (a, b) in (x.get("markers") or {}).items())}
+                for x in self.types_not_found(version)]
+        return pd.DataFrame(rows, columns=["cell_type", "parent", "n_parent_cells", "reason", "marker_detection"])
+
     def diff(self, a, b):
         ra, rb = self.result(a), self.result(b)
         ch = ra["pred"] != rb["pred"]
@@ -1547,10 +1557,14 @@ class Session:
         self.export_table(version).to_csv(d / "cells.csv", index=False)
         dump_json(r["state"], d / "state.json", indent=1)
         r["conflicts"].to_csv(d / "conflicts.csv", index=False)
+        nf = self.not_found_table(v)  # (always written, empty when every type has cells)
+        nf.to_csv(d / "types_not_found.csv", index=False)
         lines = [f"# Session {self.id}, sample {self.sample_id}, version {v}", ""]
         for h in self.history():
             if h["version"] <= v:
                 lines.append(f"- v{h['version']} ({h['created_at']}, {h['action']}): {h['message']}")
         lines += ["", "## Constraints"] + [f"- {cmod.describe(c)}  (\"{c['text']}\")" for c in r["state"]["constraints"]]
+        if len(nf):  # the list's types without a cell: not silently gone (types_not_found.csv has the evidence)
+            lines += ["", "## Cell types of the list without cells"] + [f"- {t}: {why}" for t, why in zip(nf.cell_type, nf.reason)]
         (d / "CHANGELOG.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
         return str(d)

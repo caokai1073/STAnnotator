@@ -362,6 +362,7 @@ def _step_export(r, out, opts, st):
     tmp = d / ".annotation.csv.tmp"
     tab.to_csv(tmp, index=False)
     os.replace(tmp, d / "annotation.csv")
+    _write_atomic(d / "types_not_found.csv", s.not_found_table().to_csv(index=False))  # the list's types without cells, why
     reg0 = st["steps"].get("register", {})
     on_he = bool(r.get("he")) and reg0.get("registration") in ("file", "auto")  # (placed: not waiting, not failed)
     pos = notebook.positions_csv(sid)

@@ -149,7 +149,8 @@ s003,/data/run2/output-XETG...-s003,,,colon
 
 In `--out`:
 - `results/<sample>/annotation.csv` (one row per cell: cell type, lineage, confidence, `x_um`, `y_um`),
-  `cell_positions.csv` (with `px`, `py` on the H&E when the cells were placed on it), `registration.csv`, `qc.json`;
+  `cell_positions.csv` (with `px`, `py` on the H&E when the cells were placed on it), `registration.csv`,
+  `types_not_found.csv` (the list's types without cells, and why), `qc.json`;
 - `summary.csv`: one row per sample with its status (`ok`, `flagged`, `failed`), the reason of a flag (e.g. no
   alignment found, another orientation fits too), the registration check and the share of Unassigned cells;
 - `data/`: the batch's data folder. Open flagged samples in the app over SSH (section B) with this folder as the data

@@ -2521,8 +2521,9 @@ def revert(version: int, message: Optional[str] = None) -> str:
 
 @mcp.tool()
 def export(version: Optional[int] = None) -> str:
-    """Write cells.csv (cell_id, region, cell_type, lineage, type levels, confidence, ...), conflicts.csv, state.json
-    and CHANGELOG.md for a version; returns the folder."""
+    """Write cells.csv (cell_id, region, cell_type, lineage, type levels, confidence, ...), conflicts.csv,
+    types_not_found.csv (the list's types without a cell, with why and their markers' detection), state.json and
+    CHANGELOG.md for a version; returns the folder."""
     return _j({"folder": _s().export(version)})
 
 

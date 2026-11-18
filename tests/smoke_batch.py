@@ -50,6 +50,10 @@ try:
         assert not (o / "results" / s / "registration.csv").exists()  # (no H&E)
         q = json.load(open(o / "results" / s / "qc.json"))
         assert q["n_cells"] == len(a) and summ[s]["registration"] == "none (no H&E)"
+        nf = list(csv.DictReader(open(o / "results" / s / "types_not_found.csv")))  # the list's types without cells
+        got = {r["cell_type"] for r in a}
+        assert all(r["cell_type"] not in got and r["reason"] for r in nf), nf
+        assert {r["cell_type"] for r in nf} >= set(q["steps"]["annotate"]["types_without_cells"]), (nf, q["steps"]["annotate"])
     assert summ["s1"]["session"] != summ["s2"]["session"]
     assert not (tmp / "unused").exists(), "the batch made folders in the default data folder"
     # without STAGENT_HOME (and no data folder in the settings): nothing in ~/stagent either

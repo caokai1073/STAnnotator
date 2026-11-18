@@ -266,7 +266,8 @@ What it writes in `--out`:
 - `results/<sample>/annotation.csv`: one row per cell (cell type, lineage, levels, confidence, `x_um`, `y_um`);
   `cell_positions.csv`: `cell_id`, `x_um`, `y_um`, and `px`, `py` on the H&E (with corrections) when the cells were
   placed on it; `registration.csv` (placed samples): the affine, how it was made (`file`, `auto (batch)`, plus a local
-  correction) and its check; `qc.json`.
+  correction) and its check; `types_not_found.csv`: the list's cell types that got no cell, with why and how often
+  their markers are detected; `qc.json`.
 - `summary.csv`: one row per sample: status (`ok`, `flagged`, `failed`), flags (e.g. no alignment found, another
   orientation fits too, local shifts left), cells, median transcripts, the registration check (median and 90th
   percentile offset), types without cells, share of Unassigned cells.

@@ -24,6 +24,21 @@ def _numba_cache():
     os.environ.setdefault("NUMBA_CACHE_DIR", str(_local_dir() / "numba"))
 
 
+def _mpl_cache():
+    """PyInstaller's run-time hook gives matplotlib a new temporary config folder at every start (for one-file apps,
+    whose files move), so it built its font cache again each time ("Matplotlib is building the font cache" in every
+    tester's log). This app is a folder that stays where it is installed: a folder of our own keeps the cache, one per
+    install place (a cache of fonts in a moved or older app would point at files that are not there)."""
+    import hashlib
+    where = hashlib.sha1(str(Path(sys.executable).resolve().parent).encode("utf-8")).hexdigest()[:10]
+    d = _local_dir() / "matplotlib" / where
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        os.environ["MPLCONFIGDIR"] = str(d)
+    except OSError:  # (not writable: the hook's temporary folder stays)
+        pass
+
+
 def _log_streams(to_file=False):
     """The app's output goes to app.log in _local_dir(): always for the windowed Windows program (STAnnotator.exe has
     no console: sys.stdout and sys.stderr are None, which the web server's logging (uvicorn) and every print fail on),
@@ -69,5 +84,7 @@ if __name__ == "__main__":
     # Code talks to "mcp" over stdin / stdout)
     _log_streams(to_file=sys.platform == "darwin" and not args and not (sys.stdout and sys.stdout.isatty()))
     _numba_cache()
+    if getattr(sys, "frozen", False):
+        _mpl_cache()
     from stagent.cli import main
     main(args or ["app"])
