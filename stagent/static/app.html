@@ -2109,6 +2109,7 @@ async function loadEmbedding(show) {
   const sample = st.sample.sample_id, r = await api(`/api/sample/${sample}/embedding`);
   if (!st.sample || sample !== st.sample.sample_id) return;  // another sample opened meanwhile
   st.emb = r.embedding;
+  anRefresh();  // Leiden clusters appear in (or leave) the open analysis tabs' groupings
   const e = st.emb;
   $("eShow").disabled = !e;
   $("einfo").textContent = e ? `${e.n_clusters} Leiden clusters · ${e.n_pcs} PCs · ${e.n_neighbors} neighbors · ${e.seconds} s` : "Not computed yet";
@@ -2423,6 +2424,7 @@ async function loadNiches(show) {
   fillModes(st.lastSummary);
   if (show && st.niche) { st.mode = "niche"; $("mode").value = "niche"; }
   if (st.mode === "niche" || show) { refreshOverlay(); loadLegend(); }
+  anRefresh();  // the open Compare / Signaling / Trajectory / Co-localization lists show the new niches
 }
 $("nIdentity").onchange = () => { $("nPrograms").disabled = $("nIdentity").value !== "nmf"; syncSeg("nIdentity"); };
 $("nRun").onclick = async () => {
@@ -2480,7 +2482,7 @@ function syncNKind() {
 async function loadCoOptions(force) {  // the groupings of the open annotation (or of the project's slices)
   if ($("nKind").value !== "coloc" || !st.sid || st.placeholder) return;
   const sel = anSelection(coScope());
-  const key = [st.sid, st.version, coScope(), sel ? Object.entries(sel).map(([s, r]) => `${s}:${r.length}`).join() : ""].join("|");
+  const key = [st.sid, st.version, coScope(), sel ? Object.entries(sel).map(([s, r]) => `${s}:${r.length}`).join() : "", groupingsSig()].join("|");
   if (!force && key === CO.key) return;
   CO.key = key;
   try { CO.opts = await post("/api/analysis/options", coBody()); } catch (e) { CO.key = ""; toast(e.message, 6000); return; }
@@ -5089,6 +5091,9 @@ async function importSample() {  // returns true when the sample was imported
                         regions_geojson: geo, regions_from: $("imGeoFromRow").hidden ? "" : $("imGeoFrom").value });
   if (body.regions_from && !images.length) { $("imStatus").textContent = `Regions from ${body.regions_from} need the H&E file they were drawn on (H&E file above, registered)`; return false; }
   if (!name) { $("imStatus").textContent = "Give a name (none could be taken from the files)"; return false; }
+  if (/[\s\/\\<>:"|?*]/.test(name)) {  // the server's rule (importer._check_name), said before the import starts
+    $("imStatus").textContent = `No spaces, slashes or < > : " | ? * in the sample name: e.g. ${name.replace(/[\s\/\\<>:"|?*]+/g, "_")}`; return false;
+  }
   if (imgMode() === "file" && !images.length) { $("imStatus").textContent = "Choose the H&E file, or No H&E"; return false; }
   if (kind === "xenium" && !(st.imXSlices || []).length) { $("imStatus").textContent = "Give the cells and counts files; check the message under the fields"; return false; }
   if (isFlat() && !(st.imFSlices || []).length) { $("imStatus").textContent = "Give the counts and the cell metadata file; check the message under the fields"; return false; }
@@ -6647,7 +6652,9 @@ $("mkDlg").addEventListener("close", closeLibMenu);
 function showCheck(r) {
   const box = $("mkMsgs"); box.textContent = "";
   const line = (t, cls) => { const d = document.createElement("div"); d.textContent = t; if (cls) d.className = cls; box.append(d); };
-  if (r.ok) line(`OK: ${r.n_types} types, ${r.depth} levels, ${r.genes.length} genes.`, "ok");
+  // the genes the list uses as markers, not the panel: "127 genes" read as the panel shrinking from 480
+  const panel = st.genes && st.genes.length ? ` of the panel's ${st.genes.length.toLocaleString()} (the others stay in the data)` : "";
+  if (r.ok) line(`OK: ${r.n_types} types, ${r.depth} levels, ${r.genes.length} marker genes${panel}.`, "ok");
   r.errors.forEach((e) => line("✗ " + e, "err"));
   r.warnings.forEach((w) => line("! " + w));
   $("mkSum").textContent = r.ok ? `${r.n_types} types · ${r.depth} levels` : `${r.errors.length} errors`;
@@ -7415,7 +7422,9 @@ function anSelection(scope = anScope()) {  // the cells selected in the UMAP win
   }
   return st.sel ? { [st.sample.sample_id]: rows(st.sel) } : null;
 }
-function anRefresh() {  // the Compare and Signaling tabs follow the open annotation and the selection
+// the niches (run and names) and the UMAP's Leiden clusters are groupings too: a new run or new names reload the lists
+const groupingsSig = () => `${st.nicheSig || ""}|${st.emb ? st.emb.run_id || "" : ""}`;
+function anRefresh() {  // the Compare and Signaling tabs follow the open annotation, the selection, the niches and the UMAP
   if (document.querySelector('header .pane[data-pane="compare"]').classList.contains("on")) setTimeout(() => loadAnOptions(), 0);
   if (document.querySelector('header .pane[data-pane="signal"]').classList.contains("on")) setTimeout(() => loadSigOptions(), 0);
   if (document.querySelector('header .pane[data-pane="traj"]').classList.contains("on")) setTimeout(() => loadTrajOptions(), 0);
@@ -7433,7 +7442,7 @@ async function loadAnOptions(force) {  // the groupings of the open annotation (
   $("aScopeWrap").hidden = !p;
   if (!st.sid) { $("aninfo").textContent = "Open or make an annotation first"; $("aRun").disabled = true; AN.key = ""; return; }
   const sel = anSelection();
-  const key = [st.sid, st.version, anScope(), sel ? Object.entries(sel).map(([s, r]) => `${s}:${r.length}`).join() : ""].join("|");
+  const key = [st.sid, st.version, anScope(), sel ? Object.entries(sel).map(([s, r]) => `${s}:${r.length}`).join() : "", groupingsSig()].join("|");
   if (!force && key === AN.key) return;
   AN.key = key; $("aRun").disabled = true; $("aninfo").textContent = "Loading the groupings…";
   try { AN.opts = await post("/api/analysis/options", anBody()); } catch (e) { $("aninfo").textContent = e.message; AN.key = ""; return; }
@@ -7801,7 +7810,7 @@ async function loadTrajOptions(force) {
   const p = st.sample && projectOf(st.sample.sample_id);
   $("tScopeWrap").hidden = !p;
   if (!st.sid || st.placeholder) { $("tinfo").textContent = "Open or make an annotation first"; $("tRun").disabled = true; TR.key = ""; return; }
-  const key = [st.sid, st.version, trScope()].join("|");
+  const key = [st.sid, st.version, trScope(), groupingsSig()].join("|");
   if (!force && key === TR.key) return;
   TR.key = key; $("tRun").disabled = true; $("tinfo").textContent = "Loading the groupings…";
   try { TR.opts = await post("/api/analysis/options", trBody()); } catch (e) { $("tinfo").textContent = e.message; TR.key = ""; return; }
@@ -7967,7 +7976,7 @@ async function loadSigOptions(force) {
   $("sScopeWrap").hidden = !p;
   if (!st.sid) { $("sinfo").textContent = "Open or make an annotation first"; $("sRun").disabled = true; SG.key = ""; return; }
   const sel = sgSelection();
-  const key = [st.sid, st.version, sgScope(), sel ? Object.entries(sel).map(([s, r]) => `${s}:${r.length}`).join() : ""].join("|");
+  const key = [st.sid, st.version, sgScope(), sel ? Object.entries(sel).map(([s, r]) => `${s}:${r.length}`).join() : "", groupingsSig()].join("|");
   if (!force && key === SG.key) return;
   SG.key = key; $("sRun").disabled = true; $("sinfo").textContent = "Loading the groupings…";
   try { SG.opts = await post("/api/analysis/options", sgBody()); } catch (e) { $("sinfo").textContent = e.message; SG.key = ""; return; }

@@ -635,6 +635,11 @@ def _slice_from_fields(fields):
     if not cells:
         raise ValueError("choose the cells file (cells.parquet or cells.csv.gz)")
     files = {"cells": str(Path(cells).expanduser())}
+    low = Path(cells).name.lower()
+    if not low.endswith((".parquet", ".csv", ".csv.gz")):  # e.g. cells.zarr.zip (the outlines): pandas only said
+        # "Multiple files found in ZIP file"
+        what = " holds the cell outlines, not the cell table" if ".zarr" in low else " is not a cell table"
+        raise ValueError(f"{Path(cells).name}{what}: choose cells.parquet or cells.csv.gz of the Xenium output")
     counts = [str(Path(p).expanduser()) for p in (fields.get("counts") or [])]
     if len(counts) == 1:
         files["matrix"] = counts[0]
