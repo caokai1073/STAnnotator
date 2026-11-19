@@ -240,6 +240,8 @@ def _bh(p):
 def _bins(t, nbins):
     """Bin of every value of t (equal numbers of cells), and the bins' centers (median t)."""
     edges = np.unique(np.quantile(t, np.linspace(0, 1, nbins + 1)))
+    if len(edges) < 2:  # one value: one bin (else bin -1)
+        return np.zeros(len(t), int), np.array([float(np.median(t))])
     b = np.clip(np.searchsorted(edges, t, side="right") - 1, 0, len(edges) - 2)
     centers = np.array([np.median(t[b == i]) if (b == i).any() else np.nan for i in range(len(edges) - 1)])
     return b, centers
@@ -389,6 +391,11 @@ def run(c, method, within=None, start=None, end=None, root=None, alpha=0.3, by="
             note.append("slices pooled without batch correction: differences between slices can shape the expression graph")
         if info["n_unreached"]:
             note.append(f"{info['n_unreached']:,} cells are in parts of the graph the root does not reach: they have no pseudotime")
+    ft = t[np.isfinite(t)]
+    if len(ft) and ft.min() == ft.max():  # nothing to order (e.g. From is every cell: all at distance 0)
+        raise ValueError("every cell of the trajectory has the same position"
+                         + (": the From group holds all of them (e.g. a whole slice). Choose From (and To) among groups "
+                            "inside the tissue, such as cell types or regions" if method == "spatial" else ""))
     say(0.85, "genes along the trajectory")
     genes, tab = gene_trends(c.X, t, list(c.genes))
     comp = composition(t, c.labels[by].to_numpy() if by in c.labels.columns else np.full(len(t), None, dtype=object))

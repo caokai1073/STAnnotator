@@ -127,7 +127,7 @@ def _labels(s, version=None, selection=None):
 
 
 def cells(session=None, version=None, pid=None, selection=None, get_session=None, sessions=None):
-    """The cell table: one annotation (session, version) or every annotated slice of project pid (the annotations
+    """The cell table: one annotation (session, version) or every slice of project pid, all annotated (the annotations
     in sessions, {sample_id: session id}, else the latest ones). selection: rows (one annotation) or {sample_id: rows}
     (project)."""
     from .session import Session
@@ -142,6 +142,13 @@ def cells(session=None, version=None, pid=None, selection=None, get_session=None
         ids = [x for x in p["samples"] if x in latest]
         if not ids:
             raise ValueError("no slice of this project has an annotation yet")
+        if len(ids) < len(p["samples"]):  # all slices means all: a slice left out silently would change the result
+            from . import config
+            import json
+            names = [(json.load(open(config.SAMPLES / x / "meta.json", encoding="utf-8")).get("name") or x)
+                     for x in p["samples"] if x not in latest]
+            raise ValueError(f"all slices together need every slice annotated; not yet: {', '.join(names)}. Annotate "
+                             f"{'them' if len(names) > 1 else 'it'} first, or analyze this slice only")
         S = [get(latest[x]) for x in ids]
         versions = [None] * len(S)
         sel = [(selection or {}).get(x) for x in ids] if selection else [None] * len(S)
@@ -172,7 +179,8 @@ def cells(session=None, version=None, pid=None, selection=None, get_session=None
                     missing.setdefault(k, []).append(s.sample_id)
                 lab[k] = np.full(n, None, dtype=object)
         section = p["slices"].get(s.sample_id, {}).get("section") if pid else None  # as renamed in the project
-        lab["slice"] = np.full(n, section or s.meta.get("project_section", s.sample_id) if pid else s.sample_id, dtype=object)
+        lab["slice"] = np.full(n, str(section or s.meta.get("project_section", s.sample_id) if pid else s.sample_id),
+                               dtype=object)  # (as text: a section numbered 1 is chosen as "1" in the page)
         for mk, mv in meta.get(s.sample_id, {}).items():
             lab[mk if mk not in BUILTIN else f"meta:{mk}"] = np.full(n, str(mv), dtype=object)
         parts.append(pd.DataFrame(lab))
