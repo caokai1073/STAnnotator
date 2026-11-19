@@ -41,6 +41,15 @@ NO_TYPE = (UNASSIGNED, LOW_QUALITY)  # labels that are not a cell type
 MIN_CELLS, N_PCS, N_NEIGHBORS, MIN_CLUSTER = 60, 30, 15, 30
 RESOLUTION = "auto"  # default; a number fixes the Leiden resolution for every level
 MIN_SCORE, MIN_MARGIN = 0.5, 0.25
+# COMMON_ACCEPT (since 0.2.60): a cluster also goes to its best child when the child's score is positive and its
+# margin clear but below MIN_SCORE because the child's markers are common in the whole level (a dominant subtype: its
+# markers vary little between the level's clusters, so their z-scores stay small), provided every positive marker of
+# the child is detected in at least COMMON_DET of the cluster's cells. SCP2927 147328 (ileum) with the IBD list:
+# Enterocytes 0 -> 40,862 cells (before, lost to CXCL1+ colonocytes), agreement 0.839 -> 0.858, macro-F1 0.706 ->
+# 0.728; built-in lists: SCP 147328 / 167799, lymph node 5K and four mouse MERFISH slices unchanged, SCP 146685
+# 0.854 -> 0.852 (F1 0.738 -> 0.733), mouse merfish_D0 slice 0.325 -> 0.323.
+COMMON_ACCEPT = True
+COMMON_DET = 0.5
 TOKEN = re.compile(r"^([A-Za-z0-9._|-]+?)([+-]?)$")
 
 
@@ -1369,6 +1378,12 @@ class _Annotator:
         best = S[np.arange(k), order[:, 0]]
         second = S[np.arange(k), order[:, 1]] if len(children) > 1 else np.full(k, -np.inf)
         ok = (best >= MIN_SCORE) & (best - second >= MIN_MARGIN)
+        if COMMON_ACCEPT:
+            for c in np.flatnonzero(~ok & (best > 0) & (best - second >= MIN_MARGIN)):
+                ch = children[order[c, 0]]
+                pos = [frac[c, [self.gi[g] for g in m["genes"]]].max() for m in ch["markers"] if m["sign"] > 0]
+                if pos and min(pos) >= COMMON_DET:
+                    ok[c] = True
         return {"k": k, "size": size, "S": S, "order": order, "best": best, "second": second, "ok": ok,
                 "assigned_frac": float(size[ok].sum() / len(idx))}
 
@@ -1463,6 +1478,19 @@ class _Annotator:
                             v = np.asarray(self.counts[:, [self.gi[x] for x in m["genes"]]][pool].max(1).todense()).ravel()
                             item["markers"]["|".join(m["genes"])] = [int((v > 0).sum()), int((v >= 2).sum())]
                     best = max(item["markers"].items(), key=lambda kv: kv[1][1], default=None)
+                    common = item["markers"] and all(a >= 0.5 * len(pool) for a, _ in item["markers"].values())
+                    if common:  # its markers are everywhere in the parent: not missing evidence, no contrast
+                        left = int((res["labels"][pool] == parent).sum()) if parent else 0
+                        item["reason"] = (
+                            f"its markers are detected in most of the {len(pool):,} {parent or 'cells'} (" + ", ".join(
+                                f"{g} {a / len(pool):.0%}" for g, (a, b) in item["markers"].items()) + "), so no cluster "
+                            "stands out for it against its sibling types (the scores are relative within the level)"
+                            + (f"; {left:,} of them could not be typed by cluster and were given the other {parent} "
+                               "types" if left else "")
+                            + ". If it is the main kind of " + (parent or "cell") + " here, give it a marker that tells "
+                            "it from its siblings")
+                        out.append(item)
+                        continue
                     item["reason"] = ("no cluster went to it, also at finer resolutions, and no group of cells shows "
                                       "its markers together" + (
                         f"; among the {len(pool):,} {parent or 'cells'}: " + ", ".join(

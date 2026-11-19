@@ -12,6 +12,7 @@ Session directory (work/sessions/<session_id>/):
   figures/, exports/
 """
 import hashlib, json, os, re, threading, time, uuid
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 import numpy as np, pandas as pd, scipy.sparse as sp
@@ -417,6 +418,17 @@ class Session:
         rows = np.array([self.row_of(c) for c in last])
         return rows, np.array(list(last.values()))
 
+    @contextmanager
+    def _xlock(self, what, progress=None):
+        """Across processes: the agent's tools, a batch run or a second app may open this annotation while it is being
+        computed; the one that comes second waits for the first and then reads its result, instead of computing it
+        again and writing the same files at once."""
+        d = self.dir / "base"
+        d.mkdir(parents=True, exist_ok=True)
+        say = (lambda: progress(0.0, "another process is computing this annotation: waiting for it")) if progress else None
+        with open(d / f".{what}.lock", "a+") as f, osutil.locked(f, wait=say):
+            yield
+
     def base(self, version=None, progress=None):
         """Expression-model output for a version (its marker step and corrections): computed once, cached in memory
         and on disk."""
@@ -432,8 +444,15 @@ class Session:
                     except Exception:  # a cut file (from before files were written whole)
                         logp = None
                 if logp is None:
-                    logp = self._train_base(st, progress)
-                    osutil.replace_atomic(f, lambda t: np.save(t, logp))
+                    with self._xlock(f"base_{key}", progress):  # another process training it: wait, then read its file
+                        if f.exists():
+                            try:
+                                logp = np.load(f)
+                            except Exception:
+                                logp = None
+                        if logp is None:
+                            logp = self._train_base(st, progress)
+                            osutil.replace_atomic(f, lambda t: np.save(t, logp))
                 pred, conf = cmod.posterior(logp, [], None, self.types)
                 self._bases[key] = {"key": key, "logp": logp, "pred": pred, "conf": conf}
                 _keep_last(self._bases, KEEP_BASES)  # (the others are on disk)
@@ -582,16 +601,19 @@ class Session:
                     _keep_last(self._mres, KEEP_MRES)
                     break
             if res is None:
-                res = markers.annotate(self.counts, self.panel, self.scheme["tree"], progress,
-                                       resolution=self.scheme.get("resolution", markers.RESOLUTION),
-                                       knn=self.knn_mode(), spill=self._spill())
-                self._save_mres("init", res)
+                with self._xlock("markers", progress):  # another process making it (the agent's, a batch): its result
+                    res = self._load_mres("init")
+                    if res is None:
+                        res = markers.annotate(self.counts, self.panel, self.scheme["tree"], progress,
+                                               resolution=self.scheme.get("resolution", markers.RESOLUTION),
+                                               knn=self.knn_mode(), spill=self._spill())
+                        self._save_mres("init", res)
+                        if res.get("fingerprints"):  # checksums of this run, for telling whether two runs agree (bug reports carry it)
+                            fp = {"session_id": self.id, "sample_id": self.sample_id, "time": _now(), **res["fingerprints"]}
+                            (self.dir / "base" / "fingerprints.json").write_text(json.dumps(fp, indent=1), encoding="utf-8")
+                            print(f"annotation {self.id}: " + json.dumps({k: fp[k] for k in fp if k != "versions"}), flush=True)
                 self._mres["init"] = res
                 _keep_last(self._mres, KEEP_MRES)
-                if res.get("fingerprints"):  # checksums of this run, for telling whether two runs agree (bug reports carry it)
-                    fp = {"session_id": self.id, "sample_id": self.sample_id, "time": _now(), **res["fingerprints"]}
-                    (self.dir / "base" / "fingerprints.json").write_text(json.dumps(fp, indent=1), encoding="utf-8")
-                    print(f"annotation {self.id}: " + json.dumps({k: fp[k] for k in fp if k != "versions"}), flush=True)
                 i = 0
             for j in range(i, len(ops)):
                 res = self._apply_recluster(res, ops[j], ops[:j + 1], progress)

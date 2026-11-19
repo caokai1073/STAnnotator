@@ -110,19 +110,23 @@ def read_text(path):
 
 
 @contextmanager
-def locked(f):
+def locked(f, wait=None):
     """An exclusive lock on the open file f for the duration of the block (several processes write the same file:
-    the agent, the viewer, reviewers)."""
+    the agent, the viewer, reviewers). wait(): called once when another process holds it (the block then waits)."""
     if WINDOWS:
         import msvcrt
         f.flush()
         here = f.tell()
         f.seek(0)
+        told = False
         while True:
             try:
                 msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
                 break
             except OSError:
+                if wait and not told:
+                    told = True
+                    wait()
                 time.sleep(0.05)
         f.seek(here)
         try:
@@ -135,7 +139,12 @@ def locked(f):
             f.seek(here)
     else:
         import fcntl
-        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            if wait:
+                wait()
+            fcntl.flock(f, fcntl.LOCK_EX)
         try:
             yield
         finally:
