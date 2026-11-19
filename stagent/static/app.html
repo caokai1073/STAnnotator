@@ -4427,11 +4427,12 @@ async function busyTick() {
     }
   } catch (e) { /* (tried again) */ } finally { BUSY.polling = false; }
 }
-function busyAgent(asked = false) {
+function busyAgent(asked = false, waitedS = 0) {  // waitedS: how long the agent has been asked already (the server's waited_s)
   const rd = rfRound(); BUSY.sid = RF.sid; BUSY.asked = asked;
   busyShow("agent", `The agent is reviewing round ${rd ? rd.n : ""}`,
            "Its edits and findings appear in the Refine window when it is done (a few minutes). You can follow it in " +
            (st.desktop ? "its Claude Code window." : "the chat column."));
+  if (waitedS > 0) { BUSY.t0 = Date.now() - waitedS * 1000; busyTick(); }  // (reopened: the 10 minutes count from the request)
 }
 $("busyDlg").addEventListener("cancel", (e) => e.preventDefault());  // (Esc does not close it)
 $("busyStop").onclick = () => {
@@ -4469,7 +4470,7 @@ async function rfOpen(from) {
   if (!$("rfDlg").open) $("rfDlg").showModal();
   clearInterval(RF.timer);
   RF.timer = setInterval(rfPoll, 3000);
-  if (r.awaiting && !BUSY.kind) busyAgent(true);  // (the agent still reviews this round)
+  if (r.awaiting && !BUSY.kind) busyAgent(true, r.waited_s || 0);  // (the agent still reviews this round, asked waited_s ago)
   // the round after an Accept goes to the agent by itself (the user accepted edits to go on; the organ is known);
   // the first round waits for Agent review (the organ to confirm, words to write first)
   const rd = r.rounds[r.rounds.length - 1], prev = r.rounds[r.rounds.length - 2];

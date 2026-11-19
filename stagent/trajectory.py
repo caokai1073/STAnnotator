@@ -401,7 +401,8 @@ def run(c, method, within=None, start=None, end=None, root=None, alpha=0.3, by="
     comp = composition(t, c.labels[by].to_numpy() if by in c.labels.columns else np.full(len(t), None, dtype=object))
     res = {"method": method, "within": within or {}, "by": by, **info, **genes, "composition": comp,
            "n_cells_selected": int(sel.sum()), "n_on_trajectory": int(np.isfinite(t).sum()),
-           "note": " ".join(note + ["Correlations treat cells as independent: rank genes by r and eta2, not by p."])}
+           "note": " ".join([x if x.endswith(".") else x + "." for x in note]  # (each its own sentence)
+                            + ["Correlations treat cells as independent: rank genes by r and eta2, not by p."])}
     return res, tab, t, raw, masks
 
 
