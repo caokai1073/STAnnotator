@@ -2442,6 +2442,19 @@ $("nRun").onclick = async () => {
   if ($("nKind").value === "coloc") return runColoc();
   if ($("nKMode").value === "agent") return agentNiches();
   const body = { identity: $("nIdentity").value, n_programs: +$("nPrograms").value, k: +$("nK").value, n_niches: +$("nN").value };
+  if (projectMode("niches")) {  // niches of all slices go to each slice's annotation: every slice needs one
+    const bare = projectOf(st.sample.sample_id).samples.filter((id) => {
+      if (id === st.sample.sample_id && st.sid && !st.placeholder) return false;  // (its annotation is open)
+      const s = (st.samples || []).find((x) => x.sample_id === id);
+      return !(s && (s.sessions || []).some((x) => ["markers", "scref", "existing"].includes(x.method)));
+    });
+    if (bare.length) {
+      const names = bare.map((id) => { const s = (st.samples || []).find((x) => x.sample_id === id); return (s && s.name) || id; });
+      toast(`Niches of all slices together need every slice annotated; not yet: ${names.join(", ")}. Annotate ${bare.length > 1 ? "them" : "it"} first `
+        + "(or all slices at once with Annotate and All slices together), or turn off All slices together for this slice's niches only.", 14000);
+      return;
+    }
+  }
   if (!(await memoryOk("niches", projectMode("niches"), "The niche analysis"))) return;
   $("nRun").disabled = true; $("nprogress").classList.add("show");
   try {
@@ -2453,7 +2466,7 @@ $("nRun").onclick = async () => {
     await pollJob(job, $("nprogress"), $("nfill"), $("nstage"), $("nRun"), 600);
     await loadNiches(true);
     setTimeout(() => $("nprogress").classList.remove("show"), 800);
-  } catch (e) { if (isStop(e)) stopped($("nprogress"), "Niches"); else toast(`Niches failed: ${e.message}`, 8000); }
+  } catch (e) { if (isStop(e)) stopped($("nprogress"), "Niches"); else { toast(`Niches failed: ${e.message}`, 12000); $("nprogress").classList.remove("show"); } }
   finally { $("nRun").disabled = false; }
 };
 async function agentNiches() {  // the agent chooses k per region, runs the niches and names them

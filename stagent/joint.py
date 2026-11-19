@@ -224,8 +224,10 @@ def niches(pid, k=15, n_niches=8, identity="nmf", n_programs=20, progress=None, 
     sess = latest_sessions(pid, sessions)
     ids, off, counts, panel = _pooled(pid, pooled=identity == "nmf")  # only NMF reads the counts
     missing = [s for s in ids if s not in sess]
-    if missing:
-        raise ValueError(f"annotate every slice first (missing: {', '.join(missing[:4])})")
+    if missing:  # the niches go to each slice's annotation
+        names = [(json.load(open(config.SAMPLES / s / "meta.json", encoding="utf-8")).get("name") or s) for s in missing]
+        raise ValueError(f"niches of all slices together need every slice annotated; not yet: {', '.join(names[:6])}"
+                         f"{' and more' if len(names) > 6 else ''}. Annotate them first, or run the niches of one slice")
     S = [Session(sess[s]) for s in ids]
     if identity == "nmf":
         from sklearn.decomposition import NMF
