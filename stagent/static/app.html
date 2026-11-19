@@ -6248,7 +6248,7 @@ const STEPS = {
   priors: ["Priors", "The tissue priors of this sample's organ: what the agent's review checks the annotation and regions against. Check opens the Prior window (remove what does not hold for your tissue, add your own); Accept when they fit. Done once accepted; to do again when they change.", null],
   regions: ["Regions", "Optional: outline tissue regions on the map (brush, polygon…), then tell the agent what holds there, e.g. “epithelial cells are only in the mucosa”.", ["Draw", () => { $("regpanel").hidden = false; $("regpanel").classList.remove("collapsed"); setTool("brush"); toast("Brush: paint a region on the map (or pick another tool in the Regions panel), then Save", 6000); }]],
   review: ["Review", "Optional: the agent checks the annotation (areas and marker genes that look wrong) and gives advice.", ["Review", () => { st.rvScope = "annotation"; openReviewChooser().catch((e) => toast(e.message, 6000)); }]],
-  analyze: ["Analyze", "Optional: embedding (PCA, UMAP), niches, DE genes and DESeq2, composition, signaling, trajectories. Click to unfold them.", null],
+  analyze: ["Analyze", "Embedding (PCA, UMAP), niches, DE genes and DESeq2, composition, signaling, trajectories: done when each of them is. Click to unfold them.", null],
   // the analyses, under Analyze (their tab opens, as a click on it does)
   embed: ["Embed", "PCA, UMAP and Leiden clusters of the cells (Analysis → Embed).", ["Embed", () => anTab("embed")]],
   niches: ["Niche", "Niches: places where cells of similar make-up live together (Analysis → Niche).", ["Niche", () => anTab("niches")]],
@@ -6687,7 +6687,7 @@ function showCheck(r) {
   const box = $("mkMsgs"); box.textContent = "";
   const line = (t, cls) => { const d = document.createElement("div"); d.textContent = t; if (cls) d.className = cls; box.append(d); };
   // the genes the list uses as markers, not the panel: "127 genes" read as the panel shrinking from 480
-  const panel = st.genes && st.genes.length ? ` of the panel's ${st.genes.length.toLocaleString()} (the others stay in the data)` : "";
+  const panel = st.genes && st.genes.length ? ` of the panel's ${st.genes.length.toLocaleString()}` : "";
   if (r.ok) line(`OK: ${r.n_types} types, ${r.depth} levels, ${r.genes.length} marker genes${panel}.`, "ok");
   r.errors.forEach((e) => line("✗ " + e, "err"));
   r.warnings.forEach((w) => line("! " + w));

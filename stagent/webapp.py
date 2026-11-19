@@ -3397,11 +3397,14 @@ def steps_of(s, sample=None):
             "compare": "DE genes, DESeq2, top genes, composition", "signal": "ligand-receptor signaling between neighbors",
             "traj": "spatial axes and pseudotime"}
     got = {"compare": ", ".join(x for x in have if x in ("DE genes", "DESeq2", "top genes", "composition"))}
-    children = [{"key": k, "state": "done" if done_of[k] else "optional" if annotated else "blocked",
+    children = [{"key": k, "state": "done" if done_of[k] else "todo" if annotated else "blocked",  # (each one to do)
                  "detail": (got.get(k) or "done") if done_of[k] else what[k] if annotated else "after annotating"}
                 for k in ("embed", "niches", "compare", "signal", "traj")]
-    steps.append({"key": "analyze", "state": "done" if have else "optional" if annotated else "blocked",
-                  "detail": ", ".join(have) if have else "optional: embed, niches, compare, signal, trajectory" if annotated else "after annotating",
+    n_done = sum(done_of.values())  # a step to do, as filter, priors and annotate: done (green) when every analysis is
+    steps.append({"key": "analyze", "state": "done" if n_done == len(done_of) else "todo" if annotated else "blocked",
+                  "detail": ", ".join(have) if n_done == len(done_of) else
+                  (f"{n_done} of {len(done_of)} done: " + ", ".join(have)) if have and annotated else
+                  "embed, niches, compare, signal, trajectory" if annotated else "after annotating",
                   "children": children})
     nxt = next((x["key"] for x in steps if x["state"] == "todo"), None)
     return {"sample_id": sid, "steps": steps, "next": nxt}
