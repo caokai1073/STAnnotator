@@ -393,7 +393,7 @@ def apply(ids, p, progress=lambda *a: None, genes_removed=None):
         at(i, s, 0.85, "writing the filtered cells")
         image = importer.image_of(s)
         placed = regcheck._key(s, image)   # the placement's checks stay valid: no cell moves (regcheck.carry)
-        cells.to_parquet(d / "cells.parquet")
+        importer._write_cells(d, cells)  # (at once: the app may read it meanwhile)
         osutil.save_counts(d / "counts.npz", X)   # (the fastest zip compression: seconds, not tens of seconds)
         config.write_genes(d / "genes.txt", g)
         if not prm:  # every cell and gene back: the data as imported, its numbers beside it again

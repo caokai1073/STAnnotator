@@ -12,7 +12,7 @@ State: <annotation>/refine.json: {"organ", "rounds": [{"n", "session", "version"
 "dismissed" | "stopped", "accepted": [edit ids]}]}. A round's next annotation is a new annotation (session) of the
 same sample; refine.json follows the chain: each new session keeps the file of the round it came from.
 """
-import json, time
+import difflib, json, time
 import numpy as np, pandas as pd
 from . import config, markers
 from .osutil import dump_json
@@ -242,10 +242,16 @@ def changes(before, after):
 
 
 # ---------------- marker list edits ----------------
+def _names(nodes):
+    return [x for n in nodes for x in [n["name"], *_names(n.get("children", []))]]
+
+
 def _node(tree, name):
     nd = markers._find(tree, name)
     if nd is None:
-        raise ValueError(f"no type {name!r} in the marker list")
+        names = _names(tree)
+        near = difflib.get_close_matches(name, names, n=3, cutoff=0.5)
+        raise ValueError(f"no type {name!r} in the marker list" + (f"; did you mean {', '.join(map(repr, near))}?" if near else ""))
     return nd
 
 

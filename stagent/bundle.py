@@ -261,7 +261,7 @@ def apply_sample(src, p, progress=lambda *a: None):
                         v = np.array(cells[col], float) if col in cells else np.full(len(cells), np.nan)  # (a copy: pandas' may be read-only)
                         v[hit] = pos.loc[ids[hit], col].to_numpy(float)
                         cells[col] = v
-                cells.to_parquet(d / "cells.parquet")
+                importer._write_cells(d, cells)
                 if "sample/pieces.json" in z.namelist():
                     (d / "pieces.json").write_bytes(z.read("sample/pieces.json"))
             if reg.get("registration_positions") and "sample/registration_positions.parquet" in z.namelist():

@@ -153,6 +153,10 @@ def type_structure(s, cell_type, resolution=0.5, max_cells=30000, version=None):
     Xn = model.lognorm(s.counts[rows])
     g, nbr = markers._graph(Xn)
     sub = markers._leiden(g, nbr, resolution, 0)
+    if len(np.unique(sub)) < 2:  # (one sub-cluster: no rest to set it against)
+        return {"cell_type": cell_type, "n_cells": int((types == cell_type).sum()), "subclusters": [],
+                "note": f"one sub-cluster at resolution {resolution}: the type looks uniform here; a higher "
+                        "resolution may still split it"}
     det = (s.counts[rows] > 0).astype(np.float32).tocsr()
     depth = s.cells.depth_um.to_numpy()[rows]
     reg = r["region"][rows]
