@@ -73,6 +73,9 @@ def save_counts(path, X):
     replace_atomic(path, write)
 
 
+REPLACE_WAIT_S = 30  # (Windows refuses the rename while a reader has the file open; the app reads it now and then)
+
+
 def replace_atomic(path, write):
     """write(tmp_path) makes the file at a temporary name next to path, then one rename puts it in place (a reader or
     a stopped run never leaves half a file that later reads would trust). The temporary name keeps path's suffix
@@ -82,13 +85,18 @@ def replace_atomic(path, write):
     tmp = path.with_name(f".{_unique()}.{path.name}")
     try:
         write(tmp)
-        for i in range(20):
+        end, i = time.monotonic() + REPLACE_WAIT_S, 0
+        while True:
             try:
                 os.replace(tmp, path)
                 return
-            except PermissionError:  # Windows: a reader has it open for a moment
-                time.sleep(0.05 * (i + 1))
-        os.replace(tmp, path)
+            except PermissionError as e:  # Windows: a reader has it open for a moment
+                if time.monotonic() >= end:
+                    raise PermissionError(f"{path.name} could not be replaced: another program kept it open for "
+                                          f"{REPLACE_WAIT_S} s (another STAnnotator window or the agent reading "
+                                          "it, an antivirus scan, a sync folder); try again in a moment") from e
+                i += 1
+                time.sleep(min(0.05 * i, 0.5))
     finally:
         if tmp.exists():
             try:
