@@ -250,14 +250,14 @@ def _remember_organ(sample_id, organ):
 NEXT_HEADINGS = ("Priors", "References", "Depth rule", "Verification note", "The depth rule", "How to read the depth")
 
 
-def compartments(organ):
+def compartments(organ, species=None):
     """The organ's "Compartments to draw" from the priors (how each compartment looks on the H&E), to match the classes
     of segment() to; organ "other": the organ-independent ones. {"organ", "compartments_to_draw"} or {"error", ...}."""
     q = str(organ or "").strip()
     if not q:
         return {"error": "which organ is this tissue? Name it", "organs": default_priors()["organs"],
                 "hint": "use one of the organs, or organ='other' for a tissue none of them covers"}
-    r = tissue_priors("General cross-organ priors" if q.lower() in ("other", "none", "unknown") else q)
+    r = tissue_priors("General cross-organ priors" if q.lower() in ("other", "none", "unknown") else q, species)
     if r.get("error"):
         return r | {"hint": "use one of the organs, or organ='other' for a tissue none of them covers"}
     text = r["text"]   # plain text: "=== Organ ===" sections, a "Compartments to draw" line with its "- " items
@@ -477,8 +477,10 @@ def _prior_blocks(md):
     return out
 
 
-def organ_priors(organ):
-    """What the Prior window shows: the organ's priors (id, statement, rules), those the user removed and added."""
+def organ_priors(organ, species=None):
+    """What the Prior window shows: the organ's priors (id, statement, rules), those the user removed and added.
+    species ("human" / "mouse"): the priors of the other species are not listed (see for_species); "removed" keeps
+    every id the user removed, also of priors not listed, so that saving the window does not bring them back."""
     organ = str(organ or "").strip()
     if not organ:
         raise ValueError("name the organ")
@@ -486,16 +488,76 @@ def organ_priors(organ):
     name = d.get("organ") or next((o for o in user_organs() if _slug(o) == _slug(organ)), str(organ).strip())
     ch = _changes(name)
     blocks = [] if d.get("error") else _prior_blocks(d["text"])
+    shown = blocks if d.get("error") or species not in SPECIES else _prior_blocks(for_species(d["text"], species))
     return {"organ": name, "covered": not d.get("error"),
-            "priors": [{k: b[k] for k in ("id", "title", "short", "rules")} for b in blocks],
+            "priors": [{k: b[k] for k in ("id", "title", "short", "rules")} for b in shown],
             "removed": [x for x in ch["removed"] if any(b["id"] == x for b in blocks)], "added": ch["added"],
-            "edited": bool(ch["removed"] or ch["added"])}
+            "edited": bool(ch["removed"] or ch["added"]), "species": species if species in SPECIES else None}
 
 
-def tissue_priors(organ=None):
+# Species: priors or parts of them that hold for one species only are marked "[human]" or "[mouse]" at the start of
+# their list item in the document (e.g. "- **PAN-06. [mouse] ...", "    - [human] ..."). For a sample of one species
+# the agent and the Prior window get that species' version: the other species' items left out with their sub-items,
+# the marks of this one removed. A sample whose species is not clear (an H&E only, no genes) gets everything, marked.
+SPECIES = ("human", "mouse")
+_TAGGED = re.compile(r"^(\s*)- (\*\*[A-Z]+-\d+[a-z]?\. )?\[(human|mouse)\] ")
+
+
+def _indent(line):
+    return len(line) - len(line.lstrip())
+
+
+def for_species(md, species):
+    """The priors document (or a part of it) for one species (see SPECIES); species None: unchanged."""
+    if species not in SPECIES:
+        return md
+    lines, out, i = md.split("\n"), [], 0
+    while i < len(lines):
+        m = _TAGGED.match(lines[i])
+        if m and m.group(3) != species:   # the other species' item: left out with its continuation and sub-items
+            ind = len(m.group(1))
+            i += 1
+            while i < len(lines):
+                if lines[i].strip():
+                    if _indent(lines[i]) <= ind:
+                        break
+                    i += 1
+                    continue
+                j = i   # a blank line: the item goes on only when the next text is indented under it
+                while j < len(lines) and not lines[j].strip():
+                    j += 1
+                if j < len(lines) and _indent(lines[j]) > ind:
+                    i = j
+                    continue
+                break
+            continue
+        out.append(lines[i][:m.end() - len(m.group(3)) - 3] + lines[i][m.end():] if m else lines[i])
+        i += 1
+    return "\n".join(out)
+
+
+def sample_species(sample_id):
+    """"human" or "mouse" from the sample's gene names (human HUGO symbols are upper case, mouse ones Xxxx), None
+    when it is not clear (an H&E only, few genes, or a mixed panel)."""
+    try:
+        from .session import panel_genes
+        f = config.SAMPLES / str(sample_id) / "genes.txt"
+        genes = panel_genes(sample_id) if f.exists() else []
+    except Exception:
+        return None
+    g = [x for x in genes if x[:1].isalpha() and any(c.isalpha() for c in x[1:])]
+    if len(g) < 20:
+        return None
+    lower = sum(x[1:] != x[1:].upper() for x in g) / len(g)
+    return "mouse" if lower > 0.6 else "human" if lower < 0.2 else None
+
+
+def tissue_priors(organ=None, species=None):
     """The organ's priors as plain text: the app's document (with its group's shared notes) less the priors the user
-    removed, plus those the user added (Prior in the app; "edited": true); without organ, the list of organs."""
+    removed, plus those the user added (Prior in the app; "edited": true); without organ, the list of organs.
+    species ("human" / "mouse"): that species' version (for_species); None: all, with the marks."""
     organ = str(organ or "").strip()
+    sp = species if species in SPECIES else None
     if not organ:
         r = default_priors()
         return {"organs": r["organs"] + user_organs(), "how_to_read": to_txt(r["how_to_read"]),
@@ -507,6 +569,7 @@ def tissue_priors(organ=None):
     md = "" if d.get("error") else d["text"]
     for b in sorted([b for b in _prior_blocks(md) if b["id"] in v["removed"]], key=lambda b: -b["start"]):
         md = md[:b["start"]] + md[b["end"]:]
+    md = for_species(md, sp)
     text = to_txt(md) if md else f"=== {v['organ']} ===\n"
     if v["removed"]:
         text += f"\nRemoved by the user (do not apply): {', '.join(v['removed'])}\n"
@@ -515,7 +578,8 @@ def tissue_priors(organ=None):
             f"- {a['id']}. {a['text']}\n" + (f"  - Rule: {a['rule']}\n" if a.get("rule") else
                                               f"  - Rule: none ({a['no_rule']})\n" if a.get("no_rule") else
                                               "  - Rule: not written yet (set_prior_rule)\n") for a in v["added"])
-    out = {"organ": v["organ"], "text": text, "edited": v["edited"]}
+    out = {"organ": v["organ"], "text": text, "edited": v["edited"],
+           "species": sp or "not known: items marked [human] or [mouse] hold for that species only"}
     if v["edited"]:
         out["note"] = "the user removed or added priors in the app: follow this version, not the app's default"
     return out

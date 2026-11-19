@@ -46,6 +46,19 @@ try:
     r = c.get(f"/api/s/{s.id}/steps").json()
     assert step(r, "regions")["state"] == "optional" and step(r, "priors")["state"] == "done", r["steps"]
     hetissue.set_priors(organ, [], [])  # (the user's changes of this organ undone: the shared settings of the test)
+
+    # species: the other species' priors and items left out, this one's marks removed; unknown: all, marked
+    ids = lambda t: {l.split(".")[0][2:] for l in t.splitlines() if l.startswith("- ") and "-" in l.split(".")[0][2:]}
+    allp, hum, mou = (hetissue.tissue_priors("pancreas", sp)["text"] for sp in (None, "human", "mouse"))
+    assert {"PAN-05", "PAN-06"} <= ids(allp) and "[mouse]" in allp, ids(allp)
+    assert "PAN-06" not in ids(hum) and "PAN-05" in ids(hum) and "[human]" not in hum and "[mouse]" not in hum
+    assert "PAN-05" not in ids(mou) and "PAN-06" in ids(mou) and "[mouse]" not in mou
+    col = hetissue.tissue_priors("colon", "human")["text"]
+    assert "max_depth_um=150" in col and "types=[ICC], max_depth_um=40" not in col and "REG4+" not in col
+    assert "forestomach" not in hetissue.compartments("stomach", "human")["compartments_to_draw"]
+    assert "forestomach" in hetissue.compartments("stomach", "mouse")["compartments_to_draw"]
+    v = hetissue.organ_priors("pancreas", "human")
+    assert v["species"] == "human" and "PAN-06" not in {p["id"] for p in v["priors"]}
     print("ok")
 finally:
     shutil.rmtree(home, ignore_errors=True)

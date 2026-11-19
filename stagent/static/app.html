@@ -3996,7 +3996,7 @@ function prShow(v) {
   organs.forEach((o) => sel.append(new Option(o + ((v.edited_organs || []).includes(o) ? " (changed)" : ""), o)));
   sel.append(new Option("another organ…", "__new"));
   sel.value = v.organ || "";
-  $("prWhy").textContent = prWhy(v);
+  $("prWhy").textContent = [prWhy(v), v.species ? `The ${v.species} priors (from the gene names).` : ""].filter(Boolean).join(" ");
   const removed = new Set(v.removed || []), list = $("prList"), rem = $("prRemoved");
   list.textContent = ""; rem.textContent = "";
   (v.priors || []).forEach((p) => {
@@ -4015,7 +4015,7 @@ function prShow(v) {
     list.append(row);
   });
   if (!list.children.length) list.append(Object.assign(document.createElement("div"), { className: "prrow hint", textContent: v.organ ? "No priors: add one below." : "" }));
-  $("prRemovedBox").hidden = !removed.size; $("prNRemoved").textContent = removed.size;
+  $("prRemovedBox").hidden = !rem.children.length; $("prNRemoved").textContent = rem.children.length;  // (the other species' removed ones are not listed)
   $("prState").textContent = !v.organ ? "" : v.edited ? "Changed: the Review uses your version." : v.covered ? "The app's priors (default)." : "";
   $("prDefault").disabled = !v.edited; $("prNew").disabled = $("prAdd").disabled = !v.organ; $("prErr").textContent = "";
   clearTimeout(PR.poll);  // a rule the agent is writing: look again until it is there

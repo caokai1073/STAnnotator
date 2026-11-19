@@ -1542,7 +1542,7 @@ def set_prior_rule(organ: str, prior_id: str, types: Optional[list[str]] = None,
 
 
 @mcp.tool()
-def tissue_priors(organ: Optional[str] = None) -> str:
+def tissue_priors(organ: Optional[str] = None, species: Optional[str] = None) -> str:
     """The app's literature-based tissue priors (data/priors/tissue_priors.md, given as plain text) of an organ: its compartments to draw
     with how each looks on the H&E, and spatial priors (where each cell type lives, as rules of the constraint
     language, with exceptions and references). Without organ: the organs covered and how to read a rule. Use it to
@@ -1550,9 +1550,19 @@ def tissue_priors(organ: Optional[str] = None) -> str:
     against the rules (name the rule, e.g. COL-01, in the advice) and to suggest priors (preview_constraint),
     always with the user's agreement. sample_context gives the sample's organ when something names it. When the
     user removed or added priors (Prior in the app), this returns their version ("edited": true): follow it; write
-    the rule of an added prior that has none with set_prior_rule."""
+    the rule of an added prior that has none with set_prior_rule. species ("human" / "mouse"): default the open
+    sample's, from its gene names; the priors come as that species' version ("species" says which). When it is not
+    known (e.g. an H&E only), every prior comes, items marked [human] or [mouse] hold for that species only: ask the
+    user the species, or pass it."""
     from . import hetissue
-    return _j(hetissue.tissue_priors(organ))
+    return _j(hetissue.tissue_priors(organ, species or _sample_species()))
+
+
+def _sample_species():
+    """The open sample's species from its gene names (hetissue.sample_species), or None."""
+    from . import hetissue
+    s = _active.get("session")
+    return hetissue.sample_species(s.sample_id) if s is not None else None
 
 
 @mcp.tool()
@@ -1575,7 +1585,7 @@ def segment_he(organ: Optional[str] = None, n_classes: int = 6) -> list:
         return [_j({"error": "which organ is this tissue? Ask the user (tissue_priors() lists the organs covered; "
                              "organ='other' when it is none of them), then call segment_he(organ=...) again",
                     "organs": hetissue.tissue_priors()["organs"]})]
-    comp = hetissue.compartments(organ)
+    comp = hetissue.compartments(organ, hetissue.sample_species(s.sample_id))
     if comp.get("error"):
         return [_j(comp)]
     meta = hetissue.segment(s.sample_id, n_classes, organ=comp["organ"])

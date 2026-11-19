@@ -30,6 +30,9 @@ using it, especially its exceptions.
 - **strength**
   - `only` and `exclude`: strong x0.01, moderate x0.1, weak x0.5.
   - `enrich`: strong x10, moderate x3, weak x1.5.
+- **[human] / [mouse]** at the start of a prior or of one of its items: it holds for that species only. The agent
+  and the Prior window get the sample's species' version (from its gene names): the other species' items are left
+  out. When the species is not known, everything is given with the marks.
 - **Depth values** are starting points: calibrate them on each sample, for example from the depth of cells in a
   drawn muscularis region.
 
@@ -69,12 +72,12 @@ Cell-type names are taken from `colon.txt`, `small_intestine.txt` and `stomach.t
 - Depth cannot separate positions along the crypt-villus or pit-gland axis, because all of those cells are at
   depth ~0. Zonation priors therefore need drawn regions.
 - Layer thicknesses:
-  - Human colon: crypts are about 370 um (proximal) to 510 um (distal) long [COL 5]. The whole wall between the
-    teniae is about 0.5 to 3.5 mm thick (mean about 1.7 mm), and the muscularis propria is its thickest layer
+  - [human] Human colon: crypts are about 370 um (proximal) to 510 um (distal) long [COL 5]. The whole wall between
+    the teniae is about 0.5 to 3.5 mm thick (mean about 1.7 mm), and the muscularis propria is its thickest layer
     [COL 6].
-  - Mouse: the whole wall is only a few hundred um thick. No mouse per-layer value was verified online.
-- The `max_depth_um` values below are deliberately conservative: they still hold in mouse. In human tissue, larger
-  values can be used. Calibrate them on the sample by checking the depth of cells inside a muscularis region the
+  - [mouse] Mouse: the whole wall is only a few hundred um thick. No mouse per-layer value was verified online.
+- The `max_depth_um` values below are deliberately conservative: they still hold in mouse. Where a prior gives a
+  separate human value, use it on human tissue. Calibrate them on the sample by checking the depth of cells inside a muscularis region the
   user has drawn.
 - Lymphoid aggregates and Peyer's patches create large epithelium-free zones inside the mucosa, so their cells get
   a large depth. Never use a depth `only` rule for lymphocytes.
@@ -161,8 +164,8 @@ Cell-type names are taken from `colon.txt`, `small_intestine.txt` and `stomach.t
   - Confidence: high (moderate).
   - Evidence: [3, 4, 5]
 
-- **COL-05. Paneth cells (not in the built-in colon list) are normally present only in the proximal colon (caecum
-  and ascending colon) of humans, at crypt bases. They are absent from the normal distal colon and from the
+- **COL-05. Paneth cells (not in the built-in colon list) are normally present only in the proximal colon
+  (caecum and ascending colon) of humans, at crypt bases. They are absent from the normal distal colon and from the
   mouse colon.**
   - Rule (only if the user adds "Paneth cells" to the colon list):
     - `kind=region, types=[Paneth cells], regions=[crypt base], mode=only, strength=moderate`
@@ -172,8 +175,8 @@ Cell-type names are taken from `colon.txt`, `small_intestine.txt` and `stomach.t
     - Paneth cell metaplasia in the distal colon is a real and frequent finding in IBD. It was found in 11 of 13
       paediatric UC and 14 of 15 paediatric Crohn's cases, and it also occurs in other chronic colitis [7]. Never
       use a strong exclude.
-    - In mouse colon, REG4+ deep crypt secretory cells take the Paneth niche role [8]. With this list they will
-      be called Goblet cells.
+    - [mouse] In mouse colon, REG4+ deep crypt secretory cells take the Paneth niche role [8]. With this list they
+      will be called Goblet cells.
     - LYZ is not specific to Paneth cells (macrophages express it too) [19].
   - Confidence: high for the anatomy (weak exclude).
   - Evidence: [7, 8, 19]
@@ -251,8 +254,10 @@ Cell-type names are taken from `colon.txt`, `small_intestine.txt` and `stomach.t
   - Rule:
     - `kind=region, types=[Neurons], regions=[submucosa, muscularis propria, myenteric plexus], mode=only, strength=moderate`
     - `kind=region, types=[Neurons, Glia], regions=[myenteric plexus], mode=enrich, strength=strong`
-  - Without drawn regions: `kind=depth, types=[Neurons], max_depth_um=40, mode=exclude, strength=moderate`. In
-    human tissue, 100 um is safe.
+  - Without drawn regions:
+    - [mouse] `kind=depth, types=[Neurons], max_depth_um=40, mode=exclude, strength=moderate`
+    - [human] `kind=depth, types=[Neurons], max_depth_um=100, mode=exclude, strength=moderate` (100 um is safe in
+      human tissue)
   - Exceptions and caveats:
     - Do NOT exclude Glia from the mucosa: mucosal enteric glia sit beneath the epithelium and support the
       barrier [12].
@@ -267,8 +272,10 @@ Cell-type names are taken from `colon.txt`, `small_intestine.txt` and `stomach.t
   border of the circular muscle. They are not in the mucosa.**
   - Rule:
     - `kind=region, types=[ICC], regions=[muscularis propria, myenteric plexus], mode=only, strength=moderate`
-  - Without drawn regions: `kind=depth, types=[ICC], max_depth_um=40, mode=exclude, strength=moderate`. In human
-    tissue, 150 um is safe.
+  - Without drawn regions:
+    - [mouse] `kind=depth, types=[ICC], max_depth_um=40, mode=exclude, strength=moderate`
+    - [human] `kind=depth, types=[ICC], max_depth_um=150, mode=exclude, strength=moderate` (150 um is safe in human
+      tissue)
   - Exceptions and caveats:
     - KIT also marks Mast cells and ILCs, which sit in the mucosa and submucosa. The list already uses -CPA3 and
       -PTPRC, and this prior helps further.
@@ -368,9 +375,9 @@ Cell-type names are taken from `colon.txt`, `small_intestine.txt` and `stomach.t
   - Exceptions and caveats:
     - In Crohn's ileitis and other chronic injury, Paneth cell hyperplasia and abnormal Paneth cells occur; in
       some disease states Paneth cells are mislocalised higher up the crypt.
-    - LYZ (and in mouse Lyz1) also marks Macrophages and Monocytes [18], so keep DEFA5/DEFA6 as the required
-      markers.
-    - Gene names differ by species: human DEFA5/DEFA6; mouse Defa/Lyz1/Mptx2.
+    - [human] LYZ also marks Macrophages and Monocytes [18], so keep DEFA5/DEFA6 as the required markers.
+    - [mouse] Lyz1 also marks Macrophages and Monocytes [18]; the mouse Paneth markers are Defa genes, Lyz1 and
+      Mptx2 (human DEFA5/DEFA6 have other names in mouse).
   - Confidence: high (strong).
   - Evidence: [1, 2, 3, 18]
 
@@ -452,7 +459,7 @@ Cell-type names are taken from `colon.txt`, `small_intestine.txt` and `stomach.t
   - Exceptions and caveats:
     - Coeliac disease, other enteropathies and drugs raise IEL counts above 25 per 100 [10]. That is a real
       finding, so the enrich rule is fine but must not be turned into an exclusion of lamina propria T cells.
-    - Mouse IELs are proportionally richer in gd T cells and CD8aa cells.
+    - [mouse] Mouse IELs are proportionally richer in gd T cells and CD8aa cells.
     - Epithelial spill-over into IEL segments.
   - Confidence: high (moderate).
   - Evidence: [9, 10, 11]
@@ -560,8 +567,8 @@ Cell-type names are taken from `colon.txt`, `small_intestine.txt` and `stomach.t
 - **lymphoid follicle**: basophilic nodules in the deep mucosa. In the stomach they mostly mean gastritis (see
   STO-09).
 - **intestinal metaplasia** (if present): glands with goblet cells and a brush border in gastric mucosa.
-- Mouse only: **forestomach**, a keratinised squamous epithelium sharply demarcated from the glandular stomach.
-  Squamous cell types are not in the built-in list.
+- [mouse] **forestomach** (mouse only): a keratinised squamous epithelium sharply demarcated from the glandular
+  stomach. Squamous cell types are not in the built-in list.
 
 A note on depth in the stomach: the oxyntic and antral glands fill the whole mucosal thickness, so the entire
 mucosa (pits, glands and the lamina propria between them) has depth ~0. Depth therefore separates mucosa from
@@ -616,7 +623,7 @@ submucosa and muscularis well, but it carries no information on pit-versus-base 
     - `kind=region, types=[Chief cells], regions=[antral mucosa], mode=exclude, strength=weak`
   - Without drawn regions: none.
   - Exceptions and caveats:
-    - In humans, individual antral glands contain MIST1+ chief cells [2], so keep the antrum exclusion weak.
+    - [human] In humans, individual antral glands contain MIST1+ chief cells [2], so keep the antrum exclusion weak.
     - PGC is also made by antral and neck mucous cells.
     - In atrophic gastritis and SPEM, chief cells are lost or transdifferentiate [6].
   - Confidence: high for base versus surface (strong). Low for the antrum (weak).
@@ -630,9 +637,9 @@ submucosa and muscularis well, but it carries no information on pit-versus-base 
     - `kind=region, types=[Parietal cells], regions=[oxyntic mucosa], mode=enrich, strength=moderate`
   - Without drawn regions: none.
   - Exceptions and caveats:
-    - In humans, parietal cells occur in over 50% of antral glands [2]. Do NOT exclude Parietal cells from the
-      antrum in human samples.
-    - Rodents have a sharper body/antrum boundary [2]. In mouse, a weak antrum exclusion is acceptable.
+    - [human] In humans, parietal cells occur in over 50% of antral glands [2]. Do NOT exclude Parietal cells from
+      the antrum in human samples.
+    - [mouse] Rodents have a sharper body/antrum boundary [2]. In mouse, a weak antrum exclusion is acceptable.
     - Autoimmune and atrophic gastritis lose parietal cells.
     - PPI therapy causes parietal cell protrusions but does not move them.
   - Confidence: high (strong for the pit exclusion).
@@ -663,7 +670,7 @@ submucosa and muscularis well, but it carries no information on pit-versus-base 
   - Exceptions and caveats:
     - ECL-cell hyperplasia and neuroendocrine tumours occur in atrophic gastritis.
     - Antral and duodenal enterochromaffin cells differ in expression [4].
-    - Human-specific LH+ EEC [4].
+    - [human] Human-specific LH+ EEC [4].
   - Confidence: high (moderate).
   - Evidence: [2, 4]
 
@@ -1014,7 +1021,7 @@ Small islets are many; draw a representative set and rely on the neighborhood fa
   - Confidence: high; moderate / weak.
   - Evidence: [4], [5]
 
-- **PAN-05. In human islets, alpha, beta and delta cells are intermingled, with many cells along intra-islet vessels;
+- **PAN-05. [human] In human islets, alpha, beta and delta cells are intermingled, with many cells along intra-islet vessels;
   there is no beta-cell core and non-beta mantle. Do not use core/mantle priors on human tissue.**
   - Rule: none for human (deliberately no rule).
   - Without drawn regions: none.
@@ -1024,7 +1031,7 @@ Small islets are many; draw a representative set and rely on the neighborhood fa
   - Confidence: high; (no rule).
   - Evidence: [1], [2], [3]
 
-- **PAN-06. In mouse (and rat) islets, Beta cells form the core and Alpha and Delta cells sit in the mantle at the
+- **PAN-06. [mouse] In mouse (and rat) islets, Beta cells form the core and Alpha and Delta cells sit in the mantle at the
   islet periphery.**
   - Rule (mouse only): `kind=neighborhood, types=[Alpha cells, Delta cells], neighbor_types=[Exocrine, Fibroblasts,
     Endothelial], min_frac=0.15, mode=enrich, strength=weak` (non-beta cells touch the exocrine border); and
@@ -1351,9 +1358,10 @@ for that.
 - **LUNG-02. Basal cells sit on the basement membrane of the conducting airways. They are absent from alveoli. In
   human they extend from the trachea down into small airways; in mouse they are restricted to the trachea, the main
   bronchi and the first intralobar branches, and mouse bronchioles have essentially none.**
-  - Rule: `kind=region, types=[Basal cells], regions=[airway epithelium, submucosal gland], mode=only,
-    strength=moderate`. For mouse intralobar bronchioles, also
-    `kind=region, types=[Basal cells], regions=[bronchiole], mode=exclude, strength=moderate`.
+  - Rule:
+    - `kind=region, types=[Basal cells], regions=[airway epithelium, submucosal gland], mode=only, strength=moderate`
+    - [mouse] For intralobar bronchioles, also
+      `kind=region, types=[Basal cells], regions=[bronchiole], mode=exclude, strength=moderate`.
   - Without drawn regions: `kind=neighborhood, types=[Basal cells], neighbor_types=[Ciliated cells, Club cells,
     Goblet cells, Basal cells], min_frac=0.3, mode=only, strength=weak`
   - Exceptions and caveats:
@@ -1387,7 +1395,7 @@ for that.
   - Exceptions and caveats:
     - Goblet-cell hyperplasia and metaplasia in asthma, COPD and smokers extends goblet cells distally [4].
     - Mucinous adenocarcinoma expresses MUC5AC/MUC5B in the parenchyma.
-    - Normal mouse airways have very few goblet cells.
+    - [mouse] Normal mouse airways have very few goblet cells.
     - Submucosal gland mucous cells (MUC5B, BPIFB1) will be typed as Goblet cells (gland cells are not in the
       built-in list), which is why the gland region is included [2].
   - Confidence: high. Strength: moderate.
@@ -1401,10 +1409,10 @@ for that.
   - Without drawn regions: `kind=neighborhood, types=[Club cells], neighbor_types=[AT1 cells, AT2 cells],
     min_frac=0.7, mode=exclude, strength=weak`
   - Exceptions and caveats:
-    - Human terminal and respiratory bronchioles contain RAS cells (SCGB3A2+ SCGB1A1+) that sit right next to
-      alveoli and can make AT2 cells [8]. Mice have no respiratory bronchioles [8].
-    - Mouse Scgb1a1+ cells rarely contribute to alveoli at steady state [6], but after injury their descendants
-      appear in the alveoli [4].
+    - [human] Human terminal and respiratory bronchioles contain RAS cells (SCGB3A2+ SCGB1A1+) that sit right next
+      to alveoli and can make AT2 cells [8]. Mice have no respiratory bronchioles [8].
+    - [mouse] Mouse Scgb1a1+ cells rarely contribute to alveoli at steady state [6], but after injury their
+      descendants appear in the alveoli [4].
     - SCGB1A1/SCGB3A1 transcripts spill over from the airway lumen and mucus.
   - Confidence: high (normal), medium at the bronchioalveolar junction. Strength: moderate.
   - Evidence: [1][2][4][6][8]
@@ -2152,8 +2160,8 @@ The only epithelium is the choroid plexus, which is not cortex. Use regions or n
     the adjacent layer(s) listed in `regions`.
   - Without drawn regions: none.
   - Exceptions and caveats:
-    - In mouse, IT neurons form a continuous gradient with cortical depth [4].
-    - In human, excitatory types are less layer-restricted than expected and can span adjacent layers [2].
+    - [mouse] In mouse, IT neurons form a continuous gradient with cortical depth [4].
+    - [human] In human, excitatory types are less layer-restricted than expected and can span adjacent layers [2].
     - Always include the neighbouring layer(s) in `regions`, and do not use "strong".
     - Agranular cortex (motor, frontal) has no distinct L4.
   - Confidence: medium. Strength: moderate (weak for human).
@@ -2331,7 +2339,7 @@ separate follicles from the interfollicular zone. Prefer regions.
     - Follicular lymphoma, Burkitt lymphoma and GCB-type DLBCL spread GC-like cells everywhere. Turn the rule off for
       lymphoma.
     - Small or tangentially cut GCs are easy to miss on H&E. Check for MKI67/AICDA hot spots before drawing.
-    - Mouse lymph nodes from unimmunized specific-pathogen-free mice have few or no GCs.
+    - [mouse] Mouse lymph nodes from unimmunized specific-pathogen-free mice have few or no GCs.
   - Confidence: high. Strength: strong (normal or reactive tissue).
   - Evidence: [1][2][11]
 
@@ -2461,9 +2469,9 @@ separate follicles from the interfollicular zone. Prefer regions.
   - Evidence: [10][11]
 
 - **LN-12. Lymphoid-tissue species and sample notes (drawing guidance).**
-  - Human tonsils and reactive nodes from children have many secondary follicles. Adult and elderly nodes have fewer,
-    plus fat and fibrosis in the hilum.
-  - Mouse LN (no tonsil) is small, with a thin cortex.
+  - [human] Human tonsils and reactive nodes from children have many secondary follicles. Adult and elderly nodes
+    have fewer, plus fat and fibrosis in the hilum.
+  - [mouse] Mouse LN (no tonsil) is small, with a thin cortex.
   - Spleen (also in this list) has white pulp (follicles, PALS) and red pulp instead of cortex and medulla. Draw
     `white pulp`/`red pulp` and do not reuse the LN medulla rules.
   - Confidence: medium. Evidence: [11] (tonsil age effects); spleen layout: textbook histology, not verified online.

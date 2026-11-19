@@ -2978,7 +2978,7 @@ def _priors_view(sample, sid=None, organ=None):
     out = {"organ": organ, "guess": g, "organs": covered + [o for o in hetissue.user_organs() if o not in covered],
            "edited_organs": [o for o in covered if hetissue._user_file(o).exists()]}
     if organ:
-        out |= hetissue.organ_priors(organ)
+        out |= hetissue.organ_priors(organ, hetissue.sample_species(sample))  # (the sample's species: its version)
     return out
 
 
