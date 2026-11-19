@@ -3372,7 +3372,7 @@ def steps_of(s, sample=None):
     n_pri = len(st.get("constraints", []))
     steps.append({"key": "regions", "state": "done" if n_poly else "optional",
                   "detail": ", ".join(x for x in [f"{n_poly} region outline(s)" if n_poly else "", f"{n_pri} rule(s) on them" if n_pri else ""] if x)
-                  or "optional: draw tissue regions"})
+                  or "optional: draw or import tissue regions"})
     if annotated:
         runs = [(sc, advice.status(s, sc)) for sc in advice.SCOPES]
         done = [advice.SCOPES[sc]["label"] for sc, x in runs if x["n_runs"]]

@@ -6246,7 +6246,7 @@ const STEPS = {
   filter: ["Filter cells and genes", "Leave out cells with few transcripts or genes and genes detected in few cells, before annotating. Seconds to a minute.", ["Filter", () => $("qfBtn").click()]],
   annotate: ["Annotate", "Cell types from a marker list (or a reference, or a CSV of labels): Type tab → Markers… → Annotate. A few minutes.", ["Annotate", () => showTab("annotate")]],
   priors: ["Priors", "The tissue priors of this sample's organ: what the agent's review checks the annotation and regions against. Check opens the Prior window (remove what does not hold for your tissue, add your own); Accept when they fit. Done once accepted; to do again when they change.", null],
-  regions: ["Regions", "Optional: outline tissue regions on the map (brush, polygon…), then tell the agent what holds there, e.g. “epithelial cells are only in the mucosa”.", ["Draw", () => { $("regpanel").hidden = false; $("regpanel").classList.remove("collapsed"); setTool("brush"); toast("Brush: paint a region on the map (or pick another tool in the Regions panel), then Save", 6000); }]],
+  regions: ["Regions", "Optional: outline tissue regions on the map (brush, polygon…), or Import a GeoJSON of outlines drawn on this H&E (e.g. QuPath annotations, in full-resolution pixels).", ["Draw", () => { $("regpanel").hidden = false; $("regpanel").classList.remove("collapsed"); setTool("brush"); toast("Brush: paint a region on the map (or pick another tool in the Regions panel), then Save", 6000); }]],
   review: ["Review", "Optional: the agent checks the annotation (areas and marker genes that look wrong) and gives advice.", ["Review", () => { st.rvScope = "annotation"; openReviewChooser().catch((e) => toast(e.message, 6000)); }]],
   analyze: ["Analyze", "Embedding (PCA, UMAP), niches, DE genes and DESeq2, composition, signaling, trajectories: done when each of them is. Click to unfold them.", null],
   // the analyses, under Analyze (their tab opens, as a click on it does)
@@ -6256,6 +6256,8 @@ const STEPS = {
   signal: ["Signal", "Cell-cell communication: ligand-receptor signaling between neighboring cells (Analysis → Signal).", ["Signal", () => anTab("signal")]],
   traj: ["Trajectory", "Spatial axes and pseudotime, and the genes that change along them (Analysis → Trajectory).", ["Trajectory", () => anTab("traj")]],
 };
+// a step's other action, shown before its main one: Regions can also come from a GeoJSON (the Regions panel's Import)
+const STEP_PRE = { regions: ["Import", "Import regions from a GeoJSON of outlines drawn on this H&E (e.g. QuPath annotations, in full-resolution pixels)", () => $("rgImport").click()] };
 const anTab = (t) => document.querySelector(`#tabs .tab[data-tab="${t}"]`).click();
 st.stepsAnalyze = false;  // Analyze folded whenever the app starts; unfolding it holds while the app is open
 const STEP_MARK = { done: "✓", todo: "", optional: "", skipped: "–", blocked: "!", "not needed": "–" };
@@ -6309,6 +6311,12 @@ async function loadSteps() {
       };
       right.append(...(x.state === "done" ? [chk] : [chk, acc]));  // (accepted: Check to look again)
     } else if (a && (["todo", "optional", "skipped"].includes(x.state) || align)) {
+      const pre = !x.open && STEP_PRE[x.key];
+      if (pre) {
+        const pb = Object.assign(document.createElement("button"), { textContent: pre[0], title: pre[1] });
+        pb.onclick = (e) => { e.stopPropagation(); pre[2](); };
+        right.append(pb);
+      }
       const b = Object.assign(document.createElement("button"), { textContent: a[0], title: x.open ? "Open one of this sample's annotations (Data → Annotation)" : help });
       if (x.key === r.next) b.classList.add("primary");
       b.onclick = (e) => { e.stopPropagation(); a[1](); };
