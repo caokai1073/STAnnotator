@@ -2440,7 +2440,6 @@ async function loadNiches(show) {
 $("nIdentity").onchange = () => { $("nPrograms").disabled = $("nIdentity").value !== "nmf"; syncSeg("nIdentity"); };
 $("nRun").onclick = async () => {
   if ($("nKind").value === "coloc") return runColoc();
-  if ($("nKMode").value === "agent") return agentNiches();
   const body = { identity: $("nIdentity").value, n_programs: +$("nPrograms").value, k: +$("nK").value, n_niches: +$("nN").value };
   if (projectMode("niches")) {  // niches of all slices go to each slice's annotation: every slice needs one
     const bare = projectOf(st.sample.sample_id).samples.filter((id) => {
@@ -2455,6 +2454,7 @@ $("nRun").onclick = async () => {
       return;
     }
   }
+  if ($("nKMode").value === "agent") return agentNiches();  // (after the check: the agent runs all slices too)
   if (!(await memoryOk("niches", projectMode("niches"), "The niche analysis"))) return;
   $("nRun").disabled = true; $("nprogress").classList.add("show");
   try {
@@ -2471,7 +2471,8 @@ $("nRun").onclick = async () => {
 };
 async function agentNiches() {  // the agent chooses k per region, runs the niches and names them
   try {
-    const r = await post("/api/claude/niches", { session: st.sid, n_niches: +$("nN").value, identity: $("nIdentity").value });
+    const r = await post("/api/claude/niches", { session: st.sid, n_niches: +$("nN").value, identity: $("nIdentity").value,
+                                                 project: projectMode("niches") });  // All slices together: one k for all
     if (r.message && st.chatAvailable) { $("input").value = r.message; send(); }
     else if (r.claude_code) toast(r.claude_code.reused ? "The agent is choosing k; the niches appear here when done" : "The agent is opening to choose k", 6000);
   } catch (e) { toast(e.message, 6000); }
@@ -6424,7 +6425,7 @@ async function proposalApplied(r) {
   }
   if (r.session_id && r.session_id === st.sid) {
     await refreshVersion(true);
-    if (r.tool === "run_niches" || r.tool === "name_niches") await loadNiches(false);
+    if (["run_niches", "run_project_niches", "name_niches"].includes(r.tool)) await loadNiches(false);
   }
 }
 async function pollProposals() {

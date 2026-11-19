@@ -1014,11 +1014,21 @@ NICHE_K_REQUEST = ("Choose the neighborhood size k for the niche analysis of ver
                    "niche_summary, name the niches with name_niches and explain your choice of k in two lines.")
 
 
+NICHE_K_PROJECT_REQUEST = ("Choose the neighborhood size k for the niches of all slices of this project together "
+                           "(I clicked 'Agent chooses' with 'All slices together'; version {v} of this slice): look "
+                           "at niche_context (cell density, the distance k neighbors cover and the lineages per "
+                           "region) and the tissue, choose one k that suits every slice (one k for all slices "
+                           "here), run_project_niches with it ({n} niches, identity {identity}), then look at "
+                           "niche_summary, name the niches with name_niches (the names go to every slice) and "
+                           "explain your choice of k in two lines.")
+
+
 async def api_claude_niches(req: Request):
     b = await req.json()
     s = review_app._session(b["session"])
-    return _json(_ask_claude(s, NICHE_K_REQUEST.format(v=s.state()["version"], n=int(b.get("n_niches", 8)),
-                                                       identity=b.get("identity", "nmf"))))
+    ask = NICHE_K_PROJECT_REQUEST if b.get("project") else NICHE_K_REQUEST  # (All slices together)
+    return _json(_ask_claude(s, ask.format(v=s.state()["version"], n=int(b.get("n_niches", 8)),
+                                           identity=b.get("identity", "nmf"))))
 
 
 async def api_niches_run(req: Request):

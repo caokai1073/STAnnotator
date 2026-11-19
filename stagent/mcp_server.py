@@ -55,7 +55,7 @@ Getting started
 
 Changes to the data are reviewed by the user
 - Every tool that changes data (import_sample, import_cosmx_merfish, import_visium, import_stereoseq, import_he_only, start_session, add / update / remove_constraint, propose_he_region, label_cells,
-  label_cluster, remove_correction, recluster, revert, apply_alignment, run_niches, name_niches, record_verdicts,
+  label_cluster, remove_correction, recluster, revert, apply_alignment, run_niches, run_project_niches, name_niches, record_verdicts,
   resolve_rule_suggestion, assign_region_cells, propose_region, move_piece, undo_piece_move) only proposes the change: the app shows it in a review window with what it does, and it
   is applied only when the user clicks Accept there (Dismiss drops it). The tool waits a little for the decision and
   returns the outcome (status "accepted by the user and applied" with the result, "dismissed by the user", or
@@ -182,7 +182,9 @@ Niches (the viewer's Niche tab, or when asked): run_niches averages each cell's 
 its cell type) over its k nearest cells and clusters the averages. When asked to choose k: niche_context, then k
 per drawn region or radius_um so neighborhoods span the tissue scale that matters (small in dense epithelium, larger
 in sparse stroma). Afterwards niche_summary and show_niches; name the niches (name_niches) from their composition,
-genes and place, cautiously; group_markers(by="niche") gives each niche's genes.
+genes and place, cautiously; group_markers(by="niche") gives each niche's genes. For all slices of a project together
+(the Niche tab's "All slices together"): run_project_niches, one k for every slice (no k per region there; every
+slice must be annotated); name_niches on one slice names them in all.
 
 Comparing groups (when asked, e.g. "what differs between N3 and N5", "fibroblasts in the mucosa vs elsewhere",
 "which niches does UC have more of"): analysis_groupings lists what cells can be grouped by (cell type, lineage,
@@ -755,6 +757,33 @@ def _d_run_niches(a):
         det.append("Per region: " + ", ".join(f"{k}: {v} cells" for k, v in a["k_by_region"].items()))
     det.append("Replaces the current niches of this annotation (their names too).")
     return {"title": "Find niches", "version": s.state()["version"], "details": det}
+
+
+def _project_niche_slices(s):
+    """(project id, {sample_id: annotation} of its slices: the open one for this slice, else each slice's latest),
+    or a ValueError naming the slices not annotated yet."""
+    from . import config, joint, projects
+    pid = projects.project_of(s.sample_id)
+    if not pid:
+        raise ValueError("this sample is in no project: use run_niches for its niches")
+    sess = joint.latest_sessions(pid, {s.sample_id: s.id})
+    missing = [x for x in projects.load(pid)["samples"] if x not in sess]
+    if missing:
+        names = [(json.load(open(config.SAMPLES / x / "meta.json", encoding="utf-8")).get("name") or x) for x in missing]
+        raise ValueError(f"niches of all slices together need every slice annotated; not yet: {', '.join(names)}. "
+                         "Tell the user to annotate them first (or all slices together), or use run_niches for this "
+                         "slice only")
+    return pid, sess
+
+
+def _d_run_project_niches(a):
+    s = _s()
+    pid, sess = _project_niche_slices(s)
+    det = [f"All {len(sess)} slices of the project together: one set of niches (the same N1, N2... in every slice)",
+           f"Identity: {a['identity']}" + (f" ({a['n_programs']} NMF programs)" if a["identity"] == "nmf" else ""),
+           f"Neighborhood: {a['k']} nearest cells, in every slice", f"{a['n_niches']} niches",
+           "Replaces the current niches of every slice's annotation (their names too)."]
+    return {"title": "Find niches of all slices", "version": s.state()["version"], "details": det}
 
 
 def _d_name_niches(a):
@@ -1960,6 +1989,21 @@ def run_niches(k: int = 15, n_niches: int = 8, identity: str = "nmf", n_programs
     result replaces the session's current niches and shows in the viewer (color by niche). Returns niche_summary."""
     from . import niches
     return _j(niches.run(_s(), k, n_niches, identity, n_programs, k_by_region, radius_um))
+
+
+@mcp.tool()
+@_reviewed(_d_run_project_niches)
+def run_project_niches(k: int = 15, n_niches: int = 8, identity: str = "nmf", n_programs: int = 20) -> str:
+    """Niches of all slices of the open sample's project together (the Niche tab with "All slices together"): every
+    cell's identity (as run_niches) averaged over its k nearest cells in its own slice, one k-means over all slices,
+    so a niche means the same in every slice. One k for all slices (no k per region or radius here); every slice
+    must be annotated (the niches go to each slice's annotation: the open one here, the latest elsewhere). name_niches
+    on any slice names them in all. Returns niche_summary of the open slice."""
+    from . import joint, niches
+    s = _s()
+    pid, sess = _project_niche_slices(s)
+    joint.niches(pid, k, n_niches, identity, n_programs, sessions=sess)
+    return _j(niches.summary(s) | {"slices": list(sess)})
 
 
 @mcp.tool()
