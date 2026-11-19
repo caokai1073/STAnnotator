@@ -461,7 +461,7 @@ def _write_bundle(name, ids, xy, X, genes, image, A, regions, description, sourc
 def _write_files(d, out, name, cells, X, genes, image, A, description, source, image_kind, um_per_px, has_regions,
                  registration, image_pending, pending_kind, by=None):
     """The files of a sample bundle, in d (meta.json names out, where the bundle goes)."""
-    cells.to_parquet(d / "cells.parquet")
+    _write_cells(d, cells)
     osutil.save_counts(d / "counts.npz", X)   # (the fastest zip compression: seconds, not tens of seconds)
     config.write_genes(d / "genes.txt", genes)
     from .qcfilter import save_numbers
@@ -1460,6 +1460,13 @@ def image_only(meta_or_id):
     return bool(m.get("image_only"))
 
 
+def _write_cells(d, cells):
+    """cells.parquet written at once (a temporary file renamed): the app and the agent's process read it while the
+    other moves the cells (Session reads it, then notes its time), so half a file or an old read with the new time is
+    never seen."""
+    osutil.replace_atomic(d / "cells.parquet", lambda tmp: cells.to_parquet(tmp))
+
+
 def apply_registration_fix(sample_id, correction):
     """Move every cell onto its nucleus on the image: p + A (p - origin) + b in H&E level-0 pixels, the correction
     that insights.registration fitted, plus its "local" field if it has one (regcheck.correction: the local shifts of
@@ -1476,7 +1483,7 @@ def apply_registration_fix(sample_id, correction):
     p = cells[["px", "py"]].to_numpy()
     q = p + displacement(p, correction)
     cells["px"], cells["py"] = q[:, 0], q[:, 1]
-    cells.to_parquet(d / "cells.parquet")
+    _write_cells(d, cells)
     meta = json.load(open(d / "meta.json"))
     M = np.eye(2) + A  # the corrected placement is again an affine of the cell um (exported as the registration; a local field is not part of it)
     if fresh or not meta.get("placement_affine_import"):  # (a left-over one from before a new registration is stale)
@@ -1505,7 +1512,7 @@ def move_piece(sample_id, piece):
     p = cells.loc[sel, ["px", "py"]].to_numpy()
     q = (p - c) @ M.T + c + t
     cells.loc[sel, "px"], cells.loc[sel, "py"] = q[:, 0], q[:, 1]
-    cells.to_parquet(d / "cells.parquet")
+    _write_cells(d, cells)
     meta = json.load(open(d / "meta.json"))
     if fresh:  # the placement shown now is where the corrections start (placement_affine)
         meta.pop("placement_affine_import", None)
@@ -1538,7 +1545,7 @@ def undo_piece_move(sample_id):
     M, c, t = np.asarray(p["M"], float), np.asarray(p["center_px"], float), np.asarray(p["t_px"], float)
     q = (cells.loc[sel, ["px", "py"]].to_numpy() - c - t) @ np.linalg.inv(M).T + c
     cells.loc[sel, "px"], cells.loc[sel, "py"] = q[:, 0], q[:, 1]
-    cells.to_parquet(d / "cells.parquet")
+    _write_cells(d, cells)
     meta = json.load(open(d / "meta.json"))
     meta["registration_fixes"].pop()
     if not any("piece" in f for f in meta["registration_fixes"]):
@@ -1589,7 +1596,7 @@ def undo_registration_fix(sample_id):
     if "px_import" not in cells:
         raise ValueError("the registration of this sample was never corrected")
     cells["px"], cells["py"] = cells.px_import.to_numpy(), cells.py_import.to_numpy()
-    cells.drop(columns=["px_import", "py_import"]).to_parquet(d / "cells.parquet")
+    _write_cells(d, cells.drop(columns=["px_import", "py_import"]))
     meta = json.load(open(d / "meta.json"))
     meta.pop("registration_fixes", None)
     _drop_positions(meta, sample_id)  # undone: adding the image again does not put it back
@@ -1665,7 +1672,7 @@ def apply_positions(sample_id, progress=print):
         cells["px_import"], cells["py_import"] = p[:, 0], p[:, 1]
         m["placement_affine_import"] = placement(sample_id).tolist()
     cells["px"], cells["py"] = q[:, 0], q[:, 1]
-    cells.to_parquet(d / "cells.parquet")
+    _write_cells(d, cells)
     if " + cell positions" not in (m.get("registration_by") or ""):
         m["registration_by"] = (m.get("registration_by") or "file") + " + cell positions"
     m.setdefault("registration_fixes", []).append({"positions": {"file": POSITIONS_FILE, "n_cells": int(hit.sum())},
@@ -1805,7 +1812,7 @@ def place_cells(sample_id, A, image, image_kind="H&E", by="file", progress=print
                                                      "image_pending", "registration_affine", "registration_by")}
     m["placement_previous"]["placement_affine"] = old.tolist()
     cells["px"], cells["py"] = pxy[:, 0], pxy[:, 1]
-    cells.drop(columns=[c for c in ("px_import", "py_import") if c in cells]).to_parquet(d / "cells.parquet")
+    _write_cells(d, cells.drop(columns=[c for c in ("px_import", "py_import") if c in cells]))
     m.pop("registration_fixes", None)
     m.pop("placement_affine_import", None)  # belonged to the corrections of the placement replaced here
     if not keep_positions:

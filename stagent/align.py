@@ -162,6 +162,8 @@ def _cands(s):
 
 def _get(s, cid):
     st = _cands(s)
+    if str(st.get("image")) != str(_image(s)[0]):  # another image was imported since the search
+        raise ValueError("the image changed since these candidates were found: run search_alignment again")
     hit = [c for c in st["candidates"] if c["id"] == str(cid).upper()]
     if not hit:
         raise ValueError(f"no candidate {cid}; candidates: {[c['id'] for c in st['candidates']]}")

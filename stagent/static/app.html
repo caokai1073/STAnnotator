@@ -1493,6 +1493,7 @@ function overlayUrl() {
   if (st.epoch) q.set("f", st.epoch);  // after Refresh: fresh tiles, not the browser's
   if (st.mode === "region" && st.colorEpoch) q.set("c", st.colorEpoch);  // region colors changed: fresh tiles
   if (st.mode === "niche" && st.niche) q.set("n", st.niche.params.run_id);
+  if (st.mode === "leiden" || st.mode.startsWith("trajectory:")) q.set("n", modeRun(st.mode));  // a new run: fresh tiles
   const only = [...filt()].join("|");
   if (only) q.set("only", only);
   return (l, x, y) => `/api/s/${st.sid}/overlay/${st.version}/${st.mode}/${l}/${x}_${y}.png?${q}`;
@@ -1576,16 +1577,25 @@ function grayColors() {
   uploadColors(withSelection(a));
   GL.colorKey = key;
 }
+// what a color mode's colors depend on besides the version: the region colors, the niche run, the UMAP's Leiden
+// clusters or the trajectory run (a new run under the same version must not reuse the old colors)
+function modeRun(mode) {
+  return mode === "region" ? st.colorEpoch || 0 : mode === "niche" ? (st.niche ? st.niche.params.run_id : "")
+    : mode === "leiden" ? (st.emb ? st.emb.run_id : "") : mode.startsWith("trajectory:") ? ((st.trajs || {})[mode.slice(11)] || {}).run_id || "" : 0;
+}
 async function loadColors() {
   const q = new URLSearchParams({ version: st.version, mode: st.mode, only: [...filt()].join("|") });
-  const key = `${st.sid}|${q}|${st.mode === "region" ? st.colorEpoch || 0 : st.mode === "niche" && st.niche ? st.niche.params.run_id
-    : st.mode.startsWith("trajectory:") ? ((st.trajs || {})[st.mode.slice(11)] || {}).run_id : 0}`;
+  const key = `${st.sid}|${q}|${modeRun(st.mode)}`;
   if (GL.colorKey === key) return;
+  GL.wantColors = key;
   if (!GL.colors[key]) {
     const r = await fetch(`/api/s/${st.sid}/colors.bin?${q}`);
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
-    GL.colors = { [key]: new Uint8Array(await r.arrayBuffer()) };  // keep only the current one
+    const buf = new Uint8Array(await r.arrayBuffer());
+    if (GL.wantColors !== key) return;  // other colors were asked for meanwhile (a newer version, another filter)
+    GL.colors = { [key]: buf };  // keep only the current one
   }
+  if (GL.wantColors !== key) return;
   uploadColors(withSelection(GL.colors[key]));
   GL.colorKey = key;
 }
@@ -2118,6 +2128,7 @@ async function loadEmbedding(show) {
   $("emScope").hidden = !(e && e.project && projectOf(st.sample.sample_id));
   if ($("emScope").hidden) $("emScope").value = "slice";
   fillModes(st.lastSummary);
+  if (st.mode === "leiden") { GL.colorKey = null; refreshOverlay(); loadLegend(); }  // the new run's clusters
   if (show && e) await openEmbedding();
 }
 // ---------------- Stop: a long run can be stopped; what it made is taken back (jobs.py) ----------------
@@ -2282,7 +2293,7 @@ async function loadEMData() {
   }
   const cm = $("emColor").value === "map" ? st.mode : $("emColor").value;
   const only = [...(st.filters[cm] || [])].join("|");  // the legend's choice: only those cells, as on the map
-  const ckey = `${st.sid}|${st.version}|${cm}|${cm === "niche" && st.niche ? st.niche.params.run_id : ""}|${cm === "region" ? st.colorEpoch || 0 : ""}|${only}`;
+  const ckey = `${st.sid}|${st.version}|${cm}|${modeRun(cm)}|${only}`;
   if (!EM.colors[ckey]) {
     const r = await fetch(`/api/s/${st.sid}/colors.bin?${new URLSearchParams({ version: st.version, mode: cm, only })}`);
     if (!r.ok) { toast((await r.json().catch(() => ({}))).error || "no colors for this choice", 5000); return; }
@@ -2485,7 +2496,8 @@ async function loadCoOptions(force) {  // the groupings of the open annotation (
   const key = [st.sid, st.version, coScope(), sel ? Object.entries(sel).map(([s, r]) => `${s}:${r.length}`).join() : "", groupingsSig()].join("|");
   if (!force && key === CO.key) return;
   CO.key = key;
-  try { CO.opts = await post("/api/analysis/options", coBody()); } catch (e) { CO.key = ""; toast(e.message, 6000); return; }
+  try { const o = await post("/api/analysis/options", coBody()); if (key !== CO.key) return; CO.opts = o; }
+  catch (e) { if (key === CO.key) { CO.key = ""; toast(e.message, 6000); } return; }
   const g = CO.opts.groupings, many = Object.keys(g).filter((k) => g[k].length > 1 && k !== "selection");
   const items = (ks) => ks.map((k) => [k, anLabel(k)]);
   fillSelect("nCoBy", items(many), [$("nCoBy").value, "cell type"].find((x) => many.includes(x)));
@@ -2508,6 +2520,7 @@ async function runColoc() {
   try {
     const { job } = await post("/api/coloc/run", b);
     const j = await pollJob(job, $("nprogress"), $("nfill"), $("nstage"), $("nRun"), 400);
+    if (ranElsewhere(b, $("nprogress"))) return;
     AN.last = j.result; AN.req = { ...b, selection: undefined }; AN.sel = b.selection; AN.view = "";
     AN.by.coloc = { last: AN.last, req: AN.req, sel: AN.sel }; syncLast();
     setTimeout(() => $("nprogress").classList.remove("show"), 800);
@@ -2546,7 +2559,7 @@ async function refreshVersion(force, infoPromise, infoSid) {  // infoPromise: /i
   $("vinfo").title = info.history.slice(-6).map((h) => `v${h.version}: ${h.message}`).join("\n");
   if (st.plaus) await loadPlaus(false);  // groups belong to a version: recompute for the new one
   reportState();
-  refreshOverlay();
+  refreshOverlay(); emRefresh();
   // (independent: the legend and the regions load together; one that failed, e.g. while a server connection comes
   // back, is loaded again by the next tick instead of leaving its panel away)
   const got = await Promise.allSettled([loadLegend(), loadRegions()]);
@@ -2562,6 +2575,10 @@ async function loadLegend() {
   if (asked !== `${st.sid}|${st.version}|${st.mode}`) return;  // the color mode (or annotation) changed meanwhile
   st.legend = r.items;
   const f = filt();
+  if (f.size && !st.mode.startsWith("gene:")) {  // a filter on a name no longer listed would hide every cell
+    const keys = new Set(r.items.map((x) => x.key)), gone = [...f].filter((k) => !keys.has(k));
+    if (gone.length) { gone.forEach((k) => f.delete(k)); refreshOverlay(); emFollow(); }
+  }
   $("legend").hidden = !!st.imageOnly;  // an image only: no cells to list
   $("legend").classList.remove("stale");
   $("lgtitle").textContent = (st.mode.startsWith("gene:") ? `${st.mode.slice(5)} transcripts` : st.mode.startsWith("lr:") ? lrTitle(st.mode)
@@ -3844,7 +3861,7 @@ async function adviceAct(x, step, extra) {
     let name;
     if (step === "region") { name = prompt("Save the outline as region (name):", x.action.name); if (!name) return; }
     const r = await post(`/api/s/${st.sid}/advice/act`, { id: x.id, step, name, ...(extra || {}) });
-    if (r.reload) { await reloadGeometry(); toast(step === "undo_registration" ? "Registration correction undone"
+    if (r.reload) { await afterPlacement(); toast(step === "undo_registration" ? "Registration correction undone"
       : (x.action || {}).mode === "local" ? `Cells moved onto their nuclei where the tissue shifted (up to ${r.moved_um_max} µm)`
       : `Cells moved onto their nuclei (median ${r.moved_um_median} µm, up to ${r.moved_um_max} µm)`, 6000); return; }
     if (r.claude_code) toast(r.claude_code.reused ? "Sent to the agent" : "The agent is opening", 4000);
@@ -3937,6 +3954,10 @@ async function pollSuggestions() {  // suggestions made in Claude Code show up w
     await loadNiches(fresh);
     if (fresh) toast("New niches from the agent: colored by niche", 5000);
   }
+  const trajSig = JSON.stringify(sug.traj || {});  // a trajectory the agent ran: a color of the map
+  if (st.trajSig !== undefined && trajSig !== st.trajSig) await loadTraj();
+  st.trajSig = trajSig;
+  if (sug.report && sug.report !== st.reportTime && $("rpDlg").open) await openReport();  // (before the returns below)
   // new advice is told apart by its ids, not by a signature that loading the panel also updates: a click that loads
   // the panel while the agent works (Review, solve, a new version, the cells moving) must not swallow its arrival
   const advSig = JSON.stringify(sug.advice);
@@ -3947,7 +3968,6 @@ async function pollSuggestions() {  // suggestions made in Claude Code show up w
   if (advSig !== st.advicePollSig) { st.advicePollSig = advSig; await adviceArrived(); return; }
   if (!st.plaus) { if (fresh) { await loadPlaus(false); toast(`The agent made ${fresh} suggestion(s): see the Review panel`, 4000); } return; }
   if (JSON.stringify(sug.solved) !== JSON.stringify(st.solvedSig) || sug.review !== st.plaus.review_count) { await loadPlaus(false); return; }  // Claude judged candidates
-  if (sug.report && sug.report !== st.reportTime && $("rpDlg").open) await openReport();
   st.plaus.suggestions = sug.areas; st.plaus.proposal = sug.proposal; renderPlaus();
 }
 setInterval(() => pollSuggestions().catch(() => {}), 4000);
@@ -6760,6 +6780,8 @@ $("mode").onchange = (e) => {
   if (st.sid) { loadLegend(); emFollow(); }
 };
 function emFollow() { if (!$("empanel").hidden && $("emColor").value === "map") loadEMData().then(drawEM); }
+// the UMAP window's colors after the labels, niches or runs changed (any color choice but slice: its key holds them)
+function emRefresh() { if (!$("empanel").hidden && st.emb && EM.xy) loadEMData().then(drawEM).catch(() => {}); }
 function setGene() {
   const v = $("geneInput").value.trim();
   const g = (st.genes || []).find((x) => x.toUpperCase() === v.toUpperCase());
@@ -7423,6 +7445,7 @@ function anSelection(scope = anScope()) {  // the cells selected in the UMAP win
   return st.sel ? { [st.sample.sample_id]: rows(st.sel) } : null;
 }
 // the niches (run and names) and the UMAP's Leiden clusters are groupings too: a new run or new names reload the lists
+const groupRuns = () => ({ niche: st.niche ? st.niche.params.run_id : null, leiden: st.emb ? st.emb.run_id || null : null });
 const groupingsSig = () => `${st.nicheSig || ""}|${st.emb ? st.emb.run_id || "" : ""}`;
 function anRefresh() {  // the Compare and Signaling tabs follow the open annotation, the selection, the niches and the UMAP
   if (document.querySelector('header .pane[data-pane="compare"]').classList.contains("on")) setTimeout(() => loadAnOptions(), 0);
@@ -7445,7 +7468,8 @@ async function loadAnOptions(force) {  // the groupings of the open annotation (
   const key = [st.sid, st.version, anScope(), sel ? Object.entries(sel).map(([s, r]) => `${s}:${r.length}`).join() : "", groupingsSig()].join("|");
   if (!force && key === AN.key) return;
   AN.key = key; $("aRun").disabled = true; $("aninfo").textContent = "Loading the groupings…";
-  try { AN.opts = await post("/api/analysis/options", anBody()); } catch (e) { $("aninfo").textContent = e.message; AN.key = ""; return; }
+  try { const o = await post("/api/analysis/options", anBody()); if (key !== AN.key) return; AN.opts = o; }
+  catch (e) { if (key === AN.key) { $("aninfo").textContent = e.message; AN.key = ""; } return; }  // (an older request answering late: dropped)
   const g = AN.opts.groupings, many = Object.keys(g).filter((k) => g[k].length > 1);
   const items = (ks) => ks.map((k) => [k, anLabel(k)]);
   const pick = (id, prefs, ks) => fillSelect(id, items(ks), [$(id).value, ...prefs].find((x) => ks.includes(x)));
@@ -7502,7 +7526,7 @@ $("aWBy").onchange = anWithin;
 document.querySelector('#tabs .tab[data-tab="compare"]').addEventListener("click", () => loadAnOptions());
 // fillSelect(), loadAnOptions() etc. are defined before the page's first annotation is opened
 $("aRun").onclick = async () => {
-  const kind = $("aKind").value, b = { ...anBody(), kind }, w = $("aWBy").value;
+  const kind = $("aKind").value, b = { ...anBody(), kind, runs: groupRuns() }, w = $("aWBy").value;
   b.within = w ? { [w]: $("aWVal").value } : {};
   if (kind === "de" || kind === "deseq2") Object.assign(b, { by: $("aBy").value, group: $("aGroup").value, reference: $("aRef").value });
   if (kind === "deseq2") b.replicate = $("aRep").value;
@@ -7512,6 +7536,7 @@ $("aRun").onclick = async () => {
   try {
     const { job } = await post("/api/analysis/run", b);
     const j = await pollJob(job, $("aprogress"), $("afill"), $("astage"), $("aRun"), 500);  // (Stop under the button)
+    if (ranElsewhere(b, $("aprogress"))) return;
     AN.last = j.result; AN.req = { ...b, selection: undefined }; AN.sel = b.selection; AN.view = "";
     AN.by[kind] = { last: AN.last, req: AN.req, sel: AN.sel }; syncLast();
     setTimeout(() => $("aprogress").classList.remove("show"), 800);
@@ -7519,6 +7544,14 @@ $("aRun").onclick = async () => {
   } catch (e) { if (isStop(e)) stopped($("aprogress"), "Compare"); else { toast(e.message, 7000); $("aprogress").classList.remove("show"); } }
   finally { $("aRun").disabled = false; }
 };
+// an analysis that ended after another annotation was opened: its result is kept with its own annotation (Last
+// result there), not shown over this one
+function ranElsewhere(b, bar) {
+  if (b.session === st.sid) return false;
+  bar.classList.remove("show");
+  toast("The analysis is done for the annotation that was open when it started: open it again to see the result (Last result)", 7000);
+  return true;
+}
 async function loadResults(sid) {  // the last result of each analysis, kept with the annotation
   const r = await api(`/api/s/${sid}/results`);
   if (sid !== st.sid) return;
@@ -7813,7 +7846,8 @@ async function loadTrajOptions(force) {
   const key = [st.sid, st.version, trScope(), groupingsSig()].join("|");
   if (!force && key === TR.key) return;
   TR.key = key; $("tRun").disabled = true; $("tinfo").textContent = "Loading the groupings…";
-  try { TR.opts = await post("/api/analysis/options", trBody()); } catch (e) { $("tinfo").textContent = e.message; TR.key = ""; return; }
+  try { const o = await post("/api/analysis/options", trBody()); if (key !== TR.key) return; TR.opts = o; }
+  catch (e) { if (key === TR.key) { $("tinfo").textContent = e.message; TR.key = ""; } return; }  // (an older request answering late: dropped)
   const g = TR.opts.groupings, ks = Object.keys(g).filter((k) => k !== "selection" || g[k].includes("selected"));
   const items = ks.map((k) => [k, anLabel(k)]);
   const pick = (id, prefs, list, first) => fillSelect(id, list, [$(id).value, ...prefs].find((x) => list.some(([v]) => v === x)), first);
@@ -7863,6 +7897,7 @@ $("tRun").onclick = async () => {
   try {
     const { job } = await post("/api/trajectory/run", b);
     const j = await pollJob(job, $("tprogress"), $("tfill"), $("tstage"), $("tRun"), 300);  // most runs take seconds
+    if (ranElsewhere(b, $("tprogress"))) return;
     AN.last = j.result; AN.req = { ...b, selection: undefined }; AN.sel = b.selection; AN.view = "";
     AN.by[`trajectory_${m}`] = { last: AN.last, req: AN.req, sel: AN.sel }; syncLast();
     await loadTraj(); loadTrajOptions(true);
@@ -7873,8 +7908,13 @@ $("tRun").onclick = async () => {
 };
 $("tLast").onclick = () => openLast(`trajectory_${$("tMethod").value}`);
 async function loadTraj() {  // the open annotation's last trajectory of each method (each a color of the map)
-  st.trajs = st.sid ? (await api(`/api/s/${st.sid}/trajectory`).catch(() => ({}))).trajectories || {} : {};
+  const sid = st.sid, before = modeRun(st.mode);
+  const trajs = sid ? (await api(`/api/s/${sid}/trajectory`).catch(() => ({}))).trajectories || {} : {};
+  if (sid !== st.sid) return;
+  st.trajs = trajs;
   fillModes(st.lastSummary);
+  if (st.mode.startsWith("trajectory:") && modeRun(st.mode) !== before) { refreshOverlay(); loadLegend(); emRefresh(); }
+  const last = trLastText(); if ($("tLast")) $("tLast").title = last || "";
 }
 function trLastText() {  // the last run of the method chosen in the tab
   const x = (st.trajs || {})[$("tMethod").value];
@@ -7979,7 +8019,8 @@ async function loadSigOptions(force) {
   const key = [st.sid, st.version, sgScope(), sel ? Object.entries(sel).map(([s, r]) => `${s}:${r.length}`).join() : "", groupingsSig()].join("|");
   if (!force && key === SG.key) return;
   SG.key = key; $("sRun").disabled = true; $("sinfo").textContent = "Loading the groupings…";
-  try { SG.opts = await post("/api/analysis/options", sgBody()); } catch (e) { $("sinfo").textContent = e.message; SG.key = ""; return; }
+  try { const o = await post("/api/analysis/options", sgBody()); if (key !== SG.key) return; SG.opts = o; }
+  catch (e) { if (key === SG.key) { $("sinfo").textContent = e.message; SG.key = ""; } return; }  // (an older request answering late: dropped)
   const g = SG.opts.groupings, many = Object.keys(g).filter((k) => g[k].length > 1);
   const items = (ks) => ks.map((k) => [k, anLabel(k)]);
   fillSelect("sBy", items(many), [$("sBy").value, "cell type"].find((x) => many.includes(x)));
@@ -8012,6 +8053,7 @@ $("sRun").onclick = async () => {
   try {
     const { job } = await post("/api/communication/run", b);
     const j = await pollJob(job, $("sprogress"), $("sfill"), $("sstage"), $("sRun"), 600);
+    if (ranElsewhere(b, $("sprogress"))) return;
     AN.last = j.result; AN.req = { ...b, selection: undefined }; AN.sel = b.selection; AN.view = "";
     AN.by[kind] = { last: AN.last, req: AN.req, sel: AN.sel }; syncLast();
     setTimeout(() => $("sprogress").classList.remove("show"), 800);
@@ -8261,6 +8303,11 @@ function dotPlotSVG(d, opts = {}) {  // d: {groups, n_cells, genes, pct, mean}; 
 }
 async function showDots(genes, opts, first, compare) {  // fetch the dot plot data of the result shown and draw it
   const q = AN.req, box = $("anBody");  // compare: only the two sides of a DE comparison
+  const grp = [q.by, ...Object.keys(q.within || {})].find((k) => k === "niche" || k === "leiden");
+  if (grp && q.runs && q.runs[grp] !== groupRuns()[grp]) {  // (results made before 0.2.60 do not say)
+    box.textContent = `The ${grp === "niche" ? "niches were" : "Leiden clusters were"} computed again since this result: run it again for a dot plot.`;
+    return;
+  }
   box.textContent = "Drawing…";
   try {
     const d = await post("/api/analysis/dots", { session: q.session, version: q.version, scope: q.scope, selection: AN.sel, sessions: q.sessions,

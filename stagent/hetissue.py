@@ -283,7 +283,11 @@ def load(sample_id):
     d = config.SAMPLES / sample_id / "he_segment"
     if not (d / "meta.json").exists():
         raise ValueError("no classes of the H&E yet: run segment_he first")
-    return json.load(open(d / "meta.json")), np.load(d / "labels.npy")
+    meta = json.load(open(d / "meta.json"))
+    from .importer import image_of
+    if meta.get("image") and str(image_of(sample_id)) != meta["image"]:  # another image since: its classes are not this one's
+        raise ValueError("the image changed since segment_he: run segment_he again")
+    return meta, np.load(d / "labels.npy")
 
 
 def _simplify(pts, tol):

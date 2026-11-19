@@ -94,7 +94,7 @@ def _version(req):
 
 # ---------------- crops ----------------
 def crop_jpeg(s: Session, cell: int, view: str, overlay: bool) -> bytes:
-    key = (s.id, s.versions()[-1], cell, view, overlay)
+    key = (s.id, s.versions()[-1], s._cells_mtime, cell, view, overlay)  # (the cells moved: a new crop)
     if key in _crops:
         _crops.move_to_end(key)
         return _crops[key]
@@ -201,7 +201,7 @@ async def api_crop(req):
     if view not in VIEWS_UM:
         return _json({"error": f"view must be one of {list(VIEWS_UM)}"}, 400)
     data = crop_jpeg(s, int(req.path_params["cell"]), view, req.query_params.get("overlay") == "1")
-    return Response(data, media_type="image/jpeg", headers={"Cache-Control": "max-age=3600"})
+    return Response(data, media_type="image/jpeg", headers={"Cache-Control": "no-cache"})  # (its URL has no version)
 
 
 async def api_verdict(req: Request):

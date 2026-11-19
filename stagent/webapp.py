@@ -51,13 +51,18 @@ class LRU(OrderedDict):
     def _size(v):
         return len(v) if isinstance(v, (bytes, bytearray)) else 0
 
+    epoch = 0  # raised by drop() and clear(): a value computed before them is not put back afterwards
+
     def get_or(self, key, fn):
         with self.lock:
             if key in self:
                 self.move_to_end(key)
                 return self[key]
+            epoch = self.epoch
         v = fn()
         with self.lock:
+            if self.epoch != epoch:  # dropped while it was computed: it may be stale; given once, not kept
+                return v
             if key in self:
                 self.nbytes -= self._size(self[key])
             self[key] = v
@@ -71,6 +76,7 @@ class LRU(OrderedDict):
     def drop(self, pred):
         """Remove the entries whose key pred(key) is true."""
         with self.lock:
+            self.epoch += 1
             for k in [k for k in self if pred(k)]:
                 self.nbytes -= self._size(self[k])
                 del self[k]
@@ -78,6 +84,7 @@ class LRU(OrderedDict):
 
     def clear(self):
         with self.lock:
+            self.epoch += 1
             super().clear()
             self.nbytes = 0
             _FREED.set()
@@ -1666,9 +1673,11 @@ def _analysis_cells(b):
     s = review_app._session(b["session"])
     sel = b.get("selection") or None
     claudelink.write_viewer_selection(sel)
-    key = (s.id, b.get("version"), b.get("scope"), json.dumps(sel, sort_keys=True) if sel else "",
+    nm = niches.current(s)[0] or {}  # its run and its names (renamed niches keep the run: the agent's name_niches,
+    key = (s.id, b.get("version"), b.get("scope"), json.dumps(sel, sort_keys=True) if sel else "",  # the advice's)
            json.dumps(b.get("sessions") or {}, sort_keys=True),
-           (niches.current(s)[0] or {}).get("run_id"), (embedding.current(s.sample_id) or {}).get("run_id"), s.versions()[-1],
+           nm.get("run_id"), json.dumps(nm.get("names") or {}, sort_keys=True),
+           (embedding.current(s.sample_id) or {}).get("run_id"), s.versions()[-1],
            _project_key(s, b) if b.get("scope") == "project" else None)
     return _cell_tables.get_or(key, lambda: _make_cells(s, b, sel))
 
@@ -2268,7 +2277,17 @@ def api_area_suggestions(req):
                   "review": len(claudereview.load(s)["areas"]) + len(claudereview.load(s)["markers"]),
                   "advice": advice.signature(s),
                   "report": (advice.report(s) or {}).get("time"),
-                  "niche": [(niches.current(s)[0] or {}).get("run_id"), niches.niche_names(s)]})
+                  "niche": [(niches.current(s)[0] or {}).get("run_id"), niches.niche_names(s)],
+                  "traj": _traj_runs(s)})
+
+
+def _traj_runs(s):
+    """{method: run_id} of the annotation's last trajectories (a run by the agent becomes a color of the map)."""
+    from . import trajectory
+    try:
+        return {m: x.get("run_id") for m, x in trajectory.all_last(s).items()}
+    except (OSError, ValueError):
+        return {}
 
 
 async def api_marker_check_solve(req: Request):

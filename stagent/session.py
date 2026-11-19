@@ -198,8 +198,8 @@ class Session:
         self.he_um_per_px = float(self.meta.get("he_um_per_px", config.HE_UM_PER_PX))
         if self.scheme["kind"] != "markers":
             self.node_names = self.types
-        self.cells = pd.read_parquet(sd / "cells.parquet")
-        self._cells_mtime = (sd / "cells.parquet").stat().st_mtime
+        self._cells_mtime = (sd / "cells.parquet").stat().st_mtime  # (before reading: a file replaced in between
+        self.cells = pd.read_parquet(sd / "cells.parquet")              # makes stale() true, not an old read kept)
         self.actor = "viewer"  # "agent" when the agent's tools change it (mcp_server sets it)
         self._counts = None
         self._cache, self._bases, self._nbr_frac_cache = {}, {}, {}
