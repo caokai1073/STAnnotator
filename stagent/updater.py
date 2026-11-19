@@ -1,9 +1,10 @@
 """Updates of the desktop app: a newer release on GitHub is offered when the app starts (and from About), downloaded
 in the background and installed with one click.
 
-- check(): the latest release (GitHub's API, at most every few hours; the answer is kept in the settings), its
+- check(): the latest release (GitHub's API, at most every hour; the answer is kept in the settings), its
   version, notes and the installer for this system (STAnnotator.dmg on macOS, STAnnotator-Setup.exe on Windows).
-  The app checks at start and every CHECK_EVERY while it is open, and offers a release by itself at most once a day
+  The app checks at start and once CHECK_EVERY has passed on the clock while it is open (also right after the
+  computer wakes from sleep, which stops the app's timers), and offers a release by itself at most once a day
   (shown(); "Later" waits for the next day, "Skip" for the next release); About > Check for updates always shows it.
 - Download: the installer goes to a folder of the app's own (not the data folder), with progress.
 - install(): macOS: a small script waits for the app to quit, puts the new STAnnotator.app from the DMG in the place
@@ -28,7 +29,7 @@ from . import __version__, config
 REPO = "caokai1073/STAnnotator"
 API = f"https://api.github.com/repos/{REPO}/releases/latest"
 PAGE = f"https://github.com/{REPO}/releases/latest"
-CHECK_EVERY = 6 * 3600
+CHECK_EVERY = 3600
 
 
 def _num(v):
@@ -122,8 +123,8 @@ def _too_old_macos():
 
 def check(force=False, fresh=False):
     """{current, latest, available, can_install, skipped, ...}; asks GitHub at most every CHECK_EVERY seconds, or now
-    with force (About > Check for updates) or fresh (the app starting: a release published since the last check, a
-    few hours ago, must show at the next start)."""
+    with force (About > Check for updates) or fresh (the app starting: a release published since the last check, up
+    to an hour ago, must show at the next start)."""
     st = config.read_settings()
     c = _cached()
     cached = c.get("latest") or {}

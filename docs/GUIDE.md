@@ -842,8 +842,8 @@ Part of the Annotation and Spatial organization reviews.
 - **About**: the build, the data folder, whether Claude Code was found and when Claude last used the tools, with a
   button that copies these details. It also holds the settings below.
 
-**Updates** (desktop app). The app asks GitHub for a newer release when it starts and every 6 hours while it stays
-open, and offers one by itself at most once a day (**Later** waits until the next day). **Check for updates** in About
+**Updates** (desktop app). The app asks GitHub for a newer release when it starts and every hour while it stays
+open (also right after the computer wakes from sleep), and offers one by itself at most once a day (**Later** waits until the next day). **Check for updates** in About
 asks now and always shows it. Without an internet connection nothing is shown.
 
 - The window shows the notes of every release since the installed one, newest first; **Download and install** fetches the installer in the background.

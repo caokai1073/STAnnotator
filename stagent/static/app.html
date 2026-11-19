@@ -6070,8 +6070,15 @@ function showUpdate(u) {
   $("updGo").textContent = u.can_install ? "Download and install" : "Open the release page"; $("updGo").disabled = false;
   if (!$("updDlg").open) $("updDlg").showModal();
 }
+// The app's timers stop while the computer sleeps, so a timer of an hour could take days on a Mac that is only ever
+// closed: a tick each minute compares the wall clock instead, and checks once an hour has passed since the last check
+// (right after waking from sleep too). The server asks GitHub at most every hour (updater.CHECK_EVERY).
+function updTick() {
+  if (Date.now() - (UPD.last || 0) >= 3600 * 1000) checkForUpdate(false).catch(() => {});
+}
 async function checkForUpdate(force, fresh = false) {  // fresh: the app starting, GitHub asked now
   if (!native() || !native().update_check) return;
+  UPD.last = Date.now();
   const u = await native().update_check(!!force, !!fresh);
   if (u.error) { if (force) toast(u.error, 7000); return; }
   if (!force) {  // by itself: at most once a day, never over an open update dialog or a download
@@ -8823,7 +8830,7 @@ api("/api/config").then((c) => {  // the desktop app (or no Claude Code CLI): th
   let tries = 0;
   const ready = () => (native() && native().connection
     ? (initConnection(c.remote).catch(() => {}), setTimeout(() => checkForUpdate(false, true).catch(() => {}), 4000),
-       setInterval(() => checkForUpdate(false).catch(() => {}), 6 * 3600 * 1000),  // while the app stays open
+       setInterval(updTick, 60 * 1000),  // while the app stays open: an hour on the clock (sleep included)
        setTimeout(() => askShare().catch(() => {}), 9000))
     : ++tries < 300 && setTimeout(ready, 100));
   if (window.pywebview) ready();

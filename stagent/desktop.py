@@ -217,7 +217,7 @@ class Api:
 
     # ---- updates (updater.py) ----
     def update_check(self, force=False, fresh=False):
-        """The latest release and whether it is newer than this app (GitHub, at most every few hours unless force or
+        """The latest release and whether it is newer than this app (GitHub, at most every hour unless force or
         fresh: the app starting)."""
         from . import updater
         try:
