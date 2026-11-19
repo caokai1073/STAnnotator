@@ -49,6 +49,20 @@ NK cells 51% -> as mregDC 70%), lineage 0.688 -> 0.695; mouse colon MERFISH, fou
 0.596 / 0.468 -> 0.883 / 0.892 / 0.922 / 0.510 (Cd14, detected in mouse colon epithelium, no longer makes epithelium
 monocytes); CosMx lung and colitis colon, PanCK / CD45 protein AUROC of the epithelial / immune calls unchanged
 (0.976 / 0.837 -> 0.973 / 0.836; 0.974 / 0.775 -> 0.974 / 0.774).
+Brain (2026-11-19): rewritten from cortex classes only (excitatory / inhibitory neurons, four interneuron types,
+glia) to the cortical layer types (L2/3 IT, L4/5 IT, L5 ET, L5/6 NP, L6 CT, L6b), hippocampal CA and dentate gyrus
+neurons, thalamic neurons, cerebellar granule cells, Purkinje cells and molecular layer interneurons, striatal D1 / D2
+medium spiny neurons, SNCG interneurons, dopaminergic, serotonergic and noradrenergic neurons, the oligodendrocyte
+lineage (OPCs, newly formed oligodendrocytes), ependymal cells, choroid plexus epithelium and VSMCs; with alternatives
+for panels without the classic genes (e.g. C1QL1 for OPCs, CLDN11 ERMN for oligodendrocytes, SALL1 for microglia,
+FGD5 for endothelium, PPP1R17 SKOR2 for Purkinje cells). Checked against the Allen Brain Cell atlas MERFISH
+Zhuang-ABCA-4 (three mouse brain sections, 162,578 cells, 1,122 genes, the atlas's subclasses), scored over the cells
+of subclasses the list has: agreement 0.147 -> 0.947, macro-F1 0.044 -> 0.648 (the old list had no neuron subclass,
+and on this panel lost oligodendrocytes, OPCs, microglia and endothelium for want of their classic genes). On the
+MOSTA Stereo-seq adult mouse brain (cell bins, no labels) the layer types lie in their order across the cortex and the
+dentate gyrus, CA and thalamic types in their places. Known limits: L5 IT and L6 IT neurons have no type (they go to
+L4/5 IT, L6 CT or L6b), SST and VIP need SST / VIP in the panel, and Stereo-seq's high background of Pvalb and Sst
+makes too many PVALB / SST interneurons there (as with the old list).
 Earlier (2026-11-07), against the authors' labels of SCP2927 (Xenium, 480 genes): the small intestine list on an ileum
 section and the colon list on a colon section; and the colon list on a mouse colon MERFISH slice (990 signaling genes,
 at the lineage level). Agreement with the authors, before -> after that check: ileum 88.0% -> 88.0%, colon 89.0% -> 89.1%

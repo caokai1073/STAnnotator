@@ -2072,10 +2072,14 @@ Investigative Dermatology, 2020. doi:10.1016/j.jid.2019.07.726
 
 ## Brain (cortex)
 
-Type names are from `brain.txt`. That file does not include `@immune` or `@stroma`, so the brain types are Neurons
-(Excitatory neurons; Inhibitory neurons: PVALB / SST / VIP / LAMP5 interneurons), Astrocytes, Oligodendrocytes, OPCs,
-Microglia, Border macrophages, T cells, Endothelial cells, Pericytes and VLMCs. The built-in list does not split
-excitatory neurons by layer.
+Type names are from `brain.txt`. That file does not include `@immune` or `@stroma`. Its cortical types are
+Cortical and hippocampal excitatory neurons (L2/3 IT, L4/5 IT, L5 ET, L5/6 NP, L6 CT and L6b neurons, with
+Hippocampal CA neurons and Dentate gyrus granule cells), Inhibitory neurons (PVALB / SST / VIP / LAMP5 / SNCG
+interneurons), Astrocytes, the Oligodendrocyte lineage (OPCs, Newly formed oligodendrocytes, Oligodendrocytes),
+Microglia, Border macrophages, T cells, Endothelial cells, Pericytes, VLMCs and VSMCs. The list also has types of
+other regions (thalamus, striatum, cerebellum, midbrain monoaminergic nuclei, ventricles); the priors below are for
+the cortex only. L5 IT and L6 IT neurons have no type of their own (they go to the IT or CT type nearest in
+expression).
 
 **Compartments to draw**
 - `meninges`: the thin fibrous pia-arachnoid layer on the outer cortical surface, with its large vessels. It often
@@ -2124,11 +2128,11 @@ The only epithelium is the choroid plexus, which is not cortex. Use regions or n
   - Evidence: [3][4]
 
 - **BRN-03. L1 contains no pyramidal (excitatory) somata. Its few neurons are almost all GABAergic interneurons.**
-  - Rule: `kind=region, types=[Excitatory neurons], regions=[L1], mode=exclude, strength=moderate`
+  - Rule: `kind=region, types=[Cortical and hippocampal excitatory neurons], regions=[L1], mode=exclude, strength=moderate`
   - Without drawn regions: none (no surface marker; VLMC density at the pia is too sparse to stand in for "L1").
   - Exceptions and caveats:
     - Cajal-Retzius cells are glutamatergic, sit in L1 and are sparse in adult cortex. This rule would type them as
-      Excitatory neurons and suppress them, but they are a real finding, mostly in developing or young tissue.
+      excitatory neurons and suppress them, but they are a real finding, mostly in developing or young tissue.
     - Upper-L2 pyramidal somata fall into a loosely drawn L1, which is why the strength is moderate rather than strong.
   - Confidence: high. Strength: moderate.
   - Evidence: [1][5][6]
@@ -2154,10 +2158,9 @@ The only epithelium is the choroid plexus, which is not cortex. Use regions or n
   - L6 CT (FOXP2, SYT6) in L6
   - L6b (CCN2/CTGF, NXPH4) at the L6-white-matter border
 
-  None of these subtypes is in the built-in list.
-  - Rule (if the user adds the subtypes): `kind=region, types=[L5 ET neurons (not in the built-in list)],
-    regions=[L5], mode=only, strength=moderate`, and similarly for the other subtypes, each with its own layer and
-    the adjacent layer(s) listed in `regions`.
+  These are the subtypes of Cortical and hippocampal excitatory neurons in the built-in list.
+  - Rule: `kind=region, types=[L5 ET neurons], regions=[L5], mode=only, strength=moderate`, and similarly for the
+    other subtypes, each with its own layer and the adjacent layer(s) listed in `regions`.
   - Without drawn regions: none.
   - Exceptions and caveats:
     - [mouse] In mouse, IT neurons form a continuous gradient with cortical depth [4].
