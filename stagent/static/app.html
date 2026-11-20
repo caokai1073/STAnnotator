@@ -7613,7 +7613,7 @@ $("aRun").onclick = async () => {
   const kind = $("aKind").value, b = { ...anBody(), kind, runs: groupRuns() }, w = $("aWBy").value;
   b.within = w ? { [w]: $("aWVal").value } : {};
   if (kind === "de" || kind === "deseq2") Object.assign(b, { by: $("aBy").value, group: $("aGroup").value, reference: $("aRef").value });
-  if (kind === "deseq2" || (kind === "composition" && b.scope === "project")) b.replicate = $("aRep").value;
+  if (kind === "deseq2") b.replicate = $("aRep").value;
   else if (kind === "markers") b.by = $("aBy").value;
   else if (kind === "spatial") b.beyond_types = $("aBeyond").checked;
   else if (kind === "program") {
@@ -7621,7 +7621,10 @@ $("aRun").onclick = async () => {
     if ($("aProg").value === "__custom") { b.genes = $("aGenes").value.trim(); b.program = "My program"; if (!b.genes) { toast("Type the program's genes", 4000); return; } }
     else b.program = $("aProg").value;
   }
-  else Object.assign(b, { rows: $("aRows").value, cols: $("aCols").value });
+  else {  // composition (over all slices: the replicates of its test too)
+    Object.assign(b, { rows: $("aRows").value, cols: $("aCols").value });
+    if (b.scope === "project") b.replicate = $("aRep").value;
+  }
   $("aRun").disabled = true; $("aprogress").classList.add("show");
   try {
     const { job } = await post("/api/analysis/run", b);
@@ -8025,7 +8028,8 @@ async function loadTrajOptions(force) {
   const g = TR.opts.groupings, ks = Object.keys(g).filter((k) => k !== "selection" || g[k].includes("selected"));
   const items = ks.map((k) => [k, anLabel(k)]);
   const pick = (id, prefs, list, first) => fillSelect(id, list, [$(id).value, ...prefs].find((x) => list.some(([v]) => v === x)), first);
-  pick("tFromBy", ["region", "cell type"], items); pick("tToBy", [], items, ["", "none (distance in µm)"]);
+  const drawn = (g.region || []).some((v) => v !== "no region");  // (no region drawn: "no region" holds every cell)
+  pick("tFromBy", drawn ? ["region", "cell type"] : ["cell type", "region"], items); pick("tToBy", [], items, ["", "none (distance in µm)"]);
   pick("tRootBy", ["cell type"], items); pick("tBy", ["cell type"], items.filter(([k]) => g[k].length > 1));
   fillSelect("tWBy", items.filter(([k]) => g[k].length > 1), undefined, ["", "all cells"]);
   trValues();
