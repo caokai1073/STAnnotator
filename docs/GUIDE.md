@@ -597,11 +597,14 @@ Histograms show where each threshold cuts and the dialog counts what goes; empty
      e.g. PanCK, CD45, CD3; Xenium: the protein features of the cell feature matrix). They are read at import (older
      samples: when first annotated, if the import's files are still there) and kept with the sample. Each stain is
      made positive or negative per cell (Otsu's threshold on log intensity); each cell type's share of positive cells
-     is read from the annotation itself; every cell's stains then reweigh its types (tempered, as a stain can spill
-     into a neighbor). No stain needs to be matched to a type, and stains all types share (DAPI, membrane) change
+     is read from the annotation itself, as two levels per stain (the types it is on in, and the others, so that a stain
+     spilling into neighbors does not move cells between immune or stromal types); every cell's stains then reweigh
+     its types (tempered). No stain needs to be matched to a type, and stains all types share (DAPI, membrane) change
      nothing. On two CosMx slides, leaving one stain out and using the others, the annotation agreed a little better
-     with the one left out (PanCK AUROC 0.962 → 0.963 and 0.966 → 0.967, CD45 0.748 → 0.750); on a 790,000-cell colon
-     slide 2.4% of the cells changed, mostly between close types. Annotations made before 0.2.61 keep their results.
+     with the one left out about as well or a little better (PanCK AUROC 0.962 → 0.962 and 0.966 → 0.966, CD45 unchanged);
+     on a 790,000-cell colon slide 1.6% of the cells changed. The gain is small: the stains help most where the
+     transcripts leave a cell between an epithelial and a non-epithelial type. A type that holds cells of another
+     kind in the annotation (e.g. "Mast cells" half PanCK-positive) still teaches the stains that mixture. Annotations made before 0.2.61 keep their results.
 4. Click **Annotate**.
 
 The cells the marker step could not type get a type from their marker genes and then, round by round, from the cell
