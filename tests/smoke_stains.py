@@ -1,7 +1,7 @@
 """Protein / IF stains as evidence (protein.py): a CosMx slide made from the example MERFISH slice (PanCK from its
 epithelial genes, CD45 from Ptprc, DAPI flat) is imported with its stains kept (protein.parquet); an annotation with
 stains (the default) reweighs the types (cells positive for a stain move to the types mostly positive for it; DAPI is
-left out), one without them and annotations made before (no "stains" in the scheme) are as before, the agent's review
+left out; rates taken at two levels only at a clear gap, membrane stains left out), one without them and annotations made before (no "stains" in the scheme) are as before, the agent's review
 names the stains, the samples list shows them, and the notebook replays the annotation with them. Runs in a
 temporary data folder."""
 import os, shutil, tempfile, json
@@ -82,6 +82,17 @@ try:
             if "ORIGINAL" in g:
                 break
     assert "labels identical to the original" in out.getvalue(), out.getvalue()[-300:]
+    # two levels only at a clear gap (the Mac review's ASHUC1 rates): Membrane-like rates running on from type to
+    # type (ILCs 0.67, CD8 T 0.79 ...) give every type the same rate; PanCK splits at its gap (Mast cells 0.55 low)
+    # (ILCs, CD8 T, B, naive CD4 T, plasma, fibroblasts, macrophages, blood vessel EC, mast | goblet, cycling TA, unassigned)
+    n = np.array([18954, 22147, 32822, 353, 258126, 106631, 26936, 28733, 55354, 50999, 36754, 63411])
+    memb = np.array([0.67, 0.79, 0.77, 0.71, 0.65, 0.36, 0.51, 0.47, 0.48, 0.98, 0.98, 0.60])
+    pck = np.array([0.24, 0.10, 0.07, 0.09, 0.25, 0.31, 0.36, 0.40, 0.55, 0.98, 0.98, 0.81])
+    R = protein._two_levels(np.c_[memb, pck], n)
+    assert np.ptp(R[:, 0]) == 0, R[:, 0]
+    lo, hi = R[:9, 1], R[9:, 1]
+    assert np.ptp(lo) == 0 and np.ptp(hi) == 0 and hi[0] > 0.8 > 0.4 > lo[0], R[:, 1]
+    assert protein.skipped("Membrane") and protein.skipped("MembraneStain") and protein.skipped("DAPI") and not protein.skipped("PanCK")
     print("ok")
 finally:
     os.chdir("/")

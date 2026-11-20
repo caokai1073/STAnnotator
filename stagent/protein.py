@@ -5,12 +5,14 @@ cell types, besides the transcripts.
 No stain needs to be named for a type: each stain is made positive / negative per cell (Otsu's threshold on
 log1p(intensity)), each cell type's positive rate is read from the transcript-based annotation itself (smoothed
 toward the overall rate), and every cell's probabilities of the types are multiplied by the likelihood of its stains
-under each type's rates, tempered by WEIGHT, then renormalized. The rates are taken at two levels per stain (the types
-it is on in, near the highest rate, and the others; see _two_levels): a stain spilling into neighbors gives immune or
-stromal types rates of 0.25-0.55 that would otherwise move cells between them (on ASHUC1 3,322 cells, 92% PanCK+, into
-"Mast cells", a type half PanCK+ from epithelial cells labeled so; at two levels 1,150, 61% PanCK+). A stain that all types share (DAPI, a membrane stain)
-gives the same likelihood to every type and changes nothing; PanCK moves PanCK-negative cells away from the types
-that are mostly PanCK-positive. Stains are read once from the import's files and kept as protein.parquet (cell_id +
+under each type's rates, tempered by WEIGHT, then renormalized. The rates are taken at two levels per stain, split at
+the widest gap between the types' rates, and only when that gap is clear (see _two_levels): a stain spilling into
+neighbors gives immune or stromal types rates of 0.25-0.55 that would otherwise move cells between them (on ASHUC1
+3,322 cells, 92% PanCK+, into "Mast cells", a type half PanCK+ from epithelial cells labeled so), and a stain whose
+rates run on without a gap (a membrane stain, CD45 or CD3 on ASHUC1 and lung5) would split types alike in it by a
+fixed line (ILCs at 0.67 vs CD8 T cells at 0.79 swapped 2,300 cells by Membrane alone). Nuclear and membrane stains
+(DAPI, Membrane...) are left out by name; PanCK moves PanCK-negative cells away from the types that are mostly
+PanCK-positive. Stains are read once from the import's files and kept as protein.parquet (cell_id +
 one column per stain) in the sample's folder, so filters and corrections of the cells do not matter (matched by id).
 """
 import json
@@ -21,9 +23,15 @@ WEIGHT = 0.5          # the stains' log-likelihood is multiplied by this (spillo
 SMOOTH = 20.0         # pseudo-cells of the overall rate in each type's rate
 RATE_CLIP = (0.02, 0.98)
 MIN_CELLS_POS = 0.01  # a stain positive in fewer (or more than 1 - this) of the cells is left out
-SKIP = ("DAPI",)      # nuclear stains: no type information
-MIN_SPREAD = 0.3      # a stain whose types' positive rates span less tells nothing
-SIDE_GAP = 0.25       # the types a stain is "on" in: within this of the highest rate
+SKIP = ("dapi", "membrane")  # nuclear and membrane stains (names starting so, any case): on in every cell type
+MIN_GAP = 0.2         # a stain tells types apart only where their positive rates have a gap at least this wide
+MIN_N = 200           # types with fewer cells (rates less sure; 1% of the cells when that is less, as in a small
+                      # sample) do not make or fill a gap; they join the nearer side
+
+
+def skipped(name):
+    """A stain of no type information (nuclear, membrane)."""
+    return str(name).strip().lower().startswith(SKIP)
 
 
 def _file(sample_id):
@@ -112,7 +120,7 @@ def available(sample_id):
         d = ensure(sample_id)
     except Exception:
         return []
-    return [] if d is None else [c for c in d.columns[1:] if c not in SKIP]
+    return [] if d is None else [c for c in d.columns[1:] if not skipped(c)]
 
 
 def _otsu(v):
@@ -135,7 +143,7 @@ def positives_df(d, cell_ids, stains=None):
     if d is None:
         return [], None, None
     d = d.set_index(d.cell_id.astype(str)).reindex(pd.Index(np.asarray(cell_ids).astype(str)))
-    names = [c for c in d.columns[1:] if c not in SKIP and (stains is None or c in stains)]
+    names = [c for c in d.columns[1:] if not skipped(c) and (stains is None or c in stains)]
     V = np.log1p(np.clip(d[names].to_numpy(float), 0, None))
     ok = np.isfinite(V).all(1)
     P = np.zeros(V.shape, bool)
@@ -152,18 +160,22 @@ def positives_df(d, cell_ids, stains=None):
 
 
 def _two_levels(R, n):
-    """Each stain separates the types it is on in (rates within SIDE_GAP of the highest) from the others, each side
-    given its cells' mean rate. Differences within a side are mostly a stain spilling into
-    neighbors (a PanCK rate of 0.25 or 0.55 in immune or stromal types, by how close they lie to the epithelium) and
-    would move cells between those types; a stain whose types differ by less than MIN_SPREAD tells nothing."""
+    """Each stain separates the types it is on in from the others at the widest gap between the types' rates (types
+    of at least MIN_N cells; the cut in the gap's middle), each side given its cells' mean rate. Differences within a
+    side are mostly a stain spilling into neighbors (a PanCK rate of 0.25 or 0.55 in immune or stromal types, by how
+    close they lie to the epithelium) and would move cells between those types; a stain without a gap of MIN_GAP
+    (rates running on from type to type) tells nothing: any line through it splits types alike in the stain."""
     R = R.copy()
     have = n > 0
+    big = n >= min(MIN_N, max(10.0, 0.01 * n.sum()))
     for j in range(R.shape[1]):
-        r = R[have, j]
-        if not len(r) or r.max() - r.min() < MIN_SPREAD:
-            R[:, j] = np.average(r, weights=n[have]) if len(r) else 0.5
+        r = np.sort(R[big, j])
+        g = np.diff(r)
+        if not len(g) or g.max() < MIN_GAP:
+            R[:, j] = np.average(R[have, j], weights=n[have]) if have.any() else 0.5
             continue
-        hi = R[:, j] >= r.max() - SIDE_GAP  # (near the top only: a type half positive is a mixture, not "on")
+        k = int(g.argmax())
+        hi = R[:, j] > (r[k] + r[k + 1]) / 2
         for side in (hi, ~hi):
             m = side & have
             if m.any():

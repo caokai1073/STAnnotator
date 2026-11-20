@@ -1582,7 +1582,7 @@ def _stains_of(sample_id, meta):
     if (d / "protein.parquet").exists():
         try:
             import pyarrow.parquet as pq
-            return [c for c in pq.read_schema(d / "protein.parquet").names[1:] if c not in protein.SKIP]
+            return [c for c in pq.read_schema(d / "protein.parquet").names[1:] if not protein.skipped(c)]
         except Exception:
             return None
     if (d / "protein.none").exists() or (meta.get("source") or {}).get("kind") not in ("cosmx", "xenium"):
