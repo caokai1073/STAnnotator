@@ -20,6 +20,11 @@ deseq2(): DESeq2 (PyDESeq2) on pseudobulk counts: a group against the rest or an
 markers(): the top genes of every group of a grouping against the rest of the cells.
 crosstab(): how the cells of one grouping split over another (cell types per niche, niches per slice, ...), with the
   enrichment over what independence predicts and, for slice-level rows, every slice's own shares.
+proportions(): for slice-level rows (a condition column of the project's slices), whether each value of cols (cell
+  type, niche, ...) makes up a different share of the cells between conditions, with the replicates (slices, or
+  patients) as the samples, as propeller (Phipson et al. 2022): per replicate the share of each value,
+  arcsine-square-root transformed; per value a linear model of the conditions with the residual variances moderated
+  across values (limma's empirical Bayes); two conditions: moderated t, more: moderated F; Benjamini-Hochberg FDR.
 log_run() / recent(): the analyses the user ran in the app (request and headline), for the agent's review.
 embedding_facts(): Leiden clusters against the labels and, in a joint embedding, against the slices.
 """
@@ -500,7 +505,124 @@ def markers(c, by, top=8, within=None, min_cells=30):
             "skipped_small": [str(g) for g, n in vc.items() if n < min_cells], "note": NOTE}
 
 
-def crosstab(c, rows, cols, within=None, top_cols=None):
+PROP_MIN_CELLS = 20   # replicates with fewer cells (in the subset) are left out of the proportion test
+
+
+def _trigamma_inv(x):
+    """The y with trigamma(y) = x (limma's trigammaInverse: Newton's method)."""
+    from scipy.special import polygamma
+    x = float(x)
+    if x > 1e7:
+        return 1 / np.sqrt(x)
+    if x < 1e-6:
+        return 1 / x
+    y = 0.5 + 1 / x
+    for _ in range(50):
+        tri = float(polygamma(1, y))
+        dif = tri * (1 - tri / x) / float(polygamma(2, y))
+        y += dif
+        if -dif / y < 1e-8:
+            break
+    return y
+
+
+def _squeeze(s2, df):
+    """limma's empirical Bayes: (moderated variances, prior df d0) from residual variances s2 with df each."""
+    from scipy.special import digamma, polygamma
+    s2 = np.maximum(np.asarray(s2, float), 1e-12)
+    if len(s2) < 3 or df <= 0:
+        return s2, 0.0
+    z = np.log(s2)
+    e = z - digamma(df / 2) + np.log(df / 2)
+    emean = e.mean()
+    evar = e.var(ddof=1) - float(polygamma(1, df / 2))
+    if evar > 0:
+        d0 = 2 * _trigamma_inv(evar)
+        s0 = np.exp(emean + digamma(d0 / 2) - np.log(d0 / 2))
+    else:
+        d0, s0 = np.inf, np.exp(emean)
+    if not np.isfinite(d0):
+        return np.full(len(s2), s0), 1e6
+    return (d0 * s0 + df * s2) / (d0 + df), float(d0)
+
+
+def proportions(c, condition, cols, within=None, replicate=None):
+    """Whether each value of cols makes up a different share of the cells between the conditions (values of the
+    slice-level column condition), the replicates (replicate: slice, or a patient / donor column; default
+    Cells.replicates()) being the samples; see the module's note (propeller)."""
+    from scipy import stats as st
+    reps, default = c.replicates()
+    if not reps:
+        raise ValueError("the proportion test needs a project's slices (the replicates)")
+    replicate = replicate or default
+    if replicate not in reps:
+        raise ValueError(f"the replicate must be one of {', '.join(reps)}")
+    if condition in ("slice", replicate):
+        raise ValueError(f"compare conditions made of several {replicate}s (a metadata column such as condition), "
+                         f"not the {replicate}s themselves")
+    w = _within(c, within)
+    cond, k = _column(c, condition), _column(c, cols)
+    rep = c.labels[replicate].astype(str).to_numpy()
+    m = w & pd.notna(cond) & pd.notna(k)
+    per = pd.DataFrame({"rep": rep[m], "cond": cond[m].astype(str)}).groupby("rep")["cond"].nunique()
+    if (per > 1).any():
+        raise ValueError(f"a {replicate} holds several values of {condition} ({', '.join(per[per > 1].index[:4])}): "
+                         f"choose slice as the replicate")
+    ct = pd.crosstab(pd.Series(rep[m], name="rep"), pd.Series(k[m], name=cols))
+    small = ct.index[ct.sum(1) < PROP_MIN_CELLS].tolist()
+    ct = ct.drop(index=small)
+    rc = pd.Series(cond[m].astype(str), index=None).groupby(rep[m]).first().reindex(ct.index)
+    groups = sorted(rc.unique().tolist())
+    nper = rc.value_counts().reindex(groups).astype(int)
+    if len(groups) < 2:
+        raise ValueError(f"only one value of {condition} among the {replicate}s with {PROP_MIN_CELLS}+ cells")
+    if (nper < 2).any():
+        raise ValueError(f"the test needs 2 or more {replicate}s per value of {condition}; here "
+                         + ", ".join(f"{g}: {n}" for g, n in nper.items()))
+    N = ct.sum(1).to_numpy(float)[:, None]
+    P = ct.to_numpy(float) / N
+    Y = np.arcsin(np.sqrt(P))
+    g = rc.to_numpy()
+    n, G = len(g), len(groups)
+    means = np.stack([Y[g == x].mean(0) for x in groups])        # groups x values
+    resid = Y - means[[groups.index(x) for x in g]]
+    df = n - G
+    s2 = (resid ** 2).sum(0) / df
+    s2m, d0 = _squeeze(s2, df)
+    dft = df + d0
+    shares = {x: P[g == x].mean(0) for x in groups}
+    out = []
+    for j, val in enumerate(ct.columns):
+        row = {"value": str(val), "mean_share": {x: round(float(shares[x][j]), 4) for x in groups},
+               "n_cells": int(ct.iloc[:, j].sum())}
+        if G == 2:
+            a, b = groups
+            t = (means[1, j] - means[0, j]) / np.sqrt(s2m[j] * (1 / nper[b] + 1 / nper[a]))
+            row["t"] = round(float(t), 2)
+            row["p"] = float(2 * st.t.sf(abs(t), dft))
+            row["log2_ratio"] = round(float(np.log2((shares[b][j] + 1e-4) / (shares[a][j] + 1e-4))), 2)
+        else:
+            ssb = sum(nper[x] * (means[i, j] - Y[:, j].mean()) ** 2 for i, x in enumerate(groups))
+            f = (ssb / (G - 1)) / s2m[j]
+            row["F"] = round(float(f), 2)
+            row["p"] = float(st.f.sf(f, G - 1, dft))
+        out.append(row)
+    fdr = _bh(np.array([r["p"] for r in out]))
+    for r, q in zip(out, fdr):
+        r["fdr"] = float(f"{q:.3g}")
+        r["p"] = float(f"{r['p']:.3g}")
+    out.sort(key=lambda r: (r["p"], -abs(r.get("t", r.get("F", 0)))))
+    return {"condition": condition, "cols": cols, "replicate": replicate, "groups": groups,
+            "n_replicates": {x: int(nper[x]) for x in groups}, "left_out": small, "test": "t" if G == 2 else "F",
+            "contrast": f"{groups[1]} vs {groups[0]}" if G == 2 else None, "prior_df": round(d0, 1),
+            "values": out, "n_significant": int(sum(r["fdr"] < 0.05 for r in out)),
+            "note": (f"Each {replicate} is one sample: its share of each {cols} value, arcsine-square-root "
+                     "transformed, then a linear model per value with the variances moderated across values (as limma "
+                     "/ propeller). log2_ratio: the mean shares' ratio. With 2-3 replicates per condition only large "
+                     "changes reach significance; the cell counts are not the statistics, the replicates are.")}
+
+
+def crosstab(c, rows, cols, within=None, top_cols=None, replicate=None):
     """Cells of grouping rows split over grouping cols: counts, shares within each row, log2 enrichment over
     independence; slice-level rows (slice or a metadata column) of a project also give every slice's shares."""
     w = _within(c, within)
@@ -533,6 +655,10 @@ def crosstab(c, rows, cols, within=None, top_cols=None):
             reps.append({"slice": str(c.labels.slice.to_numpy()[ms][0]), rows: str(r[ms][0]), "n_cells": int(ms.sum()),
                          "shares": {str(a): round(float(v), 4) for a, v in vc.items()}})
         res["by_slice"] = reps
+        try:  # the replicates allow a test of the shares between the conditions
+            res["test"] = proportions(c, rows, cols, within, replicate)
+        except ValueError as e:
+            res["test_note"] = str(e)
     if c.missing:
         res["missing"] = c.missing
     return res

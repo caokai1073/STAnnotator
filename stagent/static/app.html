@@ -66,7 +66,7 @@ header.collapsed .hmini { display: flex; }
 .cmpgroup { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 10px 0 2px; }
 .cmplegend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 12px; font-size: 12px; }
 .cmplegend span.sw { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
-#anBody { max-height: 62vh; overflow: auto; }
+#anBody { max-height: 62vh; overflow: auto; } #anBody tr.sig td { font-weight: 600; }
 table.an { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
 table.an th { text-align: right; font-weight: 600; color: var(--muted); padding: 5px 8px; border-bottom: 1px solid var(--line);
   position: sticky; top: 0; background: var(--panel); white-space: nowrap; }
@@ -7539,7 +7539,7 @@ function anWithin() {
 function syncAnKind() {
   const k = $("aKind").value;
   document.querySelectorAll("[data-pane=compare] .an-de").forEach((e) => (e.hidden = k !== "de" && k !== "deseq2" && !(k === "markers" && e.classList.contains("an-mk"))));
-  document.querySelectorAll("[data-pane=compare] .an-ds").forEach((e) => (e.hidden = k !== "deseq2"));
+  document.querySelectorAll("[data-pane=compare] .an-ds").forEach((e) => (e.hidden = k !== "deseq2" && !(k === "composition" && $("aScope").value === "project")));
   if (AN.opts) anGroups();
   document.querySelectorAll("[data-pane=compare] .an-cp").forEach((e) => (e.hidden = k !== "composition"));
   $("aByLbl").textContent = k === "markers" ? "Group by" : "Compare by";
@@ -7548,11 +7548,11 @@ function syncAnKind() {
     de: "Wilcoxon test on log-normalized expression; genes ranked by AUC (0.5 = no difference). Group All compares every group with the other cells at once. Click a gene to color the map by it.",
     deseq2: "The raw counts of each side summed per replicate (slice, or patient), then DESeq2: needs 2 or more replicates with 30+ cells on each side (3+ is better). Replicates holding both sides (e.g. two regions in the same slices) are paired.",
     markers: "Every group against the other cells: what sets each niche, cluster or region apart.",
-    composition: "Shares of each value per row, and how much more or less common it is than if the two were unrelated.",
+    composition: "Shares of each value per row, and how much more or less common it is than if the two were unrelated. All slices with Rows a condition (one value per slice): a test of each share between the conditions, the replicates (slices, or patients) as the samples.",
   }[k];
 }
 $("aKind").onchange = () => { syncAnKind(); syncLast(); };
-$("aScope").onchange = () => loadAnOptions(true);
+$("aScope").onchange = () => { loadAnOptions(true); syncAnKind(); };
 $("aBy").onchange = anGroups;
 $("aGroup").onchange = () => { const r = $("aRef").value; anGroups(); if ([...$("aRef").options].some((o) => o.value === r)) $("aRef").value = r; };
 $("aWBy").onchange = anWithin;
@@ -7562,7 +7562,7 @@ $("aRun").onclick = async () => {
   const kind = $("aKind").value, b = { ...anBody(), kind, runs: groupRuns() }, w = $("aWBy").value;
   b.within = w ? { [w]: $("aWVal").value } : {};
   if (kind === "de" || kind === "deseq2") Object.assign(b, { by: $("aBy").value, group: $("aGroup").value, reference: $("aRef").value });
-  if (kind === "deseq2") b.replicate = $("aRep").value;
+  if (kind === "deseq2" || (kind === "composition" && b.scope === "project")) b.replicate = $("aRep").value;
   else if (kind === "markers") b.by = $("aBy").value;
   else Object.assign(b, { rows: $("aRows").value, cols: $("aCols").value });
   $("aRun").disabled = true; $("aprogress").classList.add("show");
@@ -7771,8 +7771,22 @@ async function showAnalysis() {
   } else {
     $("anTitle").textContent = `${anLabel(r.cols)} per ${anLabel(r.rows)}`;
     $("anSub").textContent = `${where} · ${r.n_cells.toLocaleString()} cells`;
-    const view = AN.view || "shares";
-    anSeg([["shares", "Shares"], ["enrichment", "Enrichment"]], view, (v) => { AN.view = v; showAnalysis(); });
+    const view = AN.view === "test" && !r.test ? "shares" : AN.view || (r.test ? "test" : "shares");
+    anSeg([["shares", "Shares"], ["enrichment", "Enrichment"], ...(r.test ? [["test", "Test"]] : [])], view, (v) => { AN.view = v; showAnalysis(); });
+    if (view === "test") {  // the shares between conditions, replicates as the samples (propeller)
+      const t = r.test, two = t.test === "t";
+      $("anSub").textContent = `${where} · ${t.groups.map((g) => `${g}: ${t.n_replicates[g]} ${t.replicate === "slice" ? "slices" : t.replicate}`).join(", ")} · ${t.n_significant} with FDR < 0.05`;
+      const pct = (v) => `${(100 * v).toFixed(1)}%`;
+      const head = [anLabel(r.cols), ...t.groups.map((g) => `${g} (mean share)`), ...(two ? [`log2 ${t.groups[1]}/${t.groups[0]}`, "t"] : ["F"]), "p", "FDR"];
+      const tb = anTable(head, t.values.map((x) => [x.value, ...t.groups.map((g) => pct(x.mean_share[g])),
+        ...(two ? [`${x.log2_ratio > 0 ? "+" : ""}${x.log2_ratio.toFixed(2)}`, x.t.toFixed(2)] : [x.F.toFixed(2)]),
+        x.p < 0.001 ? "< 0.001" : x.p.toFixed(3), x.fdr < 0.001 ? "< 0.001" : x.fdr.toFixed(3)]));
+      tb.querySelectorAll("tr").forEach((tr, i) => { if (i && t.values[i - 1].fdr < 0.05) tr.classList.add("sig"); });
+      $("anBody").append(tb);
+      $("anNote").textContent = t.note + (t.left_out.length ? ` Left out (fewer than 20 cells): ${t.left_out.join(", ")}.` : "");
+      if (!$("anDlg").open) $("anDlg").showModal();
+      return;
+    }
     const colors = await groupColors(r.cols, r.keys);
     const box = $("anBody");
     if (view === "enrichment") {
@@ -7808,7 +7822,7 @@ async function showAnalysis() {
           sl.forEach((s) => bar(`slice ${s.slice}`, s.n_cells, s.shares, sl.length === 1 ? x.enrichment : null));
         } else bar(x.row, x.n_cells, x.shares, x.enrichment);
       });
-      $("anNote").textContent = r.scope === "project" ? "From each slice's latest annotation; annotate, embed and find niches with all slices together so the same names mean the same cells." : "";
+      $("anNote").textContent = r.scope === "project" ? "From each slice's latest annotation; annotate, embed and find niches with all slices together so the same names mean the same cells." + (r.test_note ? ` No test of the shares: ${r.test_note}.` : "") : "";
     }
     if (view === "shares") r.keys.forEach((k) => { const l = document.createElement("span"); l.innerHTML = `<span class="sw" style="background:${colors[k]}"></span>`; l.append(k); $("anLegend").append(l); });
     if (r.missing && Object.keys(r.missing).length) $("anNote").textContent += " Missing: " + Object.entries(r.missing).map(([k, s]) => `${anLabel(k)} in ${s.join(", ")}`).join("; ") + ".";
@@ -7851,8 +7865,10 @@ $("anCsv").onclick = async () => {
   const part = q.kind === "de" ? (r.all ? `de_every_${r.by}` : `de_${r.group}_vs_${r.reference}`) : q.kind === "markers" ? `top_genes_by_${r.by}`
     : q.kind === "run" ? `communication_${r.by}` : q.kind === "compare" ? `communication_by_${r.split}`
     : q.kind === "trajectory" ? `trajectory_genes_${r.label}` : q.kind === "coloc" ? `colocalization_${r.by}_${r.radius_um}um`
-    : `${r.cols}_per_${r.rows}`;
-  const name = `${st.sample.sample_id}_${part}`.replace(/[^A-Za-z0-9_.-]+/g, "_") + ".csv", url = `/api/analysis/${r.id}.csv?name=${encodeURIComponent(name)}`;
+    : q.kind === "composition" && r.test && r.test.id && (AN.view || "test") === "test" ? `${r.cols}_share_test_by_${r.rows}` : `${r.cols}_per_${r.rows}`;
+  const testView = q.kind === "composition" && r.test && r.test.id && (AN.view || "test") === "test";
+  const id = testView ? r.test.id : r.id;
+  const name = `${st.sample.sample_id}_${part}`.replace(/[^A-Za-z0-9_.-]+/g, "_") + ".csv", url = `/api/analysis/${id}.csv?name=${encodeURIComponent(name)}`;
   if (st.remote) { await saveDownload(name, url); return; }
   if (native()) { const path = await native().save_path(name); if (!path) return;
     try { const res = await fetch(url); if (!res.ok) throw new Error((await res.json()).error);

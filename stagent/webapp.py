@@ -1632,6 +1632,14 @@ def _keep_result(b, kind, result, table):
     except (ValueError, KeyError, OSError):
         pass
     try:
+        old = json.load(open(f))["result"].get("test", {}).get("id") if f.exists() else None
+        if old and (d / f"{old}.parquet").exists():
+            (d / f"{old}.parquet").unlink()
+    except (ValueError, KeyError, OSError, AttributeError):
+        pass
+    try:
+        if (result.get("test") or {}).get("id") and result["test"]["id"] in ANALYSES:
+            ANALYSES[result["test"]["id"]].to_parquet(d / f"{result['test']['id']}.parquet")
         table.to_parquet(d / f"{result['id']}.parquet")
     except Exception as e:  # the result stays; only its CSV is missing after a restart
         print(f"could not keep the table of {kind}: {e}", file=sys.stderr)
@@ -1760,8 +1768,16 @@ async def api_analysis_run(req: Request):
             r = analysis.markers(c, b["by"], top=15, within=within)
             table = pd.DataFrame([{"group": g["group"], "n_cells": g["n_cells"], **x} for g in r["groups"] for x in g["genes"]])
         elif b["kind"] == "composition":
-            r = analysis.crosstab(c, b["rows"], b["cols"], within)
+            r = analysis.crosstab(c, b["rows"], b["cols"], within, replicate=b.get("replicate") or None)
             table = pd.DataFrame([{b["rows"]: x["row"], "n_cells": x["n_cells"], **x["shares"]} for x in r["table"]]).fillna(0)
+            if r.get("test"):  # its own table (CSV): one row per value of cols
+                t = r["test"]
+                tt = pd.DataFrame([{b["cols"]: x["value"], "n_cells": x["n_cells"],
+                                    **{f"mean_share_{g}": x["mean_share"][g] for g in t["groups"]},
+                                    **{k: x[k] for k in ("log2_ratio", "t", "F") if k in x}, "p": x["p"], "fdr": x["fdr"]}
+                                   for x in t["values"]])
+                t["id"] = uuid.uuid4().hex[:12]
+                ANALYSES[t["id"]] = tt
         else:
             raise ValueError("kind must be de, deseq2, markers or composition")
         key = uuid.uuid4().hex[:12]

@@ -945,6 +945,15 @@ pseudobulk counts with replicates.
 **Composition**: how one grouping splits over another (cell types per niche, niches per region, niches per slice or per
 condition, with every slice's own bar), as shares or as log2 enrichment over independence.
 
+- **Test** (all slices, Rows a condition column with one value per slice): whether each cell type (or niche, ...)
+  makes up a different share of the cells between the conditions, with the **Replicates** (slices, or patients) as
+  the samples, as propeller: each replicate's shares, arcsine-square-root transformed, a linear model per type with
+  the variances moderated across types (as limma); two conditions give a moderated t and the log2 ratio of the mean
+  shares, more give an F; FDR by Benjamini-Hochberg. It needs 2 or more replicates per condition (3 or more is
+  better); replicates under 20 cells are left out. Save CSV keeps the test table.
+- On simulated slices (15 types, 3 vs 3 slices) p < 0.05 came out in 4% of unchanged types, and a type 3 times as
+  common in one condition was found (FDR < 0.05) in about 90% of runs, 2 times in about half.
+
 **Dot plot** (DE genes and Top genes): one row per group, dot size = share of cells detecting the gene, color = its
 mean expression scaled per gene. For one DE comparison only its two sides (the group and the reference or all other
 cells). The number in the window sets how many genes the table and the plot show (DE: 5–60, the plot the top N up and

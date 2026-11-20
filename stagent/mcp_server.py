@@ -1888,14 +1888,20 @@ def group_markers(by: str, top: int = 8, within: Optional[dict] = None, scope: s
 
 
 @mcp.tool()
-def composition(rows: str, cols: str, within: Optional[dict] = None, scope: str = "slice") -> str:
+def composition(rows: str, cols: str, within: Optional[dict] = None, scope: str = "slice",
+                replicate: Optional[str] = None) -> str:
     """How the cells of one grouping split over another: per value of rows its cell count, the share of each value of
     cols and the log2 enrichment over independence, e.g. rows="niche", cols="cell type"; rows="region",
     cols="niche"; scope="project", rows="slice" (or a metadata column such as condition, which also gives every
-    slice's shares), cols="niche"."""
+    slice's shares), cols="niche".
+    With scope="project" and rows a condition column (one value per slice), "test" says whether each value of cols
+    makes up a different share between the conditions, the replicates (replicate: "slice", or a patient / donor
+    column; default the donor-like column, else slice) as the samples (propeller: arcsine-square-root shares,
+    moderated t for two conditions, F for more, FDR); "test_note" says why there is none (e.g. one slice per
+    condition). Report the FDR and the mean shares per condition, not the pooled cell counts."""
     from . import analysis
     c = _cells(scope, _uses_selection(rows, cols, within))
-    return _j(analysis.crosstab(c, rows, cols, within))
+    return _j(analysis.crosstab(c, rows, cols, within, replicate=replicate))
 
 
 @mcp.tool()
