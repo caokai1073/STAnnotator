@@ -3,7 +3,7 @@
 #   Windows 10 / 11 (x64): packaging\windows\build.ps1  ->  dist\STAnnotator\STAnnotator.exe (the window) and
 #                          stagent.exe (console: Claude Code runs "stagent.exe mcp"), zipped as dist\STAnnotator-windows.zip
 #   Linux (to test the bundle): pyinstaller packaging/stannotator.spec  ->  dist/STAnnotator/
-import sys
+import platform, sys
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_all, copy_metadata
 
@@ -105,7 +105,7 @@ if sys.platform == "win32":
     coll = COLLECT(exe, cli, a.binaries, a.datas, name="STAnnotator")
 else:
     exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="STAnnotator", console=sys.platform != "darwin",
-              argv_emulation=False, target_arch="arm64" if sys.platform == "darwin" else None)
+              argv_emulation=False, target_arch=platform.machine() if sys.platform == "darwin" else None)  # (arm64 or x86_64: the build Mac's)
     coll = COLLECT(exe, a.binaries, a.datas, name="STAnnotator")
 if sys.platform == "darwin":
     icon = ROOT / "packaging" / "macos" / "AppIcon.icns"

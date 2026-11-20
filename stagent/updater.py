@@ -15,6 +15,7 @@ The data folder and the settings are not touched. A copy run from source is told
 """
 import json
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -50,14 +51,37 @@ def can_install():
     return bool(config.FROZEN) and _platform() in ("mac", "win")
 
 
+def _mac_intel():
+    """True on an Intel Mac. Asked of the hardware (sysctl hw.optional.arm64), not of this process: an Apple silicon
+    Mac running the Intel app under Rosetta reports x86_64, and its update should be the Apple silicon app."""
+    if _platform() != "mac":
+        return False
+    try:
+        import subprocess
+        out = subprocess.run(["sysctl", "-n", "hw.optional.arm64"], capture_output=True, text=True, timeout=5).stdout
+        return out.strip() != "1"
+    except Exception:
+        return platform.machine() == "x86_64"
+
+
+def pick_asset(assets, plat, intel=False):
+    """The release file for this computer: Windows the .exe; a Mac the .dmg of its processor (STAnnotator-Intel.dmg on
+    an Intel Mac, the other .dmg on Apple silicon); None when the release has none (an Intel Mac before Intel builds)."""
+    names = [(a, a.get("name", "").lower()) for a in assets]
+    if plat == "win":
+        return next((a for a, n in names if n.endswith(".exe")), None)
+    if plat == "mac":
+        return next((a for a, n in names if n.endswith(".dmg") and ("intel" in n) == bool(intel)), None)
+    return None
+
+
 def _fetch_latest(timeout=15):
     import urllib.request
     req = urllib.request.Request(API, headers={"Accept": "application/vnd.github+json", "User-Agent": "STAnnotator-app"})
     from .osutil import https_context
     with urllib.request.urlopen(req, timeout=timeout, context=https_context()) as r:
         rel = json.loads(r.read().decode("utf-8"))
-    want = {"mac": ".dmg", "win": ".exe"}.get(_platform())
-    asset = next((a for a in rel.get("assets", []) if want and a.get("name", "").lower().endswith(want)), None)
+    asset = pick_asset(rel.get("assets", []), _platform(), _mac_intel())
     return {"version": str(rel.get("tag_name", "")).lstrip("v"), "notes": rel.get("body") or "",
             "page": rel.get("html_url") or PAGE, "published": rel.get("published_at"),
             "asset": {"name": asset["name"], "url": asset["browser_download_url"], "bytes": asset.get("size")} if asset else None,

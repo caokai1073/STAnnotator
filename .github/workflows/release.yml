@@ -1,4 +1,5 @@
-# Build the macOS DMG (signed and notarized) and the Windows installer, and publish them as a GitHub release.
+# Build the macOS DMGs (signed and notarized; STAnnotator.dmg for Apple silicon, STAnnotator-Intel.dmg for Intel Macs)
+# and the Windows installer, and publish them as a GitHub release.
 #
 # A tag v<version> that matches stagent/__init__.py starts it: git tag v0.2.49 && git push origin v0.2.49
 # The release notes come from packaging/release_notes/v<version>.md (the app shows them in its update window).
@@ -44,7 +45,17 @@ jobs:
 
   macos:
     needs: version
-    runs-on: macos-15   # Apple silicon (macos-14 is retired)
+    strategy:
+      fail-fast: false   # (an Intel build that fails does not stop the Apple silicon one)
+      matrix:
+        include:
+          - runner: macos-15          # Apple silicon (macos-14 is retired)
+            dmg: STAnnotator.dmg
+            artifact: macos
+          - runner: macos-15-intel    # Intel: the app without MLX (the CPU neighbor search)
+            dmg: STAnnotator-Intel.dmg
+            artifact: macos-intel
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v7
@@ -81,11 +92,13 @@ jobs:
       - name: Build, sign and notarize
         env:
           DEVELOPER_ID: ${{ secrets.MACOS_DEVELOPER_ID }}
-        run: bash packaging/macos/build_app.sh
+        run: |
+          bash packaging/macos/build_app.sh
+          if [ "${{ matrix.dmg }}" != "STAnnotator.dmg" ]; then mv dist/STAnnotator.dmg "dist/${{ matrix.dmg }}"; fi
       - uses: actions/upload-artifact@v7
         with:
-          name: macos
-          path: dist/STAnnotator.dmg
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.dmg }}
           if-no-files-found: error
 
   windows:
@@ -121,7 +134,8 @@ jobs:
 
   release:
     needs: [version, macos, windows]
-    if: github.ref_type == 'tag'
+    # published when the Apple silicon DMG and the Windows installer are there; the Intel DMG goes along when it built
+    if: github.ref_type == 'tag' && !cancelled() && needs.version.result == 'success' && needs.windows.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -135,10 +149,13 @@ jobs:
         run: |
           v="${{ needs.version.outputs.version }}"
           ls -la assets
+          [ -f assets/STAnnotator.dmg ] && [ -f assets/STAnnotator-Setup.exe ] || { echo "::error::the Apple silicon DMG or the Windows installer is missing"; exit 1; }
+          files="assets/STAnnotator.dmg assets/STAnnotator-Setup.exe"
+          if [ -f assets/STAnnotator-Intel.dmg ]; then files="$files assets/STAnnotator-Intel.dmg"; else echo "::warning::no Intel DMG in this release"; fi
           if gh release view "v$v" > /dev/null 2>&1; then
-            gh release upload "v$v" assets/STAnnotator.dmg assets/STAnnotator-Setup.exe --clobber
+            gh release upload "v$v" $files --clobber
             gh release edit "v$v" --notes-file "packaging/release_notes/v$v.md" --latest
           else
-            gh release create "v$v" assets/STAnnotator.dmg assets/STAnnotator-Setup.exe \
+            gh release create "v$v" $files \
               --title "STAnnotator $v" --notes-file "packaging/release_notes/v$v.md" --latest
           fi

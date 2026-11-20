@@ -1,10 +1,13 @@
 #!/bin/bash
-# Build the standalone app on a Mac with Apple silicon: dist/STAnnotator.app and dist/STAnnotator.dmg.
+# Build the standalone app on a Mac: dist/STAnnotator.app and dist/STAnnotator.dmg, for the Mac's own processor
+# (Apple silicon: with MLX, the exact neighbor search on the Apple GPU; Intel: without it, the CPU search; the release
+# names the Intel image STAnnotator-Intel.dmg).
 # With DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)" set, the app and the DMG are also signed and
 # notarized (packaging/macos/sign_and_notarize.sh, which explains the one-time setup); otherwise signed ad hoc.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-[ "$(uname -m)" = "arm64" ] || { echo "build on an Apple silicon Mac"; exit 1; }
+ARCH=$(uname -m)   # arm64 (Apple silicon) or x86_64 (Intel)
+[ "$ARCH" = "arm64" ] || [ "$ARCH" = "x86_64" ] || { echo "unknown Mac processor: $ARCH"; exit 1; }
 uv venv --allow-existing .build-venv --python 3.12
 # exactly the packages of the lock file (versions and hashes: packaging/lock/update.sh updates them), then the app's
 # own code without its dependencies (--reinstall-package: an earlier build left the same version in .build-venv)
@@ -12,10 +15,12 @@ uv pip sync --python .build-venv/bin/python --require-hashes packaging/lock/mac.
 uv pip install --python .build-venv/bin/python --no-deps --reinstall-package stagent .
 # MLX (the exact neighbor search on the Apple GPU) in its build for macOS 14, the oldest it has: uv would take the
 # build for the macOS it runs on (macOS 15 on the release runner), which a Mac on macOS 14 cannot load
-MLX=$(sed -n 's/^ *"mlx==\([0-9.]*\);.*/\1/p' pyproject.toml)
-MACOSX_DEPLOYMENT_TARGET=14.0 uv pip install --python .build-venv/bin/python --python-platform aarch64-apple-darwin \
-  --reinstall --no-deps "mlx==$MLX" "mlx-metal==$MLX"
-.build-venv/bin/python -c "import mlx.core as mx; print('MLX', mx.__version__, '(Apple GPU here:', mx.is_available(mx.gpu), ')')"
+if [ "$ARCH" = "arm64" ]; then  # (MLX has no Intel build: the Intel app searches neighbors on the CPU)
+  MLX=$(sed -n 's/^ *"mlx==\([0-9.]*\);.*/\1/p' pyproject.toml)
+  MACOSX_DEPLOYMENT_TARGET=14.0 uv pip install --python .build-venv/bin/python --python-platform aarch64-apple-darwin \
+    --reinstall --no-deps "mlx==$MLX" "mlx-metal==$MLX"
+  .build-venv/bin/python -c "import mlx.core as mx; print('MLX', mx.__version__, '(Apple GPU here:', mx.is_available(mx.gpu), ')')"
+fi
 # every requirement of pyproject.toml met by the lock file (a package added there and not to the lock fails here)
 uv pip check --python .build-venv/bin/python
 # app icon (.icns) from the PNG
