@@ -1043,7 +1043,7 @@ footer .counted { flex-basis: 100%; margin: 0; }
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"></path></svg>
               <span>Download for Mac<small>Apple silicon · STAnnotator.dmg</small></span>
             </a>
-            <p class="intel-mac">Intel Mac? <a href="#" data-dmg-intel>STAnnotator-Intel.dmg</a> (Apple menu &gt; About This Mac:
+            <p class="intel-mac">Intel Mac? <a href="#" data-dmg-intel>STAnnotator_Intel.dmg</a> (Apple menu &gt; About This Mac:
               a Chip line means Apple silicon, a Processor line with Intel means Intel)</p>
             <ol>
               <li>Open the downloaded <code>.dmg</code> and drag STAnnotator to Applications.</li>
@@ -1132,7 +1132,7 @@ uv pip install --python .venv/bin/python -e .
 const REPO = "https://github.com/caokai1073/STAnnotator";
 const setLinks = (sel, url) => document.querySelectorAll(sel).forEach((a) => { a.href = url; });
 setLinks("[data-dmg]", REPO + "/releases/latest/download/STAnnotator.dmg");
-setLinks("[data-dmg-intel]", REPO + "/releases/latest/download/STAnnotator-Intel.dmg");
+setLinks("[data-dmg-intel]", REPO + "/releases/latest/download/STAnnotator_Intel.dmg");
 setLinks("[data-exe]", REPO + "/releases/latest/download/STAnnotator-Setup.exe");
 fetch("https://api.github.com/repos/caokai1073/STAnnotator/releases/latest")
   .then((r) => (r.ok ? r.json() : null))

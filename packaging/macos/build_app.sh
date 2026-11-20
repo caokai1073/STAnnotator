@@ -1,7 +1,7 @@
 #!/bin/bash
 # Build the standalone app on a Mac: dist/STAnnotator.app and dist/STAnnotator.dmg, for the Mac's own processor
 # (Apple silicon: with MLX, the exact neighbor search on the Apple GPU; Intel: without it, the CPU search; the release
-# names the Intel image STAnnotator-Intel.dmg).
+# names the Intel image STAnnotator_Intel.dmg).
 # With DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)" set, the app and the DMG are also signed and
 # notarized (packaging/macos/sign_and_notarize.sh, which explains the one-time setup); otherwise signed ad hoc.
 set -euo pipefail

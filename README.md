@@ -49,7 +49,7 @@ Three ways to run it:
 
 **Install the app on a Mac**
 
-Download `STAnnotator.dmg` (Apple silicon) or `STAnnotator-Intel.dmg` (Intel Macs) from the
+Download `STAnnotator.dmg` (Apple silicon) or `STAnnotator_Intel.dmg` (Intel Macs) from the
 [latest release](https://github.com/caokai1073/STAnnotator/releases/latest), open it and drag **STAnnotator** to
 Applications. It contains everything; no Python needed. (Apple menu > About This Mac: a "Chip" line means Apple
 silicon, a "Processor" line with Intel means Intel.) The app updates itself with the file for its Mac.

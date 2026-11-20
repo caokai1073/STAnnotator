@@ -1,4 +1,4 @@
-# Build the macOS DMGs (signed and notarized; STAnnotator.dmg for Apple silicon, STAnnotator-Intel.dmg for Intel Macs)
+# Build the macOS DMGs (signed and notarized; STAnnotator.dmg for Apple silicon, STAnnotator_Intel.dmg for Intel Macs)
 # and the Windows installer, and publish them as a GitHub release.
 #
 # A tag v<version> that matches stagent/__init__.py starts it: git tag v0.2.49 && git push origin v0.2.49
@@ -53,7 +53,9 @@ jobs:
             dmg: STAnnotator.dmg
             artifact: macos
           - runner: macos-15-intel    # Intel: the app without MLX (the CPU neighbor search)
-            dmg: STAnnotator-Intel.dmg
+            # "_" sorts after ".": GitHub lists a release's files by name, and apps up to 0.2.60 install the first .dmg
+            # they find, so STAnnotator.dmg must come first (a "-" here would put the Intel app on every Apple silicon Mac)
+            dmg: STAnnotator_Intel.dmg
             artifact: macos-intel
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
@@ -150,8 +152,12 @@ jobs:
           v="${{ needs.version.outputs.version }}"
           ls -la assets
           [ -f assets/STAnnotator.dmg ] && [ -f assets/STAnnotator-Setup.exe ] || { echo "::error::the Apple silicon DMG or the Windows installer is missing"; exit 1; }
+          # apps up to 0.2.60 install the first .dmg of the release, and GitHub lists the files by name: that must be
+          # the Apple silicon one
+          first=$(cd assets && ls *.dmg | LC_ALL=C sort | head -1)
+          [ "$first" = "STAnnotator.dmg" ] || { echo "::error::$first would come before STAnnotator.dmg: older apps would install it"; exit 1; }
           files="assets/STAnnotator.dmg assets/STAnnotator-Setup.exe"
-          if [ -f assets/STAnnotator-Intel.dmg ]; then files="$files assets/STAnnotator-Intel.dmg"; else echo "::warning::no Intel DMG in this release"; fi
+          if [ -f assets/STAnnotator_Intel.dmg ]; then files="$files assets/STAnnotator_Intel.dmg"; else echo "::warning::no Intel DMG in this release"; fi
           if gh release view "v$v" > /dev/null 2>&1; then
             gh release upload "v$v" $files --clobber
             gh release edit "v$v" --notes-file "packaging/release_notes/v$v.md" --latest

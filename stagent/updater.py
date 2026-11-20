@@ -65,8 +65,9 @@ def _mac_intel():
 
 
 def pick_asset(assets, plat, intel=False):
-    """The release file for this computer: Windows the .exe; a Mac the .dmg of its processor (STAnnotator-Intel.dmg on
-    an Intel Mac, the other .dmg on Apple silicon); None when the release has none (an Intel Mac before Intel builds)."""
+    """The release file for this computer: Windows the .exe; a Mac the .dmg of its processor (STAnnotator_Intel.dmg on
+    an Intel Mac; its "_" keeps it after STAnnotator.dmg in GitHub's name order, which apps up to 0.2.60 rely on: they
+    take the first .dmg), the other .dmg on Apple silicon); None when the release has none (an Intel Mac before Intel builds)."""
     names = [(a, a.get("name", "").lower()) for a in assets]
     if plat == "win":
         return next((a for a, n in names if n.endswith(".exe")), None)
