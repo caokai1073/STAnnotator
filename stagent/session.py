@@ -225,7 +225,7 @@ class Session:
     # ---------- creation / persistence ----------
     @classmethod
     def create(cls, sample_id, region_source="none", method="markers", markers_text=None, resolution=None,
-               carry_from=None, reference=None, existing=None, knn=None, spillover=True):
+               carry_from=None, reference=None, existing=None, knn=None, spillover=True, stains=True):
         """method 'markers' (default): hierarchical marker annotation (Leiden + marker scores) of this sample; the data
         is treated as having no cell type labels. markers_text: the marker list (indented text or CSV); required.
         knn: the marker step's neighbor search, "exact" (the true neighbors) or "approx" (pynndescent on 8 threads:
@@ -238,6 +238,8 @@ class Session:
         "majority_voting"}) trains a CellTypist-like classifier on the genes it shares with the panel.
         method 'existing': an annotation loaded from a CSV (existing = {"path", "id_column", "label_column",
         optional "lineage_column"}); its labels stay the labels, the expression model adds confidences.
+        stains (default on): the sample's protein / immunofluorescence stains (CosMx Mean.<stain>, Xenium protein
+        features), when it has them, as evidence of the types (protein.py); kept in scheme["stains"].
         method 'reference': expression model trained on the dataset's labeled slides (benchmarks only).
         method 'none': the sample's placeholder before it is annotated (the app opens it for a sample without an
         annotation): every cell is "Not annotated", nothing is computed; regions can be drawn and the registration
@@ -296,6 +298,8 @@ class Session:
             scheme = {"kind": "none", "types": [NOT_ANNOTATED], "lineage_of_type": {NOT_ANNOTATED: NOT_ANNOTATED}}
         elif method != "reference":
             raise ValueError("method must be 'markers', 'scref', 'existing', 'none' or 'reference'")
+        if method != "none":
+            scheme["stains"] = bool(stains)
         if method != "none" and not carry_from:  # regions drawn before the sample was annotated come along
             ph = placeholder(sample_id)
             last = sorted((config.SESSIONS / ph / "versions").glob("v*.json"))[-1:] if ph else []
@@ -711,8 +715,22 @@ class Session:
         if self.scheme["kind"] == "scref" and self.scheme["reference"].get("majority_voting"):
             from . import scref
             logp = scref.majority_vote(logp, self._overclusters(say))
+        if self.scheme.get("stains") and not self.scheme.get("joint"):  # protein / IF stains as evidence
+            from . import protein
+            say(0.96, "reading the protein / IF stains")
+            names, P, ok = protein.positives(self.sample_id, self.cells.cell_id.astype(str).to_numpy())
+            if names:
+                say(0.97, f"the stains as evidence ({', '.join(names)})")
+                logp = protein.apply(logp, logp.argmax(1), P, ok)[0].astype(logp.dtype)
         say(1.0, "expression model ready")
         return logp
+
+    def stains_used(self):
+        """The stains this annotation uses as evidence ([] when off or none)."""
+        if not self.scheme.get("stains") or self.scheme.get("joint"):
+            return []
+        from . import protein
+        return protein.available(self.sample_id)
 
     def knn(self):
         """Row indices of every cell's K nearest neighbors (itself excluded)."""
@@ -786,6 +804,7 @@ class Session:
                 "marker_list": self.scheme.get("text"), "reference": self.scheme.get("reference"),
                 "knn": self.knn_mode() if self.scheme["kind"] == "markers" else None,
                 "existing": self.scheme.get("existing"), "joint": self.scheme.get("joint"),
+                "stains": self.stains_used() if self.scheme["kind"] != "none" else [],
                 "regions": self.region_names(), "free_regions": vocab.FREE_REGIONS, "kinds": cmod.KINDS,
                 "modes": cmod.MODES, "strengths": cmod.STRENGTH, "verdicts": vocab.VERDICTS,
                 "depth_note": "depth = distance to the mucosa core (epithelial-marker density); 0 inside crypts",

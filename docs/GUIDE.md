@@ -592,6 +592,16 @@ Histograms show where each threshold cuts and the dialog counts what goes; empty
      GB for 700,000 cells, 4.6 GB for 2 million). With too little free memory they run one after the other, as with
      the switch off. The same cell types either way; about 20% faster on large samples (708,983 cells: 227 s →
      184 s). The time estimate's details (hover) give the number of processes.
+   - **Use protein / IF stains** (every method, on by default; shown for a sample with stains): CosMx and Xenium can
+     measure protein or immunofluorescence stains per cell (CosMx: the `Mean.<stain>` columns of the cell metadata,
+     e.g. PanCK, CD45, CD3; Xenium: the protein features of the cell feature matrix). They are read at import (older
+     samples: when first annotated, if the import's files are still there) and kept with the sample. Each stain is
+     made positive or negative per cell (Otsu's threshold on log intensity); each cell type's share of positive cells
+     is read from the annotation itself; every cell's stains then reweigh its types (tempered, as a stain can spill
+     into a neighbor). No stain needs to be matched to a type, and stains all types share (DAPI, membrane) change
+     nothing. On two CosMx slides, leaving one stain out and using the others, the annotation agreed a little better
+     with the one left out (PanCK AUROC 0.962 → 0.963 and 0.966 → 0.967, CD45 0.748 → 0.750); on a 790,000-cell colon
+     slide 2.4% of the cells changed, mostly between close types. Annotations made before 0.2.61 keep their results.
 4. Click **Annotate**.
 
 The cells the marker step could not type get a type from their marker genes and then, round by round, from the cell

@@ -575,6 +575,11 @@ def _d_start_session(a):
                    + ".")
         if a.get("spillover", True):
             det.append("Spillover from neighboring cells left out (on by default).")
+    if a.get("stains", True):
+        from . import protein
+        st_ = protein.available(a["sample_id"])
+        if st_:
+            det.append(f"Protein / IF stains as evidence of the types (on by default): {', '.join(st_)}.")
     cur = _active.get("session")
     if a.get("carry_from_current") and cur:
         det.append(f"Copies the regions, priors and corrections of the open annotation {cur.id}")
@@ -1030,7 +1035,8 @@ def start_session(sample_id: str, markers_text: Optional[str] = None,
                   carry_from_current: bool = False, reference_h5ad: Optional[str] = None,
                   label_column: Optional[str] = None, group_column: Optional[str] = None,
                   majority_voting: bool = False, annotation_csv: Optional[str] = None, id_column: Optional[str] = None,
-                  lineage_column: Optional[str] = None, knn: Optional[str] = None, spillover: bool = True) -> str:
+                  lineage_column: Optional[str] = None, knn: Optional[str] = None, spillover: bool = True,
+                  stains: bool = True) -> str:
     """Start a new annotation session on a sample. The data is treated as unlabeled: cell types come from a
     hierarchical marker gene list (markers_text: indented text as in check_marker_list, or CSV with columns
     cell_type, parent, positive_markers, negative_markers; required).
@@ -1048,7 +1054,10 @@ def start_session(sample_id: str, markers_text: Optional[str] = None,
     user asks for one.
     spillover (marker list only): leave out transcripts spilled over from neighboring cells in the marker step (a
     gene counts in a cell only above a tenth of its mean count in the 6 nearest cells); on by default, turn it off
-    only when the user asks. The cells the marker step cannot type are always
+    only when the user asks. stains (on by default): the sample's protein / immunofluorescence stains (CosMx PanCK,
+    CD45, CD3..., Xenium protein features), when it has them, are evidence of the types (each type's positive rate is
+    read from the annotation; a cell's stains reweigh its types); turn it off only when the user asks. The cells the
+    marker step cannot type are always
     typed with their marker genes and their neighbors' types.
     """
     carry = _active["session"].id if carry_from_current and _active.get("session") else None
@@ -1061,7 +1070,8 @@ def start_session(sample_id: str, markers_text: Optional[str] = None,
                "majority_voting": majority_voting}
     method = "existing" if ex else "scref" if ref else "markers"
     _active["session"] = Session.create(sample_id, "none", method=method, markers_text=markers_text,
-                                        carry_from=carry, reference=ref, existing=ex, knn=knn, spillover=spillover)
+                                        carry_from=carry, reference=ref, existing=ex, knn=knn, spillover=spillover,
+                                        stains=stains)
     return _j(_active["session"].summary())
 
 

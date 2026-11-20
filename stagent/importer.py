@@ -454,6 +454,14 @@ def _write_bundle(name, ids, xy, X, genes, image, A, regions, description, sourc
             shutil.rmtree(tmp, ignore_errors=True)
     if (source or {}).get("registration"):  # a cell positions file: its cells where it puts them
         keep_positions(name, source["registration"], progress)
+    if (source or {}).get("kind") in ("cosmx", "xenium"):  # protein / IF stains per cell, kept for the annotations
+        try:
+            from . import protein
+            st = protein.ensure(name)
+            if st is not None:
+                progress(f"  stains per cell: {', '.join(st.columns[1:])}")
+        except Exception as e:
+            progress(f"  stains not read: {e}")
     progress(f"imported sample {name} into {out}")
     return json.load(open(out / "meta.json"))
 

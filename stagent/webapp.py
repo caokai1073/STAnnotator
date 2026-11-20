@@ -1558,6 +1558,21 @@ async def api_import(req: Request):
     return await _spawn(job, work) or _json({"job": job})
 
 
+def _stains_of(sample_id, meta):
+    """The stains a sample has: names, [] (none), or None (CosMx / Xenium not looked at yet: read when annotating)."""
+    from . import protein
+    d = config.SAMPLES / sample_id
+    if (d / "protein.parquet").exists():
+        try:
+            import pyarrow.parquet as pq
+            return [c for c in pq.read_schema(d / "protein.parquet").names[1:] if c not in protein.SKIP]
+        except Exception:
+            return None
+    if (d / "protein.none").exists() or (meta.get("source") or {}).get("kind") not in ("cosmx", "xenium"):
+        return []
+    return None
+
+
 def api_samples(req):
     t = list_samples()
     ss = list_sessions()
@@ -1576,7 +1591,7 @@ def api_samples(req):
                          "spaceranger": visium.is_bins(meta),  # placed on a grid by its pipeline: no nuclei registration check
                          "platform": {"visium_hd": "Visium HD", "visium": "Visium", "stereoseq": "Stereo-seq"}.get(
                              (meta.get("source") or {}).get("kind")),
-                         "n_genes": meta.get("n_genes"),
+                         "n_genes": meta.get("n_genes"), "stains": _stains_of(r["sample_id"], meta),
                          "image_only": bool(meta.get("image_only")), "um_per_px_known": meta.get("um_per_px_known", True),
                          "filter": {"params": f["params"], "n_cells_removed": f["n_cells_removed"],
                                     "n_genes_removed": len(f["genes_removed"])} if (f := meta.get("filter")) else None,
@@ -2088,7 +2103,7 @@ async def api_annotate(req: Request):
             sid = Session.create(sample, b.get("region_source", "none"), method=b.get("method", "markers"),
                                  markers_text=b.get("markers_text"), resolution=b.get("resolution"),
                                  carry_from=b.get("carry_from"), reference=b.get("reference"),
-                                 existing=b.get("existing"), knn=b.get("knn"),
+                                 existing=b.get("existing"), knn=b.get("knn"), stains=bool(b.get("stains", True)),
                                  spillover=bool(b.get("spillover", True))).id
         except (ValueError, OSError, KeyError) as e:
             return _json({"error": str(e)}, 400)

@@ -16,7 +16,7 @@ from . import config, embedding, niches, render
 # visium and stereoseq before importer, which imports them; rds (R files, read without R) for samples and references
 # imported from an .rds / .rda: importer converts it to an h5ad again, in converted/ next to the notebook
 CARRIED = ["osutil", "csrutil", "harmony", "timing", "vocab", "markers", "model", "constraints", "regions", "existing", "visium", "stereoseq", "rds", "importer", "scref",
-           "trajectory"]
+           "trajectory", "protein"]
 # printed after a comparison with the original that a replay on one slice cannot match (computed on all slices)
 _JOINT_NOTE = (', "(computed on all slices of the project together: this slice alone gives other ones; '
                'Export > Save project replays them exactly)"')
@@ -264,6 +264,11 @@ if REFERENCE.get("majority_voting"):
     tnames = sorted(set(labels))
     tcodes = np.searchsorted(tnames, labels)
     comp = pd.Series(labels).value_counts().rename_axis("cell type").to_frame("cells").head(30)
+    if s.stains_used():  # protein / IF stains as evidence (as Session._train_base)
+        base += f'''
+STAIN_SOURCE = {_py(meta.get("source"))}
+names, P, ok = sa.protein.positives_df(sa.protein.read(STAIN_SOURCE), cell_ids)   # stains from the import's files
+logp = sa.protein.apply(logp, logp.argmax(1), P, ok)[0].astype(logp.dtype)        # stains as evidence of the types'''
     nb.append(_code(base + f'''
 base_pred, _ = sa.constraints.posterior(logp, [], None, TYPES)          # expression only
 region = sa.regions.assign(cells, STATE["regions"])                    # drawn regions

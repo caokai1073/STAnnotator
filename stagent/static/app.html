@@ -621,6 +621,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <details class="adv" id="annAdv"><summary>Advanced <span id="annAdvOn" class="advon"></span></summary><div class="advsw">
       <label class="switch" id="spillWrap" data-short="spillover out" title="In imaging data a cell's outline also catches transcripts of its neighbors. On: a gene counts as detected in a cell only where its count is above a tenth of the mean count of its 6 nearest cells. It helped on a MERFISH slice (lineage agreement 0.785 → 0.816 against the authors' labels) and changed little on Xenium sections; try it when many cells stay untyped or markers of neighboring types show up where they should not"><input type="checkbox" id="spill" checked>
         <span>Leave out spillover<small>transcripts that come from neighboring cells</small></span></label>
+      <label class="switch" id="stainsWrap" data-short="stains" hidden title="CosMx and Xenium can measure protein / immunofluorescence stains in every cell (e.g. PanCK, CD45, CD3). On: each cell type's share of stain-positive cells is read from the annotation, and every cell's stains reweigh its types (a PanCK-negative cell moves away from the types that are mostly PanCK-positive); stains all types share (DAPI, membrane) change nothing. Checked on two CosMx slides by leaving one stain out: the annotation agreed a little better with it (PanCK AUROC 0.962 → 0.963, CD45 0.748 → 0.750)"><input type="checkbox" id="stains" checked>
+        <span>Use protein / IF stains<small id="stainsList">stains measured per cell as evidence</small></span></label>
       <label class="switch" id="parWrap" data-short="parallel" title="Automatic (on by default): the Leiden clusterings each level tries (4 resolutions) run at once in separate processes, as many as the free memory allows after what the annotation itself needs at its peak (each process about 1.8 GB for 700,000 cells, 4.6 GB for 2 million); with too little free memory they run one after the other, as with the switch off. The same cell types either way; about 20% faster on large samples (708,983 cells: 227 s → 184 s). A setting of this computer, for the agent's annotations too"><input type="checkbox" id="leidenPar" checked>
         <span>Parallel clustering<small>automatic: as many processes as the free memory allows</small></span></label>
       <label class="switch" id="carryWrap" data-short="keep my edits" style="visibility:hidden" title="Start the new annotation with the regions (and their colors), priors and hand corrections of the one that is open; priors and corrections naming cell types the new annotation does not have are dropped"><input type="checkbox" id="carry" checked>
@@ -1848,6 +1850,7 @@ async function selectSample(id) {
   st.sliceSwitch = false;
   fillSessions(sid);
   setMarkers("", "");  // no default list: import or load one for this sample
+  syncStains();
   estimateAnnotation();
   if (sid) await startAnnotation("continue", sid, token);
   else if (!ids.length) await openPlaceholder(token);  // not annotated yet: regions and the registration still work
@@ -1926,6 +1929,7 @@ async function startAnnotation(mode, sid, token = st.switchToken) {
   const body = { sample_id: st.sample.sample_id, region_source: "none", mode, method,
                  markers_text: $("mkText").value, resolution: $("mkAuto").checked ? "auto" : +$("mkRes").value,
                  knn: $("knn").value, estimate_s: EST.last ? EST.last[$("knn").value].seconds : null, spillover: $("spill").checked,
+                 stains: $("stains").checked,
                  carry_from: mode === "new" && st.sid && ($("carry").checked || st.placeholder) ? st.sid : null };
   if (mode === "new" && method === "existing") {
     body.existing = { path: $("exPath").value.trim(), id_column: $("exId").value, label_column: $("exLabel").value, lineage_column: $("exLin").value };
@@ -4217,7 +4221,13 @@ function showMethod() {
   $("knnWrap").hidden = m !== "markers";
   $("spillWrap").hidden = m !== "markers";
   $("parWrap").hidden = m !== "markers";
+  syncStains();
   estimateAnnotation();
+}
+function syncStains() {  // the switch only for a sample with stains (CosMx / Xenium; [] = none, null = not read yet)
+  const s = st.sample, list = s && s.stains;
+  $("stainsWrap").hidden = !s || s.image_only || (Array.isArray(list) && !list.length);
+  $("stainsList").textContent = Array.isArray(list) && list.length ? list.join(", ") : "stains measured per cell as evidence";
 }
 function duration(s) {  // as timing.words on the server
   if (s < 50) return "under a minute";
@@ -4280,6 +4290,8 @@ function defaultKnn(e) {
 }
 $("knn").onchange = () => { syncSeg("knn"); if (knnKey()) store(knnKey(), $("knn").value); showEstimate(); };
 if (load("spill") === "off") $("spill").checked = false;
+if (load("stains") === "off") $("stains").checked = false;
+$("stains").onchange = () => store("stains", $("stains").checked ? "on" : "off");
 $("spill").onchange = () => store("spill", $("spill").checked ? "on" : "off");
 // Type tab: the switches in Advanced; its summary names those on, and it is hidden when none applies
 function syncAnnAdv() {
