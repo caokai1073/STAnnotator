@@ -1489,6 +1489,7 @@ function tileSource(url) {
 function openHE(sample) {
   return api(`/api/sample/${sample}/he_info`).then((he) => {
     st.he = he;
+    if (he.image_error) toast(he.image_error, 15000);  // (no permission, or the image moved: the cells without it)
     const kind = he.image_kind || "H&E";
     $("hideHE").hidden = kind === "none";
     setLabel($("hideHE"), `Hide the ${kind === "H&E" ? "H&E" : "image"}: the cells only (e)`);

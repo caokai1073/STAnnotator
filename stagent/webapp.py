@@ -113,6 +113,19 @@ def _idle_release(every=120):
 
 
 
+def image_error_text(path, e):
+    """What to tell the user when the sample's image cannot be opened."""
+    import errno
+    if isinstance(e, FileNotFoundError):
+        return (f"The image {path} is no longer there (moved, renamed or deleted): the cells are shown without it. "
+                "Put it back, or import the image again (Import > Image of this sample).")
+    if e.errno in (errno.EPERM, errno.EACCES) and sys.platform == "darwin":
+        return (f"macOS does not let STAnnotator read the image {path}. Allow it in System Settings > Privacy & "
+                "Security > Files and Folders > STAnnotator (the folder it is in, e.g. Downloads), or Full Disk "
+                "Access, then click Refresh. Until then the cells are shown without the image.")
+    return f"The image {path} cannot be read ({e.strerror or e}): the cells are shown without it."
+
+
 class SampleView:
     """Virtual image = the sample's bounding box on its H&E slide (the slide holds two sections)."""
 
@@ -120,8 +133,12 @@ class SampleView:
         meta = json.load(open(config.SAMPLES / sample_id / "meta.json"))
         self.sample_id = sample_id
         self.um_per_px = float(meta.get("he_um_per_px", config.HE_UM_PER_PX))
-        self.slide = render.slide(meta.get("he_path"))
         self.image_kind = meta.get("image_kind", "H&E")
+        self.image_error = None
+        try:
+            self.slide = render.slide(meta.get("he_path"))
+        except OSError as e:  # the image cannot be read: the cells on a blank background, and why (he_info says it)
+            self.slide, self.image_kind, self.image_error = render.BlankSlide(), "none", image_error_text(meta.get("he_path"), e)
         cells = pd.read_parquet(config.SAMPLES / sample_id / "cells.parquet", columns=["px", "py"])
         px, py = cells.px.to_numpy(), cells.py.to_numpy()
         self.px, self.py = px, py
@@ -2069,7 +2086,7 @@ def api_he_info(req):
     v = view(req.path_params["sample"])
     m = importer._meta(req.path_params["sample"])
     return _json({"width": v.W, "height": v.H, "tile_size": TILE, "origin": [v.ox, v.oy], "um_per_px": v.um_per_px,
-                  "image_kind": v.image_kind, "rev": int(v.rev),
+                  "image_kind": v.image_kind, "rev": int(v.rev), "image_error": v.image_error,
                   "image_only": bool(m.get("image_only")), "um_per_px_known": m.get("um_per_px_known", True)})
 
 
