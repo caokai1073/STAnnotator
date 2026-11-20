@@ -1648,34 +1648,14 @@ async def api_project_niches(req: Request):
 ANALYSES = LRU(8)   # recent results, for their CSV
 
 
-def _keep_result(b, kind, result, table):
-    """The last result of each analysis kind, kept in the annotation's folder (results/<kind>.json and its full table
-    as parquet): Last result works after a reload, and a saved annotation keeps it."""
+def _keep_result(b, kind, result, table, sessions=()):
+    """The last result of each analysis kind, kept with the annotation (analysis.keep_result) and, for an analysis of
+    all slices (sessions: its Cells' annotations), with each slice's: Last result works after a reload and there."""
+    from . import analysis
     s = review_app._session(b["session"])
-    d = s.dir / "results"
-    d.mkdir(exist_ok=True)
-    f = d / f"{kind}.json"
-    try:
-        old = json.load(open(f))["result"].get("id") if f.exists() else None
-        if old and (d / f"{old}.parquet").exists():
-            (d / f"{old}.parquet").unlink()
-    except (ValueError, KeyError, OSError):
-        pass
-    try:
-        old = json.load(open(f))["result"].get("test", {}).get("id") if f.exists() else None
-        if old and (d / f"{old}.parquet").exists():
-            (d / f"{old}.parquet").unlink()
-    except (ValueError, KeyError, OSError, AttributeError):
-        pass
-    try:
-        if (result.get("test") or {}).get("id") and result["test"]["id"] in ANALYSES:
-            ANALYSES[result["test"]["id"]].to_parquet(d / f"{result['test']['id']}.parquet")
-        table.to_parquet(d / f"{result['id']}.parquet")
-    except Exception as e:  # the result stays; only its CSV is missing after a restart
-        print(f"could not keep the table of {kind}: {e}", file=sys.stderr)
-    req = {k: v for k, v in b.items() if k not in ("session", "selection")}
-    dump_json({"time": time.strftime("%Y-%m-%dT%H:%M:%S"), "request": req, "selection": b.get("selection"),
-               "result": result}, f, default=_json_default)
+    test_id = (result.get("test") or {}).get("id")
+    analysis.keep_result([s, *(sessions if b.get("scope") == "project" else ())], kind, b, result, table,
+                         b.get("selection"), {test_id: ANALYSES[test_id]} if test_id and test_id in ANALYSES else None)
 
 
 def _json_default(o):
@@ -1827,7 +1807,7 @@ async def api_analysis_run(req: Request):
         say(0.95, "keeping the result")
         with jobs.critical():  # (the result's files: written whole)
             analysis.log_run(review_app._session(b["session"]), b, r)
-            _keep_result(b, b["kind"], {**r, "id": key}, table)
+            _keep_result(b, b["kind"], {**r, "id": key}, table, c.sessions)
         return {**r, "id": key}
 
     def work():
@@ -1868,7 +1848,7 @@ async def api_communication_run(req: Request):
                 ANALYSES.popitem(last=False)
             from . import analysis
             analysis.log_run(review_app._session(b["session"]), b, r)
-            _keep_result(b, b.get("kind", "run"), {**r, "id": key, "kind": b.get("kind", "run")}, table)
+            _keep_result(b, b.get("kind", "run"), {**r, "id": key, "kind": b.get("kind", "run")}, table, c.sessions)
             JOBS[job].update(progress=1.0, stage="done", done=True, result={**r, "id": key, "kind": b.get("kind", "run")})
         except Exception as e:
             JOBS[job].update(error=f"{type(e).__name__}: {e}" if not isinstance(e, (ValueError, KeyError)) else str(e).strip("'"),
@@ -1901,7 +1881,7 @@ async def api_coloc_run(req: Request):
                 ANALYSES.popitem(last=False)
             with jobs.critical():  # (the result's files: written whole)
                 analysis.log_run(review_app._session(b["session"]), {**b, "kind": "coloc"}, r)
-                _keep_result({**b, "kind": "coloc"}, "coloc", {**r, "id": key}, table)
+                _keep_result({**b, "kind": "coloc"}, "coloc", {**r, "id": key}, table, c.sessions)
             JOBS[job].update(progress=1.0, stage="done", done=True, result={**r, "id": key})
         except Exception as e:
             JOBS[job].update(error=f"{type(e).__name__}: {e}" if not isinstance(e, (ValueError, KeyError)) else str(e).strip("'"),
@@ -1942,7 +1922,7 @@ async def api_trajectory_run(req: Request):
                 i += n
             from . import analysis
             analysis.log_run(review_app._session(b["session"]), b | {"kind": "trajectory"}, r)
-            _keep_result(b, f"trajectory_{r['method']}", r, table)  # the last result of each method
+            _keep_result(b, f"trajectory_{r['method']}", r, table, c.sessions)  # the last result of each method
             JOBS[job].update(progress=1.0, stage="done", done=True, result=r)
         except Exception as e:
             JOBS[job].update(error=f"{type(e).__name__}: {e}" if not isinstance(e, (ValueError, KeyError)) else str(e).strip("'"),
@@ -2344,7 +2324,15 @@ def api_area_suggestions(req):
                   "advice": advice.signature(s),
                   "report": (advice.report(s) or {}).get("time"),
                   "niche": [(niches.current(s)[0] or {}).get("run_id"), niches.niche_names(s)],
-                  "traj": _traj_runs(s)})
+                  "traj": _traj_runs(s), "results": analysis_results_sig(s)})
+
+
+def analysis_results_sig(s):
+    from . import analysis
+    try:
+        return analysis.results_signature(s)
+    except OSError:
+        return []
 
 
 def _traj_runs(s):

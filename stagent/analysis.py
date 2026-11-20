@@ -474,6 +474,9 @@ def deseq2(c, by, group, reference="rest", within=None, replicate=None, top=20, 
            "n_group": int(sum(x["n_cells"] for x in samples if x["side"] == "group")),
            "n_reference": int(sum(x["n_cells"] for x in samples if x["side"] == "reference")),
            "n_genes_tested": int(ok.sum()), "n_up": int(len(up)), "n_down": int(len(down)), "up": rows(up), "down": rows(down),
+           # every gene tested, for the volcano plot: [gene, log2 fold change, adjusted p]
+           "volcano": [[str(g), round(float(l), 3), float(f"{q:.3g}")] for g, l, q in
+                       zip(t.gene, t.log2fc, t.padj) if np.isfinite(l)],
            "note": ("DESeq2 (PyDESeq2) on pseudobulk counts: the raw counts of each side summed per " + replicate +
                     (", paired by " + replicate if paired else "") + ". The replicates carry the statistics: with 2 per side"
                     " few genes are trustworthy, 3 or more are better. Imaging panels pick up transcripts of neighboring"
@@ -735,6 +738,49 @@ def headline(kind, r):
                 "rising": [x["gene"] for x in r["rising"][:8]], "falling": [x["gene"] for x in r["falling"][:8]],
                 "transient": [x["gene"] for x in r["transient"][:6]]}
     return {}
+
+
+def _jdefault(o):
+    if isinstance(o, np.generic):
+        return o.item()
+    if isinstance(o, np.ndarray):
+        return o.tolist()
+    return str(o)
+
+
+def keep_result(sessions, kind, request, result, table, selection=None, tables=None):
+    """The last result of an analysis kind, kept in every given annotation's folder (results/<kind>.json and its full
+    table as results/<id>.parquet; tables: more {id: DataFrame}, e.g. a composition's test): the app's Last result
+    shows it after a reload, for a project's analysis on each of its slices, and for one the agent ran too."""
+    import sys
+    tables = {result["id"]: table, **(tables or {})} if table is not None and result.get("id") else dict(tables or {})
+    req = {k: v for k, v in request.items() if k not in ("session", "selection")}
+    for s in dict.fromkeys(sessions):
+        d = s.dir / "results"
+        d.mkdir(exist_ok=True)
+        f = d / f"{kind}.json"
+        try:  # the tables of the result it replaces
+            old = json.load(open(f))["result"] if f.exists() else {}
+            for oid in (old.get("id"), (old.get("test") or {}).get("id")):
+                if oid and oid not in tables and (d / f"{oid}.parquet").exists():
+                    (d / f"{oid}.parquet").unlink()
+        except (ValueError, KeyError, OSError, AttributeError):
+            pass
+        for tid, t in tables.items():
+            try:
+                t.to_parquet(d / f"{tid}.parquet")
+            except Exception as e:  # the result stays; only its CSV is missing after a restart
+                print(f"could not keep the table of {kind}: {e}", file=sys.stderr)
+        dump_json({"time": time.strftime("%Y-%m-%dT%H:%M:%S"), "request": req, "selection": selection,
+                   "result": result}, f, default=_jdefault)
+
+
+def results_signature(s):
+    """What changes when a result is kept (the app reloads Last result)."""
+    d = s.dir / "results"
+    if not d.exists():
+        return []
+    return sorted([f.stem, int(f.stat().st_mtime)] for f in d.glob("*.json"))
 
 
 def log_run(s, request, result):

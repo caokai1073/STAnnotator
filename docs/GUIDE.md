@@ -632,7 +632,7 @@ The methods themselves are described in [Annotation methods](#6-annotation-metho
   expression…** (type any panel gene: cells are colored by their transcript count, 0 / 1 / 2–3 / 4–7 / 8+, and a
   clicked cell shows its count).
 - Click a legend entry to show only that type; click a cell for its label, alternatives and region.
-- Opacity, dot size, hide cells, hide H&E.
+- Opacity (fully opaque by default), dot size, hide cells, hide H&E.
 
 ### Regions
 
@@ -949,6 +949,9 @@ pseudobulk counts with replicates.
   `~ replicate + side`; when the sides are different slices or patients (e.g. condition A vs B), `~ side`.
 - The result: up and down genes by adjusted p (< 0.05) with log2 fold change and its standard error, mean normalized
   counts per side, and the pseudobulk samples used (**Samples**). Save CSV has every gene tested. It runs PyDESeq2.
+- **Dot plot**: the top up and down genes in the cells of the two sides (as for DE genes); **Volcano**: every gene
+  tested, log2 fold change against −log10 adjusted p, the strongest named (click a name to color the map). Save
+  figure… writes either as PDF.
 
 **Top genes**: every group against the rest (what sets each niche or cluster apart).
 
@@ -995,6 +998,7 @@ down; DE of All: 1–30 per group; Top genes: 1–15 per group).
 - A click on a gene colors the map by it.
 - **Last result** reopens the last result of the analysis chosen in the tab (DE genes, DESeq2, Top genes or
   Composition).
+  It also shows an analysis the agent ran, and an analysis of all slices on each slice of the project.
 - **Ask Agent** asks the agent to interpret the result (it calls the same analysis through `de_genes`, `deseq2`,
   `group_markers` or `composition`).
 

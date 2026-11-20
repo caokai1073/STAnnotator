@@ -823,7 +823,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <label>Color by <select id="mode" disabled><option value="">annotate first</option></select></label>
       <input type="text" id="geneInput" list="geneList" placeholder="gene, e.g. EPCAM" hidden autocomplete="off"
              title="Type a gene of the panel and press Enter" style="width:150px"><datalist id="geneList"></datalist>
-      <label>Opacity <input type="range" id="opacity" min="0" max="100" value="85"></label>
+      <label>Opacity <input type="range" id="opacity" min="0" max="100" value="100"></label>
       <label title="Size of the cell dots">Dot size <input type="range" id="dotsize" min="20" max="300" value="100" step="10">
         <span id="dotsizeVal" style="min-width:34px">1.0×</span></label>
       <button id="hide" title="Hide the cells: the H&amp;E only (h)">Hide cells</button>
@@ -1435,7 +1435,7 @@ Object.entries(ICON_TITLES).forEach(([id, t]) => $(id) && ($(id).title = t));
 Object.entries(ICON_ONLY).forEach(([id, n]) => $(id) && decorate($(id), n, true));
 Object.entries(ICON_TEXT).forEach(([id, n]) => $(id) && decorate($(id), n, false));
 document.querySelectorAll("[data-pick]").forEach((b) => decorate(b, "folder", false));
-const st = { samples: [], sample: null, he: null, sid: null, version: null, mode: "type", filters: {}, opacity: 0.85, switchToken: 0, heHidden: false,
+const st = { samples: [], sample: null, he: null, sid: null, version: null, mode: "type", filters: {}, opacity: 1, switchToken: 0, heHidden: false,
              openedThisVisit: {}, dotSize: 1.0,
              hidden: false, busy: false, legend: [], regions: null };
 const api = async (path, opts) => {
@@ -3986,6 +3986,9 @@ async function pollSuggestions() {  // suggestions made in Claude Code show up w
   const trajSig = JSON.stringify(sug.traj || {});  // a trajectory the agent ran: a color of the map
   if (st.trajSig !== undefined && trajSig !== st.trajSig) await loadTraj();
   st.trajSig = trajSig;
+  const resSig = JSON.stringify(sug.results || []);  // an analysis the agent ran (or one of all slices): its Last result
+  if (st.resSig !== undefined && resSig !== st.resSig) await loadResults(st.sid).catch(() => {});
+  st.resSig = resSig;
   if (sug.report && sug.report !== st.reportTime && $("rpDlg").open) await openReport();  // (before the returns below)
   // new advice is told apart by its ids, not by a signature that loading the panel also updates: a click that loads
   // the panel while the agent works (Review, solve, a new version, the cells moving) must not swallow its arrival
@@ -7803,7 +7806,32 @@ async function showAnalysis() {
     $("anSub").textContent = `${anLabel(r.by)} · ${where} · pseudobulk per ${anLabel(r.replicate)}: ${r.n_samples[0]} vs ${r.n_samples[1]} samples` +
       ` (${r.n_group.toLocaleString()} vs ${r.n_reference.toLocaleString()} cells) · design ${r.design} · ${r.n_genes_tested.toLocaleString()} genes tested`;
     const dir = AN.view || "up", N = AN.n.deseq2;
-    anSeg([["up", `Up (${r.n_up})`], ["down", `Down (${r.n_down})`], ["samples", "Samples"]], dir, (v) => { AN.view = v; showAnalysis(); });
+    anSeg([["up", `Up (${r.n_up})`], ["down", `Down (${r.n_down})`], ["dots", "Dot plot"], ...(r.volcano ? [["volcano", "Volcano"]] : []),
+           ["samples", "Samples"]], dir, (v) => { AN.view = v; showAnalysis(); });
+    if (dir === "dots") {  // the top up and down genes in the cells of the two sides
+      $("anNWrap").hidden = false; $("anNLabel").textContent = "genes each way";
+      Object.assign($("anN"), { min: 5, max: 60, value: N });
+      const up = r.up.slice(0, Math.min(N, 30)).map((x) => x.gene), down = r.down.slice(0, Math.min(N, 30)).map((x) => x.gene);
+      $("anFig").hidden = false;
+      $("anNote").textContent = `Top ${up.length} up and ${down.length} down genes (by adjusted p) in the cells of the two sides: ${r.group} and ${ref} (all their cells, not the pseudobulk). Click a gene to color the map by it.`;
+      if (!$("anDlg").open) $("anDlg").showModal();
+      if (!up.length && !down.length) { $("anBody").textContent = "No significant genes (adjusted p < 0.05)."; return; }
+      await showDots([...up, ...down], { highlight: [r.group], breaks: [[0, "up"], ...(down.length ? [[up.length, "down"]] : [])] },
+                     [], { group: r.group, reference: r.reference });
+      return;
+    }
+    if (dir === "volcano") {  // every gene tested: log2 fold change against -log10 adjusted p
+      $("anNWrap").hidden = false; $("anNLabel").textContent = "labels each way";
+      Object.assign($("anN"), { min: 5, max: 60, value: N });
+      $("anFig").hidden = false;
+      const svg = volcanoSVG(r, Math.min(N, 30), ref);
+      $("anBody").innerHTML = svg;
+      $("anBody").querySelectorAll(".vgene").forEach((t) => (t.onclick = () => colorByGene(t.dataset.gene)));
+      AN.svg = svg.replace(/fill="currentColor"/g, 'fill="#222"');
+      $("anNote").textContent = `${r.volcano.length.toLocaleString()} genes tested; red: higher in ${r.group}, blue: higher in ${ref} (adjusted p < 0.05); the dashed line is adjusted p = 0.05. The ${Math.min(N, 30)} strongest each way are named; click a name to color the map by it.`;
+      if (!$("anDlg").open) $("anDlg").showModal();
+      return;
+    }
     if (dir === "samples") {  // the pseudobulk samples, and those left out for too few cells
       $("anNWrap").hidden = true;
       const rows = r.samples.map((x) => [x.replicate, x.side === "group" ? r.group : ref, x.n_cells.toLocaleString(), "used"])
@@ -8427,6 +8455,37 @@ function dotPlotSVG(d, opts = {}) {  // d: {groups, n_cells, genes, pct, mean}; 
   out.push("</svg>");
   return out.join("");
 }
+function volcanoSVG(r, nLab, ref) {  // DESeq2: log2 FC (x) against -log10 adjusted p (y), the strongest genes named
+  const W = 680, H = 440, L = 56, R = 16, T = 18, B = 46, pw = W - L - R, ph = H - T - B;
+  const pts = r.volcano.map(([g, l, q]) => ({ g, l, y: -Math.log10(Math.max(q, 1e-300)), sig: q < 0.05 }));
+  const xm = Math.max(1, ...pts.map((p) => Math.abs(p.l))) * 1.05, ym = Math.max(2, ...pts.map((p) => p.y)) * 1.05;
+  const X = (v) => L + (v + xm) / (2 * xm) * pw, Y = (v) => T + ph - v / ym * ph;
+  const col = (p) => (!p.sig ? "#b5b5b5" : p.l > 0 ? "#c8402e" : "#2f62b8");
+  const e = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  let s = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Helvetica, Arial, sans-serif" font-size="11">`;
+  s += `<rect x="${L}" y="${T}" width="${pw}" height="${ph}" fill="none" stroke="#999"/>`;
+  const step = (m) => { const r_ = m / 4, p = Math.pow(10, Math.floor(Math.log10(r_))); return [1, 2, 5, 10].map((k) => k * p).find((k) => k >= r_); };
+  const sx = step(xm), sy = step(ym);
+  for (let v = -Math.floor(xm / sx) * sx; v <= xm; v += sx) s += `<line x1="${X(v)}" x2="${X(v)}" y1="${T + ph}" y2="${T + ph + 4}" stroke="#999"/><text x="${X(v)}" y="${T + ph + 16}" text-anchor="middle" fill="currentColor">${+v.toFixed(2)}</text>`;
+  for (let v = 0; v <= ym; v += sy) s += `<line x1="${L - 4}" x2="${L}" y1="${Y(v)}" y2="${Y(v)}" stroke="#999"/><text x="${L - 7}" y="${Y(v) + 4}" text-anchor="end" fill="currentColor">${+v.toFixed(1)}</text>`;
+  s += `<line x1="${L}" x2="${L + pw}" y1="${Y(-Math.log10(0.05))}" y2="${Y(-Math.log10(0.05))}" stroke="#888" stroke-dasharray="4 3"/>`;
+  s += `<line x1="${X(0)}" x2="${X(0)}" y1="${T}" y2="${T + ph}" stroke="#ccc"/>`;
+  [...pts].sort((a, b) => a.sig - b.sig).forEach((p) => { s += `<circle cx="${X(p.l).toFixed(1)}" cy="${Y(p.y).toFixed(1)}" r="2.6" fill="${col(p)}" fill-opacity="0.75"/>`; });
+  const lab = [...pts.filter((p) => p.sig && p.l > 0).sort((a, b) => b.y - a.y).slice(0, nLab), ...pts.filter((p) => p.sig && p.l < 0).sort((a, b) => b.y - a.y).slice(0, nLab)];
+  const placed = [];  // labels moved up a line when they would cover another, left out when that does not help
+  lab.forEach((p) => {
+    const right = p.l > 0, w = 6.2 * p.g.length, x0 = right ? X(p.l) + 4 : X(p.l) - 4 - w;
+    let y = Y(p.y) - 3;
+    for (let k = 0; k < 4 && placed.some((b) => Math.abs(b.y - y) < 11 && x0 < b.x + b.w && b.x < x0 + w); k++) y -= 11;
+    if (placed.some((b) => Math.abs(b.y - y) < 11 && x0 < b.x + b.w && b.x < x0 + w) || y < T + 8) return;
+    placed.push({ x: x0, y, w });
+    if (Math.abs(y - (Y(p.y) - 3)) > 1) s += `<line x1="${X(p.l)}" y1="${Y(p.y)}" x2="${right ? x0 : x0 + w}" y2="${y + 2}" stroke="#999" stroke-width="0.6"/>`;
+    s += `<text class="vgene" data-gene="${e(p.g)}" x="${right ? x0 : x0 + w}" y="${y}" text-anchor="${right ? "start" : "end"}" fill="currentColor" style="cursor:pointer">${e(p.g)}</text>`;
+  });
+  s += `<text x="${L + pw / 2}" y="${H - 8}" text-anchor="middle" fill="currentColor">log₂ fold change (${e(r.group)} / ${e(ref)})</text>`;
+  s += `<text x="14" y="${T + ph / 2}" text-anchor="middle" fill="currentColor" transform="rotate(-90 14 ${T + ph / 2})">−log₁₀ adjusted p</text></svg>`;
+  return s;
+}
 async function showDots(genes, opts, first, compare) {  // fetch the dot plot data of the result shown and draw it
   const q = AN.req, box = $("anBody");  // compare: only the two sides of a DE comparison
   const grp = [q.by, ...Object.keys(q.within || {})].find((k) => k === "niche" || k === "leiden");
@@ -8459,6 +8518,7 @@ $("anFig").onclick = () => {
   if (!AN.svg) return;
   const r = AN.last, k = AN.req.kind;
   const part = k === "de" ? (r.all ? `de_every_${r.by}_dotplot` : `de_${r.group}_vs_${r.reference}_dotplot`) : k === "markers" ? `top_genes_by_${r.by}_dotplot`
+    : k === "deseq2" ? `deseq2_${r.group}_vs_${r.reference}_${AN.view === "volcano" ? "volcano" : "dotplot"}`
     : k === "run" ? `communication_${r.by}_${AN.view}` : k === "trajectory" ? `trajectory_${AN.view || "heat"}_${r.label}` : `communication_by_${r.split}_${AN.view}`;
   saveFigure(`${st.sample.sample_id}_${part}.pdf`.replace(/[^A-Za-z0-9_.-]+/g, "_"), AN.svg);
 };

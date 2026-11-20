@@ -1810,6 +1810,21 @@ def _cells(scope, uses_selection=False):
     return analysis.cells(s, selection=(sel or {}).get(s.sample_id) if sel else None)
 
 
+def _keep(c, scope, kind, request, r, table, tables=None):
+    """An analysis the agent ran becomes the Last result of its kind in the app (the open annotation, or every slice
+    of a project's analysis); the agent still gets r. Never fails the tool."""
+    import sys, uuid
+    from . import analysis
+    try:
+        rid = uuid.uuid4().hex[:12]
+        out = {**r, "id": rid}
+        sess = list(c.sessions) if scope == "project" else [_s()]
+        analysis.keep_result(sess, kind, {**request, "kind": request.get("kind", kind), "scope": scope,
+                                          "session": _s().id}, out, table, None, tables)
+    except Exception as e:
+        print(f"could not keep the {kind} result for the app: {e}", file=sys.stderr)
+
+
 def _uses_selection(*names):
     return any(n == "selection" for n in names) or any(isinstance(n, dict) and "selection" in n for n in names)
 
@@ -1838,7 +1853,10 @@ def de_genes(by: str, group: Union[str, list], reference: Union[str, list] = "re
     group. scope as in analysis_groupings."""
     from . import analysis
     c = _cells(scope, _uses_selection(by, within))
-    return _j(analysis.de(c, by, group, reference, within, max(1, min(int(top), 100))))
+    r = analysis.de(c, by, group, reference, within, max(1, min(int(top), 100)), full=True)
+    t = r.pop("table")
+    _keep(c, scope, "de", {"by": by, "group": group, "reference": reference, "within": within or {}}, r, t)
+    return _j(r)
 
 
 @mcp.tool()
@@ -1855,7 +1873,11 @@ def deseq2(by: str, group: Union[str, list], reference: Union[str, list] = "rest
     slice has no replicates: use de_genes there."""
     from . import analysis
     c = _cells("project", _uses_selection(by, within))
-    return _j(analysis.deseq2(c, by, group, reference, within, replicate, max(1, min(int(top), 100))))
+    r = analysis.deseq2(c, by, group, reference, within, replicate, max(1, min(int(top), 100)), full=True)
+    t = r.pop("table")
+    _keep(c, "project", "deseq2", {"by": by, "group": group, "reference": reference, "within": within or {},
+                                   "replicate": r.get("replicate")}, r, t)
+    return _j(r)
 
 
 @mcp.tool()
@@ -1874,7 +1896,7 @@ def trajectory(method: str = "spatial", within: Optional[dict] = None, start: Op
     which; pooled slices are not batch-corrected."""
     from . import trajectory as tr
     c = _cells(scope, _uses_selection(within))
-    r, _, t, raw, masks = tr.run(c, method, within, start, end, root, alpha, by)
+    r, table, t, raw, masks = tr.run(c, method, within, start, end, root, alpha, by)
     import uuid as _u
     run_id = _u.uuid4().hex[:12]
     i = 0
@@ -1884,6 +1906,9 @@ def trajectory(method: str = "spatial", within: Optional[dict] = None, start: Op
                 {"scope": scope})
         i += n
     r["label"] = tr.label(r)
+    _keep(c, scope, f"trajectory_{r['method']}", {"kind": "trajectory", "method": method, "within": within or {},
+                                                   "start": start, "end": end, "root": root, "alpha": alpha, "by": by},
+          {**r, "kind": "trajectory"}, table)
     r["heatmap"] = {"genes": r["heatmap"]["genes"]}  # the bin means stay in the app
     return _j(r)
 
@@ -1894,7 +1919,11 @@ def group_markers(by: str, top: int = 8, within: Optional[dict] = None, scope: s
     each niche apart, by="leiden" for the clusters; groups under 30 cells are skipped."""
     from . import analysis
     c = _cells(scope, _uses_selection(by, within))
-    return _j(analysis.markers(c, by, max(1, min(int(top), 30)), within))
+    r = analysis.markers(c, by, max(1, min(int(top), 30)), within)
+    import pandas as pd
+    _keep(c, scope, "markers", {"by": by, "within": within or {}}, r,
+          pd.DataFrame([{"group": g["group"], "n_cells": g["n_cells"], **x} for g in r["groups"] for x in g["genes"]]))
+    return _j(r)
 
 
 @mcp.tool()
@@ -1906,8 +1935,9 @@ def spatially_variable_genes(within: Optional[dict] = None, beyond_types: bool =
     types); off: mostly the cell types' own markers. within: one cell type, region, niche... (e.g. {"cell type":
     "Fibroblasts"}). scope="project": every slice, mean I and in how many slices each gene is in the top."""
     from . import svg
-    r = svg.spatial_genes(_cells(scope, _uses_selection(within)), within, beyond_types, max(1, min(int(top), 100)))
-    r.pop("table")
+    c = _cells(scope, _uses_selection(within))
+    r = svg.spatial_genes(c, within, beyond_types, max(1, min(int(top), 100)))
+    _keep(c, scope, "spatial", {"within": within or {}, "beyond_types": beyond_types}, r, r.pop("table"))
     return _j(r)
 
 
@@ -1921,8 +1951,10 @@ def program_scores(program: Optional[str] = None, genes: Optional[list[str]] = N
     Fibrosis / ECM, Endothelial activation, Stress / immediate early), or genes: your own list (then program names
     it). The scores are kept, so the map can be colored by them: the app's color menu lists "program: <name>"."""
     from . import programs
-    r = programs.run(_cells(scope, _uses_selection(by, within)), program, genes, by, within)
-    r.pop("table")
+    c = _cells(scope, _uses_selection(by, within))
+    r = programs.run(c, program, genes, by, within)
+    _keep(c, scope, "program", {"program": r["program"], "genes": " ".join(genes) if genes else None, "by": by,
+                                "within": within or {}}, r, r.pop("table"))
     return _j(r)
 
 
@@ -1940,7 +1972,11 @@ def composition(rows: str, cols: str, within: Optional[dict] = None, scope: str 
     condition). Report the FDR and the mean shares per condition, not the pooled cell counts."""
     from . import analysis
     c = _cells(scope, _uses_selection(rows, cols, within))
-    return _j(analysis.crosstab(c, rows, cols, within, replicate=replicate))
+    r = analysis.crosstab(c, rows, cols, within, replicate=replicate)
+    import pandas as pd
+    _keep(c, scope, "composition", {"rows": rows, "cols": cols, "within": within or {}, "replicate": replicate}, r,
+          pd.DataFrame([{rows: x["row"], "n_cells": x["n_cells"], **x["shares"]} for x in r["table"]]).fillna(0))
+    return _j(r)
 
 
 @mcp.tool()
