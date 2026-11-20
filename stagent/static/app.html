@@ -7692,6 +7692,7 @@ async function showAnalysis() {
   // the window's header names the analysis; what was compared (groups, cell types) is the first line below it
   $("anKind").textContent = AN_KIND[q.kind] || "Result"; $("anTitle").textContent = "";
   $("anNWrap").hidden = $("anFig").hidden = true; AN.svg = null;
+  anSeg([], "", () => {});  // the views of the last result go (Spatial and Programs have none; the others set theirs)
   $("anTitle").hidden = false;  // (below the header now: signaling's views fit there too)
   if (q.kind === "trajectory") {
     $("anAsk").hidden = !(st.desktop || st.chatAvailable);
