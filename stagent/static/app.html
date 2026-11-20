@@ -66,7 +66,8 @@ header.collapsed .hmini { display: flex; }
 .cmpgroup { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 10px 0 2px; }
 .cmplegend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 12px; font-size: 12px; }
 .cmplegend span.sw { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
-#anBody { max-height: 62vh; overflow: auto; } #anBody tr.sig td { font-weight: 600; }
+#anBody { max-height: 62vh; overflow: auto; }
+#anTitle { font-weight: 600; font-size: 14px; margin-bottom: 2px; } #anTitle:empty { display: none; } #anBody tr.sig td { font-weight: 600; }
 .pgbar { display: inline-block; height: 9px; border-radius: 2px; vertical-align: middle; }
 table.an { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
 table.an th { text-align: right; font-weight: 600; color: var(--muted); padding: 5px 8px; border-bottom: 1px solid var(--line);
@@ -1051,9 +1052,9 @@ T and NK cells: CD3E|NKG7+ EPCAM-
   </div>
 </dialog>
 <dialog id="figDlg">
-  <div class="dh"><b>Where these cells lie</b><span class="hint" id="figTitle" style="margin-left:8px"></span><span class="spacer"></span>
+  <div class="dh"><b>Where these cells lie</b><span class="spacer"></span>
     <button id="figClose">Close</button></div>
-  <div style="padding:10px 14px 14px"><img id="figBig" alt="Where these cells lie">
+  <div style="padding:10px 14px 14px"><div class="antitle" id="figTitle" style="font-weight:600;margin-bottom:6px"></div><img id="figBig" alt="Where these cells lie">
     <div class="hint" style="margin-top:6px">Red: these cells · blue: the other cells of the type · grey: all cells</div></div>
 </dialog>
 <dialog id="prDlg" style="width:min(760px,95vw)">
@@ -1323,11 +1324,11 @@ T and NK cells: CD3E|NKG7+ EPCAM-
   <div class="gallery" id="glGrid"></div>
 </dialog>
 <dialog id="anDlg" style="width:min(1000px,96vw)">
-  <div class="dh"><b id="anTitle">Compare</b><span id="anSeg" class="seg"></span>
+  <div class="dh"><b id="anKind">Compare</b><span id="anSeg" class="seg"></span>
     <label id="anNWrap" class="hint" hidden style="margin-left:12px;display:inline-flex;align-items:center;gap:5px"><span id="anNLabel">genes</span>
       <input type="number" id="anN" style="width:58px;height:28px"></label><span class="spacer"></span>
     <button id="anAsk" hidden title="Ask the agent what this result may mean">Ask Agent</button><button id="anFig" hidden title="Save the figure as a PDF file">Save figure…</button><button id="anCsv">Save CSV…</button><button id="anClose">Close</button></div>
-  <div class="imbody"><div class="hint" id="anSub"></div><div id="anBody"></div><div id="anLegend" class="cmplegend"></div><div class="hint" id="anNote"></div></div>
+  <div class="imbody"><div class="antitle" id="anTitle"></div><div class="hint" id="anSub"></div><div id="anBody"></div><div id="anLegend" class="cmplegend"></div><div class="hint" id="anNote"></div></div>
 </dialog>
 <dialog id="shareDlg" style="width:min(560px,94vw)">
   <div class="dh"><b>Help test STAnnotator</b><span class="spacer"></span></div>
@@ -7679,10 +7680,14 @@ async function groupColors(by, keys) {  // the map's colors of a grouping's grou
   keys.forEach((k, i) => { if (!colors[k]) colors[k] = PALETTE[i % PALETTE.length]; });
   return colors;
 }
+const AN_KIND = { de: "DE genes", deseq2: "DESeq2", markers: "Top genes", composition: "Composition", spatial: "Spatial genes",
+                  program: "Programs", coloc: "Co-localization", trajectory: "Trajectory", run: "Signaling", compare: "Signaling" };
 async function showAnalysis() {
   const r = AN.last, q = AN.req; if (!r) return;
+  // the window's header names the analysis; what was compared (groups, cell types) is the first line below it
+  $("anKind").textContent = AN_KIND[q.kind] || "Result"; $("anTitle").textContent = "";
   $("anNWrap").hidden = $("anFig").hidden = true; AN.svg = null;
-  $("anTitle").hidden = q.kind === "run" || q.kind === "compare";  // signaling: the views' bar comes first
+  $("anTitle").hidden = false;  // (below the header now: signaling's views fit there too)
   if (q.kind === "trajectory") {
     $("anAsk").hidden = !(st.desktop || st.chatAvailable);
     showTrajectory(r, q);
@@ -7803,7 +7808,7 @@ async function showAnalysis() {
     if (list.length < r[dir === "up" ? "n_up" : "n_down"]) $("anNote").textContent = `The ${list.length} strongest shown (up to 60 with the number above); Save CSV has every gene. ` + r.note;
   } else if (q.kind === "deseq2") {
     const ref = r.reference === "rest" ? "all other cells" : r.reference;
-    $("anTitle").textContent = `${r.group} vs ${ref} · DESeq2`;
+    $("anTitle").textContent = `${r.group} vs ${ref}`;
     $("anSub").textContent = `${anLabel(r.by)} · ${where} · pseudobulk per ${anLabel(r.replicate)}: ${r.n_samples[0]} vs ${r.n_samples[1]} samples` +
       ` (${r.n_group.toLocaleString()} vs ${r.n_reference.toLocaleString()} cells) · design ${r.design} · ${r.n_genes_tested.toLocaleString()} genes tested`;
     const dir = AN.view || "up", N = AN.n.deseq2;
@@ -8122,7 +8127,7 @@ async function trCompSVG(r) {
 }
 async function showTrajectory(r, q) {
   const within = Object.entries(r.within || {}).map(([k, v]) => `${anLabel(k)} ${v}`).join(", ");
-  $("anTitle").hidden = false; $("anTitle").textContent = `Trajectory: ${r.label}`;
+  $("anTitle").hidden = false; $("anTitle").textContent = r.label;
   const how = r.method === "spatial" ? (r.axis.end ? "position between the two groups (0 to 1)" : "distance in the tissue")
     : `diffusion pseudotime${r.method === "mixed" ? `, weight of space ${r.alpha}` : ""}` + (r.n_graph_cells < r.n_on_trajectory ? ` (graph of ${r.n_graph_cells.toLocaleString()} sampled cells)` : "");
   $("anSub").textContent = [q.scope === "project" ? "all slices pooled" : "this slice", within && `only ${within}`,
