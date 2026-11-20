@@ -72,7 +72,9 @@ header.collapsed .hmini { display: flex; }
 .anfoot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; } .anfoot:not(:has(button:not([hidden]))) { display: none; } .andh .dhmid { display: flex; align-items: center; }
 .andh .dhright { justify-self: end; display: flex; gap: 8px; align-items: center; }
 #anTitle { font-weight: 600; font-size: 14px; margin-bottom: 2px; } #anTitle:empty { display: none; } #anBody tr.sig td { font-weight: 600; }
-.pgbar { display: inline-block; height: 9px; border-radius: 2px; vertical-align: middle; }
+.pgtrack { position: relative; display: inline-block; width: 100px; height: 11px; vertical-align: middle;
+           background: linear-gradient(var(--line), var(--line)) 50% 0 / 1px 100% no-repeat; }
+.pgbar { position: absolute; top: 1px; height: 9px; border-radius: 2px; }
 table.an { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
 table.an th { text-align: right; font-weight: 600; color: var(--muted); padding: 5px 8px; border-bottom: 1px solid var(--line);
   position: sticky; top: 0; background: var(--panel); white-space: nowrap; }
@@ -7733,8 +7735,14 @@ async function showAnalysis() {
     $("anTitle").textContent = `${r.program} by ${anLabel(r.by)}`;
     $("anSub").textContent = `${where} · ${r.n_cells.toLocaleString()} cells · ${r.genes.length} genes: ${r.genes.join(", ")}`;
     const mx = Math.max(1e-6, ...r.groups.map((x) => Math.abs(x.mean)));
-    const bar = (v) => { const b = document.createElement("span"); b.className = "pgbar"; b.style.width = `${Math.round(60 * Math.abs(v) / mx)}px`;
-      b.style.background = v > 0 ? "rgba(200,60,40,.7)" : "rgba(40,90,200,.5)"; const w = document.createElement("span"); w.append(b, ` ${v.toFixed(3)}`); return w; };
+    const bar = (v) => {  // diverging from 0 (background): above to the right in red, below to the left in blue
+      const track = document.createElement("span"); track.className = "pgtrack";
+      const b = document.createElement("span"); b.className = "pgbar";
+      const w = Math.round(50 * Math.abs(v) / mx);
+      Object.assign(b.style, { width: `${w}px`, left: v >= 0 ? "50%" : `calc(50% - ${w}px)`, background: v > 0 ? "rgba(200,60,40,.75)" : "rgba(40,90,200,.6)" });
+      track.append(b);
+      const out = document.createElement("span"); out.style.whiteSpace = "nowrap"; out.append(track, ` ${v.toFixed(3)}`); return out;
+    };
     $("anBody").append(anTable([anLabel(r.by), "Mean score", "Median", "Above background", "Cells"], r.groups.map((x) =>
       [x.group, bar(x.mean), x.median.toFixed(3), `${(100 * x.pct_above).toFixed(1)}%`, x.n_cells.toLocaleString()])));
     const go = Object.assign(document.createElement("button"), { textContent: "Show on map", title: "Color the map by this program's score" });
