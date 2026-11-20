@@ -4273,9 +4273,12 @@ $("spill").onchange = () => store("spill", $("spill").checked ? "on" : "off");
 // Type tab: the switches in Advanced; its summary names those on, and it is hidden when none applies
 function syncAnnAdv() {
   const shown = [...$("annAdv").querySelectorAll(".advsw > .switch")].filter((w) => !w.hidden && w.style.visibility !== "hidden");
-  $("annAdv").hidden = !shown.length;
+  // only when it changes: setting hidden again is a new mutation even with the same value, and this runs on mutations
+  // (with every switch hidden, e.g. a method other than marker genes and no annotation open, the page froze)
+  if ($("annAdv").hidden !== !shown.length) $("annAdv").hidden = !shown.length;
   const on = shown.filter((w) => w.querySelector("input").checked).map((w) => w.dataset.short);
-  $("annAdvOn").textContent = on.length ? `· ${on.join(", ")}` : "";
+  const txt = on.length ? `· ${on.join(", ")}` : "";
+  if ($("annAdvOn").textContent !== txt) $("annAdvOn").textContent = txt;
 }
 new MutationObserver(syncAnnAdv).observe($("annAdv"), { subtree: true, attributes: true, attributeFilter: ["hidden", "style"] });
 $("annAdv").addEventListener("change", syncAnnAdv);
