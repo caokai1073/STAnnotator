@@ -50,7 +50,7 @@ using it, especially its exceptions.
 - Gastrointestinal tract: colon, small intestine, stomach
 - Liver, pancreas, kidney
 - Lung, heart, breast, skin
-- Brain (cortex), lymph node and tonsil
+- Brain, lymph node and tonsil
 - General cross-organ priors for immune and stromal cells
 
 
@@ -2070,18 +2070,29 @@ Investigative Dermatology, 2020. doi:10.1016/j.jid.2019.07.726
 
 ---
 
-## Brain (cortex)
+## Brain
 
-Type names are from `brain.txt`. That file does not include `@immune` or `@stroma`. Its cortical types are
-Cortical and hippocampal excitatory neurons (L2/3 IT, L4/5 IT, L5 ET, L5/6 NP, L6 CT and L6b neurons, with
-Hippocampal CA neurons and Dentate gyrus granule cells), Inhibitory neurons (PVALB / SST / VIP / LAMP5 / SNCG
-interneurons), Astrocytes, the Oligodendrocyte lineage (OPCs, Newly formed oligodendrocytes, Oligodendrocytes),
-Microglia, Border macrophages, T cells, Endothelial cells, Pericytes, VLMCs and VSMCs. The list also has types of
-other regions (thalamus, striatum, cerebellum, midbrain monoaminergic nuclei, ventricles); the priors below are for
-the cortex only. L5 IT and L6 IT neurons have no type of their own (they go to the IT or CT type nearest in
-expression).
+Type names are from `brain.txt`. That file does not include `@immune` or `@stroma`. Its types are:
+- Neurons:
+  - Cortical and hippocampal excitatory neurons: L2/3 IT, L4/5 IT, L5 ET, L5/6 NP, L6 CT and L6b neurons, Hippocampal
+    CA neurons and Dentate gyrus granule cells.
+  - Thalamic neurons and Cerebellar granule cells.
+  - Inhibitory neurons: PVALB, SST, VIP, LAMP5 and SNCG interneurons, Medium spiny neurons (D1 and D2 MSNs), Purkinje
+    cells and Cerebellar MLIs.
+  - Dopaminergic, Serotonergic and Noradrenergic neurons.
+- Astrocytes, and the Oligodendrocyte lineage (OPCs, Newly formed oligodendrocytes, Oligodendrocytes).
+- Ependymal cells and Choroid plexus epithelium.
+- Microglia, Border macrophages and T cells.
+- Endothelial cells, Pericytes, VLMCs and VSMCs.
+
+BRN-01 to BRN-13 are about the cerebral cortex and the cell types found throughout the brain. BRN-14 to BRN-20 are
+about the other regions the list covers: hippocampus, striatum, thalamus, cerebellum, the monoaminergic nuclei and the
+ventricles. L5 IT and L6 IT neurons have no type of their own; they go to the IT or CT type nearest in expression.
 
 **Compartments to draw**
+
+For a section of the whole brain (e.g. a mouse coronal or sagittal section), draw the regions first. Draw the
+cortical layers only where the rules need them.
 - `meninges`: the thin fibrous pia-arachnoid layer on the outer cortical surface, with its large vessels. It often
   tears or folds away in sections.
 - `L1`: the cell-sparse band, about 100-250 um thick in human and about 100 um in mouse, just below the pia. It has
@@ -2097,9 +2108,28 @@ expression).
   corpus callosum or external capsule.
 - On H&E, layer borders are gradual. Draw them generously and prefer moderate or weak strength for rules that use
   layer regions.
+- `cortex`: the neocortical grey matter, all layers, from the pia to the white matter. Use it when the layers are not
+  drawn.
+- `hippocampus`: the hippocampal formation (CA fields, dentate gyrus, subiculum). It is a curled structure below the
+  corpus callosum in mouse and in the medial temporal lobe in human.
+- `CA pyramidal layer`: the dense band of pyramidal somata, one to a few cells thick, running through CA1-CA3.
+- `DG granule layer`: the dense C- or V-shaped band of small round granule-cell somata around the hilus.
+- `striatum`: the caudate-putamen (one structure in mouse; caudate and putamen in human) and the nucleus accumbens.
+  It is grey matter crossed by pale bundles of white-matter fibres, which give the mouse striatum a speckled look.
+- `thalamus`: the large paired grey mass on each side of the third ventricle, below the hippocampus in mouse. Its
+  outer edge is the thin reticular nucleus, lying against the internal capsule.
+- `cerebellum`: the folded cerebellar cortex with its white matter and deep nuclei.
+- `cerebellar molecular layer`: the outer, cell-sparse, pale layer of each folium.
+- `cerebellar granular layer`: the inner layer of densely packed small dark nuclei. The Purkinje cells form a single
+  row of large somata at its outer edge.
+- `brainstem`: the midbrain, pons and medulla. In human sections the substantia nigra and the locus coeruleus are
+  brown from neuromelanin on H&E. In mouse they have no pigment.
+- `ventricle`: a ventricle's lumen with its wall, the row of cells lining it, inside the outline. Choroid plexus
+  fronds lie in the lateral, third and fourth ventricles. Mouse lateral ventricles are often only slits.
 
-The `kind=depth` rule (epithelial-marker density) is not meaningful in brain cortex because there is no epithelium.
-The only epithelium is the choroid plexus, which is not cortex. Use regions or neighborhood rules instead.
+The `kind=depth` rule (epithelial-marker density) is not meaningful in the brain because there is no epithelium.
+The only epithelia are the choroid plexus and the ependyma, which line the ventricles. Use regions or neighborhood
+rules instead.
 
 **Priors**
 
@@ -2202,13 +2232,16 @@ The only epithelium is the choroid plexus, which is not cortex. Use regions or n
   - Evidence: [11][12]
 
 - **BRN-09. Pericytes sit on capillaries. Every pericyte soma touches an endothelial tube.**
-  - Rule: `kind=neighborhood, types=[Pericytes], neighbor_types=[Endothelial cells], min_frac=0.07 (>=1 of 15),
-    mode=only, strength=moderate`
+  - Rules:
+    - `kind=neighborhood, types=[Pericytes], neighbor_types=[Endothelial cells], min_frac=0.07 (>=1 of 15),
+      mode=only, strength=moderate`
+    - `kind=neighborhood, types=[VSMCs], neighbor_types=[Endothelial cells, Pericytes, VSMCs], min_frac=0.13,
+      mode=only, strength=moderate`: arteriolar smooth muscle cells (MYH11 / ACTA2-high) wrap the endothelium too.
   - Without drawn regions: this rule is already region-free.
   - Exceptions and caveats:
     - Brain has the highest pericyte coverage of any organ, so this rule is safest here.
-    - Arteriolar smooth-muscle-like mural cells (ACTA2-high) are also adjacent to endothelium and are typed as
-      Pericytes in this list.
+    - VSMCs sit on arterioles and arteries, and pericytes on capillaries. Their markers overlap (ACTA2 in
+      arteriolar pericytes), so the two types can swap near small arterioles.
     - If the panel types endothelium poorly (few CLDN5/FLT1 counts), the rule wrongly suppresses real pericytes.
       Check the endothelial call rate first.
   - Confidence: high. Strength: moderate.
@@ -2218,8 +2251,8 @@ The only epithelium is the choroid plexus, which is not cortex. Use regions or n
   penetrating vessels, and choroid plexus. Microglia are in the parenchyma and not in the meninges.**
   - Rules:
     - `kind=region, types=[Border macrophages], regions=[meninges], mode=enrich, strength=strong`
-    - `kind=neighborhood, types=[Border macrophages], neighbor_types=[Endothelial cells, Pericytes, VLMCs],
-      min_frac=0.13 (>=2 of 15), mode=only, strength=moderate`
+    - `kind=neighborhood, types=[Border macrophages], neighbor_types=[Endothelial cells, Pericytes, VLMCs,
+      VSMCs], min_frac=0.13 (>=2 of 15), mode=only, strength=moderate`
     - `kind=region, types=[Microglia], regions=[meninges], mode=exclude, strength=weak`
   - Exceptions and caveats:
     - Blood-borne monocyte-derived macrophages enter the parenchyma in stroke, tumors and multiple sclerosis lesions.
@@ -2232,8 +2265,8 @@ The only epithelium is the choroid plexus, which is not cortex. Use regions or n
   arterioles and venules, never free in the neuropil. Perivascular fibroblasts are absent from capillaries.**
   - Rules:
     - `kind=region, types=[VLMCs], regions=[meninges], mode=enrich, strength=strong`
-    - `kind=neighborhood, types=[VLMCs], neighbor_types=[Endothelial cells, Pericytes, VLMCs, Border macrophages],
-      min_frac=0.2, mode=only, strength=moderate`
+    - `kind=neighborhood, types=[VLMCs], neighbor_types=[Endothelial cells, Pericytes, VLMCs, VSMCs, Border
+      macrophages], min_frac=0.2, mode=only, strength=moderate`
   - Exceptions and caveats:
     - Fibrotic scars after injury and the stroma of meningioma or metastases break this rule.
     - VLMCs are PDGFRA+, so OPC/VLMC confusion is possible. Check DCN/COL1A2.
@@ -2242,8 +2275,8 @@ The only epithelium is the choroid plexus, which is not cortex. Use regions or n
 
 - **BRN-12. T cells are rare in normal brain. The few present are tissue-resident memory cells in perivascular
   (Virchow-Robin) spaces and meninges, not scattered in the neuropil.**
-  - Rule: `kind=neighborhood, types=[T cells], neighbor_types=[Endothelial cells, Pericytes, VLMCs, Border
-    macrophages], min_frac=0.13, mode=only, strength=weak`
+  - Rule: `kind=neighborhood, types=[T cells], neighbor_types=[Endothelial cells, Pericytes, VLMCs, VSMCs,
+    Border macrophages], min_frac=0.13, mode=only, strength=weak`
   - Exceptions and caveats:
     - Do not use this rule in encephalitis, multiple sclerosis, gliomas or metastases, or after stroke, where
       parenchymal T cells are the finding.
@@ -2258,6 +2291,124 @@ The only epithelium is the choroid plexus, which is not cortex. Use regions or n
   - Do not reuse mouse layer thickness, or mouse rules about which type is "absent from layer X", for human without
     checking.
   - Confidence: high. Evidence: [2][14][15]
+
+- **BRN-14. The cortical layer types (L2/3 IT, L4/5 IT, L5 ET, L5/6 NP, L6 CT, L6b neurons) are neocortical. They are
+  not found in the hippocampus, striatum, thalamus or cerebellum. Hippocampal CA neurons and Dentate gyrus granule cells
+  are found only in the hippocampal formation.**
+  - Rules:
+    - `kind=region, types=[L2/3 IT neurons, L4/5 IT neurons, L5 ET neurons, L5/6 NP neurons, L6 CT neurons, L6b
+      neurons], regions=[hippocampus, striatum, thalamus, cerebellum], mode=exclude, strength=moderate`
+    - `kind=region, types=[Hippocampal CA neurons, Dentate gyrus granule cells], regions=[hippocampus], mode=only,
+      strength=moderate`
+  - Without drawn regions: none.
+  - Exceptions and caveats:
+    - Cortex-like excitatory neurons also lie outside the neocortex: in the olfactory (piriform) cortex, the claustrum
+      and endopiriform nucleus, and the cortical amygdala. Leave these out of the excluding regions.
+    - The subiculum and entorhinal cortex border the CA fields, and their neurons fall between the CA and layer types.
+      Draw `hippocampus` with the subiculum.
+  - Confidence: high. Strength: moderate.
+  - Evidence: [6][18]
+
+- **BRN-15. In the hippocampus, CA pyramidal neurons sit in the CA pyramidal layer and dentate granule cells sit in
+  the DG granule layer. Its interneurons are scattered through the other strata and the hilus.**
+  - Rules:
+    - `kind=region, types=[Dentate gyrus granule cells], regions=[DG granule layer], mode=only, strength=moderate`
+    - `kind=region, types=[Hippocampal CA neurons], regions=[CA pyramidal layer], mode=enrich, strength=moderate`
+  - Without drawn regions: none.
+  - Exceptions and caveats:
+    - Newborn granule cells sit in the subgranular zone, at the hilar edge of the granule layer. Draw the layer with
+      its edge.
+    - [human] In temporal lobe epilepsy the granule layer widens and granule cells scatter into the molecular layer
+      (granule cell dispersion) [21]. Do not use `only` on epileptic tissue.
+    - CA3 pyramidal somata are spread more loosely than those of CA1, so draw the CA3 layer wider.
+  - Confidence: high. Strength: moderate.
+  - Evidence: [6][18][21]
+
+- **BRN-16. Medium spiny neurons (MSNs) are the neurons of the striatum, about 95% of them in rodents. D1 and D2 MSNs
+  are intermingled, about one to one, throughout the striatum.**
+  - Rules:
+    - `kind=region, types=[Medium spiny neurons], regions=[striatum], mode=only, strength=moderate`
+    - None that separates D1 from D2 MSNs: they do not form separate areas.
+  - Without drawn regions: none.
+  - Exceptions and caveats:
+    - MSN-like neurons are also found in the olfactory tubercle, the islands of Calleja and the amygdala's
+      intercalated cells. Include the olfactory tubercle in `striatum`, or use moderate strength.
+    - PPP1R1B (DARPP-32) is also expressed in some cortical neurons, and a sparse panel may type them as MSNs. This
+      rule removes them.
+    - The striatal interneurons (PVALB and SST cells and others, about 5%) belong to the interneuron types. The
+      cholinergic interneurons have no type of their own and stay at Neurons.
+  - Confidence: high. Strength: moderate.
+  - Evidence: [6][18][19]
+
+- **BRN-17. Thalamic neurons (TCF7L2, SLC17A6) are in the thalamus.**
+  - Rule: `kind=region, types=[Thalamic neurons], regions=[thalamus], mode=only, strength=moderate`
+  - Without drawn regions: none.
+  - Exceptions and caveats:
+    - TCF7L2 is also expressed in the habenula, the pretectum and parts of the midbrain. Draw `thalamus` with the
+      habenula, and keep the strength moderate.
+    - The thalamus's own GABAergic cells sit mostly in the reticular nucleus (PVALB+), the thin shell at its lateral
+      edge. Do not write an `exclude` rule for Inhibitory neurons in the thalamus.
+    - [mouse] Mouse relay nuclei have almost no local interneurons, except the dorsal lateral geniculate nucleus [20].
+    - [human] Human relay nuclei have many local GABAergic interneurons [20].
+  - Confidence: high. Strength: moderate.
+  - Evidence: [6][18][20]
+
+- **BRN-18. The cerebellar cortex has three layers. Cerebellar granule cells are in the granular layer. Purkinje
+  cells form a single row at the edge of the granular and molecular layers. Molecular layer interneurons (basket and
+  stellate cells) are in the molecular layer. None of these types are found outside the cerebellum.**
+  - Rules:
+    - `kind=region, types=[Cerebellar granule cells, Purkinje cells, Cerebellar MLIs], regions=[cerebellum],
+      mode=only, strength=moderate`
+    - `kind=region, types=[Cerebellar granule cells], regions=[cerebellar granular layer], mode=enrich,
+      strength=moderate`
+    - `kind=region, types=[Cerebellar MLIs], regions=[cerebellar molecular layer], mode=enrich, strength=moderate`
+    - `kind=region, types=[PVALB interneurons, SST interneurons, VIP interneurons, LAMP5 interneurons, SNCG
+      interneurons], regions=[cerebellum], mode=exclude, strength=weak`. MLIs are PVALB+ and are easily called
+      PVALB interneurons.
+  - Without drawn regions: `kind=neighborhood, types=[Purkinje cells], neighbor_types=[Cerebellar granule cells],
+    min_frac=0.13, mode=only, strength=weak`
+  - Exceptions and caveats:
+    - GABRA6+ granule-like cells are also found in the cochlear nuclei of the brainstem. Keep them out of the rule by
+      drawing `cerebellum` without the brainstem, or use moderate strength.
+    - [mouse] Purkinje cells express Th in mouse, which can make them look like dopaminergic neurons. This rule and
+      BRN-19 correct that.
+    - Bergmann glia (astrocytes in the Purkinje layer) and the Golgi cells of the granular layer are normal. They are
+      typed as Astrocytes and as Inhibitory neurons.
+  - Confidence: high. Strength: moderate (weak for the cortical interneurons).
+  - Evidence: [6][18][22]
+
+- **BRN-19. Monoaminergic neurons lie in small brainstem nuclei, not in the forebrain or the cerebellum.**
+  - dopaminergic neurons in the substantia nigra pars compacta and the ventral tegmental area (midbrain)
+  - serotonergic neurons in the raphe nuclei, along the midline of the brainstem
+  - noradrenergic neurons in the locus coeruleus (dorsal pons, beside the fourth ventricle)
+
+  Here "forebrain" means the cortex, hippocampus, striatum and thalamus (the rule's regions).
+  - Rule: `kind=region, types=[Dopaminergic neurons, Serotonergic neurons, Noradrenergic neurons], regions=[cortex,
+    hippocampus, striatum, thalamus, cerebellum], mode=exclude, strength=moderate`
+  - Without drawn regions: none.
+  - Exceptions and caveats:
+    - Do not use `only` with `brainstem`. Dopaminergic cells also lie in the hypothalamus and the olfactory bulb (TH+,
+      often with little SLC6A3).
+    - Monoaminergic axons pass through the forebrain, so a few TH or SLC6A4 transcripts in segmented forebrain cells
+      are not cell bodies. SLC6A4 is also expressed for a while in developing thalamic neurons.
+    - [mouse] Purkinje cells are Th+. See BRN-18.
+  - Confidence: high. Strength: moderate.
+  - Evidence: [6][18]
+
+- **BRN-20. Ependymal cells line the ventricles (and the spinal central canal) as a single row. Choroid plexus
+  epithelium forms fronds within the lateral, third and fourth ventricles. Neither type is in the parenchyma.**
+  - Rules:
+    - `kind=region, types=[Choroid plexus epithelium], regions=[ventricle], mode=only, strength=moderate`
+    - `kind=region, types=[Ependymal cells], regions=[ventricle], mode=only, strength=moderate` (the outline must hold
+      the wall)
+  - Without drawn regions: none.
+  - Exceptions and caveats:
+    - Tanycytes line the floor of the third ventricle and are ependymal-like. They are typed as Ependymal cells.
+    - A ventricle collapsed in the section still has its ependyma. Draw the slit with its wall.
+    - Choroid plexus can tear free and come to rest elsewhere in the section, and ependymal rests are found in
+      ependymomas.
+  - Confidence: high. Strength: moderate.
+  - Evidence: [6][18][22]
 
 **References**
 - [1] Tasic B et al., Shared and distinct transcriptomic cell types across neocortical areas, Nature, 2018.
@@ -2293,6 +2444,15 @@ The only epithelium is the choroid plexus, which is not cortex. Use regions or n
   transcriptomic map, Nature Neuroscience, 2020. doi:10.1038/s41593-020-0602-1.
 - [17] Armulik A, Genove G, Betsholtz C, Pericytes: developmental, physiological, and pathological perspectives,
   problems, and promises, Developmental Cell, 2011. doi:10.1016/j.devcel.2011.07.001.
+- [18] Zhang M et al., Molecularly defined and spatially resolved cell atlas of the whole mouse brain, Nature, 2023.
+  doi:10.1038/s41586-023-06808-9.
+- [19] Gerfen CR, Surmeier DJ, Modulation of striatal projection systems by dopamine, Annual Review of Neuroscience,
+  2011. doi:10.1146/annurev-neuro-061010-113641.
+- [20] Arcelli P et al., GABAergic neurons in mammalian thalamus: a marker of thalamic complexity?, Brain Research
+  Bulletin, 1997. doi:10.1016/S0361-9230(96)00107-4.
+- [21] Houser CR, Granule cell dispersion in the dentate gyrus of humans with temporal lobe epilepsy, Brain Research,
+  1990. doi:10.1016/0006-8993(90)91601-C.
+- [22] Cerebellar cortex layers, ependyma and choroid plexus (textbook histology, not verified online).
 
 ---
 
@@ -2702,7 +2862,7 @@ dark-blue nodular lymphoid aggregate, sometimes with a pale germinal centre, ins
 - [13] Buechler MB et al., Cross-tissue organization of the fibroblast lineage, Nature, 2021.
   doi:10.1038/s41586-021-03549-5.
 
-Not verified online (stated as textbook): cortical thickness and agranular L4 (BRN-13), spleen layout (LN-12), PROX1
+Not verified online (stated as textbook): cortical thickness and agranular L4 (BRN-13), cerebellar layers, ependyma and choroid plexus (BRN-18, BRN-20), spleen layout (LN-12), PROX1
 in hepatocytes (GEN-03), visceral smooth-muscle layers (GEN-02), intraepithelial lymphocyte frequencies (GEN-07), and
 memory B cells beneath tonsil crypt epithelium (LN-11, no rule given). The perivascular location of mast cells
 (GEN-06) rests on the Krystel-Whittemore abstract (vascular roles). The "beneath epithelial surfaces" and "near

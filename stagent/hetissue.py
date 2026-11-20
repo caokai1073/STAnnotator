@@ -433,15 +433,23 @@ def _user_file(organ):
     return _user_dir() / f"{_slug(organ)}.json"
 
 
+# sections renamed: their earlier titles (the user's changes kept under those are read until saved again)
+FORMER_TITLES = {"Brain": ["Brain (cortex)"]}
+
+
 def _changes(organ):
-    f = _user_file(organ)
+    f, name = _user_file(organ), organ
+    if not f.exists():
+        old = next((o for o in FORMER_TITLES.get(str(organ).strip(), []) if _user_file(o).exists()), None)
+        if old:
+            f, name = _user_file(old), old
     try:
         c = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
     except ValueError:
         c = {}
-    if not isinstance(c, dict) or (c.get("organ") and _slug(c["organ"]) != _slug(organ)):
+    if not isinstance(c, dict) or (c.get("organ") and _slug(c["organ"]) != _slug(name)):
         c = {}   # another organ's file (an older version gave every non-ASCII name the same one)
-    return {"organ": c.get("organ") or organ, "removed": list(c.get("removed") or []), "added": list(c.get("added") or []),
+    return {"organ": organ if name != organ else c.get("organ") or organ, "removed": list(c.get("removed") or []), "added": list(c.get("added") or []),
             "next_id": int(c.get("next_id") or 0)}
 
 
@@ -627,6 +635,8 @@ def set_priors(organ, removed=None, added=None):
 
 def _write_changes(name, removed, added, next_id):
     f = _user_file(name)
+    for old in FORMER_TITLES.get(str(name).strip(), []):
+        _user_file(old).unlink(missing_ok=True)   # (now kept under the new title)
     if not removed and not added:
         f.unlink(missing_ok=True)
     else:
@@ -676,7 +686,8 @@ def set_prior_rule(organ, prior_id, types=None, mode=None, strength="moderate", 
 # other names of the priors' sections, besides their own (kept short: a name not known is an organ not covered)
 PRIOR_ALIASES = {"Colon": ["large intestine", "large bowel", "colorectal", "colorectum", "rectum"],
                  "Small intestine": ["small bowel", "ileum", "jejunum", "duodenum"], "Lung": ["lungs"],
-                 "Lymph node and tonsil": ["lymph nodes", "tonsils"]}
+                 "Lymph node and tonsil": ["lymph nodes", "tonsils"],
+                 "Brain": ["Brain (cortex)", "cerebrum", "cerebral cortex", "neocortex"]}
 
 
 def _key(name):
@@ -686,7 +697,7 @@ def _key(name):
 
 def _section_keys(k):
     """The names that mean section k: its title, with and without the part in brackets, each organ of an "X and Y"
-    title ("Brain (cortex)": "brain"; "Lymph node and tonsil": "lymph node", "tonsil"), its aliases."""
+    title ("X (y)": "x"; "Lymph node and tonsil": "lymph node", "tonsil"), its aliases."""
     base = re.sub(r"\s*\(.*\)", "", k).strip()
     names = [k, base, k.replace("(", " ").replace(")", " "), *re.split(r",\s*|\s+and\s+", base),
              *PRIOR_ALIASES.get(k, [])]
