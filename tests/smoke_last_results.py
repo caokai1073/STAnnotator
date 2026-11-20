@@ -1,6 +1,6 @@
-"""Last result of analyses the agent runs and of analyses of all slices: the agent's trajectory, DE genes, top genes
-and composition are kept as the open annotation's Last result (with their CSV), the app's suggestions poll carries a
-results signature that changes with them (the app reloads Last result), and an analysis of all slices run from the
+"""Last result of analyses the agent runs and of analyses of all slices: the agent's trajectory, DE genes, top genes,
+composition, co-localization and communication (one slice, and compared across slices) are kept as the open
+annotation's Last result (with their CSV), the app's suggestions poll carries a results signature that changes with them (the app reloads Last result), and an analysis of all slices run from the
 app is kept on every slice of the project. Runs in a temporary data folder."""
 import os, shutil, tempfile, time
 import h5py
@@ -35,14 +35,23 @@ try:
     mcp_server.de_genes("cell type", "Transit-amplifying cells")
     mcp_server.group_markers("lineage")
     mcp_server.composition("lineage", "cell type")
+    mcp_server.colocalization("lineage")
+    mcp_server.cell_communication("lineage")
+    mcp_server.compare_communication("slice", "lineage")
     res = c.get(f"/api/s/{sids[0]}/results").json()
-    assert {"trajectory_spatial", "de", "markers", "composition"} <= set(res), list(res)
+    assert {"trajectory_spatial", "de", "markers", "composition", "coloc", "run", "compare"} <= set(res), list(res)
+    assert res["compare"]["request"]["scope"] == "project" and res["run"]["result"]["kind"] == "run"
+    for k in ("coloc", "run", "compare"):
+        r = c.get(f"/api/analysis/{res[k]['result']['id']}.csv")
+        assert r.status_code == 200 and len(r.text.splitlines()) > 1, (k, r.status_code)
+    other0 = c.get(f"/api/s/{sids[1]}/results").json()
+    assert "compare" in other0, list(other0)  # (an analysis of all slices: on the other slice too)
     assert res["trajectory_spatial"]["request"]["kind"] == "trajectory" and res["de"]["request"]["kind"] == "de"
     for k in ("trajectory_spatial", "de", "markers", "composition"):
         r = c.get(f"/api/analysis/{res[k]['result']['id']}.csv")
         assert r.status_code == 200 and len(r.text.splitlines()) > 1, (k, r.status_code)
     sig1 = c.get(f"/api/s/{sids[0]}/plausibility/suggestions").json()["results"]
-    assert sig1 != sig0 and len(sig1) == 4, sig1
+    assert sig1 != sig0 and len(sig1) == 7, sig1
     # an analysis of all slices, from the app: kept on both slices
     j = c.post("/api/analysis/run", json={"session": sids[0], "kind": "composition", "scope": "project",
                                          "rows": "slice", "cols": "lineage"}).json()

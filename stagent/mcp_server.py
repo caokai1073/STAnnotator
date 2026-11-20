@@ -1992,7 +1992,9 @@ def cell_communication(by: str = "cell type", within: Optional[dict] = None, sco
     from . import communication
     c = _cells(scope, _uses_selection(by, within))
     r = communication.run(c, by, within, resource, contact_um, secreted_um, min_pct, nonprotein, max(1, min(int(top), 100)))
-    r.pop("table")
+    _keep(c, scope, "run", {"kind": "run", "by": by, "within": within or {}, "resource": resource,
+                            "contact_um": contact_um, "secreted_um": secreted_um, "min_pct": min_pct,
+                            "nonprotein": nonprotein}, {**r, "kind": "run"}, r.pop("table"))
     return _j(r)
 
 
@@ -2006,7 +2008,9 @@ def colocalization(by: str = "cell type", within: Optional[dict] = None, scope: 
     strongest pairs together and apart. A shared layer or compartment also brings cells together."""
     from . import coloc
     c = _cells(scope, _uses_selection(by, within))
-    r, _ = coloc.run(c, by, within, radius_um, n_perm)
+    r, table = coloc.run(c, by, within, radius_um, n_perm)
+    _keep(c, scope, "coloc", {"kind": "coloc", "by": by, "within": within or {}, "radius_um": radius_um,
+                              "n_perm": n_perm}, r, table)
     return _j(r)
 
 
@@ -2018,7 +2022,8 @@ def compare_communication(split: str, by: str = "cell type", within: Optional[di
     from . import communication
     c = _cells(scope, _uses_selection(split, by, within))
     r = communication.compare(c, split, by, within, max(1, min(int(top), 100)), resource=resource)
-    r.pop("table")
+    _keep(c, scope, "compare", {"kind": "compare", "split": split, "by": by, "within": within or {}, "resource": resource},
+          {**r, "kind": "compare"}, r.pop("table"))
     return _j(r)
 
 
