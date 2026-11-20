@@ -67,6 +67,10 @@ header.collapsed .hmini { display: flex; }
 .cmplegend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 12px; font-size: 12px; }
 .cmplegend span.sw { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
 #anBody { max-height: 62vh; overflow: auto; }
+/* result windows: the analysis name left, its views (and how many genes) in the middle, the buttons right */
+#anDlg .andh { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
+.anfoot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; } .anfoot:not(:has(button:not([hidden]))) { display: none; } .andh .dhmid { display: flex; align-items: center; }
+.andh .dhright { justify-self: end; display: flex; gap: 8px; align-items: center; }
 #anTitle { font-weight: 600; font-size: 14px; margin-bottom: 2px; } #anTitle:empty { display: none; } #anBody tr.sig td { font-weight: 600; }
 .pgbar { display: inline-block; height: 9px; border-radius: 2px; vertical-align: middle; }
 table.an { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
@@ -1324,11 +1328,12 @@ T and NK cells: CD3E|NKG7+ EPCAM-
   <div class="gallery" id="glGrid"></div>
 </dialog>
 <dialog id="anDlg" style="width:min(1000px,96vw)">
-  <div class="dh"><b id="anKind">Compare</b><span id="anSeg" class="seg"></span>
+  <div class="dh andh"><b id="anKind">Compare</b><span class="dhmid"><span id="anSeg" class="seg"></span>
     <label id="anNWrap" class="hint" hidden style="margin-left:12px;display:inline-flex;align-items:center;gap:5px"><span id="anNLabel">genes</span>
-      <input type="number" id="anN" style="width:58px;height:28px"></label><span class="spacer"></span>
-    <button id="anAsk" hidden title="Ask the agent what this result may mean">Ask Agent</button><button id="anFig" hidden title="Save the figure as a PDF file">Save figure…</button><button id="anCsv">Save CSV…</button><button id="anClose">Close</button></div>
-  <div class="imbody"><div class="antitle" id="anTitle"></div><div class="hint" id="anSub"></div><div id="anBody"></div><div id="anLegend" class="cmplegend"></div><div class="hint" id="anNote"></div></div>
+      <input type="number" id="anN" style="width:58px;height:28px"></label></span>
+    <span class="dhright"><button id="anCsv">Save CSV…</button><button id="anClose">Close</button></span></div>
+  <div class="imbody"><div class="antitle" id="anTitle"></div><div class="hint" id="anSub"></div><div id="anBody"></div><div id="anLegend" class="cmplegend"></div><div class="hint" id="anNote"></div>
+    <div class="anfoot"><button id="anAsk" hidden title="Ask the agent what this result may mean">Ask Agent</button><button id="anFig" hidden title="Save the figure as a PDF file">Save figure…</button></div></div>
 </dialog>
 <dialog id="shareDlg" style="width:min(560px,94vw)">
   <div class="dh"><b>Help test STAnnotator</b><span class="spacer"></span></div>
