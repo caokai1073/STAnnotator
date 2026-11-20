@@ -712,11 +712,11 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <div class="seg" data-for="aScope"></div></div>
     <div class="fld"><span>Analysis</span><select id="aKind" class="segsel" title="What to compare">
       <option value="de" data-short="DE genes">Genes that differ between one group and the rest or another group</option>
-      <option value="deseq2" data-short="DESeq2">DESeq2 on pseudobulk counts (summed per slice or patient): genes that differ across replicates; a project's slices only</option>
       <option value="markers" data-short="Top genes">The top genes of every group</option>
       <option value="composition" data-short="Composition">How the cells of one grouping split over another</option>
       <option value="spatial" data-short="Spatial">Spatially variable genes (Moran's I): genes whose expression forms patches in the tissue</option>
-      <option value="program" data-short="Programs">Gene program scores (proliferation, interferon, hypoxia… or your genes) per cell, by group and on the map</option></select>
+      <option value="program" data-short="Programs">Gene program scores (proliferation, interferon, hypoxia… or your genes) per cell, by group and on the map</option>
+      <option value="deseq2" data-short="DESeq2">DESeq2 on pseudobulk counts (summed per slice or patient): genes that differ across replicates; a project's slices only</option></select>
       <div class="seg" data-for="aKind"></div></div>
     <label class="fld an-de an-mk"><span id="aByLbl">Compare by</span><select id="aBy" title="What the groups are"></select></label>
     <div class="fgrid an-de">
