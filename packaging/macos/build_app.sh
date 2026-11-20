@@ -11,7 +11,8 @@ ARCH=$(uname -m)   # arm64 (Apple silicon) or x86_64 (Intel)
 uv venv --allow-existing .build-venv --python 3.12
 # exactly the packages of the lock file (versions and hashes: packaging/lock/update.sh updates them), then the app's
 # own code without its dependencies (--reinstall-package: an earlier build left the same version in .build-venv)
-uv pip sync --python .build-venv/bin/python --require-hashes packaging/lock/mac.txt
+LOCK=packaging/lock/mac.txt; [ "$ARCH" = "x86_64" ] && LOCK=packaging/lock/mac-intel.txt  # (older numba: see the lock script)
+uv pip sync --python .build-venv/bin/python --require-hashes "$LOCK"
 uv pip install --python .build-venv/bin/python --no-deps --reinstall-package stagent .
 # MLX (the exact neighbor search on the Apple GPU) in its build for macOS 14, the oldest it has: uv would take the
 # build for the macOS it runs on (macOS 15 on the release runner), which a Mac on macOS 14 cannot load

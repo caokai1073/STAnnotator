@@ -11,9 +11,12 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 EXCLUDE=()
 [ -n "${1:-}" ] && EXCLUDE=(--exclude-newer "$1")
-for p in mac:aarch64-apple-darwin win:x86_64-pc-windows-msvc; do
+for p in mac:aarch64-apple-darwin mac-intel:x86_64-apple-darwin win:x86_64-pc-windows-msvc; do
+  BIN=()  # the Intel Mac: only versions with a built wheel for it (newer numba, llvmlite, cryptography have none, and
+          # building them there needs compilers the build runner lacks), so older versions where needed
+  [ "${p%%:*}" = "mac-intel" ] && BIN=(--only-binary numba --only-binary llvmlite --only-binary cryptography --only-binary numpy)
   uv pip compile pyproject.toml packaging/lock/build.in --extra app --python-version 3.12 \
-    --python-platform "${p#*:}" "${EXCLUDE[@]}" --generate-hashes --no-header -q -o "packaging/lock/${p%%:*}.txt"
+    --python-platform "${p#*:}" "${EXCLUDE[@]}" "${BIN[@]}" --generate-hashes --no-header -q -o "packaging/lock/${p%%:*}.txt"
 done
 # (MLX is not in mac.txt: its marker needs the Mac's kernel version; build_app.sh installs the version pyproject pins)
 git diff --stat -- packaging/lock/
