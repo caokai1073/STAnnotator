@@ -67,6 +67,7 @@ header.collapsed .hmini { display: flex; }
 .cmplegend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 12px; font-size: 12px; }
 .cmplegend span.sw { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
 #anBody { max-height: 62vh; overflow: auto; } #anBody tr.sig td { font-weight: 600; }
+.pgbar { display: inline-block; height: 9px; border-radius: 2px; vertical-align: middle; }
 table.an { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
 table.an th { text-align: right; font-weight: 600; color: var(--muted); padding: 5px 8px; border-bottom: 1px solid var(--line);
   position: sticky; top: 0; background: var(--panel); white-space: nowrap; }
@@ -160,8 +161,8 @@ header #sample, header #session { min-width: 0; }
 .stat > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .stat .progress { margin-top: 8px; }
 .stat #pstage, .stat #estage, .stat #nstage { font-size: 11.5px; color: var(--muted); }
-.seg { display: flex; gap: 2px; padding: 3px; background: var(--bg); border-radius: 9px; }
-.seg button { flex: 1 1 0; border: 0; background: none; padding: 5px 4px; font-size: 12px; color: var(--muted); border-radius: 7px; }
+.seg { display: flex; flex-wrap: wrap; gap: 2px; padding: 3px; background: var(--bg); border-radius: 9px; }
+.seg button { flex: 1 1 0; white-space: nowrap; border: 0; background: none; padding: 5px 4px; font-size: 12px; color: var(--muted); border-radius: 7px; }
 .seg button:hover:not(.on) { background: none; color: var(--ink); }
 .seg button.on { background: var(--panel); color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
 #reviewMode { display: inline-flex; padding: 2px; }
@@ -710,7 +711,9 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <option value="de" data-short="DE genes">Genes that differ between one group and the rest or another group</option>
       <option value="deseq2" data-short="DESeq2">DESeq2 on pseudobulk counts (summed per slice or patient): genes that differ across replicates; a project's slices only</option>
       <option value="markers" data-short="Top genes">The top genes of every group</option>
-      <option value="composition" data-short="Composition">How the cells of one grouping split over another</option></select>
+      <option value="composition" data-short="Composition">How the cells of one grouping split over another</option>
+      <option value="spatial" data-short="Spatial">Spatially variable genes (Moran's I): genes whose expression forms patches in the tissue</option>
+      <option value="program" data-short="Programs">Gene program scores (proliferation, interferon, hypoxia… or your genes) per cell, by group and on the map</option></select>
       <div class="seg" data-for="aKind"></div></div>
     <label class="fld an-de an-mk"><span id="aByLbl">Compare by</span><select id="aBy" title="What the groups are"></select></label>
     <div class="fgrid an-de">
@@ -718,6 +721,10 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <label class="fld"><span>Versus</span><select id="aRef"></select></label>
     </div>
     <label class="fld an-ds" title="One pseudobulk sample per value: the counts of each side summed per slice, or per patient / donor (a metadata column with one value per slice; several slices of a patient form one sample)"><span>Replicates</span><select id="aRep"></select></label>
+    <label class="fld an-pg" title="A built-in program (short marker sets) or your own genes"><span>Program</span><select id="aProg"></select></label>
+    <label class="fld an-pg" id="aGenesWrap" hidden title="Gene names separated by spaces or commas"><span>Genes</span><input type="text" id="aGenes" placeholder="e.g. ISG15 IFIT1 IFIT3 MX1"></label>
+    <label class="switch an-sv" title="Take each gene's mean in every cell type out first, so what is left is spatial variation the cell type composition does not explain (e.g. a gradient within the epithelium, an inflamed patch)"><input type="checkbox" id="aBeyond" checked>
+      <span>Beyond cell types<small>patterns not explained by where the types are</small></span></label>
     <div class="fgrid an-cp">
       <label class="fld" title="One bar per value"><span>Rows</span><select id="aRows"></select></label>
       <label class="fld" title="The shares in each bar"><span>Split by</span><select id="aCols"></select></label>
@@ -1581,7 +1588,8 @@ function grayColors() {
 // clusters or the trajectory run (a new run under the same version must not reuse the old colors)
 function modeRun(mode) {
   return mode === "region" ? st.colorEpoch || 0 : mode === "niche" ? (st.niche ? st.niche.params.run_id : "")
-    : mode === "leiden" ? (st.emb ? st.emb.run_id : "") : mode.startsWith("trajectory:") ? ((st.trajs || {})[mode.slice(11)] || {}).run_id || "" : 0;
+    : mode === "leiden" ? (st.emb ? st.emb.run_id : "") : mode.startsWith("trajectory:") ? ((st.trajs || {})[mode.slice(11)] || {}).run_id || ""
+    : mode.startsWith("program:") ? ((st.programs || {})[mode.slice(8)] || {}).run_id || "" : 0;
 }
 async function loadColors() {
   const q = new URLSearchParams({ version: st.version, mode: st.mode, only: [...filt()].join("|") });
@@ -1777,6 +1785,7 @@ function fillModes(sm) {
   if (st.emb) avail.push(["leiden", "Leiden clusters"]);
   if (st.lrMode) avail.push(["lr", "ligand-receptor signal"]);
   TR_METHODS.forEach(([m, name]) => { if (st.trajs && st.trajs[m]) avail.push([`trajectory:${m}`, `trajectory: ${name}`]); });
+  Object.entries(st.programs || {}).forEach(([k, x]) => avail.push([`program:${k}`, `program: ${x.name}`]));
   const extra = [["confidence", "confidence"]];
   if (st.vocab && st.vocab.method === "markers") extra.push(["cluster", "clusters (marker step)"]);
   if (st.showMore) avail.push(...extra);
@@ -1997,6 +2006,7 @@ async function openSession(sid) {
   // the requests that do not wait for each other go out together (a server over SSH answers each after a round trip);
   // what depends on them still runs in the same order as before
   const pInfo = api(`/api/s/${sid}/info`), pTraj = api(`/api/s/${sid}/trajectory`).catch(() => ({}));
+  const pProg = api(`/api/s/${sid}/programs`).catch(() => ({}));
   const pNiches = loadNiches(false), pEmb = loadEmbedding(false);
   [pInfo, pNiches, pEmb].forEach((p) => p.catch(() => {}));  // (awaited below; no unhandled rejection meanwhile)
   const stale = () => st.sid !== sid;  // another annotation opened meanwhile: this one stops here
@@ -2015,9 +2025,9 @@ async function openSession(sid) {
   }
   await pNiches;
   await pEmb;
-  const trajs = (await pTraj).trajectories || {};
+  const trajs = (await pTraj).trajectories || {}, progs = await pProg;
   if (stale()) return;
-  st.trajs = trajs;
+  st.trajs = trajs; st.programs = progs.scored || {}; PG.builtin = progs.builtin || PG.builtin;
   loadResults(sid).catch(() => {});
   $("anSave").disabled = false;
   loadGenes(st.sample.sample_id).catch(() => {});
@@ -2596,7 +2606,8 @@ async function loadLegend() {
   $("legend").hidden = !!st.imageOnly;  // an image only: no cells to list
   $("legend").classList.remove("stale");
   $("lgtitle").textContent = (st.mode.startsWith("gene:") ? `${st.mode.slice(5)} transcripts` : st.mode.startsWith("lr:") ? lrTitle(st.mode)
-    : st.mode.startsWith("trajectory:") ? `Trajectory: ${((st.trajs || {})[st.mode.slice(11)] || {}).label || TR_NAME[st.mode.slice(11)]}` : MODE_TITLES[st.mode]) + (f.size ? ` (${f.size} shown)` : "");
+    : st.mode.startsWith("trajectory:") ? `Trajectory: ${((st.trajs || {})[st.mode.slice(11)] || {}).label || TR_NAME[st.mode.slice(11)]}`
+    : st.mode.startsWith("program:") ? `Program: ${((st.programs || {})[st.mode.slice(8)] || {}).name || st.mode.slice(8)}` : MODE_TITLES[st.mode]) + (f.size ? ` (${f.size} shown)` : "");
   $("lgall").disabled = !f.size;
   const box = $("lgitems"); box.textContent = "";
   const toggle = (keys) => {
@@ -7462,6 +7473,15 @@ async function paintTile(t, mode, sel) {  // the image, then the cells: light gr
 }
 $("allSamples").onclick = () => openGallery(!(st.sample && projectOf(st.sample.sample_id)));  // the project, or every sample
 // ---------------- Compare: DE genes, top genes per group, composition (one slice or all slices pooled) ----------------
+const PG = { builtin: {} };  // the built-in gene programs (name: genes), from /api/s/<sid>/programs
+function fillPrograms() {
+  const sel = $("aProg"), keep = sel.value;
+  const names = Object.keys(PG.builtin || {});
+  sel.replaceChildren(...names.map((n) => Object.assign(document.createElement("option"), { value: n, textContent: n, title: PG.builtin[n].join(" ") })),
+    Object.assign(document.createElement("option"), { value: "__custom", textContent: "Your genes…" }));
+  if ([...sel.options].some((o) => o.value === keep)) sel.value = keep;
+}
+$("aProg").onchange = () => { $("aGenesWrap").hidden = $("aProg").value !== "__custom"; };
 const AN = { opts: null, key: "", last: null, req: null, view: "", by: {}, n: { de: 20, deseq2: 20, deall: 5, markers: 5, run: 20, compare: 20, circle: 40 } };
 const AN_N = { de: [5, 60], deseq2: [5, 60], deall: [1, 30], markers: [1, 15], run: [5, 60], compare: [5, 80], circle: [5, 300] };  // the dialog's number: least, most
 const AN_LABEL = { "cell type": "cell type", leiden: "Leiden cluster", selection: "UMAP selection" };
@@ -7542,12 +7562,19 @@ function syncAnKind() {
   document.querySelectorAll("[data-pane=compare] .an-ds").forEach((e) => (e.hidden = k !== "deseq2" && !(k === "composition" && $("aScope").value === "project")));
   if (AN.opts) anGroups();
   document.querySelectorAll("[data-pane=compare] .an-cp").forEach((e) => (e.hidden = k !== "composition"));
-  $("aByLbl").textContent = k === "markers" ? "Group by" : "Compare by";
-  setLabel($("aRun"), { de: "Find DE genes", deseq2: "Run DESeq2", markers: "Find top genes", composition: "Show composition" }[k]);
+  document.querySelectorAll("[data-pane=compare] .an-sv").forEach((e) => (e.hidden = k !== "spatial"));
+  document.querySelectorAll("[data-pane=compare] .an-pg").forEach((e) => (e.hidden = k !== "program"));
+  if (k === "program") { fillPrograms(); document.querySelectorAll("[data-pane=compare] .an-mk").forEach((e) => (e.hidden = false)); }
+  $("aGenesWrap").hidden = k !== "program" || $("aProg").value !== "__custom";
+  $("aByLbl").textContent = k === "markers" || k === "program" ? "Group by" : "Compare by";
+  setLabel($("aRun"), { de: "Find DE genes", deseq2: "Run DESeq2", markers: "Find top genes", composition: "Show composition",
+                        spatial: "Find spatial genes", program: "Score the program" }[k]);
   $("aHint").textContent = {
     de: "Wilcoxon test on log-normalized expression; genes ranked by AUC (0.5 = no difference). Group All compares every group with the other cells at once. Click a gene to color the map by it.",
     deseq2: "The raw counts of each side summed per replicate (slice, or patient), then DESeq2: needs 2 or more replicates with 30+ cells on each side (3+ is better). Replicates holding both sides (e.g. two regions in the same slices) are paired.",
     markers: "Every group against the other cells: what sets each niche, cluster or region apart.",
+    spatial: "Moran's I of every gene over each cell's 10 nearest cells, slice by slice; ranked by I (0 = no pattern, near 1 = smooth patches). Across all cells the patterns are mostly the cell types: keep Beyond cell types on, or choose Only within one type.",
+    program: "A program's genes against expression-matched control genes in every cell (as scanpy's score_genes); the mean per group, and the map colored by the score (Show on map).",
     composition: "Shares of each value per row, and how much more or less common it is than if the two were unrelated. All slices with Rows a condition (one value per slice): a test of each share between the conditions, the replicates (slices, or patients) as the samples.",
   }[k];
 }
@@ -7564,6 +7591,12 @@ $("aRun").onclick = async () => {
   if (kind === "de" || kind === "deseq2") Object.assign(b, { by: $("aBy").value, group: $("aGroup").value, reference: $("aRef").value });
   if (kind === "deseq2" || (kind === "composition" && b.scope === "project")) b.replicate = $("aRep").value;
   else if (kind === "markers") b.by = $("aBy").value;
+  else if (kind === "spatial") b.beyond_types = $("aBeyond").checked;
+  else if (kind === "program") {
+    Object.assign(b, { by: $("aBy").value || "cell type" });
+    if ($("aProg").value === "__custom") { b.genes = $("aGenes").value.trim(); b.program = "My program"; if (!b.genes) { toast("Type the program's genes", 4000); return; } }
+    else b.program = $("aProg").value;
+  }
   else Object.assign(b, { rows: $("aRows").value, cols: $("aCols").value });
   $("aRun").disabled = true; $("aprogress").classList.add("show");
   try {
@@ -7658,6 +7691,38 @@ async function showAnalysis() {
   const where = [r.scope === "project" ? "all slices pooled" : "this slice", within && `only ${within}`].filter(Boolean).join(" · ");
   $("anBody").textContent = ""; $("anLegend").textContent = ""; $("anNote").textContent = r.note || "";
   $("anAsk").hidden = !(st.desktop || st.chatAvailable);
+  if (q.kind === "spatial") {
+    $("anTitle").textContent = `Spatially variable genes${r.beyond_types ? " beyond cell types" : ""}`;
+    $("anSub").textContent = `${where} · ${r.n_cells.toLocaleString()} cells` + (r.slices.length > 1 ? ` in ${r.slices.length} slices` : "") + ` · ${r.n_significant} with FDR < 0.05`;
+    const multi = r.slices.length > 1;
+    const head = ["Gene", "Moran's I", "z", "FDR", "% detected", ...(multi ? ["Slices in top"] : [])];
+    $("anBody").append(anTable(head, r.genes.map((x) => [geneLink(x.gene), x.morans_i.toFixed(3), x.z.toFixed(1),
+      x.fdr < 0.001 ? "< 0.001" : x.fdr.toFixed(3), `${(100 * x.pct_detected).toFixed(1)}%`, ...(multi ? [`${x.n_slices_top} / ${r.slices.length}`] : [])])));
+    $("anNote").textContent = r.note + " Click a gene to color the map by it.";
+    if (!$("anDlg").open) $("anDlg").showModal();
+    return;
+  }
+  if (q.kind === "program") {
+    $("anTitle").textContent = `${r.program} by ${anLabel(r.by)}`;
+    $("anSub").textContent = `${where} · ${r.n_cells.toLocaleString()} cells · ${r.genes.length} genes: ${r.genes.join(", ")}`;
+    const mx = Math.max(1e-6, ...r.groups.map((x) => Math.abs(x.mean)));
+    const bar = (v) => { const b = document.createElement("span"); b.className = "pgbar"; b.style.width = `${Math.round(60 * Math.abs(v) / mx)}px`;
+      b.style.background = v > 0 ? "rgba(200,60,40,.7)" : "rgba(40,90,200,.5)"; const w = document.createElement("span"); w.append(b, ` ${v.toFixed(3)}`); return w; };
+    $("anBody").append(anTable([anLabel(r.by), "Mean score", "Median", "Above background", "Cells"], r.groups.map((x) =>
+      [x.group, bar(x.mean), x.median.toFixed(3), `${(100 * x.pct_above).toFixed(1)}%`, x.n_cells.toLocaleString()])));
+    const go = Object.assign(document.createElement("button"), { textContent: "Show on map", title: "Color the map by this program's score" });
+    go.onclick = async () => {
+      $("anDlg").close();
+      st.programs = (await api(`/api/s/${st.sid}/programs`).catch(() => ({}))).scored || st.programs;
+      fillModes(st.lastSummary);
+      if (![...$("mode").options].some((o) => o.value === r.mode)) { toast("Score the program on this slice first", 4000); return; }
+      $("mode").value = r.mode; $("mode").dispatchEvent(new Event("change"));
+    };
+    $("anLegend").append(go);
+    $("anNote").textContent = r.note;
+    if (!$("anDlg").open) $("anDlg").showModal();
+    return;
+  }
   if (q.kind === "de" && r.all) {  // every group against the other cells
     $("anTitle").textContent = `Every ${anLabel(r.by)} vs the other cells`;
     $("anSub").textContent = `${where} · ${r.groups.length} groups` + (r.skipped_small.length ? ` · skipped (under 30 cells): ${r.skipped_small.join(", ")}` : "") +

@@ -262,6 +262,11 @@ def colors_for(s: Session, version, mode, only):
             b = gene_bins(s, mode)
             out[:, :3] = np.array([x[2] for x in GENE_BINS], np.uint8)[b]
             out[:, 3] = np.array([x[3] for x in GENE_BINS], np.uint8)[b]
+        elif mode.startswith("program:"):
+            from . import programs
+            b = programs.bins(programs.values(s, mode.split(":", 1)[1]))
+            out[:, :3] = np.array([x[2] for x in programs.BINS], np.uint8)[b]
+            out[:, 3] = np.array([x[3] for x in programs.BINS], np.uint8)[b]
         elif mode == "leiden":
             lab = embedding.leiden(s.sample_id)
             if lab is not None:
@@ -311,6 +316,9 @@ def colors_for(s: Session, version, mode, only):
 
 def mode_key(s, mode):
     """Cache key of a color mode; niche colors change with every niche run."""
+    if mode.startswith("program:"):
+        from . import programs
+        return f"{mode}:{programs.saved(s).get(mode.split(':', 1)[1], {}).get('run_id')}"
     if mode.startswith("trajectory"):
         from . import trajectory
         return f"traj:{(trajectory.last(s, trajectory.mode_method(mode))[0] or {}).get('run_id')}"
@@ -386,6 +394,9 @@ def cell_keys(s: Session, version, mode):
         return k
     if mode.startswith("gene:"):
         return np.array([x[0] for x in GENE_BINS], dtype=object)[gene_bins(s, mode)]
+    if mode.startswith("program:"):
+        from . import programs
+        return np.array([x[0] for x in programs.BINS], dtype=object)[programs.bins(programs.values(s, mode.split(":", 1)[1]))]
     if mode.startswith("lr:"):
         return np.array([x[0] for x in lr_table(mode)], dtype=object)[lr_bins(s, mode)]
     if mode == "leiden":
@@ -449,6 +460,10 @@ def legend_for(s: Session, version, mode):
     if mode.startswith("gene:"):
         n = np.bincount(gene_bins(s, mode), minlength=len(GENE_BINS))
         return [{"key": k, "label": lab, "color": c, "count": int(n[i])} for i, (k, lab, c, _) in enumerate(GENE_BINS)][::-1]
+    if mode.startswith("program:"):
+        from . import programs
+        n = np.bincount(programs.bins(programs.values(s, mode.split(":", 1)[1])), minlength=len(programs.BINS))
+        return [{"key": k, "label": lab, "color": c, "count": int(n[i])} for i, (k, lab, c, _) in enumerate(programs.BINS)][::-1]
     if mode.startswith("trajectory"):
         from . import trajectory
         meta, t, _ = trajectory.last(s, trajectory.mode_method(mode))
@@ -1756,7 +1771,8 @@ async def api_analysis_run(req: Request):
         c = _analysis_cells(b)
         within = {k: v for k, v in (b.get("within") or {}).items() if v not in (None, "", [])}
         say(0.3, {"de": "testing every gene (Wilcoxon)", "deseq2": "DESeq2 on the pseudobulk counts",
-                  "markers": "the top genes of every group", "composition": "counting the cells"}.get(b["kind"], "computing"))
+                  "markers": "the top genes of every group", "composition": "counting the cells",
+                  "spatial": "Moran's I of every gene", "program": "scoring the program"}.get(b["kind"], "computing"))
         if b["kind"] == "de":
             r = analysis.de(c, b["by"], b["group"], b.get("reference") or "rest", within, top=60, full=True)
             table = r.pop("table")
@@ -1767,6 +1783,15 @@ async def api_analysis_run(req: Request):
         elif b["kind"] == "markers":
             r = analysis.markers(c, b["by"], top=15, within=within)
             table = pd.DataFrame([{"group": g["group"], "n_cells": g["n_cells"], **x} for g in r["groups"] for x in g["genes"]])
+        elif b["kind"] == "spatial":
+            from . import svg
+            r = svg.spatial_genes(c, within, bool(b.get("beyond_types")), top=60, k=int(b.get("k") or svg.K),
+                                  progress=lambda f, m: say(0.3 + 0.6 * f, m))
+            table = r.pop("table")
+        elif b["kind"] == "program":
+            from . import programs
+            r = programs.run(c, b.get("program") or None, b.get("genes") or None, b.get("by") or "cell type", within)
+            table = r.pop("table")
         elif b["kind"] == "composition":
             r = analysis.crosstab(c, b["rows"], b["cols"], within, replicate=b.get("replicate") or None)
             table = pd.DataFrame([{b["rows"]: x["row"], "n_cells": x["n_cells"], **x["shares"]} for x in r["table"]]).fillna(0)
@@ -1779,7 +1804,7 @@ async def api_analysis_run(req: Request):
                 t["id"] = uuid.uuid4().hex[:12]
                 ANALYSES[t["id"]] = tt
         else:
-            raise ValueError("kind must be de, deseq2, markers or composition")
+            raise ValueError("kind must be de, deseq2, markers, composition, spatial or program")
         key = uuid.uuid4().hex[:12]
         ANALYSES[key] = table
         while len(ANALYSES) > ANALYSES.n:
@@ -3978,6 +4003,13 @@ async def api_reference_inspect(req: Request):
         return _json({"error": f"cannot read the reference: {e}"}, 400)
 
 
+def api_programs(req):
+    """The gene programs scored on an annotation ({key: name, genes, ...}) and the built-in ones."""
+    from . import programs
+    s = review_app._session(req.path_params["sid"])
+    return _json({"scored": programs.saved(s), "builtin": {k: v.split() for k, v in programs.BUILTIN.items()}})
+
+
 async def api_existing_inspect(req: Request):
     """An annotation CSV (by path, or uploaded text kept in <data folder>/annotations/): columns and matches."""
     from . import existing
@@ -4421,6 +4453,7 @@ def build_app(port):
         Route("/api/markers/to_csv", api_markers_to_csv, methods=["POST"]),
         Route("/api/reference/inspect", api_reference_inspect, methods=["POST"]),
         Route("/api/existing/inspect", api_existing_inspect, methods=["POST"]),
+        Route("/api/s/{sid}/programs", api_programs),
         Route("/api/s/{sid}/export_to", api_export_to, methods=["POST"]),
         Route("/api/markers/draft", api_markers_draft, methods=["POST"]),
         Route("/api/markers/organs", api_markers_organs),

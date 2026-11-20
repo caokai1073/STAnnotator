@@ -954,6 +954,26 @@ condition, with every slice's own bar), as shares or as log2 enrichment over ind
 - On simulated slices (15 types, 3 vs 3 slices) p < 0.05 came out in 4% of unchanged types, and a type 3 times as
   common in one condition was found (FDR < 0.05) in about 90% of runs, 2 times in about half.
 
+**Spatial genes**: genes whose expression forms patches or gradients in the tissue, by Moran's I of each gene over
+every cell's 10 nearest cells (slice by slice; 0 = no pattern, near 1 = smooth patches; ranked by I, since with many
+cells nearly every pattern is significant).
+
+- **Beyond cell types** (on by default) takes each gene's mean in every cell type out first, so the list shows the
+  patterns the cell type composition does not explain (a gradient along the crypt, an inflamed patch); off, the list
+  is mostly the cell types' own markers. **Only within** looks inside one type, region or niche.
+- All slices: each slice on its own, then the cells-weighted mean I, a combined z and in how many slices each gene is
+  among the top. Click a gene to color the map by it.
+- On SCP2927 147328 (356,629 cells, 480 genes) it takes about 2 s; beyond the cell types it lists GREM1 (the crypt
+  base), DUOX2, DUOXA2, LCN2 and CXCL10 (inflamed epithelium) and FDCSP (follicles).
+
+**Programs**: a gene program's score in every cell: the mean log-normalized expression of its genes minus that of
+expression-matched control genes (as scanpy's `score_genes`); above 0 is higher than background. Built in:
+proliferation, interferon type I and gamma responses, hypoxia, inflammation (TNF / NF-kB), antigen presentation
+(MHC-II), cytotoxicity, T cell exhaustion, EMT, fibrosis / ECM, endothelial activation, stress / immediate early
+(short marker sets; human and mouse names match); or **Your genes…**. The result gives the mean and the share above
+background per group; **Show on map** colors the cells by the score (the color menu keeps "program: <name>"). A
+program needs 3 of its genes in the panel; the result names those it used and those missing.
+
 **Dot plot** (DE genes and Top genes): one row per group, dot size = share of cells detecting the gene, color = its
 mean expression scaled per gene. For one DE comparison only its two sides (the group and the reference or all other
 cells). The number in the window sets how many genes the table and the plot show (DE: 5–60, the plot the top N up and

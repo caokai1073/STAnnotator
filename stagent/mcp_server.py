@@ -1888,6 +1888,35 @@ def group_markers(by: str, top: int = 8, within: Optional[dict] = None, scope: s
 
 
 @mcp.tool()
+def spatially_variable_genes(within: Optional[dict] = None, beyond_types: bool = True, top: int = 30,
+                             scope: str = "slice") -> str:
+    """Genes whose expression forms spatial patterns (Moran's I over each cell's 10 nearest cells, per slice; ranked
+    by I: 0 = none, near 1 = smooth patches). beyond_types (default on): each gene's mean per cell type is taken out
+    first, so the patterns are those the cell type composition does not explain (gradients or patches within the
+    types); off: mostly the cell types' own markers. within: one cell type, region, niche... (e.g. {"cell type":
+    "Fibroblasts"}). scope="project": every slice, mean I and in how many slices each gene is in the top."""
+    from . import svg
+    r = svg.spatial_genes(_cells(scope, _uses_selection(within)), within, beyond_types, max(1, min(int(top), 100)))
+    r.pop("table")
+    return _j(r)
+
+
+@mcp.tool()
+def program_scores(program: Optional[str] = None, genes: Optional[list[str]] = None, by: str = "cell type",
+                   within: Optional[dict] = None, scope: str = "slice") -> str:
+    """Score a gene program in every cell (the program's genes against expression-matched control genes, as scanpy's
+    score_genes; above 0 = higher than background) and give its mean per value of `by` (cell type, niche, region,
+    ...). program: a built-in one (Proliferation, Interferon type I response, Interferon gamma response, Hypoxia,
+    Inflammation (TNF / NF-kB), Antigen presentation (MHC-II), Cytotoxicity, T cell exhaustion, EMT / mesenchymal,
+    Fibrosis / ECM, Endothelial activation, Stress / immediate early), or genes: your own list (then program names
+    it). The scores are kept, so the map can be colored by them: the app's color menu lists "program: <name>"."""
+    from . import programs
+    r = programs.run(_cells(scope, _uses_selection(by, within)), program, genes, by, within)
+    r.pop("table")
+    return _j(r)
+
+
+@mcp.tool()
 def composition(rows: str, cols: str, within: Optional[dict] = None, scope: str = "slice",
                 replicate: Optional[str] = None) -> str:
     """How the cells of one grouping split over another: per value of rows its cell count, the share of each value of
