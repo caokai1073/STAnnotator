@@ -117,6 +117,10 @@ def image_error_text(path, e):
     """What to tell the user when the sample's image cannot be opened: e an OSError (moved, no permission, locked) or
     any other failure to read it (a file still being copied or synced, a damaged file, not an image the app reads)."""
     import errno
+    from .render import IncompleteImage
+    if isinstance(e, IncompleteImage):
+        return (f"The image {path} is incomplete: {e}. It is probably still being copied or synced. The cells are "
+                "shown without it; click Refresh when the copy has finished.")
     if not isinstance(e, OSError):
         return (f"The image {path} cannot be read as an image ({e}): it may still be copying or "
                 "syncing, be damaged, or not be a TIFF / OME-TIFF. The cells are shown without it; click Refresh once "
@@ -140,6 +144,7 @@ class SampleView:
         self.um_per_px = float(meta.get("he_um_per_px", config.HE_UM_PER_PX))
         self.image_kind = meta.get("image_kind", "H&E")
         self.image_error = None
+        self.he_path = meta.get("he_path")
         try:
             self.slide = render.slide(meta.get("he_path"))
         except Exception as e:  # the image cannot be read (missing, no permission, locked, cut short, not a TIFF): the
@@ -535,16 +540,25 @@ def he_tile(req: Request):
     sid, L = req.path_params["sample"], int(req.path_params["level"])
     tx, ty = (int(v) for v in req.path_params["xy"].split(".")[0].split("_"))
     v = view(sid)
+    try:
+        x0, y0, x1, y1, w, h, _ = v.tile_box(L, tx, ty)
+    except ValueError:
+        return Response(status_code=404)
 
     def make():
-        x0, y0, x1, y1, w, h, _ = v.tile_box(L, tx, ty)
         buf = io.BytesIO()
         v.slide.read(x0, y0, x1, y1, w, h).save(buf, "JPEG", quality=85)
         return buf.getvalue()
     try:
         data = _tiles.get_or((sid, L, tx, ty), make)
-    except ValueError:
-        return Response(status_code=404)
+    except Exception as e:  # the image's pixels cannot be read here (damaged): a blank tile, not kept, and he_info
+        # says why from now on (the app's Refresh reads the file again)
+        if v.image_error is None:
+            v.image_error = image_error_text(v.he_path, e)
+            print(f"he tile {sid} {L} {tx}_{ty}: {type(e).__name__}: {e}", flush=True)
+        buf = io.BytesIO()
+        Image.new("RGB", (w, h), v.slide.fill).save(buf, "JPEG", quality=85)
+        return Response(buf.getvalue(), media_type="image/jpeg", headers=NO_CACHE)
     return Response(data, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
 
 
@@ -856,6 +870,8 @@ async def api_refine_start(req: Request):
     noted = False
     try:
         if b.get("from") and b["from"] != s.id:
+            if not (config.SESSIONS / str(b["from"]) / "session.json").is_file():  # (deleted since)
+                raise ValueError(f"the annotation whose rounds this one continues ({b['from']}) no longer exists")
             iterate.carry(review_app._session(b["from"]), s)
         organ = (b.get("organ") or "").strip() or None
         if organ:

@@ -1,6 +1,8 @@
 """A sample whose image cannot be read still opens: its cells on a blank background, and he_info says why
 (image_error) instead of failing with 500. The image moved; cut short (a copy or sync still going: 4 bytes); not a
-TIFF; no permission (macOS keeping the app out of Downloads): chmod where it takes the right to read away (not on
+TIFF; a pyramid still being copied (its header and full resolution there, its smaller levels, stored last, not yet:
+he_info says so, and once the copy is whole the app's Refresh shows the image); no permission (macOS keeping the app
+out of Downloads): chmod where it takes the right to read away (not on
 Windows, where it only makes the file read-only, nor for root), and everywhere a PermissionError raised by the opener.
 Runs in a temporary data folder."""
 import os, shutil, tempfile, json
@@ -57,6 +59,47 @@ try:
         if case == "permission error":
             assert "Permission denied" in j["image_error"] or "macOS" in j["image_error"], j["image_error"]
         assert c.get("/api/sample/s1/cells.bin").status_code == 200, case  # (the cells, on the blank background)
+    # a pyramid still being copied: every cut either opens whole or is refused with "incomplete"; once whole, Refresh
+    import numpy as np, tifffile
+    pyr = os.path.join(home, "pyramid.ome.tif")
+    rgb = np.random.default_rng(0).integers(0, 255, (1500, 1100, 3), dtype=np.uint8)
+    with tifffile.TiffWriter(pyr) as w:
+        w.write(rgb, tile=(128, 128), subifds=3, photometric="rgb", compression="zlib", metadata={"axes": "YXS"})
+        for k in (2, 4, 8):
+            w.write(rgb[::k, ::k], tile=(128, 128), subfiletype=1, photometric="rgb", compression="zlib")
+    whole = open(pyr, "rb").read()
+    for frac in np.linspace(0.05, 0.995, 60):
+        part = os.path.join(home, "part.tif")
+        open(part, "wb").write(whole[:int(len(whole) * frac)])
+        try:
+            sl = render.Slide(part)
+        except render.IncompleteImage:
+            continue
+        except Exception:  # (cut inside the header: not an image yet, the message above)
+            continue
+        for k, (w_, h_, _) in enumerate(sl.levels):  # opened: every level reads
+            sl._box(k, 0, 0, w_, h_)
+        sl.close()
+    m = json.load(open(mf)); m.update(he_path=part, image_kind="H&E"); json.dump(m, open(mf, "w"))
+    open(part, "wb").write(whole[:int(len(whole) * 0.9)])
+    webapp._views.pop("s1", None)
+    j = c.get("/api/sample/s1/he_info").json()
+    print("copying ->", j["image_kind"], "|", j["image_error"][:120])
+    assert j["image_kind"] == "none" and "incomplete" in j["image_error"] and "Refresh" in j["image_error"], j
+    open(part, "wb").write(whole)  # the copy has finished: Refresh
+    webapp._views.pop("s1", None); render.unload(part)
+    j = c.get("/api/sample/s1/he_info").json()
+    assert j["image_kind"] == "H&E" and not j["image_error"], j
+    # a tile whose pixels cannot be read (damaged inside): a blank tile, and he_info says why
+    v = webapp.view("s1")
+    def broken(*a):
+        raise RuntimeError("LIBDEFLATE_BAD_DATA")
+    v.slide.read = broken
+    webapp._tiles.clear() if hasattr(webapp._tiles, "clear") else None
+    r = c.get("/api/sample/s1/he/0/0_0.jpg")
+    assert r.status_code == 200 and r.headers["content-type"] == "image/jpeg", r.status_code
+    j = c.get("/api/sample/s1/he_info").json()
+    assert j["image_error"] and "LIBDEFLATE_BAD_DATA" in j["image_error"], j
     print("ok")
 finally:
     for f in os.listdir(home):

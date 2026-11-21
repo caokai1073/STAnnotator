@@ -1,6 +1,6 @@
 """Figures: region maps (PNG), H&E conflict crops and tissue overviews (JPEG, smaller for MCP clients). Each returns
 its path. Slide reads any box of a pyramidal H&E at a given output size (also used by the viewer's tiles)."""
-import math, threading
+import contextlib, logging, math, threading
 from pathlib import Path
 import numpy as np, tifffile, zarr
 from PIL import Image
@@ -34,13 +34,57 @@ def lineage_palette(lineages):
 REGION_COLORS = {"mucosa": "#e6862a", "submucosa": "#57a35a", "muscularis_propria": "#3d76b8",
                  "lymphoid_aggregate": "#8e5bb5", "fibromuscular_hyperplasia": "#c9b63c", "granuloma": "#b07aa1",
                  "unknown": "#cfcfcf"}
+class IncompleteImage(ValueError):
+    """The image file ends before the data it lists (a copy or sync still going, or a file cut short)."""
+
+
+class _Problems(logging.Handler):
+    def __init__(self):
+        super().__init__(logging.WARNING)
+        self.found = []
+
+    def emit(self, record):
+        self.found.append(record.getMessage())
+
+
+@contextlib.contextmanager
+def _tiff_problems():
+    """What tifffile logs while reading a file's structure: it logs (does not raise) a tag whose value lies past the
+    end of the file, then goes on without it (e.g. the pyramid's levels when they are stored last)."""
+    h, log = _Problems(), logging.getLogger("tifffile")
+    log.addHandler(h)
+    try:
+        yield h.found
+    finally:
+        log.removeHandler(h)
+
+
+def _check_complete(t, series, problems):
+    """Raise IncompleteImage when the file is shorter than its structure says: a tag's value or a level's pixels past
+    the end. A pyramid stores its smaller levels last, so a file still being copied opens at full resolution but its
+    zoomed-out views have nothing to read."""
+    size = t.filehandle.size
+    cut = [m for m in problems if "offset" in m.lower() or "truncat" in m.lower() or "corrupt" in m.lower()]
+    if cut:
+        raise IncompleteImage(f"the file ({size:,} bytes) is shorter than its own structure says")
+    for k, lv in enumerate(series.levels):
+        for pg in list(lv.pages)[:3]:  # (the pages read: the first, or the 3 colors of a planar RGB)
+            offs, counts = getattr(pg, "dataoffsets", None), getattr(pg, "databytecounts", None)
+            if offs is None or counts is None or not len(offs):
+                continue
+            end = max(int(o) + int(c) for o, c in zip(offs, counts))
+            if end > size:
+                raise IncompleteImage(f"the file ({size:,} bytes) ends before the pixels of pyramid level {k} "
+                                      f"(up to {end:,} bytes)")
+
+
 class Slide:
     """A pyramidal TIFF / OME-TIFF: RGB (H&E) or a fluorescence channel (e.g. DAPI, shown in gray with its display
     range taken from the coarsest level)."""
 
     def __init__(self, path):
         self.path = path
-        with tifffile.TiffFile(path) as t:
+        with _tiff_problems() as problems, tifffile.TiffFile(path) as t:
             s = t.series[0]
             self.levels = []
             for lv in s.levels:
@@ -49,6 +93,7 @@ class Slide:
             rgb = "S" in s.axes and s.shape[s.axes.index("S")] in (3, 4)
             rgb = rgb or ("C" in s.axes and s.shape[s.axes.index("C")] == 3 and s.dtype == np.uint8)
             self.rgb, self.dtype = rgb, s.dtype
+            _check_complete(t, s, problems)
         self.W0, self.H0 = self.levels[0][:2]
         self._z, self._stores, self._lock = {}, [], threading.Lock()
         self.fill = (245, 245, 245) if self.rgb else (0, 0, 0)
