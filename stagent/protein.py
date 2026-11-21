@@ -66,14 +66,11 @@ def _from_xenium(source):
     files = source.get("files") or {}
     if "atera" in files and "matrix" not in files:  # (Atera: protein features of its AnnData zarr matrix, if any)
         from .importer import _atera_read
-        obs, var, X = _atera_read(files["atera"])
-        if "feature_type" not in var.columns:
-            return None
-        keep = np.flatnonzero(var["feature_type"].astype(str).to_numpy() == "Protein Expression")
-        if not len(keep):
+        obs, var, X = _atera_read(files["atera"], keep_types=("Protein Expression",))
+        if "feature_type" not in var.columns or not len(var):
             return None
         names = (var["feature_name"] if "feature_name" in var.columns else var.index).astype(str).to_numpy()
-        out = pd.DataFrame(X[:, keep].toarray().astype(float), columns=[str(x) for x in names[keep]])
+        out = pd.DataFrame(X.toarray().astype(float), columns=[str(x) for x in names])
         out.insert(0, "cell_id", [str(b) for b in obs.index])
         return out
     f = files.get("matrix")

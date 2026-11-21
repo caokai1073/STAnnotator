@@ -721,19 +721,37 @@ def _atera_group(path):
         raise
 
 
-def _atera_read(path, counts=True):
-    """An Atera AnnData-zarr matrix: (obs DataFrame indexed by barcode, var DataFrame or None, X CSR cells x features
-    or None)."""
+def _atera_read(path, counts=True, keep_types=None, block=20000):
+    """An Atera AnnData-zarr matrix: (obs DataFrame indexed by barcode, var DataFrame (only the features of
+    keep_types, e.g. ("Gene Expression",), when given) or None, X float32 CSR cells x those features or None). X is
+    read in blocks of rows and only its kept columns stay: a whole-transcriptome slide (400,000 cells, 600 million
+    entries, int64 indices) took 13 GB read in one piece, the kept matrix alone is under 5 GB."""
     from anndata.io import read_elem
     g, store = _atera_group(path)
     try:
         obs = read_elem(g["obs"])
         if not counts:
             return obs, None, None
-        var, X = read_elem(g["var"]), read_elem(g["X"])
+        var = read_elem(g["var"])
+        keep = (np.flatnonzero(np.isin(var["feature_type"].astype(str).to_numpy(), list(keep_types)))
+                if keep_types and "feature_type" in var.columns else np.arange(len(var)))
+        gx = g["X"]
+        if gx.attrs.get("encoding-type") != "csr_matrix":  # (dense or CSC: read whole)
+            X = csrutil.columns_f32(sp.csr_matrix(read_elem(gx)), keep)
+        else:
+            n_rows, n_cols = (int(v) for v in gx.attrs["shape"])
+            indptr = np.asarray(gx["indptr"][:], np.int64)
+            data, ind, nnz = [], [], []
+            for a in range(0, n_rows, block):
+                b = min(a + block, n_rows)
+                lo, hi = int(indptr[a]), int(indptr[b])
+                m = sp.csr_matrix((gx["data"][lo:hi], gx["indices"][lo:hi], indptr[a:b + 1] - lo), shape=(b - a, n_cols))
+                m = m[:, keep].astype(np.float32).tocsr()
+                data.append(m.data); ind.append(m.indices.astype(np.int32)); nnz.append(np.diff(m.indptr))
+            X = csrutil.stack_rows(data, ind, nnz, len(keep))
     finally:
         store.close()
-    return obs, var, sp.csr_matrix(X)
+    return obs, var.iloc[keep], X
 
 
 def _atera_obs_columns(obs):
@@ -763,11 +781,11 @@ def _xenium_matrix(src):
     """(barcodes, genes, cells x genes CSR) with only "Gene Expression" features."""
     f = _source(src)["files"]
     if "atera" in f and not any(k in f for k in ("matrix", "mtx", "mtx_dir")):
-        obs, var, X = _atera_read(f["atera"])
-        bc = np.array([str(b) for b in obs.index], dtype=object)
+        obs, var, X = _atera_read(f["atera"], keep_types=("Gene Expression",))
+        if not len(var):
+            raise ValueError("the matrix has no 'Gene Expression' features")
         names = (var["feature_name"] if "feature_name" in var.columns else var.index).astype(str).to_numpy()
-        ftype = (var["feature_type"].astype(str).to_numpy() if "feature_type" in var.columns
-                 else np.full(len(var), "Gene Expression"))
+        return np.array([str(b) for b in obs.index], dtype=object), [str(g) for g in names], X
     elif "matrix" in f:
         with h5py.File(f["matrix"], "r") as h:
             m = h["matrix"]
@@ -840,7 +858,9 @@ def import_xenium(name, xenium_dir, he=None, registration=None, description="", 
     if missing.any():
         progress(f"  {int(missing.sum()):,} cells have no counts and are left out")
         cells = cells[~missing]
-    X = X[pos[cells.cell_id].to_numpy()]
+    rows = pos[cells.cell_id].to_numpy()
+    if not (len(rows) == X.shape[0] and (rows == np.arange(len(rows))).all()):  # (Atera: same order, no copy)
+        X = X[rows]
     xy = cells[["x_centroid", "y_centroid"]].to_numpy(float)
     progress(f"{len(cells):,} cells, {len(genes)} genes")
     ps = info["pixel_size_um"]

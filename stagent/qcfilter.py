@@ -42,9 +42,19 @@ def _numbers(X, genes):
     mito = np.array([bool(MITO.match(g)) for g in genes])
     counts = np.asarray(X.sum(1)).ravel()
     return {"genes": genes, "mito": mito, "counts": counts, "n_genes": np.diff(X.indptr),
-            "mito_pct": 100 * np.asarray(X[:, mito].sum(1)).ravel() / np.maximum(counts, 1) if mito.any()
+            "mito_pct": 100 * np.asarray(X @ mito.astype(np.float32)).ravel() / np.maximum(counts, 1) if mito.any()  # (a
+            # product, not X[:, mito]: that copies index arrays as long as the matrix)
             else np.zeros(X.shape[0]),
-            "detected": np.bincount(X.indices, minlength=X.shape[1])}
+            "detected": _bincount(X.indices, X.shape[1])}
+
+
+def _bincount(ind, n, chunk=1 << 26):
+    """np.bincount of the column indices in chunks (on the whole it converts int32 indices to int64 first: a copy
+    twice their size, 4.8 GB for a whole-transcriptome slide)."""
+    out = np.zeros(n, np.int64)
+    for a in range(0, len(ind), chunk):
+        out += np.bincount(ind[a:a + chunk], minlength=n)
+    return out
 
 
 def _load(sample_id):
