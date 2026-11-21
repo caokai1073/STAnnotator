@@ -1186,6 +1186,80 @@ def fingerprint(a):
     return hashlib.sha256(b).hexdigest()[:12]
 
 
+MOMENT_GROUP = 32_000_000  # stored counts per group of genes in _level_moments (about 0.6 GB of transient memory)
+_COLS = None
+
+
+def _rows_cols(indptr, indices, data, rows, g0, g1):
+    """counts[rows][:, g0:g1] of a CSR with sorted indices, as (indptr, indices - g0, data): each row's range found by
+    binary search (a column slice of scipy reads every stored value: 0.5 s a group on a whole-transcriptome slide).
+    The same entries in the same order."""
+    global _COLS
+    if _COLS is None:
+        import os
+        from numba import njit
+        cache = bool(globals().get("__file__")) and os.path.isfile(globals()["__file__"])
+
+        @njit(cache=cache)
+        def cols(indptr, indices, data, rows, g0, g1):
+            n = len(rows)
+            lo = np.empty(n, np.int64)
+            hi = np.empty(n, np.int64)
+            ptr = np.zeros(n + 1, np.int64)
+            for k in range(n):
+                r = rows[k]
+                a, b = indptr[r], indptr[r + 1]
+                s = a + np.searchsorted(indices[a:b], g0)
+                e = a + np.searchsorted(indices[a:b], g1)
+                lo[k], hi[k] = s, e
+                ptr[k + 1] = ptr[k] + (e - s)
+            ind = np.empty(ptr[n], np.int32)
+            val = np.empty(ptr[n], data.dtype)
+            for k in range(n):
+                o = ptr[k]
+                for j in range(lo[k], hi[k]):
+                    ind[o] = indices[j] - g0
+                    val[o] = data[j]
+                    o += 1
+            return ptr, ind, val
+        _COLS = cols
+    return _COLS(indptr, indices, data, rows, g0, g1)
+
+
+def _level_moments(counts, idx, every, group=MOMENT_GROUP):
+    """(gene means, gene means of squares) of the log-normalized rows idx of the counts, the same to the bit as
+    _moments(lognorm(counts)[idx]) and without that matrix: genes are taken in groups of about `group` stored counts
+    (columns of the counts, then the level's cells; normalized with lognorm's own factors), each gene's values summed
+    over the cells ascending as the slabs of _moments do. _moments' slabs of 256 genes each read the whole matrix:
+    72 passes over 600 million values for a whole-transcriptome slide (31 s); here about 20."""
+    from .model import lognorm_factors
+    counts = sp.csr_matrix(counts, dtype=np.float32)
+    inv = lognorm_factors(counts)
+    if not every:
+        inv = inv[idx]
+    g = counts.shape[1]
+    per_gene = np.zeros(g, np.int64)  # stored counts per gene (in chunks: bincount copies int32 indices to int64)
+    for a in range(0, counts.nnz, 1 << 26):
+        per_gene += np.bincount(counts.indices[a:a + (1 << 26)], minlength=g)
+    mu, ex2 = np.zeros(g, np.float32), np.zeros(g, np.float32)
+    rows = np.arange(counts.shape[0], dtype=np.int64) if every else np.asarray(idx, np.int64)
+    g0 = 0
+    while g0 < g:
+        g1 = g0 + 1 + int(np.searchsorted(np.cumsum(per_gene[g0 + 1:]), group))
+        g1 = min(max(g1, g0 + 1), g)
+        ptr, ind, val = _rows_cols(counts.indptr, counts.indices, counts.data, rows, g0, g1)
+        vals = np.multiply(val, np.repeat(inv, np.diff(ptr)))
+        np.log1p(vals, out=vals)
+        del val
+        Cc = sp.csr_matrix((vals, ind, ptr), shape=(len(rows), g1 - g0)).tocsc()
+        del ptr, ind, vals
+        Cc.sort_indices()
+        _slab_moments(Cc, mu, ex2, g0)
+        del Cc
+        g0 = g1
+    return mu, ex2
+
+
 def _level_matrix(counts, idx, block=20000):
     """What a level's PCA reads: the log-normalized rows idx of the counts, with more than MAX_PCA_GENES genes
     (whole-transcriptome data) only their N_HVG most variable genes -- the same matrix _pca keeps, so the PCA is the
@@ -1206,12 +1280,16 @@ def _level_matrix(counts, idx, block=20000):
                 m = m[:, cols]
             data.append(m.data.astype(np.float32, copy=False)); ind.append(m.indices); nnz.append(np.diff(m.indptr))
         return csrutil.stack_rows(data, ind, nnz, counts.shape[1] if cols is None else len(cols))
-    X = lognorm(counts) if every else rows()  # (every cell: shares the counts' indices)
-    if X.shape[1] <= MAX_PCA_GENES:
-        return X
-    mu, ex2 = _moments(X)
+    if counts.shape[1] <= MAX_PCA_GENES:
+        return lognorm(counts) if every else rows()  # (every cell: shares the counts' indices)
+    if counts.has_canonical_format and counts.dtype == np.float32:  # the most variable genes without the level's
+        # matrix of every gene
+        mu, ex2 = _level_moments(counts, idx, every)
+    else:  # (duplicate entries: lognorm adds them up first)
+        X = lognorm(counts) if every else rows()
+        mu, ex2 = _moments(X)
+        del X
     keep = np.sort(np.argsort(-(ex2 - mu ** 2))[:N_HVG])
-    del X  # the kept genes made again from the counts: never both in memory
     return rows(keep)
 
 

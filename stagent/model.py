@@ -32,13 +32,12 @@ def lognorm(m):
     The values are the same to the bit as diags(100 / total) @ m with log1p over its data. The input is not changed;
     nothing may sort or prune the result's indices in place, as that would reach the matrix it came from."""
     m = sp.csr_matrix(m, dtype=np.float32)
-    tot = np.asarray(m.sum(1)).ravel()
-    tot[tot == 0] = 1
+    tot = _totals(m)
     if not m.has_canonical_format:  # duplicate entries for one cell and gene, which the product below adds up:
         m = sp.diags(100.0 / tot) @ m      # (a sample's counts never have any -- shared_counts sums them at load)
         m.data = np.log1p(m.data)
         return m
-    inv = np.asarray(100.0 / tot, dtype=m.dtype)
+    inv = lognorm_factors(m, tot)
     out = np.empty_like(m.data)
     for a in range(0, m.shape[0], LOGNORM_BLOCK):  # a block at a time: no temporary the size of the matrix
         b = min(a + LOGNORM_BLOCK, m.shape[0])
@@ -46,6 +45,18 @@ def lognorm(m):
         np.multiply(m.data[lo:hi], np.repeat(inv[a:b], np.diff(m.indptr[a:b + 1])), out=out[lo:hi])
         np.log1p(out[lo:hi], out=out[lo:hi])
     return m._with_data(out, copy=False)
+
+
+def _totals(m):
+    tot = np.asarray(m.sum(1)).ravel()
+    tot[tot == 0] = 1
+    return tot
+
+
+def lognorm_factors(m, tot=None):
+    """The per-cell factors of lognorm (100 / transcripts, float32) of a float32 CSR m, computed as lognorm does: a
+    cell's value of lognorm is log1p(count * factor), to the bit."""
+    return np.asarray(100.0 / (_totals(m) if tot is None else tot), dtype=m.dtype)
 
 
 def build_reference():
