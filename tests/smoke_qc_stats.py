@@ -84,6 +84,20 @@ try:
     with open(os.path.join(home, "other_program", "big.bin"), "wb") as f:
         f.write(b"0" * 50 * 2 ** 20)
     assert webapp._about()["data_size_mb"] == before, "counted files that are not the app's"
+
+    # the filter's block-by-block subset and detection counts are the plain formulas' (float32 and other types)
+    import scipy.sparse as sp
+    rng = np.random.default_rng(1)
+    for dt in (np.float32, np.int32):
+        X = sp.random(2345, 300, density=0.1, format="csr", random_state=1, dtype=np.float64)
+        X.data = np.ceil(X.data * 5)
+        X = X.astype(dt)
+        for fr, fc in ((0.8, 0.9), (1.0, 0.9), (0.8, 1.0), (1.0, 1.0), (0.0, 1.0)):
+            rows, cols = rng.random(X.shape[0]) < fr, rng.random(X.shape[1]) < fc
+            A, B = qcfilter._subset(X, rows, cols, block=100), X[rows][:, cols].tocsr()
+            assert A.shape == B.shape and A.dtype == B.dtype and (A != B).nnz == 0, (dt, fr, fc)
+            assert np.array_equal(qcfilter._detected_in(X, rows, block=100),
+                                  np.bincount(X.indices[np.repeat(rows, np.diff(X.indptr))], minlength=X.shape[1]))
     print("ok")
 finally:
     shutil.rmtree(home, ignore_errors=True)

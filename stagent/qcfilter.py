@@ -259,9 +259,42 @@ def _plan(ids, prm, full=False):
     return data, genes, keep, gkeep, detected
 
 
-def _detected_in(X, rows):
-    """Per gene, the cells among rows (a mask) it is detected in."""
-    return np.bincount(X.indices[np.repeat(rows, np.diff(X.indptr))], minlength=X.shape[1])
+def _detected_in(X, rows, block=50000):
+    """Per gene, the cells among rows (a mask) it is detected in. Block of cells by block: a mask and the selected
+    indices as long as the matrix, then bincount's int64 copy of them, took 8 GB at once for a whole-transcriptome
+    slide (600 million entries)."""
+    out = np.zeros(X.shape[1], np.int64)
+    rows = np.asarray(rows, bool)
+    for a in range(0, X.shape[0], block):
+        b = min(a + block, X.shape[0])
+        if not rows[a:b].any():
+            continue
+        lo, hi = X.indptr[a], X.indptr[b]
+        ind = X.indices[lo:hi]
+        if not rows[a:b].all():
+            ind = ind[np.repeat(rows[a:b], np.diff(X.indptr[a:b + 1]))]
+        out += np.bincount(ind, minlength=X.shape[1])
+    return out
+
+
+def _subset(X, rows, cols, block=50000):
+    """X[rows][:, cols] (masks) as CSR, made block of kept cells by block straight into the result: X[rows] first is
+    a copy of the kept cells with every gene beside the matrix and its filtered copy. The same matrix (float32
+    counts; other types the old way, to keep their type)."""
+    if np.all(rows) and np.all(cols):  # (every cell and gene back: the matrix itself, only read from here on)
+        return sp.csr_matrix(X)
+    if X.dtype != np.float32:
+        return X[rows][:, cols].tocsr()
+    from . import csrutil
+    ri, ci = np.flatnonzero(rows), np.flatnonzero(cols)
+    data, ind, nnz = [], [], []
+    for a in range(0, len(ri), block):
+        m = X[ri[a:a + block]]
+        if len(ci) < X.shape[1]:
+            m = m[:, ci]
+        m = m.tocsr()
+        data.append(m.data); ind.append(m.indices); nnz.append(np.diff(m.indptr))
+    return csrutil.stack_rows(data, ind, nnz, len(ci))
 
 
 def _load_all(ids):
@@ -388,7 +421,7 @@ def apply(ids, p, progress=lambda *a: None, genes_removed=None):
                     osutil.replace_atomic(o / f, lambda t, f=f: shutil.copy2(d / f, t))
         at(i, s, 0.25, "filtering the cells and genes")
         D, km = data[s], keep[s][0]
-        X = D["X"][km][:, gkeep].tocsr()
+        X = _subset(D["X"], km, gkeep)
         cells = D["cells"].iloc[np.flatnonzero(km)].reset_index(drop=True)
         cells = _placed(cells, meta, prev)
         if meta.get("registration_fixes"):  # corrected: local shifts and moved pieces are no affine
