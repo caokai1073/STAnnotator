@@ -763,6 +763,10 @@ def gram(X):
     C, (mu, ex2) = np.zeros((g, g)), _moment_arrays(Xc)
     with numba_parallel():
         before = numba.get_num_threads()
+        chunk = getattr(numba, "set_parallel_chunksize", None)  # rows handed out one at a time as threads come free
+        # (not split evenly beforehand): a slower core (efficiency cores, a core busy with another program) does fewer
+        # rows instead of holding up the others; each row is still one thread's, so the result is the same
+        prev = chunk(1) if chunk else None
         try:
             numba.set_num_threads(gram_threads())
             for g0, Cc, R in _slabs(X):
@@ -770,6 +774,8 @@ def gram(X):
                 _GRAM(Cc.indptr, Cc.indices, Cc.data, R.indptr, R.indices, R.data, g0, C)
         finally:
             numba.set_num_threads(before)
+            if chunk:
+                chunk(prev)
     return _mirror(C), mu, ex2
 
 
