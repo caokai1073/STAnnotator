@@ -114,8 +114,13 @@ def _idle_release(every=120):
 
 
 def image_error_text(path, e):
-    """What to tell the user when the sample's image cannot be opened."""
+    """What to tell the user when the sample's image cannot be opened: e an OSError (moved, no permission, locked) or
+    any other failure to read it (a file still being copied or synced, a damaged file, not an image the app reads)."""
     import errno
+    if not isinstance(e, OSError):
+        return (f"The image {path} cannot be read as an image ({e}): it may still be copying or "
+                "syncing, be damaged, or not be a TIFF / OME-TIFF. The cells are shown without it; click Refresh once "
+                "the file is complete, or import the image again (Import > Image of this sample).")
     if isinstance(e, FileNotFoundError):
         return (f"The image {path} is no longer there (moved, renamed or deleted): the cells are shown without it. "
                 "Put it back, or import the image again (Import > Image of this sample).")
@@ -137,7 +142,8 @@ class SampleView:
         self.image_error = None
         try:
             self.slide = render.slide(meta.get("he_path"))
-        except OSError as e:  # the image cannot be read: the cells on a blank background, and why (he_info says it)
+        except Exception as e:  # the image cannot be read (missing, no permission, locked, cut short, not a TIFF): the
+            # cells on a blank background, and why (he_info says it)
             self.slide, self.image_kind, self.image_error = render.BlankSlide(), "none", image_error_text(meta.get("he_path"), e)
         cells = pd.read_parquet(config.SAMPLES / sample_id / "cells.parquet", columns=["px", "py"])
         px, py = cells.px.to_numpy(), cells.py.to_numpy()
