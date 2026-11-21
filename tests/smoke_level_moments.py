@@ -27,4 +27,15 @@ for name, idx in (("all", np.arange(n)), ("subset", np.sort(rng.choice(n, 1900, 
     new = markers._level_matrix(X, idx)
     assert old.shape == new.shape and np.array_equal(old.indptr, new.indptr) and np.array_equal(old.indices, new.indices) \
         and np.array_equal(old.data, new.data), name
-print("smoke_level_moments ok")
+# the Gram matrix on every core (gram_threads) is the one of a single thread, to the bit
+H = markers._level_matrix(X, np.arange(n))
+full = markers.gram(H)
+keep_threads = markers._GRAM_THREADS
+try:
+    markers._GRAM_THREADS = 1
+    one = markers.gram(H)
+finally:
+    markers._GRAM_THREADS = keep_threads
+assert all(np.array_equal(a, b) for a, b in zip(full, one)), "the Gram matrix depends on the thread count"
+assert markers.gram_threads() >= 1
+print("smoke_level_moments ok", f"(gram on {markers.gram_threads()} threads)")

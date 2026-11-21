@@ -705,8 +705,38 @@ def _mirror(C):
     return C
 
 
+_GRAM_THREADS = None
+
+
+def gram_threads():
+    """Threads of the Gram matrix: every core but a Mac's efficiency cores (each row of the matrix is summed by one
+    thread over the cells in their order, so the result is the same for any count, unlike the approximate neighbor
+    search's KNN_THREADS). Its sums are bound by memory: 8 -> 18 threads took 35% less time on an M5 Pro (18 cores, all
+    performance; 7.9 times one thread), 8 -> 20 on an i7-12700 server 28% less. A Mac's efficiency cores are left
+    out by name (hw.perflevelN.name): a slow thread holds up its share of the rows."""
+    global _GRAM_THREADS
+    if _GRAM_THREADS is None:
+        import os, sys
+        n = os.cpu_count() or 1
+        if sys.platform == "darwin":
+            try:
+                import subprocess
+                q = lambda k: subprocess.run(["sysctl", "-n", k], capture_output=True, text=True, timeout=5).stdout.strip()
+                levels, fast = int(q("hw.nperflevels") or 0), 0
+                for i in range(levels):
+                    if "efficien" not in q(f"hw.perflevel{i}.name").lower():
+                        fast += int(q(f"hw.perflevel{i}.physicalcpu") or 0)
+                n = fast or n
+            except Exception:
+                pass
+        _GRAM_THREADS = n
+    import numba
+    return max(1, min(_GRAM_THREADS, int(numba.config.NUMBA_NUM_THREADS)))
+
+
 def gram(X):
-    """(X.T @ X, gene means, gene means of squares): the first as a dense float64 array, on up to 8 threads (numba).
+    """(X.T @ X, gene means, gene means of squares): the first as a dense float64 array, on gram_threads() threads
+    (numba).
     Each entry is summed over the cells in their order, so the same on every computer and for any number of threads,
     and exact in float64 (scipy's sparse product sums in float32 on one thread: 3 times slower on 8 cores for a
     5,000-gene panel, 21.6 -> 6.3 s on 188,644 cells, and off by 3e-5). The means come from the same pass."""
@@ -734,7 +764,7 @@ def gram(X):
     with numba_parallel():
         before = numba.get_num_threads()
         try:
-            numba.set_num_threads(max(1, min(KNN_THREADS, int(numba.config.NUMBA_NUM_THREADS))))
+            numba.set_num_threads(gram_threads())
             for g0, Cc, R in _slabs(X):
                 _slab_moments(Cc, mu, ex2, g0)
                 _GRAM(Cc.indptr, Cc.indices, Cc.data, R.indptr, R.indices, R.data, g0, C)
