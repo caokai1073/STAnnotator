@@ -51,14 +51,30 @@ try:
     assert got == [("done", None), ("error", "ValueError: no cells"), ("stopped", None)], got
     assert all(x["settings"] == {"n_pcs": 30} and x["seconds"] >= 0 for x in lines()[-3:])
 
+    # the sample found from the annotation when not given
+    os.makedirs(os.path.join(home, "sessions", "s9"), exist_ok=True)
+    json.dump({"sample_id": "sampleA"}, open(os.path.join(home, "sessions", "s9", "session.json"), "w"))
+    report.log_analysis("trajectory", "trajectory", {"method": "dpt"}, seconds=2, session="s9")
+    report.log_analysis("compare", "de", {}, session="gone")
+    assert lines()[-2]["sample"] == "sampleA" and "sample" not in lines()[-1], lines()[-2:]
+    # refused before it started (a sample or marker list that does not read): noted as rejected
+    from starlette.testclient import TestClient
+    c = TestClient(webapp.build_app(8799), base_url="http://127.0.0.1:8799")
+    r = c.post("/api/annotate", json={"sample_id": "no_such_sample", "markers_text": "not a list"})
+    assert r.status_code == 400, r.text
+    x = lines()[-1]
+    assert x["outcome"] == "rejected" and x["section"] == "annotate" and x["sample"] == "no_such_sample" \
+        and x.get("error") and x["settings"]["marker_lines"] == 1, x
+    n_before = len(lines())
+
     # the reports: the lines of their time, in every annotation
     out = os.path.join(home, "r.zip")
     res = report.build(out, {"version": "t"}, days=3, parts=("analyses",))
-    assert res["included"]["analyses"] == 4, res
+    assert res["included"]["analyses"] == n_before, res
     with zipfile.ZipFile(out) as z:
-        assert len(z.read("analysis_runs.jsonl").decode().splitlines()) == 4
+        assert len(z.read("analysis_runs.jsonl").decode().splitlines()) == n_before
         assert "analysis_runs.jsonl" in z.read("README.txt").decode()
-    assert report.contents(3)["analyses"]["n"] == 4
+    assert report.contents(3)["analyses"]["n"] == n_before
     res = report.build(out, {"version": "t"}, days=3, parts=("calls",))
     with zipfile.ZipFile(out) as z:
         assert "analysis_runs.jsonl" not in z.namelist()
@@ -66,7 +82,7 @@ try:
     old = dict(lines()[0], time="2000-01-01T00:00:00")
     with open(report.RUNS, "a", encoding="utf-8") as f:
         f.write(json.dumps(old) + "\n")
-    assert len(report._recent_runs(time.time() - 86400)) == 4
+    assert len(report._recent_runs(time.time() - 86400)) == n_before
 
     # the log keeps its newer half past its size
     keep = report.RUNS_MAX

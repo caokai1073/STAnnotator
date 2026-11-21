@@ -846,6 +846,8 @@ async def api_refine_start(req: Request):
     from . import iterate, hetissue
     s = review_app._session(req.path_params["sid"])
     b = await req.json()
+    from . import report
+    noted = False
     try:
         if b.get("from") and b["from"] != s.id:
             iterate.carry(review_app._session(b["from"]), s)
@@ -854,9 +856,9 @@ async def api_refine_start(req: Request):
             hetissue._remember_organ(s.sample_id, organ)
         st = await asyncio.to_thread(iterate.start_round, s, organ)
         rd = st["rounds"][-1]
-        from . import report
         report.log_analysis("annotate", "refine", {"organ": organ, "round": rd.get("n"), "ask": bool(b.get("ask")),
                                                    "message": b.get("message")}, session=s.id, sample=s.sample_id)
+        noted = True
         if (b.get("message") or "").strip():
             rd = iterate.add_message(s, "user", b["message"].strip())
         out = {"round": rd}
@@ -871,6 +873,10 @@ async def api_refine_start(req: Request):
                                                         organ=_refine_organ_line(iterate.load(s), rd["report"]["organ"])))
         return _json(out)
     except ValueError as e:
+        if not noted:  # (the round could not start)
+            report.log_analysis("annotate", "refine", {"organ": b.get("organ"), "ask": bool(b.get("ask")),
+                                                       "message": b.get("message")}, outcome="rejected", error=str(e),
+                                session=s.id, sample=s.sample_id)
         return _json({"error": str(e)}, 400)
 
 
@@ -2110,6 +2116,8 @@ async def api_annotate(req: Request):
                                  existing=b.get("existing"), knn=b.get("knn"), stains=bool(b.get("stains", True)),
                                  spillover=bool(b.get("spillover", True))).id
         except (ValueError, OSError, KeyError) as e:
+            from . import report
+            report.log_analysis("annotate", "annotate", b, outcome="rejected", error=str(e), sample=sample)
             return _json({"error": str(e)}, 400)
     run = jobs.RUNS.get(sid)
     if mode == "continue" and run and run.thread.is_alive() and not run.stop_asked:  # already opening: follow it
@@ -2157,6 +2165,9 @@ async def _spawn(job, work, log=None):
         await asyncio.to_thread(jobs.spawn, job, work)
     except RuntimeError as e:
         JOBS[job].update(error=str(e), done=True)
+        if log is not None:
+            from . import report
+            report.log_analysis(outcome="rejected", error=str(e), **log)
         return _json({"error": str(e)}, 409)
 
 

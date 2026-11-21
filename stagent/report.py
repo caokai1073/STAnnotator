@@ -100,8 +100,11 @@ def log_analysis(section, kind, request=None, seconds=None, outcome="done", erro
                  project=None):
     """One line per analysis the user runs in the app (Annotate, Refine, Embed, Niche, Compare, Signal, Trajectory),
     in every annotation, kept in the data folder: what ran, its settings, how long and how it ended (done, error,
-    stopped). Its results are not kept here. Never raises."""
+    stopped; rejected: refused before it started, e.g. a marker list that does not read). Its results are not kept
+    here. The sample is found from the annotation when not given. Never raises."""
     try:
+        if session and not sample:
+            sample = _session_sample(session)
         rec = {"time": time.strftime("%Y-%m-%dT%H:%M:%S"), "section": section, "kind": kind, "outcome": outcome,
                "seconds": None if seconds is None else round(seconds, 1), "session": session, "sample": sample,
                "project": project, "settings": _settings(request)}
@@ -110,6 +113,13 @@ def log_analysis(section, kind, request=None, seconds=None, outcome="done", erro
         _append(RUNS, {k: v for k, v in rec.items() if v is not None}, RUNS_MAX)
     except Exception:
         pass
+
+
+def _session_sample(sid):
+    try:
+        return json.loads((config.SESSIONS / str(sid) / "session.json").read_text(encoding="utf-8")).get("sample_id")
+    except (OSError, ValueError, AttributeError):
+        return None
 
 
 def _recent_calls(since):
