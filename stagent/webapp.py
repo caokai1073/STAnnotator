@@ -647,8 +647,9 @@ def api_config(req):
 
 
 FS_KINDS = {"h5ad": (".h5ad", ".rds", ".rda", ".rdata"),
-            "xenium": (".parquet", ".csv.gz", ".h5", ".xenium", ".mtx.gz", ".tsv.gz", ".ome.tif"),
-            "xcells": (".parquet", ".csv.gz"), "xcounts": (".h5", ".mtx.gz", ".tsv.gz"), "xexp": (".xenium",),
+            "xenium": (".parquet", ".csv.gz", ".h5", ".xenium", ".mtx.gz", ".tsv.gz", ".ome.tif", ".zarr.zip", ".spatial"),
+            "xcells": (".parquet", ".csv.gz", ".zarr.zip"), "xcounts": (".h5", ".mtx.gz", ".tsv.gz", ".zarr.zip"),
+            "xexp": (".xenium", ".spatial"),
             "ximage": (".ome.tif", ".tif", ".tiff"), "image": (".tif", ".tiff", ".btf"), "csv": (".csv", ".tsv", ".txt"),
             "markers": (".csv", ".tsv", ".txt"), "flat": (".csv", ".csv.gz"), "geojson": (".geojson", ".json"),
             "heonly": importer.IMAGE_ONLY_SUFFIXES}

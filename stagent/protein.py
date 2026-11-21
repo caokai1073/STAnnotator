@@ -63,7 +63,20 @@ def _from_cosmx(source):
 def _from_xenium(source):
     import h5py, scipy.sparse as sp
     from .importer import _strings
-    f = (source.get("files") or {}).get("matrix")
+    files = source.get("files") or {}
+    if "atera" in files and "matrix" not in files:  # (Atera: protein features of its AnnData zarr matrix, if any)
+        from .importer import _atera_read
+        obs, var, X = _atera_read(files["atera"])
+        if "feature_type" not in var.columns:
+            return None
+        keep = np.flatnonzero(var["feature_type"].astype(str).to_numpy() == "Protein Expression")
+        if not len(keep):
+            return None
+        names = (var["feature_name"] if "feature_name" in var.columns else var.index).astype(str).to_numpy()
+        out = pd.DataFrame(X[:, keep].toarray().astype(float), columns=[str(x) for x in names[keep]])
+        out.insert(0, "cell_id", [str(b) for b in obs.index])
+        return out
+    f = files.get("matrix")
     if not f:
         return None
     try:

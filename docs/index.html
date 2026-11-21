@@ -398,7 +398,7 @@ footer .counted { flex-basis: 100%; margin: 0; }
             includes it (Pro or higher; the free plan does not). <a href="https://github.com/caokai1073/STAnnotator/blob/main/docs/CLAUDE_CODE.md">How to set it up, step by step →</a></p>
         </div>
       </div>
-      <p class="lede">STAnnotator takes spatial transcriptomics (Xenium, CosMx, MERSCOPE, Visium HD, Stereo-seq and more)
+      <p class="lede">STAnnotator takes spatial transcriptomics (Xenium, Atera, CosMx, MERSCOPE, Visium HD, Stereo-seq and more)
         from import to results on the tissue image: registration, cell types, regions, niches, composition and DE genes,
         cell–cell communication, trajectories and pseudotime, and comparisons across regions, slices and conditions.
         Tell it what you know in plain sentences. Every change the agent proposes waits in
@@ -427,7 +427,7 @@ footer .counted { flex-basis: 100%; margin: 0; }
           A <b>Steps</b> panel on the map shows where the sample stands and takes you to the next step.</p>
         <ol class="steps">
           <li><span class="n">1</span><h3>Import</h3>
-            <p>Xenium, CosMx (AtoMx flat files), MERSCOPE, Visium HD and Stereo-seq output, h5ad, or Seurat and SpatialExperiment <code>.rds</code> files, read without R. Add the H&amp;E and its registration, or let the agent align it without a registration file. Before you accept an alignment the whole tissue is checked, and areas where the tissue shifted are corrected in one click. Bring regions drawn in QuPath; filter cells and genes. An H&amp;E alone works too, for a pathologist to outline regions before the expression data exist.</p></li>
+            <p>Xenium, 10x Atera, CosMx (AtoMx flat files), MERSCOPE, Visium HD and Stereo-seq output, h5ad, or Seurat and SpatialExperiment <code>.rds</code> files, read without R. Add the H&amp;E and its registration, or let the agent align it without a registration file. Before you accept an alignment the whole tissue is checked, and areas where the tissue shifted are corrected in one click. Bring regions drawn in QuPath; filter cells and genes. An H&amp;E alone works too, for a pathologist to outline regions before the expression data exist.</p></li>
           <li><span class="n">2</span><h3>Annotate</h3>
             <p>From a marker gene list, a labeled single-cell reference, or an annotation you already have. No marker list? Start from a built-in list for 12 organs, pruned to your gene panel and checked against single-cell atlases. Then the agent reviews the result round by round (Refine cell types). The same data gives the same annotation on every computer.</p></li>
           <li><span class="n">3</span><h3>Refine in words</h3>

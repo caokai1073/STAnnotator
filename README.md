@@ -10,7 +10,7 @@
   <a href="https://www.caokai.site/STAnnotator/">Website</a>
 </p>
 
-Spatial transcriptomics (Xenium, CosMx, MERSCOPE, Visium HD, Stereo-seq, …) on the tissue image, from registration
+Spatial transcriptomics (Xenium, Atera, CosMx, MERSCOPE, Visium HD, Stereo-seq, …) on the tissue image, from registration
 and cell types to regions, niches, composition and DE genes, cell-cell communication, trajectories and pseudotime,
 and comparisons across regions, slices and conditions, with an AI agent at your side.
 
@@ -134,7 +134,7 @@ s002,/data/run1/output-XETG...-s002,/data/he/s002.ome.tif,,colon
 s003,/data/run2/output-XETG...-s003,,,colon
 ```
 
-- `xenium`: a Xenium output folder (a folder of several slices: one row per slice, its name prefix in `section`), or
+- `xenium`: a Xenium or Atera output folder (a folder of several slices: one row per slice, its name prefix in `section`), or
   `h5ad` (with `section_column` / `section` for an h5ad of several sections).
 - `he`, `registration`: optional. Without an alignment file the app's alignment search runs, the best candidates are
   checked against the nuclei over the whole tissue and the best is applied (never one that is far off); where the
@@ -166,7 +166,7 @@ never stops the others. Each job needs the memory of one annotation (about 11 GB
 ## Getting started
 
 1. **Import**: Xenium (`cells.parquet` and `cell_feature_matrix.h5`; optionally `experiment.xenium` and the DAPI
-   image), or h5ad / RDS (Seurat, SpatialExperiment; read without R). Optionally the H&E and its registration;
+   image), 10x Atera (`cell_feature_matrix.zarr.zip`, or the output folder), or h5ad / RDS (Seurat, SpatialExperiment; read without R). Optionally the H&E and its registration;
    without a registration, **Align with Agent** aligns the H&E for you.
 2. **Type** tab: a marker list (**Markers…**: import a CSV, or **Start from an organ**: a built-in list for
    12 common organs pruned to your gene panel, which the agent can complete) or a reference, then **Annotate**.

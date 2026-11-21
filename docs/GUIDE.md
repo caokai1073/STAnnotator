@@ -5,7 +5,7 @@ and the local / server setups are in the [README](../README.md).
 
 **Contents**
 
-1. [Import a sample](#1-import-a-sample): Xenium and AnnData / R files, Visium HD, Stereo-seq, CosMx and MERFISH,
+1. [Import a sample](#1-import-a-sample): Xenium (and 10x Atera) and AnnData / R files, Visium HD, Stereo-seq, CosMx and MERFISH,
    H&E only, aligning the image, regions drawn elsewhere, several slices, an example
 2. [Marker lists](#2-marker-lists)
 3. [Work with the agent](#3-work-with-the-agent): asking, reviewing Claude's changes, working on a server
@@ -37,6 +37,11 @@ existing sample** (its annotations go to the trash with it).
 - Give each file in its field of **Import** (any names). For several slices, one file per line in each field, matched
   by a name prefix such as `GSM1234_`. The command line also takes the whole output folder.
 - Control probes are dropped.
+- **10x Atera** (Atera Onboard Analysis 1.0 and later) goes in the same way (**Xenium / Atera**): its
+  `cell_feature_matrix.zarr.zip` holds the cells (positions in µm, the barcode as cell id) and the counts, so give it
+  in **Counts** and leave **Cells** empty; optionally `experiment.spatial` (the pixel size) and
+  `morphology_2d/ch0000_dapi.ome.tif`. Or give the output folder. The cell types 10x adds (Azimuth) are not read; an
+  H&E is aligned as for Xenium.
 
 ### AnnData (h5ad)
 
@@ -243,7 +248,7 @@ s002,/data/run1/output-XETG...-s002,/data/he/s002.ome.tif,,colon
 s003,/data/run2/output-XETG...-s003,,,colon
 ```
 
-- `xenium`: a Xenium output folder (for a folder holding several slices, e.g. `GSM1_cells.parquet`,
+- `xenium`: a Xenium or Atera output folder (for a folder holding several slices, e.g. `GSM1_cells.parquet`,
   `GSM2_cells.parquet`, one row per slice with its name prefix in `section`); or `h5ad` (with `section_column` /
   `section` for an h5ad of several sections, `x_column` / `y_column` when the coordinates are not `x` / `y`). The
   manifest is checked before anything runs.

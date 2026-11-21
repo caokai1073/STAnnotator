@@ -541,19 +541,27 @@ def remove_samples(names):
 
 # ---------------- Xenium output (the folder, or only the files an import reads) ----------------
 MORPHOLOGY = ["morphology_focus/ch0000_dapi.ome.tif", "morphology_focus/morphology_focus_0000.ome.tif",
-              "morphology_focus.ome.tif", "morphology_mip.ome.tif"]  # the DAPI image (first in experiment.xenium)
+              "morphology_focus.ome.tif", "morphology_mip.ome.tif",  # the DAPI image (first in experiment.xenium)
+              "morphology_2d/ch0000_dapi.ome.tif"]  # (Atera)
 # what an import reads, by the end of the file name (a prefix such as GSM1234_ is allowed): the cells and the counts
-# are needed; experiment.xenium (the pixel size) and the DAPI image (the background when there is no H&E) are optional
+# are needed; experiment.xenium (the pixel size) and the DAPI image (the background when there is no H&E) are optional.
+# 10x Atera (Atera Onboard Analysis 1.0+) is read as a Xenium output: its cell_feature_matrix.zarr.zip (AnnData zarr
+# in a zip: raw counts, obs centroid_column / centroid_row in um, the barcode as cell id) holds the cells and the
+# counts; experiment.spatial (pixel size) and morphology_2d/ch0000_dapi.ome.tif as Xenium's.
 XENIUM_FILES = {"cells": ("cells.parquet", "cells.csv.gz"), "matrix": ("cell_feature_matrix.h5",),
+                "atera": ("cell_feature_matrix.zarr.zip",),
                 "matrix.mtx.gz": ("matrix.mtx.gz",), "barcodes.tsv.gz": ("barcodes.tsv.gz",),
-                "features.tsv.gz": ("features.tsv.gz",), "experiment": ("experiment.xenium",),
+                "features.tsv.gz": ("features.tsv.gz",), "experiment": ("experiment.xenium", "experiment.spatial"),
                 "morphology": ("ch0000_dapi.ome.tif", "morphology_focus.ome.tif", "morphology_mip.ome.tif")}
-XENIUM_NEEDED = "cells.parquet (or cells.csv.gz) and cell_feature_matrix.h5 (or its matrix.mtx.gz, barcodes.tsv.gz, features.tsv.gz)"
+XENIUM_NEEDED = ("cells.parquet (or cells.csv.gz) and cell_feature_matrix.h5 (or its matrix.mtx.gz, barcodes.tsv.gz, "
+                 "features.tsv.gz); for Atera cell_feature_matrix.zarr.zip")
 
 
 def _xenium_role(name):
     """(role, prefix) of a file of a Xenium output, or None."""
     low = name.lower()
+    if low.endswith("csc_cell_feature_matrix.zarr.zip"):  # (Atera's copy by gene, not read)
+        return None
     for role, ends in XENIUM_FILES.items():
         for e in ends:
             if low.endswith(e):
@@ -584,6 +592,8 @@ def xenium_sources(entries):
                     files[role] = str(hit)
             if (p / "cell_feature_matrix").is_dir() and "matrix" not in files:
                 files["mtx_dir"] = str(p / "cell_feature_matrix")
+            if (p / "cell_feature_matrix.zarr").is_dir() and "atera" not in files:  # (an Atera bundle unzipped)
+                files["atera"] = str(p / "cell_feature_matrix.zarr")
             named = []  # the image experiment.xenium names (Xenium Ranger 2+: morphology_focus/morphology_focus_0000.ome.tif)
             if "experiment" in files:
                 try:
@@ -594,7 +604,7 @@ def xenium_sources(entries):
             m = next((p / x for x in named + MORPHOLOGY if (p / x).exists()), None)
             if m:
                 files["morphology"] = str(m)
-            if "cells" in files:
+            if "cells" in files or "atera" in files:
                 out.append({"key": p.name, "folder": str(p), "files": files})
                 continue
             children = [c for c in sorted(p.iterdir()) if c.is_file()]
@@ -614,8 +624,9 @@ def xenium_sources(entries):
         f = s["files"]
         if all(k in f for k in ("matrix.mtx.gz", "barcodes.tsv.gz", "features.tsv.gz")) and "matrix" not in f:
             f["mtx"] = [f["matrix.mtx.gz"], f["barcodes.tsv.gz"], f["features.tsv.gz"]]
-        lacks = [w for w, ok in (("cells.parquet or cells.csv.gz", "cells" in f),
-                                 ("cell_feature_matrix.h5", any(k in f for k in ("matrix", "mtx", "mtx_dir")))) if not ok]
+        lacks = [w for w, ok in (("cells.parquet or cells.csv.gz", "cells" in f or "atera" in f),
+                                 ("cell_feature_matrix.h5", any(k in f for k in ("matrix", "mtx", "mtx_dir", "atera"))))
+                 if not ok]
         if lacks:
             raise ValueError(f"{s['key']}: missing {' and '.join(lacks)} (an import needs {XENIUM_NEEDED})")
     keys = [s["key"] for s in out]
@@ -640,8 +651,20 @@ def _slice_from_fields(fields):
     "experiment": path, "morphology": path} (the last two optional). The files may have any names."""
     one = lambda k: (fields.get(k) or [None])[0] if isinstance(fields.get(k), list) else fields.get(k)
     cells = one("cells")
+    counts = [str(Path(p).expanduser()) for p in (fields.get("counts") or [])]
+    atera = [Path(p).expanduser() for p in ([cells] if cells else []) + counts if _is_atera(p)]
+    if atera:  # Atera: cell_feature_matrix.zarr.zip holds the cells and the counts (in either field)
+        files = {"atera": str(atera[0])}
+        for k in ("experiment", "morphology"):
+            if one(k):
+                files[k] = str(Path(one(k)).expanduser())
+        for p in files.values():
+            if not Path(p).exists():
+                raise ValueError(f"{p}: no such file")
+        r = _xenium_role(atera[0].name)
+        return {"key": r[1] if r and r[1] else atera[0].parent.name, "folder": str(atera[0].parent), "files": files}
     if not cells:
-        raise ValueError("choose the cells file (cells.parquet or cells.csv.gz)")
+        raise ValueError("choose the cells file (cells.parquet or cells.csv.gz; for Atera cell_feature_matrix.zarr.zip)")
     files = {"cells": str(Path(cells).expanduser())}
     low = Path(cells).name.lower()
     if not low.endswith((".parquet", ".csv", ".csv.gz")):  # e.g. cells.zarr.zip (the outlines): pandas only said
@@ -680,8 +703,54 @@ def _source(src):
     return s[0]
 
 
+def _is_atera(p):
+    """An Atera cell_feature_matrix.zarr.zip (or the folder it unzips to)."""
+    n = Path(str(p).rstrip("/\\")).name.lower()
+    return n.endswith(("cell_feature_matrix.zarr.zip", "cell_feature_matrix.zarr")) and not n.startswith("csc_")
+
+
+def _atera_group(path):
+    """(zarr group, store to close) of an Atera cell_feature_matrix.zarr(.zip)."""
+    import zarr
+    store = zarr.storage.ZipStore(path, read_only=True) if str(path).lower().endswith(".zip") else \
+        zarr.storage.LocalStore(path, read_only=True)
+    try:
+        return zarr.open_group(store, mode="r"), store
+    except Exception:
+        store.close()
+        raise
+
+
+def _atera_read(path, counts=True):
+    """An Atera AnnData-zarr matrix: (obs DataFrame indexed by barcode, var DataFrame or None, X CSR cells x features
+    or None)."""
+    from anndata.io import read_elem
+    g, store = _atera_group(path)
+    try:
+        obs = read_elem(g["obs"])
+        if not counts:
+            return obs, None, None
+        var, X = read_elem(g["var"]), read_elem(g["X"])
+    finally:
+        store.close()
+    return obs, var, sp.csr_matrix(X)
+
+
+def _atera_obs_columns(obs):
+    for x, y in (("centroid_column", "centroid_row"), ("x_centroid", "y_centroid")):
+        if x in obs.columns and y in obs.columns:
+            return x, y
+    raise ValueError("the Atera matrix has no cell centroids (obs centroid_column / centroid_row)")
+
+
 def _xenium_cells(src):
-    f = _source(src)["files"]["cells"]
+    files = _source(src)["files"]
+    if "atera" in files and "cells" not in files:
+        obs = _atera_read(files["atera"], counts=False)[0]
+        x, y = _atera_obs_columns(obs)
+        return pd.DataFrame({"cell_id": [str(b) for b in obs.index], "x_centroid": obs[x].to_numpy(float),
+                             "y_centroid": obs[y].to_numpy(float)})
+    f = files["cells"]
     if f.endswith(".parquet"):
         c = pd.read_parquet(f, columns=["cell_id", "x_centroid", "y_centroid"])
     else:
@@ -693,7 +762,13 @@ def _xenium_cells(src):
 def _xenium_matrix(src):
     """(barcodes, genes, cells x genes CSR) with only "Gene Expression" features."""
     f = _source(src)["files"]
-    if "matrix" in f:
+    if "atera" in f and not any(k in f for k in ("matrix", "mtx", "mtx_dir")):
+        obs, var, X = _atera_read(f["atera"])
+        bc = np.array([str(b) for b in obs.index], dtype=object)
+        names = (var["feature_name"] if "feature_name" in var.columns else var.index).astype(str).to_numpy()
+        ftype = (var["feature_type"].astype(str).to_numpy() if "feature_type" in var.columns
+                 else np.full(len(var), "Gene Expression"))
+    elif "matrix" in f:
         with h5py.File(f["matrix"], "r") as h:
             m = h["matrix"]
             n_feat, n_cells = (int(v) for v in m["shape"][:])
@@ -722,11 +797,23 @@ def inspect_xenium(src):
     info = {"folder": s["folder"], "key": s["key"], "files": {k: v for k, v in f.items() if k != "mtx"},
             "pixel_size_um": 0.2125, "morphology": f.get("morphology")}
     if "experiment" in f:
-        e = json.load(open(f["experiment"]))
+        e = json.load(open(f["experiment"], encoding="utf-8"))
         info["pixel_size_um"] = float(e.get("pixel_size", 0.2125))
         info.update({k: e[k] for k in ("panel_name", "panel_num_targets_predesigned", "region_name", "run_name")
                      if k in e})
-    if f["cells"].endswith(".parquet"):
+        p = e.get("panel_wta") or e.get("panel") or {}  # (Atera's experiment.spatial)
+        if isinstance(p, dict) and p.get("panel_name") and "panel_name" not in info:
+            info["panel_name"] = p["panel_name"]
+    if "atera" in f:
+        info["platform"] = "Atera"
+    if "atera" in f and "cells" not in f:
+        g, store = _atera_group(f["atera"])
+        try:
+            shape = g["X"].attrs.get("shape") or getattr(g["X"], "shape", None)  # (sparse: a group with its shape)
+            info["n_cells"] = int(shape[0])
+        finally:
+            store.close()
+    elif f["cells"].endswith(".parquet"):
         import pyarrow.parquet as pq
         info["n_cells"] = int(pq.ParquetFile(f["cells"]).metadata.num_rows)
     else:

@@ -45,10 +45,10 @@ def start_server(port):
 # digits, underscores and spaces only (webview.util.parse_file_type): any other character (e.g. "/") makes it refuse
 # the dialog, so the Choose button does nothing (macOS and Windows alike).
 FILE_TYPES = {"h5ad": ("AnnData or R (*.h5ad;*.rds;*.rda;*.RData)", "All files (*.*)"),
-              "xenium": ("Xenium files (*.parquet;*.csv.gz;*.gz;*.h5;*.xenium;*.mtx.gz;*.tsv.gz;*.ome.tif)", "All files (*.*)"),
-              "xcells": ("Xenium cells (*.parquet;*.csv.gz;*.gz)", "All files (*.*)"),
-              "xcounts": ("Xenium counts (*.h5;*.mtx.gz;*.tsv.gz;*.gz)", "All files (*.*)"),
-              "xexp": ("Xenium experiment (*.xenium)", "All files (*.*)"),
+              "xenium": ("Xenium or Atera files (*.parquet;*.csv.gz;*.gz;*.h5;*.xenium;*.mtx.gz;*.tsv.gz;*.ome.tif;*.zip;*.spatial)", "All files (*.*)"),
+              "xcells": ("Xenium cells (*.parquet;*.csv.gz;*.gz;*.zip)", "All files (*.*)"),
+              "xcounts": ("Xenium or Atera counts (*.h5;*.mtx.gz;*.tsv.gz;*.gz;*.zip)", "All files (*.*)"),
+              "xexp": ("Xenium or Atera experiment (*.xenium;*.spatial)", "All files (*.*)"),
               "ximage": ("Images (*.ome.tif;*.tif;*.tiff)", "All files (*.*)"),
               "image": ("Images (*.tif;*.tiff;*.btf)", "All files (*.*)"),
               "csv": ("CSV (*.csv)", "All files (*.*)"),

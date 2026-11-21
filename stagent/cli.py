@@ -87,7 +87,8 @@ def main(argv=None):
     ix = sub.add_parser("import-xenium", help="import one sample from a Xenium output folder, or only its files")
     ix.add_argument("--name", required=True, help="sample id used in the viewer and in Claude")
     ix.add_argument("--xenium", required=True, nargs="+", help="Xenium output folder, or its files: cells.parquet (or "
-                    "cells.csv.gz) and cell_feature_matrix.h5, optionally experiment.xenium and the DAPI ome.tif")
+                    "cells.csv.gz) and cell_feature_matrix.h5, optionally experiment.xenium and the DAPI ome.tif; "
+                    "or a 10x Atera output folder, or its cell_feature_matrix.zarr.zip (+ experiment.spatial)")
     ix.add_argument("--he", help="optional H&E image registered with Xenium Explorer")
     ix.add_argument("--registration", help="the H&E's alignment file (Xenium Explorer), an affine CSV, or cell positions saved by the app")
     ix.add_argument("--description", default="")
