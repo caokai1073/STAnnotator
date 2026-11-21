@@ -1186,6 +1186,35 @@ def fingerprint(a):
     return hashlib.sha256(b).hexdigest()[:12]
 
 
+def _level_matrix(counts, idx, block=20000):
+    """What a level's PCA reads: the log-normalized rows idx of the counts, with more than MAX_PCA_GENES genes
+    (whole-transcriptome data) only their N_HVG most variable genes -- the same matrix _pca keeps, so the PCA is the
+    same to the bit. Made block of rows by block (lognorm is per cell: a block is the same as those rows of the whole),
+    and the rows with every gene are let go before the PCA: the level's log-normalized rows, a copy of them and the
+    kept genes were in memory at once (400,000 cells x 18,000 genes: 14.5 GB at the peak, 7 of it these)."""
+    from .model import lognorm
+    from . import csrutil
+    counts = sp.csr_matrix(counts)
+    every = _all_rows(idx, counts.shape[0])
+    idx = np.arange(counts.shape[0]) if every else np.asarray(idx)
+
+    def rows(cols=None):
+        data, ind, nnz = [], [], []
+        for a in range(0, len(idx), block):
+            m = lognorm(counts[a:a + block] if every else counts[idx[a:a + block]])
+            if cols is not None:
+                m = m[:, cols]
+            data.append(m.data.astype(np.float32, copy=False)); ind.append(m.indices); nnz.append(np.diff(m.indptr))
+        return csrutil.stack_rows(data, ind, nnz, counts.shape[1] if cols is None else len(cols))
+    X = lognorm(counts) if every else rows()  # (every cell: shares the counts' indices)
+    if X.shape[1] <= MAX_PCA_GENES:
+        return X
+    mu, ex2 = _moments(X)
+    keep = np.sort(np.argsort(-(ex2 - mu ** 2))[:N_HVG])
+    del X  # the kept genes made again from the counts: never both in memory
+    return rows(keep)
+
+
 def _graph(Xn, knn_mode="auto", fp=None):
     """PCA on standardized genes and a kNN graph with adaptive Gaussian weights; built once per level. fp: a dict
     that gets the checksums of the PCA and of the neighbors (the root level, for checking that runs agree)."""
@@ -1337,11 +1366,10 @@ class _Annotator:
     """Top-down marker annotation over one sample; also re-runs single levels or clusters in place."""
 
     def __init__(self, counts, panel, progress=None, seed=0, knn_mode=KNN, spill=None):
-        from .model import lognorm
         from . import timing
         with timing.step("prepare", counts.shape[0] / 1e6):
             counts = sp.csr_matrix(counts)
-            self.Xn = lognorm(counts)
+            # (no log-normalized copy of every cell is kept: each level makes its own, see _level_matrix)
             self.det = _spill_marker_columns(counts, spill) if spill else _detected(counts)
             self.counts = counts  # (the rare-type search reads transcript counts of a few marker genes)
         self.knn_mode = knn_mode
@@ -1394,7 +1422,7 @@ class _Annotator:
         self.say(self.done / self.total, f"building the neighbor graph of {label} ({len(idx):,} cells)")
         from . import timing
         root = parent is None and len(idx) == self.n
-        g, nbr = _graph(self.Xn if _all_rows(idx, self.n) else self.Xn[idx], self.knn_mode, self.fp if root else None)
+        g, nbr = _graph(_level_matrix(self.counts, idx), self.knn_mode, self.fp if root else None)
         self.graph = (g, nbr)  # (kept for the rare-type search of this level)
         cands = RESOLUTIONS if resolution == AUTO else (float(resolution),)
         best, tried = None, {}

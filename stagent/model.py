@@ -131,20 +131,22 @@ def _genes(X, keep=None):
     if X.shape[1] <= markers.MAX_PCA_GENES:
         return None
     mu = np.asarray(X.mean(0)).ravel()
-    var = np.asarray(X.multiply(X).mean(0)).ravel() - mu ** 2
+    X = sp.csr_matrix(X)  # (squares on the same structure: X.multiply(X) copies the indices too; the same numbers)
+    var = np.asarray(X._with_data(X.data * X.data, copy=False).mean(0)).ravel() - mu ** 2
     return np.array(sorted(set(np.argsort(-var)[:markers.N_HVG].tolist()) | set(keep or [])), np.int64)
 
 
-def _fit(X, y, T, pi_target, extra_X=None, extra_y=None, progress=None, seed=0, genes=None):
+def _fit(X, y, T, pi_target, extra_X=None, extra_y=None, progress=None, seed=0, genes=None, selected=False):
     """Core trainer. X: log-normalized CSR, y: class indices; 10% of (X, y) is held out for temperature scaling.
     pi_target: class distribution to correct the prior back to (training data may be class-capped). genes: the
-    columns to learn from (default: _genes); the model keeps them ("genes") and predict() uses only them."""
+    columns to learn from (default: _genes); the model keeps them ("genes") and predict() uses only them. selected:
+    X holds only those columns already."""
     from scipy.optimize import minimize_scalar
     if len(y) < MIN_TRAIN:
         raise ValueError(f"only {len(y)} labeled cells to learn the expression model from (at least {MIN_TRAIN}): "
                          "check that the labels match the sample's cells, and that not all of them are Unassigned")
     genes = _genes(X) if genes is None else genes
-    if genes is not None:
+    if genes is not None and not selected:
         X = X[:, genes]
     rng = np.random.default_rng(seed)
     perm = rng.permutation(len(y))
@@ -219,8 +221,10 @@ def train_pseudo(counts, labels, T, progress=None, seed=0, keep=None):
     from . import timing
     X, y, natural = pseudo_pool(counts, labels, T, seed)
     genes = _genes(X, keep)
-    with timing.step("model", len(y) * (X.shape[1] if genes is None else len(genes)) * T / 1e12):
-        return _fit(X, y, T, natural, progress=progress, seed=seed, genes=genes)
+    if genes is not None:  # (the training cells' other genes let go before the dense training matrix is made)
+        X = X[:, genes]
+    with timing.step("model", len(y) * X.shape[1] * T / 1e12):
+        return _fit(X, y, T, natural, progress=progress, seed=seed, genes=genes, selected=True)
 
 
 def finetune(init, extra_X, extra_y, replay_X, replay_y, progress=None, seed=0):
@@ -281,12 +285,14 @@ CHUNK_VALUES = 65536 * 480  # cells x genes made dense at once in _logits (with 
                             # 65,536-cell blocks made predicting all cells the peak of the annotation (+1.6 GB)
 
 
-def _logits(model, Xn, chunk=None):
+def _logits(model, Xn, chunk=None, counts=False):
+    """counts: Xn holds raw counts, log-normalized chunk by chunk here (lognorm is per cell: the same values as the
+    whole matrix normalized first, without that copy of it)."""
     out, g = [], model.get("genes")
     if chunk is None:
         chunk = int(min(65536, max(1024, CHUNK_VALUES // max(1, Xn.shape[1] if g is None else len(g)))))
     for i in range(0, Xn.shape[0], chunk):
-        part = Xn[i:i + chunk]
+        part = lognorm(Xn[i:i + chunk]) if counts else Xn[i:i + chunk]
         a = ((part if g is None else part[:, g]).toarray() - model["mu"]) / model["sd"]
         out.append(a @ model["W"].T + model["b"] + model["prior_shift"])
     return np.concatenate(out).astype(np.float32)
@@ -298,6 +304,6 @@ def predict(model, counts):
     g = model.get("genes")
     with timing.step("predict", counts.shape[0] * (counts.shape[1] if g is None else len(g)) / 1e9):  # (densifying
         # every cell's genes dominates)
-        z = _logits(model, lognorm(counts)) / model["temp"]
+        z = _logits(model, sp.csr_matrix(counts), counts=True) / model["temp"]
     z -= z.max(1, keepdims=True)
     return (z - np.log(np.exp(z).sum(1, keepdims=True))).astype(np.float16)
