@@ -9,6 +9,8 @@ the screenshots the user adds:
   in the last days, with images left out;
 - agent_calls.jsonl: every call of the app's agent tools in those days (tool, arguments, time, result or error),
   written by log_call;
+- analysis_runs.jsonl: the analyses the user ran in the app in those days, in every annotation (what, its settings,
+  when, how long, done / failed / stopped; no results), written by log_analysis;
 - proposals/: the changes the agent proposed in those days and what became of them (Accept, Dismiss, error);
 - annotation/: the open annotation's history (versions, priors, corrections, analyses run, chat), no cell tables;
 - app.log: the end of the app's log.
@@ -34,6 +36,9 @@ MAX_VERSIONS = 10  # the annotation's latest versions: a bug is in what happened
 ANNOTATION_MAX = 40 * 2 ** 20  # the annotation's files together (a long history has many versions of ~1 MB); the
                                # whole report then stays under the upload's 35 MB once zipped (text: ~4x smaller)
 SESSION_TYPES = {".json", ".jsonl", ".md", ".txt"}
+RUNS = config.HOME / "analysis_runs.jsonl"
+RUNS_MAX = 2 * 2 ** 20       # analysis_runs.jsonl keeps its newer half past this size
+SETTING_MAX = 500            # characters of one setting kept in the analysis log
 
 
 # ---------------- the agent's tool calls ----------------
@@ -57,22 +62,70 @@ def log_call(tool, args, seconds, result=None, error=None, session=None, via=Non
                 rec["traceback"] = trace[-TRACE_MAX:]
         else:
             rec["result"] = _short(result)
-        CALLS.parent.mkdir(parents=True, exist_ok=True)
-        with open(CALLS, "a", encoding="utf-8") as f:
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-        if CALLS.stat().st_size > CALLS_MAX:
-            lines = CALLS.read_text(encoding="utf-8").splitlines(keepends=True)
-            CALLS.write_text("".join(lines[len(lines) // 2:]), encoding="utf-8")
+        _append(CALLS, rec, CALLS_MAX)
+    except Exception:
+        pass
+
+
+def _append(path, rec, cap):
+    """One JSON line added to a log, which keeps its newer half past cap bytes."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec, ensure_ascii=False, default=str) + "\n")
+    if path.stat().st_size > cap:
+        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+        path.write_text("".join(lines[len(lines) // 2:]), encoding="utf-8")
+
+
+def _settings(request):
+    """An analysis' settings as the log keeps them: no cell lists (their number), no marker list (its lines), each
+    value cut at SETTING_MAX characters."""
+    out = {}
+    for k, v in (request or {}).items():
+        if k in ("session", "version", "estimate_s", "kind"):  # (the kind: its own field)
+            continue
+        if k == "selection":
+            out["selection_cells"] = sum(len(x) for x in v.values()) if isinstance(v, dict) else None
+        elif k == "markers_text":
+            out["marker_lines"] = len([x for x in str(v or "").splitlines() if x.strip()])
+        elif k == "message":
+            out["message"] = bool(str(v or "").strip())  # (the user's words to the agent: in the conversations)
+        else:
+            t = v if isinstance(v, str) else json.dumps(v, default=str, ensure_ascii=False)
+            out[k] = v if len(t) <= SETTING_MAX else t[:SETTING_MAX] + f"… ({len(t)} characters)"
+    return out
+
+
+def log_analysis(section, kind, request=None, seconds=None, outcome="done", error=None, session=None, sample=None,
+                 project=None):
+    """One line per analysis the user runs in the app (Annotate, Refine, Embed, Niche, Compare, Signal, Trajectory),
+    in every annotation, kept in the data folder: what ran, its settings, how long and how it ended (done, error,
+    stopped). Its results are not kept here. Never raises."""
+    try:
+        rec = {"time": time.strftime("%Y-%m-%dT%H:%M:%S"), "section": section, "kind": kind, "outcome": outcome,
+               "seconds": None if seconds is None else round(seconds, 1), "session": session, "sample": sample,
+               "project": project, "settings": _settings(request)}
+        if error:
+            rec["error"] = _short(error)[:SETTING_MAX]
+        _append(RUNS, {k: v for k, v in rec.items() if v is not None}, RUNS_MAX)
     except Exception:
         pass
 
 
 def _recent_calls(since):
-    if not CALLS.exists():
+    return _recent_lines(CALLS, since)
+
+
+def _recent_runs(since):
+    return _recent_lines(RUNS, since)
+
+
+def _recent_lines(path, since):
+    if not path.exists():
         return []
     stamp = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(since))
     out = []
-    for line in CALLS.read_text(encoding="utf-8", errors="replace").splitlines():
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         try:
             if json.loads(line).get("time", "") >= stamp:
                 out.append(line)
@@ -280,6 +333,7 @@ def contents(days=3, sid=None):
                               "text_bytes": min(sum(_text_size(p) for p, _ in tr), TRANSCRIPT_MAX),
                               "folders": [str(project_dir(f)) for f in _agent_folders() if project_dir(f).is_dir()]},
             "calls": {"n": len(_recent_calls(since))},
+            "analyses": {"n": len(_recent_runs(since))},
             "proposals": {"n": len(props)},
             "annotation": {"files": len(sess)},
             "app_log": {"files": [str(p) for p in logs], "bytes": sum(min(p.stat().st_size, LOG_TAIL) for p in logs)}}
@@ -297,6 +351,8 @@ def _readme(about, days, parts, sid, left_out=(), included=None):
     what = {"note": "note.txt: what the user wrote", "about": "about.json: the About information",
             "conversations": "agent/: the agent's Claude Code conversations (JSON lines; images left out)",
             "calls": "agent_calls.jsonl: the app's agent tools called (arguments, results or errors with tracebacks, seconds)",
+            "analyses": "analysis_runs.jsonl: the analyses run in the app, in every annotation (settings, seconds, how "
+                        "each ended; no results)",
             "proposals": "proposals/: changes the agent proposed and what became of them",
             "annotation": "annotation/: the annotation's history (versions, priors, corrections, analyses, chat); "
                           "sample/meta.json: its sample (platform, cells, genes, image, registration)",
@@ -370,7 +426,7 @@ def screenshots(items):
     return out
 
 
-def build(dest, about, days=3, parts=("conversations", "calls", "proposals", "annotation", "app_log"), sid=None,
+def build(dest, about, days=3, parts=("conversations", "calls", "analyses", "proposals", "annotation", "app_log"), sid=None,
           note="", page_errors=None, shots=None):
     """Write the report to dest (a .zip); returns what went in. shots: the user's screenshots, [(name, bytes)]."""
     about = {**about, "install_id": install_id()}
@@ -387,7 +443,7 @@ def build(dest, about, days=3, parts=("conversations", "calls", "proposals", "an
 
 
 def _build(tmp, dest, about, days, since, parts, sid, note, page_errors, shots=()):
-    n = {"conversations": 0, "calls": 0, "proposals": 0, "annotation": 0, "app_log": 0, "page_errors": 0,
+    n = {"conversations": 0, "calls": 0, "analyses": 0, "proposals": 0, "annotation": 0, "app_log": 0, "page_errors": 0,
          "screenshots": 0}
     skipped = []
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
@@ -415,6 +471,11 @@ def _build(tmp, dest, about, days, since, parts, sid, note, page_errors, shots=(
             if calls:
                 _put(z, "agent_calls.jsonl", "\n".join(calls) + "\n")
             n["calls"] = len(calls)
+        if "analyses" in parts:
+            runs = _recent_runs(since)
+            if runs:
+                _put(z, "analysis_runs.jsonl", "\n".join(runs) + "\n")
+            n["analyses"] = len(runs)
         if "proposals" in parts:
             for p in _proposals(since):
                 z.write(p, f"proposals/{p.name}")

@@ -1353,7 +1353,8 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       3 days, so that they can find and fix problems you may not report.</p>
     <ul style="margin:0;padding-left:18px" class="hint">
       <li>Sent: your conversations with the agent (without images), the agent's tool calls and their errors, the changes
-        it proposed, the history of the annotation you work on, and the app's log.</li>
+        it proposed, the analyses you ran (their kind, settings and time taken, not their results), the history of the
+        annotation you work on, and the app's log.</li>
       <li>Never sent: expression data, cell tables or images.</li>
       <li>The reports go to the developers' private folder under a random id of this installation
         (<code id="shareId">…</code>), not your name. Nothing is sent when you did not use the app.</li>
@@ -5890,6 +5891,7 @@ const BUG_PARTS = [
     return `${k.files} conversation${k.files === 1 ? "" : "s"}, ${mb(text)} of text` + (k.bytes > text * 1.2 ? ` (${mb(k.bytes - text)} of images left out)` : "");
   }],
   ["calls", "The agent's tool calls", (c) => c.calls.n ? `${c.calls.n} call${c.calls.n === 1 ? "" : "s"}` : "none in this time"],
+  ["analyses", "Analyses you ran, in every annotation: kind, settings, time taken (no results)", (c) => c.analyses?.n ? `${c.analyses.n} run${c.analyses.n === 1 ? "" : "s"}` : "none in this time"],
   ["proposals", "Changes the agent proposed, and what became of them", (c) => c.proposals.n ? `${c.proposals.n}` : "none in this time"],
   ["annotation", "This annotation's history: versions, priors, corrections, analyses run", (c) => c.session ? "the annotation open now" : "no annotation open"],
   ["page_errors", "Errors in the app's window (scripts, failed requests)", () => { const n = bugPageErrors().length; return n ? `${n}` : "none in this time"; }],
@@ -5989,7 +5991,7 @@ function bugRequest() {
   const who = (email ? email[0] : from.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z0-9]+/g, "-")).replace(/^[-.]+|[-.]+$/g, "").slice(0, 30);
   const name = ["STAnnotator-report", stamp, BUG.install, who].filter(Boolean).join("-") + ".zip";
   return { name, from, note, days: +$("bugDays").value,
-           parts: BUG.parts || ["conversations", "calls", "proposals", "annotation", "page_errors", "app_log"],
+           parts: BUG.parts || ["conversations", "calls", "analyses", "proposals", "annotation", "page_errors", "app_log"],
            screenshots: BUG.shots.map((s) => ({ name: s.name, data: s.data })) };
 }
 async function bugRun(label, fn) {

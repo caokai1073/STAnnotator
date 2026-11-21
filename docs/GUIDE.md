@@ -1253,6 +1253,8 @@ With the app working on a server, the report is made there and this computer's c
 During testing, the desktop app asks once whether it may send the developers a report of its use every 3 days.
 
 - The contents are those of a bug report, for the time since the last one; nothing is sent when the app was not used.
+  They include the analyses run in the app in that time, in every annotation (their kind, settings, time taken and
+  whether they finished; not their results).
 - The reports carry a random id of the installation, not the user's name.
 - **?** → **About** → **Usage sharing** shows when the last one was sent, turns it off or on, and sends one now.
 

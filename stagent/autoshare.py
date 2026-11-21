@@ -1,6 +1,7 @@
 """Usage sharing during testing: with the user's consent, the desktop app sends the developers a report of its use every
 few days, the same report as Report a bug (report.py: conversations with the agent without images, the agent's tool
-calls, the changes it proposed, the annotation in use, the app's log; no expression data, cell tables or images).
+calls, the analyses run in the app (kind, settings, seconds; no results), the changes it proposed, the annotation in use,
+the app's log; no expression data, cell tables or images).
 
 The user is asked once (the app's first start with this version); About shows the state, turns it off or on, and sends
 one now. The receiver files these reports under autosave/<installation id>/ in the developers' Drive folder.
@@ -50,7 +51,7 @@ def _active_session(since):
 
 def _used_since(since):
     """Whether the app was used in this time: a conversation, an agent tool call, or an annotation changed."""
-    if report.transcripts(since) or report._recent_calls(since):
+    if report.transcripts(since) or report._recent_calls(since) or report._recent_runs(since):
         return True
     return config.SESSIONS.is_dir() and any(d.stat().st_mtime >= since for d in config.SESSIONS.glob("*"))
 
@@ -80,7 +81,7 @@ def send(about, force=False):
         name = f"STAnnotator-usage-{stamp}-{report.install_id()}.zip"
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / name
-            parts = ["conversations", "calls", "proposals", "annotation", "app_log"]
+            parts = ["conversations", "calls", "analyses", "proposals", "annotation", "app_log"]
             report.build(path, about, int(days), parts, sid,
                          f"Automatic usage report ({int(days)} day(s); the user allowed usage sharing).")
             if path.stat().st_size > report.UPLOAD_MAX:   # too large: without the conversations

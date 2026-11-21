@@ -854,6 +854,9 @@ async def api_refine_start(req: Request):
             hetissue._remember_organ(s.sample_id, organ)
         st = await asyncio.to_thread(iterate.start_round, s, organ)
         rd = st["rounds"][-1]
+        from . import report
+        report.log_analysis("annotate", "refine", {"organ": organ, "round": rd.get("n"), "ask": bool(b.get("ask")),
+                                                   "message": b.get("message")}, session=s.id, sample=s.sample_id)
         if (b.get("message") or "").strip():
             rd = iterate.add_message(s, "user", b["message"].strip())
         out = {"round": rd}
@@ -1082,7 +1085,8 @@ async def api_niches_run(req: Request):
             JOBS[job].update(progress=1.0, stage="done", done=True)
         except Exception as e:
             JOBS[job].update(error=f"{type(e).__name__}: {e}", done=True)
-    return await _spawn(job, work) or _json({"job": job})
+    return await _spawn(job, work, {"section": "niches", "kind": "niches", "request": b, "session": s.id,
+                                    "sample": s.sample_id}) or _json({"job": job})
 
 
 async def api_embedding_run(req: Request):
@@ -1103,7 +1107,8 @@ async def api_embedding_run(req: Request):
             JOBS[job].update(progress=1.0, stage="done", done=True)
         except Exception as e:
             JOBS[job].update(error=f"{type(e).__name__}: {e}", done=True)
-    return await _spawn(job, work) or _json({"job": job})
+    return await _spawn(job, work, {"section": "embed", "kind": "embed", "request": b, "session": s.id,
+                                    "sample": s.sample_id}) or _json({"job": job})
 
 
 def api_embedding(req):
@@ -1618,7 +1623,7 @@ def api_samples(req):
     return _json(rows)
 
 
-async def _project_job(pid, fn, estimate_s=None, kind=None):
+async def _project_job(pid, fn, estimate_s=None, kind=None, request=None):
     """Run a project-wide analysis in the background; progress under /api/job/project:<id>. kind (annotate, embed,
     niches): what runs, so a page opened again (a reconnect) can follow it (/api/sample/<s>/running)."""
     job = f"project:{pid}"
@@ -1634,7 +1639,8 @@ async def _project_job(pid, fn, estimate_s=None, kind=None):
             JOBS[job].update(progress=1.0, stage="done", done=True)
         except Exception as e:
             JOBS[job].update(error=f"{type(e).__name__}: {e}", done=True)
-    return await _spawn(job, work) or _json({"job": job})
+    log = {"section": kind, "kind": kind, "request": request, "project": pid} if kind else None  # (All slices)
+    return await _spawn(job, work, log) or _json({"job": job})
 
 
 async def api_project_annotate(req: Request):
@@ -1643,7 +1649,7 @@ async def api_project_annotate(req: Request):
     return await _project_job(pid, lambda say: joint.annotate(pid, b.get("markers_text", ""), b.get("resolution"),
                                                         bool(b.get("carry")), say, b.get("knn"),
                                                         spillover=bool(b.get("spillover", True))),
-                        estimate_s=b.get("estimate_s"), kind="annotate")
+                        estimate_s=b.get("estimate_s"), kind="annotate", request=b)
 
 
 async def api_project_embed(req: Request):
@@ -1651,7 +1657,7 @@ async def api_project_embed(req: Request):
     pid, b = req.path_params["pid"], await req.json()
     return await _project_job(pid, lambda say: joint.embed(pid, int(b.get("n_pcs", 30)), int(b.get("n_neighbors", 15)),
                                                      float(b.get("min_dist", 0.3)), float(b.get("resolution", 1.0)),
-                                                     bool(b.get("harmony", True)), say), kind="embed")
+                                                     bool(b.get("harmony", True)), say), kind="embed", request=b)
 
 
 async def api_project_niches(req: Request):
@@ -1659,7 +1665,7 @@ async def api_project_niches(req: Request):
     pid, b = req.path_params["pid"], await req.json()
     return await _project_job(pid, lambda say: joint.niches(pid, int(b.get("k", 15)), int(b.get("n_niches", 8)),
                                                       b.get("identity", "nmf"), int(b.get("n_programs", 20)), say,
-                                                      sessions=b.get("sessions")), kind="niches")
+                                                      sessions=b.get("sessions")), kind="niches", request=b)
 
 
 # ---------------- differential expression and composition ----------------
@@ -1834,7 +1840,7 @@ async def api_analysis_run(req: Request):
         except Exception as e:
             JOBS[job].update(error=f"{type(e).__name__}: {e}" if not isinstance(e, (ValueError, KeyError)) else str(e).strip("'"),
                              done=True)
-    return await _spawn(job, work) or _json({"job": job})
+    return await _spawn(job, work, {"section": "compare", "kind": b.get("kind"), "request": b, "session": b.get("session")}) or _json({"job": job})
 
 
 async def api_communication_run(req: Request):
@@ -1871,7 +1877,7 @@ async def api_communication_run(req: Request):
         except Exception as e:
             JOBS[job].update(error=f"{type(e).__name__}: {e}" if not isinstance(e, (ValueError, KeyError)) else str(e).strip("'"),
                              done=True)
-    return await _spawn(job, work) or _json({"job": job})
+    return await _spawn(job, work, {"section": "signaling", "kind": b.get("kind", "run"), "request": b, "session": b.get("session")}) or _json({"job": job})
 
 
 async def api_coloc_run(req: Request):
@@ -1904,7 +1910,7 @@ async def api_coloc_run(req: Request):
         except Exception as e:
             JOBS[job].update(error=f"{type(e).__name__}: {e}" if not isinstance(e, (ValueError, KeyError)) else str(e).strip("'"),
                              done=True)
-    return await _spawn(job, work) or _json({"job": job})
+    return await _spawn(job, work, {"section": "niches", "kind": "coloc", "request": b, "session": b.get("session")}) or _json({"job": job})
 
 
 async def api_trajectory_run(req: Request):
@@ -1945,7 +1951,7 @@ async def api_trajectory_run(req: Request):
         except Exception as e:
             JOBS[job].update(error=f"{type(e).__name__}: {e}" if not isinstance(e, (ValueError, KeyError)) else str(e).strip("'"),
                              done=True)
-    return await _spawn(job, work) or _json({"job": job})
+    return await _spawn(job, work, {"section": "trajectory", "kind": "trajectory", "request": b, "session": b.get("session")}) or _json({"job": job})
 
 
 def _colors_forget(s):
@@ -2130,7 +2136,9 @@ async def api_annotate(req: Request):
             JOBS[sid].update(progress=1.0, stage="done", done=True)
         except Exception as e:  # report to the page instead of dying silently
             JOBS[sid].update(error=f"{type(e).__name__}: {e}", done=True)
-    return await _spawn(sid, work) or _json({"session_id": sid})
+    log = {"section": "annotate", "kind": "annotate", "request": b, "session": sid, "sample": sample} \
+        if mode == "new" else None  # (opening an annotation is not an analysis)
+    return await _spawn(sid, work, log) or _json({"session_id": sid})
 
 
 def _drop_session(sid):
@@ -2139,13 +2147,32 @@ def _drop_session(sid):
     shutil.rmtree(config.SESSIONS / sid, ignore_errors=True)
 
 
-async def _spawn(job, work):
-    """Start a run the user can stop (jobs.spawn; a stopped run of the same job is waited for); None, or a 409."""
+async def _spawn(job, work, log=None):
+    """Start a run the user can stop (jobs.spawn; a stopped run of the same job is waited for); None, or a 409.
+    log: an analysis of the Analysis tab ({section, kind, request, session, sample, project}), noted when it ends
+    (report.log_analysis: its settings, seconds, done / error / stopped)."""
+    if log is not None:
+        work = _logged(job, work, log)
     try:
         await asyncio.to_thread(jobs.spawn, job, work)
     except RuntimeError as e:
         JOBS[job].update(error=str(e), done=True)
         return _json({"error": str(e)}, 409)
+
+
+def _logged(job, work, log):
+    def run():
+        t0 = time.time()
+        try:
+            work()
+        finally:
+            from . import report
+            j, r = JOBS.get(job) or {}, jobs.RUNS.get(job)
+            stopped = bool(j.get("stopped") or (r is not None and r.stop_asked))
+            outcome = "stopped" if stopped else "error" if j.get("error") or not j.get("done") else "done"
+            report.log_analysis(seconds=time.time() - t0, outcome=outcome,
+                                error=j.get("error") if outcome == "error" else None, **log)
+    return run
 
 
 async def api_job_stop(req: Request):
@@ -2687,8 +2714,8 @@ async def api_bug_save(req: Request):
     from . import report
     b = await req.json()
     days, sid = _report_args(b)
-    parts = [p for p in b.get("parts", []) if p in ("conversations", "calls", "proposals", "annotation", "page_errors",
-                                                   "app_log")]
+    parts = [p for p in b.get("parts", []) if p in ("conversations", "calls", "analyses", "proposals", "annotation",
+                                                   "page_errors", "app_log")]
     errors = b.get("page_errors")
     note = str(b.get("note", ""))[:20000]
     raw = b.get("screenshots") or []
