@@ -10,10 +10,12 @@
 :root {
   --bg: #f4f4f2; --panel: #ffffff; --ink: #1d1f21; --muted: #6b6f73; --line: #e0e0dc;
   --accent: #0f7c86; --accent-soft: #e3f2f3; --warn: #b5541c; --user: #eef3f8; --stop: #c0392b;
+  --update: #d9620f; --update-ink: #ffffff;
 }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #17191b; --panel: #212427; --ink: #e8e8e6; --muted: #9a9ea3; --line: #33373b;
-          --accent: #4fb6bf; --accent-soft: #1f3638; --warn: #e08a55; --user: #26303a; --stop: #c9443a; }
+          --accent: #4fb6bf; --accent-soft: #1f3638; --warn: #e08a55; --user: #26303a; --stop: #c9443a;
+          --update: #f0913f; --update-ink: #1d1f21; }
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -54,7 +56,7 @@ header .hrow.bottom button { padding: 5px 8px; font-size: 12px; gap: 4px; white-
 header.collapsed .hmini { display: flex; }
 .cap { width: 100%; flex: none; display: flex; align-items: center; gap: 6px; }
 /* a new version of the desktop app: shown until it is installed or skipped (checkForUpdate) */
-.updpill { padding: 4px 10px; font-weight: 600; background: var(--accent); border-color: var(--accent); color: var(--panel); }
+.updpill { padding: 4px 10px; font-weight: 600; background: var(--update); border-color: var(--update); color: var(--update-ink); }
 .updpill:hover { filter: brightness(1.1); }
 #updBtn { margin-left: auto; }
 #updBtn:not([hidden]) + #helpBtn { margin-left: 0 !important; }
@@ -6134,7 +6136,7 @@ function setUpdBadge(u) {
     if (!b) continue;
     b.hidden = !UPD.badge;
     if (UPD.badge) {
-      b.textContent = `Update ${UPD.badge.latest}`;
+      b.textContent = "Update";  // (the version is in its tooltip and the window)
       b.title = `STAnnotator ${UPD.badge.latest} is available (you have ${UPD.badge.current}): what it changes, and install it`;
     }
   }

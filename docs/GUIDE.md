@@ -863,7 +863,7 @@ Part of the Annotation and Spatial organization reviews.
 **Updates** (desktop app). The app asks GitHub for a newer release when it starts and every hour while it stays
 open (also right after the computer wakes from sleep), and offers one by itself at most once a day (**Later** waits until the next day). **Check for updates** in About
 asks now and always shows it. Without an internet connection nothing is shown. While a newer version waits, an
-**Update** button with its number stays beside **?** (and at the top of the folded toolbar) and opens the window.
+**Update** button stays beside **?** (and at the top of the folded toolbar) and opens the window.
 
 - The window shows the notes of every release since the installed one, newest first; **Download and install** fetches the installer in the background.
 - **Install and restart** closes the app, puts the new version in its place (macOS: the STAnnotator.app it runs from;
