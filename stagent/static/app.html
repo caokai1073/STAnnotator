@@ -1644,7 +1644,9 @@ function drawGL() {
   gl.uniform2f(GL.u.u_offset, 2 * a.x / w - 1, 1 - 2 * a.y / h);
   const diam = 2 * GL.radius * kx * st.dotSize * dpr;
   const few = filt().size || st.sel || ["conflicts", "changed", "plausibility"].includes(st.mode);  // keep sparse cells findable
-  gl.uniform1f(GL.u.u_size, Math.max(diam, 2 * dpr));
+  // zoomed out, a cell is under a pixel: the dots keep a smallest size, which follows Dot size too (a fixed 2 pixels
+  // made the slider do nothing there); never under one device pixel
+  gl.uniform1f(GL.u.u_size, Math.max(diam, Math.max(1, 2 * dpr * st.dotSize)));
   gl.uniform1f(GL.u.u_min, few ? 4 * dpr * st.dotSize : 0);
   gl.uniform1f(GL.u.u_opacity, st.opacity);
   gl.uniform1f(GL.u.u_edge, diam >= 7 * dpr ? 1 : 0);
