@@ -1543,7 +1543,8 @@ function openHE(sample) {
   });
 }
 function heUrl(sample) {  // the tiles of the image chosen (st.imgId; the frame: "main")
-  const he = st.he, img = st.imgId && st.imgId !== "main" ? `&img=${encodeURIComponent(st.imgId)}` : "";
+  const he = st.he, cur = ((he && he.images) || []).find((x) => x.id === st.imgId);
+  const img = st.imgId && st.imgId !== "main" ? `&img=${encodeURIComponent(st.imgId)}${cur && cur.rev ? `&iv=${cur.rev}` : ""}` : "";
   return (l, x, y) => `/api/sample/${sample}/he/${l}/${x}_${y}.jpg?r=${he.rev}${st.epoch ? `&f=${st.epoch}` : ""}${img}`;
 }
 function fillImages(sample, he) {  // the Image selector: the sample's images (the frame first); the last choice per sample
@@ -5301,7 +5302,7 @@ $("hiGo").onclick = async () => {
   let r;
   try {
     if (frame) {
-      await post(`/api/sample/${encodeURIComponent(sample)}/image`, { path: img, kind });
+      await post(`/api/sample/${encodeURIComponent(sample)}/image`, { path: img, kind, fresh: true });  // (not placed with an earlier image's registration)
       if (mode === "file") await post(`/api/sample/${encodeURIComponent(sample)}/registration`, { path: reg });
     } else {
       r = await post(`/api/sample/${encodeURIComponent(sample)}/images/add`,
@@ -5316,19 +5317,23 @@ $("hiGo").onclick = async () => {
   loadStepsSoon();
   if (mode === "none" && st.sample && st.sample.image_pending) openAlignChoice();
 };
-var ALIGN = { auto: null };  // the samples Align automatically works through (null: none)
-function alignBusy() { return !!(ALIGN.auto || AW.ids); }  // an alignment runs (the app's, or the agent's)
+var ALIGN = { auto: null, after: false };  // the samples Align automatically works through (null: none); after: its
+// result window is being opened (the step's own check window must not take its place)
+function alignBusy() { return !!(ALIGN.auto || ALIGN.after || AW.ids); }  // an alignment runs (the app's, or the agent's)
 function alignChanged() { alignBar(); loadStepsSoon(); }  // its buttons greyed out, or back
 async function autoAlign(ids) {  // the app aligns the images by itself (align.auto), one sample after the other; then the
   // open sample's registration check window (with Undo), and a summary of the others
   ids = (ids && ids.length ? ids : [st.sample && st.sample.sample_id]).filter(Boolean);
   if (!ids.length) return;
   if (alignBusy()) { toast("An alignment is running: wait for it to end", 5000); return; }
-  ALIGN.auto = ids; alignChanged();
+  ALIGN.auto = ids; ALIGN.after = true; alignChanged();
+  try { await autoAlignRun(ids); } finally { ALIGN.auto = null; ALIGN.after = false; alignChanged(); }
+}
+async function autoAlignRun(ids) {
   const out = [];
   try {
     for (const [i, id] of ids.entries()) out.push({ id, ...(await autoAlignOne(id, ids.length > 1 ? ` (${i + 1} of ${ids.length})` : "")) });
-  } finally { ALIGN.auto = null; alignChanged(); }
+  } finally { ALIGN.auto = null; alignBar(); }
   const name = (id) => { const x = (st.samples || []).find((s) => s.sample_id === id); return x ? sampleName(x) : id; };
   const word = (x) => x.error ? `failed (${x.error})` : x.r.applied ? `${x.r.orientation}${x.r.ambiguous ? ", another orientation fits almost as well: check it" : ""}`
     : "no placement fits: use Align with Agent, or a registration file";
@@ -5344,6 +5349,12 @@ async function autoAlign(ids) {  // the app aligns the images by itself (align.a
   if (!mine || !mine.r || !mine.r.applied) { if (ids.length === 1) toast(`${name(ids[0])} aligned automatically`, 6000); return; }
   const sample = mine.id, r = mine.r;
   await afterPlacement();
+  store(`localAsk:${sample}:${st.he ? st.he.rev : ""}`, "1");  // (this window offers the local registration itself)
+  if (!st.sid) {  // no annotation open (nothing to check from): the result in words
+    toast(`${summary ? `${summary} ` : ""}${sampleName(st.sample)} aligned automatically (${r.orientation}; ${r.verdict === "fine" ? "the cells sit on their nuclei"
+      : "some areas sit off their nuclei: open an annotation, then Steps → Image → Check offers the local registration"}).`, 15000);
+    return;
+  }
   const note = (summary ? `${summary} This sample: ` : "") + `Aligned automatically (${r.orientation}).` + (r.ambiguous
     ? " Another orientation fits almost as well: check on the map that the tissue matches the image; if it does not, Undo and use Align with Agent."
     : "");

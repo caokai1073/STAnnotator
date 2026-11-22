@@ -45,7 +45,7 @@ try:
     assert [x["id"] for x in ims] == ["main", r["added"]] and ims[1]["name"] == "turned", ims
     # shown in the frame's place: the same picture as the frame
     v = webapp.view("s1")
-    sl, T = v.layer(r["added"])
+    sl, T, _ = v.layer(r["added"])
     bx = (300, 200, 900, 700)
     a = np.asarray(render.slide(os.path.join(home, "frame.ome.tif")).read(*bx, 300, 250).convert("L"), float)
     b = np.asarray(render.read_warped(sl, T, *bx, 300, 250).convert("L"), float)
@@ -75,6 +75,34 @@ try:
     # removed
     assert cl.post("/api/sample/s1/images/remove", json={"id": r2["added"]}).status_code == 200
     assert r2["added"] not in [x["id"] for x in importer.images("s1")]
+    # an image added "in the same pixels as" the frame follows it when the frame is placed again (another affine)
+    pyramid(os.path.join(home, "ifsame.ome.tif"), base[..., 1])
+    r3 = cl.post("/api/sample/s1/images/add", json={"path": os.path.join(home, "ifsame.ome.tif"), "kind": "IF", "same_as": "main"}).json()
+    A2 = A + np.array([[0, 0, 7], [0, 0, -5]])
+    importer.place_cells("s1", A2, os.path.join(home, "frame.ome.tif"), "H&E", by="file", progress=lambda *a: None)
+    x3 = next(x for x in importer.images("s1") if x["id"] == r3["added"])
+    assert np.allclose(x3["affine"], A2), "an image in the frame's pixels did not follow the frame"
+    # the same file added again with another registration: other tiles (rev), not the cached warp
+    info1 = {x["id"]: x["rev"] for x in cl.get("/api/sample/s1/he_info").json()["images"]}
+    B2 = B + np.array([[0, 0, 30], [0, 0, 0]])
+    pd.DataFrame([dict(zip(["a11", "a12", "a21", "a22", "tx", "ty"], [B2[0, 0], B2[0, 1], B2[1, 0], B2[1, 1], B2[0, 2], B2[1, 2]]))]).to_csv(reg, index=False)
+    cl.post("/api/sample/s1/images/add", json={"path": os.path.join(home, "other.ome.tif"), "kind": "IF", "registration": reg})
+    info2 = {x["id"]: x["rev"] for x in cl.get("/api/sample/s1/he_info").json()["images"]}
+    assert info2[r["added"]] != info1[r["added"]], "the new placement of the same file kept its rev"
+    v = webapp.view("s1")
+    T_new = v.layer(r["added"], info2[r["added"]])[1]
+    assert not np.allclose(T_new, T), "the warp of the new registration is the old one"
+    # an extra image that cannot be read: a blank tile not kept, and the frame image not blamed
+    os.remove(os.path.join(home, "ifsame.ome.tif")); render.unload(os.path.join(home, "ifsame.ome.tif")); v.forget_layers()
+    t = cl.get("/api/sample/s1/he/8/0_0.jpg", params={"img": r3["added"], "iv": "x"})
+    assert t.status_code == 200 and "no-store" in t.headers.get("cache-control", ""), t.headers
+    assert not cl.get("/api/sample/s1/he_info").json()["image_error"], "the frame image was blamed for another one"
+    # the Image window's image (fresh) waits for its own registration or alignment, though the sample has one
+    m = json.load(open(config.SAMPLES / "s1" / "meta.json")); m["registration_affine"] = A.tolist(); json.dump(m, open(config.SAMPLES / "s1" / "meta.json", "w"))
+    pyramid(os.path.join(home, "he3.ome.tif"), base)
+    rq = cl.post("/api/sample/s1/image", json={"path": os.path.join(home, "he3.ome.tif"), "kind": "H&E", "fresh": True}).json()
+    m = json.load(open(config.SAMPLES / "s1" / "meta.json"))
+    assert rq.get("pending") and m["image_pending"].endswith("he3.ome.tif") and not m["he_path"].endswith("he3.ome.tif"), (rq, m["he_path"])
     # the instrument's morphology images of a Xenium source
     mf = config.SAMPLES / "s1" / "meta.json"
     morph = os.path.join(home, "xen", "morphology_focus"); os.makedirs(morph)

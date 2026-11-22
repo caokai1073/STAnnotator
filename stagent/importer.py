@@ -1964,6 +1964,9 @@ def _channel_name(path):
             import tifffile
             with tifffile.TiffFile(p) as t:
                 found = re.findall(r'<Channel[^>]*?Name="([^"]+)"', t.ome_metadata or "")
+            num = re.search(r"_(\d{4})$", stem)
+            if found and len(found) > 1 and num and int(num.group(1)) < len(found):  # (every file listing all channels)
+                found = [found[int(num.group(1))]]
             name = " / ".join(dict.fromkeys(found)) if found else None
         except Exception:
             name = None
@@ -2023,6 +2026,13 @@ def images(sample_id, meta=None):
             continue
         seen.add(r)
         out.append({**x, "frame": False})
+    by_path = {res(x["path"]): x for x in out}
+    for x in out:  # an image in the same pixels as another follows it (that one realigned, or the frame moved)
+        ref = by_path.get(x.get("same_as"))
+        if ref is not None and ref is not x and not ref.get("same_as"):
+            x["affine"] = ref["affine"]
+    for x in out:  # its placement's fingerprint: tiles of another placement are other tiles (the viewer's cache)
+        x["rev"] = hashlib.sha1(json.dumps(np.round(np.asarray(x["affine"], float), 6).tolist()).encode()).hexdigest()[:8]
     return out
 
 
@@ -2048,6 +2058,7 @@ def add_image(sample_id, path, kind="IF", registration=None, same_as=None, name=
     path = str(Path(path).expanduser().resolve())
     _he_size(path)  # readable?
     m = _meta(sample_id)
+    ref = None
     if same_as:
         ref = next((x for x in images(sample_id, m) if x["id"] == same_as), None)
         if ref is None:
@@ -2068,7 +2079,8 @@ def add_image(sample_id, path, kind="IF", registration=None, same_as=None, name=
         raise ValueError(f"only {inside:.0%} of the cells fall inside this image ({W} x {H} px) with that registration")
     keep = [x for x in (m.get("images") or []) if Path(x["path"]).resolve() != Path(path).resolve()]
     keep.append({"id": _image_id(path), "name": name or _image_label(kind, path), "kind": kind, "path": path,
-                 "affine": np.asarray(A, float).tolist(), "source": "added"})
+                 "affine": np.asarray(A, float).tolist(), "source": "added",
+                 **({"same_as": str(Path(ref["path"]).resolve())} if ref else {})})  # (follows that image: images())
     m["images"] = keep
     dump_json(m, config.SAMPLES / sample_id / "meta.json", indent=1)
     return {"added": _image_id(path), "inside": round(float(inside), 3)}
@@ -2100,13 +2112,14 @@ def undo_placement(sample_id):
     return r
 
 
-def set_image(sample_id, path, kind="H&E", progress=print):
-    """Add (or replace) the sample's image. With a registration already known the cells move onto it at once;
-    otherwise it waits (image_pending) for set_registration or an alignment."""
+def set_image(sample_id, path, kind="H&E", progress=print, reuse_registration=True):
+    """Add (or replace) the sample's image. With a registration already known the cells move onto it at once (the
+    same image again, e.g. moved); otherwise, or with reuse_registration=False (another image: the app's Image window,
+    whose registration file or alignment comes next), it waits (image_pending) for set_registration or an alignment."""
     path = str(Path(path).expanduser().resolve())
     _he_size(path)  # readable?
     m = _meta(sample_id)
-    if m.get("registration_affine"):
+    if m.get("registration_affine") and reuse_registration:
         r = place_cells(sample_id, m["registration_affine"], path, kind, by=m.get("registration_by") or "file",
                         progress=progress, keep_positions=True)
         if m.get("registration_positions"):  # the registration was a cell positions file: its cells where it puts them

@@ -214,11 +214,12 @@ def embed(pid, n_pcs=30, n_neighbors=15, min_dist=0.3, resolution=1.0, harmony=T
     return meta
 
 
-def niche_sessions(pid, sessions=None, identity="nmf"):
+def niche_sessions(pid, sessions=None, identity="nmf", create=True):
     """{sample_id: session} the niches of all slices go to: each slice's annotation (the one open in the app, else its
     latest); with identity "nmf" (no cell types needed) a slice not annotated yet keeps them in its placeholder (the
     one open, else its latest, else a new one), whose first annotation takes them over. Cell types as the identity:
-    a ValueError naming the slices not annotated yet."""
+    a ValueError naming the slices not annotated yet. create=False (describing a proposal before Accept): a slice
+    without a placeholder maps to None instead of a new one."""
     from .session import Session, placeholder
     sess = latest_sessions(pid, sessions)
     missing = [s for s in projects.load(pid)["samples"] if s not in sess]
@@ -226,7 +227,7 @@ def niche_sessions(pid, sessions=None, identity="nmf"):
         for s in missing:
             want = (sessions or {}).get(s)
             ok = want and (config.SESSIONS / str(want) / "session.json").is_file() and Session(want).sample_id == s
-            sess[s] = want if ok else placeholder(s) or Session.create(s, "none", method="none").id
+            sess[s] = want if ok else placeholder(s) or (Session.create(s, "none", method="none").id if create else None)
         missing = []
     if missing:  # the niches go to each slice's annotation
         names = [(json.load(open(config.SAMPLES / s / "meta.json", encoding="utf-8")).get("name") or s) for s in missing]

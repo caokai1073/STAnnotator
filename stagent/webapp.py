@@ -165,11 +165,13 @@ class SampleView:
         self.sx = px[self.order]
         self.tree = cKDTree(np.c_[px, py])
 
-    def layer(self, image_id):
-        """Another image of the sample shown in the frame's place: (its Slide, T: frame pixels -> its pixels), or None."""
+    def layer(self, image_id, rev=None):
+        """Another image of the sample shown in the frame's place: (its Slide, T: frame pixels -> its pixels, its
+        placement's rev), or None. Kept per (image, rev): another placement of the same file is looked up again."""
         if not hasattr(self, "_layers"):
             self._layers = {}
-        if image_id not in self._layers:
+        key = (image_id, rev)
+        if key not in self._layers:
             x = next((x for x in importer.images(self.sample_id) if x["id"] == image_id and not x["frame"]), None)
             if x is None:
                 return None
@@ -177,8 +179,11 @@ class SampleView:
             A = np.asarray(x["affine"], float)       # cell um -> this image's pixels
             Fi = np.linalg.inv(F[:, :2])
             L = A[:, :2] @ Fi
-            self._layers[image_id] = (render.slide(x["path"]), np.c_[L, A[:, 2] - L @ F[:, 2]])
-        return self._layers[image_id]
+            self._layers[key] = (render.slide(x["path"]), np.c_[L, A[:, 2] - L @ F[:, 2]], x["rev"])
+        return self._layers[key]
+
+    def forget_layers(self):
+        self._layers = {}
 
     def tile_box(self, L, tx, ty):
         s = 2.0 ** (L - self.max_level)
@@ -560,12 +565,21 @@ def he_tile(req: Request):
     except ValueError:
         return Response(status_code=404)
 
-    img = req.query_params.get("img") or "main"
-    try:
-        lay = v.layer(img) if img != "main" else None
-    except Exception as e:  # (the other image cannot be opened: the frame's tile, and the reason in the log)
-        print(f"image {img} of {sid}: {type(e).__name__}: {e}", flush=True)
-        lay = None
+    img, irev = req.query_params.get("img") or "main", req.query_params.get("iv")
+
+    def blank():
+        b = io.BytesIO()
+        Image.new("RGB", (w, h), v.slide.fill).save(b, "JPEG", quality=85)
+        return Response(b.getvalue(), media_type="image/jpeg", headers=NO_CACHE)
+    lay = None
+    if img != "main":  # another image of the sample: a tile of it that cannot be made is blank and not kept (the
+        try:           # frame's own tile under its address would stay in the browser's cache)
+            lay = v.layer(img, irev)
+        except Exception as e:
+            print(f"image {img} of {sid}: {type(e).__name__}: {e}", flush=True)
+            return blank()
+        if lay is None:
+            return blank()
 
     def make():
         buf = io.BytesIO()
@@ -573,15 +587,13 @@ def he_tile(req: Request):
          ).save(buf, "JPEG", quality=85)
         return buf.getvalue()
     try:
-        data = _tiles.get_or((sid, L, tx, ty, img if lay else "main"), make)
-    except Exception as e:  # the image's pixels cannot be read here (damaged): a blank tile, not kept, and he_info
-        # says why from now on (the app's Refresh reads the file again)
-        if v.image_error is None:
+        data = _tiles.get_or((sid, L, tx, ty, (img, lay[2]) if lay else "main"), make)
+    except Exception as e:  # the image's pixels cannot be read here (damaged): a blank tile, not kept; for the
+        # frame image he_info says why from now on (the app's Refresh reads the file again)
+        print(f"he tile {sid} {img} {L} {tx}_{ty}: {type(e).__name__}: {e}", flush=True)
+        if lay is None and v.image_error is None:
             v.image_error = image_error_text(v.he_path, e)
-            print(f"he tile {sid} {L} {tx}_{ty}: {type(e).__name__}: {e}", flush=True)
-        buf = io.BytesIO()
-        Image.new("RGB", (w, h), v.slide.fill).save(buf, "JPEG", quality=85)
-        return Response(buf.getvalue(), media_type="image/jpeg", headers=NO_CACHE)
+        return blank()
     return Response(data, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
 
 
@@ -2185,7 +2197,7 @@ def api_he_info(req):
     return _json({"width": v.W, "height": v.H, "tile_size": TILE, "origin": [v.ox, v.oy], "um_per_px": v.um_per_px,
                   "image_kind": v.image_kind, "rev": int(v.rev), "image_error": v.image_error,
                   "image_only": bool(m.get("image_only")), "um_per_px_known": m.get("um_per_px_known", True),
-                  "images": [{k: x[k] for k in ("id", "name", "kind", "frame", "source")} for x in importer.images(v.sample_id)]
+                  "images": [{k: x[k] for k in ("id", "name", "kind", "frame", "source", "rev")} for x in importer.images(v.sample_id)]
                   if v.image_kind != "none" or m.get("images") or (m.get("source") or {}).get("morphology") else []})
 
 
@@ -2202,8 +2214,9 @@ async def api_annotate(req: Request):
                                  existing=b.get("existing"), knn=b.get("knn"), stains=bool(b.get("stains", True)),
                                  spillover=bool(b.get("spillover", True))).id
         except (ValueError, OSError, KeyError) as e:
-            from . import report
-            report.log_analysis("annotate", "annotate", b, outcome="rejected", error=str(e), sample=sample)
+            if b.get("method", "markers") != "none":
+                from . import report
+                report.log_analysis("annotate", "annotate", b, outcome="rejected", error=str(e), sample=sample)
             return _json({"error": str(e)}, 400)
     run = jobs.RUNS.get(sid)
     if mode == "continue" and run and run.thread.is_alive() and not run.stop_asked:  # already opening: follow it
@@ -2231,7 +2244,8 @@ async def api_annotate(req: Request):
         except Exception as e:  # report to the page instead of dying silently
             JOBS[sid].update(error=f"{type(e).__name__}: {e}", done=True)
     log = {"section": "annotate", "kind": "annotate", "request": b, "session": sid, "sample": sample} \
-        if mode == "new" else None  # (opening an annotation is not an analysis)
+        if mode == "new" and b.get("method", "markers") != "none" else None  # (opening an annotation, or the sample's
+    # placeholder made when it opens unannotated or after a filter, is not an analysis)
     return await _spawn(sid, work, log) or _json({"session_id": sid})
 
 
@@ -3135,8 +3149,11 @@ async def api_sample_image(req: Request):
     """Add or replace a sample's image; it is shown once there is a registration (file or alignment)."""
     sample = req.path_params["sample"]
     b = await req.json()
-    try:
-        r = importer.set_image(sample, b["path"], b.get("kind") or "H&E", progress=lambda *a: None)
+    if _busy(sample):
+        return _json({"error": "the sample is busy (an alignment, check, filter or annotation is running): try again when it ends"}, 409)
+    try:  # fresh: another image (the Image window), placed by its own registration file or alignment next
+        r = importer.set_image(sample, b["path"], b.get("kind") or "H&E", progress=lambda *a: None,
+                               reuse_registration=not b.get("fresh"))
     except (ValueError, OSError, KeyError) as e:
         return _json({"error": str(e)}, 400)
     _reload_sample(sample)
@@ -3148,15 +3165,19 @@ async def api_sample_image_add(req: Request):
     selector). Without a registration or same_as the image waits for its alignment (as /image)."""
     sample = req.path_params["sample"]
     b = await req.json()
+    if _busy(sample):
+        return _json({"error": "the sample is busy (an alignment, check, filter or annotation is running): try again when it ends"}, 409)
     try:
         if not (b.get("registration") or b.get("same_as")):
-            r = importer.set_image(sample, b["path"], b.get("kind") or "H&E", progress=lambda *a: None)
+            r = importer.set_image(sample, b["path"], b.get("kind") or "H&E", progress=lambda *a: None,
+                                   reuse_registration=False)
         else:
             r = importer.add_image(sample, b["path"], b.get("kind") or "IF", b.get("registration") or None,
                                    b.get("same_as") or None, b.get("name") or None)
     except (ValueError, OSError, KeyError) as e:
         return _json({"error": str(e)}, 400)
     _reload_sample(sample)
+    _forget_image_tiles(sample)
     return _json(r)
 
 
@@ -3164,11 +3185,21 @@ async def api_sample_image_remove(req: Request):
     sample = req.path_params["sample"]
     b = await req.json()
     try:
+        if _busy(sample):
+            return _json({"error": "the sample is busy: try again when it ends"}, 409)
         r = importer.remove_image(sample, str(b.get("id")))
     except ValueError as e:
         return _json({"error": str(e)}, 400)
     _reload_sample(sample)
+    _forget_image_tiles(sample)
     return _json(r)
+
+
+def _forget_image_tiles(sample):
+    """An image added or removed: the view's other images and their tiles are looked up again."""
+    if sample in _views:
+        _views[sample].forget_layers()
+    _tiles.drop(lambda k: k[0] == sample and len(k) > 4 and k[4] != "main")
 
 
 async def api_sample_registration(req: Request):
@@ -3792,7 +3823,8 @@ async def _sample_filter(req: Request):
             JOBS[f"filter:{sample}"].update(done=True, error=str(e))
         return _json({"error": str(e)}, 400)
     sess = [d for x in ids for d in _sample_sessions(x)]
-    mine = {d.name for d in sess} | {f"embed:{x}" for x in ids} | {f"regfix:{x}" for x in ids} | {f"project:{projects.project_of(sample)}"}
+    mine = {d.name for d in sess} | {f"{k}:{x}" for x in ids for k in ("embed", "regfix", "regcheck", "autoalign")} \
+        | {f"project:{projects.project_of(sample)}"}  # (an alignment or check: it reads and writes the cells too)
     if any(not j["done"] and (k in mine or k.split(":", 1)[-1] in mine) for k, j in JOBS.items()):
         JOBS[job].update(done=True, error="busy")
         return _json({"error": "an annotation or analysis of this sample is still running; wait until it finishes"}, 409)

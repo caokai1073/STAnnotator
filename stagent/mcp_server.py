@@ -791,7 +791,7 @@ def _d_run_niches(a):
     return {"title": "Find niches", "version": s.state()["version"], "details": det}
 
 
-def _project_niche_slices(s, identity="nmf"):
+def _project_niche_slices(s, identity="nmf", create=True):
     """(project id, {sample_id: session} of its slices: the open one for this slice, else each slice's latest
     annotation; with identity "nmf" a slice not annotated yet uses its placeholder), or a ValueError naming the
     slices not annotated yet (identity "cell types")."""
@@ -799,12 +799,12 @@ def _project_niche_slices(s, identity="nmf"):
     pid = projects.project_of(s.sample_id)
     if not pid:
         raise ValueError("this sample is in no project: use run_niches for its niches")
-    return pid, joint.niche_sessions(pid, {s.sample_id: s.id}, identity)
+    return pid, joint.niche_sessions(pid, {s.sample_id: s.id}, identity, create)
 
 
 def _d_run_project_niches(a):
     s = _s()
-    pid, sess = _project_niche_slices(s, a["identity"])
+    pid, sess = _project_niche_slices(s, a["identity"], create=False)  # (nothing made before Accept)
     det = [f"All {len(sess)} slices of the project together: one set of niches (the same N1, N2... in every slice)",
            f"Identity: {a['identity']}" + (f" ({a['n_programs']} NMF programs)" if a["identity"] == "nmf" else ""),
            f"Neighborhood: {a['k']} nearest cells, in every slice", f"{a['n_niches']} niches",
