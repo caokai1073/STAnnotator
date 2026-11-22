@@ -228,6 +228,8 @@ details.adv[open] > summary { margin-bottom: 10px; }
 details.adv > summary .advon { font-size: 11.5px; }
 .progress { display: flex; visibility: hidden; align-items: center; gap: 8px; min-width: 180px; flex: 1; max-width: 640px; }
 .progress.show { visibility: visible; }
+#qfprog { flex-direction: column; align-items: stretch; gap: 6px; }  /* Filter: the bar on its own line, the stage under it */
+#qfprog .pbar { flex: none; width: 100%; }
 .pstop { color: #b42318; border-color: #e5a29b; }
 .pstop.main { margin-top: 6px; width: 100%; }
 .pbar { flex: 1; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; min-width: 120px; }
@@ -499,12 +501,16 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .frow > span:first-child { font-size: 12.5px; color: var(--muted); }
 .frow small.opt { display: block; font-size: 10.5px; opacity: .8; }
 .frow b.req { color: var(--warn); font-weight: 600; }
-#imDlg textarea { resize: none; overflow: hidden; }  /* grows with what is entered (autoGrow) */
+#imDlg textarea, #hiDlg textarea { resize: none; overflow: hidden; }  /* grows with what is entered (autoGrow) */
 .frow input[type=text], .frow textarea, .frow select { width: 100%; min-width: 0; }
 .frow textarea { font: 12px ui-monospace, Menlo, monospace; resize: vertical; }
 .imkind { display: flex; gap: 16px; margin-bottom: 6px; }
 .choice { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font-size: 13px; }
 .choice button { padding: 2px 10px; font-size: 12.5px; }
+.choice.hicol { flex-direction: column; align-items: flex-start; gap: 8px; }
+.choice.hicol label { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.choice.hicol select { width: auto; min-width: 140px; padding-top: 2px; padding-bottom: 2px; }
+#hiSame[hidden] { display: none; }
 /* one of the bars on top of the map, as small as its text: beside the others on a wide map, on a row of its own
    on a narrow one (the panels below follow the bars' height, so nothing lies on top of it) */
 #alignbar { flex: 0 1 auto; max-width: 100%; pointer-events: auto; display: flex; flex-wrap: wrap; gap: 6px 10px;
@@ -1007,14 +1013,15 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <div class="row"><span class="spacer"></span><button id="acCancel">Cancel</button></div>
   </div>
 </dialog>
-<dialog id="hiDlg" style="width:min(640px,95vw)">
+<dialog id="hiDlg" style="width:min(800px,95vw)">
   <div class="dh"><b id="hiTitle">Import the H&amp;E</b><span class="spacer"></span></div>
   <div class="imbody" style="gap:8px">
     <div class="frow"><span>Image</span><textarea id="hiImg" rows="1" placeholder="the H&amp;E of this sample: pyramidal TIFF / OME-TIFF"></textarea><button id="hiImgPick" data-kind="image">Choose…</button></div>
     <div class="frow"><span>Image kind</span><select id="hiKind"><option value="H&amp;E">H&amp;E</option><option value="DAPI">DAPI</option><option value="IF">protein / IF stain</option></select><span></span></div>
-    <div class="frow"><span>Registration<small class="opt">optional</small></span><span class="choice">
+    <div class="frow"><span>Registration<small class="opt">optional</small></span><span class="choice hicol">
       <label><input type="radio" name="hiRegMode" value="file"> Registration file</label>
-      <label id="hiSameWrap" hidden><input type="radio" name="hiRegMode" value="same"> Same pixels as <select id="hiSame"></select></label>
+      <label id="hiSameWrap" hidden><input type="radio" name="hiRegMode" value="same"> <span id="hiSameText">Same pixels as</span>
+        <select id="hiSame"></select></label>
       <label><input type="radio" name="hiRegMode" value="none" checked> No registration (align it next)</label></span><span></span></div>
     <div class="frow" id="hiRegRow" hidden><span></span><textarea id="hiReg" rows="1" placeholder="affine CSV (a11,a12,a21,a22,tx,ty), Xenium Explorer alignment (3x3), or cell positions saved by this app"></textarea><button id="hiRegPick" data-kind="csv">Choose…</button></div>
     <div class="row" style="margin-top:4px"><span class="err" id="hiErr"></span><span class="spacer"></span><button id="hiCancel">Cancel</button><button id="hiGo" class="primary">Import</button></div>
@@ -5254,14 +5261,23 @@ function openImageImport(add) {  // Steps → Image → Import (the sample has n
   const same = $("hiSame"); same.textContent = "";
   ims.forEach((x) => same.append(Object.assign(document.createElement("option"), { value: x.id, textContent: x.name })));
   const dapi = ims.find((x) => x.kind === "DAPI"); if (dapi) same.value = dapi.id;
+  same.hidden = ims.length < 2;  // one image: named in the line, no list of one
+  $("hiSameText").textContent = ims.length < 2 && ims.length ? `Same pixels as the ${ims[0].name}` : "Same pixels as";
   $("hiSameWrap").hidden = !add;
-  hiDefaultReg(); $("hiDlg").showModal();
+  hiDefaultReg(); $("hiDlg").showModal(); hiGrow();
 }
-function hiDefaultReg() {  // a stain or DAPI added: often in the instrument's pixels (same as its DAPI); an H&E: aligned
-  const add = !!$("hiDlg").dataset.add, mode = add && $("hiKind").value !== "H&E" ? "same" : "none";
+function hiGrow() { ["hiImg", "hiReg"].forEach((id) => autoGrow($(id))); }  // (the paths and the hints shown whole, as in Import)
+function hiDefaultReg() {  // a stain or DAPI added: in the instrument's pixels when the sample has its DAPI (same as it),
+  // else with a registration file; an H&E: aligned
+  const add = !!$("hiDlg").dataset.add, kind = $("hiKind").value;
+  const dapi = ((st.he && st.he.images) || []).some((x) => x.kind === "DAPI");
+  const mode = !add || kind === "H&E" ? "none" : dapi ? "same" : "file";
   document.querySelector(`input[name=hiRegMode][value=${mode}]`).checked = true; hiRegShown();
+  $("hiImg").placeholder = kind === "H&E" ? "the H&E of this sample: pyramidal TIFF / OME-TIFF"
+    : kind === "DAPI" ? "the DAPI of this sample: pyramidal TIFF / OME-TIFF" : "the stain image: pyramidal TIFF / OME-TIFF";
+  hiGrow();
 }
-function hiRegShown() { $("hiRegRow").hidden = document.querySelector("input[name=hiRegMode]:checked").value !== "file"; }
+function hiRegShown() { $("hiRegRow").hidden = document.querySelector("input[name=hiRegMode]:checked").value !== "file"; hiGrow(); }
 document.querySelectorAll("input[name=hiRegMode]").forEach((r) => (r.onchange = hiRegShown));
 $("hiKind").onchange = hiDefaultReg;
 for (const [btn, field] of [["hiImgPick", "hiImg"], ["hiRegPick", "hiReg"]])
