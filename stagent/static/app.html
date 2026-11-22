@@ -601,7 +601,6 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <div class="io"><button id="importBtn" title="Add a sample (Xenium or Atera files, h5ad or RDS), then its image and registration">Import</button>
     <button id="export" disabled title="Save the cell table (CSV), the registration, or the analysis as a Jupyter notebook">Export</button>
     <button id="connBtn" hidden title="Work on this computer or on a server over SSH">Local</button></div>
-    <span class="folder">Data folder <span class="path" id="path">–</span></span>
   </div>
   <div class="tabs main" id="mainTabs" role="tablist">
     <button class="tab" data-main="data" role="tab" title="The sample: import, its cells and image, its annotations">Data</button><button class="tab" data-main="analysis" role="tab" title="Annotate, Embed, Niche, Compare, Signal, Trajectory">Analysis</button></div>
@@ -1925,8 +1924,6 @@ async function selectSample(id) {
   store("sample", id); store(`projectSample:${(projectOf(id) || {}).project_id || ""}`, id);
   if ($("sample").value !== id || $("project").value !== ((projectOf(id) || {}).project_id || "")) fillSampleSelect(id);
   loadStepsSoon();  // its steps also while none of its annotations is open
-  $("path").textContent = st.sample.bundle_dir;
-  $("path").title = `bundle: ${st.sample.bundle_dir}\nsource: ${st.sample.source_dir}\nH&E: ${st.sample.he_path}`;
   closeSession();
   await openHE(id);
   alignBar(); miniInfo(); sliceNav(); sampleInfo(); syncExport();
