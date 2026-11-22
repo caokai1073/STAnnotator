@@ -3473,6 +3473,11 @@ def steps_of(s, sample=None):
         reg = {"state": "not needed", "detail": f"placed by {meta.get('registration_by') or 'the instrument software'}"}
     elif not (meta.get("he_path") or meta.get("image_pending")):
         reg = {"state": "optional", "image": "none", "detail": "no H&E: import one to see the cells on the tissue"}
+    elif not meta.get("image_pending") and meta.get("image_kind") not in ("H&E", None, "none") \
+            and not meta.get("registration_by"):  # the instrument's own DAPI, the cells on it by their coordinates
+        reg = {"state": "optional", "image": "none",
+               "detail": f"the instrument's {meta.get('image_kind')} is shown (the cells on it by their coordinates); "
+                         "no H&E: import one to see the tissue"}
     elif meta.get("image_pending") or not importer.on_image(meta):
         reg = {"state": "blocked", "image": "pending", "detail": "the H&E is not aligned with the cells yet: align it"}
     else:
