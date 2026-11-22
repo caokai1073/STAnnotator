@@ -5551,15 +5551,23 @@ const HELP = `
     tissue and applies the one whose cells sit on their nuclei (a minute or two), then shows the registration check
     with <b>Undo</b>. When another orientation fits almost as well, or none fits (e.g. several sections on one slide), it
     says so: use Align with Agent.</li>
-  <li>When several samples wait for their alignment, choose the ones to align (or All samples): the agent aligns
-    them one after the other.</li>
-  <li>Before you accept it, the whole tissue is checked: the review window shows a histogram of the deviation between
-    the cells and the nuclei, and the windows on the tissue. When areas sit off their nuclei it offers <b>Do local
-    registration</b> (the alignment, then the cells moved onto their nuclei there, at once) or <b>Align anyway</b>.</li>
-  <li>It imports, then the agent finds the section and its orientation on the image and refines it until the cells
-    sit on their nuclei.</li></ul></li>
-<li>Another image or registration for a sample: import it again with them under the same name and tick <b>Replace the
-  existing sample</b> (its annotations go to the trash with it).</li>
+  <li>When several samples wait for their alignment, the window lists them: tick the ones to align (or All samples);
+    the app or the agent aligns them one after the other. While an alignment runs, the Align buttons are greyed
+    out.</li>
+  <li><b>Align with Agent</b>: the agent finds the section and its orientation on the image and refines it until the
+    cells sit on their nuclei. Before you accept it, the whole tissue is checked: the review window shows a histogram
+    of the deviation between the cells and the nuclei, and the windows on the tissue. When areas sit off their nuclei
+    it offers <b>Do local registration</b> (the alignment, then the cells moved onto their nuclei there, at once) or
+    <b>Align anyway</b>.</li>
+  <li>After an alignment whose check found areas off their nuclei, the check window (histogram, <b>Do local
+    registration</b>) opens by itself, once.</li></ul></li>
+<li>Cells placed by a registration file (at Import, or Steps → Image) are checked against the nuclei at once: the
+  check window opens by itself.</li>
+<li>An image that cannot be read (still being copied, damaged, moved) is said at once, on the map and in the Image
+  step, which then offers <b>Refresh</b>: click it once the file is complete.</li>
+<li>Another image for a sample: Steps → Image → <b>Add</b> (a DAPI, a protein / IF stain, another H&amp;E). Another
+  registration: import the sample again under the same name and tick <b>Replace the existing sample</b> (its
+  annotations go to the trash with it).</li>
 <li>Remove one sample: the trash beside Rename (Data tab).</li></ul>
 
 <h3>Several slices</h3><ul>
@@ -5599,10 +5607,12 @@ const HELP = `
   <li>Click legend entries to show only those; click again to drop one; <b>show all</b> resets.</li></ul></li>
 <li>Display:<ul>
   <li><b>Opacity</b> and <b>Dot size</b> sliders.</li>
-  <li><b>Hide cells</b> <kbd>h</kbd>, <b>Hide H&amp;E</b> <kbd>e</kbd>.</li></ul></li>
+  <li><b>Hide cells</b> <kbd>h</kbd>, <b>Hide image</b> <kbd>e</kbd>.</li>
+  <li><b>Image</b> (when the sample has several): the H&amp;E, the DAPI or a stain under the cells.</li></ul></li>
 <li>The toolbar on the right:<ul>
   <li>Two tabs: <b>Data</b> and <b>Analysis</b>, whose steps (Annotate, Embed, Niche, Compare, Signal, Trajectory) are a
-    second row; a dot marks a running analysis.</li>
+    second row; a dot marks a running analysis. Embed and Niche run before annotating; Compare, Signal and
+    Trajectory need the cell types and show <b>Annotate first</b> until then.</li>
   <li><b>›</b> at its top folds it to the right edge for a bigger map; <b>‹</b> or <kbd>t</kbd> brings it back.</li></ul></li>
 <li><b>Reset analysis</b> (bottom): removes the annotations of this sample (in a project, of all its slices), optionally the
   PCA / UMAP too.</li></ul>
@@ -5682,7 +5692,8 @@ const HELP = `
 
 <h3>Embedding</h3><ul>
 <li><b>Run PCA + UMAP</b> computes PCA, UMAP and Leiden clusters from the expression.<ul>
-  <li>About a minute; shared by all annotations of the sample.</li></ul></li>
+  <li>About a minute; shared by all annotations of the sample. It needs no annotation: run it first if you like, and
+    the UMAP shows the cell types once the sample is annotated.</li></ul></li>
 <li><b>Show UMAP</b> shows it under the button, in the panel.<ul>
   <li>UMAP or PCA, colored as the map, by cell type, Leiden cluster or niche.</li>
   <li>Scroll to zoom, drag to move, double-click to reset.</li></ul></li>
@@ -5707,8 +5718,12 @@ const HELP = `
 <li><b>Report</b>: the agent writes the annotation report; <b>Save…</b> keeps it as a Markdown file.</li></ul>
 
 <h3>Niche</h3><ul>
-<li>Set the identity, k and number of niches, then <b>Run niches</b>.</li>
-<li>With <b>k: Agent chooses</b>, the agent picks k per region, runs and names them.</li>
+<li>Set the identity, k and number of niches, then <b>Run niches</b>.<ul>
+  <li><b>NMF programs</b> (the default) come from the expression alone: they run before annotating (one slice or all
+    slices together), and the sample's first annotation takes them over. <b>Cell types</b> needs an annotation (with
+    all slices together, every slice annotated).</li></ul></li>
+<li>With <b>k: Agent chooses</b>, the agent picks k per region (all slices together: one k from every slice's cell
+  density), runs and names them.</li>
 <li><b>Co-localization</b>: which groups (cell types, lineages, regions, niches…) sit next to each other more or less
   often than by chance: neighbor pairs within a radius, against the labels shuffled within each slice. A table of
   z-scores (red together, blue apart; the diagonal: how clustered a group is), observed / expected, and the strongest
@@ -5784,8 +5799,8 @@ const HELP = `
   <b>Report</b> are there too.</li>
 <li>Something went wrong? The bug icon (top right, between <b>?</b> and <b>›</b>):<ul>
   <li>describe the bug in a few words, and add up to 3 screenshots if they help (choose, drop or paste them);</li>
-  <li>the report adds your conversations with the agent, its tool calls and proposals, this annotation's history and
-    the app's log (no expression data or cell tables, and no images but your screenshots; <i>What goes in the
+  <li>the report adds your conversations with the agent, its tool calls and proposals, the analyses you ran (their
+    settings and time, not their results), this annotation's history and the app's log (no expression data or cell tables, and no images but your screenshots; <i>What goes in the
     report</i> lets you leave parts out);</li>
   <li><b>Upload to the developers</b> sends it to their Google Drive folder (run from source, the app asks once for the
     upload link they gave you), or <b>Save to file…</b> keeps it on this computer to send yourself.</li></ul></li></ul>`;
@@ -5806,8 +5821,8 @@ Anything that would change your data opens here in a review window first and is 
   <li>An answer in Claude Code, with the numbers the tools computed (cells, shares, genes, p-values).</li>
   <li>Figures it looked at (H&amp;E crops, maps, UMAPs), which it describes and can show you.</li>
   <li>A <b>review window</b> in the app for every change: what it does, how many cells, a preview on the map;
-    <b>Accept</b> applies it as a new version, <b>Dismiss</b> drops it. <b>Undo</b> takes back all the agent did for one
-    request.</li>
+    <b>Accept</b> applies it as a new version, <b>Dismiss</b> drops it; while it is applied a bar shows its progress (what
+    it does, how long it has taken). <b>Undo</b> takes back all the agent did for one request.</li>
   <li><b>Manual / Auto</b> (map toolbar): in <b>Auto</b> every change is applied at once, without the review window
     (a note says what; <b>Undo</b> takes it back). <b>Manual</b> is the default.</li></ul></li></ul>
 
@@ -5817,9 +5832,12 @@ Anything that would change your data opens here in a review window first and is 
   <li>It finds the files, checks them and proposes the import; after Accept the sample appears in the app.</li></ul></li></ul>
 
 <h3>Put the cells on the H&amp;E</h3><ul>
-<li>“Align the H&amp;E” (an image without a registration file; also <b>Align with Agent</b>).<ul>
-  <li>It searches where the tissue lies on the image (rotation, mirroring, scale), refines the best candidate on the
-    nuclei and shows you the fit; after Accept the cells sit on the image.</li></ul></li>
+<li>“Align the H&amp;E” (an image without a registration file; also Steps → Image → Align → <b>Align with Agent</b>).<ul>
+  <li>It searches where the tissue lies on the image (rotation, mirroring, scale), compares the candidates on their
+    figures (useful for a slide with several sections, or a tissue whose orientation is hard to tell), refines the
+    right one on the nuclei and shows you the fit; after Accept the cells sit on the image.</li>
+  <li>Without the agent: <b>Align automatically</b> (same place) picks the candidate whose cells sit closest to their
+    nuclei.</li></ul></li>
 <li>“Check the registration”, “do a local registration for slice 1”.<ul>
   <li>It measures the offset of the cells from the nuclei window by window over the whole tissue and proposes a
     correction where they drift (local shifts up to 100 µm).</li></ul></li>
@@ -5857,8 +5875,10 @@ Anything that would change your data opens here in a review window first and is 
 
 <h3>Analyses and what they mean</h3><ul>
 <li>Niches: “find niches and name them”.<ul>
-  <li>It chooses the neighborhood size from the regions, runs the niches (for Accept), reads each niche's cells and
-    genes on the H&amp;E and proposes names for the legend.</li></ul></li>
+  <li>It chooses the neighborhood size from the regions and the cell density (all slices together: one k that suits
+    every slice), runs the niches (for Accept), reads each niche's cells and genes on the H&amp;E and proposes names
+    for the legend.</li>
+  <li>Niches of NMF programs need no annotation: it runs them on a sample (or all slices) not annotated yet.</li></ul></li>
 <li>Genes: “what sets mucosal fibroblasts apart from the others?”, “top genes of each niche”.<ul>
   <li>DE genes or top genes with AUC, fold change and FDR, and what they suggest.</li></ul></li>
 <li>Composition: “which cell types make up niche N3?”, “how do the regions differ?”.</li>
@@ -5893,7 +5913,8 @@ Anything that would change your data opens here in a review window first and is 
 const METHODS = `
 <p class="hint">How each analysis computes its result. Expression is log-normalized throughout: counts per cell scaled
 to 100, then log(1 + x). Random steps use a fixed seed, and the approximate neighbor search (pynndescent) always runs
-on 8 threads, because its result depends on the thread count: a rerun gives the same annotation, on this computer or
+on 8 threads, because its result depends on the thread count (the PCA's sums run on every core, each in a fixed
+order, so the number of cores does not change them): a rerun gives the same annotation, on this computer or
 another with the same app version (Intel / AMD and Apple silicon may still differ slightly). Every annotation keeps
 checksums of its steps (PCA, neighbors, first clusters, labels) to compare runs.</p>
 
@@ -5910,17 +5931,31 @@ checksums of its steps (PCA, neighbors, first clusters, labels) to compare runs.
   30 nearest cells have EPCAM + KRT8 (at least 3 transcripts and 5% of the cell's); depth = distance to the nearest
   core cell.</li>
 <li><b>H&amp;E only</b>: no cells; an image without zoom levels is copied as a pyramidal OME-TIFF; the pixel size is
-  read from OME, SVS (MPP) or the TIFF resolution tags.</li></ul>
+  read from OME, SVS (MPP) or the TIFF resolution tags.</li>
+<li><b>Images</b>: pyramidal TIFF / OME-TIFF read in place. Opening one checks that the file holds what its structure
+  lists (every tag and every level's pixels within the file size): a file still being copied, whose smaller levels
+  (stored last) are not there yet, is refused with that reason instead of showing empty zoom levels.</li>
+<li><b>Several images</b>: the cells, regions and corrections live in the pixels of one image (the one they were
+  placed on). Every other image keeps its own affine from cell µm to its pixels (its registration file; the same as
+  another image it shares pixels with; for the instrument's DAPI and stains of Xenium / Atera, µm divided by the pixel
+  size), and is drawn in that image's place by composing the two affines: any rotation, mirroring or scale between
+  them.</li></ul>
 
 <h3>Registration</h3><ul>
 <li><b>Registration file</b>: an affine from cell µm to image pixels, or a Xenium Explorer matrix (image pixels to
   morphology pixels) turned into one.</li>
-<li><b>Align with Agent</b><ul>
+<li><b>Alignment without a registration file</b> (Align automatically, Align with Agent)<ul>
   <li>Search: the tissue on a thumbnail of the image against the cells' footprint, for 8 orientations (4 rotations,
-    mirrored or not) and a range of pixel sizes, by FFT cross-correlation; the best few are candidates.</li>
-  <li>Choice: the agent looks at the candidates' figures and picks the section and orientation.</li>
+    mirrored or not) and a range of pixel sizes (around the size an OME-TIFF states), by FFT cross-correlation; the
+    best few are candidates.</li>
   <li>Refinement: nuclei on the image (hematoxylin, or DAPI) cross-correlated with the cell centroids in windows over
-    the tissue; an affine fit of the windows' offsets; three rounds with a shrinking search.</li></ul></li>
+    the tissue; an affine fit of the windows' offsets; three rounds with a shrinking search.</li>
+  <li>Check: the refined candidate measured over the whole tissue as the registration check does (below): the
+    offsets, the share of coarse windows with a clear reading, and a verdict (fine, local shifts, far off).</li>
+  <li>Choice. <b>Align with Agent</b>: the agent looks at the candidates' figures and picks the section and
+    orientation. <b>Align automatically</b>: the best 3 candidates are refined and checked, a far off one never
+    applied; the one with the largest share of clear readings, then the smallest median offset, wins; another
+    orientation that is not far off either makes it say so (check it, or use the agent).</li></ul></li>
 <li><b>Registration check and local correction</b> (Review: Spatial organization)<ul>
   <li>Windows of 200 µm: the offset of the nuclei from the cells, searched up to 25 µm; an offset counts when its
     correlation is clear (at least 0.2, and the one at zero at most 85% of it).</li>
@@ -6013,14 +6048,14 @@ checksums of its steps (PCA, neighbors, first clusters, labels) to compare runs.
   in every slice.</li></ul>
 
 <h3>Embed</h3><ul>
-<li>PCA of the log-normalized expression, 15 nearest neighbors (exact on a GPU or for small samples, else
+<li>From the expression alone (no annotation needed): PCA of the log-normalized expression, 15 nearest neighbors (exact on a GPU or for small samples, else
   pynndescent), Leiden on that graph, and UMAP on the same neighbors starting from PC1 / PC2.</li>
 <li>Several slices: one PCA of the pooled cells, optionally corrected with Harmony (soft k-means with a diversity
   penalty, then a per-cluster correction of the slices).</li></ul>
 
 <h3>Niche</h3><ul>
 <li>Identity of each cell: its weights on NMF gene programs (20 by default; fitted on up to 60,000 cells, every cell
-  projected), scaled to sum 1; or its cell type.</li>
+  projected), scaled to sum 1, from the expression alone (no annotation needed); or its cell type.</li>
 <li>Neighborhood: the mean identity of the cell and its k nearest cells (one k, a k per drawn region, or every cell
   within a radius).</li>
 <li>Niches: k-means of the neighborhoods into the number of niches chosen. Several slices: neighbors within each
