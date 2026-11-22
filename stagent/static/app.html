@@ -57,7 +57,10 @@ header.collapsed .hmini { display: flex; }
 .cap { width: 100%; flex: none; display: flex; align-items: center; gap: 6px; }
 /* a new version of the desktop app: shown until it is installed or skipped (checkForUpdate) */
 .updpill { padding: 4px 10px; font-weight: 600; background: var(--update); border-color: var(--update); color: var(--update-ink); }
-.updpill:hover { filter: brightness(1.1); }
+/* (keeps its own colors on hover: the general button:hover rule, more specific, set the light accent background
+   under the white text, so the button turned all white) */
+.updpill:hover:not(:disabled) { background-color: var(--update); border-color: var(--update); color: var(--update-ink);
+  filter: brightness(1.1); }
 #updBtn { margin-left: auto; }
 #updBtn:not([hidden]) + #helpBtn { margin-left: 0 !important; }
 .captxt { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .14em; color: var(--muted); }
