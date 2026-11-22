@@ -511,6 +511,13 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
             align-items: center; padding: 6px 8px 6px 12px; font-size: 12.5px; background: #fff5e0; color: #6b4a00;
             border: 1px solid #f0c674; border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,.08), 0 1px 3px rgba(0,0,0,.06); }
 #alignbar[hidden] { display: none; }
+/* Embed, Niche, Compare, Signal, Trajectory on a sample not annotated yet: what to do first */
+.needann { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; margin-bottom: 10px; font-size: 12.5px;
+           background: #fff5e0; color: #6b4a00; border: 1px solid #f0c674; border-radius: 10px; }
+.needann[hidden] { display: none; }
+.needann button { align-self: flex-start; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .needann { background: #3a2f17; color: #f3d9a4; border-color: #7a6230; } }
+:root[data-theme="dark"] .needann { background: #3a2f17; color: #f3d9a4; border-color: #7a6230; }
 #acDlg .acopt { display: grid; grid-template-columns: 180px 1fr; gap: 10px; align-items: start; }
 #acDlg .acopt button { width: 100%; }
 @media (max-width: 520px) { #acDlg .acopt { grid-template-columns: 1fr; } }
@@ -1945,6 +1952,37 @@ function panelsIdle() {  // no annotation open on this sample: the panels say so
   $("rgitems").replaceChildren(hint("No annotation open: its regions show when one is open."));
   ["legend", "regpanel"].forEach((id) => $(id).classList.remove("stale"));
 }
+// the analyses work on an annotation's cell types: on a sample not annotated yet (or with no annotation open) each of
+// their tabs says so at its top, with a button to Type → Annotate (or Data → Annotation), and the greyed-out Run
+// buttons say why in their tooltips
+var NEED_ANN = ["embed", "niches", "compare", "signal", "traj"], NEED_RUN = { embed: "eRun", niches: "nRun", traj: "tRun" };  // (Compare, Signal: their own checks)
+function syncNeedAnn() {
+  const open = !!st.sid, need = !!st.sample && !st.imageOnly && (!open || st.placeholder);
+  for (const t of NEED_ANN) {
+    const pane = document.querySelector(`header .pane[data-pane="${t}"]`);
+    if (!pane) continue;
+    let box = pane.querySelector(".needann");
+    if (!box) {
+      box = Object.assign(document.createElement("div"), { className: "needann", hidden: true });
+      box.append(Object.assign(document.createElement("span")), Object.assign(document.createElement("button"), { className: "primary" }));
+      pane.prepend(box);
+    }
+    box.hidden = !need;
+    const [txt, btn] = box.children;
+    if (open) {
+      txt.innerHTML = "<b>This sample is not annotated yet.</b> Embed, Niche, Compare, Signal and Trajectory work on its cell types: annotate it first.";
+      btn.textContent = "Annotate first"; btn.onclick = () => anTab("annotate");
+    } else {
+      txt.innerHTML = "<b>No annotation is open.</b> Open one of this sample's annotations, or annotate it.";
+      btn.textContent = "Choose an annotation"; btn.onclick = () => { showTab("data"); $("session").focus(); };
+    }
+    const run = $(NEED_RUN[t]);
+    if (run) {
+      if (run.dataset.t0 === undefined) run.dataset.t0 = run.title || "";
+      run.title = need ? (open ? "Annotate the sample first (Type → Annotate)" : "Open an annotation first (Data → Annotation)") : run.dataset.t0;
+    }
+  }
+}
 function closeSession() {
   st.sid = null; st.placeholder = false; st.version = null; st.filters = {}; st.regions = null; st.advice = null; st.advicePollSig = undefined; st.adviceSeen = null;
   if (st.drawing) stopDraw(); closePlaus();
@@ -1970,6 +2008,7 @@ function closeSession() {
   GL.colorKey = null; drawGL();
   $("msgs").querySelectorAll(".m").forEach((m) => m.remove());
   viewer.clearOverlays();
+  syncNeedAnn();
 }
 
 async function startAnnotation(mode, sid, token = st.switchToken) {
@@ -2068,6 +2107,7 @@ async function openSession(sid) {
   if (stale()) return;
   st.vocab = vocab;
   st.placeholder = st.vocab.method === "none";  // the sample is not annotated yet
+  syncNeedAnn();
   if (st.placeholder) $("carryWrap").style.visibility = "hidden";  // its regions always come along
   if (st.vocab.marker_list) setMarkers(st.vocab.marker_list, "");  // re-annotating starts from this annotation's list
   if (st.vocab.method === "scref" && st.vocab.reference) setReference(st.vocab.reference);
@@ -2120,6 +2160,7 @@ function imageOnlyUI() {
   }
   $("composerhint").textContent = on ? "Tip: ask the agent about the tissue or to outline an area; regions you draw are named by you."
     : "Tip: refer to regions you drew by their name.";
+  syncNeedAnn();  // (the analyses' notice: none on an H&E only)
 }
 // Stepping to another slice keeps what is shown: the color mode (st.wantMode, in fillModes), the legend filters, the
 // embedding window with its settings, and, on an embedding of all slices together, its zoom and the lasso selection.
