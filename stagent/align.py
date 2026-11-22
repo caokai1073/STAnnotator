@@ -13,6 +13,8 @@
    sit from their nuclei, and whether areas sit off them (tissue stretched, folded or torn between the run and the
    staining), which one alignment cannot fix: then the local registration (Review: Spatial organization) is advised.
    The review window of apply_alignment shows its histogram.
+Without the agent (the app's "Align automatically", stagent batch): auto() refines and checks the best few candidates
+and applies the one whose cells sit closest to their nuclei (pick).
 5. apply(): puts the cells on the image (importer.place_cells; undo with importer.undo_placement); the deviation's
    windows become the registration check of the new placement (regcheck.json), so the local registration starts
    from them.
@@ -492,6 +494,56 @@ def apply(s, cid, by="Claude"):
         dump_json(m, config.SAMPLES / s.sample_id / "meta.json", indent=1)
         r["deviation"] = {"verdict": d["verdict"], "advice": advice_lines(d)[1:]}
     return r
+
+
+AUTO_CANDIDATES = 3  # candidates auto() refines and checks (each about a minute on a large section)
+
+
+def pick(cands):
+    """The best checked candidate for auto(): never a "far off" one; clear readings first (the share of the coarse
+    windows that find their nuclei), then the median offset. Ambiguous: another candidate in a different orientation
+    that is not "far off" either (the check's own line between right and wrong placements, READ_SHARE)."""
+    ok = [c for c in cands if c.get("check") and c["check"]["verdict"] != "far off"]
+    if not ok:
+        return None, False
+    ok.sort(key=lambda c: (-c["check"]["clear_reading_share"],
+                           1e9 if c["check"]["median_um"] is None else c["check"]["median_um"]))
+    best = ok[0]
+    return best, any(c["orientation"] != best["orientation"] for c in ok[1:])
+
+
+def auto(sample_id, candidates=AUTO_CANDIDATES, by="auto", progress=None):
+    """Align without the agent: search, then the best `candidates` candidates refined and checked over the whole tissue
+    (deviation), the best by pick() applied. Returns {applied, candidate, orientation, ambiguous, check, candidates}
+    ({applied: False, reason} when no candidate fits: none is applied). The placement before is kept for Undo."""
+    say = progress or (lambda f, m: None)
+    a = search(Sample(sample_id), progress=lambda f, m: say(0.15 * f, f"searching the image: {m}"))
+    top = a["candidates"][:candidates]
+    cands = []
+    for i, c in enumerate(top):
+        lo, hi = 0.15 + 0.8 * i / max(len(top), 1), 0.15 + 0.8 * (i + 1) / max(len(top), 1)
+        name = f"candidate {i + 1} of {len(top)} ({c['orientation_name']})"
+        say(lo, f"{name}: refining")
+        row = {"id": c["id"], "orientation": c["orientation_name"], "score": c["score"]}
+        try:
+            refine(Sample(sample_id), c["id"])
+            d = deviation(Sample(sample_id), c["id"],
+                          progress=lambda f, m: say(lo + (hi - lo) * (0.2 + 0.8 * f), f"{name}: checking ({m})"))
+            row["check"] = {k: v for k, v in d.items() if k not in ("A", "offsets_um")}
+        except ValueError as e:
+            row["error"] = str(e)
+        cands.append(row)
+    best, ambiguous = pick(cands)
+    if best is None:
+        return {"applied": False, "candidates": cands,
+                "reason": "no candidate puts the cells on their nuclei" if cands else "no placement found on the image"}
+    say(0.97, "putting the cells on the image")
+    from . import jobs
+    with jobs.critical():  # (a Stop now: the cells and their sample file are written whole first, then put back)
+        apply(Sample(sample_id), best["id"], by=by)
+        jobs.on_stop(lambda: importer.undo_placement(sample_id))
+    return {"applied": True, "candidate": best["id"], "orientation": best["orientation"], "ambiguous": ambiguous,
+            "check": best["check"], "candidates": cands}
 
 
 class Sample:

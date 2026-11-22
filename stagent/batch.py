@@ -33,7 +33,7 @@ cell_positions.csv (cell_id, x_um, y_um; px, py on the H&E when the cells were p
 import csv, hashlib, json, os, re, shutil, sys, time, traceback
 from pathlib import Path
 
-CANDIDATES = 3          # alignment candidates refined and checked (each about a minute on a large section)
+CANDIDATES = 3          # alignment candidates refined and checked (align.AUTO_CANDIDATES; each about a minute)
 COLUMNS = ("sample", "xenium", "h5ad", "section_column", "section", "x_column", "y_column", "he", "registration",
            "organ", "markers")
 SUMMARY = ("sample", "status", "flags", "error", "n_cells", "n_genes", "median_transcripts", "registration",
@@ -216,19 +216,6 @@ def _check(sid):
     return d
 
 
-def _pick(cands):
-    """The best checked candidate: never a "far off" one; clear readings first (the share of the coarse windows that
-    find their nuclei), then the median offset. Ambiguous: another candidate in a different orientation that is not
-    "far off" either (the check's own line between right and wrong placements, align.READ_SHARE)."""
-    ok = [c for c in cands if c["check"]["verdict"] != "far off"]
-    if not ok:
-        return None, False
-    ok.sort(key=lambda c: (-c["check"]["clear_reading_share"],
-                           1e9 if c["check"]["median_um"] is None else c["check"]["median_um"]))
-    best = ok[0]
-    return best, any(c["orientation"] != best["orientation"] for c in ok[1:])
-
-
 def _step_register(r, out, opts, st):
     from . import align, importer, regcheck
     sid = r["sample"]
@@ -246,27 +233,19 @@ def _step_register(r, out, opts, st):
         a = align.search(align.Sample(sid))
         return {"registration": "waiting (no file; auto off)", "candidates": len(a["candidates"]),
                 "flags": ["registration: no file, pick an alignment in the app"]}
-    else:  # the app's search, decided here
-        a = align.search(align.Sample(sid))
-        cands = []
-        for c in a["candidates"][:opts["candidates"]]:
-            try:
-                align.refine(align.Sample(sid), c["id"])
-                d = align.deviation(align.Sample(sid), c["id"])
-                cands.append({"id": c["id"], "orientation": c["orientation_name"], "score": c["score"],
-                              "check": {k: v for k, v in d.items() if k not in ("A", "offsets_um")}})
-                print(f"  candidate {c['id']} ({c['orientation_name']}): {d['verdict']}, median {d['median_um']} um, "
-                      f"clear {d['clear_reading_share']:.0%}", flush=True)
-            except ValueError as e:
-                print(f"  candidate {c['id']}: {e}", flush=True)
-        best, ambiguous = _pick(cands)
+    else:  # the app's search, decided here (align.auto, as the app's Align automatically)
+        a = align.auto(sid, opts["candidates"], by="auto (batch)")
+        cands = [c for c in a["candidates"] if "check" in c]
+        for c in a["candidates"]:
+            d = c.get("check")
+            print(f"  candidate {c['id']} ({c['orientation']}): " + (f"{d['verdict']}, median {d['median_um']} um, "
+                  f"clear {d['clear_reading_share']:.0%}" if d else c.get("error", "")), flush=True)
         res["candidates"] = cands
-        if best is None:
+        if not a["applied"]:
             return {"registration": "failed (no candidate fits)", "candidates": cands,
                     "flags": ["registration: no alignment found, align in the app"]}
-        align.apply(align.Sample(sid), best["id"], by="auto (batch)")
-        res |= {"registration": "auto", "candidate": f"{best['id']} {best['orientation']}"}
-        if ambiguous:
+        res |= {"registration": "auto", "candidate": f"{a['candidate']} {a['orientation']}"}
+        if a["ambiguous"]:
             flags.append("registration: another orientation fits almost as well, check it")
     try:
         chk = _check(sid)

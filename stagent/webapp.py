@@ -1247,6 +1247,36 @@ async def api_registration_local_undo(req: Request):
     return _json({"ok": True})
 
 
+async def api_align_auto(req: Request):
+    """Align the sample's cells to its image without the agent (Align automatically): align.auto, the best of the
+    search's candidates by the whole-tissue check, applied (Undo puts the cells back). A run under
+    /api/job/autoalign:<sample>; its result: applied (or the reason), the candidate, ambiguous (another orientation fits
+    almost as well: the page suggests Align with Agent), the check's verdict."""
+    sample = req.path_params["sample"]
+    if "/" in sample or ".." in sample or not (config.SAMPLES / sample / "meta.json").exists():
+        return _json({"error": f"no sample {sample}"}, 404)
+    if _busy(sample):
+        return _json({"error": "the sample is busy (an import, filter, annotation or correction is running): try again when it ends"}, 409)
+    job = f"autoalign:{sample}"
+    JOBS[job] = {"stage": "starting", "progress": 0.0, "done": False, "error": None, "kind": "autoalign",
+                 "sample": sample, "started": time.time()}
+
+    def work():
+        try:
+            r = align.auto(sample, progress=lambda f, m: JOBS[job].update(progress=round(f, 3), stage=m))
+            if r["applied"]:
+                _reload_sample(sample)
+            JOBS[job].update(progress=1.0, stage="done", done=True,
+                             result={k: r.get(k) for k in ("applied", "reason", "candidate", "orientation", "ambiguous")}
+                             | {"verdict": (r.get("check") or {}).get("verdict"),
+                                "median_um": (r.get("check") or {}).get("median_um"),
+                                "tried": len(r["candidates"])})
+        except Exception as e:
+            JOBS[job].update(error=f"{type(e).__name__}: {e}" if not isinstance(e, ValueError) else str(e), done=True)
+    return await _spawn(job, work, {"section": "registration", "kind": "auto_align", "request": {}, "sample": sample}) \
+        or _json({"job": job})
+
+
 async def api_registration_check(req: Request):
     """Check the registration now, without the agent (Steps > Check registration): the cells against the nuclei in
     windows over the whole tissue (regcheck.summary; the windows of the alignment's check are reused). A run under
@@ -2893,7 +2923,7 @@ def _busy(sample, skip=None):
     """An import, annotation or analysis of the sample is running (skip: the asking job itself)."""
     sess = _sample_sessions(sample)
     pid = projects.project_of(sample)
-    mine = {x.name for x in sess} | {f"embed:{sample}", f"import:{sample}", f"regfix:{sample}", f"regcheck:{sample}", f"filter:{sample}", f"project:{pid}"}
+    mine = {x.name for x in sess} | {f"embed:{sample}", f"import:{sample}", f"regfix:{sample}", f"regcheck:{sample}", f"autoalign:{sample}", f"filter:{sample}", f"project:{pid}"}
     return any(k != skip and not j["done"] and (k in mine or k.split(":", 1)[-1] in mine) for k, j in JOBS.items())
 
 
@@ -4488,6 +4518,7 @@ def build_app(port):
         Route("/api/claude/model", api_claude_model, methods=["POST"]),
         Route("/api/sample/{sample}/registration/local", api_registration_local, methods=["POST"]),
         Route("/api/sample/{sample}/registration/check", api_registration_check, methods=["POST"]),
+        Route("/api/sample/{sample}/align/auto", api_align_auto, methods=["POST"]),
         Route("/api/sample/{sample}/registration/figure", api_registration_figure),
         Route("/api/sample/{sample}/registration/local/undo", api_registration_local_undo, methods=["POST"]),
         Route("/api/sample/{sample}/priors", api_sample_priors),

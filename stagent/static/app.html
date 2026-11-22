@@ -859,7 +859,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <div class="seg" id="reviewMode" title="How the agent's changes are taken. Manual: each waits for you in a review window (Accept or Dismiss). Auto: each is applied at once, without the window; Undo takes it back."><button data-m="manual">Manual</button><button data-m="auto">Auto</button></div>
       <span id="vinfo" hidden></span>
     </div>
-    <div id="alignbar" hidden><span id="alignmsg"></span><button id="alignNow">Align with Agent</button></div>
+    <div id="alignbar" hidden><span id="alignmsg"></span><button id="alignAuto" title="The app aligns the image with the cells by itself (no agent): it tries the best few placements, checks each over the whole tissue and keeps the one whose cells sit on their nuclei; you see the result and can undo it">Align automatically</button><button id="alignNow">Align with Agent</button></div>
     </div>
     <div id="legend" class="float" hidden>
       <div class="lh"><b id="lgtitle">Cell types</b><span class="spacer"></span>
@@ -1190,6 +1190,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <div class="frow" id="imRegModeRow"><span>Registration<small class="opt">optional</small></span><span class="choice">
       <label><input type="radio" name="imRegMode" value="file"> Registration file</label>
       <label><input type="radio" name="imRegMode" value="none" checked> No registration</label>
+      <button id="imNewAuto" disabled title="Choose an image first">Align automatically</button>
       <button id="imNewAlign" disabled title="Choose an image first">Align with Agent</button></span><span></span></div>
     <div class="frow" id="imRegRow" hidden><span></span><textarea id="imNewReg" rows="1" placeholder="affine CSV (a11,a12,a21,a22,tx,ty), Xenium Explorer alignment (3x3), or cell positions saved by this app; several slices: one file for all (a row per slice) or one per slice, in their order"></textarea><button data-pick="csv" data-multi="1" data-target="imNewReg">Choose…</button></div>
     <div class="frow" id="imRegSecRow" hidden><span>Registration row</span><input type="text" id="imNewRegSec" placeholder="only if the file has one row per section; default: the section chosen above"><span></span></div>
@@ -1445,7 +1446,7 @@ const ICON_TEXT = { qfBtn: "play", importBtn: "import", clearAll: "trash", allSa
   undo: "undo", refresh: "refresh", claudeBtn: "sparkle", priorBtn: "list", plaus: "shield", report: "file", export: "share", reset: "trash",
   draw: "pen", emLasso: "lasso", emClear: "x", emZoom: "target", send: "send",
   mkImport: "import", mkCheck: "check", mkSave: "save", mkDraft: "sparkle", mkOrganUse: "list", mkOrganAgent: "sparkle", mkClose: "check", imGo: "import",
-  imNewAlign: "sparkle", alignNow: "sparkle", refPick: "folder", exPick: "folder", refClose: "check", exClose: "check", rcTest: "check",
+  imNewAlign: "sparkle", alignNow: "sparkle", imNewAuto: "target", alignAuto: "target", refPick: "folder", exPick: "folder", refClose: "check", exClose: "check", rcTest: "check",
   rcGo: "server", fbOk: "check", rpAsk: "sparkle", xpCsv: "download", xpNb: "download", xpReg: "download", xpPos: "download", xpGeo: "download", xpNbAll: "download",
   hpCopy: "copy", nameSave: "check", rsGo: "trash", anFig: "download", aRun: "play", aLast: "list", anAsk: "sparkle", sRun: "play", sLast: "list", tRun: "play", tLast: "list", rvGo: "sparkle", rvShow: "list" };
 const ICON_TITLES = { lgtoggle: "Fold or unfold", rgtoggle: "Fold or unfold", stepsFold: "Fold or unfold", anCsv: "Save as CSV…", rpSave: "Save as Markdown…",
@@ -5061,9 +5062,10 @@ function imForm() {  // show the fields of the chosen options; Align with Claude
   $("imNewReg").placeholder = isFlat() ? "affine CSV (a11,a12,a21,a22,tx,ty): cell µm to H&E pixels, or cell positions saved by this app"
     : "affine CSV (a11,a12,a21,a22,tx,ty), Xenium Explorer alignment (3x3), or cell positions saved by this app";
   const can = !vis && imgMode() === "file" && $("imNewImg").value.trim() && regMode() === "none";
-  $("imNewAlign").disabled = !can;
-  $("imNewAlign").title = can ? "Import, then let the agent align the image with the cells"
-    : imgMode() !== "file" || !$("imNewImg").value.trim() ? "Choose an image first" : "Choose No registration to align with the agent";
+  $("imNewAlign").disabled = $("imNewAuto").disabled = !can;
+  const why = imgMode() !== "file" || !$("imNewImg").value.trim() ? "Choose an image first" : "Choose No registration to align the image";
+  $("imNewAlign").title = can ? "Import, then let the agent align the image with the cells" : why;
+  $("imNewAuto").title = can ? "Import, then the app aligns the image with the cells by itself (no agent); you see the result and can undo it" : why;
 }
 document.querySelectorAll("input[name=imImgMode], input[name=imRegMode]").forEach((r) => (r.onchange = imForm));
 $("imNewImg").addEventListener("input", imForm); $("imNewImg").addEventListener("change", imForm);
@@ -5142,11 +5144,49 @@ async function alignTick() {
   if (msg !== AW.shown || !$("toast").classList.contains("show")) { AW.shown = msg; toast(msg, 10000); }
 }
 $("alignNow").onclick = askAlign;
+$("alignAuto").onclick = () => autoAlign();
+async function autoAlign(sample) {  // the app aligns the image by itself (align.auto), then the registration check's window
+  sample = sample || (st.sample && st.sample.sample_id);
+  if (!sample) return;
+  const smp = (st.samples || []).find((x) => x.sample_id === sample) || st.sample, who = `Aligning ${sampleName(smp)} automatically`;
+  let job;
+  try { ({ job } = await post(`/api/sample/${encodeURIComponent(sample)}/align/auto`, {})); }
+  catch (e) { toast(`${who}: ${e.message}`, 8000); return; }
+  $("alignAuto").disabled = true;
+  toast(`${who}…`, 600000);
+  let j;
+  try {
+    for (;;) {
+      await new Promise((res) => setTimeout(res, 1000));
+      try { j = await api(`/api/job/${encodeURIComponent(job)}`); } catch (e) { continue; }
+      if (!j.done) { toast(`${who}: ${j.stage} (${Math.round(100 * j.progress)}%)`, 600000); continue; }
+      break;
+    }
+  } finally { $("alignAuto").disabled = false; }
+  loadStepsSoon();
+  if (j.stopped) { toast(`${who}: stopped`, 5000); return; }
+  if (j.error || !j.result) { toast(`${who} failed: ${j.error || "no result"}`, 12000); return; }
+  const r = j.result;
+  if (!r.applied) {
+    toast(`${who}: no placement put the cells on their nuclei (${r.reason}; ${r.tried} tried). Use Align with Agent, or a registration file.`, 15000);
+    return;
+  }
+  if (!st.sample || st.sample.sample_id !== sample) { toast(`${sampleName(smp)} aligned automatically`, 6000); return; }
+  await afterPlacement();
+  const note = `Aligned automatically (${r.orientation}).` + (r.ambiguous
+    ? " Another orientation fits almost as well: check on the map that the tissue matches the image; if it does not, Undo and use Align with Agent."
+    : "");
+  const undo = ["Undo", false, async () => {
+    await post(`/api/sample/${encodeURIComponent(sample)}/placement/undo`, {});
+    $("rgDlg").close(); await afterPlacement("The automatic alignment was undone");
+  }];
+  await checkRegistration(note, [undo]);
+}
 function alignBar() {  // an image waits for its alignment
   const s = st.sample;
   $("alignbar").hidden = !(s && s.image_pending);
   if (s && s.image_pending) { $("alignmsg").textContent = `${s.image_pending_kind || "H&E"} image not aligned yet`;
-    $("alignbar").title = "This sample's image is not aligned yet: the cells are shown on a blank background until the agent aligns them (or a registration file is given)"; }
+    $("alignbar").title = "This sample's image is not aligned yet: the cells are shown on a blank background until it is aligned (automatically, by the agent, or with a registration file)"; }
   $("alignNow").hidden = !st.desktop && !st.chatAvailable;
 }
 async function importSample() {  // returns true when the sample was imported
@@ -5248,6 +5288,7 @@ function onPress(b, fn) {
 }
 onPress($("imGo"), () => exclusive("An import", importSample));
 onPress($("imNewAlign"), async () => { if (await exclusive("An import", importSample)) await askAlign(); });  // import, then Claude aligns
+onPress($("imNewAuto"), async () => { if (await exclusive("An import", importSample)) { $("imDlg").close(); await autoAlign(); } });  // import, then the app aligns
 $("importBtn").onclick = openImport;
 // ---------------- help and about ----------------
 const HELP = `
@@ -5287,8 +5328,12 @@ const HELP = `
     annotation; it needs the same H&amp;E file (scan), registered.</li>
   <li><b>Regions</b> (optional): a GeoJSON of outlines drawn on this H&amp;E (e.g. QuPath annotations); they become
     regions of every new annotation.</li></ul></li>
-<li>An image without a registration file: <b>Align with Agent</b>.<ul>
-  <li>It is next to No registration, or on the yellow notice among the map's bars.</li>
+<li>An image without a registration file: <b>Align automatically</b> or <b>Align with Agent</b>.<ul>
+  <li>Both are next to No registration, and on the yellow notice among the map's bars.</li>
+  <li><b>Align automatically</b> needs no agent: the app refines its best 3 placements, checks each over the whole
+    tissue and applies the one whose cells sit on their nuclei (a minute or two), then shows the registration check
+    with <b>Undo</b>. When another orientation fits almost as well, or none fits (e.g. several sections on one slide), it
+    says so: use Align with Agent.</li>
   <li>When several samples wait for their alignment, choose the ones to align (or All samples): the agent aligns
     them one after the other.</li>
   <li>Before you accept it, the whole tissue is checked: the review window shows a histogram of the deviation between
@@ -6367,7 +6412,7 @@ async function loadSteps() {
     const right = document.createElement("span");
     const align = x.key === "registration" && x.state === "blocked" && !$("alignbar").hidden;  // the image waits for its alignment
     const a = x.open ? ["Open", () => { showTab("data"); $("session").focus(); toast("Choose an annotation in the Annotation box", 4000); }]
-      : align ? ["Align", () => $("alignNow").click()] : act;
+      : align ? ["Align", () => ($("alignNow").hidden ? autoAlign() : $("alignNow").click())] : act;
     if (x.key === "priors" && x.state !== "not needed") {  // Check (the Prior window), then Accept: only then ✓
       const key = `${smp}|${x.organ || ""}`;
       // accepted, then changed (e.g. a rule the agent wrote): to be checked again before Accept
@@ -6601,6 +6646,7 @@ async function pcAccept(thenLocal) {
 $("pcAccept").onclick = () => pcAccept(false);
 $("pcAnyway").onclick = () => pcAccept(false);
 $("pcLocal").onclick = () => pcAccept(true);
+window.regDialog = regDialog;
 function regDialog(sample, title, figure, text, buttons) {  // the registration figure, a sentence, and its choices
   $("rgTitle").textContent = title; $("rgText").textContent = text; $("rgErr").textContent = "";
   $("rgFig").hidden = !figure;
@@ -6613,7 +6659,8 @@ function regDialog(sample, title, figure, text, buttons) {  // the registration 
   });
   if (!$("rgDlg").open) $("rgDlg").showModal();
 }
-async function checkRegistration() {  // the cells against the nuclei over the whole tissue, by the app (no agent)
+async function checkRegistration(note = "", more = []) {  // the cells against the nuclei over the whole tissue, by the app (no agent);
+  // note: a sentence before its own (e.g. the automatic alignment's); more: buttons before its own (e.g. Undo)
   if (!st.sample || !st.sid) return;
   const sample = st.sample.sample_id, who = `Checking the registration of ${sampleName(st.sample)}`;
   let job;
@@ -6630,6 +6677,7 @@ async function checkRegistration() {  // the cells against the nuclei over the w
   loadStepsSoon();
   if (j.error || !j.result) { toast(`${who} failed: ${j.error || "no result"}`, 10000); return; }
   const r = j.result, name = sampleName(st.sample), close = ["Close", true, async () => $("rgDlg").close()];
+  const regDialog = (smp, title, fig, text, buttons) => window.regDialog(smp, title, fig, note ? `${note} ${text}` : text, [...more, ...buttons]);
   toast("", 1);
   const title = `Registration of ${name}`;
   if (r.verdict === "fine")

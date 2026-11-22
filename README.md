@@ -167,7 +167,7 @@ never stops the others. Each job needs the memory of one annotation (about 11 GB
 
 1. **Import**: Xenium (`cells.parquet` and `cell_feature_matrix.h5`; optionally `experiment.xenium` and the DAPI
    image), 10x Atera (`cell_feature_matrix.zarr.zip`, or the output folder), or h5ad / RDS (Seurat, SpatialExperiment; read without R). Optionally the H&E and its registration;
-   without a registration, **Align with Agent** aligns the H&E for you.
+   without a registration, **Align automatically** (by the app alone) or **Align with Agent** aligns the H&E for you.
 2. **Type** tab: a marker list (**Markers…**: import a CSV, or **Start from an organ**: a built-in list for
    12 common organs pruned to your gene panel, which the agent can complete) or a reference, then **Annotate**.
 3. Draw regions on the map; ask the agent with **Agent**, e.g. "epithelial cells are only in the mucosa".

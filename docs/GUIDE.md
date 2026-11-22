@@ -71,10 +71,20 @@ normalized and scaled data, graphs, reductions and commands are skipped while re
   - a Xenium Explorer alignment matrix (3x3 CSV, image pixels to morphology pixels);
   - or **No registration**.
 
-### No registration file: Align with Agent
+### No registration file: Align automatically, or Align with Agent
 
 Until the image is registered, the cells are shown on a blank background (or the DAPI) with a yellow notice
-("H&E image not aligned yet") among the map's top bars. **Align with Agent** (next to No registration, on the notice,
+("H&E image not aligned yet") among the map's top bars.
+
+**Align automatically** (next to No registration, or on the notice; no agent needed) aligns the open sample's image
+by the app alone: the search below gives its best placements, the best 3 are refined and each is checked over the
+whole tissue, and the one whose cells sit closest to their nuclei is applied (one whose cells sit far off their nuclei
+never is). It takes one to two minutes; then the registration check's window shows the result, with **Undo** and,
+when areas sit off their nuclei, **Do local registration**. When another orientation fits almost as well (a
+symmetric tissue), or no placement puts the cells on their nuclei (e.g. several sections on one slide), the app says
+so: use **Align with Agent** then.
+
+**Align with Agent** (next to No registration, on the notice,
 or on the Check registration step) asks the agent (your Claude Code) to align it. When several samples wait for
 their alignment, a dialog lists them: tick the ones to align (**All samples** for all of them) and the agent aligns
 them one after the other, each coming to you for review (applied at once in Auto mode). For each sample:
