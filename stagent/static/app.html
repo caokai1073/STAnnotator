@@ -5730,7 +5730,7 @@ const HELP = `
   pairs; Save CSV has every pair.</li></ul>
 
 <h3>Compare</h3><ul>
-<li>For this slice or all slices pooled. Four analyses:<ul>
+<li>For this slice or all slices pooled. Six analyses:<ul>
   <li><b>DE genes</b> of one group against the other cells or another group, or of every group at once (Group: <b>All</b>,
     each against the other cells).<ul>
     <li>A group: a cell type, lineage, region, niche, Leiden cluster, the cells selected in the UMAP window, a slice,
@@ -5743,7 +5743,15 @@ const HELP = `
     samples.</li>
   <li><b>Top genes</b> of every group.</li>
   <li><b>Composition</b>: how one grouping splits over another (cell types per niche, niches per slice or per
-    condition), as shares or as enrichment.</li></ul></li>
+    condition), as shares or as enrichment. Over all slices with Rows a condition, a <b>Test</b> view tests whether
+    each cell type (or niche) makes up a different share between the conditions, the slices (or patients) as
+    replicates.</li>
+  <li><b>Spatial</b>: genes that form patches or gradients in the tissue (Moran's I), by default beyond what the cell
+    types explain (e.g. the crypt base, an inflamed patch); per slice or across all slices; optionally only within
+    e.g. one cell type. Click a gene to see it on the map.</li>
+  <li><b>Programs</b>: scores every cell for a gene program (proliferation, interferon responses, hypoxia,
+    inflammation, cytotoxicity, exhaustion, EMT, fibrosis and more, or your own genes), by group, and colors the map
+    by the score.</li></ul></li>
 <li>Plots and output:<ul>
   <li>DE genes and Top genes also show a <b>Dot plot</b>: the share of cells detecting each gene and its mean
     expression, per group (for one comparison, only its two sides).</li>
@@ -6069,7 +6077,20 @@ checksums of its steps (PCA, neighbors, first clusters, labels) to compare runs.
   side when the replicates hold both sides, else ~ side; Wald test, Benjamini-Hochberg adjusted p, genes with fewer
   than 10 counts over all samples left out. Not offered for one slice (no replicates).</li>
 <li><b>Top genes</b>: every group against the other cells, ranked by AUC.</li>
-<li><b>Composition</b>: shares of one grouping within another, and log2 enrichment over what independence predicts.</li>
+<li><b>Composition</b>: shares of one grouping within another, and log2 enrichment over what independence predicts.
+  <b>Test</b> (all slices, Rows a condition): each group's share per replicate (slice or patient), arcsine square
+  root transformed, compared between the conditions by a moderated t-test (two) or F-test (more), as propeller;
+  Benjamini-Hochberg FDR.</li>
+<li><b>Spatial</b> (spatially variable genes): per slice, the cells' 10 nearest neighbors in space (row-standardized
+  weights) give Moran's I of every gene's log-normalized expression (0: no spatial pattern; near 1: smooth patches),
+  with its z-score from the normality approximation; genes are ranked by I. <i>Beyond the cell types</i> takes each
+  gene's mean in every cell type out first, so what is left is variation the type composition does not explain.
+  Several slices: each slice on its own, then the mean I (weighted by cells) and in how many slices a gene is among
+  the top.</li>
+<li><b>Programs</b> (as scanpy's score_genes, Satija et al. 2015): the panel's genes in 25 bins by mean expression;
+  for every program gene up to 50 genes of its bin are controls; a cell's score = its mean over the program genes
+  minus its mean over the controls (above 0: higher than background). A program needs 3 of its genes in the panel;
+  genes matched case-insensitively (human and mouse).</li>
 <li>Cells are not independent replicates: rank by AUC and fold change, not by p.</li></ul>
 
 <h3>Signal</h3><ul>
@@ -7173,7 +7194,10 @@ $("sample").onchange = (e) => {  // another slice of the same project: like ◀ 
   const p = st.sample && projectOf(st.sample.sample_id);
   return p && p.samples.includes(e.target.value) ? gotoSlice(e.target.value) : selectSample(e.target.value);
 };
-$("annotate").onclick = () => (projectMode() && $("method").value === "markers" ? annotateProject() : startAnnotation("new"));
+$("annotate").onclick = () => {
+  if (alignBusy()) { toast("An alignment is running: annotate when it has finished (the cells are being placed)", 6000); return; }
+  return projectMode() && $("method").value === "markers" ? annotateProject() : startAnnotation("new");
+};
 $("session").onchange = (e) => { closeSession(); $("sessDel").disabled = $("sessRename").disabled = !e.target.value; if (e.target.value) startAnnotation("continue", e.target.value); else panelsIdle(); };
 $("sessDel").onclick = async () => {  // delete the annotation chosen in the box; the next most recent one opens
   const sel = $("session"), sid = sel.value; if (!sid) return;
@@ -7575,7 +7599,10 @@ async function qfRun(params) {
   }
   $("qfRestore").disabled = false;
 }
-$("qfGo").onclick = () => qfRun(qfParams());
+$("qfGo").onclick = () => {
+  if (alignBusy()) { $("qfErr").textContent = "An alignment is running: filter when it has finished"; return; }
+  return qfRun(qfParams());
+};
 $("qfRestore").onclick = () => qfRun({});
 $("qfCancel").onclick = $("qfClose").onclick = () => $("qfDlg").close();
 const CONDITION = /type|condition|group|disease|stage|day|treat|time|state|genotype/i;

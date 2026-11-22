@@ -26,6 +26,18 @@ from scipy import ndimage
 from . import config, importer, render, insights, regcheck
 from .osutil import dump_json
 
+
+def _gated(fn):
+    """fn's products apart from a neighbor search's change of BLAS's thread count (markers.blas_gate)."""
+    import functools
+
+    @functools.wraps(fn)
+    def run(*a, **kw):
+        from . import markers
+        with markers.blas_gate():
+            return fn(*a, **kw)
+    return run
+
 LOCAL_SHARE = 0.05    # the local registration is advised when this share of the tissue's windows sits off its nuclei in
                       # areas (2+ neighboring windows off by >= regcheck.OFF_UM), or where a large shift is found
 READ_SHARE = 0.15     # the 600 um windows with a clear reading (a unique offset, or none): below this share the alignment
@@ -94,6 +106,7 @@ def _footprint(u, shape):
     return np.clip(g / max(np.percentile(g[g > 0], 30) if (g > 0).any() else 1, 1e-6), 0, 1)
 
 
+@_gated
 def search(s, scales=None, top=6, progress=None):
     """Candidate placements of the cells on the image, best first (stored for show / refine / apply)."""
     say = progress or (lambda f, m: None)
@@ -207,6 +220,7 @@ def _window_offsets(sl, kind, pxy, um_per_px, n_windows=30, window_um=300.0, max
     return out
 
 
+@_gated
 def refine(s, cid, rounds=(60.0, 25.0, 12.0)):
     """Bring a candidate to micrometer precision (see the module doc); stores the refined affine on the candidate."""
     st, c = _get(s, cid)
@@ -289,6 +303,7 @@ def _wfile(s, cid):
     return config.SAMPLES / s.sample_id / "align" / f"{cid}_windows.json"
 
 
+@_gated
 def deviation(s, cid, progress=None):
     """How far the cells sit from their nuclei with candidate cid (refined if it was), over the whole tissue: the
     offsets of regcheck's windows (fine and coarse) with the cells where the candidate puts them, a verdict ("fine",

@@ -57,9 +57,11 @@ def programs(s, n_programs=20, progress=None):
     fit = np.sort(rng.choice(X.shape[0], min(NMF_FIT_CELLS, X.shape[0]), replace=False))
     say(0.1, f"NMF: fitting {n_programs} programs on {len(fit):,} cells")
     nmf = NMF(n_components=n_programs, init="nndsvda", max_iter=300, random_state=0, tol=1e-4)
-    nmf.fit(X[fit])
-    say(0.4, "NMF: projecting all cells")
-    W = np.vstack([nmf.transform(X[i:i + 50000]) for i in range(0, X.shape[0], 50000)]).astype(np.float32)
+    from . import markers
+    with markers.blas_gate():  # (apart from a neighbor search's change of BLAS's thread count)
+        nmf.fit(X[fit])
+        say(0.4, "NMF: projecting all cells")
+        W = np.vstack([nmf.transform(X[i:i + 50000]) for i in range(0, X.shape[0], 50000)]).astype(np.float32)
     H = nmf.components_.astype(np.float32)
     np.savez(f, W=W, H=H)
     if sf is not None:

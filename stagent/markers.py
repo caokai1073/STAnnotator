@@ -377,6 +377,19 @@ def cpu_threads():
 
 _BLAS = {"n": 0, "lim": None}       # searches under the one-thread limit now, and the limit to undo after the last
 _BLAS_LOCK = __import__("threading").Lock()
+# BLAS_GATE: no product of another thread while the neighbor search changes BLAS's thread count, and no change while
+# another thread is inside a product. OpenBLAS's thread count changed under a running product froze the app (an
+# annotation beside an automatic alignment: every thread spinning in np.matmul, 25 minutes and more). Held by the
+# search for its whole run (_one_blas_thread) and by the other heavy products that may run beside it in the app
+# (blas_gate: the alignment, the expression model, the niches' NMF).
+_BLAS_GATE = __import__("threading").RLock()
+
+
+@__import__("contextlib").contextmanager
+def blas_gate():
+    """Run heavy BLAS products of this thread apart from a neighbor search's change of BLAS's thread count."""
+    with _BLAS_GATE:
+        yield
 
 
 @__import__("contextlib").contextmanager
@@ -385,7 +398,8 @@ def _one_blas_thread():
     product this thin is several times slower spread over all cores, and several at once on all cores slower still).
     A BLAS threadpoolctl cannot set (Apple's Accelerate) keeps its own threads. The limit is process-wide: two
     searches at once (two jobs) share it, set by the first and lifted by the last (else the one ending last would put
-    back the other's one thread for good)."""
+    back the other's one thread for good). Held under BLAS_GATE: another search, or a heavy product, waits for it."""
+    _BLAS_GATE.acquire()
     with _BLAS_LOCK:
         if _BLAS["n"] == 0:
             try:
@@ -402,6 +416,7 @@ def _one_blas_thread():
             if _BLAS["n"] == 0 and _BLAS["lim"] is not None:
                 _BLAS["lim"].restore_original_limits()
                 _BLAS["lim"] = None
+        _BLAS_GATE.release()
 
 
 def _blocks(n, rows, threads, fn):

@@ -13,6 +13,18 @@ import numpy as np, pandas as pd, scipy.sparse as sp
 from . import config
 from .osutil import dump_json
 
+
+def _gated(fn):
+    """fn's products apart from a neighbor search's change of BLAS's thread count (markers.blas_gate)."""
+    import functools
+
+    @functools.wraps(fn)
+    def run(*a, **kw):
+        from . import markers
+        with markers.blas_gate():
+            return fn(*a, **kw)
+    return run
+
 REF = config.HOME / "reference"  # reference pool (reference mode / benchmarks on the lab server only)
 CAP = 5000
 EPOCHS, BATCH, LR = 6, 8192, 3e-3
@@ -147,6 +159,7 @@ def _genes(X, keep=None):
     return np.array(sorted(set(np.argsort(-var)[:markers.N_HVG].tolist()) | set(keep or [])), np.int64)
 
 
+@_gated
 def _fit(X, y, T, pi_target, extra_X=None, extra_y=None, progress=None, seed=0, genes=None, selected=False):
     """Core trainer. X: log-normalized CSR, y: class indices; 10% of (X, y) is held out for temperature scaling.
     pi_target: class distribution to correct the prior back to (training data may be class-capped). genes: the
@@ -309,6 +322,7 @@ def _logits(model, Xn, chunk=None, counts=False):
     return np.concatenate(out).astype(np.float32)
 
 
+@_gated
 def predict(model, counts):
     """Calibrated log-probabilities (float16) for raw counts."""
     from . import timing

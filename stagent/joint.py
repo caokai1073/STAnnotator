@@ -252,8 +252,9 @@ def niches(pid, k=15, n_niches=8, identity="nmf", n_programs=20, progress=None, 
         X = model.lognorm(counts).astype(np.float32, copy=False).tocsr()  # float32 already: no second copy
         del counts  # only the log-normalized matrix is used below (it keeps the counts' column indices alive)
         fit = np.sort(np.random.default_rng(0).choice(X.shape[0], min(60000, X.shape[0]), replace=False))
-        nmf = NMF(n_components=n_programs, init="nndsvda", max_iter=300, random_state=0, tol=1e-4).fit(X[fit])
-        W = np.vstack([nmf.transform(X[i:i + 50000]) for i in range(0, X.shape[0], 50000)]).astype(np.float32)
+        with markers.blas_gate():  # (apart from a neighbor search's change of BLAS's thread count)
+            nmf = NMF(n_components=n_programs, init="nndsvda", max_iter=300, random_state=0, tol=1e-4).fit(X[fit])
+            W = np.vstack([nmf.transform(X[i:i + 50000]) for i in range(0, X.shape[0], 50000)]).astype(np.float32)
         ident = W / np.maximum(W.sum(1, keepdims=True), 1e-9)
         names, H = [f"P{i + 1}" for i in range(n_programs)], nmf.components_.astype(np.float32)
     elif identity == "cell types":

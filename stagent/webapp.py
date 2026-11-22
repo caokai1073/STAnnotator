@@ -1756,6 +1756,12 @@ async def _project_job(pid, fn, estimate_s=None, kind=None, request=None):
 async def api_project_annotate(req: Request):
     from . import joint
     pid, b = req.path_params["pid"], await req.json()
+    if b.get("markers_text") is not None and not isinstance(b["markers_text"], str):
+        return _json({"error": "markers_text must be text"}, 400)
+    busy = [x for x in projects.load(pid)["samples"] if _placing(x)]
+    if busy:
+        return _json({"error": f"a slice is busy (an import, filter, alignment or registration check is running: "
+                               f"{', '.join(busy[:4])}): try again when it ends"}, 409)
     return await _project_job(pid, lambda say: joint.annotate(pid, b.get("markers_text", ""), b.get("resolution"),
                                                         bool(b.get("carry")), say, b.get("knn"),
                                                         spillover=bool(b.get("spillover", True))),
@@ -2213,6 +2219,16 @@ def api_he_info(req):
 async def api_annotate(req: Request):
     b = await req.json()
     sample, mode = str(b["sample_id"]), b.get("mode", "new")
+    bad = [k for k in ("markers_text", "method", "region_source", "carry_from") if b.get(k) is not None and not isinstance(b[k], str)]
+    if bad:
+        return _json({"error": f"{', '.join(bad)} must be text"}, 400)
+    if mode == "new" and b.get("method", "markers") != "none" and _placing(sample):
+        # (an alignment, check, filter or another annotation of the sample: two at once once froze the app, OpenBLAS
+        # threads waiting on each other)
+        from . import report
+        why = "the sample is busy (an import, filter, alignment or registration check is running): try again when it ends"
+        report.log_analysis("annotate", "annotate", b, outcome="rejected", error=why, sample=sample)
+        return _json({"error": why}, 409)
     if mode == "continue" and b.get("session_id"):
         sid = b["session_id"]
     else:
@@ -2235,6 +2251,13 @@ async def api_annotate(req: Request):
                  "estimate_s": b.get("estimate_s") if mode == "new" else None,
                  "kind": "annotate" if mode == "new" else "open", "sample": sample, "session": sid}
 
+    unfinished = config.SESSIONS / sid / UNFINISHED
+    if mode == "new" and b.get("method", "markers") != "none":  # removed when it completes; one left by an app that
+        try:                                                    # ended meanwhile goes at the next start
+            unfinished.write_text(str(os.getpid()), encoding="utf-8")
+        except OSError:
+            pass
+
     def work():
         from . import timing
         if mode != "continue":  # stopped: the new annotation goes, the one open before stays
@@ -2249,6 +2272,7 @@ async def api_annotate(req: Request):
                 JOBS[sid].update(progress=0.93, stage="assigning regions, applying priors, finding conflicts")
                 s.result()
             view(s.sample_id)
+            unfinished.unlink(missing_ok=True)
             JOBS[sid].update(progress=1.0, stage="done", done=True)
         except Exception as e:  # report to the page instead of dying silently
             JOBS[sid].update(error=f"{type(e).__name__}: {e}", done=True)
@@ -2256,6 +2280,31 @@ async def api_annotate(req: Request):
         if mode == "new" and b.get("method", "markers") != "none" else None  # (opening an annotation, or the sample's
     # placeholder made when it opens unannotated or after a filter, is not an analysis)
     return await _spawn(sid, work, log) or _json({"session_id": sid})
+
+
+UNFINISHED = ".unfinished"  # in an annotation's folder while it is first computed (the pid of the app computing it)
+
+
+def _drop_unfinished():
+    """Annotations an app left half made (it ended, or was ended, while computing them; a stopped run stuck in native
+    code ends only with the app): to the trash at the next start, unless the app computing them still runs."""
+    if not config.SESSIONS.is_dir():
+        return []
+    gone = []
+    for f in config.SESSIONS.glob(f"*/{UNFINISHED}"):
+        try:
+            pid = int(f.read_text(encoding="utf-8").strip() or 0)
+        except (OSError, ValueError):
+            pid = 0
+        if pid and pid != os.getpid() and osutil.pid_alive(pid):
+            continue
+        gone.append(f.parent)
+    if gone:
+        trash = config.TRASH / f"{time.strftime('%Y%m%d-%H%M%S')}_unfinished_annotations"
+        trash.mkdir(parents=True, exist_ok=True)
+        _trash_sessions(gone, trash)
+        print(f"moved {len(gone)} unfinished annotation(s) to {trash}", flush=True)
+    return [d.name for d in gone]
 
 
 def _drop_session(sid):
@@ -2974,6 +3023,14 @@ def _forget_sample(sample):
     for cache in (_tiles, _overlays):
         cache.drop(lambda k: k[0] == sample or (len(k) > 8 and k[8] == sample))
     _cell_tables.clear()
+
+
+def _placing(sample):
+    """A run that moves or rewrites the sample's cells (import, filter, alignment, registration check or correction):
+    an annotation waits for it (an annotation during an alignment froze the app: OpenBLAS threads waiting on each
+    other while the neighbor search changed BLAS's thread count). Embed or niches may run beside an annotation."""
+    mine = {f"{k}:{sample}" for k in ("import", "filter", "autoalign", "regcheck", "regfix")}
+    return any(k in mine and not j["done"] for k, j in list(JOBS.items()))
 
 
 def _busy(sample, skip=None):
@@ -4557,6 +4614,10 @@ def build_app(port):
     async def lifespan(app):
         from . import cachemgr
         cachemgr.start()  # the caches stay under their limit while the app runs
+        try:
+            _drop_unfinished()
+        except Exception as e:
+            print(f"unfinished annotations: {e}", flush=True)
         threading.Thread(target=_idle_release, daemon=True, name="idle-release").start()
         if not os.environ.get("STAGENT_NO_PREWARM"):  # pynndescent compiled ahead, a few seconds after the start
             def prewarm():
