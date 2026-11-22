@@ -520,6 +520,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
             align-items: center; padding: 6px 8px 6px 12px; font-size: 12.5px; background: #fff5e0; color: #6b4a00;
             border: 1px solid #f0c674; border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,.08), 0 1px 3px rgba(0,0,0,.06); }
 #alignbar[hidden] { display: none; }
+.alignwait { opacity: .5; cursor: not-allowed; }  /* Annotate / Filter while the cells are being placed (they say so when clicked) */
 /* Embed, Niche, Compare, Signal, Trajectory on a sample not annotated yet: what to do first */
 .needann { display: flex; margin-bottom: 10px; }
 .needann[hidden] { display: none; }
@@ -1945,7 +1946,7 @@ async function selectSample(id) {
   else if (!ids.length) await openPlaceholder(token);  // not annotated yet: regions and the registration still work
   else st.wantMode = st.keepView = null;
   if (token === st.switchToken) panelsIdle();  // (none opened: say so)
-  if (token === st.switchToken) resumeRunning();  // an annotation, PCA / UMAP or niches still running from before
+  if (token === st.switchToken) { resumeRunning(); followPlacing().catch(() => {}); }  // an annotation, PCA / UMAP, niches or an alignment still running from before
 }
 async function openPlaceholder(token) {  // the sample's "not annotated yet" session (method none), made on first use
   const ph = st.sample.allSessions.filter((x) => x.method === "none").sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0];
@@ -5329,10 +5330,46 @@ $("hiGo").onclick = async () => {
   loadStepsSoon();
   if (mode === "none" && st.sample && st.sample.image_pending) openAlignChoice();
 };
-var ALIGN = { auto: null, after: false };  // the samples Align automatically works through (null: none); after: its
-// result window is being opened (the step's own check window must not take its place)
-function alignBusy() { return !!(ALIGN.auto || ALIGN.after || AW.ids); }  // an alignment runs (the app's, or the agent's)
-function alignChanged() { alignBar(); loadStepsSoon(); }  // its buttons greyed out, or back
+var ALIGN = { auto: null, after: false, ext: null, own: 0 };  // own: checks / local registrations of this page running  // the samples Align automatically works through (null: none); after: its
+// result window is being opened (the step's own check window must not take its place); ext: a run that places the
+// open sample's cells started elsewhere (another window, a reload, the API): {job, kind}
+function alignBusy() { return !!(ALIGN.auto || ALIGN.after || AW.ids || ALIGN.ext); }  // an alignment runs (the app's, the agent's, or one started elsewhere)
+function alignChanged() {  // its buttons greyed out, or back (Annotate and Filter wait for the cells' place too)
+  alignBar(); loadStepsSoon();
+  const busy = alignBusy();
+  for (const [id, what] of [["annotate", "annotate"], ["qfGo", "filter"]]) {
+    $(id).classList.toggle("alignwait", busy);
+    if (busy) { if ($(id).dataset.t0 === undefined) $(id).dataset.t0 = $(id).title || ""; $(id).title = `An alignment is running: ${what} when it has finished`; }
+    else if ($(id).dataset.t0 !== undefined) { $(id).title = $(id).dataset.t0; delete $(id).dataset.t0; }
+  }
+}
+// runs that place the open sample's cells, started elsewhere (another window, before a reload, the API): followed
+// here (progress, the Align / Annotate / Filter buttons waiting), checked when the sample opens and every 5 s
+const PLACING = { autoalign: "Aligning automatically", regfix: "Local registration", regcheck: "Checking the registration" };
+async function followPlacing() {
+  const s = st.sample;
+  if (!s || ALIGN.ext || ALIGN.auto || ALIGN.own) return;
+  let r; try { r = await api(`/api/sample/${encodeURIComponent(s.sample_id)}/running`); } catch (e) { return; }
+  const j = (r.running || []).find((x) => PLACING[x.kind] && !st.following.has(x.job) && !POLLING.get(x.job));
+  if (!j || ALIGN.ext || ALIGN.auto || ALIGN.own || !st.sample || st.sample.sample_id !== s.sample_id) return;
+  ALIGN.ext = { job: j.job, kind: j.kind }; st.following.add(j.job); alignChanged();
+  const who = `${PLACING[j.kind]} ${sampleName(s)} (started elsewhere)`;
+  let k;
+  try {
+    for (;;) {
+      try { k = await api(`/api/job/${encodeURIComponent(j.job)}`); } catch (e) { k = null; }
+      if (k && k.done) break;
+      if (k && st.sample && st.sample.sample_id === s.sample_id) toast(`${who}: ${k.stage} (${Math.round(100 * (k.progress || 0))}%)`, 600000);
+      await new Promise((res) => setTimeout(res, 1500));
+    }
+  } finally { ALIGN.ext = null; st.following.delete(j.job); alignChanged(); }
+  if (!st.sample || st.sample.sample_id !== s.sample_id) return;
+  if (k.error) { toast(`${who}: ${k.error}`, 10000); return; }
+  if (j.kind === "regcheck") { toast(`${who}: done (Steps → Image → Check shows it)`, 6000); return; }
+  await afterPlacement(j.kind === "autoalign" ? (k.result && k.result.applied ? `${sampleName(s)} aligned automatically (${k.result.orientation})`
+    : `${who}: no placement fits (${(k.result && k.result.reason) || "see the log"})`) : `${who}: done`);
+}
+setInterval(() => { if (!document.hidden) followPlacing().catch(() => {}); }, 5000);
 async function autoAlign(ids) {  // the app aligns the images by itself (align.auto), one sample after the other; then the
   // open sample's registration check window (with Undo), and a summary of the others
   ids = (ids && ids.length ? ids : [st.sample && st.sample.sample_id]).filter(Boolean);
@@ -6959,6 +6996,10 @@ function regDialog(sample, title, figure, text, buttons) {  // the registration 
 async function checkRegistration(note = "", more = []) {  // the cells against the nuclei over the whole tissue, by the app (no agent);
   // note: a sentence before its own (e.g. the automatic alignment's); more: buttons before its own (e.g. Undo)
   if (!st.sample || !st.sid) return;
+  ALIGN.own++;  // (not taken for a check started elsewhere)
+  try { return await checkRegistrationRun(note, more); } finally { ALIGN.own--; }
+}
+async function checkRegistrationRun(note, more) {
   const sample = st.sample.sample_id, who = `Checking the registration of ${sampleName(st.sample)}`;
   let job;
   try { ({ job } = await post(`/api/sample/${encodeURIComponent(sample)}/registration/check`, { session: st.sid })); }
@@ -7000,6 +7041,10 @@ async function checkRegistration(note = "", more = []) {  // the cells against t
 }
 async function localRegistration(sample, kept) {  // the local correction measured, checked and applied; true when applied.
   // kept(): called once the result is kept (at once in auto mode or without a figure; else when the user clicks Accept)
+  ALIGN.own++;  // (not taken for one started elsewhere)
+  try { return await localRegistrationRun(sample, kept); } finally { ALIGN.own--; }
+}
+async function localRegistrationRun(sample, kept) {
   const smp = (st.samples || []).find((x) => x.sample_id === sample), who = `Local registration of ${smp ? sampleName(smp) : sample}`;
   let job;
   try { ({ job } = await post(`/api/sample/${encodeURIComponent(sample)}/registration/local`, {})); }
