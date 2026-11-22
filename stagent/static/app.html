@@ -850,8 +850,9 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <label>Opacity <input type="range" id="opacity" min="0" max="100" value="100"></label>
       <label title="Size of the cell dots">Dot size <input type="range" id="dotsize" min="20" max="300" value="100" step="10">
         <span id="dotsizeVal" style="min-width:34px">1.0×</span></label>
-      <button id="hide" title="Hide the cells: the H&amp;E only (h)">Hide cells</button>
-      <button id="hideHE" title="Hide the H&amp;E: the cells only (e)">Hide H&amp;E</button>
+      <label id="imgWrap" hidden title="The image under the cells: the H&amp;E, the DAPI, a protein / IF stain… (each placed on the cells by its own registration)">Image <select id="imgSel"></select></label>
+      <button id="hide" title="Hide the cells: the image only (h)">Hide cells</button>
+      <button id="hideHE" title="Hide the image: the cells only (e)">Hide image</button>
       <span class="vsep"></span>
       <button id="undo" disabled title="Undo your last action (everything the agent changed for one request goes back at once)">Undo</button>
       <button id="refresh" title="Show the latest of everything: the server reads the sample, its image and annotations from disk again and the page reloads what it shows (the view, color mode and legend choice stay)">Refresh</button>
@@ -1011,9 +1012,10 @@ T and NK cells: CD3E|NKG7+ EPCAM-
   <div class="dh"><b id="hiTitle">Import the H&amp;E</b><span class="spacer"></span></div>
   <div class="imbody" style="gap:8px">
     <div class="frow"><span>Image</span><textarea id="hiImg" rows="1" placeholder="the H&amp;E of this sample: pyramidal TIFF / OME-TIFF"></textarea><button id="hiImgPick" data-kind="image">Choose…</button></div>
-    <div class="frow"><span>Image kind</span><select id="hiKind"><option value="H&amp;E">H&amp;E</option><option value="DAPI">DAPI / fluorescence instead</option></select><span></span></div>
+    <div class="frow"><span>Image kind</span><select id="hiKind"><option value="H&amp;E">H&amp;E</option><option value="DAPI">DAPI</option><option value="IF">protein / IF stain</option></select><span></span></div>
     <div class="frow"><span>Registration<small class="opt">optional</small></span><span class="choice">
       <label><input type="radio" name="hiRegMode" value="file"> Registration file</label>
+      <label id="hiSameWrap" hidden><input type="radio" name="hiRegMode" value="same"> Same pixels as <select id="hiSame"></select></label>
       <label><input type="radio" name="hiRegMode" value="none" checked> No registration (align it next)</label></span><span></span></div>
     <div class="frow" id="hiRegRow" hidden><span></span><textarea id="hiReg" rows="1" placeholder="affine CSV (a11,a12,a21,a22,tx,ty), Xenium Explorer alignment (3x3), or cell positions saved by this app"></textarea><button id="hiRegPick" data-kind="csv">Choose…</button></div>
     <div class="row" style="margin-top:4px"><span class="err" id="hiErr"></span><span class="spacer"></span><button id="hiCancel">Cancel</button><button id="hiGo" class="primary">Import</button></div>
@@ -1534,11 +1536,31 @@ function openHE(sample) {
     if (he.image_error) toast(he.image_error, 15000);  // (no permission, or the image moved: the cells without it)
     const kind = he.image_kind || "H&E";
     $("hideHE").hidden = kind === "none";
-    setLabel($("hideHE"), `Hide the ${kind === "H&E" ? "H&E" : "image"}: the cells only (e)`);
+    setLabel($("hideHE"), "Hide the image: the cells only (e)");
+    fillImages(sample, he);
     viewer.addOnceHandler("open", applyHE);
-    viewer.open(tileSource((l, x, y) => `/api/sample/${sample}/he/${l}/${x}_${y}.jpg?r=${he.rev}${st.epoch ? `&f=${st.epoch}` : ""}`));  // rev: new cell positions, new tiles
+    viewer.open(tileSource(heUrl(sample)));  // rev: new cell positions, new tiles
   });
 }
+function heUrl(sample) {  // the tiles of the image chosen (st.imgId; the frame: "main")
+  const he = st.he, img = st.imgId && st.imgId !== "main" ? `&img=${encodeURIComponent(st.imgId)}` : "";
+  return (l, x, y) => `/api/sample/${sample}/he/${l}/${x}_${y}.jpg?r=${he.rev}${st.epoch ? `&f=${st.epoch}` : ""}${img}`;
+}
+function fillImages(sample, he) {  // the Image selector: the sample's images (the frame first); the last choice per sample
+  const ims = he.images || [], sel = $("imgSel");
+  const want = load(`img:${sample}`);
+  st.imgId = ims.some((x) => x.id === want) ? want : "main";
+  sel.textContent = "";
+  ims.forEach((x) => sel.append(Object.assign(document.createElement("option"), { value: x.id, textContent: x.name + (x.frame && ims.length > 1 ? " (cells placed on it)" : "") })));
+  sel.value = st.imgId;
+  $("imgWrap").hidden = ims.length < 2;
+}
+$("imgSel").onchange = () => {  // another image under the cells: replaced in place, the view kept
+  if (!st.sample) return;
+  const sample = st.sample.sample_id;
+  st.imgId = $("imgSel").value; store(`img:${sample}`, st.imgId);
+  viewer.addTiledImage({ tileSource: tileSource(heUrl(sample)), index: 0, replace: true, success: applyHE });
+};
 function filt() {  // legend filter of the current color mode (empty = show all)
   if (!st.filters[st.mode]) st.filters[st.mode] = new Set();
   return st.filters[st.mode];
@@ -1952,7 +1974,7 @@ function panelsIdle() {  // no annotation open on this sample: the panels say so
 // the analyses work on an annotation's cell types: on a sample not annotated yet (or with no annotation open) each of
 // their tabs says so at its top, with a button to Type → Annotate (or Data → Annotation), and the greyed-out Run
 // buttons say why in their tooltips
-var NEED_ANN = ["embed", "niches", "compare", "signal", "traj"], NEED_RUN = { embed: "eRun", niches: "nRun", traj: "tRun" };  // (Compare, Signal: their own checks)
+var NEED_ANN = ["compare", "signal", "traj"], NEED_RUN = { traj: "tRun" };  // (Embed, Niche: expression only; Compare, Signal: their own checks)
 function syncNeedAnn() {
   const open = !!st.sid, need = !!st.sample && !st.imageOnly && (!open || st.placeholder);
   for (const t of NEED_ANN) {
@@ -2128,12 +2150,13 @@ async function openSession(sid) {
   await restoreView();
   await pChat;
   if (stale()) return;
-  if (st.placeholder) {  // not annotated yet: regions, the registration and the agent; the analyses need cell types
-    ["report", "nRun", "eRun", "eShow"].forEach((b) => ($(b).disabled = true));
+  if (st.placeholder) {  // not annotated yet: regions, the registration, the agent, Embed and Niche (NMF programs: expression
+    // only); the other analyses need cell types
+    $("report").disabled = true;
     syncExport();  // the registration, cell positions and regions can be saved before any annotation
-    $("einfo").textContent = $("nicheinfo").textContent = "Annotate the sample first";
     $("anSave").disabled = true;
   }
+  nicheIdentityAllowed();
   imageOnlyUI();
   syncDrawBtn();  // Continue when an outline of this sample was paused
 }
@@ -2539,11 +2562,19 @@ async function loadNiches(show) {
   if (st.mode === "niche" || show) { refreshOverlay(); loadLegend(); }
   anRefresh();  // the open Compare / Signaling / Trajectory / Co-localization lists show the new niches
 }
+function nicheIdentityAllowed() {  // Cell types as the niches' identity needs cell types: NMF programs until annotated
+  const o = $("nIdentity").querySelector('option[value="cell types"]'), off = !!st.placeholder;
+  o.disabled = off;
+  const b = document.querySelector('.seg[data-for="nIdentity"] button[data-v="cell types"]');
+  if (b) { b.disabled = off; b.title = off ? "Annotate the sample first: until then the niches use NMF programs of the expression" : o.textContent; }
+  if (off && $("nIdentity").value === "cell types") { $("nIdentity").value = "nmf"; $("nIdentity").dispatchEvent(new Event("change")); }
+}
 $("nIdentity").onchange = () => { $("nPrograms").disabled = $("nIdentity").value !== "nmf"; syncSeg("nIdentity"); };
 $("nRun").onclick = async () => {
   if ($("nKind").value === "coloc") return runColoc();
   const body = { identity: $("nIdentity").value, n_programs: +$("nPrograms").value, k: +$("nK").value, n_niches: +$("nN").value };
-  if (projectMode("niches")) {  // niches of all slices go to each slice's annotation: every slice needs one
+  if (projectMode("niches") && body.identity === "cell types") {  // niches of cell types over all slices: every slice
+    // needs an annotation (NMF programs need none: a slice not annotated yet keeps them until its first annotation)
     const bare = projectOf(st.sample.sample_id).samples.filter((id) => {
       if (id === st.sample.sample_id && st.sid && !st.placeholder) return false;  // (its annotation is open)
       const s = (st.samples || []).find((x) => x.sample_id === id);
@@ -2551,8 +2582,8 @@ $("nRun").onclick = async () => {
     });
     if (bare.length) {
       const names = bare.map((id) => { const s = (st.samples || []).find((x) => x.sample_id === id); return (s && s.name) || id; });
-      toast(`Niches of all slices together need every slice annotated; not yet: ${names.join(", ")}. Annotate ${bare.length > 1 ? "them" : "it"} first `
-        + "(or all slices at once with Annotate and All slices together), or turn off All slices together for this slice's niches only.", 14000);
+      toast(`Niches of cell types over all slices need every slice annotated; not yet: ${names.join(", ")}. Annotate ${bare.length > 1 ? "them" : "it"} first `
+        + "(or all slices at once with Annotate and All slices together), or use NMF programs as the identity.", 14000);
       return;
     }
   }
@@ -5206,13 +5237,13 @@ async function alignTick() {
   if (msg !== AW.shown || !$("toast").classList.contains("show")) { AW.shown = msg; toast(msg, 10000); }
 }
 $("alignNow").onclick = askAlign;
-$("alignAuto").onclick = () => autoAlign();  // (the open sample; several: Steps → H&E → Align)
+$("alignAuto").onclick = () => autoAlign();  // (the open sample; several: Steps → Image → Align)
 function alignWaiting() {  // the samples whose image waits for its alignment (the open one first)
   const waiting = (st.samples || []).filter((x) => x.image_pending);
   if (st.sample && st.sample.image_pending && !waiting.some((x) => x.sample_id === st.sample.sample_id)) waiting.unshift(st.sample);
   return waiting;
 }
-function openAlignChoice() {  // Steps → H&E → Align: the samples to align, automatically (the app) or with the agent
+function openAlignChoice() {  // Steps → Image → Align: the samples to align, automatically (the app) or with the agent
   if (!st.sample || alignBusy()) return;
   const agent = !$("alignNow").hidden;  // (the agent is reachable: the desktop app, or a chat)
   const waiting = alignWaiting();
@@ -5248,35 +5279,59 @@ $("acAll").onchange = () => { document.querySelectorAll("#acList input").forEach
 $("acCancel").onclick = () => $("acDlg").close();
 $("acAuto").onclick = () => { const ids = acChosen(); $("acDlg").close(); autoAlign(ids); };
 $("acAgent").onclick = () => { const ids = acChosen(); $("acDlg").close(); alignWith(ids); };
-function openImageImport() {  // Steps → H&E → Import: the open sample's image, and its registration file if there is one
+function openImageImport(add) {  // Steps → Image → Import (the sample has no image yet) or Add (another image of it)
   if (!st.sample) return;
-  $("hiTitle").textContent = `Import the H&E of ${sampleName(st.sample)}`;
+  const ims = (st.he && st.he.images) || [];
+  add = !!add && ims.length > 0;
+  $("hiDlg").dataset.add = add ? "1" : "";
+  $("hiTitle").textContent = add ? `Add an image to ${sampleName(st.sample)}` : `Import the image of ${sampleName(st.sample)}`;
   $("hiImg").value = ""; $("hiReg").value = ""; $("hiErr").textContent = ""; $("hiGo").disabled = false;
-  document.querySelector("input[name=hiRegMode][value=none]").checked = true; $("hiRegRow").hidden = true;
-  $("hiDlg").showModal();
+  setLabel($("hiGo"), add ? "Add" : "Import");
+  $("hiKind").value = add ? "IF" : "H&E";
+  const same = $("hiSame"); same.textContent = "";
+  ims.forEach((x) => same.append(Object.assign(document.createElement("option"), { value: x.id, textContent: x.name })));
+  const dapi = ims.find((x) => x.kind === "DAPI"); if (dapi) same.value = dapi.id;
+  $("hiSameWrap").hidden = !add;
+  hiDefaultReg(); $("hiDlg").showModal();
 }
-document.querySelectorAll("input[name=hiRegMode]").forEach((r) => (r.onchange = () => {
-  $("hiRegRow").hidden = document.querySelector("input[name=hiRegMode]:checked").value !== "file";
-}));
+function hiDefaultReg() {  // a stain or DAPI added: often in the instrument's pixels (same as its DAPI); an H&E: aligned
+  const add = !!$("hiDlg").dataset.add, mode = add && $("hiKind").value !== "H&E" ? "same" : "none";
+  document.querySelector(`input[name=hiRegMode][value=${mode}]`).checked = true; hiRegShown();
+}
+function hiRegShown() { $("hiRegRow").hidden = document.querySelector("input[name=hiRegMode]:checked").value !== "file"; }
+document.querySelectorAll("input[name=hiRegMode]").forEach((r) => (r.onchange = hiRegShown));
+$("hiKind").onchange = hiDefaultReg;
 for (const [btn, field] of [["hiImgPick", "hiImg"], ["hiRegPick", "hiReg"]])
   $(btn).onclick = async () => { const p = await pickFiles($(btn).dataset.kind, false); if (p.length) { $(field).value = p[0]; autoGrow($(field)); } };
 ["hiImg", "hiReg"].forEach((id) => $(id).addEventListener("input", () => { cleanPathField($(id)); autoGrow($(id)); }));
 $("hiCancel").onclick = () => $("hiDlg").close();
 $("hiGo").onclick = async () => {
   const sample = st.sample && st.sample.sample_id, img = $("hiImg").value.trim(), reg = $("hiReg").value.trim();
-  const withReg = document.querySelector("input[name=hiRegMode]:checked").value === "file";
+  const mode = document.querySelector("input[name=hiRegMode]:checked").value, kind = $("hiKind").value, add = !!$("hiDlg").dataset.add;
   if (!sample) return;
   if (!img) { $("hiErr").textContent = "Choose the image"; return; }
-  if (withReg && !reg) { $("hiErr").textContent = "Choose the registration file, or No registration"; return; }
-  $("hiGo").disabled = true; $("hiErr").textContent = withReg ? "importing the image and placing the cells on it…" : "importing the image…";
+  if (mode === "file" && !reg) { $("hiErr").textContent = "Choose the registration file, or No registration"; return; }
+  // the cells go onto it (it becomes the image they are placed on): the first image, or an H&E with its registration;
+  // another image with a registration (or the same pixels as one) is shown in its place instead (the Image box)
+  const frame = !add || (kind === "H&E" && mode === "file") || mode === "none";
+  $("hiGo").disabled = true; $("hiErr").textContent = frame && mode === "file" ? "importing the image and placing the cells on it…" : "importing the image…";
+  let r;
   try {
-    await post(`/api/sample/${encodeURIComponent(sample)}/image`, { path: img, kind: $("hiKind").value });
-    if (withReg) await post(`/api/sample/${encodeURIComponent(sample)}/registration`, { path: reg });
+    if (frame) {
+      await post(`/api/sample/${encodeURIComponent(sample)}/image`, { path: img, kind });
+      if (mode === "file") await post(`/api/sample/${encodeURIComponent(sample)}/registration`, { path: reg });
+    } else {
+      r = await post(`/api/sample/${encodeURIComponent(sample)}/images/add`,
+        { path: img, kind, registration: mode === "file" ? reg : null, same_as: mode === "same" ? $("hiSame").value : null });
+      store(`img:${sample}`, r.added);  // shown at once
+    }
   } catch (e) { $("hiErr").textContent = e.message; $("hiGo").disabled = false; return; }
   $("hiDlg").close();
-  await afterPlacement(withReg ? "The H&E is imported and the cells placed on it: Steps → H&E → Check" : "");
+  if (frame && mode === "file") st.checkNext = sample;  // checked once the steps know it is placed
+  await afterPlacement(r ? "The image is added: the Image box on the map switches between the images"
+    : mode === "file" ? "The image is imported and the cells placed on it: Steps → Image → Check" : "");
   loadStepsSoon();
-  if (!withReg && st.sample && st.sample.image_pending) openAlignChoice();
+  if (mode === "none" && st.sample && st.sample.image_pending) openAlignChoice();
 };
 var ALIGN = { auto: null };  // the samples Align automatically works through (null: none)
 function alignBusy() { return !!(ALIGN.auto || AW.ids); }  // an alignment runs (the app's, or the agent's)
@@ -5400,6 +5455,7 @@ async function importSample() {  // returns true when the sample was imported
     $("imDlg").close(); st.imClear = true;
     const many = nSlices > 1;
     toast(many ? `Imported project ${name}` : `Imported ${name}`, 4000);
+    if (!many && images.length && registration) st.checkNext = name;  // the registration checked once it is open
     await loadSamples(many ? null : name, many ? name : null);
     return true;
   } catch (e) { $("imStatus").textContent = isStop(e) ? "Import stopped: nothing of it was kept" : e.message; return false; }
@@ -5454,9 +5510,14 @@ const HELP = `
 <li><b>Priors</b> must be checked, before annotating (the agent's review of the annotation reads them): <b>Check</b> opens the Prior window with the tissue priors of the sample's organ (what
   the agent's review checks against; remove what does not hold, add your own), and <b>Accept</b> (after Check) marks
   the step done. If the priors change later, the step asks for a check again.</li>
-<li><b>H&amp;E</b>: <b>Import</b> when the sample has no image yet (the image, and its registration file if there is
+<li><b>Image</b>: <b>Import</b> when the sample has no image yet (the image, and its registration file if there is
   one), <b>Align</b> while the image waits for its alignment (automatically or with the agent), then <b>Check</b>:
-  are the cells on their nuclei everywhere?</li>
+  are the cells on their nuclei everywhere? <b>Add</b> puts another image of the sample under the cells (a DAPI, a
+  protein / IF stain, another H&amp;E), with its registration file or in the same pixels as one of its images.</li>
+<li><b>Image</b> (on the map's toolbar, when the sample has several): which image is shown under the cells. The cells
+  stay where they are; each image is placed by its own registration. A Xenium / Atera sample lists the instrument's
+  DAPI and its other morphology stains by themselves; after an H&amp;E is aligned, the image shown before stays in
+  the list.</li>
 <li>✓ marks what is done (with what came of it); the next step stands out, with a button that goes where it is done.
   Hover a step for what it does and why. A click on <b>Steps</b> folds the list.</li></ul>
 <h3>Import</h3><ul>
@@ -5487,7 +5548,7 @@ const HELP = `
   <li><b>Regions</b> (optional): a GeoJSON of outlines drawn on this H&amp;E (e.g. QuPath annotations); they become
     regions of every new annotation.</li></ul></li>
 <li>An image without a registration file: <b>Align automatically</b> or <b>Align with Agent</b>.<ul>
-  <li>Both are under <b>Steps → H&amp;E → Align</b>, and on the yellow notice among the map's bars.</li>
+  <li>Both are under <b>Steps → Image → Align</b>, and on the yellow notice among the map's bars.</li>
   <li><b>Align automatically</b> needs no agent: the app refines its best 3 placements, checks each over the whole
     tissue and applies the one whose cells sit on their nuclei (a minute or two), then shows the registration check
     with <b>Undo</b>. When another orientation fits almost as well, or none fits (e.g. several sections on one slide), it
@@ -6055,7 +6116,6 @@ async function showAbout() {
     ["Agent workspace", esc(d.claude_workspace)],
     ["Libraries", Object.entries(d.libraries).map(([k, v]) => `${k} ${v || "–"}`).join(" · ")]];
   if (native() && native().share_status) rows.push(["Usage sharing", `<span id="hpShare">…</span>`]);
-  if (native() && native().checkin_status) rows.push(["Daily count", `<span id="hpCount">…</span>`]);
   const gb = (b) => `${(b / 1e9).toFixed(b < 1e8 ? 2 : 1)} GB`;
   const cache = await api("/api/cache").catch(() => null);
   if (cache) rows.splice(5, 0, ["Cache", `<span id="hpCacheUse">${gb(cache.bytes)}</span> of at most <input type="number" id="hpCacheGb" min="0.5" step="0.5" value="${cache.limit_gb}" style="width:64px"> GB
@@ -6068,7 +6128,6 @@ async function showAbout() {
     <button id="hpCopy">Copy for a bug report</button>${native() && native().update_check ? ` <button id="hpUpdate">Check for updates</button>` : ""}`;
   if ($("hpUpdate")) $("hpUpdate").onclick = () => checkForUpdate(true);
   if ($("hpShare")) fillShare().catch(() => {});
-  if ($("hpCount")) fillCount().catch(() => {});
   if ($("hpOpenData")) $("hpOpenData").onclick = () => post("/api/open_folder", { which: "data" }).catch((e) => toast(e.message, 6000));
   if ($("hpMoveData")) $("hpMoveData").onclick = () => changeDataFolder(d.data_folder);
   const cacheDo = async (body, what) => {
@@ -6246,15 +6305,6 @@ $("bugUpload").onclick = () => {
     $("bugNote").value = ""; bugClearShots();
   });
 };
-// ---------------- the daily count (autoshare.py): every user, turned off here ----------------
-async function fillCount() {
-  const c = await native().checkin_status(), el = $("hpCount"); if (!el) return;
-  el.innerHTML = (c.on ? `On (last counted: ${c.last_day || "not yet"})` : "Off") +
-    ` <button id="hpCountToggle">${c.on ? "Turn off" : "Turn on"}</button>` +
-    `<div class="hint">Once a day the app sends the developers its random installation id, its version and the system
-      (macOS or Windows), nothing else, so they know how many use it.</div>`;
-  $("hpCountToggle").onclick = async () => { await native().checkin_set(!c.on); fillCount(); };
-}
 // ---------------- usage sharing during testing (autoshare.py): asked once, changed in About ----------------
 async function fillShare() {
   const s = await native().share_status(), el = $("hpShare"); if (!el) return;
@@ -6528,7 +6578,7 @@ setInterval(() => { if (!st.busy) followAgent().catch(() => {}); }, 4000);
 // stands (from /api/s/<sid>/steps), and a button that goes where each step is done. The next step stands out.
 const STEPS = {
   import: ["Import", "The sample: its cells and genes, and its image and registration if it has them.", null],
-  registration: ["H&E", "The tissue image: Import it (optional), Align it with the cells (automatically or with the agent), then Check: are the cells on their nuclei everywhere? The app measures the offsets over the whole tissue (about a minute) and, where the tissue shifted, offers the local registration. (Review → Spatial organization asks the agent for a wider review.)", ["Check", () => checkRegistration()]],
+  registration: ["Image", "The tissue image (H&E, DAPI, protein / IF stains): Import it (optional), Align it with the cells (automatically or with the agent), then Check: are the cells on their nuclei everywhere? Add puts another image of the sample (a DAPI, a stain…) under the cells; the Image box on the map switches between them. The app measures the offsets over the whole tissue (about a minute) and, where the tissue shifted, offers the local registration. (Review → Spatial organization asks the agent for a wider review.)", ["Check", () => checkRegistration()]],
   filter: ["Filter cells and genes", "Leave out cells with few transcripts or genes and genes detected in few cells, before annotating. Seconds to a minute.", ["Filter", () => $("qfBtn").click()]],
   annotate: ["Annotate", "Cell types from a marker list (or a reference, or a CSV of labels): Type tab → Markers… → Annotate. A few minutes.", ["Annotate", () => showTab("annotate")]],
   priors: ["Priors", "The tissue priors of this sample's organ: what the agent's review checks the annotation and regions against. Check opens the Prior window (remove what does not hold for your tissue, add your own); Accept when they fit. Done once accepted; to do again when they change.", null],
@@ -6543,7 +6593,7 @@ const STEPS = {
   traj: ["Trajectory", "Spatial axes and pseudotime, and the genes that change along them (Analysis → Trajectory).", ["Trajectory", () => anTab("traj")]],
 };
 // a step's other action, shown before its main one: Regions can also come from a GeoJSON (the Regions panel's Import)
-const STEP_PRE = { regions: ["Import", "Import regions from a GeoJSON of outlines drawn on this H&E (e.g. QuPath annotations, in full-resolution pixels)", () => $("rgImport").click()] };
+const STEP_PRE = { registration: ["Add", "Add another image of this sample (a DAPI, a protein / IF stain, another H&E): the Image box on the map switches between them", () => openImageImport(true)], regions: ["Import", "Import regions from a GeoJSON of outlines drawn on this H&E (e.g. QuPath annotations, in full-resolution pixels)", () => $("rgImport").click()] };
 const anTab = (t) => document.querySelector(`#tabs .tab[data-tab="${t}"]`).click();
 st.stepsAnalyze = false;  // Analyze folded whenever the app starts; unfolding it holds while the app is open
 const STEP_MARK = { done: "✓", todo: "", optional: "", skipped: "–", blocked: "!", "not needed": "–" };
@@ -6568,7 +6618,7 @@ async function loadSteps() {
     const mk = Object.assign(document.createElement("span"), { className: "mk", textContent: STEP_MARK[x.state] || String(i + 1) });  // done ✓, else its number
     const nm = Object.assign(document.createElement("span"), { className: "nm", textContent: name });
     const right = document.createElement("span");
-    const img = x.key === "registration" ? x.image : null;  // the H&E: none (Import), pending (Align), placed (Check)
+    const img = x.key === "registration" ? x.image : null;  // the image: none (Import), pending (Align), placed (Add, Check)
     const a = x.open ? ["Open", () => { showTab("data"); $("session").focus(); toast("Choose an annotation in the Annotation box", 4000); }]
       : img === "pending" ? ["Align", () => openAlignChoice()] : img === "none" ? ["Import", () => openImageImport()] : act;
     if (x.key === "priors" && x.state !== "not needed") {  // Check (the Prior window), then Accept: only then ✓
@@ -6597,7 +6647,7 @@ async function loadSteps() {
       };
       right.append(...(x.state === "done" ? [chk] : [chk, acc]));  // (accepted: Check to look again)
     } else if (a && (["todo", "optional", "skipped"].includes(x.state) || img)) {  // (the H&E: Check also once done)
-      const pre = !x.open && STEP_PRE[x.key];
+      const pre = !x.open && (x.key !== "registration" || img === "placed") && STEP_PRE[x.key];
       if (pre) {
         const pb = Object.assign(document.createElement("button"), { textContent: pre[0], title: pre[1] });
         pb.onclick = (e) => { e.stopPropagation(); pre[2](); };
@@ -6638,6 +6688,13 @@ async function loadSteps() {
   });
   const nd = r.steps.filter((x) => x.state === "done").length, nx = r.steps.find((x) => x.key === r.next);
   $("stepsSum").textContent = nx ? `next: ${STEPS[nx.key][0]}` : `${nd} done · the rest is optional`;
+  // the cells were just placed on an image by a registration file (Import, Steps → Image): checked once, at once
+  // (an alignment is checked as it is made)
+  const reg = r.steps.find((x) => x.key === "registration");
+  if (st.checkNext && st.checkNext === smp && st.sid && reg && reg.image === "placed") {
+    st.checkNext = null;
+    if (reg.state === "todo" && !alignBusy()) checkRegistration().catch(() => {});
+  }
 }
 function stepsRoom() {  // how much of the map's top right the steps take, for the panels placed under them
   const el = $("steps"), on = !el.hidden;
@@ -6705,7 +6762,7 @@ async function proposalApplied(r) {
     return;
   }
   if (r.advise === "local_registration") {  // the alignment's deviation check found areas off their nuclei
-    toast(`${auto ? "Applied automatically" : "Applied"}: ${r.title}. Some areas sit off their nuclei: do the local registration (Steps → H&E → Check)`, 15000);
+    toast(`${auto ? "Applied automatically" : "Applied"}: ${r.title}. Some areas sit off their nuclei: do the local registration (Steps → Image → Check)`, 15000);
     loadSteps().catch(() => {});
   } else toast(auto ? `Applied automatically: ${r.title} (Undo takes it back)` : `Applied: ${r.title}`, auto ? 7000 : 5000);
   if (r.tool === "start_session" && r.session_after) { st.openedThisVisit[r.sample_id] = r.session_after; await loadSamples(r.sample_id); return; }
@@ -6853,7 +6910,7 @@ async function checkRegistration(note = "", more = []) {  // the cells against t
   if (r.median_offset_um != null && r.median_offset_um <= 3 && little)
     return regDialog(sample, title, r.figure, `The cells sit on their nuclei (median offset ${r.median_offset_um} µm); ${r.n_areas} small area(s) are a little off, too little to correct.`, [close]);
   if ((r.after_median_um != null && r.after_median_um > 10) || (helps != null && helps <= 0))  // the correction would not bring them onto their nuclei
-    return regDialog(sample, title, r.figure, `The cells sit off their nuclei (median ${r.median_offset_um} µm) and a local correction would not bring them back: align the image again (Steps → H&E → Align, or a registration file).`, [close]);
+    return regDialog(sample, title, r.figure, `The cells sit off their nuclei (median ${r.median_offset_um} µm) and a local correction would not bring them back: align the image again (Steps → Image → Align, or a registration file).`, [close]);
   const what = r.verdict === "global" ? "The whole tissue is slightly off its nuclei" : `${r.n_areas} area(s) sit off their nuclei`;
   const gain = helps != null && r.trusted_windows ? `windows off their nuclei: ${r.windows_off} of ${r.trusted_windows}, about ${r.after_windows_off} after`
     : `the median offset goes from ${r.median_offset_um} to about ${r.after_median_um} µm`;
@@ -6872,7 +6929,7 @@ async function localRegistration(sample, kept) {  // the local correction measur
     let j; try { j = await api(`/api/job/${encodeURIComponent(job)}`); } catch (e) { continue; }
     if (!j.done) { toast(`${who}: ${j.stage} (${Math.round(100 * j.progress)}%)`, 600000); continue; }
     if (j.error) { toast(`${who} failed: ${j.error}`, 10000); return; }
-    if (!j.result) { toast(`${who}: no result (the server was restarted meanwhile?); look at Steps → H&E`, 8000); loadStepsSoon(); return; }
+    if (!j.result) { toast(`${who}: no result (the server was restarted meanwhile?); look at Steps → Image`, 8000); loadStepsSoon(); return; }
     if (st.sample && st.sample.sample_id === sample) await afterPlacement();
     loadStepsSoon();
     const r = j.result;
@@ -7537,7 +7594,7 @@ async function resumeRunning() {
           if (j.project) { const p = projectOf(s.sample_id); if (p) p.samples.forEach((id) => forgetOpened(id)); st.sliceSwitch = true; }
           else if (j.session) st.openedThisVisit[s.sample_id] = j.session;
           await loadSamples(st.sample ? st.sample.sample_id : s.sample_id);
-        } else if (!mine() || !st.sid || st.placeholder) { /* the sample open now has nothing to show it in */ }
+        } else if (!mine() || !st.sid) { /* the sample open now has nothing to show it in */ }
         else if (j.kind === "embed") { setSelection(null); await loadEmbedding(true); }
         else await loadNiches(true);
         toast(`${what} done`, 4000);
@@ -7546,7 +7603,7 @@ async function resumeRunning() {
         if (isStop(e)) stopped(prog, what); else { stage.textContent = `${what} failed: ${e.message}`; toast(stage.textContent, 8000); }
       } finally {  // the button as the sample open now allows
         clearInterval(keeper); st.following.delete(j.job);
-        btn.disabled = j.kind === "annotate" ? !!st.imageOnly : !st.sid || st.placeholder || st.imageOnly;
+        btn.disabled = j.kind === "annotate" ? !!st.imageOnly : !st.sid || st.imageOnly;
       }
     })();
   }

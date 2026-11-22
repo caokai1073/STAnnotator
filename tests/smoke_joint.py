@@ -21,8 +21,22 @@ try:
     importer.import_project("demo", "h5ad", [h5], sections=["left", "right"], section_column="half", progress=lambda *a: None)
     p = projects.list_projects()[0]
     print("project:", p["project_id"], p["samples"], [p["slices"][s]["metadata"] for s in p["samples"]], f"{time.time() - t:.0f}s")
+    # niches of NMF programs over all slices before any annotation: kept in each slice's placeholder, then taken over
+    # by the slices' first annotation (cell types as the identity still needs every slice annotated)
+    from stagent import niches as nmod, session as smod
+    try:
+        joint.niches("demo", n_niches=4, identity="cell types")
+        raise AssertionError("niches of cell types ran on slices not annotated")
+    except ValueError as e:
+        assert "annotated" in str(e), e
+    joint.niches("demo", n_niches=4, n_programs=8)
+    ph = {sl: smod.placeholder(sl) for sl in p["samples"]}
+    assert all(ph.values()) and all(nmod.summary(smod.Session(x))["params"]["identity"] == "nmf" for x in ph.values()), ph
     t = time.time()
     joint.annotate("demo", open(os.path.join(EX, "mouse_colon_merfish_markers.txt")).read())
+    for sl, sid in joint.latest_sessions("demo").items():
+        sm = nmod.summary(smod.Session(sid))
+        assert sm and sm["params"]["identity"] == "nmf" and sm["params"]["n_niches"] == 4, (sl, sm and sm["params"])
     print("joint annotation:", {s: sid for s, sid in joint.latest_sessions("demo").items()}, f"{time.time() - t:.0f}s")
     t = time.time()
     e = joint.embed("demo", harmony=True)

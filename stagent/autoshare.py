@@ -8,11 +8,12 @@ one now. The receiver files these reports under autosave/<installation id>/ in t
 Settings: share_usage ("yes" / "no"; absent: not asked yet), share_last (the last look, sent or with nothing to send),
 share_sent (the last report sent).
 
-The daily count (every user, unless turned off in About): once a day the app sends the receiver its random
+The daily count (every user; not a setting since 0.2.62): once a day the app sends the receiver its random
 installation id, its version and the system (macOS / Windows / Linux), nothing else, so the developers know how many
 installations are in use. The receiver adds a row to a sheet in their Drive folder. The day is the developers' day
 (Boston, DAY_ZONE), the same for every user; an installation updated during the day is counted again with its new
-version. Settings: checkin ("off" turns it off), checkin_day and checkin_version (the last count).
+version. Settings: checkin_day and checkin_version (the last count); checkin "off", set in About by versions before
+0.2.62, is still respected (a user's earlier choice).
 """
 import tempfile
 import threading
@@ -102,17 +103,6 @@ def _system():
     return {"Darwin": "macOS", "Windows": "Windows", "Linux": "Linux"}.get(platform.system(), platform.system())
 
 
-def checkin_status():
-    st = config.read_settings()
-    return {"on": st.get("checkin") != "off", "last_day": st.get("checkin_day"), "install_id": report.install_id(),
-            "link": report.link_status().get("set", False)}
-
-
-def checkin_set(on):
-    config.write_settings(checkin="on" if on else "off")
-    return checkin_status()
-
-
 DAY_ZONE = "America/New_York"  # the developers' day (Boston), for every user
 
 
@@ -138,7 +128,7 @@ def checkin():
     from . import __version__
     try:
         st = config.read_settings()
-        if st.get("checkin") == "off":
+        if st.get("checkin") == "off":  # (turned off in About by a version before 0.2.62: still respected)
             return {"skipped": "turned off"}
         url = report.upload_url()
         if not url:

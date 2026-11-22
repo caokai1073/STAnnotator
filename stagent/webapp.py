@@ -165,6 +165,21 @@ class SampleView:
         self.sx = px[self.order]
         self.tree = cKDTree(np.c_[px, py])
 
+    def layer(self, image_id):
+        """Another image of the sample shown in the frame's place: (its Slide, T: frame pixels -> its pixels), or None."""
+        if not hasattr(self, "_layers"):
+            self._layers = {}
+        if image_id not in self._layers:
+            x = next((x for x in importer.images(self.sample_id) if x["id"] == image_id and not x["frame"]), None)
+            if x is None:
+                return None
+            F = importer.placement(self.sample_id)  # cell um -> frame pixels
+            A = np.asarray(x["affine"], float)       # cell um -> this image's pixels
+            Fi = np.linalg.inv(F[:, :2])
+            L = A[:, :2] @ Fi
+            self._layers[image_id] = (render.slide(x["path"]), np.c_[L, A[:, 2] - L @ F[:, 2]])
+        return self._layers[image_id]
+
     def tile_box(self, L, tx, ty):
         s = 2.0 ** (L - self.max_level)
         lw, lh = int(math.ceil(self.W * s)), int(math.ceil(self.H * s))
@@ -545,12 +560,20 @@ def he_tile(req: Request):
     except ValueError:
         return Response(status_code=404)
 
+    img = req.query_params.get("img") or "main"
+    try:
+        lay = v.layer(img) if img != "main" else None
+    except Exception as e:  # (the other image cannot be opened: the frame's tile, and the reason in the log)
+        print(f"image {img} of {sid}: {type(e).__name__}: {e}", flush=True)
+        lay = None
+
     def make():
         buf = io.BytesIO()
-        v.slide.read(x0, y0, x1, y1, w, h).save(buf, "JPEG", quality=85)
+        (render.read_warped(lay[0], lay[1], x0, y0, x1, y1, w, h) if lay else v.slide.read(x0, y0, x1, y1, w, h)
+         ).save(buf, "JPEG", quality=85)
         return buf.getvalue()
     try:
-        data = _tiles.get_or((sid, L, tx, ty), make)
+        data = _tiles.get_or((sid, L, tx, ty, img if lay else "main"), make)
     except Exception as e:  # the image's pixels cannot be read here (damaged): a blank tile, not kept, and he_info
         # says why from now on (the app's Refresh reads the file again)
         if v.image_error is None:
@@ -2152,7 +2175,9 @@ def api_he_info(req):
     m = importer._meta(req.path_params["sample"])
     return _json({"width": v.W, "height": v.H, "tile_size": TILE, "origin": [v.ox, v.oy], "um_per_px": v.um_per_px,
                   "image_kind": v.image_kind, "rev": int(v.rev), "image_error": v.image_error,
-                  "image_only": bool(m.get("image_only")), "um_per_px_known": m.get("um_per_px_known", True)})
+                  "image_only": bool(m.get("image_only")), "um_per_px_known": m.get("um_per_px_known", True),
+                  "images": [{k: x[k] for k in ("id", "name", "kind", "frame", "source")} for x in importer.images(v.sample_id)]
+                  if v.image_kind != "none" or m.get("images") or (m.get("source") or {}).get("morphology") else []})
 
 
 async def api_annotate(req: Request):
@@ -3109,6 +3134,34 @@ async def api_sample_image(req: Request):
     return _json(r)
 
 
+async def api_sample_image_add(req: Request):
+    """{path, kind, registration | same_as, name}: another image of the sample, shown in the frame's place (the Image
+    selector). Without a registration or same_as the image waits for its alignment (as /image)."""
+    sample = req.path_params["sample"]
+    b = await req.json()
+    try:
+        if not (b.get("registration") or b.get("same_as")):
+            r = importer.set_image(sample, b["path"], b.get("kind") or "H&E", progress=lambda *a: None)
+        else:
+            r = importer.add_image(sample, b["path"], b.get("kind") or "IF", b.get("registration") or None,
+                                   b.get("same_as") or None, b.get("name") or None)
+    except (ValueError, OSError, KeyError) as e:
+        return _json({"error": str(e)}, 400)
+    _reload_sample(sample)
+    return _json(r)
+
+
+async def api_sample_image_remove(req: Request):
+    sample = req.path_params["sample"]
+    b = await req.json()
+    try:
+        r = importer.remove_image(sample, str(b.get("id")))
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+    _reload_sample(sample)
+    return _json(r)
+
+
 async def api_sample_registration(req: Request):
     """Add a registration file; with an image the cells move onto it at once."""
     sample = req.path_params["sample"]
@@ -3472,14 +3525,15 @@ def steps_of(s, sample=None):
     elif src.startswith("visium") or src == "stereoseq":
         reg = {"state": "not needed", "detail": f"placed by {meta.get('registration_by') or 'the instrument software'}"}
     elif not (meta.get("he_path") or meta.get("image_pending")):
-        reg = {"state": "optional", "image": "none", "detail": "no H&E: import one to see the cells on the tissue"}
+        reg = {"state": "optional", "image": "none", "detail": "no image: import one (H&E, DAPI, a stain) to see the tissue"}
     elif not meta.get("image_pending") and meta.get("image_kind") not in ("H&E", None, "none") \
             and not meta.get("registration_by"):  # the instrument's own DAPI, the cells on it by their coordinates
         reg = {"state": "optional", "image": "none",
                "detail": f"the instrument's {meta.get('image_kind')} is shown (the cells on it by their coordinates); "
                          "no H&E: import one to see the tissue"}
     elif meta.get("image_pending") or not importer.on_image(meta):
-        reg = {"state": "blocked", "image": "pending", "detail": "the H&E is not aligned with the cells yet: align it"}
+        reg = {"state": "blocked", "image": "pending",
+               "detail": f"the {meta.get('image_pending_kind') or 'H&E'} is not aligned with the cells yet: align it"}
     else:
         checked = None
         try:
@@ -3505,6 +3559,13 @@ def steps_of(s, sample=None):
         else:
             reg = {"state": "todo", "detail": "not checked: are the cells on their nuclei everywhere?"}
     reg.setdefault("image", "placed" if reg["state"] != "not needed" else None)
+    if reg["image"] in ("placed", "pending", "none"):
+        try:
+            n_img = len(importer.images(sid, meta))
+        except Exception:
+            n_img = 0
+        if n_img > 1:
+            reg["detail"] += f" · {n_img} images (Image box on the map)"
     steps.append({"key": "registration", **reg})
     f = meta.get("filter")
     annotated = s is not None and s.scheme.get("kind") not in (None, "none")
@@ -4522,6 +4583,8 @@ def build_app(port):
         Route("/api/projects/rename", api_projects_rename, methods=["POST"]),
         Route("/api/samples/clear", api_samples_clear, methods=["POST"]),
         Route("/api/sample/{sample}/image", api_sample_image, methods=["POST"]),
+        Route("/api/sample/{sample}/images/add", api_sample_image_add, methods=["POST"]),
+        Route("/api/sample/{sample}/images/remove", api_sample_image_remove, methods=["POST"]),
         Route("/api/sample/{sample}/registration", api_sample_registration, methods=["POST"]),
         Route("/api/sample/{sample}/rename", api_sample_rename, methods=["POST"]),
         Route("/api/claude/model", api_claude_model, methods=["POST"]),

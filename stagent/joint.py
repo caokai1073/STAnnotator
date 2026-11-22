@@ -224,9 +224,17 @@ def niches(pid, k=15, n_niches=8, identity="nmf", n_programs=20, progress=None, 
     sess = latest_sessions(pid, sessions)
     ids, off, counts, panel = _pooled(pid, pooled=identity == "nmf")  # only NMF reads the counts
     missing = [s for s in ids if s not in sess]
+    if missing and identity == "nmf":  # NMF programs need no cell types: a slice not annotated yet keeps them in its
+        # placeholder (the one open in the app, else its latest, else a new one); its first annotation takes them over
+        from .session import placeholder
+        for s in missing:
+            want = (sessions or {}).get(s)
+            ok = want and (config.SESSIONS / str(want) / "session.json").is_file() and Session(want).sample_id == s
+            sess[s] = want if ok else placeholder(s) or Session.create(s, "none", method="none").id
+        missing = []
     if missing:  # the niches go to each slice's annotation
         names = [(json.load(open(config.SAMPLES / s / "meta.json", encoding="utf-8")).get("name") or s) for s in missing]
-        raise ValueError(f"niches of all slices together need every slice annotated; not yet: {', '.join(names[:6])}"
+        raise ValueError(f"niches of cell types over all slices need every slice annotated; not yet: {', '.join(names[:6])}"
                          f"{' and more' if len(names) > 6 else ''}. Annotate them first, or run the niches of one slice")
     S = [Session(sess[s]) for s in ids]
     if identity == "nmf":

@@ -160,6 +160,29 @@ class Slide:
         return canvas
 
 
+def read_warped(sl, T, x0, y0, x1, y1, out_w, out_h):
+    """A box of another image's pixels shown in the frame's place: T (2x3) maps frame level-0 pixels to the image's
+    level-0 pixels (any rotation, mirroring or scale between them); the box (in frame pixels) -> RGB (out_w, out_h)."""
+    T = np.asarray(T, float)
+    L, t = T[:, :2], T[:, 2]
+    fx, fy = (x1 - x0) / out_w, (y1 - y0) / out_h  # frame pixels per output pixel
+    corners = np.array([[x0, y0], [x1, y0], [x0, y1], [x1, y1]], float) @ L.T + t
+    bx0, by0 = np.floor(corners.min(0))
+    bx1, by1 = np.ceil(corners.max(0))
+    bx0, by0, bx1, by1 = max(bx0, 0), max(by0, 0), min(bx1, sl.W0), min(by1, sl.H0)
+    if bx1 <= bx0 or by1 <= by0:
+        return Image.new("RGB", (out_w, out_h), sl.fill)
+    s = max(np.sqrt(abs(np.linalg.det(L))) * np.sqrt(fx * fy), 1e-9)  # image pixels per output pixel
+    rw, rh = max(1, int(math.ceil((bx1 - bx0) / s))), max(1, int(math.ceil((by1 - by0) / s)))
+    region = sl.read(bx0, by0, bx1, by1, rw, rh)
+    sx, sy = (bx1 - bx0) / rw, (by1 - by0) / rh  # image pixels per region pixel
+    # output (u, v) -> frame (x0 + u fx, y0 + v fy) -> image (L @ frame + t) -> region ((ix - bx0) / sx, (iy - by0) / sy)
+    a, b_, c = L[0, 0] * fx / sx, L[0, 1] * fy / sx, (L[0, 0] * x0 + L[0, 1] * y0 + t[0] - bx0) / sx
+    d, e, f = L[1, 0] * fx / sy, L[1, 1] * fy / sy, (L[1, 0] * x0 + L[1, 1] * y0 + t[1] - by0) / sy
+    return region.transform((out_w, out_h), Image.AFFINE, (a, b_, c, d, e, f), resample=Image.BILINEAR,
+                            fillcolor=tuple(sl.fill))
+
+
 class BlankSlide:
     """No image: a plain background of unlimited size (the cells are drawn on it)."""
     W0 = H0 = 10 ** 9

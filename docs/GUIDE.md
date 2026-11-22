@@ -76,7 +76,7 @@ normalized and scaled data, graphs, reductions and commands are skipped while re
 Until the image is registered, the cells are shown on a blank background (or the DAPI) with a yellow notice
 ("H&E image not aligned yet") among the map's top bars.
 
-**Steps → H&E → Align** (or the notice) offers two ways. **Align automatically** (no agent needed) aligns the open sample's image
+**Steps → Image → Align** (or the notice) offers two ways. **Align automatically** (no agent needed) aligns the open sample's image
 by the app alone: the search below gives its best placements, the best 3 are refined and each is checked over the
 whole tissue, and the one whose cells sit closest to their nuclei is applied (one whose cells sit far off their nuclei
 never is). It takes one to two minutes; then the registration check's window shows the result, with **Undo** and,
@@ -104,7 +104,7 @@ tissue colored by it. Its verdict:
   alignment cannot fix it): the window offers **Do local registration** instead of Accept: the alignment, then the
   cells moved onto their nuclei where the tissue shifted, at once, without a review (measured over the whole
   tissue and checked by measuring again; about a minute; in **Auto** mode it is done so by itself). **Align anyway**
-  applies only the alignment; the step then stays to do (**Steps → H&E → Check**), and the check's windows
+  applies only the alignment; the step then stays to do (**Steps → Image → Check**), and the check's windows
   are reused, so it starts at once;
 - **far off**: hardly any part of the tissue finds its nuclei; this is not the right alignment, and the agent tries
   another candidate instead.
@@ -477,14 +477,19 @@ The app's window, or the web viewer (`.venv/bin/stagent viewer`, then http://loc
     map; also `t`; **‹** brings it back);
   - **Import**, **Export** and **Local** / **Remote** (where the data is: this computer or a server);
   - **Steps** (a panel at the map's top right; the panels opened there go under it): the usual flow for the open
-    sample, and where it stands: 1 Import, 2 H&E, 3 Filter
+    sample, and where it stands: 1 Import, 2 Image, 3 Filter
     cells and genes, 4 Priors (checked and accepted before annotating: the agent's review of the annotation reads
     them), 5 Annotate, 6 Regions, 7 Review, 8 Analyze (it lists Embed, Niche, Compare,
     Signal and Trajectory, each done or not with a button to its tab; folded when the app starts, its arrow unfolds it). Each step shows what was done
     (✓ and a line such as "5,799 cells removed" or "checked 2026-11-09"), or a button that goes where it is done; the
-    next step stands out. **H&E** shows **Import** when the sample has no image yet (the image of this sample, and its
+    next step stands out. **Image** shows **Import** when the sample has no image yet (the image of this sample, and its
     registration file if there is one), **Align** while the image waits for its alignment (automatically or with the
-    agent), and **Check** once the cells are on it. **Check** is done by the app, without the agent: the cells against the
+    agent), and **Check** once the cells are on it; **Add** puts another image of the sample under the cells (a
+    DAPI, a protein / IF stain, another H&E: with its registration file, or in the same pixels as one of the
+    sample's images). The **Image** box on the map's toolbar switches between them: the cells stay where they are,
+    each image is placed by its own registration. A Xenium / Atera sample lists the instrument's DAPI and its
+    other morphology stains (boundary, interior RNA and protein) by themselves; when an H&E is aligned, the image
+    shown before stays in the list. **Check** is done by the app, without the agent: the cells against the
     nuclei over the whole tissue (about a minute), shown in a window with the histogram of the deviation and the
     windows on the tissue. Where the tissue shifted it offers **Do local registration**; the cells are then
     measured again and a second window shows the result: **Accept** keeps it, **Undo** puts the cells back where
@@ -719,8 +724,11 @@ before that, Claude can offer tiles of the grid.
 
 **Before the first annotation.** A sample not annotated yet opens with its cells gray ("Not annotated"). Regions can
 already be drawn, edited and imported there, and **Review** offers the registration (Spatial organization: the
-cells on their nuclei, the local correction, torn pieces). The first annotation of the sample starts with these
-regions.
+cells on their nuclei, the local correction, torn pieces). **Embed** (PCA, UMAP, Leiden) and **Niche** (with NMF
+programs as the cells' identity) run on the expression alone, so they work before annotating too; the UMAP is the
+sample's, so it shows the cell types as soon as an annotation is open, and niches of NMF programs come along into
+the first annotation. Compare, Signal and Trajectory need the cell types. The first annotation of the sample starts
+with these regions.
 
 **Priors.** The agent lists the annotation's priors (the user's words and how they were read) and removes one when
 asked (`remove_constraint`, a new version); **Undo** takes back the last one added.
@@ -891,7 +899,7 @@ asks now and always shows it. Without an internet connection nothing is shown. W
 - The choice is kept in `%APPDATA%\STAnnotator\settings.json` (macOS: `~/Library/Application Support/STAnnotator/`,
   Linux: `~/.config/stagent/`); the `STAGENT_HOME` environment variable, when set, takes precedence.
 
-**Usage sharing** and **Daily count** (desktop app): see [Troubleshooting](#usage-sharing).
+**Usage sharing** (desktop app) and the daily count: see [Troubleshooting](#usage-sharing).
 
 ### Storage, Reset analysis and Remove all samples
 
@@ -1271,7 +1279,7 @@ During testing, the desktop app asks once whether it may send the developers a r
 
 **Daily count.** Once a day the desktop app sends the developers its random installation id, its version and the
 system (macOS or Windows), nothing else, so they know how many installations are in use. It does not depend on usage
-sharing; **?** → **About** → **Daily count** turns it off or on.
+sharing.
 
 ### Common problems
 

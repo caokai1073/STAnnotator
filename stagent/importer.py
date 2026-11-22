@@ -1921,6 +1921,7 @@ def place_cells(sample_id, A, image, image_kind="H&E", by="file", progress=print
         progress(f"registration: {inside:.1%} of cells inside the image")
     m = _meta(sample_id)
     old = placement(sample_id)
+    _keep_shown_image(m, old, image)
     M = np.c_[A[:, :2] @ np.linalg.inv(old[:, :2]), A[:, 2] - A[:, :2] @ np.linalg.inv(old[:, :2]) @ old[:, 2]]
     _move_outlines(sample_id, M)
     m["placement_previous"] = {k: m.get(k) for k in ("placement_affine", "he_path", "image_kind", "he_um_per_px",
@@ -1939,6 +1940,149 @@ def place_cells(sample_id, A, image, image_kind="H&E", by="file", progress=print
         m["image_pending"] = None
     dump_json(m, d / "meta.json", indent=1)
     return {"placed_on": image, "by": by, "um_per_px": round(m["he_um_per_px"], 4)}
+
+
+# ---------------- the sample's images: the one the cells are placed on, and others shown in its place ----------------
+# One image is the sample's frame (he_path, placement_affine: the cells, regions and corrections live in its pixels).
+# The others (meta["images"]: added with their own registration, or the frame before an alignment replaced it; and
+# the instrument's morphology images of a Xenium / Atera output, found by themselves) each keep the affine from the
+# cells' um to their own pixels; the viewer shows any of them in the frame's place (webapp: warped tiles).
+_CHANNELS = {}
+
+
+def _channel_name(path):
+    """A morphology image's name: from its file (ch0001_atp1a1_cd45_e-cadherin -> ATP1A1 / CD45 / E-CADHERIN), or the
+    OME channel name of Xenium Ranger's morphology_focus_000N.ome.tif."""
+    p = Path(path)
+    if p in _CHANNELS:
+        return _CHANNELS[p]
+    stem = re.sub(r"\.ome$", "", p.stem)
+    mt = re.match(r"ch\d{4}_(.+)$", stem)
+    name = " / ".join(t.upper() for t in mt.group(1).split("_")) if mt else None
+    if not name:
+        try:
+            import tifffile
+            with tifffile.TiffFile(p) as t:
+                found = re.findall(r'<Channel[^>]*?Name="([^"]+)"', t.ome_metadata or "")
+            name = " / ".join(dict.fromkeys(found)) if found else None
+        except Exception:
+            name = None
+    name = name or stem
+    _CHANNELS[p] = name
+    return name
+
+
+def _instrument_images(m):
+    """The morphology images of the Xenium / Atera output the sample came from (the DAPI and the other stains: boundary,
+    interior RNA and protein), in the instrument's pixels: cell um / pixel size."""
+    src = m.get("source") or {}
+    morph, ps = src.get("morphology"), src.get("pixel_size_um")
+    if src.get("kind") != "xenium" or not morph or not ps:
+        return []
+    folder = Path(morph).parent
+    try:
+        files = sorted(f for f in folder.iterdir()
+                       if re.match(r"(ch\d{4}_.+|morphology_focus_\d{4}|morphology_focus|morphology_mip)\.ome\.tif$", f.name))
+    except OSError:
+        return []
+    if Path(morph) not in files and Path(morph).is_file():
+        files.insert(0, Path(morph))
+    A = [[1 / float(ps), 0.0, 0.0], [0.0, 1 / float(ps), 0.0]]
+    out = []
+    for f in files:
+        name = _channel_name(f)
+        dapi = "dapi" in name.lower() or f == Path(morph)
+        out.append({"id": "inst:" + f.name, "name": "DAPI" if dapi and "dapi" in name.lower() else name,
+                    "kind": "DAPI" if dapi else "IF", "path": str(f), "affine": A, "source": "instrument"})
+    return out
+
+
+def _image_id(path):
+    """An added image's id, from its file (never reused for another file: the viewer's tiles are kept by it)."""
+    return "img-" + hashlib.sha1(str(Path(path).resolve()).encode()).hexdigest()[:10]
+
+
+def _image_label(kind, path):
+    return kind if kind in ("H&E", "DAPI") else _channel_name(path) if path else kind
+
+
+def images(sample_id, meta=None):
+    """The sample's images, the frame first: [{id, name, kind, path, affine (cell um -> its pixels), frame, source}].
+    An image waiting for its alignment is not among them."""
+    m = meta or _meta(sample_id)
+    res = lambda p: str(Path(p).resolve()) if p else None
+    seen = {res(m.get("image_pending"))} - {None}
+    out = []
+    if m.get("he_path") and m.get("image_kind") not in (None, "none"):
+        out.append({"id": "main", "name": _image_label(m["image_kind"], m["he_path"]), "kind": m["image_kind"],
+                    "path": m["he_path"], "affine": placement(sample_id).tolist(), "frame": True, "source": "frame"})
+        seen.add(res(m["he_path"]))
+    for x in list(m.get("images") or []) + _instrument_images(m):
+        r = res(x.get("path"))
+        if r in seen or not x.get("affine"):
+            continue
+        seen.add(r)
+        out.append({**x, "frame": False})
+    return out
+
+
+def _keep_shown_image(m, old, new_image):
+    """Before the cells move onto another image: the one shown so far stays among the sample's images (with the
+    affine that placed the cells on it), unless the instrument's own images list it already."""
+    cur = m.get("he_path")
+    if not cur or m.get("image_kind") in (None, "none") or (new_image and Path(cur).resolve() == Path(new_image).resolve()):
+        return
+    keep = [x for x in (m.get("images") or []) if Path(x["path"]).resolve() != Path(cur).resolve()]
+    if new_image:  # the new frame is no longer one of the others
+        keep = [x for x in keep if Path(x["path"]).resolve() != Path(new_image).resolve()]
+    if not any(Path(x["path"]).resolve() == Path(cur).resolve() for x in _instrument_images(m)):
+        keep.append({"id": _image_id(cur), "name": _image_label(m["image_kind"], cur), "kind": m["image_kind"], "path": cur,
+                     "affine": np.asarray(old, float).tolist(), "source": "shown before"})
+    m["images"] = keep
+
+
+def add_image(sample_id, path, kind="IF", registration=None, same_as=None, name=None, section=None):
+    """Another image of the sample, shown in the frame's place: its affine from a registration file (as for the H&E:
+    an affine CSV, a Xenium Explorer matrix, cell positions) or the same pixels as another image of the sample
+    (same_as: its id, e.g. an IF stain exported in the DAPI's pixels)."""
+    path = str(Path(path).expanduser().resolve())
+    _he_size(path)  # readable?
+    m = _meta(sample_id)
+    if same_as:
+        ref = next((x for x in images(sample_id, m) if x["id"] == same_as), None)
+        if ref is None:
+            raise ValueError(f"no image {same_as} in this sample")
+        A = ref["affine"]
+    elif registration:
+        src = m.get("source") or {}
+        A = load_registration(Path(registration).expanduser(), section or src.get("section"),
+                              float(src.get("pixel_size_um") or 0.2125), src.get("candidates") or (),
+                              lambda *a: None).tolist()
+    else:
+        raise ValueError("give a registration file, or the image whose pixels it shares")
+    W, H = _he_size(path)
+    xy = pd.read_parquet(config.SAMPLES / sample_id / "cells.parquet", columns=["x", "y"]).to_numpy()
+    pxy = xy @ np.asarray(A)[:, :2].T + np.asarray(A)[:, 2]
+    inside = ((pxy[:, 0] >= 0) & (pxy[:, 0] < W) & (pxy[:, 1] >= 0) & (pxy[:, 1] < H)).mean()
+    if inside < MIN_INSIDE:
+        raise ValueError(f"only {inside:.0%} of the cells fall inside this image ({W} x {H} px) with that registration")
+    keep = [x for x in (m.get("images") or []) if Path(x["path"]).resolve() != Path(path).resolve()]
+    keep.append({"id": _image_id(path), "name": name or _image_label(kind, path), "kind": kind, "path": path,
+                 "affine": np.asarray(A, float).tolist(), "source": "added"})
+    m["images"] = keep
+    dump_json(m, config.SAMPLES / sample_id / "meta.json", indent=1)
+    return {"added": _image_id(path), "inside": round(float(inside), 3)}
+
+
+def remove_image(sample_id, image_id):
+    """Forget an added image (or one shown before); the instrument's images and the frame stay."""
+    m = _meta(sample_id)
+    keep = [x for x in (m.get("images") or []) if x["id"] != image_id]
+    if len(keep) == len(m.get("images") or []):
+        raise ValueError(f"{image_id} is not an image added to this sample")
+    m["images"] = keep
+    dump_json(m, config.SAMPLES / sample_id / "meta.json", indent=1)
+    return {"removed": image_id}
 
 
 def undo_placement(sample_id):

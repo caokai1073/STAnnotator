@@ -11,7 +11,7 @@ Session directory (work/sessions/<session_id>/):
   verdicts.jsonl      reviewer verdicts on conflict cells; suggestions.jsonl rule suggestions
   figures/, exports/
 """
-import hashlib, json, os, re, threading, time, uuid
+import hashlib, json, os, re, shutil, threading, time, uuid
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -320,6 +320,17 @@ class Session:
                  "regions": regmod.default_state(region_source), "constraints": [],
                  "corrections": [], "marker_step": {"ops": []}}
         s._write(state)
+        if method != "none":  # niches of NMF programs (expression only, run before annotating or in the annotation
+            # carried from) come along: they do not depend on the cell types
+            for src in dict.fromkeys(x for x in (carry_from, placeholder(sample_id)) if x):
+                nd = config.SESSIONS / src / "niches"
+                try:
+                    run = json.load(open(nd / "run.json"))
+                except (OSError, ValueError):
+                    continue
+                if run.get("identity") == "nmf":
+                    shutil.copytree(nd, d / "niches", dirs_exist_ok=True)
+                    break
         if carry_from:
             s._carry_over(carry_from)
         else:  # regions that came with the sample (e.g. QuPath annotations given at import) start every annotation
