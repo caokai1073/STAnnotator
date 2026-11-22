@@ -511,6 +511,9 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
             align-items: center; padding: 6px 8px 6px 12px; font-size: 12.5px; background: #fff5e0; color: #6b4a00;
             border: 1px solid #f0c674; border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,.08), 0 1px 3px rgba(0,0,0,.06); }
 #alignbar[hidden] { display: none; }
+#acDlg .acopt { display: grid; grid-template-columns: 180px 1fr; gap: 10px; align-items: start; }
+#acDlg .acopt button { width: 100%; }
+@media (max-width: 520px) { #acDlg .acopt { grid-template-columns: 1fr; } }
 #alignbar #alignmsg { min-width: 0; }
 #alignbar button { background: var(--panel); }  /* (the bars' button size: #maptop button) */
 #tools, #acts, #alignbar { box-sizing: border-box; min-height: 44px; }  /* the notice as tall as the bars */
@@ -986,6 +989,31 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <button id="nameCancel">Cancel</button><button id="nameSave" class="primary">Save</button></div>
   </div>
 </dialog>
+<dialog id="acDlg" style="width:min(520px,95vw)">
+  <div class="dh"><b>Align the H&amp;E</b><span class="spacer"></span></div>
+  <div class="imbody" style="gap:10px">
+    <div class="hint" id="acWhat"></div>
+    <div class="acopt"><button id="acAuto" class="primary">Align automatically</button>
+      <span class="hint">The app alone (no agent): it tries its best placements, checks each over the whole tissue and applies the
+        one whose cells sit on their nuclei; a minute or two. You see the result and can undo it.</span></div>
+    <div class="acopt"><button id="acAgent">Align with Agent</button>
+      <span class="hint" id="acAgentHint">Your agent (Claude Code) looks at the candidate placements and picks one: for a slide with
+        several sections, or a tissue whose orientation is hard to tell.</span></div>
+    <div class="row"><span class="spacer"></span><button id="acCancel">Cancel</button></div>
+  </div>
+</dialog>
+<dialog id="hiDlg" style="width:min(640px,95vw)">
+  <div class="dh"><b id="hiTitle">Import the H&amp;E</b><span class="spacer"></span></div>
+  <div class="imbody" style="gap:8px">
+    <div class="frow"><span>Image</span><textarea id="hiImg" rows="1" placeholder="the H&amp;E of this sample: pyramidal TIFF / OME-TIFF"></textarea><button id="hiImgPick" data-kind="image">Choose…</button></div>
+    <div class="frow"><span>Image kind</span><select id="hiKind"><option value="H&amp;E">H&amp;E</option><option value="DAPI">DAPI / fluorescence instead</option></select><span></span></div>
+    <div class="frow"><span>Registration<small class="opt">optional</small></span><span class="choice">
+      <label><input type="radio" name="hiRegMode" value="file"> Registration file</label>
+      <label><input type="radio" name="hiRegMode" value="none" checked> No registration (align it next)</label></span><span></span></div>
+    <div class="frow" id="hiRegRow" hidden><span></span><textarea id="hiReg" rows="1" placeholder="affine CSV (a11,a12,a21,a22,tx,ty), Xenium Explorer alignment (3x3), or cell positions saved by this app"></textarea><button id="hiRegPick" data-kind="csv">Choose…</button></div>
+    <div class="row" style="margin-top:4px"><span class="err" id="hiErr"></span><span class="spacer"></span><button id="hiCancel">Cancel</button><button id="hiGo" class="primary">Import</button></div>
+  </div>
+</dialog>
 <dialog id="alDlg" style="width:min(520px,95vw)">
   <div class="dh"><svg class="ic" aria-hidden="true"><use href="#ic-sparkle"/></svg><b>Align with Agent</b></div>
   <div class="imbody" style="gap:8px">
@@ -1189,9 +1217,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <div class="frow" id="imImgKindRow" hidden><span>Image kind</span><select id="imNewImgKind" title="h5ad / RDS: a DAPI or fluorescence image can stand in for the H&amp;E"><option value="H&amp;E">H&amp;E</option><option value="DAPI">DAPI / fluorescence instead</option></select><span></span></div>
     <div class="frow" id="imRegModeRow"><span>Registration<small class="opt">optional</small></span><span class="choice">
       <label><input type="radio" name="imRegMode" value="file"> Registration file</label>
-      <label><input type="radio" name="imRegMode" value="none" checked> No registration</label>
-      <button id="imNewAuto" disabled title="Choose an image first">Align automatically</button>
-      <button id="imNewAlign" disabled title="Choose an image first">Align with Agent</button></span><span></span></div>
+      <label><input type="radio" name="imRegMode" value="none" checked> No registration</label></span><span></span></div>
     <div class="frow" id="imRegRow" hidden><span></span><textarea id="imNewReg" rows="1" placeholder="affine CSV (a11,a12,a21,a22,tx,ty), Xenium Explorer alignment (3x3), or cell positions saved by this app; several slices: one file for all (a row per slice) or one per slice, in their order"></textarea><button data-pick="csv" data-multi="1" data-target="imNewReg">Choose…</button></div>
     <div class="frow" id="imRegSecRow" hidden><span>Registration row</span><input type="text" id="imNewRegSec" placeholder="only if the file has one row per section; default: the section chosen above"><span></span></div>
     <div class="frow" id="imGeoFromRow" hidden><span>Regions from<small class="opt">optional</small></span><select id="imGeoFrom" title="Regions drawn on a sample of the H&amp;E only: the same image file (scan) as the one this data is registered to"><option value="">none</option></select><span></span></div>
@@ -1446,7 +1472,7 @@ const ICON_TEXT = { qfBtn: "play", importBtn: "import", clearAll: "trash", allSa
   undo: "undo", refresh: "refresh", claudeBtn: "sparkle", priorBtn: "list", plaus: "shield", report: "file", export: "share", reset: "trash",
   draw: "pen", emLasso: "lasso", emClear: "x", emZoom: "target", send: "send",
   mkImport: "import", mkCheck: "check", mkSave: "save", mkDraft: "sparkle", mkOrganUse: "list", mkOrganAgent: "sparkle", mkClose: "check", imGo: "import",
-  imNewAlign: "sparkle", alignNow: "sparkle", imNewAuto: "target", alignAuto: "target", refPick: "folder", exPick: "folder", refClose: "check", exClose: "check", rcTest: "check",
+  alignNow: "sparkle", alignAuto: "target", acAuto: "target", acAgent: "sparkle", hiImgPick: "folder", hiRegPick: "folder", hiGo: "import", refPick: "folder", exPick: "folder", refClose: "check", exClose: "check", rcTest: "check",
   rcGo: "server", fbOk: "check", rpAsk: "sparkle", xpCsv: "download", xpNb: "download", xpReg: "download", xpPos: "download", xpGeo: "download", xpNbAll: "download",
   hpCopy: "copy", nameSave: "check", rsGo: "trash", anFig: "download", aRun: "play", aLast: "list", anAsk: "sparkle", sRun: "play", sLast: "list", tRun: "play", tLast: "list", rvGo: "sparkle", rvShow: "list" };
 const ICON_TITLES = { lgtoggle: "Fold or unfold", rgtoggle: "Fold or unfold", stepsFold: "Fold or unfold", anCsv: "Save as CSV…", rpSave: "Save as Markdown…",
@@ -5061,11 +5087,6 @@ function imForm() {  // show the fields of the chosen options; Align with Claude
     : imKind() === "stereoseq" ? "the registered image SAW wrote, when there is one" : vis ? "the output's tissue_hires_image.png (about 1 µm per pixel)" : "cells on a blank background") : "";
   $("imNewReg").placeholder = isFlat() ? "affine CSV (a11,a12,a21,a22,tx,ty): cell µm to H&E pixels, or cell positions saved by this app"
     : "affine CSV (a11,a12,a21,a22,tx,ty), Xenium Explorer alignment (3x3), or cell positions saved by this app";
-  const can = !vis && imgMode() === "file" && $("imNewImg").value.trim() && regMode() === "none";
-  $("imNewAlign").disabled = $("imNewAuto").disabled = !can;
-  const why = imgMode() !== "file" || !$("imNewImg").value.trim() ? "Choose an image first" : "Choose No registration to align the image";
-  $("imNewAlign").title = can ? "Import, then let the agent align the image with the cells" : why;
-  $("imNewAuto").title = can ? "Import, then the app aligns the image with the cells by itself (no agent); you see the result and can undo it" : why;
 }
 document.querySelectorAll("input[name=imImgMode], input[name=imRegMode]").forEach((r) => (r.onchange = imForm));
 $("imNewImg").addEventListener("input", imForm); $("imNewImg").addEventListener("change", imForm);
@@ -5145,6 +5166,48 @@ async function alignTick() {
 }
 $("alignNow").onclick = askAlign;
 $("alignAuto").onclick = () => autoAlign();
+function openAlignChoice() {  // Steps → H&E → Align: automatically (the app) or with the agent
+  if (!st.sample) return;
+  const agent = !$("alignNow").hidden;  // (the agent is reachable: the desktop app, or a chat)
+  $("acWhat").textContent = `The ${st.sample.image_pending_kind || "H&E"} image of ${sampleName(st.sample)} is not aligned with its cells yet. How should it be aligned?`;
+  $("acAgent").disabled = !agent;
+  $("acAgentHint").textContent = agent ? "Your agent (Claude Code) looks at the candidate placements and picks one: for a slide with several sections, or a tissue whose orientation is hard to tell."
+    : "Needs the agent (Claude Code), which is not available here.";
+  $("acDlg").showModal();
+}
+$("acCancel").onclick = () => $("acDlg").close();
+$("acAuto").onclick = () => { $("acDlg").close(); autoAlign(); };
+$("acAgent").onclick = () => { $("acDlg").close(); askAlign(); };
+function openImageImport() {  // Steps → H&E → Import: the open sample's image, and its registration file if there is one
+  if (!st.sample) return;
+  $("hiTitle").textContent = `Import the H&E of ${sampleName(st.sample)}`;
+  $("hiImg").value = ""; $("hiReg").value = ""; $("hiErr").textContent = ""; $("hiGo").disabled = false;
+  document.querySelector("input[name=hiRegMode][value=none]").checked = true; $("hiRegRow").hidden = true;
+  $("hiDlg").showModal();
+}
+document.querySelectorAll("input[name=hiRegMode]").forEach((r) => (r.onchange = () => {
+  $("hiRegRow").hidden = document.querySelector("input[name=hiRegMode]:checked").value !== "file";
+}));
+for (const [btn, field] of [["hiImgPick", "hiImg"], ["hiRegPick", "hiReg"]])
+  $(btn).onclick = async () => { const p = await pickFiles($(btn).dataset.kind, false); if (p.length) { $(field).value = p[0]; autoGrow($(field)); } };
+["hiImg", "hiReg"].forEach((id) => $(id).addEventListener("input", () => { cleanPathField($(id)); autoGrow($(id)); }));
+$("hiCancel").onclick = () => $("hiDlg").close();
+$("hiGo").onclick = async () => {
+  const sample = st.sample && st.sample.sample_id, img = $("hiImg").value.trim(), reg = $("hiReg").value.trim();
+  const withReg = document.querySelector("input[name=hiRegMode]:checked").value === "file";
+  if (!sample) return;
+  if (!img) { $("hiErr").textContent = "Choose the image"; return; }
+  if (withReg && !reg) { $("hiErr").textContent = "Choose the registration file, or No registration"; return; }
+  $("hiGo").disabled = true; $("hiErr").textContent = withReg ? "importing the image and placing the cells on it…" : "importing the image…";
+  try {
+    await post(`/api/sample/${encodeURIComponent(sample)}/image`, { path: img, kind: $("hiKind").value });
+    if (withReg) await post(`/api/sample/${encodeURIComponent(sample)}/registration`, { path: reg });
+  } catch (e) { $("hiErr").textContent = e.message; $("hiGo").disabled = false; return; }
+  $("hiDlg").close();
+  await afterPlacement(withReg ? "The H&E is imported and the cells placed on it: Steps → H&E → Check" : "");
+  loadStepsSoon();
+  if (!withReg && st.sample && st.sample.image_pending) openAlignChoice();
+};
 async function autoAlign(sample) {  // the app aligns the image by itself (align.auto), then the registration check's window
   sample = sample || (st.sample && st.sample.sample_id);
   if (!sample) return;
@@ -5236,7 +5299,7 @@ async function importSample() {  // returns true when the sample was imported
   if (geo.length > Math.max(1, nSlices) || (nSlices > 1 && geo.length && geo.length !== nSlices)) { $("imStatus").textContent = `${geo.length} GeoJSON files for ${nSlices} slice(s): one per slice, in their order`; return false; }
   for (const [what, list] of [["images", images], ["registration files", regs]])
     if (nSlices > 1 && list.length > 1 && list.length !== nSlices) { $("imStatus").textContent = `${list.length} ${what} for ${nSlices} slices: give one for all, or one per slice in their order`; return false; }
-  $("imGo").disabled = $("imNewAlign").disabled = true; $("imStatus").textContent = "importing…";
+  $("imGo").disabled = true; $("imStatus").textContent = "importing…";
   try {
     const { job } = await post("/api/import", body);
     await pollJob(job, $("imStatus").parentElement, null, $("imStatus"), $("imGo"), 700);
@@ -5287,18 +5350,19 @@ function onPress(b, fn) {
   b.onclick = (e) => { if (e.detail === 0) fn(); };  // keyboard (Enter, Space)
 }
 onPress($("imGo"), () => exclusive("An import", importSample));
-onPress($("imNewAlign"), async () => { if (await exclusive("An import", importSample)) await askAlign(); });  // import, then Claude aligns
-onPress($("imNewAuto"), async () => { if (await exclusive("An import", importSample)) { $("imDlg").close(); await autoAlign(); } });  // import, then the app aligns
 $("importBtn").onclick = openImport;
 // ---------------- help and about ----------------
 const HELP = `
 <h3>Steps</h3><ul>
-<li>The list at the map's top right is the usual flow for the open sample: <b>Import</b> → <b>Check registration</b>
+<li>The list at the map's top right is the usual flow for the open sample: <b>Import</b> → <b>H&amp;E</b>
   → <b>Filter cells and genes</b> → <b>Priors</b> → <b>Annotate</b> → (optional) <b>Regions</b>, <b>Review</b>,
   <b>Analyze</b>.</li>
 <li><b>Priors</b> must be checked, before annotating (the agent's review of the annotation reads them): <b>Check</b> opens the Prior window with the tissue priors of the sample's organ (what
   the agent's review checks against; remove what does not hold, add your own), and <b>Accept</b> (after Check) marks
   the step done. If the priors change later, the step asks for a check again.</li>
+<li><b>H&amp;E</b>: <b>Import</b> when the sample has no image yet (the image, and its registration file if there is
+  one), <b>Align</b> while the image waits for its alignment (automatically or with the agent), then <b>Check</b>:
+  are the cells on their nuclei everywhere?</li>
 <li>✓ marks what is done (with what came of it); the next step stands out, with a button that goes where it is done.
   Hover a step for what it does and why. A click on <b>Steps</b> folds the list.</li></ul>
 <h3>Import</h3><ul>
@@ -5329,7 +5393,7 @@ const HELP = `
   <li><b>Regions</b> (optional): a GeoJSON of outlines drawn on this H&amp;E (e.g. QuPath annotations); they become
     regions of every new annotation.</li></ul></li>
 <li>An image without a registration file: <b>Align automatically</b> or <b>Align with Agent</b>.<ul>
-  <li>Both are next to No registration, and on the yellow notice among the map's bars.</li>
+  <li>Both are under <b>Steps → H&amp;E → Align</b>, and on the yellow notice among the map's bars.</li>
   <li><b>Align automatically</b> needs no agent: the app refines its best 3 placements, checks each over the whole
     tissue and applies the one whose cells sit on their nuclei (a minute or two), then shows the registration check
     with <b>Undo</b>. When another orientation fits almost as well, or none fits (e.g. several sections on one slide), it
@@ -6370,7 +6434,7 @@ setInterval(() => { if (!st.busy) followAgent().catch(() => {}); }, 4000);
 // stands (from /api/s/<sid>/steps), and a button that goes where each step is done. The next step stands out.
 const STEPS = {
   import: ["Import", "The sample: its cells and genes, and its image and registration if it has them.", null],
-  registration: ["Check registration", "Are the cells on their nuclei everywhere? The app measures the offsets over the whole tissue (about a minute) and, where the tissue shifted, offers the local registration. (Review → Spatial organization asks the agent for a wider review.)", ["Check", () => checkRegistration()]],
+  registration: ["H&E", "The tissue image: Import it (optional), Align it with the cells (automatically or with the agent), then Check: are the cells on their nuclei everywhere? The app measures the offsets over the whole tissue (about a minute) and, where the tissue shifted, offers the local registration. (Review → Spatial organization asks the agent for a wider review.)", ["Check", () => checkRegistration()]],
   filter: ["Filter cells and genes", "Leave out cells with few transcripts or genes and genes detected in few cells, before annotating. Seconds to a minute.", ["Filter", () => $("qfBtn").click()]],
   annotate: ["Annotate", "Cell types from a marker list (or a reference, or a CSV of labels): Type tab → Markers… → Annotate. A few minutes.", ["Annotate", () => showTab("annotate")]],
   priors: ["Priors", "The tissue priors of this sample's organ: what the agent's review checks the annotation and regions against. Check opens the Prior window (remove what does not hold for your tissue, add your own); Accept when they fit. Done once accepted; to do again when they change.", null],
@@ -6410,9 +6474,9 @@ async function loadSteps() {
     const mk = Object.assign(document.createElement("span"), { className: "mk", textContent: STEP_MARK[x.state] || String(i + 1) });  // done ✓, else its number
     const nm = Object.assign(document.createElement("span"), { className: "nm", textContent: name });
     const right = document.createElement("span");
-    const align = x.key === "registration" && x.state === "blocked" && !$("alignbar").hidden;  // the image waits for its alignment
+    const img = x.key === "registration" ? x.image : null;  // the H&E: none (Import), pending (Align), placed (Check)
     const a = x.open ? ["Open", () => { showTab("data"); $("session").focus(); toast("Choose an annotation in the Annotation box", 4000); }]
-      : align ? ["Align", () => ($("alignNow").hidden ? autoAlign() : $("alignNow").click())] : act;
+      : img === "pending" ? ["Align", () => openAlignChoice()] : img === "none" ? ["Import", () => openImageImport()] : act;
     if (x.key === "priors" && x.state !== "not needed") {  // Check (the Prior window), then Accept: only then ✓
       const key = `${smp}|${x.organ || ""}`;
       // accepted, then changed (e.g. a rule the agent wrote): to be checked again before Accept
@@ -6438,7 +6502,7 @@ async function loadSteps() {
         loadSteps().catch(() => {});
       };
       right.append(...(x.state === "done" ? [chk] : [chk, acc]));  // (accepted: Check to look again)
-    } else if (a && (["todo", "optional", "skipped"].includes(x.state) || align)) {
+    } else if (a && (["todo", "optional", "skipped"].includes(x.state) || img)) {  // (the H&E: Check also once done)
       const pre = !x.open && STEP_PRE[x.key];
       if (pre) {
         const pb = Object.assign(document.createElement("button"), { textContent: pre[0], title: pre[1] });
@@ -6546,7 +6610,7 @@ async function proposalApplied(r) {
     return;
   }
   if (r.advise === "local_registration") {  // the alignment's deviation check found areas off their nuclei
-    toast(`${auto ? "Applied automatically" : "Applied"}: ${r.title}. Some areas sit off their nuclei: do the local registration (Steps → Check registration)`, 15000);
+    toast(`${auto ? "Applied automatically" : "Applied"}: ${r.title}. Some areas sit off their nuclei: do the local registration (Steps → H&E → Check)`, 15000);
     loadSteps().catch(() => {});
   } else toast(auto ? `Applied automatically: ${r.title} (Undo takes it back)` : `Applied: ${r.title}`, auto ? 7000 : 5000);
   if (r.tool === "start_session" && r.session_after) { st.openedThisVisit[r.sample_id] = r.session_after; await loadSamples(r.sample_id); return; }
@@ -6694,7 +6758,7 @@ async function checkRegistration(note = "", more = []) {  // the cells against t
   if (r.median_offset_um != null && r.median_offset_um <= 3 && little)
     return regDialog(sample, title, r.figure, `The cells sit on their nuclei (median offset ${r.median_offset_um} µm); ${r.n_areas} small area(s) are a little off, too little to correct.`, [close]);
   if ((r.after_median_um != null && r.after_median_um > 10) || (helps != null && helps <= 0))  // the correction would not bring them onto their nuclei
-    return regDialog(sample, title, r.figure, `The cells sit off their nuclei (median ${r.median_offset_um} µm) and a local correction would not bring them back: align the image again (Align with Agent, or a registration file).`, [close]);
+    return regDialog(sample, title, r.figure, `The cells sit off their nuclei (median ${r.median_offset_um} µm) and a local correction would not bring them back: align the image again (Steps → H&E → Align, or a registration file).`, [close]);
   const what = r.verdict === "global" ? "The whole tissue is slightly off its nuclei" : `${r.n_areas} area(s) sit off their nuclei`;
   const gain = helps != null && r.trusted_windows ? `windows off their nuclei: ${r.windows_off} of ${r.trusted_windows}, about ${r.after_windows_off} after`
     : `the median offset goes from ${r.median_offset_um} to about ${r.after_median_um} µm`;
@@ -6713,7 +6777,7 @@ async function localRegistration(sample, kept) {  // the local correction measur
     let j; try { j = await api(`/api/job/${encodeURIComponent(job)}`); } catch (e) { continue; }
     if (!j.done) { toast(`${who}: ${j.stage} (${Math.round(100 * j.progress)}%)`, 600000); continue; }
     if (j.error) { toast(`${who} failed: ${j.error}`, 10000); return; }
-    if (!j.result) { toast(`${who}: no result (the server was restarted meanwhile?); look at Steps → Check registration`, 8000); loadStepsSoon(); return; }
+    if (!j.result) { toast(`${who}: no result (the server was restarted meanwhile?); look at Steps → H&E`, 8000); loadStepsSoon(); return; }
     if (st.sample && st.sample.sample_id === sample) await afterPlacement();
     loadStepsSoon();
     const r = j.result;

@@ -76,7 +76,7 @@ normalized and scaled data, graphs, reductions and commands are skipped while re
 Until the image is registered, the cells are shown on a blank background (or the DAPI) with a yellow notice
 ("H&E image not aligned yet") among the map's top bars.
 
-**Align automatically** (next to No registration, or on the notice; no agent needed) aligns the open sample's image
+**Steps → H&E → Align** (or the notice) offers two ways. **Align automatically** (no agent needed) aligns the open sample's image
 by the app alone: the search below gives its best placements, the best 3 are refined and each is checked over the
 whole tissue, and the one whose cells sit closest to their nuclei is applied (one whose cells sit far off their nuclei
 never is). It takes one to two minutes; then the registration check's window shows the result, with **Undo** and,
@@ -84,8 +84,7 @@ when areas sit off their nuclei, **Do local registration**. When another orienta
 symmetric tissue), or no placement puts the cells on their nuclei (e.g. several sections on one slide), the app says
 so: use **Align with Agent** then.
 
-**Align with Agent** (next to No registration, on the notice,
-or on the Check registration step) asks the agent (your Claude Code) to align it. When several samples wait for
+**Align with Agent** (in the same place) asks the agent (your Claude Code) to align it. When several samples wait for
 their alignment, a dialog lists them: tick the ones to align (**All samples** for all of them) and the agent aligns
 them one after the other, each coming to you for review (applied at once in Auto mode). For each sample:
 
@@ -105,7 +104,7 @@ tissue colored by it. Its verdict:
   alignment cannot fix it): the window offers **Do local registration** instead of Accept: the alignment, then the
   cells moved onto their nuclei where the tissue shifted, at once, without a review (measured over the whole
   tissue and checked by measuring again; about a minute; in **Auto** mode it is done so by itself). **Align anyway**
-  applies only the alignment; the step then stays to do (**Steps → Check registration**), and the check's windows
+  applies only the alignment; the step then stays to do (**Steps → H&E → Check**), and the check's windows
   are reused, so it starts at once;
 - **far off**: hardly any part of the tissue finds its nuclei; this is not the right alignment, and the agent tries
   another candidate instead.
@@ -478,12 +477,14 @@ The app's window, or the web viewer (`.venv/bin/stagent viewer`, then http://loc
     map; also `t`; **‹** brings it back);
   - **Import**, **Export** and **Local** / **Remote** (where the data is: this computer or a server);
   - **Steps** (a panel at the map's top right; the panels opened there go under it): the usual flow for the open
-    sample, and where it stands: 1 Import, 2 Check registration, 3 Filter
+    sample, and where it stands: 1 Import, 2 H&E, 3 Filter
     cells and genes, 4 Priors (checked and accepted before annotating: the agent's review of the annotation reads
     them), 5 Annotate, 6 Regions, 7 Review, 8 Analyze (it lists Embed, Niche, Compare,
     Signal and Trajectory, each done or not with a button to its tab; folded when the app starts, its arrow unfolds it). Each step shows what was done
     (✓ and a line such as "5,799 cells removed" or "checked 2026-11-09"), or a button that goes where it is done; the
-    next step stands out. **Check registration** is done by the app, without the agent: the cells against the
+    next step stands out. **H&E** shows **Import** when the sample has no image yet (the image of this sample, and its
+    registration file if there is one), **Align** while the image waits for its alignment (automatically or with the
+    agent), and **Check** once the cells are on it. **Check** is done by the app, without the agent: the cells against the
     nuclei over the whole tissue (about a minute), shown in a window with the histogram of the deviation and the
     windows on the tissue. Where the tissue shifted it offers **Do local registration**; the cells are then
     measured again and a second window shows the result: **Accept** keeps it, **Undo** puts the cells back where

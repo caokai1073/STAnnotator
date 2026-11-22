@@ -1278,7 +1278,7 @@ async def api_align_auto(req: Request):
 
 
 async def api_registration_check(req: Request):
-    """Check the registration now, without the agent (Steps > Check registration): the cells against the nuclei in
+    """Check the registration now, without the agent (Steps > H&E > Check): the cells against the nuclei in
     windows over the whole tissue (regcheck.summary; the windows of the alignment's check are reused). A run under
     /api/job/regcheck:<sample>; its result: the verdict, the areas off their nuclei and how far."""
     sample = req.path_params["sample"]
@@ -3464,14 +3464,17 @@ def steps_of(s, sample=None):
     image_only = bool(meta.get("image_only"))
     steps = [{"key": "import", "state": "done",
               "detail": "an image without cells" if image_only else f"{meta.get('n_cells') or 0:,} cells · {meta.get('n_genes') or 0:,} genes"}]
-    # registration: the cells on their image
+    # the H&E step (key "registration"): the image imported, then the cells on it. image: "none" (the page offers
+    # Import), "pending" (Align: automatically or with the agent), "placed" (Check)
     img = importer.image_of(sid)
-    if image_only or not (meta.get("he_path") or meta.get("image_pending")):
-        reg = {"state": "not needed", "detail": "no image" if not image_only else "the image itself"}
+    if image_only:
+        reg = {"state": "not needed", "detail": "the image itself"}
     elif src.startswith("visium") or src == "stereoseq":
         reg = {"state": "not needed", "detail": f"placed by {meta.get('registration_by') or 'the instrument software'}"}
+    elif not (meta.get("he_path") or meta.get("image_pending")):
+        reg = {"state": "optional", "image": "none", "detail": "no H&E: import one to see the cells on the tissue"}
     elif meta.get("image_pending") or not importer.on_image(meta):
-        reg = {"state": "blocked", "detail": "the cells are not on the image yet: align them"}
+        reg = {"state": "blocked", "image": "pending", "detail": "the H&E is not aligned with the cells yet: align it"}
     else:
         checked = None
         try:
@@ -3496,6 +3499,7 @@ def steps_of(s, sample=None):
             reg = {"state": "done", "detail": f"reviewed {org['last_run']['time'][:10]}{fixed}"}
         else:
             reg = {"state": "todo", "detail": "not checked: are the cells on their nuclei everywhere?"}
+    reg.setdefault("image", "placed" if reg["state"] != "not needed" else None)
     steps.append({"key": "registration", **reg})
     f = meta.get("filter")
     annotated = s is not None and s.scheme.get("kind") not in (None, "none")
