@@ -89,15 +89,20 @@
     if (i < 0) { console.warn("[tutorial] unknown scene", name); return; }
     if (i !== S.scene) { S.scene = i; counters.clear(); }
   }
+  // how long a message stays up: long enough to read it (the app's own toasts last about 2 s, made for someone who
+  // just clicked; here the viewer also follows the caption), at most 15 s
+  const msgMs = (m, ms = 0) => Math.max(ms, Math.min(15000, 3000 + 55 * String(m || "").length));
   window.__TUT = {
     match, blank: BLANK,
     toast: (m) => toast(m),
-    confirm: (m) => {  // the app asked the browser's confirm(): shown over the app for a moment while playing
+    hold: (m, ms) => (S.instant ? ms : msgMs(m, ms) / S.speed),  // an app toast's time on screen in the replay
+    confirm: (m) => {  // the app asked the browser's confirm(): shown over the app while playing, then OK
       if (!S.playing || S.instant) return;
       const box = el("div", "confirmBox", `<p>${esc(m)}</p><div><button>Cancel</button><button class="ok">OK</button></div>`);
       $("#fx").append(box);
-      setTimeout(() => box.classList.add("go"), 1800 / S.speed);
-      setTimeout(() => box.remove(), 2600 / S.speed);
+      const ms = msgMs(m) / S.speed;
+      setTimeout(() => box.classList.add("go"), ms);
+      setTimeout(() => box.remove(), ms + 900 / S.speed);
     },
     download: () => toast("Downloads need the installed app: this demo replays a recorded session."),
     attach: (w) => { w.addEventListener("pointerdown", markDirty, true); w.addEventListener("keydown", markDirty, true); },
@@ -722,7 +727,7 @@
   }
 
   /* ---------------- controls ---------------- */
-  function toast(m) { const t = el("div", "toast", esc(m)); document.body.append(t); setTimeout(() => t.remove(), 4200); }
+  function toast(m) { const t = el("div", "toast", esc(m)); document.body.append(t); setTimeout(() => t.remove(), msgMs(m, 4200)); }
   $("#bPlay").onclick = () => setPlaying(!S.playing);
   $("#bNext").onclick = () => step(1);
   $("#bPrev").onclick = () => step(-1);
