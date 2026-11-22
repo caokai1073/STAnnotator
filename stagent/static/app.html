@@ -993,9 +993,10 @@ T and NK cells: CD3E|NKG7+ EPCAM-
   <div class="dh"><b>Align the H&amp;E</b><span class="spacer"></span></div>
   <div class="imbody" style="gap:10px">
     <div class="hint" id="acWhat"></div>
+    <div id="acPick" hidden><label class="alrow alall"><input type="checkbox" id="acAll"><b>All samples</b></label><div id="acList"></div></div>
     <div class="acopt"><button id="acAuto" class="primary">Align automatically</button>
       <span class="hint">The app alone (no agent): it tries its best placements, checks each over the whole tissue and applies the
-        one whose cells sit on their nuclei; a minute or two. You see the result and can undo it.</span></div>
+        one whose cells sit on their nuclei; a minute or two per sample, one after the other. You see the result and can undo it.</span></div>
     <div class="acopt"><button id="acAgent">Align with Agent</button>
       <span class="hint" id="acAgentHint">Your agent (Claude Code) looks at the candidate placements and picks one: for a slide with
         several sections, or a tissue whose orientation is hard to tell.</span></div>
@@ -5101,6 +5102,7 @@ async function afterPlacement(msg) {  // the sample's image or cell positions ch
   if (msg) toast(msg, 6000);
 }
 function askAlign() {  // choose the samples whose image waits for its alignment: the agent aligns them one after the other
+  if (alignBusy()) { toast("An alignment is running: wait for it to end", 5000); return; }
   const waiting = (st.samples || []).filter((x) => x.image_pending);
   if (st.sample && st.sample.image_pending && !waiting.some((x) => x.sample_id === st.sample.sample_id)) waiting.unshift(st.sample);
   if (waiting.length <= 1) return alignWith(waiting.length ? [waiting[0].sample_id] : [st.sample.sample_id]);
@@ -5124,6 +5126,7 @@ $("alAll").onchange = () => { document.querySelectorAll("#alList input").forEach
 $("alCancel").onclick = () => $("alDlg").close();
 $("alGo").onclick = () => { const ids = [...document.querySelectorAll("#alList input")].filter((c) => c.checked).map((c) => c.value); $("alDlg").close(); alignWith(ids); };
 async function alignWith(ids) {
+  if (alignBusy()) { toast("An alignment is running: wait for it to end", 5000); return; }
   try {
     const r = await post("/api/claude/align", { sample: ids[0], samples: ids, session: st.sid });
     if (r.message && st.chatAvailable) { $("imDlg").close(); $("input").value = r.message; send(); }
@@ -5135,9 +5138,9 @@ async function alignWith(ids) {
 }
 // while the agent aligns: which sample it is on and at what step (its tools say so), at the bottom, until every chosen
 // sample sits on its image (or its alignment was dismissed)
-const AW = { ids: null, t0: 0, timer: null, skipped: new Set(), shown: "" };
+var AW = { ids: null, t0: 0, timer: null, skipped: new Set(), shown: "" };  // (var: read by alignBusy from the start)
 function watchAlign(ids) {
-  AW.ids = ids; AW.t0 = Date.now() / 1000; AW.skipped = new Set(); AW.shown = ""; AW.last = 0;
+  AW.ids = ids; AW.t0 = Date.now() / 1000; AW.skipped = new Set(); AW.shown = ""; AW.last = 0; alignChanged();
   clearInterval(AW.timer); AW.timer = setInterval(() => alignTick().catch(() => {}), 3000);
   setTimeout(() => alignTick().catch(() => {}), 1500);  // (after the request's own message)
 }
@@ -5149,7 +5152,7 @@ async function alignTick() {
   const pending = AW.ids.filter((id) => { const x = samples.find((s) => s.sample_id === id); return x && x.image_pending && !AW.skipped.has(id); });
   const n = AW.ids.length, done = n - pending.length;
   if (!pending.length || Date.now() / 1000 - AW.t0 > 3 * 3600) {  // all aligned (or skipped), or given up after 3 h
-    clearInterval(AW.timer); AW.ids = null;
+    clearInterval(AW.timer); AW.ids = null; alignChanged();
     toast(pending.length ? "Stopped following the alignment" : `Alignment done: ${done - AW.skipped.size} of ${n} sample(s) aligned` + (AW.skipped.size ? ` (${AW.skipped.size} dismissed)` : ""), 8000);
     st.samples = samples; if (st.sample) { Object.assign(st.sample, samples.find((s) => s.sample_id === st.sample.sample_id) || {}); alignBar(); loadStepsSoon(); }
     return;
@@ -5157,7 +5160,7 @@ async function alignTick() {
   const cur = act.kind === "align" && act.time >= AW.t0 - 5 && pending.includes(act.sample) ? act : null;
   if (cur) AW.last = Math.max(AW.last || 0, cur.time);
   if (Date.now() / 1000 - Math.max(AW.last || 0, AW.t0) > 600) {  // the agent has not worked on it for 10 min
-    clearInterval(AW.timer); AW.ids = null;
+    clearInterval(AW.timer); AW.ids = null; alignChanged();
     toast(`Stopped following the alignment: the agent has not worked on it for 10 minutes (${done} of ${n} done)`, 8000);
     return;
   }
@@ -5165,19 +5168,48 @@ async function alignTick() {
   if (msg !== AW.shown || !$("toast").classList.contains("show")) { AW.shown = msg; toast(msg, 10000); }
 }
 $("alignNow").onclick = askAlign;
-$("alignAuto").onclick = () => autoAlign();
-function openAlignChoice() {  // Steps → H&E → Align: automatically (the app) or with the agent
-  if (!st.sample) return;
+$("alignAuto").onclick = () => autoAlign();  // (the open sample; several: Steps → H&E → Align)
+function alignWaiting() {  // the samples whose image waits for its alignment (the open one first)
+  const waiting = (st.samples || []).filter((x) => x.image_pending);
+  if (st.sample && st.sample.image_pending && !waiting.some((x) => x.sample_id === st.sample.sample_id)) waiting.unshift(st.sample);
+  return waiting;
+}
+function openAlignChoice() {  // Steps → H&E → Align: the samples to align, automatically (the app) or with the agent
+  if (!st.sample || alignBusy()) return;
   const agent = !$("alignNow").hidden;  // (the agent is reachable: the desktop app, or a chat)
-  $("acWhat").textContent = `The ${st.sample.image_pending_kind || "H&E"} image of ${sampleName(st.sample)} is not aligned with its cells yet. How should it be aligned?`;
-  $("acAgent").disabled = !agent;
+  const waiting = alignWaiting();
+  $("acPick").hidden = waiting.length <= 1;
+  $("acWhat").textContent = waiting.length > 1 ? `${waiting.length} samples have an image not aligned with their cells yet. Choose the ones to align, and how:`
+    : `The ${st.sample.image_pending_kind || "H&E"} image of ${sampleName(st.sample)} is not aligned with its cells yet. How should it be aligned?`;
+  const box = $("acList"); box.textContent = "";
+  waiting.forEach((x) => {
+    const lab = document.createElement("label"); lab.className = "alrow";
+    const cb = Object.assign(document.createElement("input"), { type: "checkbox", value: x.sample_id, checked: x.sample_id === st.sample.sample_id });
+    cb.onchange = syncAc;
+    lab.append(cb, Object.assign(document.createElement("span"), { className: "alname", textContent: sampleName(x), title: sampleName(x) }),
+      Object.assign(document.createElement("span"), { className: "hint", textContent: `${(x.n_cells || 0).toLocaleString()} cells · ${x.image_pending_kind || "H&E"}` }));
+    box.append(lab);
+  });
+  $("acAgent").dataset.agent = agent ? "1" : "";
   $("acAgentHint").textContent = agent ? "Your agent (Claude Code) looks at the candidate placements and picks one: for a slide with several sections, or a tissue whose orientation is hard to tell."
     : "Needs the agent (Claude Code), which is not available here.";
-  $("acDlg").showModal();
+  syncAc(); $("acDlg").showModal();
 }
+function acChosen() {
+  const cbs = [...document.querySelectorAll("#acList input")];
+  return $("acPick").hidden ? [st.sample.sample_id] : cbs.filter((c) => c.checked).map((c) => c.value);
+}
+function syncAc() {
+  const cbs = [...document.querySelectorAll("#acList input")], n = acChosen().length;
+  $("acAll").checked = n === cbs.length; $("acAll").indeterminate = n > 0 && n < cbs.length;
+  $("acAuto").disabled = !n; $("acAgent").disabled = !n || !$("acAgent").dataset.agent;
+  setLabel($("acAuto"), n > 1 ? `Align ${n} automatically` : "Align automatically");
+  setLabel($("acAgent"), n > 1 ? `Align ${n} with Agent` : "Align with Agent");
+}
+$("acAll").onchange = () => { document.querySelectorAll("#acList input").forEach((c) => (c.checked = $("acAll").checked)); syncAc(); };
 $("acCancel").onclick = () => $("acDlg").close();
-$("acAuto").onclick = () => { $("acDlg").close(); autoAlign(); };
-$("acAgent").onclick = () => { $("acDlg").close(); askAlign(); };
+$("acAuto").onclick = () => { const ids = acChosen(); $("acDlg").close(); autoAlign(ids); };
+$("acAgent").onclick = () => { const ids = acChosen(); $("acDlg").close(); alignWith(ids); };
 function openImageImport() {  // Steps → H&E → Import: the open sample's image, and its registration file if there is one
   if (!st.sample) return;
   $("hiTitle").textContent = `Import the H&E of ${sampleName(st.sample)}`;
@@ -5208,35 +5240,35 @@ $("hiGo").onclick = async () => {
   loadStepsSoon();
   if (!withReg && st.sample && st.sample.image_pending) openAlignChoice();
 };
-async function autoAlign(sample) {  // the app aligns the image by itself (align.auto), then the registration check's window
-  sample = sample || (st.sample && st.sample.sample_id);
-  if (!sample) return;
-  const smp = (st.samples || []).find((x) => x.sample_id === sample) || st.sample, who = `Aligning ${sampleName(smp)} automatically`;
-  let job;
-  try { ({ job } = await post(`/api/sample/${encodeURIComponent(sample)}/align/auto`, {})); }
-  catch (e) { toast(`${who}: ${e.message}`, 8000); return; }
-  $("alignAuto").disabled = true;
-  toast(`${who}…`, 600000);
-  let j;
+var ALIGN = { auto: null };  // the samples Align automatically works through (null: none)
+function alignBusy() { return !!(ALIGN.auto || AW.ids); }  // an alignment runs (the app's, or the agent's)
+function alignChanged() { alignBar(); loadStepsSoon(); }  // its buttons greyed out, or back
+async function autoAlign(ids) {  // the app aligns the images by itself (align.auto), one sample after the other; then the
+  // open sample's registration check window (with Undo), and a summary of the others
+  ids = (ids && ids.length ? ids : [st.sample && st.sample.sample_id]).filter(Boolean);
+  if (!ids.length) return;
+  if (alignBusy()) { toast("An alignment is running: wait for it to end", 5000); return; }
+  ALIGN.auto = ids; alignChanged();
+  const out = [];
   try {
-    for (;;) {
-      await new Promise((res) => setTimeout(res, 1000));
-      try { j = await api(`/api/job/${encodeURIComponent(job)}`); } catch (e) { continue; }
-      if (!j.done) { toast(`${who}: ${j.stage} (${Math.round(100 * j.progress)}%)`, 600000); continue; }
-      break;
-    }
-  } finally { $("alignAuto").disabled = false; }
-  loadStepsSoon();
-  if (j.stopped) { toast(`${who}: stopped`, 5000); return; }
-  if (j.error || !j.result) { toast(`${who} failed: ${j.error || "no result"}`, 12000); return; }
-  const r = j.result;
-  if (!r.applied) {
-    toast(`${who}: no placement put the cells on their nuclei (${r.reason}; ${r.tried} tried). Use Align with Agent, or a registration file.`, 15000);
-    return;
-  }
-  if (!st.sample || st.sample.sample_id !== sample) { toast(`${sampleName(smp)} aligned automatically`, 6000); return; }
+    for (const [i, id] of ids.entries()) out.push({ id, ...(await autoAlignOne(id, ids.length > 1 ? ` (${i + 1} of ${ids.length})` : "")) });
+  } finally { ALIGN.auto = null; alignChanged(); }
+  const name = (id) => { const x = (st.samples || []).find((s) => s.sample_id === id); return x ? sampleName(x) : id; };
+  const word = (x) => x.error ? `failed (${x.error})` : x.r.applied ? `${x.r.orientation}${x.r.ambiguous ? ", another orientation fits almost as well: check it" : ""}`
+    : "no placement fits: use Align with Agent, or a registration file";
+  const mine = out.find((x) => st.sample && x.id === st.sample.sample_id);
+  const ok = out.filter((x) => x.r && x.r.applied).length, others = out.filter((x) => x !== mine);
+  const summary = ids.length > 1 ? `${ok} of ${ids.length} samples aligned automatically` +
+    (others.length ? ` (${others.map((x) => `${name(x.id)}: ${word(x)}`).join("; ")})` : "") + "." : "";
+  if (ids.length > 1) {
+    if (!(mine && mine.r && mine.r.applied)) { toast(`${summary} ${mine ? `${name(mine.id)}: ${word(mine)}` : ""}`, 30000); return; }
+  } else if (out[0].error) { toast(`Aligning ${name(out[0].id)}: ${out[0].error}`, 12000); return; }
+  else if (!out[0].r.applied) { toast(`Aligning ${name(out[0].id)}: no placement put the cells on their nuclei (${out[0].r.reason}; ${out[0].r.tried} tried). Use Align with Agent, or a registration file.`, 15000); return; }
+  st.samples = await api("/api/samples").catch(() => st.samples);
+  if (!mine || !mine.r || !mine.r.applied) { if (ids.length === 1) toast(`${name(ids[0])} aligned automatically`, 6000); return; }
+  const sample = mine.id, r = mine.r;
   await afterPlacement();
-  const note = `Aligned automatically (${r.orientation}).` + (r.ambiguous
+  const note = (summary ? `${summary} This sample: ` : "") + `Aligned automatically (${r.orientation}).` + (r.ambiguous
     ? " Another orientation fits almost as well: check on the map that the tissue matches the image; if it does not, Undo and use Align with Agent."
     : "");
   const undo = ["Undo", false, async () => {
@@ -5245,12 +5277,36 @@ async function autoAlign(sample) {  // the app aligns the image by itself (align
   }];
   await checkRegistration(note, [undo]);
 }
+async function autoAlignOne(sample, of) {  // one sample: {r: the run's result} or {error}
+  const smp = (st.samples || []).find((x) => x.sample_id === sample) || st.sample, who = `Aligning ${sampleName(smp)} automatically${of}`;
+  let job;
+  try { ({ job } = await post(`/api/sample/${encodeURIComponent(sample)}/align/auto`, {})); }
+  catch (e) { return { error: e.message }; }
+  toast(`${who}…`, 600000);
+  let j;
+  for (;;) {
+    await new Promise((res) => setTimeout(res, 1000));
+    try { j = await api(`/api/job/${encodeURIComponent(job)}`); } catch (e) { continue; }
+    if (!j.done) { toast(`${who}: ${j.stage} (${Math.round(100 * j.progress)}%)`, 600000); continue; }
+    break;
+  }
+  if (j.stopped) return { error: "stopped" };
+  if (j.error || !j.result) return { error: j.error || "no result" };
+  return { r: j.result };
+}
 function alignBar() {  // an image waits for its alignment
   const s = st.sample;
   $("alignbar").hidden = !(s && s.image_pending);
   if (s && s.image_pending) { $("alignmsg").textContent = `${s.image_pending_kind || "H&E"} image not aligned yet`;
     $("alignbar").title = "This sample's image is not aligned yet: the cells are shown on a blank background until it is aligned (automatically, by the agent, or with a registration file)"; }
   $("alignNow").hidden = !st.desktop && !st.chatAvailable;
+  const busy = alignBusy();
+  for (const id of ["alignAuto", "alignNow"]) {
+    $(id).disabled = busy;
+    $(id).title = busy ? "An alignment is running: wait for it to end" : id === "alignAuto"
+      ? "The app aligns the image with the cells by itself (no agent): it tries the best few placements, checks each over the whole tissue and keeps the one whose cells sit on their nuclei; you see the result and can undo it"
+      : "Your agent (Claude Code) aligns the image; several samples: choose them";
+  }
 }
 async function importSample() {  // returns true when the sample was imported
   if (imKind() === "xenium" && st.imXPending) await st.imXPending;  // the fields were just edited: their check first
@@ -6511,6 +6567,7 @@ async function loadSteps() {
       }
       const b = Object.assign(document.createElement("button"), { textContent: a[0], title: x.open ? "Open one of this sample's annotations (Data → Annotation)" : help });
       if (x.key === r.next) b.classList.add("primary");
+      if (img === "pending" && alignBusy()) { b.disabled = true; b.title = "An alignment is running: wait for it to end"; }
       b.onclick = (e) => { e.stopPropagation(); a[1](); };
       right.append(b);
     }
