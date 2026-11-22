@@ -6693,7 +6693,13 @@ async function loadSteps() {
   const reg = r.steps.find((x) => x.key === "registration");
   if (st.checkNext && st.checkNext === smp && st.sid && reg && reg.image === "placed") {
     st.checkNext = null;
-    if (reg.state === "todo" && !alignBusy()) checkRegistration().catch(() => {});
+    if (reg.state === "todo" && !alignBusy()) { checkRegistration().catch(() => {}); return; }
+  }
+  // the alignment's check found areas off their nuclei: its window (histogram, Do local registration) opens by itself,
+  // once for this placement of the cells (closed without it: Steps → Image → Check opens it again)
+  const askKey = `localAsk:${smp}:${st.he ? st.he.rev : ""}`;
+  if (reg && reg.advise === "local" && reg.state === "todo" && st.sid && !alignBusy() && !$("rgDlg").open && !load(askKey)) {
+    store(askKey, "1"); checkRegistration().catch(() => {});
   }
 }
 function stepsRoom() {  // how much of the map's top right the steps take, for the panels placed under them

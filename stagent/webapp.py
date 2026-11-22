@@ -1325,6 +1325,15 @@ async def api_registration_check(req: Request):
             r = regcheck.summary(s, progress=lambda f, m: JOBS[job].update(progress=round(0.9 * f, 3), stage=m))
             if r.get("error"):
                 raise ValueError(r["error"])
+            try:  # the step shows this check from now on (it reuses the alignment's windows: their file is not newer)
+                mf = config.SAMPLES / sample / "meta.json"
+                mm = json.load(open(mf, encoding="utf-8"))
+                mm["registration_checked"] = {"key": regcheck._key(sample, importer.image_of(sample)),
+                                              "time": time.strftime("%Y-%m-%dT%H:%M:%S"), "verdict": r["verdict"],
+                                              "median_um": r.get("median_offset_um")}
+                dump_json(mm, mf, indent=1)
+            except (OSError, ValueError):
+                pass
             areas = r.get("areas") or []
             JOBS[job].update(progress=0.95, stage="drawing the figure")
             head, color = _CHECK_HEAD[r["verdict"]]
@@ -3545,11 +3554,16 @@ def steps_of(s, sample=None):
         org = advice.status(s, "organization") if s is not None else {"n_runs": 0}
         fixed = " (corrected)" if "local" in (meta.get("registration_by") or "") or "piece" in (meta.get("registration_by") or "") else ""
         ac, rl = meta.get("alignment_check") or {}, meta.get("registration_local") or {}
-        if img and rl.get("key") == regcheck._key(sid, img):  # Do local registration, right after the alignment
+        rc = meta.get("registration_checked") or {}
+        if img and rc.get("key") == regcheck._key(sid, img) and rc.get("time", "") > ac.get("time", "") \
+                and not (rl.get("key") == regcheck._key(sid, img) and rl.get("time", "").replace(" ", "T") > rc["time"]):  # Check since
+            reg = {"state": "done", "detail": f"checked {rc['time'][:10]}" + (f" (median {rc['median_um']} µm)" if rc.get("median_um") is not None else "") + fixed}
+        elif img and rl.get("key") == regcheck._key(sid, img):  # Do local registration, right after the alignment
             reg = {"state": "done", "detail": f"corrected locally {rl['time'][:10]} (cells moved up to {rl['moved_um_max']} µm)"}
         elif img and ac.get("key") == regcheck._key(sid, img) and ac.get("verdict") != "fine" \
                 and not (org["n_runs"] and org["last_run"]["time"] >= ac.get("time", "")):  # (not reviewed since)
-            reg = {"state": "todo", "detail": "the alignment check found areas off their nuclei: do the local registration"}
+            reg = {"state": "todo", "advise": "local",
+                   "detail": "the alignment check found areas off their nuclei: do the local registration"}
         elif img and ac.get("key") == regcheck._key(sid, img) and ac.get("verdict") == "fine":  # accepted: nothing more
             reg = {"state": "done", "detail": f"checked when aligned: the cells sit on their nuclei (median {ac.get('median_um')} µm)"}
         elif checked:
