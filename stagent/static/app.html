@@ -512,12 +512,9 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
             border: 1px solid #f0c674; border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,.08), 0 1px 3px rgba(0,0,0,.06); }
 #alignbar[hidden] { display: none; }
 /* Embed, Niche, Compare, Signal, Trajectory on a sample not annotated yet: what to do first */
-.needann { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; margin-bottom: 10px; font-size: 12.5px;
-           background: #fff5e0; color: #6b4a00; border: 1px solid #f0c674; border-radius: 10px; }
+.needann { display: flex; margin-bottom: 10px; }
 .needann[hidden] { display: none; }
-.needann button { align-self: flex-start; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .needann { background: #3a2f17; color: #f3d9a4; border-color: #7a6230; } }
-:root[data-theme="dark"] .needann { background: #3a2f17; color: #f3d9a4; border-color: #7a6230; }
+.needann button { flex: 1; }
 #acDlg .acopt { display: grid; grid-template-columns: 180px 1fr; gap: 10px; align-items: start; }
 #acDlg .acopt button { width: 100%; }
 @media (max-width: 520px) { #acDlg .acopt { grid-template-columns: 1fr; } }
@@ -1964,17 +1961,17 @@ function syncNeedAnn() {
     let box = pane.querySelector(".needann");
     if (!box) {
       box = Object.assign(document.createElement("div"), { className: "needann", hidden: true });
-      box.append(Object.assign(document.createElement("span")), Object.assign(document.createElement("button"), { className: "primary" }));
+      box.append(Object.assign(document.createElement("button"), { className: "primary" }));
       pane.prepend(box);
     }
     box.hidden = !need;
-    const [txt, btn] = box.children;
+    const [btn] = box.children;
     if (open) {
-      txt.innerHTML = "<b>This sample is not annotated yet.</b> Embed, Niche, Compare, Signal and Trajectory work on its cell types: annotate it first.";
-      btn.textContent = "Annotate first"; btn.onclick = () => anTab("annotate");
+      btn.textContent = "Annotate first"; btn.title = "These analyses work on the cell types: annotate the sample (Type tab)";
+      btn.onclick = () => anTab("annotate");
     } else {
-      txt.innerHTML = "<b>No annotation is open.</b> Open one of this sample's annotations, or annotate it.";
-      btn.textContent = "Choose an annotation"; btn.onclick = () => { showTab("data"); $("session").focus(); };
+      btn.textContent = "Choose an annotation"; btn.title = "Open one of this sample's annotations (Data tab), or annotate it";
+      btn.onclick = () => { showTab("data"); $("session").focus(); };
     }
     const run = $(NEED_RUN[t]);
     if (run) {
