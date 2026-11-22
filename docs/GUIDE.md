@@ -76,7 +76,7 @@ normalized and scaled data, graphs, reductions and commands are skipped while re
 Until the image is registered, the cells are shown on a blank background (or the DAPI) with a yellow notice
 ("H&E image not aligned yet") among the map's top bars.
 
-**Steps → Image → Align** (or the notice) offers two ways. **Align automatically** (no agent needed) aligns the open sample's image
+**Steps → Image → Align** offers two ways (the notice only says the image waits). **Align automatically** (no agent needed) aligns the open sample's image
 by the app alone: the search below gives its best placements, the best 3 are refined and each is checked over the
 whole tissue, and the one whose cells sit closest to their nuclei is applied (one whose cells sit far off their nuclei
 never is). It takes one to two minutes; then the registration check's window shows the result, with **Undo** and,
@@ -85,8 +85,8 @@ symmetric tissue), or no placement puts the cells on their nuclei (e.g. several 
 so: use **Align with Agent** then.
 
 **Align with Agent** (in the same place) asks the agent (your Claude Code) to align it. When several samples wait for
-their alignment, a dialog lists them: tick the ones to align (**All samples** for all of them) and the agent aligns
-them one after the other, each coming to you for review (applied at once in Auto mode). For each sample:
+their alignment, the window lists them: tick the ones to align (**All samples** for all of them); the app or the
+agent aligns them one after the other (nothing else can be aligned meanwhile), each coming to you for review (applied at once in Auto mode). For each sample:
 
 1. the tissue on the image is matched with the cells' footprint over 4 rotations, mirroring and a range of pixel
    sizes (around the size stored in an OME-TIFF);
@@ -162,7 +162,7 @@ Give the STOmics SAW output: its folder, or its files. Its spots (DNBs) are 0.5 
 - Genes are named by `geneName` when the file has it (Ensembl ids sharing a name are summed).
 - **Image**: the registered image SAW writes (`<SN>_HE_regist.tif`, or the ssDNA one) is in the DNBs' coordinates,
   so no registration is needed; a copy with zoom levels is made in the sample's folder. Another image found (not a
-  `_regist.tif`, such as MOSTA's raw ssDNA scan) is not assumed to be aligned: it waits for **Align with Agent** (on
+  `_regist.tif`, such as MOSTA's raw ssDNA scan) is not assumed to be aligned: it waits for its alignment (Steps → Image → Align; on
   MOSTA the search finds it mirrored and rotated 270 degrees, x and y swapped, and the refinement ends at 0 um).
 - The bin GEF (`tissue.gef`) is not read: use the GEM SAW writes beside it.
 

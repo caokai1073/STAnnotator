@@ -519,11 +519,10 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 #acDlg .acopt button { width: 100%; }
 @media (max-width: 520px) { #acDlg .acopt { grid-template-columns: 1fr; } }
 #alignbar #alignmsg { min-width: 0; }
-#alignbar button { background: var(--panel); }  /* (the bars' button size: #maptop button) */
 #tools, #acts, #alignbar { box-sizing: border-box; min-height: 44px; }  /* the notice as tall as the bars */
 .alrow { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 5px 4px; border-radius: 6px; font-size: 13px; cursor: pointer; }
 .alrow:hover { background: var(--bg); } .alrow.alall { border-bottom: 1px solid var(--line); border-radius: 0; }
-#alList { max-height: 50vh; overflow-y: auto; overflow-x: hidden; }
+#acList { max-height: 50vh; overflow-y: auto; overflow-x: hidden; }
 .pjnames { display: flex; flex-direction: column; gap: 4px; } .pjnames input.moved { border-color: var(--accent); }
 .inrow button.rmsample { color: #c0392b; } .inrow button.rmsample:hover:not(:disabled) { border-color: #c0392b; }
 .imreplace { display: flex; gap: 6px; align-items: flex-start; } .imreplace input { margin-top: 2px; }
@@ -867,7 +866,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <div class="seg" id="reviewMode" title="How the agent's changes are taken. Manual: each waits for you in a review window (Accept or Dismiss). Auto: each is applied at once, without the window; Undo takes it back."><button data-m="manual">Manual</button><button data-m="auto">Auto</button></div>
       <span id="vinfo" hidden></span>
     </div>
-    <div id="alignbar" hidden><span id="alignmsg"></span><button id="alignAuto" title="The app aligns the image with the cells by itself (no agent): it tries the best few placements, checks each over the whole tissue and keeps the one whose cells sit on their nuclei; you see the result and can undo it">Align automatically</button><button id="alignNow">Align with Agent</button></div>
+    <div id="alignbar" hidden><span id="alignmsg"></span></div>
     </div>
     <div id="legend" class="float" hidden>
       <div class="lh"><b id="lgtitle">Cell types</b><span class="spacer"></span>
@@ -1019,16 +1018,6 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <label><input type="radio" name="hiRegMode" value="none" checked> No registration (align it next)</label></span><span></span></div>
     <div class="frow" id="hiRegRow" hidden><span></span><textarea id="hiReg" rows="1" placeholder="affine CSV (a11,a12,a21,a22,tx,ty), Xenium Explorer alignment (3x3), or cell positions saved by this app"></textarea><button id="hiRegPick" data-kind="csv">Choose…</button></div>
     <div class="row" style="margin-top:4px"><span class="err" id="hiErr"></span><span class="spacer"></span><button id="hiCancel">Cancel</button><button id="hiGo" class="primary">Import</button></div>
-  </div>
-</dialog>
-<dialog id="alDlg" style="width:min(520px,95vw)">
-  <div class="dh"><svg class="ic" aria-hidden="true"><use href="#ic-sparkle"/></svg><b>Align with Agent</b></div>
-  <div class="imbody" style="gap:8px">
-    <div class="hint">The images of these samples are not aligned yet. The agent aligns the ones you choose, one after the
-      other; each alignment comes to you for review (or is applied at once in Auto mode).</div>
-    <label class="alrow alall"><input type="checkbox" id="alAll"><b>All samples</b></label>
-    <div id="alList"></div>
-    <div class="row" style="margin-top:4px"><span class="spacer"></span><button id="alCancel">Cancel</button><button id="alGo" class="primary">Align</button></div>
   </div>
 </dialog>
 <dialog id="busyDlg" aria-live="polite">
@@ -1479,7 +1468,7 @@ const ICON_TEXT = { qfBtn: "play", importBtn: "import", clearAll: "trash", allSa
   undo: "undo", refresh: "refresh", claudeBtn: "sparkle", priorBtn: "list", plaus: "shield", report: "file", export: "share", reset: "trash",
   draw: "pen", emLasso: "lasso", emClear: "x", emZoom: "target", send: "send",
   mkImport: "import", mkCheck: "check", mkSave: "save", mkDraft: "sparkle", mkOrganUse: "list", mkOrganAgent: "sparkle", mkClose: "check", imGo: "import",
-  alignNow: "sparkle", alignAuto: "target", acAuto: "target", acAgent: "sparkle", hiImgPick: "folder", hiRegPick: "folder", hiGo: "import", refPick: "folder", exPick: "folder", refClose: "check", exClose: "check", rcTest: "check",
+  acAuto: "target", acAgent: "sparkle", hiImgPick: "folder", hiRegPick: "folder", hiGo: "import", refPick: "folder", exPick: "folder", refClose: "check", exClose: "check", rcTest: "check",
   rcGo: "server", fbOk: "check", rpAsk: "sparkle", xpCsv: "download", xpNb: "download", xpReg: "download", xpPos: "download", xpGeo: "download", xpNbAll: "download",
   hpCopy: "copy", nameSave: "check", rsGo: "trash", anFig: "download", aRun: "play", aLast: "list", anAsk: "sparkle", sRun: "play", sLast: "list", tRun: "play", tLast: "list", rvGo: "sparkle", rvShow: "list" };
 const ICON_TITLES = { lgtoggle: "Fold or unfold", rgtoggle: "Fold or unfold", stepsFold: "Fold or unfold", anCsv: "Save as CSV…", rpSave: "Save as Markdown…",
@@ -5170,30 +5159,6 @@ async function afterPlacement(msg) {  // the sample's image or cell positions ch
   alignBar(); sampleInfo(); syncExport();  // (the Data card: "image waiting for its alignment" no more)
   if (msg) toast(msg, 6000);
 }
-function askAlign() {  // choose the samples whose image waits for its alignment: the agent aligns them one after the other
-  if (alignBusy()) { toast("An alignment is running: wait for it to end", 5000); return; }
-  const waiting = (st.samples || []).filter((x) => x.image_pending);
-  if (st.sample && st.sample.image_pending && !waiting.some((x) => x.sample_id === st.sample.sample_id)) waiting.unshift(st.sample);
-  if (waiting.length <= 1) return alignWith(waiting.length ? [waiting[0].sample_id] : [st.sample.sample_id]);
-  const box = $("alList"); box.textContent = "";
-  waiting.forEach((x) => {
-    const lab = document.createElement("label"); lab.className = "alrow";
-    const cb = Object.assign(document.createElement("input"), { type: "checkbox", value: x.sample_id, checked: x.sample_id === (st.sample && st.sample.sample_id) });
-    cb.onchange = syncAl;
-    lab.append(cb, Object.assign(document.createElement("span"), { className: "alname", textContent: sampleName(x), title: sampleName(x) }),
-      Object.assign(document.createElement("span"), { className: "hint", textContent: `${(x.n_cells || 0).toLocaleString()} cells · ${x.image_pending_kind || "H&E"}` }));
-    box.append(lab);
-  });
-  syncAl(); $("alDlg").showModal();
-}
-function syncAl() {
-  const cbs = [...document.querySelectorAll("#alList input")], n = cbs.filter((c) => c.checked).length;
-  $("alAll").checked = n === cbs.length; $("alAll").indeterminate = n > 0 && n < cbs.length;
-  $("alGo").disabled = !n; setLabel($("alGo"), n > 1 ? `Align ${n} samples` : "Align");
-}
-$("alAll").onchange = () => { document.querySelectorAll("#alList input").forEach((c) => (c.checked = $("alAll").checked)); syncAl(); };
-$("alCancel").onclick = () => $("alDlg").close();
-$("alGo").onclick = () => { const ids = [...document.querySelectorAll("#alList input")].filter((c) => c.checked).map((c) => c.value); $("alDlg").close(); alignWith(ids); };
 async function alignWith(ids) {
   if (alignBusy()) { toast("An alignment is running: wait for it to end", 5000); return; }
   try {
@@ -5236,8 +5201,6 @@ async function alignTick() {
   const msg = `Aligning with the agent: ${cur ? `${name(cur.sample)}, ${cur.what}` : `waiting for the agent (${name(pending[0])} next)`}` + (n > 1 ? ` · ${done} of ${n} done` : "");
   if (msg !== AW.shown || !$("toast").classList.contains("show")) { AW.shown = msg; toast(msg, 10000); }
 }
-$("alignNow").onclick = askAlign;
-$("alignAuto").onclick = () => autoAlign();  // (the open sample; several: Steps → Image → Align)
 function alignWaiting() {  // the samples whose image waits for its alignment (the open one first)
   const waiting = (st.samples || []).filter((x) => x.image_pending);
   if (st.sample && st.sample.image_pending && !waiting.some((x) => x.sample_id === st.sample.sample_id)) waiting.unshift(st.sample);
@@ -5245,7 +5208,7 @@ function alignWaiting() {  // the samples whose image waits for its alignment (t
 }
 function openAlignChoice() {  // Steps → Image → Align: the samples to align, automatically (the app) or with the agent
   if (!st.sample || alignBusy()) return;
-  const agent = !$("alignNow").hidden;  // (the agent is reachable: the desktop app, or a chat)
+  const agent = !!(st.desktop || st.chatAvailable);  // (the agent is reachable: the desktop app, or a chat)
   const waiting = alignWaiting();
   $("acPick").hidden = waiting.length <= 1;
   $("acWhat").textContent = waiting.length > 1 ? `${waiting.length} samples have an image not aligned with their cells yet. Choose the ones to align, and how:`
@@ -5391,15 +5354,7 @@ function alignBar() {  // an image waits for its alignment
   const s = st.sample;
   $("alignbar").hidden = !(s && s.image_pending);
   if (s && s.image_pending) { $("alignmsg").textContent = `${s.image_pending_kind || "H&E"} image not aligned yet`;
-    $("alignbar").title = "This sample's image is not aligned yet: the cells are shown on a blank background until it is aligned (automatically, by the agent, or with a registration file)"; }
-  $("alignNow").hidden = !st.desktop && !st.chatAvailable;
-  const busy = alignBusy();
-  for (const id of ["alignAuto", "alignNow"]) {
-    $(id).disabled = busy;
-    $(id).title = busy ? "An alignment is running: wait for it to end" : id === "alignAuto"
-      ? "The app aligns the image with the cells by itself (no agent): it tries the best few placements, checks each over the whole tissue and keeps the one whose cells sit on their nuclei; you see the result and can undo it"
-      : "Your agent (Claude Code) aligns the image; several samples: choose them";
-  }
+    $("alignbar").title = "This sample's image is not aligned yet: the cells are shown on a blank background until it is aligned (Steps → Image → Align, or a registration file)"; }
 }
 async function importSample() {  // returns true when the sample was imported
   if (imKind() === "xenium" && st.imXPending) await st.imXPending;  // the fields were just edited: their check first
@@ -5548,7 +5503,7 @@ const HELP = `
   <li><b>Regions</b> (optional): a GeoJSON of outlines drawn on this H&amp;E (e.g. QuPath annotations); they become
     regions of every new annotation.</li></ul></li>
 <li>An image without a registration file: <b>Align automatically</b> or <b>Align with Agent</b>.<ul>
-  <li>Both are under <b>Steps → Image → Align</b>, and on the yellow notice among the map's bars.</li>
+  <li>Both are under <b>Steps → Image → Align</b> (the yellow notice among the map's bars only says the image waits).</li>
   <li><b>Align automatically</b> needs no agent: the app refines its best 3 placements, checks each over the whole
     tissue and applies the one whose cells sit on their nuclei (a minute or two), then shows the registration check
     with <b>Undo</b>. When another orientation fits almost as well, or none fits (e.g. several sections on one slide), it
