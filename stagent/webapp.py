@@ -1103,8 +1103,8 @@ NICHE_K_REQUEST = ("Choose the neighborhood size k for the niche analysis of ver
 
 NICHE_K_PROJECT_REQUEST = ("Choose the neighborhood size k for the niches of all slices of this project together "
                            "(I clicked 'Agent chooses' with 'All slices together'; version {v} of this slice): look "
-                           "at niche_context (cell density, the distance k neighbors cover and the lineages per "
-                           "region) and the tissue, choose one k that suits every slice (one k for all slices "
+                           "at niche_context(all_slices=True) (each slice's cell density, the distance k neighbors "
+                           "cover and the lineages per region; NMF niches need no annotation) and the tissue, choose one k that suits every slice (one k for all slices "
                            "here), run_project_niches with it ({n} niches, identity {identity}), then look at "
                            "niche_summary, name the niches with name_niches (the names go to every slice) and "
                            "explain your choice of k in two lines.")

@@ -39,7 +39,9 @@ Getting started
   regions there and can review conflicts. Changes made through these tools appear in the viewer automatically.
 - A sample not annotated yet opens in the app as its placeholder (method "none": every cell "Not annotated"):
   regions, check_registration_map, the registration correction and fit_piece / move_piece work on it; tools about
-  cell types do not. A new annotation of the sample (start_session) starts with the placeholder's regions.
+  cell types do not. Niches with identity "nmf" (run_niches, run_project_niches; niche_context for k) need no
+  annotation either: do not ask for one first; the sample's first annotation (start_session) takes over the
+  placeholder's regions and NMF niches.
 - A sample of an H&E only (list_samples: image_only; import_he_only) has no cells: the user (e.g. a pathologist)
   draws and names regions on it. Asked to outline a compartment there (e.g. "draw the mucosa"), do it from the image
   and the tissue's priors: segment_he(organ) gives the classes of the tissue (hematoxylin, eosin, texture, distance
@@ -764,26 +766,20 @@ def _d_run_niches(a):
     return {"title": "Find niches", "version": s.state()["version"], "details": det}
 
 
-def _project_niche_slices(s):
-    """(project id, {sample_id: annotation} of its slices: the open one for this slice, else each slice's latest),
-    or a ValueError naming the slices not annotated yet."""
-    from . import config, joint, projects
+def _project_niche_slices(s, identity="nmf"):
+    """(project id, {sample_id: session} of its slices: the open one for this slice, else each slice's latest
+    annotation; with identity "nmf" a slice not annotated yet uses its placeholder), or a ValueError naming the
+    slices not annotated yet (identity "cell types")."""
+    from . import joint, projects
     pid = projects.project_of(s.sample_id)
     if not pid:
         raise ValueError("this sample is in no project: use run_niches for its niches")
-    sess = joint.latest_sessions(pid, {s.sample_id: s.id})
-    missing = [x for x in projects.load(pid)["samples"] if x not in sess]
-    if missing:
-        names = [(json.load(open(config.SAMPLES / x / "meta.json", encoding="utf-8")).get("name") or x) for x in missing]
-        raise ValueError(f"niches of all slices together need every slice annotated; not yet: {', '.join(names)}. "
-                         "Tell the user to annotate them first (or all slices together), or use run_niches for this "
-                         "slice only")
-    return pid, sess
+    return pid, joint.niche_sessions(pid, {s.sample_id: s.id}, identity)
 
 
 def _d_run_project_niches(a):
     s = _s()
-    pid, sess = _project_niche_slices(s)
+    pid, sess = _project_niche_slices(s, a["identity"])
     det = [f"All {len(sess)} slices of the project together: one set of niches (the same N1, N2... in every slice)",
            f"Identity: {a['identity']}" + (f" ({a['n_programs']} NMF programs)" if a["identity"] == "nmf" else ""),
            f"Neighborhood: {a['k']} nearest cells, in every slice", f"{a['n_niches']} niches",
@@ -2057,11 +2053,23 @@ def show_communication(ligand: str, receptor: str, side: str = "both") -> list:
 
 # ---------------- niches ----------------
 @mcp.tool()
-def niche_context() -> str:
+def niche_context(all_slices: bool = False) -> str:
     """For choosing the niche neighborhood size k: per drawn region (and the cells in none), cell density, the
-    median distance covered by k = 10, 15, 20, 30, 50 neighbors, and the main lineages."""
+    median distance covered by k = 10, 15, 20, 30, 50 neighbors, and the main lineages (when annotated). Needs no
+    annotation. all_slices=True: the same for every slice of the open sample's project (each slice's annotation, or
+    its cells alone when not annotated yet), for one k that suits all of them (run_project_niches)."""
     from . import niches
-    return _j(niches.context(_s()))
+    s = _s()
+    if not all_slices:
+        return _j(niches.context(s))
+    from . import joint, projects
+    pid = projects.project_of(s.sample_id)
+    if not pid:
+        return _j(niches.context(s) | {"note_project": "this sample is in no project: the open slice only"})
+    out = {}
+    for sample, sid in joint.niche_sessions(pid, {s.sample_id: s.id}, "nmf").items():
+        out[sample] = niches.context(s if sid == s.id else Session(sid))
+    return _j({"slices": out})
 
 
 @mcp.tool()
@@ -2070,7 +2078,8 @@ def run_niches(k: int = 15, n_niches: int = 8, identity: str = "nmf", n_programs
                k_by_region: Optional[dict] = None, radius_um: Optional[float] = None) -> str:
     """Niche analysis: every cell's identity (identity="nmf": its weights on n_programs NMF gene programs, scaled to
     sum 1; or "cell types": its label) is averaged over the cell and its k nearest cells, and the averages are
-    clustered (k-means) into n_niches niches. k_by_region = {"<drawn region>": k} sets k per region (cells in no
+    clustered (k-means) into n_niches niches. identity "nmf" needs no annotation (it works on a sample not annotated
+    yet; its first annotation takes the niches over); "cell types" needs one. k_by_region = {"<drawn region>": k} sets k per region (cells in no
     region use k); radius_um instead takes every cell within that distance (5-80 cells), adapting to density. The
     result replaces the session's current niches and shows in the viewer (color by niche). Returns niche_summary."""
     from . import niches
@@ -2082,12 +2091,13 @@ def run_niches(k: int = 15, n_niches: int = 8, identity: str = "nmf", n_programs
 def run_project_niches(k: int = 15, n_niches: int = 8, identity: str = "nmf", n_programs: int = 20) -> str:
     """Niches of all slices of the open sample's project together (the Niche tab with "All slices together"): every
     cell's identity (as run_niches) averaged over its k nearest cells in its own slice, one k-means over all slices,
-    so a niche means the same in every slice. One k for all slices (no k per region or radius here); every slice
-    must be annotated (the niches go to each slice's annotation: the open one here, the latest elsewhere). name_niches
-    on any slice names them in all. Returns niche_summary of the open slice."""
+    so a niche means the same in every slice. One k for all slices (no k per region or radius here). identity "nmf"
+    needs no annotation: a slice not annotated yet keeps the niches until its first annotation, which takes them over;
+    "cell types" needs every slice annotated. The niches go to each slice's annotation (the open one here, the latest
+    elsewhere). name_niches on any slice names them in all. Returns niche_summary of the open slice."""
     from . import joint, niches
     s = _s()
-    pid, sess = _project_niche_slices(s)
+    pid, sess = _project_niche_slices(s, identity)
     joint.niches(pid, k, n_niches, identity, n_programs, sessions=sess)
     return _j(niches.summary(s) | {"slices": list(sess)})
 

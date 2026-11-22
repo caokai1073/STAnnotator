@@ -32,6 +32,22 @@ try:
     joint.niches("demo", n_niches=4, n_programs=8)
     ph = {sl: smod.placeholder(sl) for sl in p["samples"]}
     assert all(ph.values()) and all(nmod.summary(smod.Session(x))["params"]["identity"] == "nmf" for x in ph.values()), ph
+    # the agent's tools too, on a slice not annotated yet: each slice's density, then NMF niches of all slices
+    import json as _json
+    from stagent import mcp_server
+    mcp_server._active["session"] = smod.Session(ph[p["samples"][0]])
+    ctx = _json.loads(mcp_server.niche_context(all_slices=True))
+    assert set(ctx["slices"]) == set(p["samples"]) and all(v["regions"] for v in ctx["slices"].values()), ctx
+    assert mcp_server._d_run_project_niches({"k": 20, "n_niches": 5, "identity": "nmf", "n_programs": 8})["title"]
+    r = _json.loads(mcp_server.GATED["run_project_niches"](k=20, n_niches=5, identity="nmf", n_programs=8))
+    assert r["params"]["n_niches"] == 5 and set(r["slices"]) == set(p["samples"]), r
+    try:
+        mcp_server._d_run_project_niches({"k": 20, "n_niches": 4, "identity": "cell types", "n_programs": 8})
+        raise AssertionError("the agent's niches of cell types ran on slices not annotated")
+    except ValueError as e:
+        assert "annotated" in str(e)
+    mcp_server._active.pop("session", None)
+    joint.niches("demo", n_niches=4, n_programs=8)  # (the run the annotation below takes over)
     t = time.time()
     joint.annotate("demo", open(os.path.join(EX, "mouse_colon_merfish_markers.txt")).read())
     for sl, sid in joint.latest_sessions("demo").items():

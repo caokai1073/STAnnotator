@@ -214,19 +214,15 @@ def embed(pid, n_pcs=30, n_neighbors=15, min_dist=0.3, resolution=1.0, harmony=T
     return meta
 
 
-def niches(pid, k=15, n_niches=8, identity="nmf", n_programs=20, progress=None, sessions=None):
-    """Niches over all slices: identities averaged over each cell's neighbors in its own slice, one k-means. They
-    go to the annotations in sessions ({sample_id: session id}, those open in the app), else the latest ones."""
-    from scipy.spatial import cKDTree
-    from sklearn.cluster import KMeans
-    from .session import Session
-    say = progress or (lambda f, m: None)
+def niche_sessions(pid, sessions=None, identity="nmf"):
+    """{sample_id: session} the niches of all slices go to: each slice's annotation (the one open in the app, else its
+    latest); with identity "nmf" (no cell types needed) a slice not annotated yet keeps them in its placeholder (the
+    one open, else its latest, else a new one), whose first annotation takes them over. Cell types as the identity:
+    a ValueError naming the slices not annotated yet."""
+    from .session import Session, placeholder
     sess = latest_sessions(pid, sessions)
-    ids, off, counts, panel = _pooled(pid, pooled=identity == "nmf")  # only NMF reads the counts
-    missing = [s for s in ids if s not in sess]
-    if missing and identity == "nmf":  # NMF programs need no cell types: a slice not annotated yet keeps them in its
-        # placeholder (the one open in the app, else its latest, else a new one); its first annotation takes them over
-        from .session import placeholder
+    missing = [s for s in projects.load(pid)["samples"] if s not in sess]
+    if missing and identity == "nmf":
         for s in missing:
             want = (sessions or {}).get(s)
             ok = want and (config.SESSIONS / str(want) / "session.json").is_file() and Session(want).sample_id == s
@@ -235,7 +231,19 @@ def niches(pid, k=15, n_niches=8, identity="nmf", n_programs=20, progress=None, 
     if missing:  # the niches go to each slice's annotation
         names = [(json.load(open(config.SAMPLES / s / "meta.json", encoding="utf-8")).get("name") or s) for s in missing]
         raise ValueError(f"niches of cell types over all slices need every slice annotated; not yet: {', '.join(names[:6])}"
-                         f"{' and more' if len(names) > 6 else ''}. Annotate them first, or run the niches of one slice")
+                         f"{' and more' if len(names) > 6 else ''}. Annotate them first, or use NMF programs as the identity")
+    return sess
+
+
+def niches(pid, k=15, n_niches=8, identity="nmf", n_programs=20, progress=None, sessions=None):
+    """Niches over all slices: identities averaged over each cell's neighbors in its own slice, one k-means. They
+    go to the annotations in sessions ({sample_id: session id}, those open in the app), else the latest ones."""
+    from scipy.spatial import cKDTree
+    from sklearn.cluster import KMeans
+    from .session import Session
+    say = progress or (lambda f, m: None)
+    sess = niche_sessions(pid, sessions, identity)
+    ids, off, counts, panel = _pooled(pid, pooled=identity == "nmf")  # only NMF reads the counts
     S = [Session(sess[s]) for s in ids]
     if identity == "nmf":
         from sklearn.decomposition import NMF
