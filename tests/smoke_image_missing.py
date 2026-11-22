@@ -90,16 +90,24 @@ try:
     webapp._views.pop("s1", None); render.unload(part)
     j = c.get("/api/sample/s1/he_info").json()
     assert j["image_kind"] == "H&E" and not j["image_error"], j
-    # a tile whose pixels cannot be read (damaged inside): a blank tile, and he_info says why
+    # a tile whose pixels cannot be read (damaged inside): an error, not a picture (the page says why at once), not
+    # kept; he_info says why, and so does the Image step (Refresh)
     v = webapp.view("s1")
     def broken(*a):
         raise RuntimeError("LIBDEFLATE_BAD_DATA")
     v.slide.read = broken
     webapp._tiles.clear() if hasattr(webapp._tiles, "clear") else None
     r = c.get("/api/sample/s1/he/0/0_0.jpg")
-    assert r.status_code == 200 and r.headers["content-type"] == "image/jpeg", r.status_code
+    assert r.status_code == 503 and not r.content and "no-store" in r.headers.get("cache-control", ""), r.status_code
     j = c.get("/api/sample/s1/he_info").json()
     assert j["image_error"] and "LIBDEFLATE_BAD_DATA" in j["image_error"], j
+    stp = [x for x in c.get("/api/sample/s1/steps").json()["steps"] if x["key"] == "registration"][0]
+    assert stp["image"] == "error" and "cannot be read" in stp["detail"], stp
+    # an image cut short (a copy still going): the step says so too, not "not checked"
+    open(part, "wb").write(whole[:int(len(whole) * 0.9)])
+    webapp._views.pop("s1", None); render.unload(part)
+    stp = [x for x in c.get("/api/sample/s1/steps").json()["steps"] if x["key"] == "registration"][0]
+    assert stp["image"] == "error" and "incomplete" in stp["detail"] and stp["state"] == "blocked", stp
     print("ok")
 finally:
     for f in os.listdir(home):

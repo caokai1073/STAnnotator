@@ -92,11 +92,12 @@ try:
     v = webapp.view("s1")
     T_new = v.layer(r["added"], info2[r["added"]])[1]
     assert not np.allclose(T_new, T), "the warp of the new registration is the old one"
-    # an extra image that cannot be read: a blank tile not kept, and the frame image not blamed
+    # an extra image that cannot be read: its tiles fail (not kept), its own error in he_info, the frame image not blamed
     os.remove(os.path.join(home, "ifsame.ome.tif")); render.unload(os.path.join(home, "ifsame.ome.tif")); v.forget_layers()
     t = cl.get("/api/sample/s1/he/8/0_0.jpg", params={"img": r3["added"], "iv": "x"})
-    assert t.status_code == 200 and "no-store" in t.headers.get("cache-control", ""), t.headers
-    assert not cl.get("/api/sample/s1/he_info").json()["image_error"], "the frame image was blamed for another one"
+    assert t.status_code == 503 and "no-store" in t.headers.get("cache-control", ""), t.headers
+    hi = cl.get("/api/sample/s1/he_info").json()
+    assert not hi["image_error"] and "ifsame" in hi["image_errors"].get(r3["added"], ""), hi.get("image_errors")
     # the Image window's image (fresh) waits for its own registration or alignment, though the sample has one
     m = json.load(open(config.SAMPLES / "s1" / "meta.json")); m["registration_affine"] = A.tolist(); json.dump(m, open(config.SAMPLES / "s1" / "meta.json", "w"))
     pyramid(os.path.join(home, "he3.ome.tif"), base)

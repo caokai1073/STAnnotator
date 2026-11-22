@@ -183,7 +183,7 @@ class SampleView:
         return self._layers[key]
 
     def forget_layers(self):
-        self._layers = {}
+        self._layers, self.layer_errors = {}, {}
 
     def tile_box(self, L, tx, ty):
         s = 2.0 ** (L - self.max_level)
@@ -571,14 +571,24 @@ def he_tile(req: Request):
         b = io.BytesIO()
         Image.new("RGB", (w, h), v.slide.fill).save(b, "JPEG", quality=85)
         return Response(b.getvalue(), media_type="image/jpeg", headers=NO_CACHE)
+
+    def failed(e):  # a tile that cannot be read: an error (no picture), so the page learns of it at once and says
+        # why (he_info: image_error, image_errors per other image); not kept anywhere
+        if img == "main":
+            if v.image_error is None:
+                v.image_error = image_error_text(v.he_path, e)
+        else:
+            v.layer_errors = getattr(v, "layer_errors", {})
+            v.layer_errors.setdefault(img, image_error_text(next((x["path"] for x in importer.images(sid) if x["id"] == img), img), e))
+        return Response(b"", status_code=503, headers=NO_CACHE)
     lay = None
-    if img != "main":  # another image of the sample: a tile of it that cannot be made is blank and not kept (the
-        try:           # frame's own tile under its address would stay in the browser's cache)
+    if img != "main":  # another image of the sample (the frame's own tile under its address would stay in the
+        try:           # browser's cache)
             lay = v.layer(img, irev)
         except Exception as e:
             print(f"image {img} of {sid}: {type(e).__name__}: {e}", flush=True)
-            return blank()
-        if lay is None:
+            return failed(e)
+        if lay is None:  # (no longer one of the sample's images)
             return blank()
 
     def make():
@@ -591,9 +601,7 @@ def he_tile(req: Request):
     except Exception as e:  # the image's pixels cannot be read here (damaged): a blank tile, not kept; for the
         # frame image he_info says why from now on (the app's Refresh reads the file again)
         print(f"he tile {sid} {img} {L} {tx}_{ty}: {type(e).__name__}: {e}", flush=True)
-        if lay is None and v.image_error is None:
-            v.image_error = image_error_text(v.he_path, e)
-        return blank()
+        return failed(e)
     return Response(data, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
 
 
@@ -2197,6 +2205,7 @@ def api_he_info(req):
     return _json({"width": v.W, "height": v.H, "tile_size": TILE, "origin": [v.ox, v.oy], "um_per_px": v.um_per_px,
                   "image_kind": v.image_kind, "rev": int(v.rev), "image_error": v.image_error,
                   "image_only": bool(m.get("image_only")), "um_per_px_known": m.get("um_per_px_known", True),
+                  "image_errors": getattr(v, "layer_errors", {}),
                   "images": [{k: x[k] for k in ("id", "name", "kind", "frame", "source", "rev")} for x in importer.images(v.sample_id)]
                   if v.image_kind != "none" or m.get("images") or (m.get("source") or {}).get("morphology") else []})
 
@@ -3544,6 +3553,30 @@ def _priors_step(sample, s=None):
             "detail": f"{what} · {'changed since you accepted them: check' if again else 'check them'}, then accept"}
 
 
+def _image_unreadable(sample, path):
+    """Why the sample's image cannot be shown (a short line for the steps), or None: the view's error (opening it, or a
+    tile that could not be read), else opening it now (an image still copying is refused: render.IncompleteImage)."""
+    if not path:
+        return None
+    v = _views.get(sample)
+    err = v.image_error if v is not None and v.he_path == path else None
+    if err is None:
+        try:
+            render.slide(path)
+        except Exception as e:
+            err = image_error_text(path, e)
+    if err is None:
+        return None
+    if " is incomplete" in err:  # (render.IncompleteImage: shorter than its structure)
+        return "the image is incomplete (probably still copying or syncing): Refresh when the copy has finished"
+    if "no longer there" in err:
+        return "the image is no longer there (moved or deleted): put it back, or import it again"
+    if "still be copying" in err:  # (it cannot be decoded: damaged, cut short, or not a TIFF)
+        return "part of the image cannot be read (damaged, still copying, or not a TIFF): Refresh once the file is " \
+               "complete, or import it again"
+    return "the image cannot be read: " + err.split(": ", 1)[-1].split(". ")[0][:160]
+
+
 def steps_of(s, sample=None):
     """Where a sample stands in the usual flow, for the steps list on the map: import, registration (checked at the
     cells' present place?), filter, priors (checked and accepted by the user, before annotating: the agent's review of
@@ -3571,6 +3604,8 @@ def steps_of(s, sample=None):
         reg = {"state": "optional", "image": "none",
                "detail": f"the instrument's {meta.get('image_kind')} is shown (the cells on it by their coordinates); "
                          "no H&E: import one to see the tissue"}
+    elif _image_unreadable(sid, img):
+        reg = {"state": "blocked", "image": "error", "detail": _image_unreadable(sid, img)}
     elif meta.get("image_pending") or not importer.on_image(meta):
         reg = {"state": "blocked", "image": "pending",
                "detail": f"the {meta.get('image_pending_kind') or 'H&E'} is not aligned with the cells yet: align it"}

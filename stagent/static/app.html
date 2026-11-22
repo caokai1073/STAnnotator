@@ -1562,6 +1562,21 @@ $("imgSel").onchange = () => {  // another image under the cells: replaced in pl
   st.imgId = $("imgSel").value; store(`img:${sample}`, st.imgId);
   viewer.addTiledImage({ tileSource: tileSource(heUrl(sample)), index: 0, replace: true, success: applyHE });
 };
+// a tile of the image that cannot be read (a damaged part of the file, a file still copying): the reason at once,
+// once per sample, image and reason (he_info), and the steps follow it
+let tileErrT = 0;
+viewer.addHandler("tile-load-failed", () => { clearTimeout(tileErrT); tileErrT = setTimeout(() => imageTileFailed().catch(() => {}), 800); });
+async function imageTileFailed() {
+  if (!st.sample) return;
+  const smp = st.sample.sample_id, he = await api(`/api/sample/${encodeURIComponent(smp)}/he_info`);
+  if (!st.sample || st.sample.sample_id !== smp) return;
+  const other = st.imgId && st.imgId !== "main", msg = other ? (he.image_errors || {})[st.imgId] : he.image_error;
+  const key = `${smp}|${st.imgId || "main"}|${msg}`;
+  if (!msg || st.tileErrShown === key) return;
+  st.tileErrShown = key;
+  if (st.he) st.he.image_error = he.image_error;
+  toast(msg, 15000); loadStepsSoon();
+}
 function filt() {  // legend filter of the current color mode (empty = show all)
   if (!st.filters[st.mode]) st.filters[st.mode] = new Set();
   return st.filters[st.mode];
@@ -6604,9 +6619,10 @@ async function loadSteps() {
     const mk = Object.assign(document.createElement("span"), { className: "mk", textContent: STEP_MARK[x.state] || String(i + 1) });  // done ✓, else its number
     const nm = Object.assign(document.createElement("span"), { className: "nm", textContent: name });
     const right = document.createElement("span");
-    const img = x.key === "registration" ? x.image : null;  // the image: none (Import), pending (Align), placed (Add, Check)
+    const img = x.key === "registration" ? x.image : null;  // the image: none (Import), pending (Align), placed (Add, Check), error (Refresh)
     const a = x.open ? ["Open", () => { showTab("data"); $("session").focus(); toast("Choose an annotation in the Annotation box", 4000); }]
-      : img === "pending" ? ["Align", () => openAlignChoice()] : img === "none" ? ["Import", () => openImageImport()] : act;
+      : img === "pending" ? ["Align", () => openAlignChoice()] : img === "none" ? ["Import", () => openImageImport()]
+      : img === "error" ? ["Refresh", () => refreshAll()] : act;  // (an image still copying: read it again when complete)
     if (x.key === "priors" && x.state !== "not needed") {  // Check (the Prior window), then Accept: only then ✓
       const key = `${smp}|${x.organ || ""}`;
       // accepted, then changed (e.g. a rule the agent wrote): to be checked again before Accept
