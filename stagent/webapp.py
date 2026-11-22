@@ -3685,11 +3685,18 @@ async def api_proposal_decide(req: Request):
     if not b.get("accept"):
         return _json(proposals.update(pid, status="dismissed", decided=time.time()))
     rec = proposals.update(pid, status="applying", decided=time.time(), auto=bool(b.get("auto")))
+    job = f"proposal:{pid}"  # its progress for the review window's bar (/api/job/proposal:<id>)
+    JOBS[job] = {"stage": "waiting for another change to finish" if _apply_lock.locked() else "starting",
+                 "progress": None, "done": False, "error": None, "kind": "proposal", "started": time.time()}
+
+    def say(f, m):
+        JOBS[job].update(stage=str(m)[:200], **({"progress": round(min(max(float(f), 0.0), 1.0), 3)} if f is not None else {}))
 
     def work():
         with _apply_lock:
+            JOBS[job].update(stage="applying")
             try:
-                out, sess = mcp_server.apply_proposal(rec, review_app._session)
+                out, sess = mcp_server.apply_proposal(rec, review_app._session, progress=say)
                 if rec["tool"] == "apply_alignment":
                     _reload_sample(rec["args"]["sample_id"])
                 if rec["tool"] in ("move_piece", "undo_piece_move"):
@@ -3700,8 +3707,10 @@ async def api_proposal_decide(req: Request):
                 import traceback
                 traceback.print_exc()
                 proposals.update(pid, status="failed", error=f"{type(e).__name__}: {e}", decided=time.time())
+            finally:
+                JOBS[job].update(done=True, progress=1.0)
     threading.Thread(target=work, daemon=True).start()
-    return _json(rec)
+    return _json(rec | {"job": job})
 
 
 async def api_cache(req: Request):

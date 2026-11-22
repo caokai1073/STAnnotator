@@ -4,7 +4,7 @@ Run: python -m stagent.mcp_server
 The server keeps one active session; every tool that changes state creates a new version.
 Tool results are compact JSON; figure tools also return the PNG so the client can display it.
 """
-import json, os, re
+import json, threading, os, re
 from typing import Optional, Union
 import numpy as np
 from mcp.server.fastmcp import FastMCP, Image
@@ -415,16 +415,41 @@ def _review_mode():
         return "manual"
 
 
-def apply_proposal(rec, get_session=None):
-    """Run a proposal's tool (the app does it when the user clicks Accept). Returns (result, active session id)."""
+_PROG = threading.local()
+
+
+def _progress():
+    """While the app applies a proposal (Accept): its progress callback (fraction 0-1 or None, message), else None."""
+    return getattr(_PROG, "fn", None)
+
+
+def _say(f, msg):
+    cb = _progress()
+    if cb:
+        cb(f, msg)
+
+
+def _logp(log):
+    """An import's progress lines: kept for the tool's answer, and shown under the review window's bar."""
+    def p(msg, *a):
+        log.append(msg)
+        _say(None, str(msg)[:200])
+    return p
+
+
+def apply_proposal(rec, get_session=None, progress=None):
+    """Run a proposal's tool (the app does it when the user clicks Accept). Returns (result, active session id).
+    progress(fraction or None, message): what the tool is doing (the review window's bar)."""
     fn = GATED[rec["tool"]]
     if rec.get("session_id"):
         _active["session"] = get_session(rec["session_id"]) if get_session else Session(rec["session_id"])
     before = _active.get("session")
     _check_unchanged(rec, before)
+    _PROG.fn = progress
     try:
         out = fn(**rec["args"])
     finally:
+        _PROG.fn = None
         if get_session:  # in the app: its own annotation objects stay the viewer's (the tool marked them "agent", and
             for x in (before, _active.get("session")):  # the user's next edits would join the agent's Undo group)
                 if x is not None:
@@ -853,7 +878,7 @@ def import_visium(name: str, path: str, he: Optional[str] = None, description: s
     from . import importer
     log = []
     with _replacing(name, replace):
-        meta = importer.import_visium(name, path, he=he, description=description, progress=log.append,
+        meta = importer.import_visium(name, path, he=he, description=description, progress=_logp(log),
                                       segmentation=segmentation, unit=unit)
     return _j({"imported": meta["sample_id"], "unit": meta["source"]["unit"], "n": meta["n_cells"],
                "n_genes": meta["n_genes"], "bin_um": meta["source"]["bin_um"], "log": log[-12:]})
@@ -883,7 +908,7 @@ def import_he_only(name: str, image: str, um_per_px: Optional[float] = None, des
     from . import importer
     log = []
     with _replacing(name, replace):
-        m = importer.import_image(name, image, um_per_px=um_per_px, description=description, progress=log.append)
+        m = importer.import_image(name, image, um_per_px=um_per_px, description=description, progress=_logp(log))
     return _j({"imported": m["sample_id"], "image_only": True, "um_per_px": m["he_um_per_px"] if m.get("um_per_px_known") else None,
                "log": log[-6:]})
 
@@ -913,7 +938,7 @@ def import_stereoseq(name: str, paths: list[str], image: Optional[str] = None, d
     from . import importer
     log = []
     with _replacing(name, replace):
-        meta = importer.import_stereoseq(name, paths, image=image, description=description, progress=log.append, unit=unit)
+        meta = importer.import_stereoseq(name, paths, image=image, description=description, progress=_logp(log), unit=unit)
     return _j({"imported": meta["sample_id"], "unit": meta["source"]["unit"], "n": meta["n_cells"],
                "n_genes": meta["n_genes"], "image": meta["image_kind"], "log": log[-12:]})
 
@@ -940,7 +965,7 @@ def import_cosmx_merfish(kind: str, name: str, paths: list[str], he: Optional[st
         raise ValueError(f"these paths hold {len(src)} slides or regions ({', '.join(x['key'] for x in src)}): import one at a time")
     with _replacing(name, replace):
         meta = importer.import_flat(kind, name, src[0], he=he, registration=registration, description=description,
-                                    progress=log.append)
+                                    progress=_logp(log))
     return _j({"imported": meta["sample_id"], "n_cells": meta["n_cells"], "n_genes": meta["n_genes"],
                "image": meta["image_kind"], "log": log[-12:]})
 
@@ -961,7 +986,7 @@ def import_sample(name: str, h5ad: list[str], he: str, registration: str, sectio
     log = []
     with _replacing(name, replace):
         meta = imp(name, h5ad, he, registration, section_column, section, None, None, counts_layer, region_column,
-                   description=description, progress=log.append)
+                   description=description, progress=_logp(log))
     return _j({"imported": meta["sample_id"], "n_cells": meta["n_cells"], "n_genes": meta["n_genes"],
                "he_um_per_px": round(meta["he_um_per_px"], 4), "log": log})
 
@@ -1068,6 +1093,8 @@ def start_session(sample_id: str, markers_text: Optional[str] = None,
     _active["session"] = Session.create(sample_id, "none", method=method, markers_text=markers_text,
                                         carry_from=carry, reference=ref, existing=ex, knn=knn, spillover=spillover,
                                         stains=stains)
+    if _progress():  # (in the app's Accept: the annotation's steps under the review window's bar)
+        _active["session"].base(progress=_progress())
     return _j(_active["session"].summary())
 
 
@@ -2083,7 +2110,7 @@ def run_niches(k: int = 15, n_niches: int = 8, identity: str = "nmf", n_programs
     region use k); radius_um instead takes every cell within that distance (5-80 cells), adapting to density. The
     result replaces the session's current niches and shows in the viewer (color by niche). Returns niche_summary."""
     from . import niches
-    return _j(niches.run(_s(), k, n_niches, identity, n_programs, k_by_region, radius_um))
+    return _j(niches.run(_s(), k, n_niches, identity, n_programs, k_by_region, radius_um, progress=_progress()))
 
 
 @mcp.tool()
@@ -2098,7 +2125,7 @@ def run_project_niches(k: int = 15, n_niches: int = 8, identity: str = "nmf", n_
     from . import joint, niches
     s = _s()
     pid, sess = _project_niche_slices(s, identity)
-    joint.niches(pid, k, n_niches, identity, n_programs, sessions=sess)
+    joint.niches(pid, k, n_niches, identity, n_programs, sessions=sess, progress=_progress())
     return _j(niches.summary(s) | {"slices": list(sess)})
 
 
