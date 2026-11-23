@@ -805,7 +805,8 @@ SCOPE_REQUEST = {
                      "outline that does not match how the compartment looks on the H&E, a name other than the one the "
                      "rules use: a region rule applies only to a region of its name) and the region make-up with the "
                      "priors' rules (name the rule); advice in the categories compartments (outlines checked on the H&E), organization, and "
-                     "registration (only when areas really sit off their nuclei: the local correction)"),
+                     "registration (only when areas really sit off their nuclei: the local correction; when "
+                     "check_registration_map advises a new alignment, that instead)"),
     "embedding": ("review the PCA + UMAP and its Leiden clusters: gather embedding_facts and show_embedding (by cell "
                   "type, leiden and, with several slices, slice); advice in the categories clusters, integration, "
                   "parameters"),
@@ -821,7 +822,8 @@ SCOPE_REQUEST = {
 REGISTRATION_ONLY = ("the cells on the H&E before annotation (version {v} of the sample's placeholder: no cell types "
                      "yet, so no compartments or neighbors): check_registration_map (the cells on their nuclei over "
                      "all the tissue: look at its close-ups) and list_regions; advice only in the category "
-                     "registration: the local correction where areas really sit off their nuclei, and for a torn or "
+                     "registration: the local correction where areas really sit off their nuclei (a new alignment instead when "
+                     "check_registration_map advises one), and for a torn or "
                      "folded piece of tissue the user outlined as a region, fit_piece (propose move_piece only when it "
                      "fits)")
 SCOPE_LEAD = "I clicked Review: {label}. Review only this part: {what}. "
@@ -1370,6 +1372,9 @@ async def api_registration_check(req: Request):
                 "share_off": round(r.get("windows_off", 0) / max(r.get("trusted_windows") or 0, 1), 3),
                 "share_in_areas": r.get("share_in_areas"), "large_shift": r.get("large_shift"),
                 "local_share": align.LOCAL_SHARE,
+                # far off over most of the tissue (a rotation or scale error of the whole alignment): align again
+                "new_alignment": bool((r.get("new_alignment") or {}).get("advised")),
+                "read_share": (r.get("new_alignment") or {}).get("read_share"),
                 # what the correction leaves, measured again with the cells moved by it
                 "after_median_um": r["correction"].get("median_offset_after_um"),
                 "after_windows_off": r["correction"].get("windows_off_after")})
@@ -1454,6 +1459,8 @@ async def api_advice_act(req: Request):
             advice.set_status(s, x["id"], "done", "prior added")
             return _json({"new_version": ver, "message": s.state(ver)["message"]})
         if step == "registration":
+            if a.get("mode") == "align":  # the page runs Align automatically itself (/api/sample/<s>/align/auto)
+                return _json({"error": "a new alignment runs as Align automatically, not as a correction"}, 400)
             fix = a["correction_px"]
             if a.get("mode") == "local" and a.get("key") != regcheck._key(s.sample_id, importer.image_of(s.sample_id)):
                 def fresh():  # the cells moved since the agent's check (e.g. a correction undone): measure again

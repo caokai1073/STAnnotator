@@ -43,6 +43,14 @@ CHECK_ROUNDS = 2          # the correction checked: the cells moved by it, their
 STAYED_SHARE = 0.6        # offset stays (still off, at least this share of it, pointing the same way) is a false reading
 STAYED_COS = 0.7          # (a repeating structure matched one period off): left alone, its cells stay, and the field is
                           # made again without it. A reading that jumps elsewhere proves nothing: the prediction stands
+REALIGN_READ = 0.4     # a new alignment is advised when the fine windows read their offset on less than this share
+REALIGN_BEYOND = 0.3   # of the tissue and at least this share find no peak within SEARCH_UM: the cells are far off over
+                       # most of the tissue, as a rotation or scale error of the whole alignment puts them. Measured on
+                       # the planted errors of bench/reg063 (5 sections): flagged were the 9 cases the local correction
+                       # left 40-180 um off (95th percentile) and 4 it left 10-29 um off, none of the 10 clean controls
+                       # (they read 71-100% of their windows); a new alignment put the cells within 2-7 um there. The
+                       # local correction only measures and moves what the windows read, and its check after covers
+                       # the same few windows, so it looks fine
 DEFAULT_FOCUS = {"crypts / epithelium": r"epith|crypt|colonocyte|enterocyte|goblet|stem|transit|paneth",
                  "vessels": r"endoth|vascul|vessel|pericyte",
                  "smooth muscle": r"smooth|muscle|myocyte"}
@@ -355,6 +363,9 @@ def summary(s, focus=None, version=None, progress=None):
     trusted = ~noise
     n_off = int(((tot >= OFF_UM) & trusted & ~false).sum()) + int(big.sum())
     loc = [x for x in areas if x["local_after_affine_um"] >= OFF_UM]
+    read = float(trusted.mean())
+    beyond = float((np.abs(a[:, 4:6]).max(1) >= w["search_um"]).mean())
+    realign = read < REALIGN_READ and beyond >= REALIGN_BEYOND
     verdict = ("fine" if not n_off else
                "global" if affine["max_offset_um"] >= OFF_UM and not loc else
                "local" if affine["max_offset_um"] < OFF_UM else "global and local")
@@ -366,7 +377,15 @@ def summary(s, focus=None, version=None, progress=None):
             "large_shift": bool(big.any()), "median_offset_um": round(float(np.median(raw[trusted])), 1) if trusted.any() else None,
             "affine_part": affine, "areas": areas[:15], "n_areas": len(areas),
             "noise_windows": int((noise & (a[:, 6] >= MIN_CORR)).sum()),
-            "beyond_search_share": round(float((np.abs(a[:, 4:6]).max(1) >= w["search_um"]).mean()), 3),
+            "beyond_search_share": round(beyond, 3),
+            "new_alignment": {"advised": realign, "read_share": round(read, 3), "beyond_search_share": round(beyond, 3),
+                              "why": (f"the windows read their offset on only {read:.0%} of the tissue and {beyond:.0%} "
+                                      f"find no peak within {SEARCH_UM} um: the cells are far off over most of the "
+                                      "tissue, as a rotation or scale error of the whole alignment puts them, beyond "
+                                      "what the local correction measures (its check after covers only the windows "
+                                      "read). Align the image again (search_alignment, refine_alignment; the app's "
+                                      "Align automatically) instead of the local correction") if realign else
+                                     f"the windows read {read:.0%} of the tissue: enough for the local correction"},
             "by_structure": {k: stats(tag == k) for k in masks},
             "by_region": {str(r): stats(top_region == r) for r in pd.unique(top_region)},
             "correction": {"moves_cells_um_median": fix["moved_um_median"], "moves_cells_um_max": fix["moved_um_max"],
@@ -374,6 +393,7 @@ def summary(s, focus=None, version=None, progress=None):
                            "false_readings": {"windows": int(false.sum()),
                                               "centers_px": [[round(float(x)), round(float(y))] for x, y in a[false, 2:4]],
                                               "offsets_um": [[float(x), float(y)] for x, y in a[false, 4:6]]},
+                           "checked_share": round(float(ta.mean()), 3),
                            "windows_off_after": int(((after >= OFF_UM) & ta).sum()),
                            "median_offset_after_um": round(float(np.median(np.hypot(*fix["after_raw_um"][ta].T))), 1)
                            if ta.any() else None},
@@ -381,8 +401,9 @@ def summary(s, focus=None, version=None, progress=None):
                     f"offset is about 1 um when the cells sit on their nuclei; areas: neighboring windows off by >= {OFF_UM:g} um; "
                     f"large_shift areas: {COARSE_WINDOW_UM:g} um windows off by {COARSE_MIN_UM:g}-{COARSE_SEARCH_UM} um, beyond the "
                     f"{SEARCH_UM} um the fine windows look; "
-                    "beyond_search_share above ~0.3: the cells are far off everywhere, redo the registration instead; correction: "
-                    "measured again with the cells moved by it (windows_off_after, median_offset_after_um); "
+                    "new_alignment.advised: the cells are far off over most of the tissue, align the image again instead of the "
+                    "local correction; correction: measured again with the cells moved by it (windows_off_after, "
+                    "median_offset_after_um) on the windows read (checked_share of them); "
                     "false_readings: windows whose offset stayed (as large, the same way) when their cells were moved onto the nuclei "
                     "(a repeating structure matched one period off), left out of the areas and left alone"}
 

@@ -152,7 +152,9 @@ Reviewing (Review: the user picks one part of the analysis; or when asked what y
     outline on the H&E; the drawn regions against the priors' Compartments to draw: missing ones, and names other
     than those the rules use, since a region rule applies only to a region of its name), organization (expected gradients and neighbors: stem cells at the crypt base, B cells in
     follicles, ICC between muscle layers, found or contradicted), registration (areas whose cells really sit off
-    their nuclei: the local correction, action {"kind": "registration", "mode": "local"});
+    their nuclei: the local correction, action {"kind": "registration", "mode": "local"}; when the map's
+    new_alignment is advised, the cells are far off over most of the tissue: a new alignment instead, action
+    {"kind": "registration", "mode": "align"});
   embedding: embedding_facts, show_embedding (by cell type, leiden, slice); clusters (mixed clusters, types split
     over clusters, clusters that are another type), integration (clusters of one slice, batch), parameters
     (resolution, neighbors);
@@ -178,7 +180,8 @@ Reviewing (Review: the user picks one part of the analysis; or when asked what y
 Aligning cells to an image (the app's "Align with Claude", or when asked): alignment_status, then
 search_alignment; look at the figures of the best candidates (show_alignment), pick the one whose footprint covers
 the right section in the right orientation, refine_alignment it, check the close-ups (centroids on nuclei) and the
-refinement numbers, then apply_alignment. If no candidate fits, say so and ask for the registration file.
+refinement numbers, then apply_alignment. If no candidate fits, say so and ask for the registration file (or the
+image's pixel size: search_alignment(um_per_px=...)).
 
 Niches (the viewer's Niche tab, or when asked): run_niches averages each cell's identity (NMF gene programs, or
 its cell type) over its k nearest cells and clusters the averages. When asked to choose k: niche_context, then k
@@ -1762,15 +1765,20 @@ def alignment_status(sample_id: Optional[str] = None) -> str:
 
 
 @mcp.tool()
-def search_alignment(sample_id: Optional[str] = None) -> list:
+def search_alignment(sample_id: Optional[str] = None, um_per_px: Optional[float] = None) -> list:
     """Find where the cells lie on the sample's image without a registration file: the tissue on the image is matched
     with the cells' footprint over 8 orientations (rotations, mirrored) and a range of pixel sizes. Returns the best
     candidates (K1, K2, ... with orientation, um per pixel, score) and the figure of K1. Scores near 0.7-0.9 with a
-    clear lead are typical of the right one; a slide often holds several sections, so check the place too."""
+    clear lead are typical of the right one; a slide often holds several sections, so check the place too.
+    Pixel sizes tried: around um_per_px when given (the image's pixel size in um, when the user knows it), else around
+    the one stored in the image file, and 0.1-2 um/px as well when that gives no good fit (a file can state a wrong
+    size, e.g. the morphology image's 0.2125 um/px on an H&E); "note" says when the best candidate's size is not the
+    file's. Also to re-align a sample already placed whose cells are far off (check_registration_map's new_alignment):
+    nothing changes until apply_alignment."""
     from . import align, claudelink
     sid = _sample_id(sample_id)
     claudelink.note_activity("align", sid, "searching where the cells lie on the image")
-    st = align.search(align.Sample(sid))
+    st = align.search(align.Sample(sid), um_per_px=um_per_px)
     png = align.show(align.Sample(sid), st["candidates"][0]["id"], refined=False) if st["candidates"] else None
     out = {k: v for k, v in st.items() if k != "candidates"} | {"candidates": [{k: c[k] for k in (
         "id", "orientation_name", "um_per_px", "score")} for c in st["candidates"]], "figure": png}
@@ -2234,7 +2242,14 @@ def check_registration_map(focus: Optional[dict] = None) -> list:
     lumen) and the yellow ones on them; a false alarm when cyan already sits on nuclei. If real areas remain, propose
     the local correction (draft_advice scope "organization", category "registration", action {"kind":
     "registration", "mode": "local"}, naming the areas and structures); a verdict "global" alone is check_registration's
-    correction ({"kind": "registration"}). The first call on a placement takes up to a minute or two."""
+    correction ({"kind": "registration"}).
+    new_alignment.advised: the windows read their offset on only a small share of the tissue and most of the rest lie
+    beyond the search: the cells are far off over most of the tissue (a rotation or scale error of the whole
+    alignment). The local correction cannot fix that, although its check looks good (it is measured again only on the
+    few windows read: correction.checked_share). Then propose a new alignment instead (action {"kind": "registration",
+    "mode": "align"}: the app's Align automatically, with Undo); search_alignment and refine_alignment show how a new
+    alignment would sit (its deviation check against this one's) without applying it. The first call on a placement
+    takes up to a minute or two."""
     from . import regcheck
     s = _s()
     info = regcheck.summary(s, focus)
@@ -2328,6 +2343,8 @@ def draft_advice(scope: str, items: list[dict]) -> str:
       {"kind": "marker_list"}   (after propose_marker_list)
       {"kind": "registration"}  (after check_registration)
       {"kind": "registration", "mode": "local"}  (after check_registration_map: also the local shifts)
+      {"kind": "registration", "mode": "align"}  (after check_registration_map advises a new alignment: the app's
+                                                  Align automatically, with Undo)
       {"kind": "niche_names", "names": {"N1": "...", ...}}
       {"kind": "show", "mode": "gene:<gene>" | "lr:<ligand>~<receptor>~receiver" | "niche" | "leiden" | "type"}
       {"kind": "rerun", "tab": "embed" | "niches" | "compare" | "signal", "params": the tab's settings, e.g.

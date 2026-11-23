@@ -3909,7 +3909,9 @@ function adviceRow(x, btn, adv, prop) {
       }));
     }
     // a local correction is measured again on the cells as they are now, so it can follow an earlier one
-    if (open && (act.mode === "local" || !adv.registration_fixed)) c.append(btn(act.mode === "local" ? "correct locally…" : "correct registration…",
+    if (open && act.mode === "align") c.append(btn("align again…", "Search the placement of the cells on the image anew (Align automatically); Undo puts them back",
+      () => adviceRegistration(x, act)));
+    else if (open && (act.mode === "local" || !adv.registration_fixed)) c.append(btn(act.mode === "local" ? "correct locally…" : "correct registration…",
       act.mode === "local" ? "Move the cells onto their nuclei where the tissue shifted" : "Move every cell onto its nucleus on the image",
       () => adviceRegistration(x, act)));
     if (adv.registration_fixed) c.append(btn("undo correction", "Put the cells back where the import placed them", () => adviceAct(x, "undo_registration")));
@@ -4044,6 +4046,15 @@ async function advicePrior(x) {
   } catch (e) { toast(e.message, 6000); }
 }
 async function adviceRegistration(x, act) {
+  if (act.mode === "align") {  // the cells are far off over most of the tissue: Align automatically, then its check window
+    if (!st.sample || !confirm(`The cells sit far off their nuclei over most of the tissue (offsets read on only ${Math.round(100 * act.read_share)}% of it), as a rotation or scale error of the whole alignment puts them. Align the image again? The app searches the placement anew and shows the result; Undo puts the cells back.`)) return;
+    const sid = st.sid, out = await autoAlign([st.sample.sample_id]);
+    if (out && out[0] && out[0].r && out[0].r.applied && st.sid === sid) {
+      try { await post(`/api/s/${sid}/advice/status`, { id: x.id, status: "done", note: "aligned again" }); } catch (e) { /* noted only */ }
+      await loadPlaus(false);
+    }
+    return;
+  }
   const ask = act.mode === "local"
     ? `In ${act.n_areas} area${act.n_areas === 1 ? "" : "s"} the cells sit up to ${act.max_offset_um} µm off their nuclei on the image. Move the cells there onto their nuclei (up to ${act.moved_um_max} µm; elsewhere they stay)? Regions keep their cells; you can undo this.`
     : `The cells sit up to ${act.max_offset_um} µm off their nuclei on the image. Move every cell onto its nucleus? Regions keep their cells; you can undo this.`;
@@ -5379,9 +5390,9 @@ async function autoAlign(ids) {  // the app aligns the images by itself (align.a
   if (!ids.length) return;
   if (alignBusy()) { toast("An alignment is running: wait for it to end", 5000); return; }
   ALIGN.auto = ids; ALIGN.after = true; alignChanged();
-  try { await autoAlignRun(ids); } finally { ALIGN.auto = null; ALIGN.after = false; alignChanged(); }
+  try { return await autoAlignRun(ids); } finally { ALIGN.auto = null; ALIGN.after = false; alignChanged(); }
 }
-async function autoAlignRun(ids) {
+async function autoAlignRun(ids) {  // [{id, r: the run's result} or {id, error}] once the windows are shown
   const out = [];
   try {
     for (const [i, id] of ids.entries()) out.push({ id, ...(await autoAlignOne(id, ids.length > 1 ? ` (${i + 1} of ${ids.length})` : "")) });
@@ -5394,18 +5405,18 @@ async function autoAlignRun(ids) {
   const summary = ids.length > 1 ? `${ok} of ${ids.length} samples aligned automatically` +
     (others.length ? ` (${others.map((x) => `${name(x.id)}: ${word(x)}`).join("; ")})` : "") + "." : "";
   if (ids.length > 1) {
-    if (!(mine && mine.r && mine.r.applied)) { toast(`${summary} ${mine ? `${name(mine.id)}: ${word(mine)}` : ""}`, 30000); return; }
-  } else if (out[0].error) { toast(`Aligning ${name(out[0].id)}: ${out[0].error}`, 12000); return; }
-  else if (!out[0].r.applied) { toast(`Aligning ${name(out[0].id)}: no placement put the cells on their nuclei (${out[0].r.reason}; ${out[0].r.tried} tried). Use Align with Agent, or a registration file.`, 15000); return; }
+    if (!(mine && mine.r && mine.r.applied)) { toast(`${summary} ${mine ? `${name(mine.id)}: ${word(mine)}` : ""}`, 30000); return out; }
+  } else if (out[0].error) { toast(`Aligning ${name(out[0].id)}: ${out[0].error}`, 12000); return out; }
+  else if (!out[0].r.applied) { toast(`Aligning ${name(out[0].id)}: no placement put the cells on their nuclei (${out[0].r.reason}; ${out[0].r.tried} tried). Use Align with Agent, or a registration file.`, 15000); return out; }
   st.samples = await api("/api/samples").catch(() => st.samples);
-  if (!mine || !mine.r || !mine.r.applied) { if (ids.length === 1) toast(`${name(ids[0])} aligned automatically`, 6000); return; }
+  if (!mine || !mine.r || !mine.r.applied) { if (ids.length === 1) toast(`${name(ids[0])} aligned automatically`, 6000); return out; }
   const sample = mine.id, r = mine.r;
   await afterPlacement();
   store(`localAsk:${sample}:${st.he ? st.he.rev : ""}`, "1");  // (this window offers the local registration itself)
   if (!st.sid) {  // no annotation open (nothing to check from): the result in words
     toast(`${summary ? `${summary} ` : ""}${sampleName(st.sample)} aligned automatically (${r.orientation}; ${r.verdict === "fine" ? "the cells sit on their nuclei"
       : "some areas sit off their nuclei: open an annotation, then Steps → Image → Check offers the local registration"}).`, 15000);
-    return;
+    return out;
   }
   const note = (summary ? `${summary} This sample: ` : "") + `Aligned automatically (${r.orientation}).` + (r.ambiguous
     ? " Another orientation fits almost as well: check on the map that the tissue matches the image; if it does not, Undo and use Align with Agent."
@@ -5415,6 +5426,7 @@ async function autoAlignRun(ids) {
     $("rgDlg").close(); await afterPlacement("The automatic alignment was undone");
   }];
   await checkRegistration(note, [undo]);
+  return out;
 }
 async function autoAlignOne(sample, of) {  // one sample: {r: the run's result} or {error}
   const smp = (st.samples || []).find((x) => x.sample_id === sample) || st.sample, who = `Aligning ${sampleName(smp)} automatically${of}`;
@@ -7023,6 +7035,9 @@ async function checkRegistrationRun(note, more) {
   const title = `Registration of ${name}`;
   if (r.verdict === "fine")
     return regDialog(sample, title, r.figure, `The cells sit on their nuclei everywhere (median offset ${r.median_offset_um} µm).`, [close]);
+  if (r.new_alignment)  // far off over most of the tissue: beyond what the local registration measures (its check would look fine)
+    return regDialog(sample, title, r.figure, `The cells sit far off their nuclei over most of the tissue: the offset could be read on only ${Math.round(100 * r.read_share)}% of it, as a rotation or scale error of the whole alignment leaves them. The local registration cannot fix this. Align the image again: the app searches the placement anew and shows the result (Undo puts the cells back).`,
+      [["Close", false, async () => $("rgDlg").close()], ["Align again", true, async () => { $("rgDlg").close(); await autoAlign([sample]); }]]);
   // too little to correct: few windows off and none far (the alignment check's rule), or the correction would not bring
   // any window back onto its nuclei. Not the whole-tissue median: a shift in one place hardly moves it. (A server
   // without windows_off: the median, as before.)

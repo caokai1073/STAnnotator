@@ -20,7 +20,9 @@ Each item can carry one action the user takes in the viewer with one click:
   prior          {"kind": "prior", "prior": spec}: preview, then add the prior
   marker_list    {"kind": "marker_list"}: open the marker list Claude proposed (propose_marker_list)
   registration   {"kind": "registration"}: correct the cells' place on the image (insights.registration); with
-                 "mode": "local", also where the tissue shifted locally (regcheck.correction)
+                 "mode": "local", also where the tissue shifted locally (regcheck.correction); with "mode": "align",
+                 align the image again (the app's Align automatically: align.auto), when the cells are far off over
+                 most of the tissue (regcheck's new_alignment)
   claude         {"kind": "claude", "request": "..."}: ask Claude Code to do it (e.g. a re-clustering), as a request
   niche_names    {"kind": "niche_names", "names": {"N1": "...", ...}}: name the niches
   show           {"kind": "show", "mode": "gene:<gene>" | "lr:<ligand>~<receptor>~receiver|sender" | "niche" | ...}:
@@ -150,6 +152,19 @@ def _action(s, st, act):
         if not act.get("prior"):
             raise ValueError("a prior action needs 'prior' (a constraint spec, as for preview_constraint)")
         out["prior"], out["prior_text"] = _check_prior(s, act["prior"])
+    elif kind == "registration" and act.get("mode") == "align":
+        from . import regcheck, importer
+        if not importer.image_of(s.sample_id):
+            raise ValueError("this sample has no image to align to")
+        info = regcheck.summary(s)
+        if info.get("error"):
+            raise ValueError(info["error"])
+        na = info["new_alignment"]
+        if not na["advised"]:
+            raise ValueError(f"no new alignment needed: {na['why']}; propose the local correction "
+                             "({\"kind\": \"registration\", \"mode\": \"local\"}) where areas sit off their nuclei")
+        out |= {"mode": "align", "read_share": na["read_share"], "beyond_search_share": na["beyond_search_share"],
+                "median_offset_um": info.get("median_offset_um")}
     elif kind == "registration" and act.get("mode") == "local":
         from . import regcheck
         info = regcheck.summary(s)

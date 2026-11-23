@@ -2,7 +2,8 @@
 
 1. search(): the tissue on a thumbnail of the image is compared with the footprint of the cells (where cells are,
    from their um coordinates) for 8 orientations (4 rotations, mirrored or not) and a range of image pixel sizes
-   (around the size stored in an OME-TIFF, else 0.1-2 um/px), by FFT cross-correlation. The score is the agreement
+   (around the size the user gives, else around the size stored in an OME-TIFF, else 0.1-2 um/px; 0.1-2 um/px too
+   when the stored size gives no good fit, as a wrong size in the file does), by FFT cross-correlation. The score is the agreement
    of tissue and footprint over the footprint's box (+1 both or neither, -1 one only), so a footprint that is too
    small or too large scores low. The best few are kept as candidates (affines cell um -> image level-0 px).
 2. Claude looks at the candidates (show()), picks one (several sections on one slide, symmetric tissue).
@@ -106,9 +107,17 @@ def _footprint(u, shape):
     return np.clip(g / max(np.percentile(g[g > 0], 30) if (g > 0).any() else 1, 1e-6), 0, 1)
 
 
+def _near(um_per_px):
+    """The pixel sizes tried around a stated one (+/- 8%)."""
+    return um_per_px * np.exp(np.linspace(-0.08, 0.08, 9))
+
+
 @_gated
-def search(s, scales=None, top=6, progress=None):
-    """Candidate placements of the cells on the image, best first (stored for show / refine / apply)."""
+def search(s, scales=None, top=6, progress=None, um_per_px=None):
+    """Candidate placements of the cells on the image, best first (stored for show / refine / apply). Pixel sizes
+    tried: around um_per_px when given (the user knows the image's), else around the size stored in the file, else
+    SCALES. A stated size can be wrong (an H&E saved with the morphology image's 0.2125 um/px): when the sizes around
+    the file's give no candidate or only weak ones (best score below WEAK_SCORE), SCALES are searched as well."""
     say = progress or (lambda f, m: None)
     path, kind = _image(s)
     sl = render.slide(path)
@@ -118,12 +127,54 @@ def search(s, scales=None, top=6, progress=None):
     I = _tissue(sl.read(0, 0, W0, H0, w, h), kind)
     J = 2 * I - 1
     known = image_um_per_px(path)
+    given = um_per_px is not None
+    if given and not 0.01 <= float(um_per_px) <= 50:
+        raise ValueError("um_per_px is the image's pixel size in micrometers (e.g. 0.2125 or 0.5)")
+    may_widen = scales is None and known and not given   # the file's size first, the wide range if it fits badly
     if scales is None:
-        scales = known * np.exp(np.linspace(-0.08, 0.08, 9)) if known else SCALES
+        scales = _near(float(um_per_px)) if given else _near(known) if known else SCALES
     xy = s.cells[["x", "y"]].to_numpy()
     xy = xy[np.random.default_rng(0).choice(len(xy), min(len(xy), 200000), replace=False)]
+    found = _scan_scales(J, w, h, f, xy, scales, lambda p, m: say(0.05 + (0.45 if may_widen else 0.85) * p, m))
+    widened = False
+    if may_widen and (not found or max(c["score"] for c in found) < WEAK_SCORE):
+        say(0.5, f"no good fit near the file's {known:g} um/px: searching 0.1-2 um/px")
+        found += _scan_scales(J, w, h, f, xy, SCALES, lambda p, m: say(0.5 + 0.4 * p, m))
+        widened = True
+    found.sort(key=lambda x: -x["score"])
+    out = []
+    for c in found:  # one candidate per orientation and place
+        A = np.asarray(c["A"])
+        if any(c["orientation"] == o["orientation"] and np.hypot(*(A[:, 2] - np.asarray(o["A"])[:, 2])) < 0.1 * max(W0, H0)
+               for o in out):
+            continue
+        out.append(c)
+        if len(out) >= top:
+            break
+    for i, c in enumerate(out):
+        c.update(id=f"K{i + 1}", orientation_name=ORIENT_NAMES[c["orientation"]], score=round(c["score"], 3),
+                 um_per_px=round(c["um_per_px"], 4))
+    st = {"image": path, "kind": kind, "image_um_per_px_in_file": known, "candidates": out, "time": time.time()}
+    if given:
+        st["um_per_px_given"] = float(um_per_px)
+    if widened:
+        st["searched_beyond_file_um_per_px"] = True
+    if known and out and abs(np.log(out[0]["um_per_px"] / known)) > 0.08:
+        st["note"] = (f"the best candidate's pixel size ({out[0]['um_per_px']:g} um/px) is not the {known:g} um/px "
+                      "stored in the image file: the file's value looks wrong (applying a candidate uses its own size)")
+    dump_json(st, _file(s), indent=1)
+    say(1.0, "done")
+    return st
+
+
+WEAK_SCORE = 0.5   # a search's best score below this: no good fit (right placements score about 0.7-0.9)
+
+
+def _scan_scales(J, w, h, f, xy, scales, say):
+    """The best placement of the footprint of xy (cell um) on the tissue J (thumbnail, +1 tissue / -1 not) for each
+    orientation and pixel size."""
     found = []
-    say(0.05, f"searching {len(scales)} pixel sizes x 8 orientations")
+    say(0.0, f"searching {len(scales)} pixel sizes x 8 orientations")
     for k in range(8):
         O = _orient(k)
         for sc in scales:
@@ -143,24 +194,8 @@ def search(s, scales=None, top=6, progress=None):
             dy, dx = (i if i <= h else i - P[0]), (j if j <= w else j - P[1])
             found.append({"orientation": k, "um_per_px": float(sc), "score": float(C[i, j]),
                           "A": np.c_[O / sc, f * (np.array([dx, dy]) - umin)].tolist()})
-        say(0.1 + 0.8 * (k + 1) / 8, f"orientation {k + 1} of 8")
-    found.sort(key=lambda x: -x["score"])
-    out = []
-    for c in found:  # one candidate per orientation and place
-        A = np.asarray(c["A"])
-        if any(c["orientation"] == o["orientation"] and np.hypot(*(A[:, 2] - np.asarray(o["A"])[:, 2])) < 0.1 * max(W0, H0)
-               for o in out):
-            continue
-        out.append(c)
-        if len(out) >= top:
-            break
-    for i, c in enumerate(out):
-        c.update(id=f"K{i + 1}", orientation_name=ORIENT_NAMES[c["orientation"]], score=round(c["score"], 3),
-                 um_per_px=round(c["um_per_px"], 4))
-    st = {"image": path, "kind": kind, "image_um_per_px_in_file": known, "candidates": out, "time": time.time()}
-    dump_json(st, _file(s), indent=1)
-    say(1.0, "done")
-    return st
+        say((k + 1) / 8, f"orientation {k + 1} of 8")
+    return found
 
 
 def _file(s):
