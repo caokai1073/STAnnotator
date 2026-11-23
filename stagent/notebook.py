@@ -25,6 +25,12 @@ from pathlib import Path
 HOME = WORK = SAMPLES = SESSIONS = Path(".")
 RECORD_TIMINGS = False  # the app keeps how long its steps take; the notebook does not
 
+
+def read_settings():
+    """The app's settings of this computer: none in the notebook, so every step uses the app's defaults (for example
+    Leiden in worker processes, as the app's "Parallel clustering" does by default)."""
+    return {}
+
 def device():
     """As in the app: the GPU that exact neighbor searches run on when torch is installed (it gives the same
     neighbors as the CPU, only faster)."""
