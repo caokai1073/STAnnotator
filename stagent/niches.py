@@ -112,7 +112,7 @@ def run(s, k=15, n_niches=8, identity="nmf", n_programs=20, k_by_region=None, ra
     kk = _neighbors_k(s, k, k_by_region, radius_um)
     xy = s.cells[["x", "y"]].to_numpy()
     nn = cKDTree(xy).query(xy, k=int(kk.max()) + 1)[1]   # column 0 is the cell itself
-    avg = np.zeros_like(ident)
+    avg = np.zeros(ident.shape)  # float64: k-means of float32 on several threads is not deterministic
     for kv in np.unique(kk):
         rows = np.where(kk == kv)[0]
         for i in range(0, len(rows), 20000):

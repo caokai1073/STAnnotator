@@ -268,7 +268,7 @@ def niches(pid, k=15, n_niches=8, identity="nmf", n_programs=20, progress=None, 
     else:
         raise ValueError("identity must be 'nmf' or 'cell types'")
     say(0.5, "averaging over neighbors within each slice")
-    avg = np.zeros_like(ident)
+    avg = np.zeros(ident.shape)  # float64: k-means of float32 on several threads is not deterministic
     for i, s in enumerate(S):
         xy = s.cells[["x", "y"]].to_numpy()
         nn = cKDTree(xy).query(xy, k=int(k) + 1)[1]

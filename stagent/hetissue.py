@@ -128,7 +128,7 @@ def segment(sample_id, n_classes=6, progress=None, organ=None):
     dist = ndi.distance_transform_edt(tissue) * step  # a statistic of the classes, not a feature (it would split
     F = np.stack([f[tissue] for f in feats], 1).astype(np.float32)  # every edge off as a class of its own)
     mu, sd = F.mean(0), F.std(0) + 1e-6
-    Fz = (F - mu) / sd
+    Fz = ((F - mu) / sd).astype(np.float64)  # float64: k-means of float32 on several threads is not deterministic
     rng = np.random.default_rng(SEED)
     fit = Fz[rng.choice(len(Fz), min(FIT_PIXELS, len(Fz)), replace=False)]
     say(f"k-means of {len(Fz):,} tissue pixels into {n_classes} classes")

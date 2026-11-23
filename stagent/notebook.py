@@ -375,7 +375,7 @@ for name, k in {_py(nmeta.get('k_by_region') or {})}.items():   # k per drawn re
         nb.append(_code(ident + kk + f'''
 from sklearn.cluster import KMeans
 nn_ = cKDTree(xy).query(xy, k=int(kk.max()) + 1)[1]
-avg = np.zeros_like(identity)
+avg = np.zeros(identity.shape)  # float64: k-means of float32 on several threads is not deterministic
 for k in np.unique(kk):
     r = np.where(kk == k)[0]
     for i in range(0, len(r), 20000):
@@ -843,7 +843,7 @@ if IDENTITY == "nmf":                    # NMF programs fitted on the pooled cel
 else:                                    # the cell types of each slice
     pred_all = np.concatenate([SLICES[x]["pred"] for x in ORDER])
     identity = np.zeros((len(pred_all), T), np.float32); identity[np.arange(len(pred_all)), pred_all] = 1
-avg = np.zeros_like(identity)
+avg = np.zeros(identity.shape)  # float64: k-means of float32 on several threads is not deterministic
 for i, x in enumerate(ORDER):            # averaged over each cell's neighbors in its own slice
     nn_ = cKDTree(SLICES[x]["xy"]).query(SLICES[x]["xy"], k=K_NICHE + 1)[1]
     part = identity[OFF[i]:OFF[i + 1]]
