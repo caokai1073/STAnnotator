@@ -520,8 +520,13 @@ The app's window, or the web viewer (`.venv/bin/stagent viewer`, then http://loc
   list and in Export); its id, versions and results stay. Leave the name empty for none.
 - **Overview of the project** shows the slices of the project chosen (with **No project** chosen: **Overview of all
   samples**, every sample) side by side, each over its image (the **image** box) and colored the
-  same way: cell type, lineage, Leiden clusters, niche or region (from the annotation open, else each sample's latest
-  one), with one legend for all.
+  same way: cell type, lineage, Leiden clusters, niche, region, gene expression or a program (from the annotation
+  open, else each sample's latest one), with one legend for all.
+  - **gene expression…**: type a gene; every slice uses the same transcript bins (0, 1, 2–3, 4–7, 8 or more), a slice
+    whose panel lacks it says so.
+  - **program…**: the programs scored in Compare > Programs (with how many slices have each). The slices of a project
+    run share its color cutoffs, so a color means the same score on every slice; a slice scored in another run says
+    so (its own cutoffs).
   - Tick legend entries to show only them (e.g. only ILCs; the other cells turn light gray on every sample); **Show
     all** clears the ticks.
   - Click a sample to open it.
@@ -1012,8 +1017,11 @@ expression-matched control genes (as scanpy's `score_genes`); above 0 is higher 
 proliferation, interferon type I and gamma responses, hypoxia, inflammation (TNF / NF-kB), antigen presentation
 (MHC-II), cytotoxicity, T cell exhaustion, EMT, fibrosis / ECM, endothelial activation, stress / immediate early
 (short marker sets; human and mouse names match); or **Your genes…**. The result gives the mean and the share above
-background per group; **Show on map** colors the cells by the score (the color menu keeps "program: <name>"). A
-program needs 3 of its genes in the panel; the result names those it used and those missing.
+background per group; **Show on map** colors the cells by the score (the color menu keeps "program: <name>"): at or
+below background, then the 50%, 80% and 95% quantiles of the scores above it. Scored with **All slices**, the
+cutoffs come from every slice's cells together, so the colors compare across slices (the legend says "cutoffs of all
+N slices"; also in Overview of the project). A program needs 3 of its genes in the panel; the result names those it
+used and those missing.
 
 **Dot plot** (DE genes and Top genes): one row per group, dot size = share of cells detecting the gene, color = its
 mean expression scaled per gene. For one DE comparison only its two sides (the group and the reference or all other

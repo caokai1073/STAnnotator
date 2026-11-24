@@ -312,7 +312,7 @@ def colors_for(s: Session, version, mode, only):
             out[:, 3] = np.array([x[3] for x in GENE_BINS], np.uint8)[b]
         elif mode.startswith("program:"):
             from . import programs
-            b = programs.bins(programs.values(s, mode.split(":", 1)[1]))
+            b = programs.cell_bins(s, mode.split(":", 1)[1])
             out[:, :3] = np.array([x[2] for x in programs.BINS], np.uint8)[b]
             out[:, 3] = np.array([x[3] for x in programs.BINS], np.uint8)[b]
         elif mode == "leiden":
@@ -444,7 +444,7 @@ def cell_keys(s: Session, version, mode):
         return np.array([x[0] for x in GENE_BINS], dtype=object)[gene_bins(s, mode)]
     if mode.startswith("program:"):
         from . import programs
-        return np.array([x[0] for x in programs.BINS], dtype=object)[programs.bins(programs.values(s, mode.split(":", 1)[1]))]
+        return np.array([x[0] for x in programs.BINS], dtype=object)[programs.cell_bins(s, mode.split(":", 1)[1])]
     if mode.startswith("lr:"):
         return np.array([x[0] for x in lr_table(mode)], dtype=object)[lr_bins(s, mode)]
     if mode == "leiden":
@@ -510,7 +510,7 @@ def legend_for(s: Session, version, mode):
         return [{"key": k, "label": lab, "color": c, "count": int(n[i])} for i, (k, lab, c, _) in enumerate(GENE_BINS)][::-1]
     if mode.startswith("program:"):
         from . import programs
-        n = np.bincount(programs.bins(programs.values(s, mode.split(":", 1)[1])), minlength=len(programs.BINS))
+        n = np.bincount(programs.cell_bins(s, mode.split(":", 1)[1]), minlength=len(programs.BINS))
         return [{"key": k, "label": lab, "color": c, "count": int(n[i])} for i, (k, lab, c, _) in enumerate(programs.BINS)][::-1]
     if mode.startswith("trajectory"):
         from . import trajectory

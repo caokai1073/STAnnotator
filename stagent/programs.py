@@ -128,8 +128,11 @@ def run(c, name=None, genes=None, by="cell type", within=None, keep_for=None):
     gi = {g: i for i, g in enumerate(c.genes)}
     sc, ctrl = score(c.X, c.genes, [gi[g] for g in used])
     key = key_of(name)
+    # the color cutoffs, from every cell scored together: the slices of a project run share them, so a color means
+    # the same score on each slice (the main map and the project's overview)
     info = {"name": name, "genes": used, "missing": missing, "n_controls": int(len(ctrl)),
-            "run_id": time.strftime("%Y%m%d-%H%M%S") + f"-{int(time.time() * 1000) % 1000:03d}"}
+            "run_id": time.strftime("%Y%m%d-%H%M%S") + f"-{int(time.time() * 1000) % 1000:03d}",
+            "cutoffs": cutoffs(sc), "scope": "project" if c.pid else "slice", "n_slices": len(c.sessions)}
     off = np.cumsum([0] + [len(s.cells) for s in c.sessions])
     for i, s in enumerate(c.sessions):
         if keep_for is None or s in keep_for:
@@ -161,10 +164,23 @@ BINS = (("low", "at or below background", (200, 200, 200), 40), ("q1", "above ba
         ("q4", "top 5%", (128, 0, 38), 250))
 
 
-def bins(v):
-    """Bin (index into BINS) of every cell: at or below 0, then quantiles of the scores above 0."""
+def cutoffs(v):
+    """The bin edges of BINS above 0: the quantiles 50%, 80%, 95% of the scores above 0 (None: none above 0)."""
+    v = np.asarray(v)
     pos = v[v > 0]
-    if not len(pos):
+    return [round(float(x), 6) for x in np.quantile(pos, [0.5, 0.8, 0.95])] if len(pos) else None
+
+
+def bins(v, t=None):
+    """Bin (index into BINS) of every cell: at or below 0, then by the cutoffs t (default: v's own)."""
+    v = np.asarray(v)
+    t = t if t is not None else cutoffs(v)
+    if t is None:
         return np.zeros(len(v), int)
-    t = np.quantile(pos, [0.5, 0.8, 0.95])
     return np.where(v <= 0, 0, 1 + np.digitize(v, t)).astype(int)
+
+
+def cell_bins(s, key):
+    """The bins of an annotation's cells for program `key`, by the cutoffs of its run (shared by the slices of a
+    project run; a program scored before 0.2.63 keeps no cutoffs: its own slice's)."""
+    return bins(values(s, key), saved(s).get(key, {}).get("cutoffs"))

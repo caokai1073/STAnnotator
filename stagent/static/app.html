@@ -621,7 +621,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <button id="sampleRename" disabled title="Rename the sample as the app shows it (a slice: its name in the project)">Rename</button>
       <button id="rmSample" class="rmsample" disabled title="Remove this sample only: its cells, annotations and chats go to the data folder's trash (to import it again under its name: Import, Replace the existing sample)">Remove</button></div></div>
     <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-layers"/></svg><div id="sampleInfo">No sample yet</div></div>
-    <div class="act2"><button id="allSamples" disabled title="The slices of the project (or, with no project chosen, every sample) at a glance, colored the same way (cell type, lineage, Leiden, niche, region)">Overview of the project</button></div>
+    <div class="act2"><button id="allSamples" disabled title="The slices of the project (or, with no project chosen, every sample) at a glance, colored the same way (cell type, lineage, Leiden, niche, region, gene expression, program)">Overview of the project</button></div>
     <div class="act2"><button id="qfBtn" class="primary main" disabled title="Delete cells with few transcripts or genes or a high mitochondrial share, and genes detected in few cells">Filter cells and genes</button></div>
     <div id="slNav" class="slnav" hidden>
       <div class="stepper"><button id="slPrev" title="Previous slice of the project ([)">◀</button><span id="slPos"></span><button id="slNext" title="Next slice of the project (])">▶</button></div>
@@ -1368,7 +1368,11 @@ T and NK cells: CD3E|NKG7+ EPCAM-
   <div class="dh"><b id="glTitle">Slices</b><span class="hint" id="glInfo" style="margin-left:8px"></span><span class="spacer"></span>
     <label class="hint" style="display:inline-flex;align-items:center;gap:6px">Color by <select id="glMode">
       <option value="type">cell type</option><option value="lineage">lineage</option><option value="leiden">Leiden clusters</option>
-      <option value="niche">niche</option><option value="region">region</option><option value="cells">nothing (cells in gray)</option></select></label>
+      <option value="niche">niche</option><option value="region">region</option><option value="gene">gene expression…</option>
+      <option value="program">program…</option><option value="cells">nothing (cells in gray)</option></select></label>
+    <input type="text" id="glGene" list="glGeneList" hidden autocomplete="off" placeholder="gene, e.g. EPCAM" style="width:130px;margin-left:6px"
+           title="A gene of the panels: every slice on the same scale (transcripts per cell); press Enter"><datalist id="glGeneList"></datalist>
+    <select id="glProg" hidden style="margin-left:6px;max-width:240px" title="A program scored in Compare > Programs: the slices of a project run share its color cutoffs"></select>
     <label class="hint" style="display:inline-flex;align-items:center;gap:4px;margin-left:8px"><input type="checkbox" id="glImg" checked> image</label>
     <button id="glSave" title="Save the overview as a figure (PDF): every sample as shown, with the legend">Save figure</button>
     <button id="glClose">Close</button></div>
@@ -1681,6 +1685,10 @@ function grayColors() {
 }
 // what a color mode's colors depend on besides the version: the region colors, the niche run, the UMAP's Leiden
 // clusters or the trajectory run (a new run under the same version must not reuse the old colors)
+function progTitle(key) {  // a project run's slices share its color cutoffs: the legend says so
+  const x = (st.programs || {})[key] || {};
+  return `Program: ${x.name || key}` + (x.scope === "project" && x.n_slices > 1 ? ` (cutoffs of all ${x.n_slices} slices)` : "");
+}
 function modeRun(mode) {
   return mode === "region" ? st.colorEpoch || 0 : mode === "niche" ? (st.niche ? st.niche.params.run_id : "")
     : mode === "leiden" ? (st.emb ? st.emb.run_id : "") : mode.startsWith("trajectory:") ? ((st.trajs || {})[mode.slice(11)] || {}).run_id || ""
@@ -2747,7 +2755,7 @@ async function loadLegend() {
   $("legend").classList.remove("stale");
   $("lgtitle").textContent = (st.mode.startsWith("gene:") ? `${st.mode.slice(5)} transcripts` : st.mode.startsWith("lr:") ? lrTitle(st.mode)
     : st.mode.startsWith("trajectory:") ? `Trajectory: ${((st.trajs || {})[st.mode.slice(11)] || {}).label || TR_NAME[st.mode.slice(11)]}`
-    : st.mode.startsWith("program:") ? `Program: ${((st.programs || {})[st.mode.slice(8)] || {}).name || st.mode.slice(8)}` : MODE_TITLES[st.mode]) + (f.size ? ` (${f.size} shown)` : "");
+    : st.mode.startsWith("program:") ? progTitle(st.mode.slice(8)) : MODE_TITLES[st.mode]) + (f.size ? ` (${f.size} shown)` : "");
   $("lgall").disabled = !f.size;
   const box = $("lgitems"); box.textContent = "";
   const toggle = (keys) => {
@@ -5633,7 +5641,8 @@ const HELP = `
   <li><b>◀ ▶</b> or <kbd>[</kbd> <kbd>]</kbd> step through them and keep what is shown: Color by, legend filters,
     hidden H&amp;E, the UMAP window and, on a UMAP of all slices, its zoom and selection.</li>
   <li><b>Overview of the project</b> (Data tab) shows its slices side by side (with no project chosen: <b>Overview of
-    all samples</b>).</li>
+    all samples</b>), colored the same way, also by a gene (the same transcript bins on every slice) or a program
+    (a project run's cutoffs, shared by its slices).</li>
   <li>The Compare tab compares them (scope: all slices, rows by slice).</li></ul></li>
 <li><b>All slices together</b> (in the Annotate, Embed and Niche tabs, each for its own analysis; off by default for
   Annotate, on for Embed and Niche) treats the project as one:<ul>
@@ -7799,15 +7808,20 @@ async function openGallery(all) {  // every slice of the project (or every sampl
   GL_SCOPE.all = !!all;
   const p = st.sample && projectOf(st.sample.sample_id);
   if (!all && !p) return;
-  const want = st.mode && st.mode !== "cells" && !st.mode.includes(":") ? st.mode : "type";
+  const m = st.mode || "";
+  const want = m.startsWith("gene:") ? "gene" : m.startsWith("program:") ? "program" : m && m !== "cells" && !m.includes(":") ? m : "type";
   $("glMode").value = [...$("glMode").options].some((o) => o.value === want) ? want : "type";
+  if (want === "gene") $("glGene").value = m.slice(5);
+  GL_SCOPE.wantProg = want === "program" ? m.slice(8) : null;
   $("glTitle").textContent = all ? "All samples" : `Project ${p.name}`;
   $("glDlg").showModal();
   drawGallery();
 }
 // Each tile keeps its image and cells; ticking legend entries only recolors them (the others light gray on every sample)
 async function drawGallery() {
-  const mode = $("glMode").value, img = $("glImg").checked, ids = galleryIds(), token = (GL_SCOPE.token = (GL_SCOPE.token || 0) + 1);
+  const img = $("glImg").checked, ids = galleryIds(), token = (GL_SCOPE.token = (GL_SCOPE.token || 0) + 1);
+  const mode = await glEffectiveMode(ids);
+  if (token !== GL_SCOPE.token) return;
   GL_SCOPE.sel = new Set(); GL_SCOPE.mode = mode;
   $("glInfo").textContent = `${ids.length} ${GL_SCOPE.all ? "samples" : "slices"} · click one to open it`;
   const grid = $("glGrid"); grid.textContent = ""; glLegend(new Map());
@@ -7830,7 +7844,8 @@ async function drawGallery() {
     try {
       await loadTile(t, mode, img);
       await paintTile(t, mode, GL_SCOPE.sel);
-      if (t.note) t.ts.textContent += ` · ${t.note}`;
+      if (mode.startsWith("program:")) glProgNote(t, mode.slice(8));
+      if (t.note && !t.ts.textContent.endsWith(t.note)) t.ts.textContent += ` · ${t.note}`;
       t.items.forEach((it) => { const o = legend.get(it.label); legend.set(it.label, { color: o ? o.color : it.color, count: (o ? o.count : 0) + (it.count || 0) }); });
       if (token === GL_SCOPE.token) glLegend(legend);
     } catch (e) { t.ts.textContent += " · could not draw"; }
@@ -7842,7 +7857,8 @@ function glLegend(legend) {  // tick entries to show only them; Show all clears 
   const all = document.createElement("button"); all.id = "glAll"; all.textContent = "Show all"; all.disabled = !GL_SCOPE.sel.size;
   all.onclick = () => { GL_SCOPE.sel.clear(); box.querySelectorAll("input").forEach((x) => (x.checked = false)); glRecolor(); };
   box.append(all);
-  [...legend.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 80).forEach(([k, v]) => {
+  const binned = /^(gene|program):/.test(GL_SCOPE.mode || "");  // bins keep their order (high to low), not by size
+  [...legend.entries()].sort((a, b) => (binned ? 0 : b[1].count - a[1].count)).slice(0, 80).forEach(([k, v]) => {
     const l = document.createElement("label"), cb = document.createElement("input"), i = document.createElement("i");
     cb.type = "checkbox"; cb.checked = GL_SCOPE.sel.has(k);
     cb.onchange = () => { if (cb.checked) GL_SCOPE.sel.add(k); else GL_SCOPE.sel.delete(k); glRecolor(); };
@@ -7857,7 +7873,10 @@ async function glRecolor() {
     if (t.pos) await paintTile(t, GL_SCOPE.mode, sel).catch(() => {});
   }
 }
-$("glMode").onchange = drawGallery;
+$("glMode").onchange = () => { GL_SCOPE.wantProg = null; drawGallery(); };
+$("glGene").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); drawGallery(); } });
+$("glGene").addEventListener("change", drawGallery);
+$("glProg").onchange = drawGallery;
 $("glImg").onchange = drawGallery;
 $("glSave").onclick = () => {  // the tiles as shown, their names and the legend, as one figure
   const tiles = (GL_SCOPE.tiles || []).filter((t) => t.pos);
@@ -7865,7 +7884,9 @@ $("glSave").onclick = () => {  // the tiles as shown, their names and the legend
   const x = (v) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
   const n = tiles.length, cols = Math.min(4, n), tw = 260, th = Math.round(tw * tiles[0].c.height / tiles[0].c.width), gap = 16, cap = 30;
   const W = cols * tw + (cols - 1) * gap + 40;
-  const mode = $("glMode").selectedOptions[0].textContent, sel = GL_SCOPE.sel;
+  const gm = GL_SCOPE.mode || "", sel = GL_SCOPE.sel;
+  const mode = gm.startsWith("gene:") ? `${gm.slice(5)} transcripts` : gm.startsWith("program:") ? `program ${$("glProg").selectedOptions[0] ? $("glProg").selectedOptions[0].dataset.name : gm.slice(8)}`
+    : $("glMode").selectedOptions[0].textContent;
   let entries = [...$("glLegend").querySelectorAll("label")].map((l) => ({ name: l.textContent, color: l.querySelector("i").style.background, on: l.querySelector("input").checked }));
   if (sel.size) entries = entries.filter((e) => e.on).concat([{ name: "other cells", color: "rgb(205,205,205)" }]);
   // the legend: aligned columns as wide as the longest entry, filled top to bottom (largest groups first)
@@ -7887,15 +7908,66 @@ $("glSave").onclick = () => {  // the tiles as shown, their names and the legend
              `<text x="${cx}" y="${cy + th + 25}" font-size="9" fill="#666666">${x(sub.length > 60 ? sub.slice(0, 58) + "…" : sub)}</text>`);
   });
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" fill="currentColor">${out.join("")}</svg>`;
-  saveFigure(`${GL_SCOPE.all ? "all_samples" : "slices"}_${$("glMode").value}.pdf`, svg);
+  saveFigure(`${GL_SCOPE.all ? "all_samples" : "slices"}_${gm.replace(/[^A-Za-z0-9_-]+/g, "_")}.pdf`, svg);
 };
+function glSid(s) {  // the annotation a tile shows: the open one on its sample, else the sample's latest
+  const sess = (s.sessions || []).filter((x) => USER_METHODS.includes(x.method));
+  const open = st.sample && s.sample_id === st.sample.sample_id && st.sid;
+  return open ? st.sid : sess.length ? sess[0].session_id : null;
+}
+// The color mode of the overview: gene expression (one gene, the same transcript bins on every slice) and programs
+// (scored in Compare > Programs; a project run's slices share its cutoffs) need their own choice
+async function glEffectiveMode(ids) {
+  const kind = $("glMode").value;
+  $("glGene").hidden = kind !== "gene"; $("glProg").hidden = kind !== "program";
+  if (kind === "gene") {
+    GL_SCOPE.genes = GL_SCOPE.genes || {};
+    const miss = ids.filter((id) => !GL_SCOPE.genes[id]);
+    await Promise.all(miss.map((id) => api(`/api/sample/${id}/genes`).then((r) => (GL_SCOPE.genes[id] = r.genes)).catch(() => (GL_SCOPE.genes[id] = []))));
+    const all = [...new Set(ids.flatMap((id) => GL_SCOPE.genes[id] || []))].sort();
+    const dl = $("glGeneList"); if (dl.childElementCount !== all.length) dl.replaceChildren(...all.map((g) => Object.assign(document.createElement("option"), { value: g })));
+    const v = $("glGene").value.trim(), g = all.find((x) => x.toUpperCase() === v.toUpperCase());
+    if (!g) { if (v) toast(`${v} is in none of these panels`, 4000); $("glGene").focus(); return "cells"; }
+    $("glGene").value = g; return `gene:${g}`;
+  }
+  if (kind === "program") {  // the programs scored on the slices' annotations
+    GL_SCOPE.progs = {};
+    await Promise.all(ids.map((id) => {
+      const s = st.samples.find((x) => x.sample_id === id), sid = s && glSid(s);
+      return sid ? api(`/api/s/${sid}/programs`).then((r) => (GL_SCOPE.progs[id] = r.scored || {})).catch(() => {}) : null;
+    }));
+    const names = {};
+    Object.values(GL_SCOPE.progs).forEach((p) => Object.entries(p).forEach(([k, x]) => { (names[k] = names[k] || { name: x.name, n: 0 }).n += 1; }));
+    const sel = $("glProg"), keep = GL_SCOPE.wantProg || sel.value, keys = Object.keys(names).sort((a, b) => names[b].n - names[a].n);
+    if (!keys.length) {
+      sel.replaceChildren(Object.assign(document.createElement("option"), { value: "", textContent: "none scored (Compare > Programs)" }));
+      return "cells";
+    }
+    sel.replaceChildren(...keys.map((k) => Object.assign(document.createElement("option"),
+      { value: k, textContent: `${names[k].name} (${names[k].n} of ${ids.length})` })));
+    keys.forEach((k, i) => (sel.options[i].dataset.name = names[k].name));
+    sel.value = keys.includes(keep) ? keep : keys[0]; GL_SCOPE.wantProg = null;
+    return `program:${sel.value}`;
+  }
+  return kind;
+}
+// A slice whose program comes from another run than most slices (or from a run of the slice alone, beside others)
+// has its own cutoffs: its colors are not on the same scale; the tile says so
+function glProgNote(t, key) {
+  const xs = Object.values(GL_SCOPE.progs || {}).map((p) => p[key]).filter((x) => x && x.run_id);
+  if (xs.length < 2) return;
+  const n = {}; xs.forEach((x) => (n[x.run_id] = (n[x.run_id] || 0) + 1 + (x.scope === "project" ? 0.5 : 0)));  // (a tie: the project run)
+  const main = Object.keys(n).sort((a, b) => n[b] - n[a])[0];
+  const mine = (GL_SCOPE.progs[t.s.sample_id] || {})[key];
+  if (mine && mine.run_id !== main) t.note = "scored in another run: its own cutoffs";
+}
 async function loadTile(t, mode, withImage) {  // the sample's cells, its open or latest annotation and its image, once
   const s = t.s;
   t.he = await api(`/api/sample/${s.sample_id}/he_info`);
   t.pos = new Float32Array(await (await fetch(`/api/sample/${s.sample_id}/cells.bin?r=${t.he.rev}`)).arrayBuffer());
   const sess = (s.sessions || []).filter((x) => USER_METHODS.includes(x.method));
   const open = st.sample && s.sample_id === st.sample.sample_id && st.sid;
-  t.sid = open ? st.sid : sess.length ? sess[0].session_id : null; t.ver = open ? st.version : sess.length ? sess[0].n_versions : null;
+  t.sid = glSid(s); t.ver = open ? st.version : sess.length ? sess[0].n_versions : null;
   t.items = []; t.note = ""; t.colored = false;
   if (mode !== "cells") {
     if (!t.sid) t.note = "no annotation";
@@ -7903,7 +7975,8 @@ async function loadTile(t, mode, withImage) {  // the sample's cells, its open o
       const q = new URLSearchParams({ version: t.ver, mode });
       const r = await fetch(`/api/s/${t.sid}/colors.bin?${q}`);  // can this sample be colored this way?
       if (r.ok) { t.colored = true; t.items = ((await api(`/api/s/${t.sid}/legend?${q}`).catch(() => ({}))).items || []).filter((it) => it.count); }
-      else t.note = { leiden: "no Leiden clusters (PCA + UMAP)", niche: "no niches", region: "no regions" }[mode] || "not available";
+      else t.note = mode.startsWith("gene:") ? "gene not in its panel" : mode.startsWith("program:") ? "program not scored here"
+        : { leiden: "no Leiden clusters (PCA + UMAP)", niche: "no niches", region: "no regions" }[mode] || "not available";
       if (t.colored && mode === "region" && !t.items.some((it) => it.key !== "unknown")) { t.note = "no regions drawn"; t.items = []; t.colored = false; }
     }
   }
