@@ -522,9 +522,9 @@ The app's window, or the web viewer (`.venv/bin/stagent viewer`, then http://loc
   samples**, every sample) side by side, each over its image (the **image** box) and colored the
   same way: cell type, lineage, Leiden clusters, niche, region, gene expression or a program (from the annotation
   open, else each sample's latest one), with one legend for all.
-  - **gene expression…**: type a gene; every slice uses the same transcript bins (0, 1, 2–3, 4–7, 8 or more), a slice
+  - **gene expression**: type a gene; every slice uses the same transcript bins (0, 1, 2–3, 4–7, 8 or more), a slice
     whose panel lacks it says so.
-  - **program…**: the programs scored in Compare > Programs (with how many slices have each). The slices of a project
+  - **program**: the programs scored in Compare > Programs (with how many slices have each). The slices of a project
     run share its color cutoffs, so a color means the same score on every slice; a slice scored in another run says
     so (its own cutoffs).
   - Tick legend entries to show only them (e.g. only ILCs; the other cells turn light gray on every sample); **Show

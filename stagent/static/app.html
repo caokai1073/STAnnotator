@@ -1368,8 +1368,8 @@ T and NK cells: CD3E|NKG7+ EPCAM-
   <div class="dh"><b id="glTitle">Slices</b><span class="hint" id="glInfo" style="margin-left:8px"></span><span class="spacer"></span>
     <label class="hint" style="display:inline-flex;align-items:center;gap:6px">Color by <select id="glMode">
       <option value="type">cell type</option><option value="lineage">lineage</option><option value="leiden">Leiden clusters</option>
-      <option value="niche">niche</option><option value="region">region</option><option value="gene">gene expression…</option>
-      <option value="program">program…</option><option value="cells">nothing (cells in gray)</option></select></label>
+      <option value="niche">niche</option><option value="region">region</option><option value="gene">gene expression</option>
+      <option value="program">program</option></select></label>
     <input type="text" id="glGene" list="glGeneList" hidden autocomplete="off" placeholder="gene, e.g. EPCAM" style="width:130px;margin-left:6px"
            title="A gene of the panels: every slice on the same scale (transcripts per cell); press Enter"><datalist id="glGeneList"></datalist>
     <select id="glProg" hidden style="margin-left:6px;max-width:240px" title="A program scored in Compare > Programs: the slices of a project run share its color cutoffs"></select>
@@ -7813,6 +7813,7 @@ async function openGallery(all) {  // every slice of the project (or every sampl
   $("glMode").value = [...$("glMode").options].some((o) => o.value === want) ? want : "type";
   if (want === "gene") $("glGene").value = m.slice(5);
   GL_SCOPE.wantProg = want === "program" ? m.slice(8) : null;
+  GL_SCOPE.base = new Map(); GL_SCOPE.idsKey = null;  // (each opening reads the samples again; a change of color mode does not)
   $("glTitle").textContent = all ? "All samples" : `Project ${p.name}`;
   $("glDlg").showModal();
   drawGallery();
@@ -7821,35 +7822,44 @@ async function openGallery(all) {  // every slice of the project (or every sampl
 async function drawGallery() {
   const img = $("glImg").checked, ids = galleryIds(), token = (GL_SCOPE.token = (GL_SCOPE.token || 0) + 1);
   const mode = await glEffectiveMode(ids);
-  if (token !== GL_SCOPE.token) return;
+  if (token !== GL_SCOPE.token || mode === null) return;  // (gene expression without a gene yet: the tiles stay)
   GL_SCOPE.sel = new Set(); GL_SCOPE.mode = mode;
   $("glInfo").textContent = `${ids.length} ${GL_SCOPE.all ? "samples" : "slices"} · click one to open it`;
-  const grid = $("glGrid"); grid.textContent = ""; glLegend(new Map());
+  const key = ids.join("|") + (GL_SCOPE.all ? "|all" : "");
+  if (GL_SCOPE.idsKey !== key) {  // the tiles, once per opening: a new color mode repaints them in place
+    GL_SCOPE.idsKey = key;
+    const grid = $("glGrid"); grid.textContent = "";
+    GL_SCOPE.tiles = ids.map((id) => {
+      const s = st.samples.find((x) => x.sample_id === id), pj = projectOf(id);
+      const tile = document.createElement("div"); tile.className = "tile" + (st.sample && id === st.sample.sample_id ? " cur" : "");
+      const c = document.createElement("canvas"); c.width = 460; c.height = 340;
+      const tt = document.createElement("div"); tt.className = "tt";
+      tt.textContent = pj && pj.slices[id] ? (GL_SCOPE.all ? `${pj.name} · ${pj.slices[id].section}` : pj.slices[id].section) : sampleName(s);
+      const ts = document.createElement("div"); ts.className = "ts";
+      const sub = [metaText(s.metadata), `${s.n_cells.toLocaleString()} cells`].filter(Boolean).join(" · ");
+      ts.textContent = sub;
+      tile.append(c, tt, ts);
+      tile.onclick = () => { $("glDlg").close(); if (projectOf(st.sample.sample_id) && pj && pj === projectOf(st.sample.sample_id)) gotoSlice(id); else { $("sample").value = id; selectSample(id); } };
+      grid.append(tile);
+      return { s, c, ts, sub };
+    });
+  }
   const legend = new Map();
-  GL_SCOPE.tiles = ids.map((id) => {
-    const s = st.samples.find((x) => x.sample_id === id), pj = projectOf(id);
-    const tile = document.createElement("div"); tile.className = "tile" + (st.sample && id === st.sample.sample_id ? " cur" : "");
-    const c = document.createElement("canvas"); c.width = 460; c.height = 340;
-    const tt = document.createElement("div"); tt.className = "tt";
-    tt.textContent = pj && pj.slices[id] ? (GL_SCOPE.all ? `${pj.name} · ${pj.slices[id].section}` : pj.slices[id].section) : sampleName(s);
-    const ts = document.createElement("div"); ts.className = "ts";
-    ts.textContent = [metaText(s.metadata), `${s.n_cells.toLocaleString()} cells`].filter(Boolean).join(" · ");
-    tile.append(c, tt, ts);
-    tile.onclick = () => { $("glDlg").close(); if (projectOf(st.sample.sample_id) && pj && pj === projectOf(st.sample.sample_id)) gotoSlice(id); else { $("sample").value = id; selectSample(id); } };
-    grid.append(tile);
-    return { s, c, ts };
-  });
-  for (const t of GL_SCOPE.tiles) {  // one after the other: each fetches the cells of a whole sample
+  glLegend(legend);
+  const one = async (t) => {
     if (token !== GL_SCOPE.token) return;
     try {
       await loadTile(t, mode, img);
+      if (token !== GL_SCOPE.token) return;
       await paintTile(t, mode, GL_SCOPE.sel);
       if (mode.startsWith("program:")) glProgNote(t, mode.slice(8));
-      if (t.note && !t.ts.textContent.endsWith(t.note)) t.ts.textContent += ` · ${t.note}`;
+      t.ts.textContent = t.sub + (t.note ? ` · ${t.note}` : "");
       t.items.forEach((it) => { const o = legend.get(it.label); legend.set(it.label, { color: o ? o.color : it.color, count: (o ? o.count : 0) + (it.count || 0) }); });
       if (token === GL_SCOPE.token) glLegend(legend);
-    } catch (e) { t.ts.textContent += " · could not draw"; }
-  }
+    } catch (e) { t.ts.textContent = `${t.sub} · could not draw`; }
+  };
+  const queue = [...GL_SCOPE.tiles];  // three samples at a time (each the cells of a whole sample)
+  await Promise.all([0, 1, 2].map(async () => { while (queue.length) await one(queue.shift()); }));
 }
 function glLegend(legend) {  // tick entries to show only them; Show all clears the ticks
   const box = $("glLegend"); box.textContent = "";
@@ -7927,7 +7937,7 @@ async function glEffectiveMode(ids) {
     const all = [...new Set(ids.flatMap((id) => GL_SCOPE.genes[id] || []))].sort();
     const dl = $("glGeneList"); if (dl.childElementCount !== all.length) dl.replaceChildren(...all.map((g) => Object.assign(document.createElement("option"), { value: g })));
     const v = $("glGene").value.trim(), g = all.find((x) => x.toUpperCase() === v.toUpperCase());
-    if (!g) { if (v) toast(`${v} is in none of these panels`, 4000); $("glGene").focus(); return "cells"; }
+    if (!g) { if (v) toast(`${v} is in none of these panels`, 4000); $("glGene").focus(); return null; }
     $("glGene").value = g; return `gene:${g}`;
   }
   if (kind === "program") {  // the programs scored on the slices' annotations
@@ -7961,39 +7971,49 @@ function glProgNote(t, key) {
   const mine = (GL_SCOPE.progs[t.s.sample_id] || {})[key];
   if (mine && mine.run_id !== main) t.note = "scored in another run: its own cutoffs";
 }
-async function loadTile(t, mode, withImage) {  // the sample's cells, its open or latest annotation and its image, once
+async function glBase(s, c, withImage) {  // a sample's image info, cells and image backdrop: once per opening
+  const k = `${s.sample_id}|${withImage ? 1 : 0}`;
+  if (!GL_SCOPE.base.has(k)) GL_SCOPE.base.set(k, (async () => {
+    const he = await api(`/api/sample/${s.sample_id}/he_info`);
+    const pos = new Float32Array(await (await fetch(`/api/sample/${s.sample_id}/cells.bin?r=${he.rev}`)).arrayBuffer());
+    const W = he.width, H = he.height, kk = Math.min((c.width - 8) / W, (c.height - 8) / H);
+    const b = { he, pos, k: kk, ox: (c.width - kk * W) / 2, oy: (c.height - kk * H) / 2 };
+    b.bg = document.createElement("canvas"); b.bg.width = c.width; b.bg.height = c.height;
+    if (withImage && he.image_kind && he.image_kind !== "none") {  // the lowest level that holds the whole image in one tile
+      const top = Math.ceil(Math.log2(Math.max(W, H))), L = Math.max(0, top - Math.ceil(Math.log2(Math.max(W, H) / he.tile_size)));
+      const im = new Image(); im.src = `/api/sample/${s.sample_id}/he/${L}/0_0.jpg?r=${he.rev}`;
+      await im.decode().catch(() => {});
+      const sc = 2 ** (L - top);
+      if (im.naturalWidth) b.bg.getContext("2d").drawImage(im, b.ox, b.oy, im.naturalWidth / sc * kk, im.naturalHeight / sc * kk);
+    }
+    return b;
+  })().catch((e) => { GL_SCOPE.base.delete(k); throw e; }));
+  return GL_SCOPE.base.get(k);
+}
+async function loadTile(t, mode, withImage) {  // the sample's cells and image (kept), the colors of this mode
   const s = t.s;
-  t.he = await api(`/api/sample/${s.sample_id}/he_info`);
-  t.pos = new Float32Array(await (await fetch(`/api/sample/${s.sample_id}/cells.bin?r=${t.he.rev}`)).arrayBuffer());
+  Object.assign(t, await glBase(s, t.c, withImage));
   const sess = (s.sessions || []).filter((x) => USER_METHODS.includes(x.method));
   const open = st.sample && s.sample_id === st.sample.sample_id && st.sid;
   t.sid = glSid(s); t.ver = open ? st.version : sess.length ? sess[0].n_versions : null;
-  t.items = []; t.note = ""; t.colored = false;
+  t.items = []; t.note = ""; t.colored = false; t.col = null;
   if (mode !== "cells") {
     if (!t.sid) t.note = "no annotation";
     else {
       const q = new URLSearchParams({ version: t.ver, mode });
-      const r = await fetch(`/api/s/${t.sid}/colors.bin?${q}`);  // can this sample be colored this way?
-      if (r.ok) { t.colored = true; t.items = ((await api(`/api/s/${t.sid}/legend?${q}`).catch(() => ({}))).items || []).filter((it) => it.count); }
+      const [r, leg] = await Promise.all([fetch(`/api/s/${t.sid}/colors.bin?${q}`),  // (refused: this sample cannot be colored so)
+                                          api(`/api/s/${t.sid}/legend?${q}`).catch(() => ({}))]);
+      if (r.ok) { t.colored = true; t.col = new Uint8Array(await r.arrayBuffer()); t.items = (leg.items || []).filter((it) => it.count); }
       else t.note = mode.startsWith("gene:") ? "gene not in its panel" : mode.startsWith("program:") ? "program not scored here"
         : { leiden: "no Leiden clusters (PCA + UMAP)", niche: "no niches", region: "no regions" }[mode] || "not available";
       if (t.colored && mode === "region" && !t.items.some((it) => it.key !== "unknown")) { t.note = "no regions drawn"; t.items = []; t.colored = false; }
     }
   }
-  const c = t.c, W = t.he.width, H = t.he.height;
-  t.k = Math.min((c.width - 8) / W, (c.height - 8) / H); t.ox = (c.width - t.k * W) / 2; t.oy = (c.height - t.k * H) / 2;
-  t.bg = document.createElement("canvas"); t.bg.width = c.width; t.bg.height = c.height;
-  if (withImage && t.he.image_kind && t.he.image_kind !== "none") {  // the lowest level that holds the whole image in one tile
-    const top = Math.ceil(Math.log2(Math.max(W, H))), L = Math.max(0, top - Math.ceil(Math.log2(Math.max(W, H) / t.he.tile_size)));
-    const im = new Image(); im.src = `/api/sample/${s.sample_id}/he/${L}/0_0.jpg?r=${t.he.rev}`;
-    await im.decode().catch(() => {});
-    const sc = 2 ** (L - top);
-    if (im.naturalWidth) t.bg.getContext("2d").drawImage(im, t.ox, t.oy, im.naturalWidth / sc * t.k, im.naturalHeight / sc * t.k);
-  }
 }
 async function paintTile(t, mode, sel) {  // the image, then the cells: light gray ones first, colored ones on top
   let col = null;
-  if (t.colored) {
+  if (t.colored && !sel.size) col = t.col;
+  else if (t.colored) {
     const keys = sel.size ? t.items.filter((it) => sel.has(it.label)).map((it) => it.key) : [];
     const q = new URLSearchParams({ version: t.ver, mode, only: sel.size ? (keys.join("|") || "__none__") : "", rest: "gray" });
     const r = await fetch(`/api/s/${t.sid}/colors.bin?${q}`);
