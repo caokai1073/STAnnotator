@@ -1592,7 +1592,7 @@ function openHE(sample) {
     if (he.image_error) toast(he.image_error, 15000);  // (no permission, or the image moved: the cells without it)
     const kind = he.image_kind || "H&E";
     $("hideHE").hidden = kind === "none";
-    $("imgAdjBtn").hidden = kind === "none"; if (kind === "none") $("imgAdj").hidden = true;
+    $("imgAdjBtn").disabled = kind === "none"; if (kind === "none") $("imgAdj").hidden = true;  // (no image: greyed, the box stays)
     imgBoxSync();
     setLabel($("hideHE"), "Hide the image: the cells only (e)");
     fillImages(sample, he);
@@ -1644,7 +1644,7 @@ async function openImgAdj() {
   const sample = st.sample.sample_id, img = st.imgId || "main";
   const cur = ((st.he.images || []).find((x) => x.id === img)) || { name: st.he.image_kind || "Image" };
   $("iaTitle").textContent = `Image: ${cur.name}`;
-  $("imgAdj").hidden = false;
+  $("imgAdj").hidden = false; imgAdjPlace();
   IA.key = `${sample}|${img}`;
   IA.stats = null; $("iaFl").hidden = true;
   const a = imgAdjGet(sample, img);
@@ -1689,6 +1689,11 @@ function iaSave(redraw) {  // the panel's values for this sample and image; a ne
   imgAdjSet(sample, img, a); iaLabels(); applyImgFilter();
   if (redraw) { clearTimeout(IA.t); IA.t = setTimeout(reloadImageTiles, 350); }
 }
+function imgAdjPlace() {  // to the right of the Regions panel (not over it), under the bars at the top of the map
+  const rp = $("regpanel"), shown = rp && !rp.hidden && rp.offsetWidth;
+  $("imgAdj").style.left = `${shown ? rp.offsetLeft + rp.offsetWidth + 8 : 10}px`;
+}
+window.addEventListener("resize", () => { if (!$("imgAdj").hidden) imgAdjPlace(); });
 $("imgAdjBtn").onclick = () => { if ($("imgAdj").hidden) openImgAdj(); else $("imgAdj").hidden = true; };
 $("iaClose").onclick = () => { $("imgAdj").hidden = true; };
 ["iaB", "iaC"].forEach((id) => ($(id).oninput = () => iaSave(false)));
@@ -1709,8 +1714,8 @@ function imgSelTitle() {  // the image chosen, by its whole name (the box is nar
   const o = $("imgSel").selectedOptions[0];
   $("imgSel").title = o ? `${o.textContent}: the image under the cells (each placed on them by its own registration)` : "";
 }
-function imgBoxSync() {  // the image box (the Image choice, Adjust): shown while it holds something
-  $("imgbox").hidden = $("imgWrap").hidden && $("imgAdjBtn").hidden;
+function imgBoxSync() {  // the image box (the image choice, Adjust): shown while a sample is open, with one image or none too
+  $("imgbox").hidden = !st.sample;
 }
 function fillImages(sample, he) {  // the Image selector: the sample's images (the frame first); the last choice per sample
   const ims = he.images || [], sel = $("imgSel");
@@ -1718,9 +1723,11 @@ function fillImages(sample, he) {  // the Image selector: the sample's images (t
   st.imgId = ims.some((x) => x.id === want) ? want : "main";
   sel.textContent = "";
   ims.forEach((x) => sel.append(Object.assign(document.createElement("option"), { value: x.id, textContent: x.name })));
-  sel.value = st.imgId;
+  if (!ims.length) sel.append(Object.assign(document.createElement("option"), { value: "main", textContent: "No image" }));
+  sel.value = st.imgId; sel.disabled = !ims.length;
   imgSelTitle();
-  $("imgWrap").hidden = ims.length < 2;
+  if (!ims.length) sel.title = "No image yet: import one (Steps → Image → Import)";
+  $("imgWrap").hidden = false;
   imgBoxSync();
 }
 $("imgSel").onchange = () => {  // another image under the cells: replaced in place, the view kept
