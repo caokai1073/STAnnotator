@@ -6783,7 +6783,9 @@ async function loadSteps() {
     const img = x.key === "registration" ? x.image : null;  // the image: none (Import), pending (Align), placed (Add, Check), error (Refresh)
     const a = x.open ? ["Open", () => { showTab("data"); $("session").focus(); toast("Choose an annotation in the Annotation box", 4000); }]
       : img === "pending" ? ["Align", () => openAlignChoice()] : img === "none" ? ["Import", () => openImageImport()]
-      : img === "error" ? ["Refresh", () => refreshAll()] : act;  // (an image still copying: read it again when complete)
+      : img === "error" ? ["Refresh", () => refreshAll()]
+      : img === "placed" && x.advise === "align" ? ["Align again", () => autoAlign([smp])]  // (the check: far off over most of the tissue)
+      : act;  // (an image still copying: read it again when complete)
     if (x.key === "priors" && x.state !== "not needed") {  // Check (the Prior window), then Accept: only then ✓
       const key = `${smp}|${x.organ || ""}`;
       // accepted, then changed (e.g. a rule the agent wrote): to be checked again before Accept

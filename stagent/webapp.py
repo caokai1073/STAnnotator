@@ -1526,7 +1526,8 @@ async def api_registration_check(req: Request):
                 mm = json.load(open(mf, encoding="utf-8"))
                 mm["registration_checked"] = {"key": regcheck._key(sample, importer.image_of(sample)),
                                               "time": time.strftime("%Y-%m-%dT%H:%M:%S"), "verdict": r["verdict"],
-                                              "median_um": r.get("median_offset_um")}
+                                              "median_um": r.get("median_offset_um"),
+                                              "new_alignment": bool((r.get("new_alignment") or {}).get("advised"))}
                 dump_json(mm, mf, indent=1)
             except (OSError, ValueError):
                 pass
@@ -3865,7 +3866,12 @@ def steps_of(s, sample=None):
         rc = meta.get("registration_checked") or {}
         if img and rc.get("key") == regcheck._key(sid, img) and rc.get("time", "") > ac.get("time", "") \
                 and not (rl.get("key") == regcheck._key(sid, img) and rl.get("time", "").replace(" ", "T") > rc["time"]):  # Check since
-            reg = {"state": "done", "detail": f"checked {rc['time'][:10]}" + (f" (median {rc['median_um']} µm)" if rc.get("median_um") is not None else "") + fixed}
+            if rc.get("new_alignment"):  # far off over most of the tissue: not done (the window's Align again closed)
+                reg = {"state": "todo", "advise": "align",
+                       "detail": f"checked {rc['time'][:10]}: the cells sit far off their nuclei over most of the "
+                                 "tissue; align the image again (Align)"}
+            else:
+                reg = {"state": "done", "detail": f"checked {rc['time'][:10]}" + (f" (median {rc['median_um']} µm)" if rc.get("median_um") is not None else "") + fixed}
         elif img and rl.get("key") == regcheck._key(sid, img):  # Do local registration, right after the alignment
             reg = {"state": "done", "detail": f"corrected locally {rl['time'][:10]} (cells moved up to {rl['moved_um_max']} µm)"}
         elif img and ac.get("key") == regcheck._key(sid, img) and ac.get("verdict") != "fine" \
