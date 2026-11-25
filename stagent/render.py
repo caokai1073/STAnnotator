@@ -272,6 +272,12 @@ def channel_names(path):
                 rgb = "S" in sr.axes and sr.shape[sr.axes.index("S")] in (3, 4)
                 rgb = rgb or ("C" in sr.axes and sr.shape[sr.axes.index("C")] == 3 and sr.dtype == np.uint8)
                 n = sr.shape[sr.axes.index("C")] if "C" in sr.axes and not rgb else 1
+                # (Xenium's morphology_focus_000N: an OME series of every channel over several files, one channel in
+                # each; the others missing here read as zeros. Only the channels stored in this file count: those
+                # files are listed one by one)
+                own = sum(1 for pg in sr.pages if pg is not None and getattr(pg, "parent", None) is t)
+                if n > 1 and own < n:
+                    n = 1
                 if n > 1:
                     found = re.findall(r'<Channel[^>]*?Name="([^"]+)"', t.ome_metadata or "")
                     names = found if len(found) == n else [f"channel {k + 1}" for k in range(n)]
