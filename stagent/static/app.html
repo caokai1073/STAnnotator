@@ -1604,7 +1604,7 @@ function openHE(sample) {
     st.he = he;
     if (he.image_error) toast(he.image_error, 15000);  // (no permission, or the image moved: the cells without it)
     const kind = he.image_kind || "H&E";
-    $("hideHE").hidden = kind === "none";
+    $("hideHE").disabled = kind === "none"; $("hideHE").hidden = false;  // (no image: greyed, still there)
     $("imgAdjBtn").disabled = kind === "none"; if (kind === "none") $("imgAdj").hidden = true;  // (no image: greyed, the box stays)
     imgBoxSync();
     setLabel($("hideHE"), "Hide the image: the cells only (e)");
@@ -1618,7 +1618,7 @@ function heUrl(sample) {  // the tiles of the image chosen (st.imgId; the frame:
   const he = st.he, cur = ((he && he.images) || []).find((x) => x.id === st.imgId);
   const img = st.imgId && st.imgId !== "main" ? `&img=${encodeURIComponent(st.imgId)}${cur && cur.rev ? `&iv=${cur.rev}` : ""}` : "";
   const disp = imgDispQuery(sample, st.imgId || "main");
-  return (l, x, y) => `/api/sample/${sample}/he/${l}/${x}_${y}.jpg?r=${he.rev}${st.epoch ? `&f=${st.epoch}` : ""}${img}${disp}`;
+  return (l, x, y) => `/api/sample/${sample}/he/${l}/${x}_${y}.jpg?r=${he.rev}${he.image_rev ? `&ir=${he.image_rev}` : ""}${st.epoch ? `&f=${st.epoch}` : ""}${img}${disp}`;
 }
 // ---------------- the image's display: brightness and contrast (any image: in the page, at once), a fluorescence
 // image's display range and gamma (its tiles drawn anew); kept per sample and image in this browser ----------------
@@ -8336,7 +8336,7 @@ async function glBase(s, c, withImage) {  // a sample's image info, cells and im
     if (withImage && he.image_kind && he.image_kind !== "none") {  // the lowest level that holds the whole image in one tile
       const top = Math.ceil(Math.log2(Math.max(W, H))), L = Math.max(0, top - Math.ceil(Math.log2(Math.max(W, H) / he.tile_size)));
       // (as the image's display on the map: its range and gamma in the tile, brightness and contrast when drawn)
-      const im = new Image(); im.src = `/api/sample/${s.sample_id}/he/${L}/0_0.jpg?r=${he.rev}${imgDispQuery(s.sample_id, "main", he)}`;
+      const im = new Image(); im.src = `/api/sample/${s.sample_id}/he/${L}/0_0.jpg?r=${he.rev}${he.image_rev ? `&ir=${he.image_rev}` : ""}${imgDispQuery(s.sample_id, "main", he)}`;
       await im.decode().catch(() => {});
       const sc = 2 ** (L - top), bctx = b.bg.getContext("2d");
       bctx.filter = imgCssFilter(imgAdjGet(s.sample_id, "main", he)) || "none";
@@ -9778,7 +9778,7 @@ $("xpGeo").onclick = () => exportAs("regions");
 document.addEventListener("keydown", (e) => {
   if (document.querySelector("dialog[open]") || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;  // a dialog open: not the map's keys
   if (e.key === "h") $("hide").click();
-  if (e.key === "e") $("hideHE").click();
+  if (e.key === "e" && !$("hideHE").disabled) $("hideHE").click();
   if (e.key === "[") stepSlice(-1);
   if (e.key === "]") stepSlice(1);
   if (e.key === "t") setHeader(!document.querySelector("header").classList.contains("collapsed"));

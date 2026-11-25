@@ -199,6 +199,9 @@ try:
     r_ = importer.remove_images("s2", [x["id"] for x in importer.images("s2")], progress=lambda *a: None)
     m2 = importer._meta("s2")
     assert r_["cells_moved_to"] is None and m2["image_kind"] == "none" and not importer.images("s2"), (r_, importer.images("s2"))
+    assert np.allclose(importer.placement("s2"), B2), "no image left: the cells moved (they stay in their pixels)"
+    importer.undo_placement("s2")  # Undo: the image back
+    assert importer._meta("s2")["he_path"].endswith("other.ome.tif") and importer.images("s2"), importer._meta("s2")["he_path"]
     print("Discard: a channel hidden, a file dropped and added back, the cells moved off their image, none left")
     # Xenium's morphology_focus_000N.ome.tif: one OME series of 4 channels over 4 files. Each file opens (not
     # "incomplete": the other files' pages are theirs) and shows its own channel, one channel each

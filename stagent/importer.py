@@ -2199,8 +2199,13 @@ def remove_images(sample_id, ids, progress=print):
             place_cells(sample_id, nxt["affine"], nxt["path"], nxt["kind"] if nxt["kind"] in ("H&E", "DAPI") else "IF",
                         by="file", progress=progress)
             out["cells_moved_to"] = nxt["name"]
-        else:
-            place_cells(sample_id, BLANK, None, "none", by="file", progress=progress)
+        else:  # no image left: the cells stay where they are (their pixels, outlines and regions too) on a blank
+            m = _meta(sample_id)  # background, so the viewer has nothing to read again; Undo puts the image back
+            m["placement_previous"] = {k: m.get(k) for k in ("placement_affine", "he_path", "image_kind", "he_um_per_px",
+                                                             "image_pending", "registration_affine", "registration_by")}
+            m["placement_previous"]["placement_affine"] = placement(sample_id).tolist()
+            m.update(he_path=None, image_kind="none")
+            dump_json(m, config.SAMPLES / sample_id / "meta.json", indent=1)
         m = _meta(sample_id)
         if old:  # (not kept among the others)
             m["images"] = [x for x in (m.get("images") or []) if Path(x["path"]).resolve() != Path(old).resolve()]

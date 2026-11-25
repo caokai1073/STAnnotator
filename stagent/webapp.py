@@ -2421,6 +2421,9 @@ def api_he_info(req):
     m = importer._meta(req.path_params["sample"])
     return _json({"width": v.W, "height": v.H, "tile_size": TILE, "origin": [v.ox, v.oy], "um_per_px": v.um_per_px,
                   "image_kind": v.image_kind, "rev": int(v.rev), "image_error": v.image_error,
+                  # (the image under the cells: in its tiles' addresses, so the browser's tiles of another one, e.g. one
+                  # discarded while the cells kept their place, are not shown)
+                  "image_rev": hashlib.sha1(str(v.he_path or "none").encode()).hexdigest()[:8],
                   "image_only": bool(m.get("image_only")), "um_per_px_known": m.get("um_per_px_known", True),
                   "image_errors": getattr(v, "layer_errors", {}),
                   "images": [{k: x[k] for k in ("id", "name", "kind", "frame", "source", "rev")}
@@ -3498,6 +3501,7 @@ async def api_sample_image_remove(req: Request):
         r = importer.remove_images(sample, b["ids"]) if b.get("ids") is not None else importer.remove_image(sample, str(b.get("id")))
     except ValueError as e:
         return _json({"error": str(e)}, 400)
+    _drop_view(sample)  # (the image under the cells changed though the cells may not have moved: no new cells file)
     _reload_sample(sample)
     _forget_image_tiles(sample)
     # the images discarded: out of memory too (their open files, stores and tiles), unless another sample shows them
