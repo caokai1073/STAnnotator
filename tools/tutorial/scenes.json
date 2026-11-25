@@ -1,16 +1,16 @@
 {
- "about": "Scenes of the recorded session (0.2.59), in order (build.py). rewrite: local paths shown as generic ones. synthetic: answers no scene recorded (the agent's status). inject: an answer for one scene. The requests to the agent were recorded with work/tut/viewer59.py, which answers them without opening Terminal.",
+ "about": "Scenes of the recorded session (0.2.62), in order (build.py). rewrite: local paths shown as generic ones. synthetic: answers no scene recorded (the agent's status). inject: an answer for one scene. The requests to the agent were recorded with tools/tutorial/record_viewer.py, which answers them without opening Terminal.",
  "rewrite": [
   [
    "/Users/caokai/Documents/STAnnotator-repo/work/tut/data/",
    "/Users/me/Downloads/scp2927/"
   ],
   [
-   "/Users/caokai/Documents/STAnnotator-repo/work/tut/home59",
+   "/Users/caokai/Documents/STAnnotator-repo/work/tut/home62",
    "/Users/me/stagent"
   ],
   [
-   "/Users/caokai/.claude/projects/-Users-caokai-Documents-STAnnotator-repo-work-tut-home59-claude-workspace",
+   "/Users/caokai/.claude/projects/-Users-caokai-Documents-STAnnotator-repo-work-tut-home62-claude-workspace",
    "~/.claude/projects/stagent"
   ],
   [
@@ -30,7 +30,7 @@
    "/Users/me/"
   ],
   [
-   "work/tut/home59",
+   "work/tut/home62",
    "/Users/me/stagent"
   ]
  ],
@@ -63,7 +63,7 @@
     "reused": true
    }
   },
-  "GET /api/s/147328_20261115-154429_6892/advice": {
+  "GET /api/s/147328_20261121-235510_5d3d/advice": {
    "items": [],
    "categories": {
     "taxonomy": "Cell types",
@@ -227,7 +227,7 @@
    "report": null,
    "registration_fixed": false
   },
-  "GET /api/s/147328_20261115-154838_8389/advice": {
+  "GET /api/s/147328_20261121-235730_5a47/advice": {
    "items": [],
    "categories": {
     "taxonomy": "Cell types",
@@ -403,16 +403,6 @@
   "GET /api/leiden_parallel",
   "GET /api/review_mode"
  ],
- "steps_order": [
-  "import",
-  "registration",
-  "filter",
-  "priors",
-  "annotate",
-  "regions",
-  "review",
-  "analyze"
- ],
  "scenes": [
   {
    "name": "s00-empty"
@@ -427,49 +417,31 @@
    "name": "c02-align-pre"
   },
   {
+   "name": "c02-aligning-a",
+   "source": "c02-aligning",
+   "from": 1795323217.652,
+   "until": 1795323231.4259999
+  },
+  {
+   "name": "c02-aligning-b",
+   "source": "c02-aligning",
+   "from": 1795323231.4259999,
+   "until": 1795323263.418
+  },
+  {
    "name": "c02-aligning"
   },
   {
-   "name": "c02-al-alignment_status-1"
+   "name": "c02-aligned"
   },
   {
-   "name": "c02-al-search_alignment-1"
+   "name": "c02-align2"
   },
   {
-   "name": "c02-al-show_alignment-1"
+   "name": "c02-check2"
   },
   {
-   "name": "c02-al-refine_alignment-1"
-  },
-  {
-   "name": "c02-al-show_alignment-2"
-  },
-  {
-   "name": "c02-al-apply_alignment-1"
-  },
-  {
-   "name": "c02-align1-accepted"
-  },
-  {
-   "name": "c02-al-alignment_status-2"
-  },
-  {
-   "name": "c02-al-search_alignment-2"
-  },
-  {
-   "name": "c02-al-show_alignment-3"
-  },
-  {
-   "name": "c02-al-refine_alignment-2"
-  },
-  {
-   "name": "c02-al-show_alignment-4"
-  },
-  {
-   "name": "c02-al-apply_alignment-2"
-  },
-  {
-   "name": "c02-align2-accepted"
+   "name": "c02-done"
   },
   {
    "name": "c03-start"
@@ -511,6 +483,9 @@
    "name": "c05r-propose_refinement-1"
   },
   {
+   "name": "c05r-propose_refinement-2"
+  },
+  {
    "name": "c05r-proposed"
   },
   {
@@ -546,8 +521,8 @@
   {
    "name": "c06-pre",
    "source": "c06-embed",
-   "from": 1794776009.322,
-   "until": 1794776017.055
+   "from": 1795323772.279,
+   "until": 1795323780.031
   },
   {
    "name": "c06-embed"
@@ -643,16 +618,13 @@
    "name": "c14-reviewing"
   },
   {
-   "name": "c14-show_area-2"
-  },
-  {
    "name": "c14-show_area-3"
   },
   {
    "name": "c14-show_area-5"
   },
   {
-   "name": "c14-show_area-7"
+   "name": "c14-show_area-6"
   },
   {
    "name": "c14-record_review-1"
@@ -673,10 +645,19 @@
    "name": "c15b-shift-start"
   },
   {
-   "name": "c15b-shift-import"
+   "name": "c15b-import-a",
+   "source": "c15b-shift-import",
+   "from": 1795324248.785,
+   "until": 1795324256.322
   },
   {
-   "name": "c15b-check"
+   "name": "c15b-import-b",
+   "source": "c15b-shift-import",
+   "from": 1795324256.322,
+   "until": 1795324556.796
+  },
+  {
+   "name": "c15b-shift-import"
   },
   {
    "name": "c15b-local"

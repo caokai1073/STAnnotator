@@ -22,6 +22,14 @@
   // draws it for a moment, and the answer is yes, as in the recording
   window.confirm = (msg) => { T.confirm && T.confirm(String(msg || "")); return true; };
 
+  // the app's messages (toast: "Filtered ...", "Refreshed ...") last about 2 s, for someone who just clicked; in the
+  // replay the viewer is also reading the caption, so each stays long enough to read (the player says how long)
+  addEventListener("DOMContentLoaded", () => {
+    const own = window.toast;
+    if (typeof own !== "function" || !T.hold) return;
+    window.toast = (msg, ms = 2200) => own(msg, T.hold(String(msg ?? ""), ms));
+  });
+
   // the player scales the app down (CSS transforms); Safari then draws a native drop-down's arrow at its unscaled size,
   // far too large. A drawn arrow scales with the rest (the app's look otherwise unchanged)
   const css = document.createElement("style");
