@@ -7890,7 +7890,7 @@ async function drawGallery() {
   GL_SCOPE.scale = null;
   if (/^(gene|program):/.test(mode)) {  // one color scale on every slice: a project's top (as on the map), across projects the highest
     const sc = (await Promise.all(GL_SCOPE.tiles.map((t) => {
-      const sid = glSid(t.s);
+      const sid = glSid(t.s, mode);
       return sid ? api(`/api/s/${sid}/legend?mode=${encodeURIComponent(mode)}`).then((r) => r.scale).catch(() => null) : null;
     }))).filter(Boolean);
     if (token !== GL_SCOPE.token) return;
@@ -7989,11 +7989,17 @@ $("glSave").onclick = () => {  // the tiles as shown, their names and the legend
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" fill="currentColor">${out.join("")}</svg>`;
   saveFigure(`${GL_SCOPE.all ? "all_samples" : "slices"}_${gm.split("~")[0].replace(/[^A-Za-z0-9_-]+/g, "_")}.pdf`, svg);
 };
-function glSid(s) {  // the annotation a tile shows: the open one on its sample, else the sample's latest
-  const sess = (s.sessions || []).filter((x) => USER_METHODS.includes(x.method));
+// The annotation a tile shows ({sid, ver}): the open one on its sample, else the sample's latest. Gene expression and
+// regions are the sample's own data: a sample not annotated yet shows them through its placeholder (every cell
+// "Not annotated"), which the other colorings do not use.
+function glAnn(s, mode) {
+  const data = /^(gene:|region$)/.test(mode || "");
   const open = st.sample && s.sample_id === st.sample.sample_id && st.sid;
-  return open ? st.sid : sess.length ? sess[0].session_id : null;
+  if (open && (data || !st.placeholder)) return { sid: st.sid, ver: st.version };
+  const all = s.sessions || [], x = all.find((y) => USER_METHODS.includes(y.method)) || (data ? all.find((y) => y.method === "none") : null);
+  return x ? { sid: x.session_id, ver: x.n_versions } : { sid: null, ver: null };
 }
+function glSid(s, mode) { return glAnn(s, mode).sid; }
 // The color mode of the overview: gene expression (one gene, one color scale on every slice) and programs
 // (scored in Compare > Programs) need their own choice; both color on one scale on every slice
 async function glEffectiveMode(ids) {
@@ -8062,9 +8068,7 @@ async function glBase(s, c, withImage) {  // a sample's image info, cells and im
 async function loadTile(t, mode, withImage) {  // the sample's cells and image (kept), the colors of this mode
   const s = t.s;
   Object.assign(t, await glBase(s, t.c, withImage));
-  const sess = (s.sessions || []).filter((x) => USER_METHODS.includes(x.method));
-  const open = st.sample && s.sample_id === st.sample.sample_id && st.sid;
-  t.sid = glSid(s); t.ver = open ? st.version : sess.length ? sess[0].n_versions : null;
+  const a = glAnn(s, mode); t.sid = a.sid; t.ver = a.ver;
   t.items = []; t.note = ""; t.big = ""; t.colored = false; t.col = null;
   if (mode !== "cells") {
     if (!t.sid) t.big = "Not annotated";
