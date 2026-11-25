@@ -2769,6 +2769,7 @@ async function loadLegend() {
   if (asked !== `${st.sid}|${st.version}|${st.mode}`) return;  // the color mode (or annotation) changed meanwhile
   st.legend = r.items;
   const f = filt();
+  if (r.scale && f.size) { f.clear(); refreshOverlay(); emFollow(); }  // a gene: the color bar alone, nothing to tick
   if (f.size) {  // a filter on a name no longer listed would hide every cell
     const keys = new Set(r.items.map((x) => x.key)), gone = [...f].filter((k) => !keys.has(k));
     if (gone.length) { gone.forEach((k) => f.delete(k)); refreshOverlay(); emFollow(); }
@@ -2780,7 +2781,7 @@ async function loadLegend() {
     : st.mode.startsWith("program:") ? progTitle(st.mode.slice(8)) : MODE_TITLES[st.mode]) + (f.size ? ` (${f.size} shown)` : "");
   $("lgall").disabled = !f.size;
   const box = $("lgitems"); box.textContent = "";
-  if (r.scale) box.append(geneBar(r.scale, r.scale.n_slices > 1 ? `${r.scale.unit}, one scale on all ${r.scale.n_slices} slices` : ""));  // a gene: a color bar, then detected / not detected (to show only either)
+  if (r.scale) { box.append(geneBar(r.scale, r.scale.n_slices > 1 ? `${r.scale.unit}, one scale on all ${r.scale.n_slices} slices` : "")); return; }  // a gene: the color bar alone
   const toggle = (keys) => {
     const allOn = keys.every((k) => f.has(k));
     keys.forEach((k) => (allOn ? f.delete(k) : f.add(k)));
