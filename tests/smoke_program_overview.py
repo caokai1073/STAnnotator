@@ -1,8 +1,9 @@
 """Program colors on the same scale across the slices of a project, and the colors the project's overview asks for:
 a program scored on all slices together keeps the cutoffs of every slice's cells in each slice (the map, its legend
 and the overview bin by them, so a color means the same score on every slice); a program scored on one slice keeps
-its own; one scored before the cutoffs were kept bins by its own slice as before; gene colors of each slice come from
-the same transcript bins, a gene missing in a panel is refused. Runs in a temporary data folder."""
+its own; one scored before the cutoffs were kept bins by its own slice as before; genes color by normalized expression
+on a continuous scale (its top the slice's own, or one given for every slice by the overview); a gene missing in a
+panel is refused. Runs in a temporary data folder."""
 import os, shutil, tempfile, time
 import numpy as np
 EX = os.path.join(os.path.dirname(__file__), "..", "examples", "cadinu_merfish")
@@ -69,14 +70,34 @@ try:
     allp = programs.saved(ss[1]); del allp["proliferation"]["cutoffs"]; dump_json(allp, ss[1].dir / "programs" / "programs.json")
     vv = programs.values(ss[1], "proliferation")
     assert (programs.cell_bins(ss[1], "proliferation") == programs.bins(vv)).all()
-    # genes: the same transcript bins on each slice; a gene not in the panel refused
+    # genes: normalized expression (as model.lognorm) on a continuous scale, its top the slice's 99th percentile of the
+    # cells it is detected in, or the one given (the overview: one scale on every slice); not detected faint gray
+    from stagent import model
     gene = Session(sids[0]).panel[0]
+    tops = []
     for s in ss:
-        r = c.get(f"/api/s/{s.id}/colors.bin", params={"version": s.versions()[-1], "mode": f"gene:{gene.lower()}"})
+        ver = s.versions()[-1]
+        ref = np.asarray(model.lognorm(s.counts)[:, s.panel.index(gene)].todense()).ravel()
+        leg = c.get(f"/api/s/{s.id}/legend", params={"version": ver, "mode": f"gene:{gene.lower()}"}).json()
+        sc = leg["scale"]
+        assert abs(sc["top"] - np.quantile(ref[ref > 0], 0.99)) < 1e-3 and sc["top"] == sc["slice_top"], sc
+        assert {x["key"]: x["count"] for x in leg["items"]} == {"detected": int((ref > 0).sum()), "not detected": int((ref == 0).sum())}
+        tops.append(sc["top"])
+        r = c.get(f"/api/s/{s.id}/colors.bin", params={"version": ver, "mode": f"gene:{gene.lower()}"})
         assert r.status_code == 200 and len(r.content) == 4 * len(s.cells), r.status_code
-        cnt = np.asarray(s.counts[:, s.panel.index(gene)].todense()).ravel()
         col = np.frombuffer(r.content, np.uint8).reshape(-1, 4)
-        assert (col[:, :3] == np.array([x[2] for x in webapp.GENE_BINS], np.uint8)[np.digitize(cnt, [1, 2, 4, 8])]).all()
+        assert (col[ref == 0] == webapp.GENE_NONE).all()
+        on = ref > 0
+        t = np.clip(ref[on] / sc["top"], 0, 1)
+        assert np.abs(col[on, :3].astype(int) - webapp.GENE_LUT[(t * 255).round().astype(int)]).max() <= 1
+        assert (col[on, 3] >= 215).all() and col[on][t >= 1, 3].min() == 255
+        hi = ref > np.quantile(ref[on], 0.5)  # the same values, the same colors on another scale's top
+        r2 = c.get(f"/api/s/{s.id}/colors.bin", params={"version": ver, "mode": f"gene:{gene}~{2 * sc['top']}"})
+        col2 = np.frombuffer(r2.content, np.uint8).reshape(-1, 4)
+        t2 = np.clip(ref[on] / (2 * sc["top"]), 0, 1)
+        assert np.abs(col2[on, :3].astype(int) - webapp.GENE_LUT[(t2 * 255).round().astype(int)]).max() <= 1, hi.sum()
+        assert c.get(f"/api/s/{s.id}/legend", params={"version": ver, "mode": f"gene:{gene}~{2 * sc['top']}"}).json()["scale"]["top"] == 2 * sc["top"]
+    print("gene scale tops per slice", tops)
     r = c.get(f"/api/s/{sids[0]}/colors.bin", params={"version": ss[0].versions()[-1], "mode": "gene:NOPE_GENE"})
     assert r.status_code == 400 and "panel" in r.json()["error"], r.text
     assert projects.list_projects()[0]["samples"]

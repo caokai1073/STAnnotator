@@ -117,6 +117,7 @@ table.an td.heat { min-width: 44px; }
 .gllegend input { margin: 0; }
 .gllegend #glAll { padding: 1px 8px; font-size: 11px; }
 .gllegend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.gllegend .gbar { width: 230px; padding: 0; }
 .gallery .tt { font-size: 12px; font-weight: 600; margin-top: 4px; } .gallery .ts { font-size: 11px; color: var(--muted); }
 .num { width: 62px; }
 .folder { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); min-width: 0;
@@ -283,6 +284,10 @@ header .br { flex: 1 1 100%; height: 0; }
 #legend .it { display: flex; align-items: center; gap: 7px; padding: 2px 4px; border-radius: 4px; cursor: pointer; font-size: 12px; }
 #legend .it:hover { background: var(--bg); }
 #legend .it.off { opacity: .35; }
+.gbar { padding: 4px 4px 6px; font-size: 11px; color: var(--muted); }
+.gbar .bar { height: 10px; border-radius: 3px; }
+.gbar .tk { display: flex; justify-content: space-between; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.gbar .u { margin-top: 1px; }
 #legend .sw { width: 11px; height: 11px; border-radius: 50%; flex: none; }
 #legend .n { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
 #legend .grp { font-size: 10px; text-transform: uppercase; color: var(--muted); margin: 6px 4px 2px; letter-spacing: .04em; }
@@ -1636,7 +1641,8 @@ function initGL() {
     }`));
   gl.linkProgram(prog);
   if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return;
-  Object.assign(GL, { ok: true, canvas: c, gl, prog, pos: gl.createBuffer(), col: gl.createBuffer(),
+  Object.assign(GL, { ok: true, canvas: c, gl, prog, pos: gl.createBuffer(), col: gl.createBuffer(), idx: gl.createBuffer(),
+    u32: !!gl.getExtension("OES_element_index_uint"),
     loc: { pos: gl.getAttribLocation(prog, "a_pos"), col: gl.getAttribLocation(prog, "a_col") },
     u: Object.fromEntries(["u_scale", "u_offset", "u_size", "u_min", "u_opacity", "u_edge"].map((k) => [k, gl.getUniformLocation(prog, k)])) });
   viewer.canvas.insertBefore(c, viewer.drawer.canvas.nextSibling);  // above the image, below overlays and the navigator
@@ -1671,8 +1677,21 @@ async function loadPositions(sample) {
   GL.loading = { key, p };
   try { await p; } finally { if (GL.loading && GL.loading.p === p) GL.loading = null; }
 }
+// The order to draw cells in: fainter ones first, so a cell barely shown (e.g. a gene not detected) never covers
+// one in color; null when every cell is as opaque (drawn as they come). A counting sort: a few ms for a million cells.
+function alphaOrder(col) {
+  const n = col.length / 4, cnt = new Uint32Array(257);
+  for (let i = 0; i < n; i++) cnt[col[4 * i + 3] + 1]++;
+  if (cnt.filter((x) => x).length < 2) return null;
+  for (let a = 1; a < 257; a++) cnt[a] += cnt[a - 1];
+  const out = new Uint32Array(n);
+  for (let i = 0; i < n; i++) out[cnt[col[4 * i + 3]]++] = i;
+  return out;
+}
 function uploadColors(arr) {  // the cells' colors to the GPU; the overview (navigator) draws the same
   const gl = GL.gl; gl.bindBuffer(gl.ARRAY_BUFFER, GL.col); gl.bufferData(gl.ARRAY_BUFFER, arr, gl.STATIC_DRAW);
+  GL.order = alphaOrder(arr);
+  if (GL.order && GL.u32) { gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, GL.idx); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, GL.order, gl.STATIC_DRAW); }
   GL.curCol = arr; GL.colRev = (GL.colRev || 0) + 1;
 }
 function grayColors() {
@@ -1735,7 +1754,8 @@ function drawGL() {
   gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
   gl.bindBuffer(gl.ARRAY_BUFFER, GL.pos); gl.enableVertexAttribArray(GL.loc.pos); gl.vertexAttribPointer(GL.loc.pos, 2, gl.FLOAT, false, 0, 0);
   gl.bindBuffer(gl.ARRAY_BUFFER, GL.col); gl.enableVertexAttribArray(GL.loc.col); gl.vertexAttribPointer(GL.loc.col, 4, gl.UNSIGNED_BYTE, true, 0, 0);
-  gl.drawArrays(gl.POINTS, 0, GL.n);
+  if (GL.order && GL.u32 && GL.order.length === GL.n) { gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, GL.idx); gl.drawElements(gl.POINTS, GL.n, gl.UNSIGNED_INT, 0); }
+  else gl.drawArrays(gl.POINTS, 0, GL.n);
 }
 async function refreshOverlay() {
   if (GL.ok) {
@@ -1781,8 +1801,9 @@ function drawNav() {
   const kx = ((b.x - a.x) / st.he.width) * dpr, ky = ((b.y - a.y) / st.he.height) * dpr, ox = a.x * dpr, oy = a.y * dpr;
   if (cells) {  // one device pixel per cell, in its map color
     const img = ctx.createImageData(W, H), d = img.data, P = GL.posArr, C = GL.curCol, op = st.opacity;
-    for (let i = 0; i < GL.n; i++) {
-      const al = C[4 * i + 3]; if (!al) continue;
+    const ord = GL.order && GL.order.length === GL.n ? GL.order : null;  // fainter cells first, as on the map
+    for (let o = 0; o < GL.n; o++) {
+      const i = ord ? ord[o] : o, al = C[4 * i + 3]; if (!al) continue;
       const x = (ox + P[2 * i] * kx) | 0, y = (oy + P[2 * i + 1] * ky) | 0;
       if (x < 0 || y < 0 || x >= W || y >= H) continue;
       const j = 4 * (y * W + x);
@@ -2747,17 +2768,18 @@ async function loadLegend() {
   if (asked !== `${st.sid}|${st.version}|${st.mode}`) return;  // the color mode (or annotation) changed meanwhile
   st.legend = r.items;
   const f = filt();
-  if (f.size && !st.mode.startsWith("gene:")) {  // a filter on a name no longer listed would hide every cell
+  if (f.size) {  // a filter on a name no longer listed would hide every cell
     const keys = new Set(r.items.map((x) => x.key)), gone = [...f].filter((k) => !keys.has(k));
     if (gone.length) { gone.forEach((k) => f.delete(k)); refreshOverlay(); emFollow(); }
   }
   $("legend").hidden = !!st.imageOnly;  // an image only: no cells to list
   $("legend").classList.remove("stale");
-  $("lgtitle").textContent = (st.mode.startsWith("gene:") ? `${st.mode.slice(5)} transcripts` : st.mode.startsWith("lr:") ? lrTitle(st.mode)
+  $("lgtitle").textContent = (st.mode.startsWith("gene:") ? `${st.mode.slice(5)} expression` : st.mode.startsWith("lr:") ? lrTitle(st.mode)
     : st.mode.startsWith("trajectory:") ? `Trajectory: ${((st.trajs || {})[st.mode.slice(11)] || {}).label || TR_NAME[st.mode.slice(11)]}`
     : st.mode.startsWith("program:") ? progTitle(st.mode.slice(8)) : MODE_TITLES[st.mode]) + (f.size ? ` (${f.size} shown)` : "");
   $("lgall").disabled = !f.size;
   const box = $("lgitems"); box.textContent = "";
+  if (r.scale) box.append(geneBar(r.scale));  // a gene: a color bar, then detected / not detected (to show only either)
   const toggle = (keys) => {
     const allOn = keys.every((k) => f.has(k));
     keys.forEach((k) => (allOn ? f.delete(k) : f.add(k)));
@@ -2785,6 +2807,21 @@ async function loadLegend() {
   });
 }
 $("lgall").onclick = () => { filt().clear(); refreshOverlay(); loadLegend(); emFollow(); };
+// The color bar of a gene: normalized expression (as in the analyses) from the lowest detected value to the top of the
+// scale (the 99th percentile of the cells it is detected in; the cells above have the top's color)
+function geneBar(sc, note) {
+  const w = document.createElement("div"); w.className = "gbar";
+  const bar = document.createElement("div"); bar.className = "bar";
+  bar.style.background = `linear-gradient(to right, ${sc.ramp.map((c) => rgb(c)).join(", ")})`;
+  const tk = document.createElement("div"); tk.className = "tk";
+  const f = (v) => (v >= 10 ? v.toFixed(0) : v >= 1 ? v.toFixed(1) : v.toFixed(2));
+  [">0", f(sc.top / 2), `${f(sc.top)}${sc.max > sc.top ? "+" : ""}`].forEach((t) => tk.append(Object.assign(document.createElement("span"), { textContent: t })));
+  const u = document.createElement("div"); u.className = "u"; u.textContent = note || sc.unit;
+  w.title = `Normalized expression, ${sc.unit}: transcripts of the gene per 100 transcripts of the cell, log1p (as in the analyses). ` +
+    `The top of the bar is the 99th percentile of the cells it is detected in${sc.max > sc.top ? ` (largest ${f(sc.max)}: above it in the top color)` : ""}.`;
+  w.append(bar, tk, u);
+  return w;
+}
 // the legend sits at the bottom: folding moves its header down, so the arrow points down while it is open
 $("lgtoggle").onclick = () => { $("legend").classList.toggle("collapsed"); $("lgtoggle").classList.toggle("flip", !$("legend").classList.contains("collapsed")); };
 $("lgtoggle").classList.add("flip");
@@ -2825,7 +2862,7 @@ function showCell(c) {
   row("region", c.region.replace(/_/g, " "));
   row("depth", `${c.depth_um} µm from epithelium`);
   row("counts", c.total_counts);
-  if (c.gene) row(c.gene.name, `${c.gene.count} transcript${c.gene.count === 1 ? "" : "s"}`);
+  if (c.gene) row(c.gene.name, `${c.gene.count} transcript${c.gene.count === 1 ? "" : "s"}` + (c.gene.norm !== undefined ? ` (normalized ${c.gene.norm})` : ""));
   row("cell id", c.cell);
   if (c.cluster) {
     row("marker cluster", `${c.cluster} → ${c.cluster_assigned || "unassigned"}` + (c.cluster_resolution ? ` (resolution ${c.cluster_resolution})` : ""));
@@ -5641,7 +5678,7 @@ const HELP = `
   <li><b>◀ ▶</b> or <kbd>[</kbd> <kbd>]</kbd> step through them and keep what is shown: Color by, legend filters,
     hidden H&amp;E, the UMAP window and, on a UMAP of all slices, its zoom and selection.</li>
   <li><b>Overview of the project</b> (Data tab) shows its slices side by side (with no project chosen: <b>Overview of
-    all samples</b>), colored the same way, also by a gene (the same transcript bins on every slice) or a program
+    all samples</b>), colored the same way, also by a gene (one color scale on every slice) or a program
     (a project run's cutoffs, shared by its slices).</li>
   <li>The Compare tab compares them (scope: all slices, rows by slice).</li></ul></li>
 <li><b>All slices together</b> (in the Annotate, Embed and Niche tabs, each for its own analysis; off by default for
@@ -7821,7 +7858,7 @@ async function openGallery(all) {  // every slice of the project (or every sampl
 // Each tile keeps its image and cells; ticking legend entries only recolors them (the others light gray on every sample)
 async function drawGallery() {
   const img = $("glImg").checked, ids = galleryIds(), token = (GL_SCOPE.token = (GL_SCOPE.token || 0) + 1);
-  const mode = await glEffectiveMode(ids);
+  let mode = await glEffectiveMode(ids);
   if (token !== GL_SCOPE.token || mode === null) return;  // (gene expression without a gene yet: the tiles stay)
   GL_SCOPE.sel = new Set(); GL_SCOPE.mode = mode;
   $("glInfo").textContent = `${ids.length} ${GL_SCOPE.all ? "samples" : "slices"} · click one to open it`;
@@ -7843,6 +7880,19 @@ async function drawGallery() {
       grid.append(tile);
       return { s, c, ts, sub };
     });
+  }
+  GL_SCOPE.scale = null;
+  if (mode.startsWith("gene:")) {  // one color scale on every slice: its top the highest of the slices' own tops
+    const sc = (await Promise.all(GL_SCOPE.tiles.map((t) => {
+      const sid = glSid(t.s);
+      return sid ? api(`/api/s/${sid}/legend?mode=${encodeURIComponent(mode)}`).then((r) => r.scale).catch(() => null) : null;
+    }))).filter(Boolean);
+    if (token !== GL_SCOPE.token) return;
+    if (sc.length) {
+      const top = Math.max(...sc.map((x) => x.slice_top));
+      GL_SCOPE.scale = { ...sc[0], top, max: Math.max(...sc.map((x) => x.max)) };
+      mode = `${mode}~${top}`; GL_SCOPE.mode = mode;
+    }
   }
   const legend = new Map();
   glLegend(legend);
@@ -7867,6 +7917,7 @@ function glLegend(legend) {  // tick entries to show only them; Show all clears 
   const all = document.createElement("button"); all.id = "glAll"; all.textContent = "Show all"; all.disabled = !GL_SCOPE.sel.size;
   all.onclick = () => { GL_SCOPE.sel.clear(); box.querySelectorAll("input").forEach((x) => (x.checked = false)); glRecolor(); };
   box.append(all);
+  if (GL_SCOPE.scale && (GL_SCOPE.mode || "").startsWith("gene:")) box.append(geneBar(GL_SCOPE.scale, `${GL_SCOPE.scale.unit}, one scale on every slice`));
   const binned = /^(gene|program):/.test(GL_SCOPE.mode || "");  // bins keep their order (high to low), not by size
   [...legend.entries()].sort((a, b) => (binned ? 0 : b[1].count - a[1].count)).slice(0, 80).forEach(([k, v]) => {
     const l = document.createElement("label"), cb = document.createElement("input"), i = document.createElement("i");
@@ -7895,19 +7946,28 @@ $("glSave").onclick = () => {  // the tiles as shown, their names and the legend
   const n = tiles.length, cols = Math.min(4, n), tw = 260, th = Math.round(tw * tiles[0].c.height / tiles[0].c.width), gap = 16, cap = 30;
   const W = cols * tw + (cols - 1) * gap + 40;
   const gm = GL_SCOPE.mode || "", sel = GL_SCOPE.sel;
-  const mode = gm.startsWith("gene:") ? `${gm.slice(5)} transcripts` : gm.startsWith("program:") ? `program ${$("glProg").selectedOptions[0] ? $("glProg").selectedOptions[0].dataset.name : gm.slice(8)}`
+  const mode = gm.startsWith("gene:") ? `${gm.slice(5).split("~")[0]} expression` : gm.startsWith("program:") ? `program ${$("glProg").selectedOptions[0] ? $("glProg").selectedOptions[0].dataset.name : gm.slice(8)}`
     : $("glMode").selectedOptions[0].textContent;
   let entries = [...$("glLegend").querySelectorAll("label")].map((l) => ({ name: l.textContent, color: l.querySelector("i").style.background, on: l.querySelector("input").checked }));
   if (sel.size) entries = entries.filter((e) => e.on).concat([{ name: "other cells", color: "rgb(205,205,205)" }]);
   // the legend: aligned columns as wide as the longest entry, filled top to bottom (largest groups first)
+  const sc = gm.startsWith("gene:") && GL_SCOPE.scale, off = sc ? 30 : 0;  // a gene: its color bar above the entries
   const out = [], lg = [], colW = Math.min(W - 40, 22 + Math.max(...entries.map((e) => e.name.length), 4) * 5.4), rowH = 15;
   const nCol = Math.max(1, Math.floor((W - 40 + 12) / (colW + 12))), nRow = Math.ceil(entries.length / nCol);
   entries.forEach((e, i) => {
-    const lx = 20 + Math.floor(i / nRow) * (colW + 12), ly = 46 + (i % nRow) * rowH;
+    const lx = 20 + Math.floor(i / nRow) * (colW + 12), ly = 46 + off + (i % nRow) * rowH;
     const name = e.name.length > (colW - 22) / 5.4 ? e.name.slice(0, Math.floor((colW - 22) / 5.4) - 1) + "…" : e.name;
     lg.push(`<circle cx="${lx + 5}" cy="${ly - 3.5}" r="4.5" fill="${e.color}"/><text x="${lx + 15}" y="${ly}" font-size="10">${x(name)}</text>`);
   });
-  const ly = 46 + (nRow - 1) * rowH;
+  const ly = 46 + off + (nRow - 1) * rowH;
+  if (sc) {
+    const f = (v) => (v >= 10 ? v.toFixed(0) : v >= 1 ? v.toFixed(1) : v.toFixed(2));
+    lg.push(`<defs><linearGradient id="gg">${sc.ramp.map((c, i) => `<stop offset="${i / (sc.ramp.length - 1)}" stop-color="${rgb(c)}"/>`).join("")}</linearGradient></defs>`,
+      `<rect x="20" y="34" width="180" height="8" rx="2" fill="url(#gg)"/>`,
+      `<text x="20" y="53" font-size="9">&gt;0</text><text x="110" y="53" font-size="9" text-anchor="middle">${f(sc.top / 2)}</text>`,
+      `<text x="200" y="53" font-size="9" text-anchor="end">${f(sc.top)}${sc.max > sc.top ? "+" : ""}</text>`,
+      `<text x="210" y="42" font-size="9" fill="#666666">${x(sc.unit)}, one scale on every slice</text>`);
+  }
   const top = (entries.length ? ly + 18 : 34), rows = Math.ceil(n / cols), H = top + rows * (th + cap + gap) + 4;
   out.push(`<text x="20" y="22" font-size="14" font-weight="600">${x($("glTitle").textContent)} · colored by ${x(mode)}${sel.size ? ` (only ${x([...sel].join(", "))})` : ""}</text>`, ...lg);
   tiles.forEach((t, i) => {
@@ -7918,14 +7978,14 @@ $("glSave").onclick = () => {  // the tiles as shown, their names and the legend
              `<text x="${cx}" y="${cy + th + 25}" font-size="9" fill="#666666">${x(sub.length > 60 ? sub.slice(0, 58) + "…" : sub)}</text>`);
   });
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" fill="currentColor">${out.join("")}</svg>`;
-  saveFigure(`${GL_SCOPE.all ? "all_samples" : "slices"}_${gm.replace(/[^A-Za-z0-9_-]+/g, "_")}.pdf`, svg);
+  saveFigure(`${GL_SCOPE.all ? "all_samples" : "slices"}_${gm.split("~")[0].replace(/[^A-Za-z0-9_-]+/g, "_")}.pdf`, svg);
 };
 function glSid(s) {  // the annotation a tile shows: the open one on its sample, else the sample's latest
   const sess = (s.sessions || []).filter((x) => USER_METHODS.includes(x.method));
   const open = st.sample && s.sample_id === st.sample.sample_id && st.sid;
   return open ? st.sid : sess.length ? sess[0].session_id : null;
 }
-// The color mode of the overview: gene expression (one gene, the same transcript bins on every slice) and programs
+// The color mode of the overview: gene expression (one gene, one color scale on every slice) and programs
 // (scored in Compare > Programs; a project run's slices share its cutoffs) need their own choice
 async function glEffectiveMode(ids) {
   const kind = $("glMode").value;
@@ -8024,8 +8084,10 @@ async function paintTile(t, mode, sel) {  // the image, then the cells: light gr
   const lay = document.createElement("canvas"); lay.width = c.width; lay.height = c.height;  // cells on their own layer, blended over the image
   const lc = lay.getContext("2d"), id = lc.createImageData(c.width, c.height), d = id.data;
   const gray = (i) => col && col[4 * i] === 205 && col[4 * i + 1] === 205 && col[4 * i + 2] === 205;
+  const ord = col ? alphaOrder(col) : null;  // fainter cells first: a cell where a gene is not detected never covers one where it is
   for (const pass of [true, false]) {
-    for (let i = 0; i < pos.length / 2; i++) {
+    for (let o = 0; o < pos.length / 2; o++) {
+      const i = ord ? ord[o] : o;
       if (sel.size && gray(i) !== pass) continue;
       if (!sel.size && !pass) break;
       const a = col ? col[4 * i + 3] : 200; if (!a) continue;

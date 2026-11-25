@@ -307,9 +307,7 @@ def colors_for(s: Session, version, mode, only):
             out[:, :3] = np.array([x[2] for x in table], np.uint8)[b]
             out[:, 3] = np.array([x[3] for x in table], np.uint8)[b]
         elif mode.startswith("gene:"):
-            b = gene_bins(s, mode)
-            out[:, :3] = np.array([x[2] for x in GENE_BINS], np.uint8)[b]
-            out[:, 3] = np.array([x[3] for x in GENE_BINS], np.uint8)[b]
+            out[:] = gene_rgba(*gene_values(s, mode))
         elif mode.startswith("program:"):
             from . import programs
             b = programs.cell_bins(s, mode.split(":", 1)[1])
@@ -375,19 +373,67 @@ def mode_key(s, mode):
     return f"niche:{(niches.current(s)[0] or {}).get('run_id')}" if mode == "niche" else mode
 
 
-GENE_BINS = (("0", "not detected", (200, 200, 200), 35), ("1", "1 transcript", (254, 217, 118), 235),
-             ("2-3", "2–3 transcripts", (253, 141, 60), 240), ("4-7", "4–7 transcripts", (227, 26, 28), 245),
-             ("8+", "8 or more", (128, 0, 38), 250))
+GENE_NONE = (200, 200, 200, 35)  # not detected: faint, drawn under the others
+GENE_RAMP = ((254, 217, 118), (253, 141, 60), (227, 26, 28), (128, 0, 38))  # low to high (yellow, orange, red, wine)
+GENE_LUT = np.stack([np.interp(np.linspace(0, 1, 256), np.linspace(0, 1, len(GENE_RAMP)), [c[k] for c in GENE_RAMP])
+                     for k in range(3)], 1).round().astype(np.uint8)
+GENE_UNIT = "ln(1 + transcripts per 100)"
+_gene_cache = LRU(8)
 
 
-def gene_bins(s, mode):
-    """Transcript-count bin (index into GENE_BINS) of every cell for color mode "gene:<name>"."""
-    g = mode.split(":", 1)[1]
-    i = {x.upper(): k for k, x in enumerate(s.panel)}.get(g.upper())
+def _gene_parse(mode):
+    """Color mode "gene:<name>" (the scale's top at the slice's 99th percentile of the cells it is detected in) or
+    "gene:<name>~<top>" (a given top: the project overview puts every slice on one scale)."""
+    g, _, top = mode.split(":", 1)[1].partition("~")
+    return g, (float(top) if top else None)
+
+
+def gene_norm(s, gene):
+    """A gene's normalized expression per cell, as in the analyses (model.lognorm: ln(1 + transcripts per 100 of the
+    cell's transcripts)); 0 where not detected."""
+    i = {x.upper(): k for k, x in enumerate(s.panel)}.get(gene.upper())
     if i is None:
-        raise ValueError(f"{g} is not in this sample's gene panel")
-    c = np.asarray(s.counts[:, i].todense()).ravel()
-    return np.digitize(c, [1, 2, 4, 8])
+        raise ValueError(f"{gene} is not in this sample's gene panel")
+
+    def make():
+        X = s.counts
+        tot = np.asarray(X.sum(1), np.float32).ravel()
+        tot[tot == 0] = 1
+        c = np.asarray(X[:, i].todense(), np.float32).ravel()
+        return np.log1p(c * (np.float32(100.0) / tot))
+    return _gene_cache.get_or((str(s.sample_dir), s.panel[i], (s.sample_dir / "counts.npz").stat().st_mtime_ns), make)
+
+
+def gene_top(v):
+    """The top of a gene's color scale on a slice: the 99th percentile of the cells it is detected in."""
+    pos = v[v > 0]
+    return round(float(np.quantile(pos, 0.99)), 3) if len(pos) else 1.0
+
+
+def gene_values(s, mode):
+    """(values, top) of color mode "gene:<name>[~<top>]"."""
+    g, top = _gene_parse(mode)
+    v = gene_norm(s, g)
+    return v, (top if top and top > 0 else gene_top(v))
+
+
+def gene_rgba(v, top):
+    """Continuous colors: not detected faint gray; detected from yellow (low) to wine (at the top and above), more
+    opaque with the value."""
+    out = np.empty((len(v), 4), np.uint8)
+    out[:] = GENE_NONE
+    on = v > 0
+    t = np.clip(v[on] / top, 0, 1)
+    out[on, :3] = GENE_LUT[(t * 255).round().astype(int)]
+    out[on, 3] = (215 + 40 * t).round().astype(np.uint8)
+    return out
+
+
+def gene_scale(s, mode):
+    """The legend's color bar of a gene mode: its top, the slice's own top and largest value, the ramp."""
+    v, top = gene_values(s, mode)
+    return {"top": top, "slice_top": gene_top(v), "max": round(float(v.max()), 3) if len(v) else 0.0,
+            "ramp": [list(c) for c in GENE_RAMP], "unit": GENE_UNIT}
 
 
 _lr_cache = LRU(6)
@@ -441,7 +487,7 @@ def cell_keys(s: Session, version, mode):
         k[k == ""] = "ok"
         return k
     if mode.startswith("gene:"):
-        return np.array([x[0] for x in GENE_BINS], dtype=object)[gene_bins(s, mode)]
+        return np.where(gene_values(s, mode)[0] > 0, "detected", "not detected").astype(object)
     if mode.startswith("program:"):
         from . import programs
         return np.array([x[0] for x in programs.BINS], dtype=object)[programs.cell_bins(s, mode.split(":", 1)[1])]
@@ -506,8 +552,9 @@ def legend_for(s: Session, version, mode):
         n = np.bincount(lr_bins(s, mode), minlength=len(table))
         return [{"key": k, "label": lab, "color": c, "count": int(n[i])} for i, (k, lab, c, _) in enumerate(table)][::-1]
     if mode.startswith("gene:"):
-        n = np.bincount(gene_bins(s, mode), minlength=len(GENE_BINS))
-        return [{"key": k, "label": lab, "color": c, "count": int(n[i])} for i, (k, lab, c, _) in enumerate(GENE_BINS)][::-1]
+        n = int((gene_values(s, mode)[0] > 0).sum())
+        return [{"key": "detected", "label": "detected", "color": GENE_RAMP[2], "count": n},
+                {"key": "not detected", "label": "not detected", "color": GENE_NONE[:3], "count": len(s.cells) - n}]
     if mode.startswith("program:"):
         from . import programs
         n = np.bincount(programs.cell_bins(s, mode.split(":", 1)[1]), minlength=len(programs.BINS))
@@ -621,6 +668,7 @@ def overlay_tile(req: Request):
         rad = CELL_RADIUS_UM / v.um_per_px  # in level-0 image pixels
         idx = v.cells_in(x0, y0, x1, y1, pad=max(rad * size, 2.0 * size / sc) + 2)
         idx = idx[col[idx, 3] > 0]
+        idx = idx[np.argsort(col[idx, 3], kind="stable")]  # faint cells (e.g. a gene not detected) under the others
         u, w_ = (v.px[idx] - x0) * sc, (v.py[idx] - y0) * sc
         r = rad * sc * size
         if only or mode in ("conflicts", "changed", "plausibility"):  # few cells shown: keep them findable when zoomed out
@@ -2457,7 +2505,10 @@ def api_legend(req):
     v = int(req.query_params.get("version") or s.versions()[-1])
     mode = req.query_params.get("mode", "type")
     try:
-        return _json({"version": v, "mode": mode, "items": legend_for(s, v, mode)})
+        out = {"version": v, "mode": mode, "items": legend_for(s, v, mode)}
+        if mode.startswith("gene:"):  # a color bar, not bins
+            out["scale"] = gene_scale(s, mode)
+        return _json(out)
     except (KeyError, ValueError) as e:  # e.g. a gene or signal not in this sample's panel (as colors.bin)
         return _json({"error": str(e)}, 400)
 
@@ -2474,7 +2525,8 @@ def api_cell_at(req):
     if q.get("gene"):  # the gene the map is colored by
         i = {x.upper(): k for k, x in enumerate(s.panel)}.get(q["gene"].upper())
         if i is not None:
-            info["gene"] = {"name": s.panel[i], "count": int(s.counts[int(row), i])}
+            info["gene"] = {"name": s.panel[i], "count": int(s.counts[int(row), i]),
+                            "norm": round(float(gene_norm(s, s.panel[i])[int(row)]), 3)}
     return _json(info | {"x_img": float(v.px[row] - v.ox), "y_img": float(v.py[row] - v.oy)})
 
 
@@ -3114,7 +3166,7 @@ async def api_refresh(req: Request):
             review_app._sessions.pop(sid, None)
         if mcp_server._active.get("session") is not None and mcp_server._active["session"].sample_id == sample:
             mcp_server._active["session"] = Session(mcp_server._active["session"].id)
-    for cache in (_colors, _lr_cache, _cell_tables):
+    for cache in (_colors, _lr_cache, _cell_tables, _gene_cache):
         cache.clear()
     config.release_memory()
     return _json({"epoch": int(time.time() * 1000)})
@@ -4029,7 +4081,7 @@ def api_samples_clear(req):
     for d in samples + old:
         render.forget(d)  # images open in the viewer (Windows cannot delete an open file)
         shutil.rmtree(d)
-    for cache in (_views, _tiles, _overlays, _colors, _cell_tables, _lr_cache, ANALYSES, FIGURES):
+    for cache in (_views, _tiles, _overlays, _colors, _cell_tables, _lr_cache, _gene_cache, ANALYSES, FIGURES):
         cache.clear()
     review_app._sessions.clear()
     mcp_server._active.pop("session", None)

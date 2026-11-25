@@ -522,8 +522,8 @@ The app's window, or the web viewer (`.venv/bin/stagent viewer`, then http://loc
   samples**, every sample) side by side, each over its image (the **image** box) and colored the
   same way: cell type, lineage, Leiden clusters, niche, region, gene expression or a program (from the annotation
   open, else each sample's latest one), with one legend for all.
-  - **gene expression**: type a gene; every slice uses the same transcript bins (0, 1, 2–3, 4–7, 8 or more), a slice
-    whose panel lacks it says so.
+  - **gene expression**: type a gene; every slice is on one color scale of normalized expression (its top the highest
+    of the slices' own tops), a slice whose panel lacks it says so.
   - **program**: the programs scored in Compare > Programs (with how many slices have each). The slices of a project
     run share its color cutoffs, so a color means the same score on every slice; a slice scored in another run says
     so (its own cutoffs).
@@ -658,8 +658,10 @@ The methods themselves are described in [Annotation methods](#6-annotation-metho
 - **The overview** at the bottom right shows the whole sample as the map does (the image, the cells in their colors
   and the region outlines), with the box of the current view.
 - **Color by**: cell type, lineage, region, changes, conflicts, confidence, clusters, niche, trajectory, or **gene
-  expression…** (type any panel gene: cells are colored by their transcript count, 0 / 1 / 2–3 / 4–7 / 8+, and a
-  clicked cell shows its count).
+  expression** (type any panel gene: cells are colored by its normalized expression, ln(1 + transcripts per 100 of the
+  cell's transcripts) as in the analyses, on a color bar from yellow to dark red whose top is the 99th percentile of
+  the cells it is detected in; cells where it is not detected are faint gray and drawn under the others, and a
+  clicked cell shows its count and value).
 - Click a legend entry to show only that type; click a cell for its label, alternatives and region.
 - Opacity (fully opaque by default), dot size, hide cells, hide H&E.
 
