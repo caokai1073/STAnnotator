@@ -1980,9 +1980,8 @@ def program_scores(program: Optional[str] = None, genes: Optional[list[str]] = N
     ...). program: a built-in one (Proliferation, Interferon type I response, Interferon gamma response, Hypoxia,
     Inflammation (TNF / NF-kB), Antigen presentation (MHC-II), Cytotoxicity, T cell exhaustion, EMT / mesenchymal,
     Fibrosis / ECM, Endothelial activation, Stress / immediate early), or genes: your own list (then program names
-    it). The scores are kept, so the map can be colored by them: the app's color menu lists "program: <name>"; with
-    scope "project" the slices share the color cutoffs (the colors compare across slices, also in the app's Overview
-    of the project)."""
+    it). The scores are kept, so the map can be colored by them: the app's color menu lists "program: <name>"; the
+    colors are one continuous scale on all slices of the project (also in the app's Overview of the project)."""
     from . import programs
     c = _cells(scope, _uses_selection(by, within))
     r = programs.run(c, program, genes, by, within)

@@ -1,8 +1,7 @@
-"""Program colors on the same scale across the slices of a project, and the colors the project's overview asks for:
-a program scored on all slices together keeps the cutoffs of every slice's cells in each slice (the map, its legend
-and the overview bin by them, so a color means the same score on every slice); a program scored on one slice keeps
-its own; one scored before the cutoffs were kept bins by its own slice as before; genes color by normalized expression
-on a continuous scale, one for all slices of a project (or one given); a gene missing in a panel is refused. Runs in a temporary data folder."""
+"""Program and gene colors on one continuous scale across the slices of a project (the map, its legend and the
+project's overview): its top the highest of the slices' own (the 99th percentile of the cells above background, or
+where the gene is detected), a slice scored again on its own joins it, one scored before the tops were kept is
+read from its scores, a top can be given; genes color by normalized expression; a gene missing in a panel is refused. Runs in a temporary data folder."""
 import os, shutil, tempfile, time
 import numpy as np
 EX = os.path.join(os.path.dirname(__file__), "..", "examples", "cadinu_merfish")
@@ -40,35 +39,53 @@ try:
             time.sleep(0.2)
         raise AssertionError("timeout")
 
-    # all slices together: each slice keeps the cutoffs of every cell
+    def colors(s, mode):
+        r = c.get(f"/api/s/{s.id}/colors.bin", params={"version": s.versions()[-1], "mode": mode})
+        assert r.status_code == 200, r.text
+        return np.frombuffer(r.content, np.uint8).reshape(-1, 4)
+
+    def scale(s, mode):
+        return c.get(f"/api/s/{s.id}/legend", params={"version": s.versions()[-1], "mode": mode}).json()["scale"]
+
+    def ramp(v, top):  # the expected colors: at or below 0 faint gray, above it the color bar up to top
+        out = np.tile(np.array(webapp.GENE_NONE, np.uint8), (len(v), 1))
+        on = v > 0
+        t = np.clip(v[on] / top, 0, 1)
+        out[on, :3] = webapp.GENE_LUT[(t * 255).round().astype(int)]
+        return out, on
+
+    # programs: a continuous scale, its top the highest of the project's slices' tops (99th percentile above 0)
     run({"kind": "program", "program": "Proliferation", "by": "cell type", "scope": "project"}, sids[0])
     infos = [programs.saved(s)["proliferation"] for s in ss]
-    assert infos[0]["cutoffs"] == infos[1]["cutoffs"] and infos[0]["scope"] == "project" and infos[0]["n_slices"] == 2, infos
     v = [programs.values(s, "proliferation") for s in ss]
-    allv = np.concatenate(v)
-    assert np.allclose(infos[0]["cutoffs"], np.quantile(allv[allv > 0], [0.5, 0.8, 0.95]), atol=1e-5)
-    b = [programs.cell_bins(s, "proliferation") for s in ss]
-    both = np.concatenate(b)
-    top = (both == 4).sum() / (allv > 0).sum()  # the top 5% bin: 5% of the cells above background over both slices
-    print("top bin share over both slices", round(top, 4), "per slice", [round((x == 4).sum() / max(1, (y > 0).sum()), 4) for x, y in zip(b, v)])
-    assert abs(top - 0.05) < 0.01, top
-    for s, bb in zip(ss, b):  # the map, its legend and the overview's colors bin the same way
-        ver = s.versions()[-1]
-        leg = c.get(f"/api/s/{s.id}/legend", params={"version": ver, "mode": "program:proliferation"}).json()["items"]
-        n = {x["key"]: x["count"] for x in leg}
-        assert [n[k] for k, *_ in programs.BINS] == np.bincount(bb, minlength=5).tolist(), (n, np.bincount(bb))
-        col = np.frombuffer(c.get(f"/api/s/{s.id}/colors.bin", params={"version": ver, "mode": "program:proliferation"}).content, np.uint8).reshape(-1, 4)
-        assert (col[:, :3] == np.array([x[2] for x in programs.BINS], np.uint8)[bb]).all()
-    # one slice alone: its own cutoffs (the overview tells this slice apart: another run)
+    own = [float(np.quantile(x[x > 0], 0.99)) for x in v]
+    assert all(abs(i["slice_top"] - o) < 1e-3 for i, o in zip(infos, own)) and infos[0]["scope"] == "project", infos
+    for s, vv in zip(ss, v):
+        sc = scale(s, "program:proliferation")
+        assert abs(sc["top"] - max(own)) < 1e-3 and sc["n_slices"] == 2 and sc["kind"] == "program", sc
+        want, on = ramp(vv, sc["top"])
+        col = colors(s, "program:proliferation")
+        assert np.abs(col[:, :3].astype(int) - want[:, :3]).max() <= 1 and (col[~on] == webapp.GENE_NONE).all()
+        leg = {x["key"]: x["count"] for x in c.get(f"/api/s/{s.id}/legend", params={"version": s.versions()[-1], "mode": "program:proliferation"}).json()["items"]}
+        assert leg == {"above background": int(on.sum()), "at or below background": int((~on).sum())}, leg
+    print("program tops per slice", [round(x, 4) for x in own], "project top", scale(ss[0], "program:proliferation")["top"])
+    # one slice scored again on its own: its new top joins the project's scale (both slices, recolored)
+    before = colors(ss[0], "program:proliferation").copy()
     run({"kind": "program", "program": "Proliferation", "by": "cell type", "scope": "slice"}, sids[1])
     i1 = programs.saved(ss[1])["proliferation"]
-    assert i1["scope"] == "slice" and i1["run_id"] != infos[0]["run_id"] and np.allclose(i1["cutoffs"], programs.cutoffs(programs.values(ss[1], "proliferation")))
-    assert programs.saved(ss[0])["proliferation"]["run_id"] == infos[0]["run_id"]
-    # scored before the cutoffs were kept: its own slice's quantiles, as before
+    assert i1["scope"] == "slice" and i1["run_id"] != infos[0]["run_id"]
+    t1 = programs.top(programs.values(ss[1], "proliferation"))
+    top = max(own[0], t1)
+    assert abs(scale(ss[0], "program:proliferation")["top"] - top) < 1e-3 and abs(scale(ss[1], "program:proliferation")["top"] - top) < 1e-3
+    if abs(top - max(own)) > 1e-3:
+        assert (colors(ss[0], "program:proliferation") != before).any()
+    # scored before the tops were kept: computed from its scores
     from stagent.osutil import dump_json
-    allp = programs.saved(ss[1]); del allp["proliferation"]["cutoffs"]; dump_json(allp, ss[1].dir / "programs" / "programs.json")
-    vv = programs.values(ss[1], "proliferation")
-    assert (programs.cell_bins(ss[1], "proliferation") == programs.bins(vv)).all()
+    allp = programs.saved(ss[1]); del allp["proliferation"]["slice_top"]; dump_json(allp, ss[1].dir / "programs" / "programs.json")
+    assert abs(programs.project_top(ss[0], "proliferation")[0] - top) < 1e-3
+    # a given top (the overview of all samples)
+    want, _ = ramp(v[0], 2 * top)
+    assert np.abs(colors(ss[0], f"program:proliferation~{2 * top}")[:, :3].astype(int) - want[:, :3]).max() <= 1
     # genes: normalized expression (as model.lognorm) on a continuous scale, its top the highest of the project's
     # slices' 99th percentiles of the cells it is detected in (the map and the overview alike), or the one given;
     # not detected faint gray

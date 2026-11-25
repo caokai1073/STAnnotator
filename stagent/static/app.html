@@ -1378,7 +1378,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <option value="program">program</option></select></label>
     <input type="text" id="glGene" list="glGeneList" hidden autocomplete="off" placeholder="gene, e.g. EPCAM" style="width:130px;margin-left:6px"
            title="A gene of the panels: every slice on the same scale (transcripts per cell); press Enter"><datalist id="glGeneList"></datalist>
-    <select id="glProg" hidden style="margin-left:6px;max-width:240px" title="A program scored in Compare > Programs: the slices of a project run share its color cutoffs"></select>
+    <select id="glProg" hidden style="margin-left:6px;max-width:240px" title="A program scored in Compare > Programs: every slice on one color scale"></select>
     <label class="hint" style="display:inline-flex;align-items:center;gap:4px;margin-left:8px"><input type="checkbox" id="glImg" checked> image</label>
     <button id="glSave" title="Save the overview as a figure (PDF): every sample as shown, with the legend">Save figure</button>
     <button id="glClose">Close</button></div>
@@ -1705,9 +1705,9 @@ function grayColors() {
 }
 // what a color mode's colors depend on besides the version: the region colors, the niche run, the UMAP's Leiden
 // clusters or the trajectory run (a new run under the same version must not reuse the old colors)
-function progTitle(key) {  // a project run's slices share its color cutoffs: the legend says so
+function progTitle(key) {
   const x = (st.programs || {})[key] || {};
-  return `Program: ${x.name || key}` + (x.scope === "project" && x.n_slices > 1 ? ` (cutoffs of all ${x.n_slices} slices)` : "");
+  return `Program: ${x.name || key}`;
 }
 function modeRun(mode) {
   return mode === "region" ? st.colorEpoch || 0 : mode === "niche" ? (st.niche ? st.niche.params.run_id : "")
@@ -2819,8 +2819,10 @@ function geneBar(sc, note) {
   const f = (v) => (v >= 10 ? v.toFixed(0) : v >= 1 ? v.toFixed(1) : v.toFixed(2));
   [">0", f(sc.top / 2), `${f(sc.top)}${sc.max > sc.top ? "+" : ""}`].forEach((t) => tk.append(Object.assign(document.createElement("span"), { textContent: t })));
   const u = document.createElement("div"); u.className = "u"; u.textContent = note || sc.unit;
-  w.title = `Normalized expression, ${sc.unit}: transcripts of the gene per 100 transcripts of the cell, log1p (as in the analyses). ` +
-    `The top of the bar is the 99th percentile of the cells it is detected in${sc.n_slices > 1 ? `, the highest of the ${sc.n_slices} slices of the project (this slice's own: ${f(sc.slice_top)}), so a color means the same value on every slice` : ""}` +
+  const prog = sc.kind === "program";
+  w.title = (prog ? "Program score: the mean expression of its genes minus that of expression-matched control genes; above 0 = above background, at or below it gray. "
+    : `Normalized expression, ${sc.unit}: transcripts of the gene per 100 transcripts of the cell, log1p (as in the analyses). `) +
+    `The top of the bar is the 99th percentile of the cells ${prog ? "above background" : "it is detected in"}${sc.n_slices > 1 ? `, the highest of the ${sc.n_slices} slices of the project (this slice's own: ${f(sc.slice_top)}), so a color means the same value on every slice` : ""}` +
     `${sc.max > sc.top ? ` (largest here ${f(sc.max)}: above the top in the top color)` : ""}.`;
   w.append(bar, tk, u);
   return w;
@@ -5681,8 +5683,8 @@ const HELP = `
   <li><b>◀ ▶</b> or <kbd>[</kbd> <kbd>]</kbd> step through them and keep what is shown: Color by, legend filters,
     hidden H&amp;E, the UMAP window and, on a UMAP of all slices, its zoom and selection.</li>
   <li><b>Overview of the project</b> (Data tab) shows its slices side by side (with no project chosen: <b>Overview of
-    all samples</b>), colored the same way, also by a gene (one color scale on every slice) or a program
-    (a project run's cutoffs, shared by its slices).</li>
+    all samples</b>), colored the same way, also by a gene or a program (each on one color scale on every
+    slice, as on the map).</li>
   <li>The Compare tab compares them (scope: all slices, rows by slice).</li></ul></li>
 <li><b>All slices together</b> (in the Annotate, Embed and Niche tabs, each for its own analysis; off by default for
   Annotate, on for Embed and Niche) treats the project as one:<ul>
@@ -7885,7 +7887,7 @@ async function drawGallery() {
     });
   }
   GL_SCOPE.scale = null;
-  if (mode.startsWith("gene:")) {  // one color scale on every slice: a project's top (as on the map), across projects the highest
+  if (/^(gene|program):/.test(mode)) {  // one color scale on every slice: a project's top (as on the map), across projects the highest
     const sc = (await Promise.all(GL_SCOPE.tiles.map((t) => {
       const sid = glSid(t.s);
       return sid ? api(`/api/s/${sid}/legend?mode=${encodeURIComponent(mode)}`).then((r) => r.scale).catch(() => null) : null;
@@ -7905,7 +7907,7 @@ async function drawGallery() {
       await loadTile(t, mode, img);
       if (token !== GL_SCOPE.token) return;
       await paintTile(t, mode, GL_SCOPE.sel);
-      if (mode.startsWith("program:")) glProgNote(t, mode.slice(8));
+      if (mode.startsWith("program:")) glProgNote(t, mode.slice(8).split("~")[0]);
       t.ts.textContent = t.sub + (t.note ? ` · ${t.note}` : "");
       t.items.forEach((it) => { const o = legend.get(it.label); legend.set(it.label, { color: o ? o.color : it.color, count: (o ? o.count : 0) + (it.count || 0) }); });
       if (token === GL_SCOPE.token) glLegend(legend);
@@ -7917,7 +7919,7 @@ async function drawGallery() {
 function glLegend(legend) {  // tick entries to show only them; Show all clears the ticks
   const box = $("glLegend"); box.textContent = "";
   if (!legend.size) return;
-  if (GL_SCOPE.scale && (GL_SCOPE.mode || "").startsWith("gene:")) {  // a gene: the color bar alone
+  if (GL_SCOPE.scale && /^(gene|program):/.test(GL_SCOPE.mode || "")) {  // a gene or a program: the color bar alone
     box.append(geneBar(GL_SCOPE.scale, `${GL_SCOPE.scale.unit}, one scale on every slice`));
     return;
   }
@@ -7957,7 +7959,7 @@ $("glSave").onclick = () => {  // the tiles as shown, their names and the legend
   let entries = [...$("glLegend").querySelectorAll("label")].map((l) => ({ name: l.textContent, color: l.querySelector("i").style.background, on: l.querySelector("input").checked }));
   if (sel.size) entries = entries.filter((e) => e.on).concat([{ name: "other cells", color: "rgb(205,205,205)" }]);
   // the legend: aligned columns as wide as the longest entry, filled top to bottom (largest groups first)
-  const sc = gm.startsWith("gene:") && GL_SCOPE.scale, off = sc ? 30 : 0;  // a gene: its color bar above the entries
+  const sc = /^(gene|program):/.test(gm) && GL_SCOPE.scale, off = sc ? 30 : 0;  // a gene or program: its color bar
   const out = [], lg = [], colW = Math.min(W - 40, 22 + Math.max(...entries.map((e) => e.name.length), 4) * 5.4), rowH = 15;
   const nCol = Math.max(1, Math.floor((W - 40 + 12) / (colW + 12))), nRow = Math.ceil(entries.length / nCol);
   entries.forEach((e, i) => {
@@ -7992,7 +7994,7 @@ function glSid(s) {  // the annotation a tile shows: the open one on its sample,
   return open ? st.sid : sess.length ? sess[0].session_id : null;
 }
 // The color mode of the overview: gene expression (one gene, one color scale on every slice) and programs
-// (scored in Compare > Programs; a project run's slices share its cutoffs) need their own choice
+// (scored in Compare > Programs) need their own choice; both color on one scale on every slice
 async function glEffectiveMode(ids) {
   const kind = $("glMode").value;
   $("glGene").hidden = kind !== "gene"; $("glProg").hidden = kind !== "program";
@@ -8027,15 +8029,15 @@ async function glEffectiveMode(ids) {
   }
   return kind;
 }
-// A slice whose program comes from another run than most slices (or from a run of the slice alone, beside others)
-// has its own cutoffs: its colors are not on the same scale; the tile says so
+// A slice whose program comes from another run than most slices (or from a run of the slice alone, beside others):
+// its scores were computed apart (other control genes), so the tile says so although the color scale is shared
 function glProgNote(t, key) {
   const xs = Object.values(GL_SCOPE.progs || {}).map((p) => p[key]).filter((x) => x && x.run_id);
   if (xs.length < 2) return;
   const n = {}; xs.forEach((x) => (n[x.run_id] = (n[x.run_id] || 0) + 1 + (x.scope === "project" ? 0.5 : 0)));  // (a tie: the project run)
   const main = Object.keys(n).sort((a, b) => n[b] - n[a])[0];
   const mine = (GL_SCOPE.progs[t.s.sample_id] || {})[key];
-  if (mine && mine.run_id !== main) t.note = "scored in another run: its own cutoffs";
+  if (mine && mine.run_id !== main) t.note = "scored in another run";
 }
 async function glBase(s, c, withImage) {  // a sample's image info, cells and image backdrop: once per opening
   const k = `${s.sample_id}|${withImage ? 1 : 0}`;

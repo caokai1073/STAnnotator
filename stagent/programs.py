@@ -9,7 +9,7 @@ The built-in programs are short, common marker sets (not a database); the user's
 scores of an annotation are kept in its folder (programs/<key>.npy, programs.json) so the map can be colored by them
 (color mode "program:<key>").
 """
-import json, re, time
+import glob, json, re, time
 import numpy as np, pandas as pd
 from .osutil import dump_json, replace_atomic
 
@@ -128,15 +128,14 @@ def run(c, name=None, genes=None, by="cell type", within=None, keep_for=None):
     gi = {g: i for i, g in enumerate(c.genes)}
     sc, ctrl = score(c.X, c.genes, [gi[g] for g in used])
     key = key_of(name)
-    # the color cutoffs, from every cell scored together: the slices of a project run share them, so a color means
-    # the same score on each slice (the main map and the project's overview)
     info = {"name": name, "genes": used, "missing": missing, "n_controls": int(len(ctrl)),
             "run_id": time.strftime("%Y%m%d-%H%M%S") + f"-{int(time.time() * 1000) % 1000:03d}",
-            "cutoffs": cutoffs(sc), "scope": "project" if c.pid else "slice", "n_slices": len(c.sessions)}
+            "scope": "project" if c.pid else "slice", "n_slices": len(c.sessions)}
     off = np.cumsum([0] + [len(s.cells) for s in c.sessions])
     for i, s in enumerate(c.sessions):
         if keep_for is None or s in keep_for:
-            keep(s, key, info, sc[off[i]:off[i + 1]])
+            v = sc[off[i]:off[i + 1]]
+            keep(s, key, info | {"slice_top": top(v)}, v)  # (the top of its color scale on this slice)
     w = analysis._within(c, within)
     col = analysis._column(c, by)
     m = w & pd.notna(col)
@@ -159,28 +158,64 @@ def run(c, name=None, genes=None, by="cell type", within=None, keep_for=None):
                      + "A short program on a targeted panel rests on few genes: check them with DE genes or the map.")}
 
 
-BINS = (("low", "at or below background", (200, 200, 200), 40), ("q1", "above background", (254, 217, 118), 225),
-        ("q2", "top half above background", (253, 141, 60), 235), ("q3", "top 20%", (227, 26, 28), 245),
-        ("q4", "top 5%", (128, 0, 38), 250))
+UNIT = "score above background"
 
 
-def cutoffs(v):
-    """The bin edges of BINS above 0: the quantiles 50%, 80%, 95% of the scores above 0 (None: none above 0)."""
+def top(v):
+    """The top of a program's color scale on a slice: the 99th percentile of its cells above background (score > 0);
+    0 when none is."""
     v = np.asarray(v)
     pos = v[v > 0]
-    return [round(float(x), 6) for x in np.quantile(pos, [0.5, 0.8, 0.95])] if len(pos) else None
+    return round(float(np.quantile(pos, 0.99)), 4) if len(pos) else 0.0
 
 
-def bins(v, t=None):
-    """Bin (index into BINS) of every cell: at or below 0, then by the cutoffs t (default: v's own)."""
-    v = np.asarray(v)
-    t = t if t is not None else cutoffs(v)
-    if t is None:
-        return np.zeros(len(v), int)
-    return np.where(v <= 0, 0, 1 + np.digitize(v, t)).astype(int)
+_TOPS = {}  # (annotation folder, key, programs.json mtime) -> its slice top (scored before 0.2.63: from its scores)
 
 
-def cell_bins(s, key):
-    """The bins of an annotation's cells for program `key`, by the cutoffs of its run (shared by the slices of a
-    project run; a program scored before 0.2.63 keeps no cutoffs: its own slice's)."""
-    return bins(values(s, key), saved(s).get(key, {}).get("cutoffs"))
+def _slice_top(d, key, info, mtime):
+    k = (str(d), key, mtime)
+    if k not in _TOPS:
+        t = info.get("slice_top")
+        if t is None:
+            try:
+                t = top(np.load(d / "programs" / f"{key}.npy"))
+            except (OSError, ValueError):
+                t = 0.0
+        _TOPS[k] = t
+    return _TOPS[k]
+
+
+def sample_top(sample_id, key, d=None):
+    """The top of program `key` on a sample: on annotation folder d, else on its annotation scored last with it
+    (the overview shows a sample's latest annotation); None: not scored on the sample."""
+    from . import config
+    if d is not None:
+        fs = [d / "programs" / "programs.json"]
+    else:  # annotation folders are named <sample>_<time>_<tag>: the sample's, checked by their session.json
+        fs = [config.SESSIONS / x for x in glob.glob(f"{glob.escape(sample_id)}_*/programs/programs.json", root_dir=config.SESSIONS)]
+    best = None
+    for f in fs:
+        try:
+            info = json.load(open(f)).get(key)
+            if not info or (d is None and json.load(open(f.parent.parent / "session.json")).get("sample_id") != sample_id):
+                continue
+            row = (info.get("run_id", ""), f.parent.parent, info, f.stat().st_mtime_ns)
+        except (OSError, ValueError):
+            continue
+        if best is None or row[0] > best[0]:
+            best = row
+    return None if best is None else _slice_top(best[1], key, best[2], best[3])
+
+
+def project_top(s, key):
+    """(top, number of slices) of program `key`'s color scale on annotation s: the highest of the tops of its
+    project's slices that have it scored, so a color means the same score on each (the map and the overview); a
+    sample alone: its own."""
+    from . import projects, config
+    tops = [sample_top(s.sample_id, key, s.dir)]
+    pid = projects.project_of(s.sample_id)
+    if pid:
+        tops += [sample_top(x, key) for x in projects.load(pid)["samples"]
+                 if x != s.sample_id and (config.SAMPLES / x / "meta.json").exists()]
+    tops = [t for t in tops if t is not None]
+    return (max(tops) if any(tops) else 1.0), len(tops)

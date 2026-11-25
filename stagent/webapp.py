@@ -309,10 +309,7 @@ def colors_for(s: Session, version, mode, only):
         elif mode.startswith("gene:"):
             out[:] = gene_rgba(*gene_values(s, mode))
         elif mode.startswith("program:"):
-            from . import programs
-            b = programs.cell_bins(s, mode.split(":", 1)[1])
-            out[:, :3] = np.array([x[2] for x in programs.BINS], np.uint8)[b]
-            out[:, 3] = np.array([x[3] for x in programs.BINS], np.uint8)[b]
+            out[:] = gene_rgba(*program_values(s, mode))
         elif mode == "leiden":
             lab = embedding.leiden(s.sample_id)
             if lab is not None:
@@ -364,9 +361,10 @@ def mode_key(s, mode):
     """Cache key of a color mode; niche colors change with every niche run."""
     if mode.startswith("gene:") and "~" not in mode:  # its top comes from the project's slices (re-filtered: a new top)
         return f"{mode}~{project_top(s.sample_id, _gene_parse(mode)[0])[0]}"
-    if mode.startswith("program:"):
+    if mode.startswith("program:"):  # a new run, or a new top from the project's slices: new colors
         from . import programs
-        return f"{mode}:{programs.saved(s).get(mode.split(':', 1)[1], {}).get('run_id')}"
+        key, top = _scale_parse(mode)
+        return f"{mode}:{programs.saved(s).get(key, {}).get('run_id')}" + ("" if top else f"~{programs.project_top(s, key)[0]}")
     if mode.startswith("trajectory"):
         from . import trajectory
         return f"traj:{(trajectory.last(s, trajectory.mode_method(mode))[0] or {}).get('run_id')}"
@@ -384,11 +382,14 @@ _gene_cache = LRU(8)
 _gene_tops = LRU(4096)  # (sample, gene, counts file) -> the top of its scale on that sample
 
 
-def _gene_parse(mode):
-    """Color mode "gene:<name>" (the scale's top: the project's, see gene_values) or "gene:<name>~<top>" (a given
-    top: the overview of all samples puts every sample on one scale)."""
+def _scale_parse(mode):
+    """Color mode "gene:<name>" / "program:<key>" (the scale's top: the project's, see gene_values and
+    programs.project_top) or "...~<top>" (a given top: the overview of all samples puts every sample on one scale)."""
     g, _, top = mode.split(":", 1)[1].partition("~")
     return g, (float(top) if top else None)
+
+
+_gene_parse = _scale_parse
 
 
 def _counts_key(sample_id):
@@ -464,13 +465,32 @@ def gene_rgba(v, top):
     return out
 
 
+def program_values(s, mode):
+    """(scores, top) of color mode "program:<key>[~<top>]": continuous like a gene, the scores above background (> 0)
+    from yellow to wine, at or below it faint gray."""
+    from . import programs
+    key, top = _scale_parse(mode)
+    return programs.values(s, key), (top if top and top > 0 else programs.project_top(s, key)[0])
+
+
+def scale_of(s, mode):
+    """The legend's color bar of a gene or program mode."""
+    from . import programs
+    if mode.startswith("program:"):
+        v, top = program_values(s, mode)
+        key, given = _scale_parse(mode)
+        return {"kind": "program", "top": top, "n_slices": 1 if given else programs.project_top(s, key)[1], "slice_top": programs.top(v),
+                "max": round(float(v.max()), 4) if len(v) else 0.0, "ramp": [list(c) for c in GENE_RAMP], "unit": programs.UNIT}
+    return gene_scale(s, mode)
+
+
 def gene_scale(s, mode):
     """The legend's color bar of a gene mode: its top (with how many slices it comes from), the slice's own top and
     largest value, the ramp."""
     v, top = gene_values(s, mode)
     g, given = _gene_parse(mode)
     n = 1 if given else project_top(s.sample_id, g)[1]
-    return {"top": top, "n_slices": n, "slice_top": gene_top(v), "max": round(float(v.max()), 3) if len(v) else 0.0,
+    return {"kind": "gene", "top": top, "n_slices": n, "slice_top": gene_top(v), "max": round(float(v.max()), 3) if len(v) else 0.0,
             "ramp": [list(c) for c in GENE_RAMP], "unit": GENE_UNIT}
 
 
@@ -527,8 +547,7 @@ def cell_keys(s: Session, version, mode):
     if mode.startswith("gene:"):
         return np.where(gene_values(s, mode)[0] > 0, "detected", "not detected").astype(object)
     if mode.startswith("program:"):
-        from . import programs
-        return np.array([x[0] for x in programs.BINS], dtype=object)[programs.cell_bins(s, mode.split(":", 1)[1])]
+        return np.where(program_values(s, mode)[0] > 0, "above background", "at or below background").astype(object)
     if mode.startswith("lr:"):
         return np.array([x[0] for x in lr_table(mode)], dtype=object)[lr_bins(s, mode)]
     if mode == "leiden":
@@ -594,9 +613,9 @@ def legend_for(s: Session, version, mode):
         return [{"key": "detected", "label": "detected", "color": GENE_RAMP[2], "count": n},
                 {"key": "not detected", "label": "not detected", "color": GENE_NONE[:3], "count": len(s.cells) - n}]
     if mode.startswith("program:"):
-        from . import programs
-        n = np.bincount(programs.cell_bins(s, mode.split(":", 1)[1]), minlength=len(programs.BINS))
-        return [{"key": k, "label": lab, "color": c, "count": int(n[i])} for i, (k, lab, c, _) in enumerate(programs.BINS)][::-1]
+        n = int((program_values(s, mode)[0] > 0).sum())
+        return [{"key": "above background", "label": "above background", "color": GENE_RAMP[2], "count": n},
+                {"key": "at or below background", "label": "at or below background", "color": GENE_NONE[:3], "count": len(s.cells) - n}]
     if mode.startswith("trajectory"):
         from . import trajectory
         meta, t, _ = trajectory.last(s, trajectory.mode_method(mode))
@@ -2544,8 +2563,8 @@ def api_legend(req):
     mode = req.query_params.get("mode", "type")
     try:
         out = {"version": v, "mode": mode, "items": legend_for(s, v, mode)}
-        if mode.startswith("gene:"):  # a color bar, not bins
-            out["scale"] = gene_scale(s, mode)
+        if mode.startswith(("gene:", "program:")):  # a color bar, not bins
+            out["scale"] = scale_of(s, mode)
         return _json(out)
     except (KeyError, ValueError) as e:  # e.g. a gene or signal not in this sample's panel (as colors.bin)
         return _json({"error": str(e)}, 400)
