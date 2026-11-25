@@ -272,6 +272,10 @@ body.desktop #side { display: none; }
 #tools, #acts, #imgbox { padding: 6px 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 #imgbox label { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
 .irlist { display: flex; flex-direction: column; gap: 4px; max-height: 50vh; overflow: auto; }
+.grtab input[type=text] { width: 100%; min-width: 110px; padding: 3px 6px; font-size: 12.5px; }
+.grtab th .grh { display: flex; gap: 4px; align-items: center; }
+.grtab th .grh input { font-weight: 600; }
+.grtab td.sl { white-space: nowrap; font-weight: 500; }
 .irlist label { display: flex; gap: 8px; align-items: center; padding: 4px 6px; border-radius: 6px; font-size: 13px; }
 .irlist label:hover { background: var(--bg); }
 .irlist .k { color: var(--muted); font-size: 11.5px; margin-left: auto; }
@@ -649,6 +653,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <button id="rmProject" class="rmsample" disabled title="Remove this project with all its slices: their cells, annotations and chats go to the data folder's trash">Remove project</button></div></div>
     <div class="fld" id="sampleWrap"><span id="sampleLbl">Sample</span><div class="inrow"><select id="sample" aria-label="Sample"></select>
       <button id="sampleRename" disabled title="Rename the sample as the app shows it (a slice: its name in the project)">Rename</button>
+      <button id="sampleGroup" disabled title="Put the project's slices into groups (e.g. condition: UC / control) to compare the groups: Compare → Compare by lists each grouping">Group</button>
       <button id="rmSample" class="rmsample" disabled title="Remove this sample only: its cells, annotations and chats go to the data folder's trash (to import it again under its name: Import, Replace the existing sample)">Remove</button></div></div>
     <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-layers"/></svg><div id="sampleInfo">No sample yet</div></div>
     <div class="act2"><button id="allSamples" disabled title="The slices of the project (or, with no project chosen, every sample) at a glance, colored the same way (cell type, lineage, Leiden, niche, region, gene expression, program)">Overview of the project</button></div>
@@ -1071,6 +1076,19 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <span class="hint" id="acAgentHint">Your agent (Claude Code) looks at the candidate placements and picks one: for a slide with
         several sections, or a tissue whose orientation is hard to tell.</span></div>
     <div class="row"><span class="spacer"></span><button id="acCancel">Cancel</button></div>
+  </div>
+</dialog>
+<dialog id="grDlg" style="width:min(820px,95vw)">
+  <div class="dh"><b id="grTitle">Groups of the slices</b><span class="spacer"></span></div>
+  <div class="imbody" style="gap:8px">
+    <div class="hint">A grouping puts each slice of the project in a group (e.g. <b>condition</b>: UC, control). Compare
+      lists it in <b>Compare by</b> (DE genes, top genes, composition, signaling) and <b>Replicates</b> (DESeq2, the
+      slices of a group as its replicates). Type a group's name in each slice's box; a box left empty: the slice in no
+      group of that grouping.</div>
+    <div style="max-height:52vh;overflow:auto"><table class="pjtab grtab" id="grTab"></table></div>
+    <div class="row"><button id="grAdd">Add a grouping</button><span class="spacer"></span></div>
+    <div class="hint" id="grNote"></div>
+    <div class="row" style="margin-top:4px"><span class="err" id="grErr"></span><span class="spacer"></span><button id="grCancel">Cancel</button><button id="grSave" class="primary">Save</button></div>
   </div>
 </dialog>
 <dialog id="irDlg" style="width:min(560px,95vw)">
@@ -2023,7 +2041,7 @@ async function loadSamples(select, project) {
   const sel = $("sample"); sel.textContent = "";
   if (!st.samples.length) {  // a fresh install: nothing imported yet
     $("empty").firstElementChild.textContent = "No samples yet. Click Import to add Xenium files (cells.parquet and cell_feature_matrix.h5) or an Atera output, h5ad or RDS files (with or without an image).";
-    $("empty").style.display = "flex"; $("annotate").disabled = true; $("sampleRename").disabled = true; $("priorBtn").disabled = true; $("qfBtn").disabled = true; $("rmSample").disabled = true; $("allSamples").disabled = true; $("pjBtn").disabled = true;
+    $("empty").style.display = "flex"; $("annotate").disabled = true; $("sampleRename").disabled = true; $("sampleGroup").disabled = true; $("priorBtn").disabled = true; $("qfBtn").disabled = true; $("rmSample").disabled = true; $("allSamples").disabled = true; $("pjBtn").disabled = true;
     $("project").textContent = ""; $("projectWrap").hidden = true; $("rmProject").disabled = true;
     if (st.sample) {  // the last sample was just removed: start afresh, as Remove all samples does (its annotation,
       setTimeout(() => location.reload(), 1500);  // image and panels must not stay open)
@@ -2147,6 +2165,7 @@ async function selectSample(id) {
   st.sample.allSessions = st.sample.sessions;
   st.sample.sessions = st.sample.sessions.filter((x) => USER_METHODS.includes(x.method));
   $("sampleRename").disabled = false; $("priorBtn").disabled = false;
+  $("sampleGroup").disabled = !projectOf(id);
   $("qfBtn").disabled = false; $("anLoad").disabled = false; $("rmSample").disabled = false; $("allSamples").disabled = false; $("pjBtn").disabled = false;
   $("reset").disabled = !st.sample.allSessions.length && !projectOf(id);  // in a project: also to reset the other slices
   imageOnlyUI();  // now, not only when an annotation opens: a sample whose annotations are not opened yet opens none
@@ -5436,6 +5455,91 @@ function imForm() {  // show the fields of the chosen options; Align with Claude
 }
 document.querySelectorAll("input[name=imImgMode], input[name=imRegMode]").forEach((r) => (r.onchange = imForm));
 $("imNewImg").addEventListener("input", imForm); $("imNewImg").addEventListener("change", imForm);
+// ---------------- Group: the project's slices put into groups (metadata columns), compared in Compare ----------------
+const GR = { pid: null, slices: [], cols: [] };  // cols: [{name, values: {sample_id: value}}]
+async function openGroups() {
+  const p = st.sample && projectOf(st.sample.sample_id); if (!p) return;
+  let r;
+  try { r = await api(`/api/project/${encodeURIComponent(p.project_id)}/groups`); } catch (e) { toast(e.message, 5000); return; }
+  GR.pid = p.project_id; GR.slices = r.slices;
+  GR.cols = Object.entries(r.columns).map(([name, values]) => ({ name, values: { ...values } }));
+  if (!GR.cols.length) GR.cols.push({ name: "group", values: {} });  // (a first grouping to fill in)
+  $("grTitle").textContent = `Groups of the slices of ${r.name}`; $("grErr").textContent = "";
+  grDraw(); $("grDlg").showModal();
+}
+function grDraw() {
+  const t = $("grTab"); t.textContent = "";
+  const head = document.createElement("tr"); head.append(Object.assign(document.createElement("th"), { textContent: "Slice" }));
+  GR.cols.forEach((c, j) => {
+    const th = document.createElement("th"), w = document.createElement("div"); w.className = "grh";
+    const name = Object.assign(document.createElement("input"), { type: "text", value: c.name, title: "The grouping's name (e.g. condition, patient, treatment)" });
+    name.oninput = () => { c.name = name.value; grNote(); };
+    const x = decorate(Object.assign(document.createElement("button"), { className: "ib", title: "Remove this grouping (the slices keep their names and cells)" }), "x", true);
+    x.onclick = () => { GR.cols.splice(j, 1); grDraw(); };
+    w.append(name, x); th.append(w); head.append(th);
+  });
+  t.append(head);
+  GR.slices.forEach((sl) => {
+    const tr = document.createElement("tr");
+    tr.append(Object.assign(document.createElement("td"), { className: "sl", textContent: sl.section }));
+    GR.cols.forEach((c, j) => {
+      const td = document.createElement("td"), dl = `grList${j}`;
+      const inp = Object.assign(document.createElement("input"), { type: "text", value: c.values[sl.sample_id] || "", placeholder: "no group" });
+      inp.setAttribute("list", dl);
+      inp.oninput = () => { c.values[sl.sample_id] = inp.value; grLists(); grNote(); };
+      td.append(inp); tr.append(td);
+    });
+    t.append(tr);
+  });
+  grLists(); grNote();
+}
+function grLists() {  // each grouping's values so far, offered in its boxes
+  document.querySelectorAll("datalist.grdl").forEach((d) => d.remove());
+  GR.cols.forEach((c, j) => {
+    const d = Object.assign(document.createElement("datalist"), { id: `grList${j}`, className: "grdl" });
+    [...new Set(Object.values(c.values).map((v) => (v || "").trim()).filter(Boolean))].sort()
+      .forEach((v) => d.append(Object.assign(document.createElement("option"), { value: v })));
+    document.body.append(d);
+  });
+}
+function grNote() {  // what Compare can do with each grouping
+  const out = [];
+  GR.cols.forEach((c) => {
+    const n = {}; GR.slices.forEach((sl) => { const v = (c.values[sl.sample_id] || "").trim(); if (v) n[v] = (n[v] || 0) + 1; });
+    const groups = Object.keys(n), name = (c.name || "").trim() || "(no name)";
+    const filled = GR.slices.filter((sl) => (c.values[sl.sample_id] || "").trim()).length;
+    if (groups.length < 2) { if (filled < GR.slices.length) out.push(`${name}: fewer than two groups (Compare does not list it)`); }  // (one value everywhere: said nothing)
+    else {
+      const one = groups.filter((g) => n[g] < 2);
+      if (one.length) out.push(`${name}: ${one.join(", ")} ${one.length > 1 ? "have" : "has"} one slice (DE genes yes, DESeq2 no)`);
+    }
+  });
+  $("grNote").textContent = out.length ? out.join(" · ") + ". DESeq2 needs 2+ slices in each group; with one, the cells of a slice are not independent samples." : "";
+}
+$("grAdd").onclick = () => {
+  const names = new Set(GR.cols.map((c) => c.name.trim().toLowerCase()));
+  let k = GR.cols.length + 1, name = "group"; while (names.has(name)) name = `group ${k++}`;
+  GR.cols.unshift({ name, values: {} }); grDraw();  // (first: in sight before the imported metadata columns)
+  const h = $("grTab").querySelector("th input"); if (h) { h.focus(); h.select(); }
+};
+$("grCancel").onclick = () => $("grDlg").close();
+$("grSave").onclick = async () => {
+  const columns = {};
+  for (const c of GR.cols) {
+    const name = (c.name || "").trim();
+    if (!name) { $("grErr").textContent = "Each grouping needs a name"; return; }
+    if (columns[name]) { $("grErr").textContent = `Two groupings are called ${name}`; return; }
+    columns[name] = Object.fromEntries(GR.slices.map((sl) => [sl.sample_id, (c.values[sl.sample_id] || "").trim()]));
+  }
+  $("grSave").disabled = true; $("grErr").textContent = "";
+  try { await post(`/api/project/${encodeURIComponent(GR.pid)}/groups`, { columns }); }
+  catch (e) { $("grErr").textContent = e.message; $("grSave").disabled = false; return; }
+  $("grSave").disabled = false; $("grDlg").close();
+  st.projects = await api("/api/projects").catch(() => st.projects);  // (the slices' metadata shown elsewhere)
+  AN.key = ""; if (typeof loadAnOptions === "function") loadAnOptions(true).catch(() => {});  // Compare by: the new groupings
+  toast("Groups saved: Compare → Compare by lists them (with All slices)", 5000);
+};
+$("sampleGroup").onclick = openGroups;
 // ---------------- Discard images: tick those to take out; the image the cells are placed on: they move to the next ----------------
 function openImageDiscard() {
   const ims = (st.he && st.he.images) || [];

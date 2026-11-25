@@ -521,6 +521,11 @@ The app's window, or the web viewer (`.venv/bin/stagent viewer`, then http://loc
   trash, as Remove does one sample).
 - **Rename** changes the name the app shows (a slice: its name in the project); the id, files
   and annotations stay.
+- **Group** (a slice of a project) puts the project's slices into groups to compare them: a grouping (e.g.
+  **condition**) gives each slice a group (UC, control; empty: none), and several groupings can be kept (condition,
+  patient, ...). Compare lists a grouping whose slices are in at least two groups: **Compare by** (DE genes, top genes,
+  composition, signaling, with All slices) and **Replicates** (DESeq2, the slices of a group as its replicates; it needs
+  two or more slices in each group). The metadata columns read at import are listed there too and can be edited.
 - **Rename** beside **Annotation** names the annotation chosen there (shown before its version and date, in the
   list and in Export); its id, versions and results stay. Leave the name empty for none.
 - **Overview of the project** shows the slices of the project chosen (with **No project** chosen: **Overview of all

@@ -3467,6 +3467,21 @@ async def api_sample_image_add(req: Request):
     return _json(r)
 
 
+async def api_project_groups(req: Request):
+    """GET: the project's slices and their groupings (metadata columns); POST {columns: {name: {sample_id: value}}}:
+    replace them. Compare lists a grouping whose values differ between slices (Compare by, Replicates)."""
+    pid = req.path_params["pid"]
+    try:
+        if req.method == "GET":
+            return _json(projects.groupings(pid))
+        b = await req.json()
+        r = projects.set_groupings(pid, b.get("columns") or {})
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+    _cell_tables.clear()  # (the slices' groupings are columns of the analyses' cell tables)
+    return _json(r)
+
+
 async def api_sample_pending_cancel(req: Request):
     """Discard the image waiting for its alignment (Steps → Image → Discard): the file is left where it is."""
     sample = req.path_params["sample"]
@@ -5002,6 +5017,7 @@ def build_app(port):
         Route("/api/sample/{sample}/images/add", api_sample_image_add, methods=["POST"]),
         Route("/api/sample/{sample}/images/remove", api_sample_image_remove, methods=["POST"]),
         Route("/api/sample/{sample}/image_stats", api_image_stats),
+        Route("/api/project/{pid}/groups", api_project_groups, methods=["GET", "POST"]),
         Route("/api/sample/{sample}/image/pending/cancel", api_sample_pending_cancel, methods=["POST"]),
         Route("/api/sample/{sample}/images/match", api_sample_image_match),
         Route("/api/sample/{sample}/registration", api_sample_registration, methods=["POST"]),

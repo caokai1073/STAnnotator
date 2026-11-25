@@ -44,6 +44,54 @@ def project_of(sample_id):
     return pid if pid and _file(pid).exists() else None
 
 
+RESERVED_GROUPINGS = {"cell type", "lineage", "region", "niche", "leiden", "selection", "slice"}  # (analysis.BUILTIN)
+
+
+def groupings(pid):
+    """The slices of a project and their groupings (the metadata columns: one value per slice, e.g. condition):
+    {"slices": [{"sample_id", "section"}], "columns": {name: {sample_id: value}}} in the slices' order."""
+    p = load(pid)
+    ids = [x for x in p["samples"] if (config.SAMPLES / x / "meta.json").exists()]
+    cols = {}
+    for x in ids:
+        for k, v in ((p["slices"].get(x) or {}).get("metadata") or {}).items():
+            cols.setdefault(k, {})[x] = "" if v is None else str(v)
+    return {"project_id": pid, "name": p["name"],
+            "slices": [{"sample_id": x, "section": (p["slices"].get(x) or {}).get("section") or x} for x in ids],
+            "columns": cols}
+
+
+def set_groupings(pid, columns):
+    """Replace the groupings of a project's slices: columns = {name: {sample_id: value}} (an empty value: the slice in
+    no group of it). Kept in the project and in each slice's meta.json, as the import keeps its metadata. Names: not
+    empty, at most 40 characters, distinct, none of the app's own groupings (cell type, slice, ...)."""
+    p = load(pid)
+    ids = [x for x in p["samples"] if (config.SAMPLES / x / "meta.json").exists()]
+    clean, seen = {}, set()
+    for name, vals in (columns or {}).items():
+        n = " ".join(str(name or "").split())
+        if not n:
+            raise ValueError("a grouping needs a name")
+        if len(n) > 40:
+            raise ValueError(f"the name {n[:40]}… is longer than 40 characters")
+        if n.lower() in RESERVED_GROUPINGS:
+            raise ValueError(f"{n!r} is one of the app's own groupings: choose another name (e.g. condition)")
+        if n.lower() in seen:
+            raise ValueError(f"two groupings are called {n!r}")
+        seen.add(n.lower())
+        v = {x: " ".join(str((vals or {}).get(x) or "").split())[:60] for x in ids}
+        clean[n] = v
+    for x in ids:
+        meta = {n: v[x] for n, v in clean.items() if v[x]}
+        p["slices"].setdefault(x, {"section": x})["metadata"] = meta
+        mf = config.SAMPLES / x / "meta.json"
+        m = json.load(open(mf, encoding="utf-8"))
+        m["metadata"] = meta
+        dump_json(m, mf, indent=1)
+    dump_json(p, _file(pid), indent=1)
+    return groupings(pid)
+
+
 def save(pid, name, slices):
     """Create or extend a project; slices = [(sample_id, section, metadata)] in order."""
     PROJECTS.mkdir(parents=True, exist_ok=True)
