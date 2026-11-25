@@ -1624,19 +1624,27 @@ function heUrl(sample) {  // the tiles of the image chosen (st.imgId; the frame:
 // image's display range and gamma (its tiles drawn anew); kept per sample and image in this browser ----------------
 const IA = { stats: null, key: "", t: 0 };
 const IA_DEF = { b: 100, c: 100, lo: null, hi: null, g: 1 };
-function imgAdjGet(sample, img) {
+// The settings belong to an image file (and channel), not to its place: when another image becomes the one the cells
+// are placed on ("main"), or none is left, the settings of the image before do not follow (he: that sample's he_info)
+function imgAdjKey(sample, img, he = st.he) {
+  const x = ((he && he.images) || []).find((i) => i.id === img);
+  return x ? `imgadj:${sample}:${x.key || img}` : null;
+}
+function imgAdjGet(sample, img, he = st.he) {
+  const k = imgAdjKey(sample, img, he);
   let a = null;
-  try { a = JSON.parse(localStorage.getItem(`imgadj:${sample}:${img}`) || "null"); } catch (e) {}
-  return { ...IA_DEF, ...(a || {}) };
+  if (k) { try { a = JSON.parse(localStorage.getItem(k) || "null"); } catch (e) {} }
+  return { ...IA_DEF, ...(a || {}) };  // (no image: the defaults)
 }
 function imgAdjSet(sample, img, a) {
+  const k = imgAdjKey(sample, img); if (!k) return;
   try {
     const def = a.b === 100 && a.c === 100 && a.lo == null && a.hi == null && a.g === 1;
-    if (def) localStorage.removeItem(`imgadj:${sample}:${img}`); else localStorage.setItem(`imgadj:${sample}:${img}`, JSON.stringify(a));
+    if (def) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(a));
   } catch (e) {}
 }
-function imgDispQuery(sample, img) {  // "&lo=..&hi=..&g=.." when the user chose a fluorescence image's range or gamma
-  const a = imgAdjGet(sample, img);
+function imgDispQuery(sample, img, he = st.he) {  // "&lo=..&hi=..&g=.." when the user chose a fluorescence image's range or gamma
+  const a = imgAdjGet(sample, img, he);
   return a.lo != null && a.hi != null && a.hi > a.lo ? `&lo=${a.lo}&hi=${a.hi}&g=${a.g}` : a.g !== 1 && a.auto ? `&lo=${a.auto[0]}&hi=${a.auto[1]}&g=${a.g}` : "";
 }
 function imgCssFilter(a) { return a.b === 100 && a.c === 100 ? "" : `brightness(${a.b / 100}) contrast(${a.c / 100})`; }
@@ -8328,10 +8336,10 @@ async function glBase(s, c, withImage) {  // a sample's image info, cells and im
     if (withImage && he.image_kind && he.image_kind !== "none") {  // the lowest level that holds the whole image in one tile
       const top = Math.ceil(Math.log2(Math.max(W, H))), L = Math.max(0, top - Math.ceil(Math.log2(Math.max(W, H) / he.tile_size)));
       // (as the image's display on the map: its range and gamma in the tile, brightness and contrast when drawn)
-      const im = new Image(); im.src = `/api/sample/${s.sample_id}/he/${L}/0_0.jpg?r=${he.rev}${imgDispQuery(s.sample_id, "main")}`;
+      const im = new Image(); im.src = `/api/sample/${s.sample_id}/he/${L}/0_0.jpg?r=${he.rev}${imgDispQuery(s.sample_id, "main", he)}`;
       await im.decode().catch(() => {});
       const sc = 2 ** (L - top), bctx = b.bg.getContext("2d");
-      bctx.filter = imgCssFilter(imgAdjGet(s.sample_id, "main")) || "none";
+      bctx.filter = imgCssFilter(imgAdjGet(s.sample_id, "main", he)) || "none";
       if (im.naturalWidth) bctx.drawImage(im, b.ox, b.oy, im.naturalWidth / sc * kk, im.naturalHeight / sc * kk);
       bctx.filter = "none";
     }

@@ -2423,7 +2423,9 @@ def api_he_info(req):
                   "image_kind": v.image_kind, "rev": int(v.rev), "image_error": v.image_error,
                   "image_only": bool(m.get("image_only")), "um_per_px_known": m.get("um_per_px_known", True),
                   "image_errors": getattr(v, "layer_errors", {}),
-                  "images": [{k: x[k] for k in ("id", "name", "kind", "frame", "source", "rev")} for x in importer.images(v.sample_id)]
+                  "images": [{k: x[k] for k in ("id", "name", "kind", "frame", "source", "rev")}
+                             | {"key": hashlib.sha1(f"{x['path']}#{x.get('channel', 0)}".encode()).hexdigest()[:12]}  # (its file and channel: the page keeps display settings by it)
+                             for x in importer.images(v.sample_id)]
                   if v.image_kind != "none" or m.get("images") or (m.get("source") or {}).get("morphology") else []})
 
 
