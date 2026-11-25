@@ -2220,6 +2220,10 @@ def remove_images(sample_id, ids, progress=print):
             hidden = {h for h in hidden if h.split("#c")[0] != base}  # (its channels hidden before too)
         else:
             hidden.add(i)
+    # a file discarded that is also one of the instrument's images (added by hand as well, e.g. a Xenium stain in the
+    # DAPI's pixels): its instrument copy, found by itself, is hidden too, or it would come back
+    files = {str(Path(by_id[i]["path"]).resolve()) for i in ids if "#c" not in i}
+    hidden |= {x["id"] for x in _instrument_images(m) if str(Path(x["path"]).resolve()) in files}
     m["images_hidden"] = sorted(hidden)
     dump_json(m, config.SAMPLES / sample_id / "meta.json", indent=1)
     return out
