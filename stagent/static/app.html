@@ -266,6 +266,7 @@ body.desktop #side { display: none; }
 #tools, #acts { padding: 6px 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 #tools input[type=range] { width: 80px; }
 #tools #mode { width: 132px; height: 32px; }  /* as tall as the buttons below it */
+#glDlg .dh select, #glDlg .dh input[type=text] { height: 32px; }  /* the overview's Color by: as on the map */
 #maptop button { padding: 5px 9px; }
 #tools .vsep { width: 1px; align-self: stretch; background: var(--line); margin: 2px 2px; }
 /* Hide cells / Hide H&E: while hidden, the icon is struck through (instead of a filled button) */
@@ -1377,7 +1378,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <option value="niche">niche</option><option value="region">region</option><option value="gene">gene expression</option>
       <option value="program">program</option></select></label>
     <input type="text" id="glGene" list="glGeneList" hidden autocomplete="off" placeholder="gene, e.g. EPCAM" style="width:130px;margin-left:6px"
-           title="A gene of the panels: every slice on the same scale (transcripts per cell); press Enter"><datalist id="glGeneList"></datalist>
+           title="A gene of the panels: every slice on one color scale (normalized expression); press Enter"><datalist id="glGeneList"></datalist>
     <select id="glProg" hidden style="margin-left:6px;max-width:240px" title="A program scored in Compare > Programs: every slice on one color scale"></select>
     <label class="hint" style="display:inline-flex;align-items:center;gap:4px;margin-left:8px"><input type="checkbox" id="glImg" checked> image</label>
     <button id="glSave" title="Save the overview as a figure (PDF): every sample as shown, with the legend">Save figure</button>
@@ -8064,17 +8065,17 @@ async function loadTile(t, mode, withImage) {  // the sample's cells and image (
   const sess = (s.sessions || []).filter((x) => USER_METHODS.includes(x.method));
   const open = st.sample && s.sample_id === st.sample.sample_id && st.sid;
   t.sid = glSid(s); t.ver = open ? st.version : sess.length ? sess[0].n_versions : null;
-  t.items = []; t.note = ""; t.colored = false; t.col = null;
+  t.items = []; t.note = ""; t.big = ""; t.colored = false; t.col = null;
   if (mode !== "cells") {
-    if (!t.sid) t.note = "no annotation";
+    if (!t.sid) t.big = "Not annotated";
     else {
       const q = new URLSearchParams({ version: t.ver, mode });
       const [r, leg] = await Promise.all([fetch(`/api/s/${t.sid}/colors.bin?${q}`),  // (refused: this sample cannot be colored so)
                                           api(`/api/s/${t.sid}/legend?${q}`).catch(() => ({}))]);
       if (r.ok) { t.colored = true; t.col = new Uint8Array(await r.arrayBuffer()); t.items = (leg.items || []).filter((it) => it.count); }
-      else t.note = mode.startsWith("gene:") ? "gene not in its panel" : mode.startsWith("program:") ? "program not scored here"
-        : { leiden: "no Leiden clusters (PCA + UMAP)", niche: "no niches", region: "no regions" }[mode] || "not available";
-      if (t.colored && mode === "region" && !t.items.some((it) => it.key !== "unknown")) { t.note = "no regions drawn"; t.items = []; t.colored = false; }
+      else t.big = mode.startsWith("gene:") ? "Not in panel" : { region: "No regions" }[mode] || "Not computed";  // said on the tile itself
+      if (t.colored && mode === "region" && !t.items.some((it) => it.key !== "unknown")) { t.big = "No regions"; t.items = []; t.colored = false; }
+      if (t.colored && !t.items.length) { t.big = "Not computed"; t.colored = false; }  // e.g. Leiden or niches not run on it: no cell colored
     }
   }
 }
@@ -8108,6 +8109,12 @@ async function paintTile(t, mode, sel) {  // the image, then the cells: light gr
     }
   }
   lc.putImageData(id, 0, 0); ctx.drawImage(lay, 0, 0);
+  if (t.big) {  // e.g. a program not computed on this slice: in large letters over it
+    ctx.save(); ctx.font = "600 34px system-ui, -apple-system, Segoe UI, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    const w = ctx.measureText(t.big).width + 36, x = c.width / 2, y = c.height / 2;
+    ctx.fillStyle = "rgba(255,255,255,0.85)"; ctx.beginPath(); ctx.roundRect(x - w / 2, y - 30, w, 60, 10); ctx.fill();
+    ctx.fillStyle = "#444"; ctx.fillText(t.big, x, y + 1); ctx.restore();
+  }
 }
 $("allSamples").onclick = () => openGallery(!(st.sample && projectOf(st.sample.sample_id)));  // the project, or every sample
 // ---------------- Compare: DE genes, top genes per group, composition (one slice or all slices pooled) ----------------
