@@ -139,8 +139,12 @@ def search(s, scales=None, top=6, progress=None, um_per_px=None):
     widened = False
     if may_widen and (not found or max(c["score"] for c in found) < WEAK_SCORE):
         say(0.5, f"no good fit near the file's {known:g} um/px: searching 0.1-2 um/px")
-        found += _scan_scales(J, w, h, f, xy, SCALES, lambda p, m: say(0.5 + 0.4 * p, m))
+        found += _scan_scales(J, w, h, f, xy, SCALES, lambda p, m: say(0.5 + 0.3 * p, m))
         widened = True
+        if found:  # the wide range steps 8% in size: then around its best size in the steps a right file gives (2%),
+            best = max(found, key=lambda c: c["score"])["um_per_px"]  # which the refinement (60 um at most) needs
+            say(0.8, f"around {best:.3g} um/px")
+            found += _scan_scales(J, w, h, f, xy, _near(best), lambda p, m: say(0.8 + 0.1 * p, m))
     found.sort(key=lambda x: -x["score"])
     out = []
     for c in found:  # one candidate per orientation and place
