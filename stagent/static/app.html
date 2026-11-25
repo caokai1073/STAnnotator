@@ -9365,7 +9365,8 @@ function syncExport() {  // Export: with an annotation open, or once the cells s
 }
 $("export").onclick = () => {
   const annotated = !!st.sid && !st.placeholder;
-  $("xpInfo").textContent = st.sid && st.version != null ? `${st.sample.sample_id} · version ${st.version}` : st.sample.sample_id; $("xpStatus").textContent = "";
+  const xp = projectOf(st.sample.sample_id);  // the name shown (after a rename too); the version is in the file names
+  $("xpInfo").textContent = xp && xp.slices[st.sample.sample_id] ? `${xp.name} · ${sampleName(st.sample)}` : sampleName(st.sample); $("xpStatus").textContent = "";
   $("xpCsv").disabled = $("xpNb").disabled = !annotated;  // these need the cell types
   $("xpCsv").title = $("xpNb").title = annotated ? "" : "Annotate the sample first";
   xpFillNotebooks(annotated);
