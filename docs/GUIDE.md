@@ -666,6 +666,10 @@ The methods themselves are described in [Annotation methods](#6-annotation-metho
   count and value).
 - Click a legend entry to show only that type; click a cell for its label, alternatives and region.
 - Opacity (fully opaque by default), dot size, hide cells, hide H&E.
+- **Adjust** (next to Hide image): brightness and contrast of the image shown; a fluorescence image (DAPI, a protein
+  / IF channel) also its display range (the raw values shown as black and white) and gamma. **Auto** goes back to the
+  image's own range (its values from the 1st to the 99.7th percentile), **Reset** to all defaults. Each image and
+  channel keeps its own settings in this browser; the project overview draws the images the same way.
 
 ### Regions
 

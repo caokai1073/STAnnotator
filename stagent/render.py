@@ -120,8 +120,9 @@ class Slide:
                     pass
             self._stores, self._z = [], {}
 
-    def _box(self, k, a0, b0, a1, b1):
-        """Pixels of level k in a box as (h, w, 3) uint8."""
+    def _box(self, k, a0, b0, a1, b1, disp=None):
+        """Pixels of level k in a box as (h, w, 3) uint8. disp: (low, high, gamma) of a fluorescence image (its raw
+        values shown from black at low to white at high, with that gamma; the user's), else its own range."""
         ax = self.levels[k][2]
         idx = tuple(slice(b0, b1) if c == "Y" else slice(a0, a1) if c == "X" else
                     slice(None) if (c in "SC" and self.rgb) else self.channel if c == "C" else 0 for c in ax)
@@ -132,8 +133,28 @@ class Slide:
         if self.rgb:
             return np.ascontiguousarray(arr[..., :3].astype(np.uint8))
         lo, hi = self.display_range()
+        gamma = 1.0
+        if disp:
+            lo, hi, gamma = disp
         g = np.clip((arr.astype(np.float32) - lo) / max(hi - lo, 1e-6), 0, 1)
+        if gamma != 1.0:
+            g = g ** np.float32(gamma)
         return np.repeat((255 * g).astype(np.uint8)[..., None], 3, axis=2)
+
+    def stats(self):
+        """For the image's display settings: RGB or not; a fluorescence image's own range (display_range), its
+        values' extent on the coarsest level and the largest value its type holds."""
+        if self.rgb:
+            return {"rgb": True}
+        k = len(self.levels) - 1
+        ax = self.levels[k][2]
+        idx = tuple(slice(None) if c in "YX" else self.channel if c == "C" else 0 for c in ax)
+        with self._lock:
+            a = np.asarray(self._zarr(k)[idx])
+        lo, hi = self.display_range()
+        top = float(np.iinfo(self.dtype).max) if np.issubdtype(self.dtype, np.integer) else float(a.max())
+        return {"rgb": False, "auto": [round(lo, 3), round(hi, 3)], "min": float(a.min()), "max": float(a.max()),
+                "type_max": top}
 
     def display_range(self):
         if self._range is None:
@@ -147,8 +168,9 @@ class Slide:
             self._range = (float(np.percentile(a, 1)), float(np.percentile(a, 99.7)))
         return self._range
 
-    def read(self, x0, y0, x1, y1, out_w, out_h):
-        """Level-0 pixel box -> RGB image of (out_w, out_h), read from the coarsest adequate pyramid level."""
+    def read(self, x0, y0, x1, y1, out_w, out_h, disp=None):
+        """Level-0 pixel box -> RGB image of (out_w, out_h), read from the coarsest adequate pyramid level (disp: see
+        _box)."""
         need = (x1 - x0) / out_w
         k = max(i for i, (w, _, _) in enumerate(self.levels) if i == 0 or self.W0 / w <= need * 1.001)
         w, h, _ = self.levels[k]
@@ -158,13 +180,13 @@ class Slide:
         canvas = Image.new("RGB", (out_w, out_h), self.fill)
         if a1 <= a0 or b1 <= b0:
             return canvas
-        img = Image.fromarray(self._box(k, a0, b0, a1, b1))
+        img = Image.fromarray(self._box(k, a0, b0, a1, b1, disp))
         tw, th = max(1, round((a1 - a0) * ds / need)), max(1, round((b1 - b0) * ds / need))
         canvas.paste(img.resize((tw, th), Image.BILINEAR), (round((a0 * ds - x0) / need), round((b0 * ds - y0) / need)))
         return canvas
 
 
-def read_warped(sl, T, x0, y0, x1, y1, out_w, out_h):
+def read_warped(sl, T, x0, y0, x1, y1, out_w, out_h, disp=None):
     """A box of another image's pixels shown in the frame's place: T (2x3) maps frame level-0 pixels to the image's
     level-0 pixels (any rotation, mirroring or scale between them); the box (in frame pixels) -> RGB (out_w, out_h)."""
     T = np.asarray(T, float)
@@ -178,7 +200,7 @@ def read_warped(sl, T, x0, y0, x1, y1, out_w, out_h):
         return Image.new("RGB", (out_w, out_h), sl.fill)
     s = max(np.sqrt(abs(np.linalg.det(L))) * np.sqrt(fx * fy), 1e-9)  # image pixels per output pixel
     rw, rh = max(1, int(math.ceil((bx1 - bx0) / s))), max(1, int(math.ceil((by1 - by0) / s)))
-    region = sl.read(bx0, by0, bx1, by1, rw, rh)
+    region = sl.read(bx0, by0, bx1, by1, rw, rh, disp)
     sx, sy = (bx1 - bx0) / rw, (by1 - by0) / rh  # image pixels per region pixel
     # output (u, v) -> frame (x0 + u fx, y0 + v fy) -> image (L @ frame + t) -> region ((ix - bx0) / sx, (iy - by0) / sy)
     a, b_, c = L[0, 0] * fx / sx, L[0, 1] * fy / sx, (L[0, 0] * x0 + L[0, 1] * y0 + t[0] - bx0) / sx
@@ -192,8 +214,11 @@ class BlankSlide:
     W0 = H0 = 10 ** 9
     fill = (250, 250, 250)
 
-    def read(self, x0, y0, x1, y1, out_w, out_h):
+    def read(self, x0, y0, x1, y1, out_w, out_h, disp=None):
         return Image.new("RGB", (out_w, out_h), self.fill)
+
+    def stats(self):
+        return {"rgb": True}
 
 
 _slides = {}

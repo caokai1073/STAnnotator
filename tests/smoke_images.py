@@ -134,6 +134,17 @@ try:
         b = np.asarray(render.slide(mc, (k + 1) % 3).read(*bx, 300, 250).convert("L"), float)
         own = np.asarray(Image.fromarray((chans[k, bx[1]:bx[3], bx[0]:bx[2]] / 1.0)).resize((300, 250)), float)
         assert np.corrcoef(a.ravel(), own.ravel())[0, 1] > 0.9 and np.corrcoef(b.ravel(), own.ravel())[0, 1] < 0.9, k
+    # display settings of a fluorescence image: its range (auto), the tiles in a range and gamma of the user's
+    stt = cl.get("/api/sample/s1/image_stats", params={"img": rm["added"] + "#c1"}).json()
+    assert stt["rgb"] is False and stt["auto"][0] < stt["auto"][1] and stt["type_max"] == 65535, stt
+    assert cl.get("/api/sample/s1/image_stats").json()["rgb"] is True  # (the frame: an RGB image)
+    q = {"img": rm["added"] + "#c1"}
+    t_auto = cl.get("/api/sample/s1/he/8/0_0.jpg", params=q).content
+    t_rng = cl.get("/api/sample/s1/he/8/0_0.jpg", params=q | {"lo": stt["auto"][0], "hi": stt["auto"][1] / 4, "g": 1}).content
+    t_gam = cl.get("/api/sample/s1/he/8/0_0.jpg", params=q | {"lo": stt["auto"][0], "hi": stt["auto"][1], "g": 0.5}).content
+    t_bad = cl.get("/api/sample/s1/he/8/0_0.jpg", params=q | {"lo": 5, "hi": 1, "g": 1}).content  # (refused: its own range)
+    lum = lambda b_: np.asarray(Image.open(io.BytesIO(b_)).convert("L"), float).mean()
+    assert lum(t_rng) > lum(t_auto) and lum(t_gam) > lum(t_auto) and t_bad == t_auto, (lum(t_auto), lum(t_rng), lum(t_gam))
     assert cl.post("/api/sample/s1/images/remove", json={"id": rm["added"] + "#c2"}).status_code == 200  # (the file)
     assert not any(x["id"].startswith(rm["added"]) for x in importer.images("s1"))
     print("smoke_images ok", f"(warped r = {rr:.3f})")

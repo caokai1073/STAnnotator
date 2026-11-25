@@ -754,18 +754,47 @@ def he_tile(req: Request):
         if lay is None:  # (no longer one of the sample's images)
             return blank()
 
+    disp = _display_settings(req.query_params)  # (a fluorescence image's range and gamma chosen in the viewer)
+
     def make():
         buf = io.BytesIO()
-        (render.read_warped(lay[0], lay[1], x0, y0, x1, y1, w, h) if lay else v.slide.read(x0, y0, x1, y1, w, h)
+        (render.read_warped(lay[0], lay[1], x0, y0, x1, y1, w, h, disp) if lay else v.slide.read(x0, y0, x1, y1, w, h, disp)
          ).save(buf, "JPEG", quality=85)
         return buf.getvalue()
     try:
-        data = _tiles.get_or((sid, L, tx, ty, (img, lay[2]) if lay else "main"), make)
+        data = _tiles.get_or((sid, L, tx, ty, (img, lay[2]) if lay else "main", disp), make)
     except Exception as e:  # the image's pixels cannot be read here (damaged): a blank tile, not kept; for the
         # frame image he_info says why from now on (the app's Refresh reads the file again)
         print(f"he tile {sid} {img} {L} {tx}_{ty}: {type(e).__name__}: {e}", flush=True)
         return failed(e)
     return Response(data, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+
+
+def _display_settings(q):
+    """(low, high, gamma) from a tile's query (lo, hi, g), or None (the image's own range)."""
+    if "lo" not in q and "hi" not in q and "g" not in q:
+        return None
+    try:
+        lo, hi, g = float(q.get("lo", "nan")), float(q.get("hi", "nan")), float(q.get("g", 1))
+    except ValueError:
+        return None
+    if not (math.isfinite(lo) and math.isfinite(hi) and hi > lo and 0.05 <= g <= 20):
+        return None
+    return (round(lo, 4), round(hi, 4), round(g, 4))
+
+
+def api_image_stats(req: Request):
+    """The display settings' bounds of one of the sample's images (img: its id, default the frame): RGB or not, a
+    fluorescence image's own range (auto), its values' extent and its type's largest value."""
+    sid, img = req.path_params["sample"], req.query_params.get("img") or "main"
+    v = view(sid)
+    try:
+        sl = v.slide if img == "main" else (v.layer(img, req.query_params.get("iv")) or (None,))[0]
+        if sl is None:
+            return _json({"error": f"no image {img}"}, 404)
+        return _json(sl.stats())
+    except Exception as e:
+        return _json({"error": f"{type(e).__name__}: {e}"}, 400)
 
 
 def overlay_tile(req: Request):
@@ -4928,6 +4957,7 @@ def build_app(port):
         Route("/api/sample/{sample}/image", api_sample_image, methods=["POST"]),
         Route("/api/sample/{sample}/images/add", api_sample_image_add, methods=["POST"]),
         Route("/api/sample/{sample}/images/remove", api_sample_image_remove, methods=["POST"]),
+        Route("/api/sample/{sample}/image_stats", api_image_stats),
         Route("/api/sample/{sample}/registration", api_sample_registration, methods=["POST"]),
         Route("/api/sample/{sample}/rename", api_sample_rename, methods=["POST"]),
         Route("/api/claude/model", api_claude_model, methods=["POST"]),

@@ -312,6 +312,15 @@ header .br { flex: 1 1 100%; height: 0; }
 #regsvg .hdl.mid { cursor: copy; }
 #regsvg text { font: 600 12px system-ui, sans-serif; paint-order: stroke; stroke: rgba(255,255,255,.85); stroke-width: 3px; }
 #regpanel { top: calc(var(--maptop, 44px) + 18px); left: 10px; width: 340px; max-height: 38%; display: flex; flex-direction: column; }
+#imgAdj { top: calc(var(--maptop, 44px) + 18px); left: 10px; width: 330px; z-index: 30; }  /* (over the panels below the toolbar while open) */
+#imgAdj .lh { display: flex; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 12px; gap: 6px; }
+#imgAdj .iabody { padding: 8px 12px 10px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+#imgAdj label { display: grid; grid-template-columns: 74px 1fr 64px; align-items: center; gap: 6px; color: var(--muted); }
+#imgAdj input[type=number] { width: 64px; padding: 2px 4px; font-size: 12px; }
+#imgAdj label span { text-align: right; font-variant-numeric: tabular-nums; }
+#imgAdj .iabtns { display: flex; gap: 6px; justify-content: flex-end; margin-top: 4px; }
+#imgAdj .hint { margin: 4px 0 2px; }
+#imgAdjBtn.on { background: var(--accent); color: #fff; border-color: var(--accent); }
 #regpanel .lh { display: flex; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 12px; gap: 5px; }
 #regpanel .lh button { flex: none; }  /* the header's buttons keep their size; nothing pushes the last one out */
 #regpanel .lh label { white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
@@ -872,6 +881,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <label id="imgWrap" hidden title="The image under the cells: the H&amp;E, the DAPI, a protein / IF stain… (each placed on the cells by its own registration)">Image <select id="imgSel"></select></label>
       <button id="hide" title="Hide the cells: the image only (h)">Hide cells</button>
       <button id="hideHE" title="Hide the image: the cells only (e)">Hide image</button>
+      <button id="imgAdjBtn" title="Brightness and contrast of the image shown (a fluorescence image also its display range and gamma)">Adjust</button>
       <span class="vsep"></span>
       <button id="undo" disabled title="Undo your last action (everything the agent changed for one request goes back at once)">Undo</button>
       <button id="refresh" title="Show the latest of everything: the server reads the sample, its image and annotations from disk again and the page reloads what it shows (the view, color mode and legend choice stay)">Refresh</button>
@@ -887,6 +897,21 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <span id="vinfo" hidden></span>
     </div>
     <div id="alignbar" hidden><span id="alignmsg"></span></div>
+    </div>
+    <div id="imgAdj" class="float" hidden>
+      <div class="lh"><b id="iaTitle">Image</b><span class="spacer"></span><button class="ib" id="iaClose" title="Close">✕</button></div>
+      <div class="iabody">
+        <label>Brightness <input type="range" id="iaB" min="0" max="300" step="5" value="100"><span id="iaBv">100%</span></label>
+        <label>Contrast <input type="range" id="iaC" min="0" max="300" step="5" value="100"><span id="iaCv">100%</span></label>
+        <div id="iaFl" hidden>
+          <div class="hint" id="iaFlHint">Display range (raw values: black at the minimum, white at the maximum)</div>
+          <label>Minimum <input type="range" id="iaLo"><input type="number" id="iaLoN"></label>
+          <label>Maximum <input type="range" id="iaHi"><input type="number" id="iaHiN"></label>
+          <label title="Below 1 the dim signal shows brighter, above 1 darker (the black and white ends stay)">Gamma <input type="range" id="iaG" min="-100" max="100" value="0"><span id="iaGv">1.00</span></label>
+        </div>
+        <div class="iabtns"><button id="iaAuto" title="The image's own display range (its values from the 1st to the 99.7th percentile) and gamma 1">Auto</button>
+          <button id="iaReset" title="Brightness and contrast 100%, the image's own display range, gamma 1">Reset</button></div>
+      </div>
     </div>
     <div id="legend" class="float" hidden>
       <div class="lh"><b id="lgtitle">Cell types</b><span class="spacer"></span>
@@ -1551,17 +1576,118 @@ function openHE(sample) {
     if (he.image_error) toast(he.image_error, 15000);  // (no permission, or the image moved: the cells without it)
     const kind = he.image_kind || "H&E";
     $("hideHE").hidden = kind === "none";
+    $("imgAdjBtn").hidden = kind === "none"; if (kind === "none") $("imgAdj").hidden = true;
     setLabel($("hideHE"), "Hide the image: the cells only (e)");
     fillImages(sample, he);
+    applyImgFilter(); if (!$("imgAdj").hidden) openImgAdj();  // (another sample: its own display)
     viewer.addOnceHandler("open", applyHE);
     viewer.open(tileSource(heUrl(sample)));  // rev: new cell positions, new tiles
   });
 }
-function heUrl(sample) {  // the tiles of the image chosen (st.imgId; the frame: "main")
+function heUrl(sample) {  // the tiles of the image chosen (st.imgId; the frame: "main"), in its display range
   const he = st.he, cur = ((he && he.images) || []).find((x) => x.id === st.imgId);
   const img = st.imgId && st.imgId !== "main" ? `&img=${encodeURIComponent(st.imgId)}${cur && cur.rev ? `&iv=${cur.rev}` : ""}` : "";
-  return (l, x, y) => `/api/sample/${sample}/he/${l}/${x}_${y}.jpg?r=${he.rev}${st.epoch ? `&f=${st.epoch}` : ""}${img}`;
+  const disp = imgDispQuery(sample, st.imgId || "main");
+  return (l, x, y) => `/api/sample/${sample}/he/${l}/${x}_${y}.jpg?r=${he.rev}${st.epoch ? `&f=${st.epoch}` : ""}${img}${disp}`;
 }
+// ---------------- the image's display: brightness and contrast (any image: in the page, at once), a fluorescence
+// image's display range and gamma (its tiles drawn anew); kept per sample and image in this browser ----------------
+const IA = { stats: null, key: "", t: 0 };
+const IA_DEF = { b: 100, c: 100, lo: null, hi: null, g: 1 };
+function imgAdjGet(sample, img) {
+  let a = null;
+  try { a = JSON.parse(localStorage.getItem(`imgadj:${sample}:${img}`) || "null"); } catch (e) {}
+  return { ...IA_DEF, ...(a || {}) };
+}
+function imgAdjSet(sample, img, a) {
+  try {
+    const def = a.b === 100 && a.c === 100 && a.lo == null && a.hi == null && a.g === 1;
+    if (def) localStorage.removeItem(`imgadj:${sample}:${img}`); else localStorage.setItem(`imgadj:${sample}:${img}`, JSON.stringify(a));
+  } catch (e) {}
+}
+function imgDispQuery(sample, img) {  // "&lo=..&hi=..&g=.." when the user chose a fluorescence image's range or gamma
+  const a = imgAdjGet(sample, img);
+  return a.lo != null && a.hi != null && a.hi > a.lo ? `&lo=${a.lo}&hi=${a.hi}&g=${a.g}` : a.g !== 1 && a.auto ? `&lo=${a.auto[0]}&hi=${a.auto[1]}&g=${a.g}` : "";
+}
+function imgCssFilter(a) { return a.b === 100 && a.c === 100 ? "" : `brightness(${a.b / 100}) contrast(${a.c / 100})`; }
+function applyImgFilter() {  // brightness and contrast: on the image's canvas only (the cells are drawn on their own)
+  const sample = st.sample && st.sample.sample_id;
+  const f = sample && GL.ok ? imgCssFilter(imgAdjGet(sample, st.imgId || "main")) : "";
+  if (viewer.drawer && viewer.drawer.canvas) viewer.drawer.canvas.style.filter = f;
+  const nav = viewer.navigator;
+  if (nav && nav.drawer && nav.drawer.canvas) nav.drawer.canvas.style.filter = f;
+  $("imgAdjBtn").classList.toggle("on", !!(sample && (f || imgDispQuery(sample, st.imgId || "main"))));
+}
+function reloadImageTiles() {  // the image's tiles in another display range: replaced in place, the view kept
+  if (!st.sample || !st.he) return;
+  viewer.addTiledImage({ tileSource: tileSource(heUrl(st.sample.sample_id)), index: 0, replace: true, success: applyHE });
+}
+async function openImgAdj() {
+  if (!st.sample || !st.he) { toast("Open a sample with an image first", 3000); return; }
+  const sample = st.sample.sample_id, img = st.imgId || "main";
+  const cur = ((st.he.images || []).find((x) => x.id === img)) || { name: st.he.image_kind || "Image" };
+  $("iaTitle").textContent = `Image: ${cur.name}`;
+  $("imgAdj").hidden = false;
+  IA.key = `${sample}|${img}`;
+  IA.stats = null; $("iaFl").hidden = true;
+  const a = imgAdjGet(sample, img);
+  $("iaB").value = a.b; $("iaC").value = a.c; iaLabels();
+  try {
+    const q = new URLSearchParams({ img }); if (cur.rev) q.set("iv", cur.rev);
+    const stt = await api(`/api/sample/${encodeURIComponent(sample)}/image_stats?${q}`);
+    if (IA.key !== `${sample}|${img}`) return;
+    IA.stats = stt;
+    if (!stt.rgb) {
+      const top = Math.max(stt.max, stt.auto[1]), step = top > 1000 ? 1 : top > 10 ? 0.1 : 0.001;
+      ["iaLo", "iaHi"].forEach((id) => Object.assign($(id), { min: 0, max: top, step }));
+      ["iaLoN", "iaHiN"].forEach((id) => Object.assign($(id), { min: 0, max: stt.type_max, step }));
+      $("iaFl").hidden = false;
+      iaFillRange(a);
+    }
+  } catch (e) { /* (no stats: brightness and contrast only) */ }
+}
+function iaFillRange(a) {
+  const st_ = IA.stats; if (!st_ || st_.rgb) return;
+  const lo = a.lo != null ? a.lo : st_.auto[0], hi = a.hi != null ? a.hi : st_.auto[1];
+  $("iaLo").value = lo; $("iaHi").value = hi; $("iaLoN").value = +(+lo).toFixed(3); $("iaHiN").value = +(+hi).toFixed(3);
+  $("iaG").value = Math.round(100 * Math.log(a.g) / Math.log(4));  // -100..100: gamma 1/4..4
+  iaLabels();
+}
+function iaLabels() {
+  $("iaBv").textContent = `${$("iaB").value}%`; $("iaCv").textContent = `${$("iaC").value}%`;
+  $("iaGv").textContent = Math.pow(4, $("iaG").value / 100).toFixed(2);
+}
+function iaSave(redraw) {  // the panel's values for this sample and image; a new range or gamma: the tiles again (shortly)
+  if (!st.sample) return;
+  const sample = st.sample.sample_id, img = st.imgId || "main";
+  if (IA.key !== `${sample}|${img}`) return;
+  const a = imgAdjGet(sample, img);
+  a.b = +$("iaB").value; a.c = +$("iaC").value;
+  if (IA.stats && !IA.stats.rgb) {
+    const lo = +$("iaLoN").value, hi = +$("iaHiN").value, g = +Math.pow(4, $("iaG").value / 100).toFixed(3);
+    const auto = IA.stats.auto;
+    const same = Math.abs(lo - auto[0]) < 1e-6 && Math.abs(hi - auto[1]) < 1e-6;
+    a.lo = same ? null : lo; a.hi = same ? null : hi; a.g = Math.abs(g - 1) < 0.005 ? 1 : g; a.auto = auto;
+  }
+  imgAdjSet(sample, img, a); iaLabels(); applyImgFilter();
+  if (redraw) { clearTimeout(IA.t); IA.t = setTimeout(reloadImageTiles, 350); }
+}
+$("imgAdjBtn").onclick = () => { if ($("imgAdj").hidden) openImgAdj(); else $("imgAdj").hidden = true; };
+$("iaClose").onclick = () => { $("imgAdj").hidden = true; };
+["iaB", "iaC"].forEach((id) => ($(id).oninput = () => iaSave(false)));
+$("iaG").oninput = () => { iaLabels(); iaSave(true); };
+$("iaLo").oninput = () => { $("iaLoN").value = +(+$("iaLo").value).toFixed(3); iaSave(true); };
+$("iaHi").oninput = () => { $("iaHiN").value = +(+$("iaHi").value).toFixed(3); iaSave(true); };
+$("iaLoN").onchange = () => { $("iaLo").value = $("iaLoN").value; iaSave(true); };
+$("iaHiN").onchange = () => { $("iaHi").value = $("iaHiN").value; iaSave(true); };
+$("iaAuto").onclick = () => {  // the image's own range and gamma 1 (brightness and contrast stay)
+  const a = imgAdjGet(st.sample.sample_id, st.imgId || "main"); a.lo = a.hi = null; a.g = 1;
+  iaFillRange(a); iaSave(true);
+};
+$("iaReset").onclick = () => {
+  $("iaB").value = 100; $("iaC").value = 100;
+  const a = { ...IA_DEF }; iaFillRange(a); iaSave(true);
+};
 function fillImages(sample, he) {  // the Image selector: the sample's images (the frame first); the last choice per sample
   const ims = he.images || [], sel = $("imgSel");
   const want = load(`img:${sample}`);
@@ -1576,6 +1702,7 @@ $("imgSel").onchange = () => {  // another image under the cells: replaced in pl
   const sample = st.sample.sample_id;
   st.imgId = $("imgSel").value; store(`img:${sample}`, st.imgId);
   viewer.addTiledImage({ tileSource: tileSource(heUrl(sample)), index: 0, replace: true, success: applyHE });
+  applyImgFilter(); if (!$("imgAdj").hidden) openImgAdj();
 };
 // a tile of the image that cannot be read (a damaged part of the file, a file still copying): the reason at once,
 // once per sample, image and reason (he_info), and the steps follow it
@@ -1598,6 +1725,7 @@ function filt() {  // legend filter of the current color mode (empty = show all)
 }
 function applyHE() {
   const it = heItem(); if (it) it.setOpacity(st.heHidden ? 0 : 1);
+  applyImgFilter();
   $("osd").classList.toggle("nohe", st.heHidden);
   $("hideHE").classList.toggle("on", st.heHidden);
   drawNav();
@@ -8070,10 +8198,13 @@ async function glBase(s, c, withImage) {  // a sample's image info, cells and im
     b.bg = document.createElement("canvas"); b.bg.width = c.width; b.bg.height = c.height;
     if (withImage && he.image_kind && he.image_kind !== "none") {  // the lowest level that holds the whole image in one tile
       const top = Math.ceil(Math.log2(Math.max(W, H))), L = Math.max(0, top - Math.ceil(Math.log2(Math.max(W, H) / he.tile_size)));
-      const im = new Image(); im.src = `/api/sample/${s.sample_id}/he/${L}/0_0.jpg?r=${he.rev}`;
+      // (as the image's display on the map: its range and gamma in the tile, brightness and contrast when drawn)
+      const im = new Image(); im.src = `/api/sample/${s.sample_id}/he/${L}/0_0.jpg?r=${he.rev}${imgDispQuery(s.sample_id, "main")}`;
       await im.decode().catch(() => {});
-      const sc = 2 ** (L - top);
-      if (im.naturalWidth) b.bg.getContext("2d").drawImage(im, b.ox, b.oy, im.naturalWidth / sc * kk, im.naturalHeight / sc * kk);
+      const sc = 2 ** (L - top), bctx = b.bg.getContext("2d");
+      bctx.filter = imgCssFilter(imgAdjGet(s.sample_id, "main")) || "none";
+      if (im.naturalWidth) bctx.drawImage(im, b.ox, b.oy, im.naturalWidth / sc * kk, im.naturalHeight / sc * kk);
+      bctx.filter = "none";
     }
     return b;
   })().catch((e) => { GL_SCOPE.base.delete(k); throw e; }));
