@@ -1707,7 +1707,7 @@ function fillImages(sample, he) {  // the Image selector: the sample's images (t
   const want = load(`img:${sample}`);
   st.imgId = ims.some((x) => x.id === want) ? want : "main";
   sel.textContent = "";
-  ims.forEach((x) => sel.append(Object.assign(document.createElement("option"), { value: x.id, textContent: x.name + (x.frame && ims.length > 1 ? " (cells placed on it)" : "") })));
+  ims.forEach((x) => sel.append(Object.assign(document.createElement("option"), { value: x.id, textContent: x.name })));
   sel.value = st.imgId;
   $("imgWrap").hidden = ims.length < 2;
   imgBoxSync();
