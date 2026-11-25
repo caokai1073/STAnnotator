@@ -1881,7 +1881,7 @@ function fillModes(sm) {
     else { add("", "annotate first"); sel.disabled = true; }
     $("geneInput").hidden = true; return;
   }
-  const avail = [["type", "cell type"], ["lineage", "lineage"], ["gene", "gene expression…"]];
+  const avail = [["type", "cell type"], ["lineage", "lineage"], ["gene", "gene expression"]];
   if (sm.has_regions) avail.push(["region", "region"]);
   if (sm.n_changed_since_first > 0 || sm.corrections.length) avail.push(["changed", "changed since first annotation"]);
   if (sm.n_conflicts > 0) avail.push(["conflicts", "conflicts with priors"]);
@@ -5664,7 +5664,7 @@ const HELP = `
   <li>Drag to move; scroll or pinch to zoom.</li>
   <li>The small map at the bottom right shows where you are.</li></ul></li>
 <li>Click a cell: its type, confidence, alternatives and region (and the gene's transcripts when coloring by a gene).</li>
-<li><b>Color by</b> cell type, lineage, <b>gene expression…</b> (type a gene, Enter), region, niche and more.<ul>
+<li><b>Color by</b> cell type, lineage, <b>gene expression</b> (type a gene, Enter), region, niche and more.<ul>
   <li>Click legend entries to show only those; click again to drop one; <b>show all</b> resets.</li></ul></li>
 <li>Display:<ul>
   <li><b>Opacity</b> and <b>Dot size</b> sliders.</li>
