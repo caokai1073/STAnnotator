@@ -147,6 +147,17 @@ try:
     assert lum(t_rng) > lum(t_auto) and lum(t_gam) > lum(t_auto) and t_bad == t_auto, (lum(t_auto), lum(t_rng), lum(t_gam))
     assert cl.post("/api/sample/s1/images/remove", json={"id": rm["added"] + "#c2"}).status_code == 200  # (the file)
     assert not any(x["id"].startswith(rm["added"]) for x in importer.images("s1"))
+    # Xenium's morphology_focus_000N.ome.tif: one OME series of 4 channels over 4 files. Each file opens (not
+    # "incomplete": the other files' pages are theirs) and shows its own channel, one channel each
+    xf = sorted(__import__("glob").glob(os.environ.get("SMOKE_XENIUM_MORPH", "/data2/celltypeagent/share/validation/xenium5k_lymph_node/outs/morphology_focus") + "/morphology_focus_000*.ome.tif"))
+    if len(xf) == 4:
+        sls = [render.Slide(f) for f in xf]
+        assert [x.channel for x in sls] == [0, 1, 2, 3] and all(render.channel_names(f) is None for f in xf)
+        means = [np.asarray(x.read(18000, 15000, 19500, 16500, 200, 200).convert("L"), float).mean() for x in sls]
+        assert len({round(m_, 1) for m_ in means}) == 4, means
+        print("Xenium morphology files: each its own channel", [importer._channel_name(f) for f in xf])
+    else:
+        print("(no Xenium morphology_focus folder of 4 files here: skipped)")
     print("smoke_images ok", f"(warped r = {rr:.3f})")
 finally:
     shutil.rmtree(home, ignore_errors=True)

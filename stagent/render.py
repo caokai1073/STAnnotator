@@ -69,6 +69,8 @@ def _check_complete(t, series, problems):
         raise IncompleteImage(f"the file ({size:,} bytes) is shorter than its own structure says")
     for k, lv in enumerate(series.levels):
         for pg in list(lv.pages)[:3]:  # (the pages read: the first, or the 3 colors of a planar RGB)
+            if pg is None or getattr(pg, "parent", t) is not t:  # a page of another file of a series over several
+                continue                                          # files (Xenium's morphology_focus_000N): not this one's
             offs, counts = getattr(pg, "dataoffsets", None), getattr(pg, "databytecounts", None)
             if offs is None or counts is None or not len(offs):
                 continue
@@ -94,6 +96,10 @@ class Slide:
             rgb = rgb or ("C" in s.axes and s.shape[s.axes.index("C")] == 3 and s.dtype == np.uint8)
             self.rgb, self.dtype = rgb, s.dtype
             n_ch = s.shape[s.axes.index("C")] if "C" in s.axes and not rgb else 1
+            if channel is None and n_ch > 1:  # a series over several files (Xenium's morphology_focus_000N, one
+                # channel in each): by default the channel this file holds, not the first file's
+                own = [c for c, pg in enumerate(list(s.pages)[:n_ch]) if pg is not None and getattr(pg, "parent", t) is t]
+                channel = own[0] if own and len(own) < n_ch else None
             self.channel = int(channel or 0)
             if not 0 <= self.channel < n_ch:
                 raise ValueError(f"{Path(path).name} has {n_ch} channel(s): no channel {self.channel + 1}")
