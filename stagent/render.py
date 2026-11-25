@@ -240,6 +240,14 @@ def unload(path):
         _slides.pop(k, None)
 
 
+def close(path):
+    """Close and drop an open image, every channel of it (its file handles and stores): no longer shown anywhere."""
+    for k in [k for k in _slides if _key_path(k) == path]:
+        sl = _slides.pop(k, None)
+        if hasattr(sl, "close"):
+            sl.close()
+
+
 def forget(folder):
     """Close and drop the images open from inside folder (before it is moved or deleted)."""
     folder = str(Path(folder).resolve())

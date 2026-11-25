@@ -189,6 +189,9 @@ try:
     assert ids() == ["main", tu] and not any(x["id"] == mu for x in m2["images"]) and not m2["images_hidden"], (ids(), m2.get("images_hidden"))
     importer.add_image("s2", mc, "IF", same_as="main")  # added again: all its channels back
     assert ids() == ["main", tu, mu, mu + "#c1", mu + "#c2"], ids()
+    render.slide(mc, 1).read(0, 0, 200, 200, 50, 50)  # (open, as the viewer had it)
+    assert cl.post("/api/sample/s2/images/remove", json={"ids": [mu, mu + "#c1", mu + "#c2"]}).status_code == 200
+    assert not any(render._key_path(k) == mc for k in render._slides), "a discarded image stays open in memory"
     r_ = cl.post("/api/sample/s2/images/remove", json={"ids": ["main"]}).json()  # the image the cells are on: they move
     m2 = importer._meta("s2")
     assert r_["cells_moved_to"] == "turned" and m2["he_path"].endswith("other.ome.tif") and np.allclose(importer.placement("s2"), B2), r_  # (reg holds B2 by now)

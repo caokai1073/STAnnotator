@@ -3492,11 +3492,25 @@ async def api_sample_image_remove(req: Request):
     try:
         if _busy(sample):
             return _json({"error": "the sample is busy: try again when it ends"}, 409)
+        before = {x["path"] for x in importer.images(sample)}
         r = importer.remove_images(sample, b["ids"]) if b.get("ids") is not None else importer.remove_image(sample, str(b.get("id")))
     except ValueError as e:
         return _json({"error": str(e)}, 400)
     _reload_sample(sample)
     _forget_image_tiles(sample)
+    # the images discarded: out of memory too (their open files, stores and tiles), unless another sample shows them
+    gone = before - {x["path"] for x in importer.images(sample)}
+    if gone:
+        still = set()
+        for d in config.SAMPLES.iterdir():
+            if d.name != sample and (d / "meta.json").exists():
+                try:
+                    still |= {x["path"] for x in importer.images(d.name)}
+                except Exception:
+                    pass
+        for pth in gone - still:
+            render.close(pth)
+        _tiles.drop(lambda k: k[0] == sample)
     return _json(r)
 
 
