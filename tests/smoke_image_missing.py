@@ -22,7 +22,7 @@ try:
     from stagent import render
     import errno
 
-    def denied(path):
+    def denied(path, channel=None):
         raise PermissionError(errno.EACCES, "Permission denied", path)
     real = render.Slide
     for case in ("missing", "cut short", "not a tiff", "no permission", "permission error"):
