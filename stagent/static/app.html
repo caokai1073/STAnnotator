@@ -118,6 +118,7 @@ table.an td.heat { min-width: 44px; }
 .gllegend #glAll { padding: 1px 8px; font-size: 11px; }
 .gllegend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 .gllegend .gbar { width: 230px; padding: 0; }
+.gllegend .gbar .u { white-space: nowrap; }
 .gallery .tt { font-size: 12px; font-weight: 600; margin-top: 4px; } .gallery .ts { font-size: 11px; color: var(--muted); }
 .num { width: 62px; }
 .folder { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); min-width: 0;
@@ -7915,10 +7916,13 @@ async function drawGallery() {
 function glLegend(legend) {  // tick entries to show only them; Show all clears the ticks
   const box = $("glLegend"); box.textContent = "";
   if (!legend.size) return;
+  if (GL_SCOPE.scale && (GL_SCOPE.mode || "").startsWith("gene:")) {  // a gene: the color bar alone
+    box.append(geneBar(GL_SCOPE.scale, `${GL_SCOPE.scale.unit}, one scale on every slice`));
+    return;
+  }
   const all = document.createElement("button"); all.id = "glAll"; all.textContent = "Show all"; all.disabled = !GL_SCOPE.sel.size;
   all.onclick = () => { GL_SCOPE.sel.clear(); box.querySelectorAll("input").forEach((x) => (x.checked = false)); glRecolor(); };
   box.append(all);
-  if (GL_SCOPE.scale && (GL_SCOPE.mode || "").startsWith("gene:")) box.append(geneBar(GL_SCOPE.scale, `${GL_SCOPE.scale.unit}, one scale on every slice`));
   const binned = /^(gene|program):/.test(GL_SCOPE.mode || "");  // bins keep their order (high to low), not by size
   [...legend.entries()].sort((a, b) => (binned ? 0 : b[1].count - a[1].count)).slice(0, 80).forEach(([k, v]) => {
     const l = document.createElement("label"), cb = document.createElement("input"), i = document.createElement("i");
@@ -7928,7 +7932,7 @@ function glLegend(legend) {  // tick entries to show only them; Show all clears 
   });
 }
 async function glRecolor() {
-  $("glAll").disabled = !GL_SCOPE.sel.size;
+  if ($("glAll")) $("glAll").disabled = !GL_SCOPE.sel.size;
   const token = (GL_SCOPE.paint = (GL_SCOPE.paint || 0) + 1), sel = new Set(GL_SCOPE.sel);
   for (const t of GL_SCOPE.tiles || []) {
     if (token !== GL_SCOPE.paint) return;
@@ -7969,7 +7973,7 @@ $("glSave").onclick = () => {  // the tiles as shown, their names and the legend
       `<text x="200" y="53" font-size="9" text-anchor="end">${f(sc.top)}${sc.max > sc.top ? "+" : ""}</text>`,
       `<text x="210" y="42" font-size="9" fill="#666666">${x(sc.unit)}, one scale on every slice</text>`);
   }
-  const top = (entries.length ? ly + 18 : 34), rows = Math.ceil(n / cols), H = top + rows * (th + cap + gap) + 4;
+  const top = (entries.length ? ly + 18 : sc ? 64 : 34), rows = Math.ceil(n / cols), H = top + rows * (th + cap + gap) + 4;
   out.push(`<text x="20" y="22" font-size="14" font-weight="600">${x($("glTitle").textContent)} · colored by ${x(mode)}${sel.size ? ` (only ${x([...sel].join(", "))})` : ""}</text>`, ...lg);
   tiles.forEach((t, i) => {
     const cx = 20 + (i % cols) * (tw + gap), cy = top + Math.floor(i / cols) * (th + cap + gap);
