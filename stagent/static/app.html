@@ -262,10 +262,12 @@ body.desktop #side { display: none; }
 #maptop { position: absolute; top: 10px; left: 10px; right: 10px; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px;
           align-items: flex-start; pointer-events: none; }
 #maptop > .float, #maptop .mtrow > .float, #maptop .mtcol > .float { position: static; pointer-events: auto; }
-#maptop .mtcol { display: flex; flex-direction: column; gap: 8px; align-items: stretch; pointer-events: none; min-width: 0; max-width: 100%; }
-#maptop .mtrow { display: flex; gap: 8px; align-items: flex-start; pointer-events: none; min-width: 0; }
-#maptop .mtrow > #acts { flex: 0 1 auto; min-width: 0; }
-#maptop .mtrow > #imgbox { flex: none; margin-left: auto; margin-right: 9px; }  /* (its right edge under Refresh's: the toolbar's, less its padding and border) */
+#maptop .mtcol { display: flex; flex-direction: column; gap: 8px; align-items: stretch; pointer-events: none; min-width: 0; max-width: 100%;
+                 width: max-content; }  /* as wide as the row below (the agent's box and the image's): the toolbar wraps in it */
+#maptop .mtcol > #tools { width: 0; min-width: 100%; box-sizing: border-box; }  /* (it does not widen the column) */
+#maptop .mtrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; pointer-events: none; min-width: 0; }
+#maptop .mtrow > #acts { flex: 1 1 auto; min-width: min(100%, 236px); }  /* (too narrow for both: the image's box goes below, at the right) */
+#maptop .mtrow > #imgbox { flex: none; margin-left: auto; }  /* (its right edge under the toolbar's) */
 #viewerwrap.pl #maptop { right: 360px !important; }
 #tools, #acts, #imgbox { padding: 6px 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 #imgbox label { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
