@@ -261,9 +261,14 @@ body.desktop #side { display: none; }
    follow its height (--maptop) and it keeps clear of the windows on the right */
 #maptop { position: absolute; top: 10px; left: 10px; right: 10px; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px;
           align-items: flex-start; pointer-events: none; }
-#maptop > .float { position: static; pointer-events: auto; }
+#maptop > .float, #maptop .mtrow > .float { position: static; pointer-events: auto; }
+#maptop .mtrow { display: flex; gap: 8px; align-items: flex-start; pointer-events: none; min-width: 0; }
+#maptop .mtrow > #acts { flex: 0 1 auto; min-width: 0; }
+#maptop .mtrow > #imgbox { flex: none; }
 #viewerwrap.pl #maptop { right: 360px !important; }
-#tools, #acts { padding: 6px 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+#tools, #acts, #imgbox { padding: 6px 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+#imgbox label { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+#imgbox #imgSel { height: 32px; max-width: 220px; }
 #tools input[type=range] { width: 80px; }
 #tools #mode { width: 132px; height: 32px; }  /* as tall as the buttons below it */
 #glDlg .dh select, #glDlg .dh input[type=text] { height: 32px; }  /* the overview's Color by: as on the map */
@@ -274,7 +279,7 @@ body.desktop #side { display: none; }
 #hide.on::after, #hideHE.on::after { content: ""; position: absolute; left: 50%; top: 50%; width: 22px; height: 2px;
   background: #d63b3b; border-radius: 1px; transform: translate(-50%, -50%) rotate(-45deg); box-shadow: 0 0 0 1px var(--panel); }
 #maptop button.ib { padding: 5px; }
-#tools, #acts { gap: 6px; }
+#tools, #acts, #imgbox { gap: 6px; }
 #acts #vinfo { font-size: 11.5px; color: var(--muted); padding: 0 2px; }
 #agentModel { height: 32px; font-size: 12.5px; padding: 0 2px; width: auto; min-width: 0; }
 header .br { flex: 1 1 100%; height: 0; }
@@ -549,7 +554,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 #acDlg .acopt button { width: 100%; }
 @media (max-width: 520px) { #acDlg .acopt { grid-template-columns: 1fr; } }
 #alignbar #alignmsg { min-width: 0; }
-#tools, #acts, #alignbar { box-sizing: border-box; min-height: 44px; }  /* the notice as tall as the bars */
+#tools, #acts, #imgbox, #alignbar { box-sizing: border-box; min-height: 44px; }  /* the notice as tall as the bars */
 .alrow { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 5px 4px; border-radius: 6px; font-size: 13px; cursor: pointer; }
 .alrow:hover { background: var(--bg); } .alrow.alall { border-bottom: 1px solid var(--line); border-radius: 0; }
 #acList { max-height: 50vh; overflow-y: auto; overflow-x: hidden; }
@@ -878,14 +883,13 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <label>Opacity <input type="range" id="opacity" min="0" max="100" value="100"></label>
       <label title="Size of the cell dots">Dot size <input type="range" id="dotsize" min="20" max="300" value="100" step="10">
         <span id="dotsizeVal" style="min-width:34px">1.0×</span></label>
-      <label id="imgWrap" hidden title="The image under the cells: the H&amp;E, the DAPI, a protein / IF stain… (each placed on the cells by its own registration)">Image <select id="imgSel"></select></label>
       <button id="hide" title="Hide the cells: the image only (h)">Hide cells</button>
       <button id="hideHE" title="Hide the image: the cells only (e)">Hide image</button>
-      <button id="imgAdjBtn" title="Brightness and contrast of the image shown (a fluorescence image also its display range and gamma)">Adjust</button>
       <span class="vsep"></span>
       <button id="undo" disabled title="Undo your last action (everything the agent changed for one request goes back at once)">Undo</button>
       <button id="refresh" title="Show the latest of everything: the server reads the sample, its image and annotations from disk again and the page reloads what it shows (the view, color mode and legend choice stay)">Refresh</button>
     </div>
+    <div class="mtrow">  <!-- the agent's box and, to its right, the image's (Image, Adjust) -->
     <div id="acts" class="float">
       <button id="claudeBtn" hidden title="Ask your own agent (Claude Code, in its own terminal window), connected to the sample open here">Agent</button>
       <select id="agentModel" hidden title="The model of the agent (Claude Code): each choice is the latest model of its family; Default: Claude Code's own setting. Claude Code opened from now on uses it">
@@ -895,6 +899,11 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <button id="report" disabled title="The annotation report the agent writes: method, composition, compartments, quality, open questions">Report</button>
       <div class="seg" id="reviewMode" title="How the agent's changes are taken. Manual: each waits for you in a review window (Accept or Dismiss). Auto: each is applied at once, without the window; Undo takes it back."><button data-m="manual">Manual</button><button data-m="auto">Auto</button></div>
       <span id="vinfo" hidden></span>
+    </div>
+    <div id="imgbox" class="float" hidden>
+      <label id="imgWrap" hidden title="The image under the cells: the H&amp;E, the DAPI, a protein / IF stain… (each placed on the cells by its own registration)">Image <select id="imgSel"></select></label>
+      <button id="imgAdjBtn" title="Brightness and contrast of the image shown (a fluorescence image also its display range and gamma)">Adjust</button>
+    </div>
     </div>
     <div id="alignbar" hidden><span id="alignmsg"></span></div>
     </div>
@@ -1578,6 +1587,7 @@ function openHE(sample) {
     const kind = he.image_kind || "H&E";
     $("hideHE").hidden = kind === "none";
     $("imgAdjBtn").hidden = kind === "none"; if (kind === "none") $("imgAdj").hidden = true;
+    imgBoxSync();
     setLabel($("hideHE"), "Hide the image: the cells only (e)");
     fillImages(sample, he);
     applyImgFilter(); if (!$("imgAdj").hidden) openImgAdj();  // (another sample: its own display)
@@ -1689,6 +1699,9 @@ $("iaReset").onclick = () => {
   $("iaB").value = 100; $("iaC").value = 100;
   const a = { ...IA_DEF }; iaFillRange(a); iaSave(true);
 };
+function imgBoxSync() {  // the image box (the Image choice, Adjust): shown while it holds something
+  $("imgbox").hidden = $("imgWrap").hidden && $("imgAdjBtn").hidden;
+}
 function fillImages(sample, he) {  // the Image selector: the sample's images (the frame first); the last choice per sample
   const ims = he.images || [], sel = $("imgSel");
   const want = load(`img:${sample}`);
@@ -1697,6 +1710,7 @@ function fillImages(sample, he) {  // the Image selector: the sample's images (t
   ims.forEach((x) => sel.append(Object.assign(document.createElement("option"), { value: x.id, textContent: x.name + (x.frame && ims.length > 1 ? " (cells placed on it)" : "") })));
   sel.value = st.imgId;
   $("imgWrap").hidden = ims.length < 2;
+  imgBoxSync();
 }
 $("imgSel").onchange = () => {  // another image under the cells: replaced in place, the view kept
   if (!st.sample) return;
