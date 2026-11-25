@@ -158,6 +158,22 @@ try:
     assert lum(t_rng) > lum(t_auto) and lum(t_gam) > lum(t_auto) and t_bad == t_auto, (lum(t_auto), lum(t_rng), lum(t_gam))
     assert cl.post("/api/sample/s1/images/remove", json={"id": rm["added"] + "#c2"}).status_code == 200  # (the file)
     assert not any(x["id"].startswith(rm["added"]) for x in importer.images("s1"))
+    # the instrument's own DAPI chosen as the image (the Image window): placed by the pixel size at once, no alignment
+    cc = pd.read_parquet(config.SAMPLES / "s1" / "cells.parquet", columns=["x", "y"])
+    xd = os.path.join(home, "xen2", "morphology_focus"); os.makedirs(xd)  # (a DAPI in the instrument's pixels: 2 um, origin 0)
+    pyramid(os.path.join(xd, "ch0000_dapi.ome.tif"), np.full((int(cc.y.max() / 2) + 20, int(cc.x.max() / 2) + 20), 100, np.uint8))
+    m = json.load(open(mf)); m["source"].update(folder=os.path.join(home, "xen2"), pixel_size_um=2.0, morphology=None); json.dump(m, open(mf, "w"))
+    keep_inside, importer.MIN_INSIDE = importer.MIN_INSIDE, 0.0  # (the example's coordinates run below 0, a Xenium's never)
+    try:
+        r_ = importer.set_image("s1", os.path.join(xd, "ch0000_dapi.ome.tif"), kind="DAPI", progress=lambda *a: None, reuse_registration=False)
+    finally:
+        importer.MIN_INSIDE = keep_inside
+    m = json.load(open(mf))
+    cc = pd.read_parquet(config.SAMPLES / "s1" / "cells.parquet", columns=["x", "y", "px", "py"])
+    assert r_.get("placed_on") and not m.get("image_pending") and np.allclose(cc.px, cc.x / 2) and np.allclose(cc.py, cc.y / 2), r_
+    assert m["source"]["morphology"].endswith("ch0000_dapi.ome.tif")  # (its other stains listed from now on)
+    other = os.path.join(home, "he2.ome.tif")  # (an image elsewhere still waits for its registration or alignment)
+    assert importer._instrument_affine(m, other) is None
     # Xenium's morphology_focus_000N.ome.tif: one OME series of 4 channels over 4 files. Each file opens (not
     # "incomplete": the other files' pages are theirs) and shows its own channel, one channel each
     xf = sorted(__import__("glob").glob(os.environ.get("SMOKE_XENIUM_MORPH", "/data2/celltypeagent/share/validation/xenium5k_lymph_node/outs/morphology_focus") + "/morphology_focus_000*.ome.tif"))

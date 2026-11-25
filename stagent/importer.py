@@ -594,14 +594,7 @@ def xenium_sources(entries):
                 files["mtx_dir"] = str(p / "cell_feature_matrix")
             if (p / "cell_feature_matrix.zarr").is_dir() and "atera" not in files:  # (an Atera bundle unzipped)
                 files["atera"] = str(p / "cell_feature_matrix.zarr")
-            named = []  # the image experiment.xenium names (Xenium Ranger 2+: morphology_focus/morphology_focus_0000.ome.tif)
-            if "experiment" in files:
-                try:
-                    f = (json.load(open(files["experiment"])).get("images") or {}).get("morphology_focus_filepath")
-                    named = [f] if f else []
-                except (OSError, ValueError):
-                    pass
-            m = next((p / x for x in named + MORPHOLOGY if (p / x).exists()), None)
+            m = _folder_morphology(p, files.get("experiment"))
             if m:
                 files["morphology"] = str(m)
             if "cells" in files or "atera" in files:
@@ -646,6 +639,20 @@ def xenium_sources(entries):
     return out
 
 
+def _folder_morphology(folder, experiment=None):
+    """The DAPI morphology image of a Xenium / Atera output folder: the one experiment.xenium names (Xenium Ranger 2+:
+    morphology_focus/morphology_focus_0000.ome.tif), else the usual names (MORPHOLOGY); None."""
+    folder = Path(folder)
+    named = []
+    if experiment:
+        try:
+            f = (json.load(open(experiment)).get("images") or {}).get("morphology_focus_filepath")
+            named = [f] if f else []
+        except (OSError, ValueError):
+            pass
+    return next((folder / x for x in named + MORPHOLOGY if (folder / x).exists()), None)
+
+
 def _slice_from_fields(fields):
     """One slice from the import dialog's fields: {"cells": path, "counts": [h5] or [mtx, barcodes, features],
     "experiment": path, "morphology": path} (the last two optional). The files may have any names."""
@@ -685,6 +692,13 @@ def _slice_from_fields(fields):
     for k in ("experiment", "morphology"):
         if one(k):
             files[k] = str(Path(one(k)).expanduser())
+    folder = Path(cells).expanduser().parent  # not chosen: those of the cells' Xenium output folder, as a folder's import
+    if "experiment" not in files and (folder / "experiment.xenium").is_file():
+        files["experiment"] = str(folder / "experiment.xenium")
+    if "morphology" not in files:
+        m = _folder_morphology(folder, files.get("experiment"))
+        if m:
+            files["morphology"] = str(m)
     for p in [v for k, v in files.items()]:
         if not Path(p).is_file():
             raise ValueError(f"{p}: no such file")
@@ -1975,6 +1989,21 @@ def _channel_name(path):
     return name
 
 
+def _instrument_affine(m, path):
+    """Cell um -> pixels of path when it is one of the morphology images of the Xenium / Atera output the sample came
+    from (its folder, as _instrument_images lists them), else None."""
+    src = m.get("source") or {}
+    ps, folder = src.get("pixel_size_um"), src.get("folder")
+    if src.get("kind") != "xenium" or not ps or not folder:
+        return None
+    p, f = Path(path).resolve(), Path(folder).resolve()
+    if not (p.parent == f or p.parent.parent == f or p.parent == f / "morphology_focus" or p.parent == f / "morphology_2d"):
+        return None
+    if not re.match(r"(ch\d{4}_.+|morphology_focus_\d{4}|morphology_focus|morphology_mip)\.ome\.tif$", p.name):
+        return None
+    return np.array([[1 / float(ps), 0.0, 0.0], [0.0, 1 / float(ps), 0.0]])
+
+
 def _instrument_images(m):
     """The morphology images of the Xenium / Atera output the sample came from (the DAPI and the other stains: boundary,
     interior RNA and protein), in the instrument's pixels: cell um / pixel size."""
@@ -2175,6 +2204,14 @@ def set_image(sample_id, path, kind="H&E", progress=print, reuse_registration=Tr
     path = str(Path(path).expanduser().resolve())
     _he_size(path)  # readable?
     m = _meta(sample_id)
+    inst = _instrument_affine(m, path)
+    if inst is not None:  # the instrument's own DAPI / stain: in its pixels, no registration or alignment to wait for
+        r = place_cells(sample_id, inst, path, kind if kind != "H&E" else "DAPI", by="file", progress=progress)
+        m = _meta(sample_id)
+        if not (m.get("source") or {}).get("morphology"):  # (imported without it: its other stains listed from now on)
+            m["source"]["morphology"] = path
+            dump_json(m, config.SAMPLES / sample_id / "meta.json", indent=1)
+        return r
     if m.get("registration_affine") and reuse_registration:
         r = place_cells(sample_id, m["registration_affine"], path, kind, by=m.get("registration_by") or "file",
                         progress=progress, keep_positions=True)
