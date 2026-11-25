@@ -223,6 +223,9 @@ language of the user's message, keeping cell type and region names as they are."
 
 mcp = FastMCP("stagent", instructions=INSTRUCTIONS)
 _active: dict = {}
+IMAGE_TOOLS = ("show_area", "show_he", "show_tissue_overview", "show_region_map")
+_image_looked: dict = {}  # annotation id -> when the agent last looked at its image (an image tool that answered)
+_image_nudged: set = set()  # (annotation, round) whose proposal was sent back once for not looking
 
 
 def _log_calls(manager):
@@ -247,6 +250,8 @@ def _log_calls(manager):
         if isinstance(res, (list, tuple)):  # content blocks: their text; images are left out
             res = [getattr(b, "text", f"<{getattr(b, 'type', 'content')}>") for b in res]
         s = _active.get("session") or s
+        if name in IMAGE_TOOLS and s is not None:
+            _image_looked[s.id] = time.time()
         report.log_call(name, arguments, time.time() - t0, result=res, session=s.id if s else None,
                         via=_active.get("via"))
         return out
@@ -1369,6 +1374,18 @@ def _compact_marker_check(q):
     return q | {"nodes": nodes, "flags": flags, "unassigned": un, "note": note}
 
 
+def _looked_this_round(s, rd):
+    """Whether the agent looked at the annotation's image since the round was first asked (a reply of the user in
+    the same round does not ask again): True / False, None when the sample has no image."""
+    from . import importer
+    try:
+        if not importer.image_of(s.sample_id):
+            return None
+    except (OSError, ValueError):
+        return None
+    return _image_looked.get(s.id, 0) >= float(rd.get("first_asked_t") or rd.get("asked_t") or 0)
+
+
 def _next_refine_session(s):
     """The annotation of the round after s's last one (made when the user accepted it: it carries the rounds, its
     first with session s.id), or None while the app is still annotating."""
@@ -1484,7 +1501,15 @@ def propose_refinement(summary: str, edits: list[dict], questions: Optional[list
             f"propose with session_id='{nxt}'" if nxt else
             "the app is annotating again with the chosen edits and the next round's annotation is not made yet. Wait "
             "for the request of the next round (it names its annotation); do not guess one"))
-    rec = iterate.propose(s, summary, edits, organ, questions, prior_findings)
+    looked = _looked_this_round(s, rd)
+    if looked is False and (s.id, rd["n"]) not in _image_nudged:  # once a round: look first
+        _image_nudged.add((s.id, rd["n"]))
+        raise ValueError("You have not looked at the tissue image in this round. Before proposing, look at it: "
+                         "show_tissue_overview once, then show_area (or show_he) for the areas your edits and "
+                         "prior_findings are about (where types lie against the priors, types you would split, merge "
+                         "or remove), and say in the summary what the image showed. Then call propose_refinement "
+                         "again; if the image cannot help here, call it again as it is (it is taken the second time).")
+    rec = iterate.propose(s, summary, edits, organ, questions, prior_findings, looked_at_image=looked)
     return _j({"edits": rec["edits"], "problems_of_the_edited_list": rec["check"],
                "next": "the user decides in the Refine window; their reply or the next round comes as a new request"})
 

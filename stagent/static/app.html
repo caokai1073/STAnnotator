@@ -462,6 +462,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .rfedits { max-height: 38vh; overflow: auto; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }
 .rfedits label { display: grid; grid-template-columns: auto 1fr; gap: 6px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; }
 .rfedits .why { color: var(--muted); }
+.rfedits .rfnoimg { padding: 6px 10px; border: 1px dashed var(--line); border-radius: 10px; }
 .rfedits .rfgroup { display: flex; flex-direction: column; gap: 4px; padding: 6px; border: 1px solid var(--line); border-radius: 10px; }
 .rfedits .rfgroup > label:not(.rfghead) { margin-left: 18px; }
 .rfedits .rfghead { display: flex; align-items: center; gap: 6px; border: none; padding: 2px 2px 0; margin: 0; }
@@ -4767,6 +4768,9 @@ function rfRender() {
   const P = rd.proposal, eb = $("rfEdits"), keepTop = eb.scrollTop;
   const opened = new Set([...eb.querySelectorAll("details[open]")].map((d) => d.dataset.k).filter(Boolean));  // (kept open)
   eb.textContent = "";
+  if (P && P.looked_at_image === false)  // asked to and reminded once, the agent still did not look at the image
+    eb.append(Object.assign(document.createElement("div"), { className: "hint rfnoimg",
+      textContent: "The agent did not look at the tissue image in this round: its edits rest on the numbers only." }));
   if (P && (P.findings || []).length) {
     // the agent's findings against the priors, apart from the edits: the user says real biology or mislabel
     const verdicts = r.prior_verdicts || {};

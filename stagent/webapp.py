@@ -944,8 +944,7 @@ REPORT_REQUEST = ("Write the annotation report of version {v} (I clicked Report)
 REFINE_REQUEST = ("I am refining the annotation {sid} with you in the Refine window, round {n} (each round after "
                   "Accept is a new annotation: answer this one even if an earlier request looked the same). {user}Call refine_report(session_id='{sid}') first. {organ} Review the "
                   "whole annotation, not only the cells the marker step could not type: gather sample_context, "
-                  "tissue_priors(organ), type_confusion, type_structure, review_markers and spatial_profile, and look at "
-                  "the H&E (show_area, show_he) where an area needs it. Judge whether the cell types, their numbers and "
+                  "tissue_priors(organ), type_confusion, type_structure, review_markers and spatial_profile. {image}Judge whether the cell types, their numbers and "
                   "where they lie fit the organ and its priors (name the rule): compare the report's where_types_lie and "
                   "rule_conflicts with the priors and list what goes against them in prior_findings (my data are often "
                   "diseased: a finding may be real biology; do not raise again those I marked real biology), and which types have weak or unspecific "
@@ -961,6 +960,15 @@ REFINE_REQUEST = ("I am refining the annotation {sid} with you in the Refine win
 REFINE_REPLY = ("In the Refine window (annotation {sid}, round {n}) I wrote: \"{text}\". My words come first. Read "
                 "refine_report(session_id='{sid}') again and answer with propose_refinement(session_id='{sid}', ...): the edits revised as I asked, or the same "
                 "edits with your answer in its summary.")
+
+
+def _refine_image_line(s):
+    """The Refine request's line on the tissue image: look at it before proposing (there is one)."""
+    if not importer.image_of(s.sample_id):
+        return "There is no tissue image for this sample: judge from the numbers and say so. "
+    return ("Look at the tissue image before proposing: show_tissue_overview once, then show_area (or show_he) for "
+            "the areas your edits and prior_findings are about (where types lie against the priors, types you would "
+            "split, merge or remove), and say in the summary what it showed. ")
 
 
 def _refine_organ_line(st, guess):
@@ -1007,7 +1015,8 @@ async def api_refine_ask(req: Request):
     user = f"I wrote: \"{msg}\" (this comes first). " if msg else ""
     iterate.mark_asked(s)
     return _json({"round": rd} | _ask_claude(s, REFINE_REQUEST.format(
-        sid=s.id, n=rd["n"], user=user, organ=_refine_organ_line(iterate.load(s), rd["report"]["organ"]))))
+        sid=s.id, n=rd["n"], user=user, organ=_refine_organ_line(iterate.load(s), rd["report"]["organ"]),
+        image=_refine_image_line(s))))
 
 
 async def api_refine_start(req: Request):
@@ -1042,7 +1051,8 @@ async def api_refine_start(req: Request):
             user = (f"I wrote: \"{b['message'].strip()}\" (this comes first). " if (b.get("message") or "").strip() else "")
             iterate.mark_asked(s)
             out |= _ask_claude(s, REFINE_REQUEST.format(sid=s.id, n=rd["n"], user=user,
-                                                        organ=_refine_organ_line(iterate.load(s), rd["report"]["organ"])))
+                                                        organ=_refine_organ_line(iterate.load(s), rd["report"]["organ"]),
+                                                        image=_refine_image_line(s)))
         return _json(out)
     except ValueError as e:
         if not noted:  # (the round could not start)

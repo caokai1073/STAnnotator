@@ -365,6 +365,7 @@ def mark_asked(s):
     st, rd = current(s)
     rd["asked"] = time.strftime("%Y-%m-%dT%H:%M:%S")
     rd["asked_t"] = time.time()
+    rd.setdefault("first_asked_t", rd["asked_t"])  # (the agent looks at the image once a round, not at every reply)
     if rd.get("decision") == "dismissed":
         rd["decision"], rd["accepted"] = None, []
     save(s, st)
@@ -501,7 +502,7 @@ def set_verdict(s, key, verdict):
     return v
 
 
-def propose(s, summary, edits, organ=None, questions=None, findings=None):
+def propose(s, summary, edits, organ=None, questions=None, findings=None, looked_at_image=None):
     """The agent's proposal for the current round: a summary, the edits (each with an id, a reason and the evidence),
     questions for the user and findings against the priors (each the cells, where they lie, the rule, the agent's
     judgement and the evidence); the edits are checked by applying them all to the list."""
@@ -524,7 +525,7 @@ def propose(s, summary, edits, organ=None, questions=None, findings=None):
     rd["proposal"] = {"summary": str(summary or "")[:6000], "edits": clean, "questions": list(questions or [])[:10],
                       "findings": found,
                       "organ": organ, "check": problems, "time": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                      "t": time.time()}
+                      "t": time.time(), "looked_at_image": looked_at_image}
     if organ and not st.get("organ"):
         st["organ"] = organ
     text_q = "".join(f"\n? {q}" for q in rd["proposal"]["questions"])

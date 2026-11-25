@@ -601,7 +601,8 @@ Histograms show where each threshold cuts and the dialog counts what goes; empty
      and in the app's log, so that two runs can be compared step by step (a bug report carries them).
 3. **Advanced** (folded; its line names the switches that are on): **Leave out spillover**, **Parallel
    clustering**, **Keep my regions, priors & corrections** (when an annotation is open: carried into the new one) and
-   **Refine with the agent** (on by default: after annotating, the agent reviews the result round by round).
+   **Refine with the agent** (on by default: after annotating, the agent reviews the result round by round; with a
+   tissue image it looks at the image each round before proposing, and the window says so when it did not).
    While a round is summed up, the agent reviews it, or the sample is annotated again after **Accept**, a window in
    the middle of the screen says so and keeps the rest of the app from being used (changing regions or priors
    meanwhile would change the annotation under the round); a message says when it is done. After 10 minutes without

@@ -308,6 +308,29 @@ try:
     pre = s2.panel[0][:2]
     assert json.loads(mcp_server.get_panel_genes(prefix=pre))["genes"] == [x for x in s2.panel if x.upper().startswith(pre.upper())]
     print("review_markers compact, panel genes checked")
+    # the tissue image in a round: a proposal without a look is sent back once, then taken with looked_at_image
+    rd = iterate.current(n)[1]
+    rd["decision"] = None; st_ = iterate.load(n); st_["rounds"][-1] = rd; iterate.save(n, st_)
+    iterate.mark_asked(n)
+    real_img = importer.image_of
+    importer.image_of = lambda sid: "he.tif"  # (a sample with an image)
+    try:
+        mcp_server._image_looked.pop(n.id, None)
+        try:
+            mcp_server.propose_refinement("x", [], session_id=n.id)
+            raise AssertionError("taken without a look at the image")
+        except ValueError as e:
+            assert "not looked at the tissue image" in str(e), e
+        mcp_server.propose_refinement("x", [], session_id=n.id)  # the second time it is taken
+        assert iterate.current(n)[1]["proposal"]["looked_at_image"] is False
+        mcp_server._image_looked[n.id] = __import__("time").time()  # an image tool answered: taken at once
+        mcp_server.propose_refinement("y", [], session_id=n.id)
+        assert iterate.current(n)[1]["proposal"]["looked_at_image"] is True
+        assert "show_tissue_overview" in webapp._refine_image_line(n)
+    finally:
+        importer.image_of = real_img
+    assert iterate.current(n)[1]["proposal"]["looked_at_image"] in (True, None)
+    print("the image is asked for once a round")
     print("ok")
 finally:
     shutil.rmtree(HOME, ignore_errors=True)
