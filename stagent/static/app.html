@@ -261,19 +261,21 @@ body.desktop #side { display: none; }
    follow its height (--maptop) and it keeps clear of the windows on the right */
 #maptop { position: absolute; top: 10px; left: 10px; right: 10px; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px;
           align-items: flex-start; pointer-events: none; }
-#maptop > .float, #maptop .mtrow > .float { position: static; pointer-events: auto; }
+#maptop > .float, #maptop .mtrow > .float, #maptop .mtcol > .float { position: static; pointer-events: auto; }
+#maptop .mtcol { display: flex; flex-direction: column; gap: 8px; align-items: stretch; pointer-events: none; min-width: 0; max-width: 100%; }
 #maptop .mtrow { display: flex; gap: 8px; align-items: flex-start; pointer-events: none; min-width: 0; }
 #maptop .mtrow > #acts { flex: 0 1 auto; min-width: 0; }
-#maptop .mtrow > #imgbox { flex: none; }
+#maptop .mtrow > #imgbox { flex: none; margin-left: auto; margin-right: 9px; }  /* (its right edge under Refresh's: the toolbar's, less its padding and border) */
 #viewerwrap.pl #maptop { right: 360px !important; }
 #tools, #acts, #imgbox { padding: 6px 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 #imgbox label { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
-#imgbox #imgSel { height: 32px; max-width: 220px; }
+#imgbox #imgSel { height: 32px; width: 118px; }
 #tools input[type=range] { width: 80px; }
 #tools #mode { width: 132px; height: 32px; }  /* as tall as the buttons below it */
 #glDlg .dh select, #glDlg .dh input[type=text] { height: 32px; }  /* the overview's Color by: as on the map */
 #maptop button { padding: 5px 9px; }
 #tools .vsep { width: 1px; align-self: stretch; background: var(--line); margin: 2px 2px; }
+#tools .mtend { display: flex; gap: 6px; align-items: center; align-self: stretch; margin-left: auto; }
 /* Hide cells / Hide H&E: while hidden, the icon is struck through (instead of a filled button) */
 #hide.on, #hideHE.on { background: var(--panel); color: var(--ink); border-color: var(--line); position: relative; }
 #hide.on::after, #hideHE.on::after { content: ""; position: absolute; left: 50%; top: 50%; width: 22px; height: 2px;
@@ -876,6 +878,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <div id="osd"></div>
     <div id="empty"><div>No cell types yet. Check the marker list (<b>Markers…</b>) and click <b>Annotate</b>.</div></div>
     <div id="maptop">
+    <div class="mtcol">  <!-- the toolbar; below it the agent's box and the image's, this one at the toolbar's right edge -->
     <div id="tools" class="float">
       <label>Color by <select id="mode" disabled><option value="">annotate first</option></select></label>
       <input type="text" id="geneInput" list="geneList" placeholder="gene, e.g. EPCAM" hidden autocomplete="off"
@@ -885,9 +888,11 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
         <span id="dotsizeVal" style="min-width:34px">1.0×</span></label>
       <button id="hide" title="Hide the cells: the image only (h)">Hide cells</button>
       <button id="hideHE" title="Hide the image: the cells only (e)">Hide image</button>
-      <span class="vsep"></span>
-      <button id="undo" disabled title="Undo your last action (everything the agent changed for one request goes back at once)">Undo</button>
-      <button id="refresh" title="Show the latest of everything: the server reads the sample, its image and annotations from disk again and the page reloads what it shows (the view, color mode and legend choice stay)">Refresh</button>
+      <span class="mtend">  <!-- Undo and Refresh together at the toolbar's right end -->
+        <span class="vsep"></span>
+        <button id="undo" disabled title="Undo your last action (everything the agent changed for one request goes back at once)">Undo</button>
+        <button id="refresh" title="Show the latest of everything: the server reads the sample, its image and annotations from disk again and the page reloads what it shows (the view, color mode and legend choice stay)">Refresh</button>
+      </span>
     </div>
     <div class="mtrow">  <!-- the agent's box and, to its right, the image's (Image, Adjust) -->
     <div id="acts" class="float">
@@ -901,8 +906,9 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <span id="vinfo" hidden></span>
     </div>
     <div id="imgbox" class="float" hidden>
-      <label id="imgWrap" hidden title="The image under the cells: the H&amp;E, the DAPI, a protein / IF stain… (each placed on the cells by its own registration)">Image <select id="imgSel"></select></label>
+      <label id="imgWrap" hidden title="The image under the cells: the H&amp;E, the DAPI, a protein / IF stain… (each placed on the cells by its own registration)"><select id="imgSel"></select></label>
       <button id="imgAdjBtn" title="Brightness and contrast of the image shown (a fluorescence image also its display range and gamma)">Adjust</button>
+    </div>
     </div>
     </div>
     <div id="alignbar" hidden><span id="alignmsg"></span></div>
@@ -1699,6 +1705,10 @@ $("iaReset").onclick = () => {
   $("iaB").value = 100; $("iaC").value = 100;
   const a = { ...IA_DEF }; iaFillRange(a); iaSave(true);
 };
+function imgSelTitle() {  // the image chosen, by its whole name (the box is narrow: a long stain's name is cut)
+  const o = $("imgSel").selectedOptions[0];
+  $("imgSel").title = o ? `${o.textContent}: the image under the cells (each placed on them by its own registration)` : "";
+}
 function imgBoxSync() {  // the image box (the Image choice, Adjust): shown while it holds something
   $("imgbox").hidden = $("imgWrap").hidden && $("imgAdjBtn").hidden;
 }
@@ -1709,13 +1719,14 @@ function fillImages(sample, he) {  // the Image selector: the sample's images (t
   sel.textContent = "";
   ims.forEach((x) => sel.append(Object.assign(document.createElement("option"), { value: x.id, textContent: x.name })));
   sel.value = st.imgId;
+  imgSelTitle();
   $("imgWrap").hidden = ims.length < 2;
   imgBoxSync();
 }
 $("imgSel").onchange = () => {  // another image under the cells: replaced in place, the view kept
   if (!st.sample) return;
   const sample = st.sample.sample_id;
-  st.imgId = $("imgSel").value; store(`img:${sample}`, st.imgId);
+  st.imgId = $("imgSel").value; store(`img:${sample}`, st.imgId); imgSelTitle();
   viewer.addTiledImage({ tileSource: tileSource(heUrl(sample)), index: 0, replace: true, success: applyHE });
   applyImgFilter(); if (!$("imgAdj").hidden) openImgAdj();
 };
