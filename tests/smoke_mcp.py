@@ -2,16 +2,27 @@
 propose the change; accept() plays the user clicking Accept in the app (the app's own apply_proposal), and the agent
 then reloads the session.
 
-Run: STAGENT_HOME=<a data folder with the sample> python tests/smoke_mcp.py   (SMOKE_SAMPLE: the sample, default 167799)"""
+Run: python tests/smoke_mcp.py: the repo's mouse colon example in a temporary data folder. Or on a data folder that
+holds an SCP2927 IBD Xenium sample: STAGENT_HOME=<folder> SMOKE_SAMPLE=<its id> python tests/smoke_mcp.py"""
 import asyncio, json, os, shutil, sys
 import tempfile
+from pathlib import Path
 os.environ.setdefault("STAGENT_SETTINGS_DIR", tempfile.mkdtemp(prefix="stagent_cfg_"))  # (never the user's settings)
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 PY = sys.executable
-SAMPLE = os.environ.get("SMOKE_SAMPLE", "167799")
-MARKERS = open(__import__("pathlib").Path(__file__).parent.parent / "examples" / "scp2927" / "ibd_xenium480_markers.csv").read()
+EX = Path(__file__).parent.parent / "examples"
+TMP_HOME = None
+if "STAGENT_HOME" not in os.environ:  # on its own: the example, imported into a temporary data folder
+    TMP_HOME = tempfile.mkdtemp(prefix="stagent_mcp_")
+    os.environ["STAGENT_HOME"] = TMP_HOME
+    from stagent import importer
+    importer.import_sample("smoke", str(EX / "cadinu_merfish" / "cadinu_merfish_D0_m3a_1_slice_2.h5ad"), progress=lambda *a: None)
+    SAMPLE, MARKERS = "smoke", open(EX / "cadinu_merfish" / "mouse_colon_merfish_markers.txt").read()
+else:
+    SAMPLE = os.environ.get("SMOKE_SAMPLE", "167799")
+    MARKERS = open(EX / "scp2927" / "ibd_xenium480_markers.csv").read()
 
 
 def show(res, n=400):
@@ -85,4 +96,8 @@ async def main():
     shutil.rmtree(config.SESSIONS / sid)  # keep the sessions folder free of test sessions
 
 
-asyncio.run(main())
+try:
+    asyncio.run(main())
+finally:
+    if TMP_HOME:
+        shutil.rmtree(TMP_HOME, ignore_errors=True)
