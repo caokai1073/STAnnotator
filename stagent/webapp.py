@@ -179,7 +179,7 @@ class SampleView:
             A = np.asarray(x["affine"], float)       # cell um -> this image's pixels
             Fi = np.linalg.inv(F[:, :2])
             L = A[:, :2] @ Fi
-            self._layers[key] = (render.slide(x["path"]), np.c_[L, A[:, 2] - L @ F[:, 2]], x["rev"])
+            self._layers[key] = (render.slide(x["path"], x.get("channel")), np.c_[L, A[:, 2] - L @ F[:, 2]], x["rev"])
         return self._layers[key]
 
     def forget_layers(self):

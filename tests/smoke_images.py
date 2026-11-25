@@ -114,6 +114,28 @@ try:
     json.dump(m, open(mf, "w"))
     names = [(x["name"], x["kind"]) for x in importer.images("s1") if x["source"] == "instrument"]
     assert names == [("DAPI", "DAPI"), ("ATP1A1 / CD45 / E-CADHERIN", "IF"), ("18S", "IF")], names
+    # a fluorescence file of several channels: one image per channel, named from the file, each shown on its own
+    mc = os.path.join(home, "multi.ome.tif")
+    chans = np.stack([base[..., 0], 255 - base[..., 1], base[..., 2] // 2]).astype(np.uint16) * 200
+    with tifffile.TiffWriter(mc, ome=True) as w:
+        w.write(chans, tile=(256, 256), subifds=2, photometric="minisblack",
+                metadata={"axes": "CYX", "Channel": {"Name": ["DAPI", "CD45", "PanCK"]}})
+        for k in (2, 4):
+            w.write(chans[:, ::k, ::k], tile=(256, 256), subfiletype=1, photometric="minisblack")
+    assert render.channel_names(mc) == ["DAPI", "CD45", "PanCK"] and render.channel_names(os.path.join(home, "frame.ome.tif")) is None
+    rm = cl.post("/api/sample/s1/images/add", json={"path": mc, "kind": "IF", "same_as": "main"}).json()
+    got = [(x["id"], x["name"]) for x in cl.get("/api/sample/s1/he_info").json()["images"] if x["id"].startswith(rm["added"])]
+    assert got == [(rm["added"], "DAPI"), (rm["added"] + "#c1", "CD45"), (rm["added"] + "#c2", "PanCK")], got
+    tiles = [cl.get("/api/sample/s1/he/8/0_0.jpg", params={"img": i}) for i, _ in got]
+    assert all(t.status_code == 200 for t in tiles) and len({t.content for t in tiles}) == 3, "the channels look the same"
+    for k in range(3):  # each one is its channel: against the channel read directly
+        sl = render.slide(mc, k)
+        a = np.asarray(sl.read(*bx, 300, 250).convert("L"), float)
+        b = np.asarray(render.slide(mc, (k + 1) % 3).read(*bx, 300, 250).convert("L"), float)
+        own = np.asarray(Image.fromarray((chans[k, bx[1]:bx[3], bx[0]:bx[2]] / 1.0)).resize((300, 250)), float)
+        assert np.corrcoef(a.ravel(), own.ravel())[0, 1] > 0.9 and np.corrcoef(b.ravel(), own.ravel())[0, 1] < 0.9, k
+    assert cl.post("/api/sample/s1/images/remove", json={"id": rm["added"] + "#c2"}).status_code == 200  # (the file)
+    assert not any(x["id"].startswith(rm["added"]) for x in importer.images("s1"))
     print("smoke_images ok", f"(warped r = {rr:.3f})")
 finally:
     shutil.rmtree(home, ignore_errors=True)

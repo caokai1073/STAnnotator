@@ -1,6 +1,6 @@
 """Figures: region maps (PNG), H&E conflict crops and tissue overviews (JPEG, smaller for MCP clients). Each returns
 its path. Slide reads any box of a pyramidal H&E at a given output size (also used by the viewer's tiles)."""
-import contextlib, logging, math, threading
+import contextlib, logging, math, re, threading
 from pathlib import Path
 import numpy as np, tifffile, zarr
 from PIL import Image
@@ -80,9 +80,9 @@ def _check_complete(t, series, problems):
 
 class Slide:
     """A pyramidal TIFF / OME-TIFF: RGB (H&E) or a fluorescence channel (e.g. DAPI, shown in gray with its display
-    range taken from the coarsest level)."""
+    range taken from the coarsest level). channel: which channel of a file of several (default the first)."""
 
-    def __init__(self, path):
+    def __init__(self, path, channel=None):
         self.path = path
         with _tiff_problems() as problems, tifffile.TiffFile(path) as t:
             s = t.series[0]
@@ -93,6 +93,10 @@ class Slide:
             rgb = "S" in s.axes and s.shape[s.axes.index("S")] in (3, 4)
             rgb = rgb or ("C" in s.axes and s.shape[s.axes.index("C")] == 3 and s.dtype == np.uint8)
             self.rgb, self.dtype = rgb, s.dtype
+            n_ch = s.shape[s.axes.index("C")] if "C" in s.axes and not rgb else 1
+            self.channel = int(channel or 0)
+            if not 0 <= self.channel < n_ch:
+                raise ValueError(f"{Path(path).name} has {n_ch} channel(s): no channel {self.channel + 1}")
             _check_complete(t, s, problems)
         self.W0, self.H0 = self.levels[0][:2]
         self._z, self._stores, self._lock = {}, [], threading.Lock()
@@ -120,7 +124,7 @@ class Slide:
         """Pixels of level k in a box as (h, w, 3) uint8."""
         ax = self.levels[k][2]
         idx = tuple(slice(b0, b1) if c == "Y" else slice(a0, a1) if c == "X" else
-                    slice(None) if (c in "SC" and self.rgb) else 0 for c in ax)
+                    slice(None) if (c in "SC" and self.rgb) else self.channel if c == "C" else 0 for c in ax)
         with self._lock:  # tifffile stores share a file handle
             arr = np.asarray(self._zarr(k)[idx])
         kept = [c for c in ax if c in "YX" or (c in "SC" and self.rgb)]
@@ -136,7 +140,7 @@ class Slide:
             k = len(self.levels) - 1
             w, h, _ = self.levels[k]
             ax = self.levels[k][2]
-            idx = tuple(slice(None) if c in "YX" else 0 for c in ax)
+            idx = tuple(slice(None) if c in "YX" else self.channel if c == "C" else 0 for c in ax)
             with self._lock:
                 a = np.asarray(self._zarr(k)[idx]).astype(np.float32).ravel()
             a = a[a > 0] if (a > 0).any() else a
@@ -195,26 +199,61 @@ class BlankSlide:
 _slides = {}
 
 
+def _key_path(k):
+    return k[0] if isinstance(k, tuple) else k
+
+
 def unload(path):
-    """Forget an open image (its file handles and stores)."""
-    _slides.pop(path, None)
+    """Forget an open image (its file handles and stores), every channel of it."""
+    for k in [k for k in _slides if _key_path(k) == path]:
+        _slides.pop(k, None)
 
 
 def forget(folder):
     """Close and drop the images open from inside folder (before it is moved or deleted)."""
     folder = str(Path(folder).resolve())
-    for p in [p for p in _slides if p and str(Path(p).resolve()).startswith(folder)]:
-        s = _slides.pop(p)
+    for k in [k for k in _slides if _key_path(k) and str(Path(_key_path(k)).resolve()).startswith(folder)]:
+        s = _slides.pop(k)
         if hasattr(s, "close"):
             s.close()
 
 
-def slide(path):
+def slide(path, channel=None):
+    """The open image of path (one channel of a file of several: channel, from 0)."""
     if not path:
         return BlankSlide()
-    if path not in _slides:
-        _slides[path] = Slide(path)
-    return _slides[path]
+    key = (path, int(channel)) if channel else path
+    if key not in _slides:
+        _slides[key] = Slide(path, channel)
+    return _slides[key]
+
+
+_CHANNEL_NAMES = {}
+
+
+def channel_names(path):
+    """The channels of a fluorescence image of several (its OME names, else "channel 1", ...), or None: one channel,
+    or RGB (an H&E)."""
+    try:
+        st = Path(path).stat()
+    except OSError:
+        return None
+    key = (str(path), st.st_mtime_ns, st.st_size)
+    if key not in _CHANNEL_NAMES:
+        names = None
+        try:
+            with tifffile.TiffFile(path) as t:
+                sr = t.series[0]
+                rgb = "S" in sr.axes and sr.shape[sr.axes.index("S")] in (3, 4)
+                rgb = rgb or ("C" in sr.axes and sr.shape[sr.axes.index("C")] == 3 and sr.dtype == np.uint8)
+                n = sr.shape[sr.axes.index("C")] if "C" in sr.axes and not rgb else 1
+                if n > 1:
+                    found = re.findall(r'<Channel[^>]*?Name="([^"]+)"', t.ome_metadata or "")
+                    names = found if len(found) == n else [f"channel {k + 1}" for k in range(n)]
+        except Exception:
+            names = None
+        _CHANNEL_NAMES[key] = names
+    return _CHANNEL_NAMES[key]
 
 
 def _grid_axes(ax, g, box, labels=True, color="k", alpha=0.3):

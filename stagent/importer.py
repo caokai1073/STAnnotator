@@ -2026,6 +2026,7 @@ def images(sample_id, meta=None):
             continue
         seen.add(r)
         out.append({**x, "frame": False})
+    out = _by_channel(out)
     by_path = {res(x["path"]): x for x in out}
     for x in out:  # an image in the same pixels as another follows it (that one realigned, or the frame moved)
         ref = by_path.get(x.get("same_as"))
@@ -2033,6 +2034,24 @@ def images(sample_id, meta=None):
             x["affine"] = ref["affine"]
     for x in out:  # its placement's fingerprint: tiles of another placement are other tiles (the viewer's cache)
         x["rev"] = hashlib.sha1(json.dumps(np.round(np.asarray(x["affine"], float), 6).tolist()).encode()).hexdigest()[:8]
+    return out
+
+
+def _by_channel(ims):
+    """A fluorescence file of several channels (an OME-TIFF of DAPI and stains) as one image per channel, named after
+    its channels: the first keeps the file's entry (the frame stays the frame), the others are "<id>#c<k>"."""
+    from . import render
+    out = []
+    for x in ims:
+        names = render.channel_names(x["path"]) if x.get("path") else None
+        if not names:
+            out.append(x)
+            continue
+        for k, nm in enumerate(names):
+            y = {**x, "channel": k, "name": nm}
+            if k:
+                y.update(id=f"{x['id']}#c{k}", frame=False)
+            out.append(y)
     return out
 
 
@@ -2089,6 +2108,7 @@ def add_image(sample_id, path, kind="IF", registration=None, same_as=None, name=
 def remove_image(sample_id, image_id):
     """Forget an added image (or one shown before); the instrument's images and the frame stay."""
     m = _meta(sample_id)
+    image_id = str(image_id).split("#c")[0]  # (a channel of an added file: the file)
     keep = [x for x in (m.get("images") or []) if x["id"] != image_id]
     if len(keep) == len(m.get("images") or []):
         raise ValueError(f"{image_id} is not an image added to this sample")
