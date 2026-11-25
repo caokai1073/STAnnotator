@@ -269,6 +269,10 @@ body.desktop #side { display: none; }
 #viewerwrap.pl #maptop { right: 360px !important; }
 #tools, #acts, #imgbox { padding: 6px 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 #imgbox label { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+.irlist { display: flex; flex-direction: column; gap: 4px; max-height: 50vh; overflow: auto; }
+.irlist label { display: flex; gap: 8px; align-items: center; padding: 4px 6px; border-radius: 6px; font-size: 13px; }
+.irlist label:hover { background: var(--bg); }
+.irlist .k { color: var(--muted); font-size: 11.5px; margin-left: auto; }
 #imgbox #imgSel { height: 32px; width: 118px; }
 #tools input[type=range] { width: 80px; }
 #tools #mode { width: 132px; height: 32px; }  /* as tall as the buttons below it */
@@ -1065,6 +1069,15 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <span class="hint" id="acAgentHint">Your agent (Claude Code) looks at the candidate placements and picks one: for a slide with
         several sections, or a tissue whose orientation is hard to tell.</span></div>
     <div class="row"><span class="spacer"></span><button id="acCancel">Cancel</button></div>
+  </div>
+</dialog>
+<dialog id="irDlg" style="width:min(560px,95vw)">
+  <div class="dh"><b id="irTitle">Discard images</b><span class="spacer"></span></div>
+  <div class="imbody" style="gap:8px">
+    <div class="hint">Tick the images to take out of this sample. Their files stay where they are; adding a file again brings it back.</div>
+    <div id="irList" class="irlist"></div>
+    <div class="hint" id="irNote"></div>
+    <div class="row" style="margin-top:4px"><span class="err" id="irErr"></span><span class="spacer"></span><button id="irCancel">Cancel</button><button id="irGo" class="danger" disabled>Discard</button></div>
   </div>
 </dialog>
 <dialog id="hiDlg" style="width:min(800px,95vw)">
@@ -5413,6 +5426,45 @@ function imForm() {  // show the fields of the chosen options; Align with Claude
 }
 document.querySelectorAll("input[name=imImgMode], input[name=imRegMode]").forEach((r) => (r.onchange = imForm));
 $("imNewImg").addEventListener("input", imForm); $("imNewImg").addEventListener("change", imForm);
+// ---------------- Discard images: tick those to take out; the image the cells are placed on: they move to the next ----------------
+function openImageDiscard() {
+  const ims = (st.he && st.he.images) || [];
+  if (!st.sample || !ims.length) { toast("This sample has no image", 3000); return; }
+  $("irTitle").textContent = `Discard images of ${sampleName(st.sample)}`;
+  $("irErr").textContent = ""; $("irGo").disabled = true;
+  const box = $("irList"); box.textContent = "";
+  ims.forEach((x) => {
+    const l = document.createElement("label"), cb = Object.assign(document.createElement("input"), { type: "checkbox", value: x.id });
+    const k = Object.assign(document.createElement("span"), { className: "k", textContent: (x.frame ? "the cells are placed on it · " : "") + (x.kind === "IF" ? "stain" : x.kind) });
+    l.append(cb, document.createTextNode(x.name), k); box.append(l);
+    cb.onchange = irNote;
+  });
+  irNote(); $("irDlg").showModal();
+}
+function irNote() {  // what happens: the cells' move when the image they are placed on goes
+  const ims = (st.he && st.he.images) || [], on = new Set([...$("irList").querySelectorAll("input:checked")].map((c) => c.value));
+  $("irGo").disabled = !on.size;
+  if (!on.has("main")) { $("irNote").textContent = ""; return; }
+  const left = ims.filter((x) => !on.has(x.id) && !x.id.startsWith("main#c"));
+  const nxt = left.find((x) => !x.id.includes("#c")) || left[0];
+  $("irNote").textContent = nxt ? `The cells are placed on the ${ims[0].name}: they move onto the ${nxt.name}, by its own registration (a local registration of the cells is not kept).`
+    : "No image is left: the cells are shown on a blank background (Steps → Image → Import puts one back).";
+}
+$("irCancel").onclick = () => $("irDlg").close();
+$("irGo").onclick = async () => {
+  const smp = st.sample && st.sample.sample_id, ids = [...$("irList").querySelectorAll("input:checked")].map((c) => c.value);
+  if (!smp || !ids.length) return;
+  if (alignBusy()) { $("irErr").textContent = "An alignment is running: wait for it to end"; return; }
+  $("irGo").disabled = true; $("irErr").textContent = "";
+  let r;
+  try { r = await post(`/api/sample/${encodeURIComponent(smp)}/images/remove`, { ids }); }
+  catch (e) { $("irErr").textContent = e.message; $("irGo").disabled = false; return; }
+  $("irDlg").close();
+  if (ids.includes(st.imgId)) store(`img:${smp}`, "main");  // (the image shown went: the one the cells are on)
+  await afterPlacement(`${r.discarded.length} image${r.discarded.length > 1 ? "s" : ""} discarded` +
+    (r.cells_moved_to ? `; the cells are now placed on the ${r.cells_moved_to}` : ids.includes("main") ? "; no image left" : ""));
+  loadStepsSoon();
+};
 async function discardPending() {  // Steps → Image → Discard: the image waiting for its alignment, forgotten
   const smp = st.sample && st.sample.sample_id; if (!smp) return;
   if (alignBusy()) { toast("An alignment is running: wait for it to end", 4000); return; }
@@ -7017,6 +7069,11 @@ async function loadSteps() {
         const pb = Object.assign(document.createElement("button"), { textContent: pre[0], title: pre[1] });
         pb.onclick = (e) => { e.stopPropagation(); pre[2](); };
         right.append(pb);
+      }
+      if (x.key === "registration" && img === "placed" && !x.open) {  // Discard: take images out (beside Add)
+        const db = Object.assign(document.createElement("button"), { textContent: "Discard", title: "Take images out of this sample (the H&E, the DAPI, a stain…): their files stay where they are" });
+        db.onclick = (e) => { e.stopPropagation(); openImageDiscard(); };
+        right.append(db);
       }
       const b = Object.assign(document.createElement("button"), { textContent: a[0], title: x.open ? "Open one of this sample's annotations (Data → Annotation)" : help });
       if (x.key === r.next) b.classList.add("primary");

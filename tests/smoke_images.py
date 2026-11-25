@@ -174,6 +174,29 @@ try:
     assert m["source"]["morphology"].endswith("ch0000_dapi.ome.tif")  # (its other stains listed from now on)
     other = os.path.join(home, "he2.ome.tif")  # (an image elsewhere still waits for its registration or alignment)
     assert importer._instrument_affine(m, other) is None
+    # Discard (Steps → Image): images taken out of a sample; the cells leave the image they are placed on
+    importer.import_sample("s2", h5, progress=lambda *a: None)
+    importer.set_image("s2", os.path.join(home, "frame.ome.tif"))
+    importer.place_cells("s2", A, os.path.join(home, "frame.ome.tif"), "H&E", by="file", progress=lambda *a: None)
+    tu = importer.add_image("s2", os.path.join(home, "other.ome.tif"), "IF", registration=reg, name="turned")["added"]
+    mu = importer.add_image("s2", mc, "IF", same_as="main")["added"]
+    ids = lambda: [x["id"] for x in importer.images("s2")]
+    assert ids() == ["main", tu, mu, mu + "#c1", mu + "#c2"], ids()
+    importer.remove_images("s2", [mu + "#c1"], progress=lambda *a: None)  # one channel: hidden
+    assert ids() == ["main", tu, mu, mu + "#c2"], ids()
+    importer.remove_images("s2", [mu, mu + "#c2"], progress=lambda *a: None)  # the rest of the file: dropped
+    m2 = importer._meta("s2")
+    assert ids() == ["main", tu] and not any(x["id"] == mu for x in m2["images"]) and not m2["images_hidden"], (ids(), m2.get("images_hidden"))
+    importer.add_image("s2", mc, "IF", same_as="main")  # added again: all its channels back
+    assert ids() == ["main", tu, mu, mu + "#c1", mu + "#c2"], ids()
+    r_ = cl.post("/api/sample/s2/images/remove", json={"ids": ["main"]}).json()  # the image the cells are on: they move
+    m2 = importer._meta("s2")
+    assert r_["cells_moved_to"] == "turned" and m2["he_path"].endswith("other.ome.tif") and np.allclose(importer.placement("s2"), B2), r_  # (reg holds B2 by now)
+    assert all(not x["path"].endswith("frame.ome.tif") for x in importer.images("s2")), "the image the cells left is kept"
+    r_ = importer.remove_images("s2", [x["id"] for x in importer.images("s2")], progress=lambda *a: None)
+    m2 = importer._meta("s2")
+    assert r_["cells_moved_to"] is None and m2["image_kind"] == "none" and not importer.images("s2"), (r_, importer.images("s2"))
+    print("Discard: a channel hidden, a file dropped and added back, the cells moved off their image, none left")
     # Xenium's morphology_focus_000N.ome.tif: one OME series of 4 channels over 4 files. Each file opens (not
     # "incomplete": the other files' pages are theirs) and shows its own channel, one channel each
     xf = sorted(__import__("glob").glob(os.environ.get("SMOKE_XENIUM_MORPH", "/data2/celltypeagent/share/validation/xenium5k_lymph_node/outs/morphology_focus") + "/morphology_focus_000*.ome.tif"))

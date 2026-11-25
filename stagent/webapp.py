@@ -3492,7 +3492,7 @@ async def api_sample_image_remove(req: Request):
     try:
         if _busy(sample):
             return _json({"error": "the sample is busy: try again when it ends"}, 409)
-        r = importer.remove_image(sample, str(b.get("id")))
+        r = importer.remove_images(sample, b["ids"]) if b.get("ids") is not None else importer.remove_image(sample, str(b.get("id")))
     except ValueError as e:
         return _json({"error": str(e)}, 400)
     _reload_sample(sample)

@@ -487,7 +487,10 @@ The app's window, or the web viewer (`.venv/bin/stagent viewer`, then http://loc
     agent), and **Check** once the cells are on it; **Add** puts another image of the sample under the cells (a
     DAPI, a protein / IF stain, another H&E: with its registration file, or in the same pixels as one of the
     sample's images; a file of exactly the size of one of them is taken as in its pixels by default). An image waiting
-    for its alignment can be dropped with **Discard** (the file stays where it is; the cells stay where they are). The **Image** box on the map (right of the agent's buttons) switches between them: the cells stay where they are,
+    for its alignment can be dropped with **Discard** (the file stays where it is; the cells stay where they are).
+    Once placed, **Discard** (beside Add) takes any of the sample's images out (the H&E, the DAPI, a stain, a single
+    channel): their files stay where they are and adding a file again brings it back; when the image the cells are
+    placed on goes, they move onto the next image by its own registration (or onto none). The **Image** box on the map (right of the agent's buttons) switches between them: the cells stay where they are,
     each image is placed by its own registration. A fluorescence file of several channels (e.g. an OME-TIFF of DAPI,
     CD45 and PanCK) gives one entry per channel, named from the file. A Xenium / Atera sample lists the instrument's DAPI and its
     other morphology stains (boundary, interior RNA and protein) by themselves; when an H&E is aligned, the image

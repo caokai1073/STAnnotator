@@ -2056,6 +2056,8 @@ def images(sample_id, meta=None):
         seen.add(r)
         out.append({**x, "frame": False})
     out = _by_channel(out)
+    hidden = set(m.get("images_hidden") or [])  # (discarded images the app finds by itself, or channels of a file)
+    out = [x for x in out if x["frame"] or x["id"] not in hidden]
     by_path = {res(x["path"]): x for x in out}
     for x in out:  # an image in the same pixels as another follows it (that one realigned, or the frame moved)
         ref = by_path.get(x.get("same_as"))
@@ -2126,6 +2128,8 @@ def add_image(sample_id, path, kind="IF", registration=None, same_as=None, name=
     if inside < MIN_INSIDE:
         raise ValueError(f"only {inside:.0%} of the cells fall inside this image ({W} x {H} px) with that registration")
     keep = [x for x in (m.get("images") or []) if Path(x["path"]).resolve() != Path(path).resolve()]
+    if m.get("images_hidden"):  # (discarded before: shown again, its channels too)
+        m["images_hidden"] = [h for h in m["images_hidden"] if h.split("#c")[0] != _image_id(path)]
     keep.append({"id": _image_id(path), "name": name or _image_label(kind, path), "kind": kind, "path": path,
                  "affine": np.asarray(A, float).tolist(), "source": "added",
                  **({"same_as": str(Path(ref["path"]).resolve())} if ref else {})})  # (follows that image: images())
@@ -2168,6 +2172,57 @@ def same_size_image(sample_id, path):
         except Exception:
             continue
     return None, (W, H)
+
+
+def remove_images(sample_id, ids, progress=print):
+    """Take images out of the sample (Steps → Image → Discard); their files stay where they are. An added image (or
+    one shown before) all of whose channels go is dropped from the list; the instrument's images and single channels
+    of a file are hidden (adding the file again shows them). The image the cells are placed on ("main"): the cells
+    move onto the first image left, by its own registration (its channel 0 when it has several), else onto no image
+    (a blank background); the image they leave is not kept as "shown before"."""
+    m = _meta(sample_id)
+    ims = images(sample_id, m)
+    by_id = {x["id"]: x for x in ims}
+    ids = list(dict.fromkeys(str(i) for i in ids))
+    bad = [i for i in ids if i not in by_id]
+    if bad:
+        raise ValueError(f"no image {', '.join(bad)} in this sample")
+    if not ids:
+        raise ValueError("choose the images to discard")
+    gone = set(ids)
+    out = {"discarded": [by_id[i]["name"] for i in ids], "cells_moved_to": None}
+    if "main" in gone:
+        left = [x for x in ims if x["id"] not in gone and not x["id"].startswith("main#c")]
+        nxt = next((x for x in left if "#c" not in x["id"]), None) or (left[0] if left else None)
+        old = m.get("he_path")
+        if nxt is not None:
+            place_cells(sample_id, nxt["affine"], nxt["path"], nxt["kind"] if nxt["kind"] in ("H&E", "DAPI") else "IF",
+                        by="file", progress=progress)
+            out["cells_moved_to"] = nxt["name"]
+        else:
+            place_cells(sample_id, BLANK, None, "none", by="file", progress=progress)
+        m = _meta(sample_id)
+        if old:  # (not kept among the others)
+            m["images"] = [x for x in (m.get("images") or []) if Path(x["path"]).resolve() != Path(old).resolve()]
+    hidden = set(m.get("images_hidden") or [])
+    if "main" in gone:  # (the channels of the image left are not those of the new one)
+        hidden = {h for h in hidden if not h.startswith("main#c")}
+        old = by_id["main"]["path"]  # the instrument's image the cells left: found by itself again, so hidden
+        hidden |= {x["id"] for x in _instrument_images(m) if Path(x["path"]).resolve() == Path(old).resolve()}
+    added = {x["id"]: x for x in (m.get("images") or [])}
+    for i in ids:
+        if i == "main" or (i.startswith("main#c") and "main" in gone):
+            continue
+        base = i.split("#c")[0]
+        family = [x["id"] for x in ims if x["id"].split("#c")[0] == base]
+        if base in added and all(f in gone for f in family):
+            m["images"] = [x for x in (m.get("images") or []) if x["id"] != base]
+            hidden = {h for h in hidden if h.split("#c")[0] != base}  # (its channels hidden before too)
+        else:
+            hidden.add(i)
+    m["images_hidden"] = sorted(hidden)
+    dump_json(m, config.SAMPLES / sample_id / "meta.json", indent=1)
+    return out
 
 
 def remove_image(sample_id, image_id):
