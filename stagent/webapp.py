@@ -4312,7 +4312,7 @@ ORGAN_REQUEST = ("Draft a marker list for {label} for sample {sample} (I chose t
 
 REVISE_REQUEST = ("Refine the marker list I have in Markers… for sample {sample}: read it with "
                   "editor_marker_list(sample_id='{sample}'). {organ_line}It is my list: keep its cell types, names and "
-                  "structure unless something is wrong. Check every marker against the panel (get_panel_genes): genes "
+                  "structure unless something is wrong. Check every marker against the panel (get_panel_genes(genes=[...])): genes "
                   "not in the panel, markers that do not tell a type from its siblings, types the panel cannot "
                   "separate, missing negative markers; add cell types of this tissue the panel can resolve that the "
                   "list lacks. {builtin}For markers you are not sure of, search the literature online. Validate with "
@@ -4350,7 +4350,7 @@ async def api_claude_markers(req: Request):
         if not desktop_mode():  # the server viewer revises the editor's list itself (Markers… > Draft)
             return _json({"message": (f"Tissue: {label}. " if label else "") + "Refine this list (my own): keep its cell "
                           "types, names and structure unless something is wrong; check every marker against the panel "
-                          "(get_panel_genes): genes not in it, markers that do not tell a type from its siblings, types "
+                          "(get_panel_genes(genes=[...])): genes not in it, markers that do not tell a type from its siblings, types "
                           "the panel cannot separate; add types of this tissue the panel can resolve that it lacks.",
                           "revise": True})
         return _json({"claude_code": claudelink.open_claude_code(sample, None, req_text, send_if_open=True)})
@@ -4542,7 +4542,8 @@ async def api_export_to(req: Request):
 
 
 DRAFT_PROMPT = """You draft a hierarchical marker gene list for cell typing of an imaging-based spatial
-transcriptomics sample (fixed gene panel). Call get_panel_genes first and use ONLY genes from the panel.
+transcriptomics sample (fixed gene panel). Use ONLY genes from the panel: get_panel_genes lists it (on a large
+panel check your genes with get_panel_genes(genes=[...]) instead).
 Format, one type per line, children indented by two spaces under their parent (any depth):
   Name: GENE+ GENE- A|B|C+
 GENE+ = expressed, GENE- = not expressed (use these to separate siblings), A|B|C+ = any one of these genes

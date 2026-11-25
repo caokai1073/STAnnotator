@@ -1319,8 +1319,8 @@ def show_conflicts(group_id: str, n: int = 6, version: Optional[int] = None) -> 
 def review_markers(node: Optional[str] = None, version: Optional[int] = None) -> str:
     """Marker check of the current annotation. For every node of the marker tree (lineage, group, cell type): its
     cell count, each listed marker's detection share in its cells vs its siblings' cells with a flag (weak / not
-    specific / negative marker detected), and the panel genes that best separate it from its siblings here; plus the
-    genes of Unassigned cells. node: only that node and its subtypes. Checks the user marked as solved in the
+    specific / negative marker detected), and the panel genes that best separate it from its siblings here, each as
+    "GENE+ 0.6 vs 0.02"; plus the genes of Unassigned cells. node: only that node and its subtypes. Checks the user marked as solved in the
     viewer's Review panel are left out of flags and listed in solved_by_user: do not raise them again."""
     from . import markerqc
     s = _s()
@@ -1335,7 +1335,55 @@ def review_markers(node: Optional[str] = None, version: Optional[int] = None) ->
         names = {node} | set(_s().type_groups.get(node, []))
         q = q | {"nodes": [n for n in q["nodes"] if n["node"] in names or n["parent"] in names],
                  "flags": [f for f in q["flags"] if f["node"] in names]}
-    return _j(q)
+    return _j(_compact_marker_check(q))
+
+
+def _share(x):
+    return "-" if x is None else f"{x:.2f}".rstrip("0").rstrip(".") if isinstance(x, float) else str(x)
+
+
+def _compact_marker_check(q):
+    """review_markers in fewer characters, every number kept: a marker or gene as "GENE+ 0.6 vs 0.02" (its share in
+    the node's cells vs its siblings' cells, the marker's flag in brackets), compared_with only where it is not the
+    other nodes of the same parent. A list of 40 types on a 5,000-gene panel made some 60,000 characters, more than
+    Claude Code passes on (it saved the output to a file, and the agent read its first part only)."""
+    kids = {}
+    for n in q["nodes"]:
+        kids.setdefault(n.get("parent"), []).append(n["node"])
+    nodes = []
+    for n in q["nodes"]:
+        m = {k: v for k, v in n.items() if k not in ("markers", "top_genes", "compared_with")}
+        if n.get("compared_with") is not None and list(n["compared_with"]) != [x for x in kids[n.get("parent")] if x != n["node"]]:
+            m["compared_with"] = n["compared_with"]
+        m["markers"] = [f"{x['marker']} {_share(x.get('in'))} vs {_share(x.get('siblings'))}" + (f" ({x['flag']})" if x.get("flag") else "")
+                        for x in n.get("markers", [])]
+        m["top_genes"] = [f"{x['gene']} {_share(x.get('in'))} vs {_share(x.get('siblings'))}" for x in n.get("top_genes", [])]
+        nodes.append(m)
+    flags = [{k: v for k, v in f.items() if not (k == "claude_verdict" and v is None)} for f in q.get("flags", [])]
+    un = q.get("unassigned")
+    if isinstance(un, dict) and un.get("top_genes"):
+        un = un | {"top_genes": [f"{x['gene']} {_share(x.get('in'))} vs {_share(x.get('siblings'))}" for x in un["top_genes"]]}
+    note = (q.get("note", "") + ". Each marker or gene reads \"GENE+ 0.6 vs 0.02\": its share in the node's cells vs "
+            "in its siblings' cells (the other nodes with the same parent, unless compared_with lists them), the "
+            "marker's flag in brackets; flags repeat the flagged markers with their keys")
+    return q | {"nodes": nodes, "flags": flags, "unassigned": un, "note": note}
+
+
+def _next_refine_session(s):
+    """The annotation of the round after s's last one (made when the user accepted it: it carries the rounds, its
+    first with session s.id), or None while the app is still annotating."""
+    from . import iterate
+    t = _list_sessions()
+    if not len(t):
+        return None
+    for sid in t[(t.sample_id == s.sample_id) & (t.session_id != s.id)].sort_values("created_at", ascending=False).session_id:
+        try:
+            rounds = iterate.load(Session(sid))["rounds"]
+        except (OSError, ValueError, KeyError):
+            continue
+        if any(r.get("session") == s.id for r in rounds):
+            return sid
+    return None
 
 
 def _refine_session(session_id=None):
@@ -1424,9 +1472,18 @@ def propose_refinement(summary: str, edits: list[dict], questions: Optional[list
     (problems the edited list would have)."""
     from . import iterate
     s = _refine_session(session_id)
-    if iterate.current(s)[1].get("decision") in ("accepted", "stopped"):
-        raise ValueError(f"round {iterate.current(s)[1]['n']} of {s.id} is already decided; the request names the "
-                         "annotation of the round waiting: pass its session_id")
+    rd = iterate.current(s)[1]
+    if rd.get("decision") == "stopped":
+        raise ValueError(f"the user stopped refining in round {rd['n']} of {s.id} (Stop refining in the Refine window): "
+                         "no proposal is taken any more. Give the user your findings in your reply instead; they can "
+                         "start refining again from the Refine window.")
+    if rd.get("decision") == "accepted":
+        nxt = _next_refine_session(s)
+        raise ValueError(f"the user accepted round {rd['n']} of {s.id}: " + (
+            f"the next round is annotation {nxt}; call refine_report(session_id='{nxt}') (its cells changed) and "
+            f"propose with session_id='{nxt}'" if nxt else
+            "the app is annotating again with the chosen edits and the next round's annotation is not made yet. Wait "
+            "for the request of the next round (it names its annotation); do not guess one"))
     rec = iterate.propose(s, summary, edits, organ, questions, prior_findings)
     return _j({"edits": rec["edits"], "problems_of_the_edited_list": rec["check"],
                "next": "the user decides in the Refine window; their reply or the next round comes as a new request"})
@@ -2512,12 +2569,31 @@ def remove_correction(correction_id: str) -> str:
 
 
 @mcp.tool()
-def get_panel_genes(sample_id: Optional[str] = None) -> str:
-    """All genes of a sample's panel (default: the active session's sample). Marker lists may use only these genes."""
+def get_panel_genes(sample_id: Optional[str] = None, genes: Optional[list[str]] = None,
+                    prefix: Optional[str] = None) -> str:
+    """The genes of a sample's panel (default: the active session's sample). Marker lists may use only these genes.
+    genes: check only these names (which are in the panel, in its spelling, and which are not); prefix: only the
+    genes starting with it (e.g. "CCL"). Without either, the whole panel; a large one (over 1,000 genes) as one
+    space-separated string, a whole transcriptome (over 8,000) not listed: check names with genes= rather than
+    reading thousands."""
     from .session import panel_genes
     sid = sample_id or (_active["session"].sample_id if "session" in _active else None)
-    genes = panel_genes(sid)
-    return _j({"n_genes": len(genes), "genes": genes})
+    panel = panel_genes(sid)
+    if genes:
+        up = {g.upper(): g for g in panel}
+        asked = [str(g).strip() for g in genes if str(g).strip()]
+        return _j({"n_genes": len(panel), "in_panel": [up[g.upper()] for g in asked if g.upper() in up],
+                   "not_in_panel": [g for g in asked if g.upper() not in up]})
+    if prefix:
+        hit = [g for g in panel if g.upper().startswith(prefix.upper())]
+        return _j({"n_genes": len(panel), "prefix": prefix, "genes": hit})
+    if len(panel) > 8000:  # a whole transcriptome: too long to read (Claude Code would not pass it on)
+        return _j({"n_genes": len(panel), "genes": None, "examples": panel[:40],
+                   "note": "a whole-transcriptome panel: check names with genes=[...] or list a family with prefix="})
+    if len(panel) > 1000:
+        return _j({"n_genes": len(panel), "genes": " ".join(panel),
+                   "note": "space-separated; check names with genes=[...] or list a family with prefix="})
+    return _j({"n_genes": len(panel), "genes": panel})
 
 
 @mcp.tool()

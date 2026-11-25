@@ -219,8 +219,8 @@ try:
     try:
         mcp_server.propose_refinement("x", [], session_id=s.id)
         raise AssertionError("a proposal went to a decided round")
-    except ValueError:
-        pass
+    except ValueError as e:  # accepted: the error names the next round's annotation
+        assert "accepted" in str(e) and s2.id in str(e), e
     print("the agent follows the round to the new annotation")
     old = st2["rounds"][-1]["marker_text"]
     tree = markers.parse(old, None)["tree"]
@@ -265,11 +265,22 @@ try:
             raise AssertionError("an accepted round was changed")
         except ValueError:
             pass
+    try:  # accepted, the next annotation not made yet: the agent is told to wait, not to guess one
+        mcp_server.propose_refinement("x", [], session_id=s2.id)
+        raise AssertionError("a proposal went to an accepted round")
+    except ValueError as e:
+        assert "not made yet" in str(e), e
     # rounds are not carried to another sample's annotation
     importer.import_sample("N", str(EX / "cadinu_merfish_D0_m3a_1_slice_2.h5ad"), progress=lambda *a: None)
     n = Session.create("N", method="markers", markers_text=text, knn="exact")
     iterate.carry(s2, n)
     assert not iterate.load(n)["rounds"], "rounds carried to another sample"
+    iterate.start_round(n); iterate.decide(n, "stopped")  # Stop refining: the agent is told so
+    try:
+        mcp_server.propose_refinement("x", [], session_id=n.id)
+        raise AssertionError("a proposal went to a stopped round")
+    except ValueError as e:
+        assert "stopped refining" in str(e), e
     # remove_marker keeps the other sign; a malformed revised list is refused, not read as removals
     neg = next((t, m["genes"][0]) for t in markers.descendants(tree) for m in markers._find(tree, t)["markers"] if m["sign"] < 0)
     out, _ = iterate.apply_edits(old, [{"kind": "remove_marker", "type": neg[0], "marker": neg[1] + "+"}])
@@ -281,6 +292,22 @@ try:
     except ValueError:
         pass
     print("round decisions, carry and edits checked")
+    # review_markers in its compact form keeps every number of the check; get_panel_genes checks names
+    from stagent import markerqc
+    mcp_server._active["session"] = s2
+    q, full = json.loads(mcp_server.review_markers()), markerqc.check(s2, None)
+    share = mcp_server._share
+    for a_, b_ in zip(q["nodes"], full["nodes"]):
+        assert a_["node"] == b_["node"] and a_["markers"] == [f"{m['marker']} {share(m['in'])} vs {share(m['siblings'])}"
+                                                               + (f" ({m['flag']})" if m.get("flag") else "") for m in b_["markers"]]
+        assert len(a_["top_genes"]) == len(b_["top_genes"]) and ("compared_with" in a_) == (
+            b_["compared_with"] != [x["node"] for x in full["nodes"] if x["parent"] == b_["parent"] and x["node"] != b_["node"]])
+    assert len(mcp_server.review_markers()) < 0.75 * len(json.dumps(full)), "not shorter"
+    g = json.loads(mcp_server.get_panel_genes(genes=[s2.panel[0].lower(), "NOT_A_GENE"]))
+    assert g["in_panel"] == [s2.panel[0]] and g["not_in_panel"] == ["NOT_A_GENE"], g
+    pre = s2.panel[0][:2]
+    assert json.loads(mcp_server.get_panel_genes(prefix=pre))["genes"] == [x for x in s2.panel if x.upper().startswith(pre.upper())]
+    print("review_markers compact, panel genes checked")
     print("ok")
 finally:
     shutil.rmtree(HOME, ignore_errors=True)
