@@ -119,6 +119,19 @@ try:
     print("gene scale: slices' own tops", [round(x, 3) for x in own], "project top", tops[0])
     r = c.get(f"/api/s/{sids[0]}/colors.bin", params={"version": ss[0].versions()[-1], "mode": "gene:NOPE_GENE"})
     assert r.status_code == 400 and "panel" in r.json()["error"], r.text
+    # every gene's top of a slice in one pass, kept next to its counts: the same as gene by gene
+    from stagent import config
+    assert (config.SAMPLES / ss[0].sample_id / webapp.GENE_TOPS_FILE).exists()
+    for g in ss[0].panel[:20]:
+        assert webapp.slice_top(ss[0].sample_id, g) == webapp.gene_top(webapp.gene_norm_of(ss[0].sample_id, g)), g
+    assert webapp.project_top(ss[0].sample_id, "NOT_A_GENE") == (1.0, 1)
+    # a program's scale comes from each slice's latest annotation: one annotated again without it no longer counts
+    import json as _json
+    from stagent.session import Session as _S
+    newer = _S.create(ss[1].sample_id, method="markers", markers_text=open(os.path.join(EX, "mouse_colon_merfish_markers.txt")).read(), knn="exact")
+    assert programs.sample_top(ss[1].sample_id, "proliferation") is None
+    assert abs(programs.project_top(ss[0], "proliferation")[0] - programs.top(programs.values(ss[0], "proliferation"))) < 1e-3
+    assert programs.project_top(ss[0], "proliferation")[1] == 1
     assert projects.list_projects()[0]["samples"]
     # a renamed slice: downloads are named by its new name (with its project's), not the id it was imported under
     assert c.post(f"/api/sample/{ss[0].sample_id}/rename", json={"name": "Left half"}).status_code == 200

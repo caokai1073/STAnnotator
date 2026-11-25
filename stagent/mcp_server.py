@@ -4,7 +4,7 @@ Run: python -m stagent.mcp_server
 The server keeps one active session; every tool that changes state creates a new version.
 Tool results are compact JSON; figure tools also return the PNG so the client can display it.
 """
-import json, threading, os, re
+import json, threading, os, re, time
 from typing import Optional, Union
 import numpy as np
 from mcp.server.fastmcp import FastMCP, Image
@@ -1383,19 +1383,26 @@ def _looked_this_round(s, rd):
             return None
     except (OSError, ValueError):
         return None
-    return _image_looked.get(s.id, 0) >= float(rd.get("first_asked_t") or rd.get("asked_t") or 0)
+    since = rd.get("first_asked_t") or rd.get("asked_t")
+    if not since:  # a round never asked from the app (the user asked in their own chat): since it began
+        try:
+            since = time.mktime(time.strptime(rd.get("time", ""), "%Y-%m-%dT%H:%M:%S"))
+        except (TypeError, ValueError):
+            since = 0
+    return _image_looked.get(s.id, -1) >= float(since)
 
 
 def _next_refine_session(s):
     """The annotation of the round after s's last one (made when the user accepted it: it carries the rounds, its
     first with session s.id), or None while the app is still annotating."""
-    from . import iterate
+    from . import iterate, config
+    from types import SimpleNamespace
     t = _list_sessions()
     if not len(t):
         return None
     for sid in t[(t.sample_id == s.sample_id) & (t.session_id != s.id)].sort_values("created_at", ascending=False).session_id:
-        try:
-            rounds = iterate.load(Session(sid))["rounds"]
+        try:  # (its refine.json only: a Session would read the cells)
+            rounds = iterate.load(SimpleNamespace(dir=config.SESSIONS / sid))["rounds"]
         except (OSError, ValueError, KeyError):
             continue
         if any(r.get("session") == s.id for r in rounds):

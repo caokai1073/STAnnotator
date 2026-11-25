@@ -185,26 +185,39 @@ def _slice_top(d, key, info, mtime):
     return _TOPS[k]
 
 
-def sample_top(sample_id, key, d=None):
-    """The top of program `key` on a sample: on annotation folder d, else on its annotation scored last with it
-    (the overview shows a sample's latest annotation); None: not scored on the sample."""
+USER_METHODS = ("markers", "scref", "existing")  # annotations made in the app (the page's USER_METHODS)
+
+
+def _latest_annotation(sample_id):
+    """The folder of a sample's latest annotation made in the app (the one the project's overview shows), or None.
+    Annotation folders are named <sample>_<time>_<tag>; each is checked by its session.json."""
     from . import config
-    if d is not None:
-        fs = [d / "programs" / "programs.json"]
-    else:  # annotation folders are named <sample>_<time>_<tag>: the sample's, checked by their session.json
-        fs = [config.SESSIONS / x for x in glob.glob(f"{glob.escape(sample_id)}_*/programs/programs.json", root_dir=config.SESSIONS)]
     best = None
-    for f in fs:
+    for x in glob.glob(f"{glob.escape(sample_id)}_*/session.json", root_dir=config.SESSIONS):
         try:
-            info = json.load(open(f)).get(key)
-            if not info or (d is None and json.load(open(f.parent.parent / "session.json")).get("sample_id") != sample_id):
-                continue
-            row = (info.get("run_id", ""), f.parent.parent, info, f.stat().st_mtime_ns)
+            j = json.load(open(config.SESSIONS / x, encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        if best is None or row[0] > best[0]:
-            best = row
-    return None if best is None else _slice_top(best[1], key, best[2], best[3])
+        if j.get("sample_id") == sample_id and j.get("method", "reference") in USER_METHODS:
+            row = (str(j.get("created_at", "")), (config.SESSIONS / x).parent)
+            best = row if best is None or row > best else best
+    return best[1] if best else None
+
+
+def sample_top(sample_id, key, d=None):
+    """The top of program `key` on a sample: on annotation folder d, else on the sample's latest annotation (the one
+    the overview shows: a program scored only on an older annotation does not set the scale); None: not scored."""
+    d = d if d is not None else _latest_annotation(sample_id)
+    if d is None:
+        return None
+    f = d / "programs" / "programs.json"
+    try:
+        info = json.load(open(f)).get(key)
+        if not info:
+            return None
+        return _slice_top(d, key, info, f.stat().st_mtime_ns)
+    except (OSError, ValueError):
+        return None
 
 
 def project_top(s, key):

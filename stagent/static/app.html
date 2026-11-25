@@ -7089,11 +7089,13 @@ async function checkRegistrationRun(note, more) {
   const regDialog = (smp, title, fig, text, buttons) => window.regDialog(smp, title, fig, note ? `${note} ${text}` : text, [...more, ...buttons]);
   toast("", 1);
   const title = `Registration of ${name}`;
-  if (r.verdict === "fine")
-    return regDialog(sample, title, r.figure, `The cells sit on their nuclei everywhere (median offset ${r.median_offset_um} µm).`, [close]);
-  if (r.new_alignment)  // far off over most of the tissue: beyond what the local registration measures (its check would look fine)
+  // far off over most of the tissue: beyond what the local registration measures, so first (the few windows that read
+  // can all sit on their nuclei: the verdict is then "fine")
+  if (r.new_alignment)
     return regDialog(sample, title, r.figure, `The cells sit far off their nuclei over most of the tissue: the offset could be read on only ${Math.round(100 * r.read_share)}% of it, as a rotation or scale error of the whole alignment leaves them. The local registration cannot fix this. Align the image again: the app searches the placement anew and shows the result (Undo puts the cells back).`,
       [["Close", false, async () => $("rgDlg").close()], ["Align again", true, async () => { $("rgDlg").close(); await autoAlign([sample]); }]]);
+  if (r.verdict === "fine")
+    return regDialog(sample, title, r.figure, `The cells sit on their nuclei everywhere (median offset ${r.median_offset_um} µm).`, [close]);
   // too little to correct: few windows off and none far (the alignment check's rule), or the correction would not bring
   // any window back onto its nuclei. Not the whole-tissue median: a shift in one place hardly moves it. (A server
   // without windows_off: the median, as before.)
@@ -7865,7 +7867,7 @@ async function openGallery(all) {  // every slice of the project (or every sampl
   $("glMode").value = [...$("glMode").options].some((o) => o.value === want) ? want : "type";
   if (want === "gene") $("glGene").value = m.slice(5);
   GL_SCOPE.wantProg = want === "program" ? m.slice(8) : null;
-  GL_SCOPE.base = new Map(); GL_SCOPE.idsKey = null;  // (each opening reads the samples again; a change of color mode does not)
+  GL_SCOPE.base = new Map(); GL_SCOPE.idsKey = null; GL_SCOPE.geneAsked = null;  // (each opening reads the samples again; a change of color mode does not)
   $("glTitle").textContent = all ? "All samples" : `Project ${p.name}`;
   $("glDlg").showModal();
   drawGallery();
@@ -7914,14 +7916,13 @@ async function drawGallery() {
   const one = async (t) => {
     if (token !== GL_SCOPE.token) return;
     try {
-      await loadTile(t, mode, img);
-      if (token !== GL_SCOPE.token) return;
+      if (!(await loadTile(t, mode, img, token))) return;
       await paintTile(t, mode, GL_SCOPE.sel);
       if (mode.startsWith("program:")) glProgNote(t, mode.slice(8).split("~")[0]);
       t.ts.textContent = t.sub + (t.note ? ` · ${t.note}` : "");
       t.items.forEach((it) => { const o = legend.get(it.label); legend.set(it.label, { color: o ? o.color : it.color, count: (o ? o.count : 0) + (it.count || 0) }); });
       if (token === GL_SCOPE.token) glLegend(legend);
-    } catch (e) { t.ts.textContent = `${t.sub} · could not draw`; }
+    } catch (e) { if (token === GL_SCOPE.token) t.ts.textContent = `${t.sub} · could not draw`; }
   };
   const queue = [...GL_SCOPE.tiles];  // three samples at a time (each the cells of a whole sample)
   await Promise.all([0, 1, 2].map(async () => { while (queue.length) await one(queue.shift()); }));
@@ -7953,8 +7954,10 @@ async function glRecolor() {
   }
 }
 $("glMode").onchange = () => { GL_SCOPE.wantProg = null; drawGallery(); };
-$("glGene").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); drawGallery(); } });
-$("glGene").addEventListener("change", drawGallery);
+// Enter and the change it fires: one drawing per gene typed (a new opening asks again)
+const glGeneGo = () => { const v = $("glGene").value.trim().toUpperCase(); if (v && v === GL_SCOPE.geneAsked) return; GL_SCOPE.geneAsked = v; drawGallery(); };
+$("glGene").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); glGeneGo(); } });
+$("glGene").addEventListener("change", glGeneGo);
 $("glProg").onchange = drawGallery;
 $("glImg").onchange = drawGallery;
 $("glSave").onclick = () => {  // the tiles as shown, their names and the legend, as one figure
@@ -8074,23 +8077,26 @@ async function glBase(s, c, withImage) {  // a sample's image info, cells and im
   })().catch((e) => { GL_SCOPE.base.delete(k); throw e; }));
   return GL_SCOPE.base.get(k);
 }
-async function loadTile(t, mode, withImage) {  // the sample's cells and image (kept), the colors of this mode
-  const s = t.s;
-  Object.assign(t, await glBase(s, t.c, withImage));
-  const a = glAnn(s, mode); t.sid = a.sid; t.ver = a.ver;
-  t.items = []; t.note = ""; t.big = ""; t.colored = false; t.col = null;
+// The sample's cells and image (kept), the colors of this mode. The tile takes them only while the request is the
+// current one (token): a slower answer of a mode left meanwhile must not replace the new mode's colors and legend.
+async function loadTile(t, mode, withImage, token) {
+  const s = t.s, base = await glBase(s, t.c, withImage);
+  const a = glAnn(s, mode), o = { ...base, sid: a.sid, ver: a.ver, items: [], note: "", big: "", colored: false, col: null };
   if (mode !== "cells") {
-    if (!t.sid) t.big = "Not annotated";
+    if (!o.sid) o.big = "Not annotated";
     else {
-      const q = new URLSearchParams({ version: t.ver, mode });
-      const [r, leg] = await Promise.all([fetch(`/api/s/${t.sid}/colors.bin?${q}`),  // (refused: this sample cannot be colored so)
-                                          api(`/api/s/${t.sid}/legend?${q}`).catch(() => ({}))]);
-      if (r.ok) { t.colored = true; t.col = new Uint8Array(await r.arrayBuffer()); t.items = (leg.items || []).filter((it) => it.count); }
-      else t.big = mode.startsWith("gene:") ? "Not in panel" : { region: "No regions" }[mode] || "Not computed";  // said on the tile itself
-      if (t.colored && mode === "region" && !t.items.some((it) => it.key !== "unknown")) { t.big = "No regions"; t.items = []; t.colored = false; }
-      if (t.colored && !t.items.length) { t.big = "Not computed"; t.colored = false; }  // e.g. Leiden or niches not run on it: no cell colored
+      const q = new URLSearchParams({ version: o.ver, mode });
+      const [r, leg] = await Promise.all([fetch(`/api/s/${o.sid}/colors.bin?${q}`),  // (refused: this sample cannot be colored so)
+                                          api(`/api/s/${o.sid}/legend?${q}`).catch(() => ({}))]);
+      if (r.ok) { o.colored = true; o.col = new Uint8Array(await r.arrayBuffer()); o.items = (leg.items || []).filter((it) => it.count); }
+      else o.big = mode.startsWith("gene:") ? "Not in panel" : { region: "No regions" }[mode] || "Not computed";  // said on the tile itself
+      if (o.colored && mode === "region" && !o.items.some((it) => it.key !== "unknown")) { o.big = "No regions"; o.items = []; o.colored = false; }
+      if (o.colored && !o.items.length) { o.big = "Not computed"; o.colored = false; }  // e.g. Leiden or niches not run on it: no cell colored
     }
   }
+  if (token !== GL_SCOPE.token) return false;
+  Object.assign(t, o);
+  return true;
 }
 async function paintTile(t, mode, sel) {  // the image, then the cells: light gray ones first, colored ones on top
   let col = null;

@@ -379,7 +379,11 @@ GENE_LUT = np.stack([np.interp(np.linspace(0, 1, 256), np.linspace(0, 1, len(GEN
                      for k in range(3)], 1).round().astype(np.uint8)
 GENE_UNIT = "ln(1 + transcripts per 100)"
 _gene_cache = LRU(8)
-_gene_tops = LRU(4096)  # (sample, gene, counts file) -> the top of its scale on that sample
+_gene_tops: dict = {}  # (sample, counts file) -> {GENE: the top of its scale on that sample}, see slice_tops
+_gene_tops_locks: dict = {}  # sample -> its lock (the map's colors and legend, the overview's tiles ask at once)
+_LOCK_OF_LOCKS = threading.Lock()
+GENE_TOPS_FILE, GENE_TOPS_V = "gene_tops.json", 1
+GENE_TOPS_ONE_PASS = 150_000_000  # stored counts up to which every gene's top is computed in one pass
 
 
 def _scale_parse(mode):
@@ -427,12 +431,67 @@ def gene_top(v):
     return round(float(np.quantile(pos, 0.99)), 3) if len(pos) else 0.0
 
 
+def _all_gene_tops(X):
+    """gene_top of every gene of counts X at once (the same values as gene_norm_of: per cell factors 100 / its
+    transcripts, log1p; the 99th percentile of each gene's values above 0)."""
+    tot = np.asarray(X.sum(1), np.float32).ravel()
+    tot[tot == 0] = 1
+    vals = np.log1p(X.data.astype(np.float32) * np.repeat(np.float32(100.0) / tot, np.diff(X.indptr)))
+    order = np.argsort(X.indices, kind="stable")
+    ends = np.cumsum(np.bincount(X.indices, minlength=X.shape[1]))
+    out, a = [], 0
+    for b in ends:
+        v = vals[order[a:b]]
+        out.append(gene_top(v))
+        a = b
+    return out
+
+
+def slice_tops(sample_id, gene=None):
+    """{GENE: top} of a sample's panel genes (gene_top of each), kept in memory and on disk next to its counts
+    (gene_tops.json, by the counts file's time: a new import or filter computes them again). Up to
+    GENE_TOPS_ONE_PASS stored counts every gene at once, the first time (a project's other slices are then read
+    once, not once per gene); above, gene by gene as asked. A missing gene of the panel is computed (gene)."""
+    from .session import panel_genes, shared_counts
+    from .osutil import dump_json
+    ck = _counts_key(sample_id)
+    with _LOCK_OF_LOCKS:
+        lock = _gene_tops_locks.setdefault(sample_id, threading.Lock())
+    with lock:
+        tops = _gene_tops.get((sample_id, ck))
+        f = config.SAMPLES / sample_id / GENE_TOPS_FILE
+        if tops is None:
+            try:
+                d = json.load(open(f, encoding="utf-8"))
+                tops = d["tops"] if d.get("counts_mtime") == ck and d.get("v") == GENE_TOPS_V else None
+            except (OSError, ValueError, KeyError):
+                tops = None
+        if tops is None:
+            tops = {}
+            X = shared_counts(config.SAMPLES / sample_id)
+            if X.nnz <= GENE_TOPS_ONE_PASS:
+                tops = {g.upper(): t for g, t in zip(panel_genes(sample_id), _all_gene_tops(X))}
+            changed = True
+        else:
+            changed = False
+        g = gene.upper() if gene else None
+        if g and g not in tops:
+            v = gene_norm_of(sample_id, gene)
+            if v is not None:
+                tops[g] = gene_top(v)
+                changed = True
+        _gene_tops[(sample_id, ck)] = tops
+        if changed:
+            try:
+                dump_json({"v": GENE_TOPS_V, "counts_mtime": ck, "tops": tops}, f)
+            except OSError:  # (a folder not writable: kept in memory only)
+                pass
+        return tops
+
+
 def slice_top(sample_id, gene):
-    """gene_top of a sample (kept: a project's other slices are read once per gene); None: not in its panel."""
-    def make():
-        v = gene_norm_of(sample_id, gene)
-        return None if v is None else gene_top(v)
-    return _gene_tops.get_or((sample_id, gene.upper(), _counts_key(sample_id)), make)
+    """gene_top of a sample; None: not in its panel."""
+    return slice_tops(sample_id, gene).get(gene.upper())
 
 
 def project_top(sample_id, gene):
@@ -442,8 +501,8 @@ def project_top(sample_id, gene):
     ids = [sample_id]
     if pid:
         ids += [x for x in projects.load(pid)["samples"] if x != sample_id and (config.SAMPLES / x / "counts.npz").exists()]
-    tops = [t for t in (slice_top(x, gene) for x in ids) if t]
-    return (max(tops) if tops else 1.0), len(ids)
+    tops = [t for t in (slice_top(x, gene) for x in ids) if t is not None]  # (slices whose panel has the gene)
+    return (max(tops) if any(tops) else 1.0), max(1, len(tops))
 
 
 def gene_values(s, mode):

@@ -330,6 +330,14 @@ try:
     finally:
         importer.image_of = real_img
     assert iterate.current(n)[1]["proposal"]["looked_at_image"] in (True, None)
+    rd = iterate.current(n)[1]  # a round never asked from the app: no look counts only since it began
+    rd.pop("first_asked_t", None); rd.pop("asked_t", None)
+    mcp_server._image_looked.pop(n.id, None)
+    importer.image_of = lambda sid: "he.tif"
+    try:
+        assert mcp_server._looked_this_round(n, rd) is False
+    finally:
+        importer.image_of = real_img
     print("the image is asked for once a round")
     print("ok")
 finally:
