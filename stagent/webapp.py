@@ -1617,7 +1617,7 @@ def api_report_md(req):
     rep = advice.report(s)
     if not rep:
         return _json({"error": "no report yet"}, 404)
-    return FileResponse(rep["path"], media_type="text/markdown", filename=f"{s.sample_id}_annotation_report.md")
+    return FileResponse(rep["path"], media_type="text/markdown", filename=f"{projects.file_stem(s.sample_id)}_annotation_report.md")
 
 
 async def api_report_save(req: Request):
@@ -4165,7 +4165,7 @@ def api_export_csv(req):
     s = review_app._session(req.path_params["sid"])
     v = int(req.query_params["version"]) if req.query_params.get("version") else s.versions()[-1]
     folder = Path(s.export(v))
-    name = f"{s.sample_id}_v{v}_cells.csv"
+    name = f"{projects.file_stem(s.sample_id)}_v{v}_cells.csv"
     return FileResponse(folder / "cells.csv", media_type="text/csv", filename=name)
 
 
@@ -4174,7 +4174,7 @@ def api_registration_csv(req):
     from . import notebook
     sample = req.path_params["sample"]
     return Response(notebook.registration_csv(sample), media_type="text/csv",
-                    headers={"Content-Disposition": attachment(f"{sample}_registration.csv")})
+                    headers={"Content-Disposition": attachment(f"{projects.file_stem(sample)}_registration.csv")})
 
 
 def api_positions_csv(req):
@@ -4182,7 +4182,7 @@ def api_positions_csv(req):
     from . import notebook
     sample = req.path_params["sample"]
     return Response(notebook.positions_csv(sample), media_type="text/csv",
-                    headers={"Content-Disposition": attachment(f"{sample}_cell_positions.csv")})
+                    headers={"Content-Disposition": attachment(f"{projects.file_stem(sample)}_cell_positions.csv")})
 
 
 def _regions_geojson(s, v):
@@ -4208,7 +4208,7 @@ def api_regions_geojson(req):
     except ValueError as e:
         return _json({"error": str(e)}, 400)
     return Response(text.encode("utf-8"), media_type="application/geo+json",
-                    headers={"Content-Disposition": attachment(f"{s.sample_id}_v{v}_regions.geojson")})
+                    headers={"Content-Disposition": attachment(f"{projects.file_stem(s.sample_id)}_v{v}_regions.geojson")})
 
 
 def api_projects_joint_runs(req):
@@ -4252,7 +4252,7 @@ def api_export_notebook(req):
     s = review_app._session(req.path_params["sid"])
     v = int(req.query_params["version"]) if req.query_params.get("version") else s.versions()[-1]
     return FileResponse(notebook.build(s, v), media_type="application/x-ipynb+json",
-                        filename=f"{s.sample_id}_v{v}_analysis.ipynb")
+                        filename=f"{projects.file_stem(s.sample_id)}_v{v}_analysis.ipynb")
 
 
 def reply_language(text):

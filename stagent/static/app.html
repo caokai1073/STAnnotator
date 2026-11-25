@@ -7379,6 +7379,11 @@ function sampleName(s) {  // as the app shows it: a slice by its name in the pro
   const p = projectOf(s.sample_id);
   return p && p.slices[s.sample_id] ? p.slices[s.sample_id].section : s.name || s.sample_id;
 }
+function fileStem(s) {  // a sample in file names, as the app shows it after a rename: a slice with its project's name
+  const p = projectOf(s.sample_id), n = sampleName(s);
+  const stem = (p && p.slices[s.sample_id] ? `${p.name}_${n}` : n).replace(/[^A-Za-z0-9_.-]+/g, "_").replace(/^_+|_+$/g, "");
+  return stem || s.sample_id;
+}
 $("sampleRename").onclick = () => {
   const s = st.sample; if (!s) return;
   st.renaming = null;  // the sample (sessRename sets the annotation)
@@ -7425,7 +7430,7 @@ $("rnCancel").onclick = () => $("rnDlg").close();
 // ---------------- an annotation as one file: save and load (bundle.py) ----------------
 $("anSave").onclick = async () => {
   if (!st.sid) return;
-  const name = `${sampleName(st.sample).replace(/[^A-Za-z0-9_.-]+/g, "_")}_v${st.version}.stannot`;
+  const name = `${fileStem(st.sample)}_v${st.version}.stannot`;
   try {
     if (native() && !st.remote) {
       const path = await native().save_path(name); if (!path) return;
@@ -8621,7 +8626,7 @@ $("anCsv").onclick = async () => {
     : q.kind === "composition" && r.test && r.test.id && (AN.view || "test") === "test" ? `${r.cols}_share_test_by_${r.rows}` : `${r.cols}_per_${r.rows}`;
   const testView = q.kind === "composition" && r.test && r.test.id && (AN.view || "test") === "test";
   const id = testView ? r.test.id : r.id;
-  const name = `${st.sample.sample_id}_${part}`.replace(/[^A-Za-z0-9_.-]+/g, "_") + ".csv", url = `/api/analysis/${id}.csv?name=${encodeURIComponent(name)}`;
+  const name = `${fileStem(st.sample)}_${part}`.replace(/[^A-Za-z0-9_.-]+/g, "_") + ".csv", url = `/api/analysis/${id}.csv?name=${encodeURIComponent(name)}`;
   if (st.remote) { await saveDownload(name, url); return; }
   if (native()) { const path = await native().save_path(name); if (!path) return;
     try { const res = await fetch(url); if (!res.ok) throw new Error((await res.json()).error);
@@ -9169,7 +9174,7 @@ $("anFig").onclick = () => {
   const part = k === "de" ? (r.all ? `de_every_${r.by}_dotplot` : `de_${r.group}_vs_${r.reference}_dotplot`) : k === "markers" ? `top_genes_by_${r.by}_dotplot`
     : k === "deseq2" ? `deseq2_${r.group}_vs_${r.reference}_${AN.view === "volcano" ? "volcano" : "dotplot"}`
     : k === "run" ? `communication_${r.by}_${AN.view}` : k === "trajectory" ? `trajectory_${AN.view || "heat"}_${r.label}` : `communication_by_${r.split}_${AN.view}`;
-  saveFigure(`${st.sample.sample_id}_${part}.pdf`.replace(/[^A-Za-z0-9_.-]+/g, "_"), AN.svg);
+  saveFigure(`${fileStem(st.sample)}_${part}.pdf`.replace(/[^A-Za-z0-9_.-]+/g, "_"), AN.svg);
 };
 async function saveFigure(name, svg) {  // an SVG of the page as PDF (made on the server): Save dialog in the app, a download in a browser
   try {
@@ -9343,7 +9348,7 @@ $("rpAsk").onclick = async () => {
   } catch (e) { toast(e.message, 6000); }
 };
 $("rpSave").onclick = async () => {
-  const name = `${st.sample.sample_id}_annotation_report.md`;
+  const name = `${fileStem(st.sample)}_annotation_report.md`;
   if (st.remote) { await saveDownload(name, `/api/s/${st.sid}/report.md`); return; }
   if (native()) {
     const path = await native().save_path(name); if (!path) return;
@@ -9427,8 +9432,9 @@ async function exportAs(kind) {  // the cell table or the notebook of the curren
   if (kind === "notebook" && $("xpNbSess").value && $("xpNbSess").value !== st.sid) return exportNotebookOf($("xpNbSess").value);
   const ext = kind === "notebook" ? "ipynb" : "csv";
   const sampleFile = { registration: "registration.csv", positions: "cell_positions.csv" }[kind];  // of the sample, not the version
-  const name = sampleFile ? `${st.sample.sample_id}_${sampleFile}` : kind === "regions" ? `${st.sample.sample_id}_v${st.version}_regions.geojson`
-    : `${st.sample.sample_id}_v${st.version}_${kind === "notebook" ? "analysis" : "cells"}.${ext}`;
+  const stem = fileStem(st.sample);  // (the name shown, after a rename too)
+  const name = sampleFile ? `${stem}_${sampleFile}` : kind === "regions" ? `${stem}_v${st.version}_regions.geojson`
+    : `${stem}_v${st.version}_${kind === "notebook" ? "analysis" : "cells"}.${ext}`;
   const url = sampleFile ? `/api/sample/${st.sample.sample_id}/${sampleFile}` : kind === "regions" ? `/api/s/${st.sid}/regions.geojson?version=${st.version}`
     : `/api/s/${st.sid}/export.${ext}?version=${st.version}`;
   if (st.remote) {  // on a server: downloaded through the SSH tunnel into a file on this computer
@@ -9454,7 +9460,7 @@ $("xpNb").onclick = () => exportAs("notebook");
 $("xpNbAll").onclick = () => exportAs("project_notebook");
 async function exportNotebookOf(sid) {  // the notebook of another annotation of this sample (its latest version)
   const rec = (st.sample.sessions || []).find((x) => x.session_id === sid); if (!rec) return;
-  const v = rec.n_versions, name = `${st.sample.sample_id}_v${v}_analysis.ipynb`, url = `/api/s/${sid}/export.ipynb?version=${v}`;
+  const v = rec.n_versions, name = `${fileStem(st.sample)}_v${v}_analysis.ipynb`, url = `/api/s/${sid}/export.ipynb?version=${v}`;
   $("xpStatus").textContent = "Writing the notebook (figures included)…";
   if (st.remote) { const path = await saveDownload(name, url); $("xpStatus").textContent = path ? `Saved ${path}` : st.dlError ? `Not saved: ${st.dlError}` : ""; return; }
   if (native()) {

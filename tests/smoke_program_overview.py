@@ -120,6 +120,14 @@ try:
     r = c.get(f"/api/s/{sids[0]}/colors.bin", params={"version": ss[0].versions()[-1], "mode": "gene:NOPE_GENE"})
     assert r.status_code == 400 and "panel" in r.json()["error"], r.text
     assert projects.list_projects()[0]["samples"]
+    # a renamed slice: downloads are named by its new name (with its project's), not the id it was imported under
+    assert c.post(f"/api/sample/{ss[0].sample_id}/rename", json={"name": "Left half"}).status_code == 200
+    v0 = ss[0].versions()[-1]
+    for url in (f"/api/s/{sids[0]}/export.csv?version={v0}", f"/api/sample/{ss[0].sample_id}/registration.csv"):  # (no regions here)
+        r = c.get(url)
+        cd = r.headers.get("content-disposition", "")
+        assert r.status_code == 200 and "demo_Left_half" in cd and ss[0].sample_id not in cd, (url, r.status_code, cd)
+    assert projects.file_stem(ss[1].sample_id) == "demo_right"
     print("smoke_program_overview ok")
 finally:
     shutil.rmtree(home, ignore_errors=True)

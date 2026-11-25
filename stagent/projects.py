@@ -287,6 +287,20 @@ def slice_name(project, value):
     return f"{project}_{re.sub(r'[^A-Za-z0-9_.-]+', '_', str(value)).strip('_')}"  # never shortened: that made slices with a common prefix clash
 
 
+def file_stem(sample_id):
+    """A sample in file names, as the app shows it after a rename: a slice <project name>_<its name in the project>,
+    a sample its own name (else its id); letters, digits, dot, dash and underscore only."""
+    try:
+        m = json.load(open(config.SAMPLES / sample_id / "meta.json", encoding="utf-8"))
+    except (OSError, ValueError):
+        return sample_id
+    pid = m.get("project")
+    p = load(pid) if pid and _file(pid).exists() else None
+    sec = p and (p.get("slices", {}).get(sample_id) or {}).get("section")
+    stem = f"{p['name']}_{sec}" if sec else m.get("name") or sample_id
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", str(stem)).strip("_") or sample_id
+
+
 def rename(sample_id, name, project_name=None):
     """Rename a sample as the app shows it; its id (folder, annotations) stays. A slice of a project gets a new section
     name (its name in the project, on the map and in the analyses); a sample on its own a display name ("" for its
