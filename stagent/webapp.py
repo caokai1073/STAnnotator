@@ -362,6 +362,8 @@ def colors_for(s: Session, version, mode, only):
 
 def mode_key(s, mode):
     """Cache key of a color mode; niche colors change with every niche run."""
+    if mode.startswith("gene:") and "~" not in mode:  # its top comes from the project's slices (re-filtered: a new top)
+        return f"{mode}~{project_top(s.sample_id, _gene_parse(mode)[0])[0]}"
     if mode.startswith("program:"):
         from . import programs
         return f"{mode}:{programs.saved(s).get(mode.split(':', 1)[1], {}).get('run_id')}"
@@ -379,42 +381,75 @@ GENE_LUT = np.stack([np.interp(np.linspace(0, 1, 256), np.linspace(0, 1, len(GEN
                      for k in range(3)], 1).round().astype(np.uint8)
 GENE_UNIT = "ln(1 + transcripts per 100)"
 _gene_cache = LRU(8)
+_gene_tops = LRU(4096)  # (sample, gene, counts file) -> the top of its scale on that sample
 
 
 def _gene_parse(mode):
-    """Color mode "gene:<name>" (the scale's top at the slice's 99th percentile of the cells it is detected in) or
-    "gene:<name>~<top>" (a given top: the project overview puts every slice on one scale)."""
+    """Color mode "gene:<name>" (the scale's top: the project's, see gene_values) or "gene:<name>~<top>" (a given
+    top: the overview of all samples puts every sample on one scale)."""
     g, _, top = mode.split(":", 1)[1].partition("~")
     return g, (float(top) if top else None)
 
 
-def gene_norm(s, gene):
-    """A gene's normalized expression per cell, as in the analyses (model.lognorm: ln(1 + transcripts per 100 of the
-    cell's transcripts)); 0 where not detected."""
-    i = {x.upper(): k for k, x in enumerate(s.panel)}.get(gene.upper())
+def _counts_key(sample_id):
+    return (config.SAMPLES / sample_id / "counts.npz").stat().st_mtime_ns
+
+
+def gene_norm_of(sample_id, gene):
+    """A gene's normalized expression per cell of a sample, as in the analyses (model.lognorm: ln(1 + transcripts per
+    100 of the cell's transcripts)); 0 where not detected. None when the gene is not in its panel."""
+    from .session import panel_genes, shared_counts
+    panel = panel_genes(sample_id)
+    i = {x.upper(): k for k, x in enumerate(panel)}.get(gene.upper())
     if i is None:
-        raise ValueError(f"{gene} is not in this sample's gene panel")
+        return None
 
     def make():
-        X = s.counts
+        X = shared_counts(config.SAMPLES / sample_id)
         tot = np.asarray(X.sum(1), np.float32).ravel()
         tot[tot == 0] = 1
         c = np.asarray(X[:, i].todense(), np.float32).ravel()
         return np.log1p(c * (np.float32(100.0) / tot))
-    return _gene_cache.get_or((str(s.sample_dir), s.panel[i], (s.sample_dir / "counts.npz").stat().st_mtime_ns), make)
+    return _gene_cache.get_or((sample_id, panel[i], _counts_key(sample_id)), make)
+
+
+def gene_norm(s, gene):
+    v = gene_norm_of(s.sample_id, gene)
+    if v is None:
+        raise ValueError(f"{gene} is not in this sample's gene panel")
+    return v
 
 
 def gene_top(v):
     """The top of a gene's color scale on a slice: the 99th percentile of the cells it is detected in."""
     pos = v[v > 0]
-    return round(float(np.quantile(pos, 0.99)), 3) if len(pos) else 1.0
+    return round(float(np.quantile(pos, 0.99)), 3) if len(pos) else 0.0
+
+
+def slice_top(sample_id, gene):
+    """gene_top of a sample (kept: a project's other slices are read once per gene); None: not in its panel."""
+    def make():
+        v = gene_norm_of(sample_id, gene)
+        return None if v is None else gene_top(v)
+    return _gene_tops.get_or((sample_id, gene.upper(), _counts_key(sample_id)), make)
+
+
+def project_top(sample_id, gene):
+    """The top of a gene's scale on a sample of a project: the highest of its slices' own tops, so a color means the
+    same value on every slice (the map and the overview); a sample alone: its own."""
+    pid = projects.project_of(sample_id)
+    ids = [sample_id]
+    if pid:
+        ids += [x for x in projects.load(pid)["samples"] if x != sample_id and (config.SAMPLES / x / "counts.npz").exists()]
+    tops = [t for t in (slice_top(x, gene) for x in ids) if t]
+    return (max(tops) if tops else 1.0), len(ids)
 
 
 def gene_values(s, mode):
     """(values, top) of color mode "gene:<name>[~<top>]"."""
     g, top = _gene_parse(mode)
     v = gene_norm(s, g)
-    return v, (top if top and top > 0 else gene_top(v))
+    return v, (top if top and top > 0 else project_top(s.sample_id, g)[0])
 
 
 def gene_rgba(v, top):
@@ -430,9 +465,12 @@ def gene_rgba(v, top):
 
 
 def gene_scale(s, mode):
-    """The legend's color bar of a gene mode: its top, the slice's own top and largest value, the ramp."""
+    """The legend's color bar of a gene mode: its top (with how many slices it comes from), the slice's own top and
+    largest value, the ramp."""
     v, top = gene_values(s, mode)
-    return {"top": top, "slice_top": gene_top(v), "max": round(float(v.max()), 3) if len(v) else 0.0,
+    g, given = _gene_parse(mode)
+    n = 1 if given else project_top(s.sample_id, g)[1]
+    return {"top": top, "n_slices": n, "slice_top": gene_top(v), "max": round(float(v.max()), 3) if len(v) else 0.0,
             "ramp": [list(c) for c in GENE_RAMP], "unit": GENE_UNIT}
 
 
@@ -3166,7 +3204,7 @@ async def api_refresh(req: Request):
             review_app._sessions.pop(sid, None)
         if mcp_server._active.get("session") is not None and mcp_server._active["session"].sample_id == sample:
             mcp_server._active["session"] = Session(mcp_server._active["session"].id)
-    for cache in (_colors, _lr_cache, _cell_tables, _gene_cache):
+    for cache in (_colors, _lr_cache, _cell_tables, _gene_cache, _gene_tops):
         cache.clear()
     config.release_memory()
     return _json({"epoch": int(time.time() * 1000)})
@@ -4081,7 +4119,7 @@ def api_samples_clear(req):
     for d in samples + old:
         render.forget(d)  # images open in the viewer (Windows cannot delete an open file)
         shutil.rmtree(d)
-    for cache in (_views, _tiles, _overlays, _colors, _cell_tables, _lr_cache, _gene_cache, ANALYSES, FIGURES):
+    for cache in (_views, _tiles, _overlays, _colors, _cell_tables, _lr_cache, _gene_cache, _gene_tops, ANALYSES, FIGURES):
         cache.clear()
     review_app._sessions.clear()
     mcp_server._active.pop("session", None)

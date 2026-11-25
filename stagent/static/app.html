@@ -2779,7 +2779,7 @@ async function loadLegend() {
     : st.mode.startsWith("program:") ? progTitle(st.mode.slice(8)) : MODE_TITLES[st.mode]) + (f.size ? ` (${f.size} shown)` : "");
   $("lgall").disabled = !f.size;
   const box = $("lgitems"); box.textContent = "";
-  if (r.scale) box.append(geneBar(r.scale));  // a gene: a color bar, then detected / not detected (to show only either)
+  if (r.scale) box.append(geneBar(r.scale, r.scale.n_slices > 1 ? `${r.scale.unit}, one scale on all ${r.scale.n_slices} slices` : ""));  // a gene: a color bar, then detected / not detected (to show only either)
   const toggle = (keys) => {
     const allOn = keys.every((k) => f.has(k));
     keys.forEach((k) => (allOn ? f.delete(k) : f.add(k)));
@@ -2808,7 +2808,7 @@ async function loadLegend() {
 }
 $("lgall").onclick = () => { filt().clear(); refreshOverlay(); loadLegend(); emFollow(); };
 // The color bar of a gene: normalized expression (as in the analyses) from the lowest detected value to the top of the
-// scale (the 99th percentile of the cells it is detected in; the cells above have the top's color)
+// scale (the 99th percentile of the cells it is detected in, the highest of a project's slices; above: the top's color)
 function geneBar(sc, note) {
   const w = document.createElement("div"); w.className = "gbar";
   const bar = document.createElement("div"); bar.className = "bar";
@@ -2818,7 +2818,8 @@ function geneBar(sc, note) {
   [">0", f(sc.top / 2), `${f(sc.top)}${sc.max > sc.top ? "+" : ""}`].forEach((t) => tk.append(Object.assign(document.createElement("span"), { textContent: t })));
   const u = document.createElement("div"); u.className = "u"; u.textContent = note || sc.unit;
   w.title = `Normalized expression, ${sc.unit}: transcripts of the gene per 100 transcripts of the cell, log1p (as in the analyses). ` +
-    `The top of the bar is the 99th percentile of the cells it is detected in${sc.max > sc.top ? ` (largest ${f(sc.max)}: above it in the top color)` : ""}.`;
+    `The top of the bar is the 99th percentile of the cells it is detected in${sc.n_slices > 1 ? `, the highest of the ${sc.n_slices} slices of the project (this slice's own: ${f(sc.slice_top)}), so a color means the same value on every slice` : ""}` +
+    `${sc.max > sc.top ? ` (largest here ${f(sc.max)}: above the top in the top color)` : ""}.`;
   w.append(bar, tk, u);
   return w;
 }
@@ -7882,14 +7883,14 @@ async function drawGallery() {
     });
   }
   GL_SCOPE.scale = null;
-  if (mode.startsWith("gene:")) {  // one color scale on every slice: its top the highest of the slices' own tops
+  if (mode.startsWith("gene:")) {  // one color scale on every slice: a project's top (as on the map), across projects the highest
     const sc = (await Promise.all(GL_SCOPE.tiles.map((t) => {
       const sid = glSid(t.s);
       return sid ? api(`/api/s/${sid}/legend?mode=${encodeURIComponent(mode)}`).then((r) => r.scale).catch(() => null) : null;
     }))).filter(Boolean);
     if (token !== GL_SCOPE.token) return;
     if (sc.length) {
-      const top = Math.max(...sc.map((x) => x.slice_top));
+      const top = Math.max(...sc.map((x) => x.top));
       GL_SCOPE.scale = { ...sc[0], top, max: Math.max(...sc.map((x) => x.max)) };
       mode = `${mode}~${top}`; GL_SCOPE.mode = mode;
     }
