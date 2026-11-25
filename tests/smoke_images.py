@@ -104,6 +104,17 @@ try:
     rq = cl.post("/api/sample/s1/image", json={"path": os.path.join(home, "he3.ome.tif"), "kind": "H&E", "fresh": True}).json()
     m = json.load(open(config.SAMPLES / "s1" / "meta.json"))
     assert rq.get("pending") and m["image_pending"].endswith("he3.ome.tif") and not m["he_path"].endswith("he3.ome.tif"), (rq, m["he_path"])
+    # the Add dialog's default: a file of the size of one of the sample's images is in its pixels (the frame first)
+    mt = cl.get("/api/sample/s1/images/match", params={"path": os.path.join(home, "he3.ome.tif")}).json()
+    assert mt["same_as"] == "main" and mt["size"] == [W, H], mt
+    pyramid(os.path.join(home, "small.ome.tif"), base[: H // 2, : W // 2])
+    assert cl.get("/api/sample/s1/images/match", params={"path": os.path.join(home, "small.ome.tif")}).json()["same_as"] is None
+    # Discard the image waiting for its alignment: forgotten, the cells where they were, the file left
+    placed = m["he_path"]
+    assert cl.post("/api/sample/s1/image/pending/cancel", json={}).status_code == 200
+    m = json.load(open(config.SAMPLES / "s1" / "meta.json"))
+    assert not m.get("image_pending") and m["he_path"] == placed and os.path.exists(os.path.join(home, "he3.ome.tif")), m.get("image_pending")
+    assert cl.post("/api/sample/s1/image/pending/cancel", json={}).status_code == 400  # (nothing waits)
     # the instrument's morphology images of a Xenium source
     mf = config.SAMPLES / "s1" / "meta.json"
     morph = os.path.join(home, "xen", "morphology_focus"); os.makedirs(morph)

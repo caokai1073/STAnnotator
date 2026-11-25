@@ -2105,6 +2105,42 @@ def add_image(sample_id, path, kind="IF", registration=None, same_as=None, name=
     return {"added": _image_id(path), "inside": round(float(inside), 3)}
 
 
+def cancel_pending(sample_id):
+    """Forget the image waiting for its alignment (the file stays where it is): the cells stay where they are, on the
+    image they are placed on (or on none); the alignment candidates found for it go too."""
+    m = _meta(sample_id)
+    pend = m.get("image_pending")
+    if not pend:
+        raise ValueError("no image is waiting for its alignment")
+    m["image_pending"] = None
+    m.pop("image_pending_kind", None)
+    dump_json(m, config.SAMPLES / sample_id / "meta.json", indent=1)
+    cf = config.SAMPLES / sample_id / "align" / "candidates.json"
+    try:
+        if Path(json.load(open(cf, encoding="utf-8")).get("image", "")).resolve() == Path(pend).resolve():
+            cf.unlink()
+    except (OSError, ValueError):
+        pass
+    return {"discarded": pend}
+
+
+def same_size_image(sample_id, path):
+    """The sample's image the file at path has the size of (in pixels: its width and height at full resolution), the
+    frame first, or None; and the file's size. An image of the same size is in all likelihood in the same pixels
+    (another channel or stain of the same scan)."""
+    W, H = _he_size(path)
+    target = str(Path(path).expanduser().resolve())
+    for x in images(sample_id):
+        if "#c" in x["id"] or str(Path(x["path"]).resolve()) == target:
+            continue
+        try:
+            if _he_size(x["path"]) == (W, H):
+                return x, (W, H)
+        except Exception:
+            continue
+    return None, (W, H)
+
+
 def remove_image(sample_id, image_id):
     """Forget an added image (or one shown before); the instrument's images and the frame stay."""
     m = _meta(sample_id)

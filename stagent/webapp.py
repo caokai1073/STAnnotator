@@ -3462,6 +3462,30 @@ async def api_sample_image_add(req: Request):
     return _json(r)
 
 
+async def api_sample_pending_cancel(req: Request):
+    """Discard the image waiting for its alignment (Steps → Image → Discard): the file is left where it is."""
+    sample = req.path_params["sample"]
+    try:
+        if _busy(sample):
+            return _json({"error": "the sample is busy: try again when it ends"}, 409)
+        r = importer.cancel_pending(sample)
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+    _reload_sample(sample)
+    return _json(r)
+
+
+def api_sample_image_match(req: Request):
+    """{path}: whether that image file has the size of one of the sample's images (the Add dialog then takes it as in
+    the same pixels): {size, same_as: id or None, name}."""
+    sample, path = req.path_params["sample"], req.query_params.get("path", "")
+    try:
+        x, size = importer.same_size_image(sample, path)
+    except Exception as e:
+        return _json({"error": f"cannot read {path}: {type(e).__name__}: {e}"}, 400)
+    return _json({"size": list(size), "same_as": x["id"] if x else None, "name": x["name"] if x else None})
+
+
 async def api_sample_image_remove(req: Request):
     sample = req.path_params["sample"]
     b = await req.json()
@@ -4958,6 +4982,8 @@ def build_app(port):
         Route("/api/sample/{sample}/images/add", api_sample_image_add, methods=["POST"]),
         Route("/api/sample/{sample}/images/remove", api_sample_image_remove, methods=["POST"]),
         Route("/api/sample/{sample}/image_stats", api_image_stats),
+        Route("/api/sample/{sample}/image/pending/cancel", api_sample_pending_cancel, methods=["POST"]),
+        Route("/api/sample/{sample}/images/match", api_sample_image_match),
         Route("/api/sample/{sample}/registration", api_sample_registration, methods=["POST"]),
         Route("/api/sample/{sample}/rename", api_sample_rename, methods=["POST"]),
         Route("/api/claude/model", api_claude_model, methods=["POST"]),

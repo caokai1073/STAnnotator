@@ -1062,6 +1062,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
       <label id="hiSameWrap" hidden><input type="radio" name="hiRegMode" value="same"> <span id="hiSameText">Same pixels as</span>
         <select id="hiSame"></select></label>
       <label><input type="radio" name="hiRegMode" value="none" checked> No registration (align it next)</label></span><span></span></div>
+    <div class="frow" id="hiMatchRow" hidden><span></span><span class="hint" id="hiMatch"></span><span></span></div>
     <div class="frow" id="hiRegRow" hidden><span></span><textarea id="hiReg" rows="1" placeholder="affine CSV (a11,a12,a21,a22,tx,ty), Xenium Explorer alignment (3x3), or cell positions saved by this app"></textarea><button id="hiRegPick" data-kind="csv">Choose…</button></div>
     <div class="row" style="margin-top:4px"><span class="err" id="hiErr"></span><span class="spacer"></span><button id="hiCancel">Cancel</button><button id="hiGo" class="primary">Import</button></div>
   </div>
@@ -5371,6 +5372,14 @@ function imForm() {  // show the fields of the chosen options; Align with Claude
 }
 document.querySelectorAll("input[name=imImgMode], input[name=imRegMode]").forEach((r) => (r.onchange = imForm));
 $("imNewImg").addEventListener("input", imForm); $("imNewImg").addEventListener("change", imForm);
+async function discardPending() {  // Steps → Image → Discard: the image waiting for its alignment, forgotten
+  const smp = st.sample && st.sample.sample_id; if (!smp) return;
+  if (alignBusy()) { toast("An alignment is running: wait for it to end", 4000); return; }
+  try { await post(`/api/sample/${encodeURIComponent(smp)}/image/pending/cancel`, {}); }
+  catch (e) { toast(e.message, 6000); return; }
+  await afterPlacement("The image waiting for its alignment is discarded (its file is left where it is)");
+  loadStepsSoon();
+}
 async function afterPlacement(msg) {  // the sample's image or cell positions changed
   const id = st.sample.sample_id, before = `${st.sample.image_kind}|${st.sample.he_path}`;
   st.samples = await api("/api/samples");
@@ -5471,6 +5480,7 @@ function openImageImport(add) {  // Steps → Image → Import (the sample has n
   $("hiDlg").dataset.add = add ? "1" : "";
   $("hiTitle").textContent = add ? `Add an image to ${sampleName(st.sample)}` : `Import the image of ${sampleName(st.sample)}`;
   $("hiImg").value = ""; $("hiReg").value = ""; $("hiErr").textContent = ""; $("hiGo").disabled = false;
+  $("hiMatchRow").hidden = true; hiMatchAsked = "";
   setLabel($("hiGo"), add ? "Add" : "Import");
   $("hiKind").value = add ? "IF" : "H&E";
   const same = $("hiSame"); same.textContent = "";
@@ -5494,10 +5504,30 @@ function hiDefaultReg() {  // a stain or DAPI added: in the instrument's pixels 
 }
 function hiRegShown() { $("hiRegRow").hidden = document.querySelector("input[name=hiRegMode]:checked").value !== "file"; hiGrow(); }
 document.querySelectorAll("input[name=hiRegMode]").forEach((r) => (r.onchange = hiRegShown));
-$("hiKind").onchange = hiDefaultReg;
+$("hiKind").onchange = () => { hiDefaultReg(); hiMatchAsked = ""; hiMatch(); };
 for (const [btn, field] of [["hiImgPick", "hiImg"], ["hiRegPick", "hiReg"]])
-  $(btn).onclick = async () => { const p = await pickFiles($(btn).dataset.kind, false); if (p.length) { $(field).value = p[0]; autoGrow($(field)); } };
+  $(btn).onclick = async () => { const p = await pickFiles($(btn).dataset.kind, false); if (p.length) { $(field).value = p[0]; autoGrow($(field)); if (field === "hiImg") hiMatch(); } };
 ["hiImg", "hiReg"].forEach((id) => $(id).addEventListener("input", () => { cleanPathField($(id)); autoGrow($(id)); }));
+// An image added that has the size of one of the sample's images (another channel or stain of the same scan): taken as
+// in its pixels by default (the user can still choose a registration file or an alignment)
+let hiMatchT = 0, hiMatchAsked = "";
+async function hiMatch() {
+  const add = !!$("hiDlg").dataset.add, path = $("hiImg").value.trim(), sample = st.sample && st.sample.sample_id;
+  if (!add || !path || !sample) { $("hiMatchRow").hidden = true; hiMatchAsked = ""; return; }
+  if (path === hiMatchAsked) return;
+  hiMatchAsked = path;
+  let r = null;
+  try { r = await api(`/api/sample/${encodeURIComponent(sample)}/images/match?${new URLSearchParams({ path })}`); } catch (e) { r = null; }
+  if (path !== $("hiImg").value.trim()) return;  // (another path meanwhile)
+  if (r && r.same_as && [...$("hiSame").options].some((o) => o.value === r.same_as)) {
+    $("hiSame").value = r.same_as;
+    document.querySelector("input[name=hiRegMode][value=same]").checked = true; hiRegShown();
+    $("hiMatch").textContent = `Same size as the ${r.name} (${r.size[0].toLocaleString()} × ${r.size[1].toLocaleString()} px): taken as in its pixels`;
+    $("hiMatchRow").hidden = false;
+  } else $("hiMatchRow").hidden = true;
+}
+$("hiImg").addEventListener("input", () => { clearTimeout(hiMatchT); hiMatchT = setTimeout(hiMatch, 600); });
+$("hiImg").addEventListener("change", hiMatch);
 $("hiCancel").onclick = () => $("hiDlg").close();
 $("hiGo").onclick = async () => {
   const sample = st.sample && st.sample.sample_id, img = $("hiImg").value.trim(), reg = $("hiReg").value.trim();
@@ -6940,7 +6970,8 @@ async function loadSteps() {
       };
       right.append(...(x.state === "done" ? [chk] : [chk, acc]));  // (accepted: Check to look again)
     } else if (a && (["todo", "optional", "skipped"].includes(x.state) || img)) {  // (the H&E: Check also once done)
-      const pre = !x.open && (x.key !== "registration" || img === "placed") && STEP_PRE[x.key];
+      const pre = !x.open && (x.key !== "registration" || img === "placed") && STEP_PRE[x.key]
+        || (img === "pending" && !x.open && ["Discard", "Forget this image waiting for its alignment (the file stays where it is); the cells stay where they are", discardPending]);
       if (pre) {
         const pb = Object.assign(document.createElement("button"), { textContent: pre[0], title: pre[1] });
         pb.onclick = (e) => { e.stopPropagation(); pre[2](); };
