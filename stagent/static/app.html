@@ -1635,9 +1635,16 @@ function applyImgFilter() {  // brightness and contrast: on the image's canvas o
   if (nav && nav.drawer && nav.drawer.canvas) nav.drawer.canvas.style.filter = f;
   $("imgAdjBtn").classList.toggle("on", !!(sample && (f || imgDispQuery(sample, st.imgId || "main"))));
 }
+function replaceImageTiles(sample) {  // the image under the cells drawn anew (another image, another display range), the view kept:
+  // OpenSeadragon shows the whole image again when it holds one image after a replace, unless preserveViewport
+  viewer.preserveViewport = true;
+  const done = () => { viewer.preserveViewport = false; };
+  viewer.addTiledImage({ tileSource: tileSource(heUrl(sample)), index: 0, replace: true,
+                         success: () => { done(); applyHE(); }, error: done });
+}
 function reloadImageTiles() {  // the image's tiles in another display range: replaced in place, the view kept
   if (!st.sample || !st.he) return;
-  viewer.addTiledImage({ tileSource: tileSource(heUrl(st.sample.sample_id)), index: 0, replace: true, success: applyHE });
+  replaceImageTiles(st.sample.sample_id);
 }
 async function openImgAdj() {
   if (!st.sample || !st.he) { toast("Open a sample with an image first", 3000); return; }
@@ -1647,6 +1654,7 @@ async function openImgAdj() {
   $("imgAdj").hidden = false; imgAdjPlace();
   IA.key = `${sample}|${img}`;
   IA.stats = null; $("iaFl").hidden = true;
+  $("iaAuto").disabled = true; $("iaAuto").title = "An H&E (RGB) has no display range or gamma: Brightness and Contrast, or Reset";
   const a = imgAdjGet(sample, img);
   $("iaB").value = a.b; $("iaC").value = a.c; iaLabels();
   try {
@@ -1659,6 +1667,7 @@ async function openImgAdj() {
       ["iaLo", "iaHi"].forEach((id) => Object.assign($(id), { min: 0, max: top, step }));
       ["iaLoN", "iaHiN"].forEach((id) => Object.assign($(id), { min: 0, max: stt.type_max, step }));
       $("iaFl").hidden = false;
+      $("iaAuto").disabled = false; $("iaAuto").title = "The image's own display range (its values from the 1st to the 99.7th percentile) and gamma 1";
       iaFillRange(a);
     }
   } catch (e) { /* (no stats: brightness and contrast only) */ }
@@ -1734,7 +1743,7 @@ $("imgSel").onchange = () => {  // another image under the cells: replaced in pl
   if (!st.sample) return;
   const sample = st.sample.sample_id;
   st.imgId = $("imgSel").value; store(`img:${sample}`, st.imgId); imgSelTitle();
-  viewer.addTiledImage({ tileSource: tileSource(heUrl(sample)), index: 0, replace: true, success: applyHE });
+  replaceImageTiles(sample);
   applyImgFilter(); if (!$("imgAdj").hidden) openImgAdj();
 };
 // a tile of the image that cannot be read (a damaged part of the file, a file still copying): the reason at once,
