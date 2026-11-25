@@ -282,14 +282,17 @@ def niches(pid, k=15, n_niches=8, identity="nmf", n_programs=20, progress=None, 
     dirs = [s.dir / "niches" for s in S]
     for d in dirs:
         d.mkdir(exist_ok=True)
-    files = ("labels.npy", "profile.npy", "run.json") + ((f"nmf_{n_programs}.npz",) if H is not None else ())
+    # the project's NMF programs in a file of their own: the slice's own nmf_<n>.npz is its programs, which niches of
+    # this slice alone use (they were taken from the project's run, so an exported notebook, fitting the slice again,
+    # did not reproduce them)
+    files = ("labels.npy", "profile.npy", "run.json") + ((f"nmf_{n_programs}_project.npz",) if H is not None else ())
     with jobs.replacing(*(d / f for d in dirs for f in files)):  # stopped: each slice's last niches back
         for i, s in enumerate(S):
             d = dirs[i]
             np.save(d / "labels.npy", lab[off[i]:off[i + 1]])
             np.save(d / "profile.npy", km.cluster_centers_[order].astype(np.float32))
             if H is not None:
-                np.savez(d / f"nmf_{n_programs}.npz", W=W[off[i]:off[i + 1]], H=H)
+                np.savez(d / f"nmf_{n_programs}_project.npz", W=W[off[i]:off[i + 1]], H=H)
             dump_json({"run_id": run, "k": int(k), "k_by_region": {}, "radius_um": None, "identity": identity,
                        "n_programs": int(n_programs) if identity == "nmf" else None, "n_niches": int(n_niches),
                        "identity_names": names, "version": s.state()["version"], "k_range": [int(k), int(k)],

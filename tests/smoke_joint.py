@@ -60,6 +60,25 @@ try:
     t = time.time()
     joint.niches("demo", n_niches=5)
     print("joint niches:", f"{time.time() - t:.0f}s")
+    # niches of one slice after a run of all slices use the slice's own NMF programs, not the project's (an exported
+    # notebook fits the slice again): the project's are kept apart; a file without the counts key (as runs of all
+    # slices wrote before) is not taken for the slice's own
+    import numpy as np
+    from stagent import config
+    s0 = smod.Session(list(joint.latest_sessions("demo").values())[0])
+    nd = s0.dir / "niches"
+    Hp = np.load(nd / "nmf_20_project.npz")["H"]
+    nmod.run(s0, n_niches=5)
+    W1, H1 = nmod.programs(s0)
+    assert H1.shape == Hp.shape and not np.allclose(H1, Hp), "the slice took the project's programs"
+    lab1 = nmod.current(s0)[1].copy()
+    np.savez(nd / "nmf_20.npz", W=np.load(nd / "nmf_20_project.npz")["W"], H=Hp)  # as before 0.2.63: no key
+    for f in (config.SAMPLES / s0.sample_id / "niches").glob("nmf_*.npz"):
+        f.unlink()  # (refitted, not read from the sample's copy)
+    nmod.run(s0, n_niches=5)
+    assert np.allclose(nmod.programs(s0)[1], H1) and (nmod.current(s0)[1] == lab1).all(), "an old project file was used"
+    print("one slice's niches after all slices: its own programs, reproduced")
+    joint.niches("demo", n_niches=5)  # (all slices' niches again, for the analyses below)
     c = analysis.cells(pid="demo")
     for mode in ("lineage", "niche", "leiden"):
         x = analysis.crosstab(c, "slice", mode)

@@ -38,16 +38,23 @@ def programs(s, n_programs=20, progress=None):
     kept in the session, and in the sample for its other annotations (the same counts give the same programs)."""
     say = progress or (lambda f, m: None)
     f = _dir(s) / f"nmf_{n_programs}.npz"
-    if f.exists():
-        z = np.load(f)
-        return z["W"], z["H"]
     try:
         sf, key = _sample_cache(s, n_programs)
-        if sf.exists():
+    except OSError:
+        sf, key = None, None
+    if f.exists():  # the annotation's own, fitted on this slice's counts as they are (the key says so; a file without
+        try:        # it may hold a project's programs, which a run of all slices once wrote here)
+            z = np.load(f)
+            if key is not None and "key" in z.files and str(z["key"]) == key and z["W"].shape[0] == len(s.cells):
+                return z["W"], z["H"]
+        except (OSError, ValueError, KeyError):
+            pass
+    try:
+        if sf is not None and sf.exists():
             z = np.load(sf)
             if str(z["key"]) == key and z["W"].shape[0] == len(s.cells):
                 say(0.4, "NMF: the programs of this sample's counts, computed before")
-                np.savez(f, W=z["W"], H=z["H"])
+                np.savez(f, W=z["W"], H=z["H"], key=np.array(key))
                 return z["W"], z["H"]
     except (OSError, ValueError, KeyError):
         sf = None
@@ -63,7 +70,7 @@ def programs(s, n_programs=20, progress=None):
         say(0.4, "NMF: projecting all cells")
         W = np.vstack([nmf.transform(X[i:i + 50000]) for i in range(0, X.shape[0], 50000)]).astype(np.float32)
     H = nmf.components_.astype(np.float32)
-    np.savez(f, W=W, H=H)
+    np.savez(f, W=W, H=H, **({"key": np.array(key)} if key is not None else {}))
     if sf is not None:
         try:
             sf.parent.mkdir(exist_ok=True)
@@ -163,7 +170,9 @@ def summary(s, version=None, top=5):
     prof = np.load(s.dir / "niches" / "profile.npy")
     H = None
     if meta["identity"] == "nmf":
-        H = np.load(s.dir / "niches" / f"nmf_{meta['n_programs']}.npz")["H"]
+        d = s.dir / "niches"  # (a run of all slices: the project's programs; before 0.2.63 in nmf_<n>.npz)
+        pf = d / f"nmf_{meta['n_programs']}_project.npz"
+        H = np.load(pf if meta.get("project") and pf.exists() else d / f"nmf_{meta['n_programs']}.npz")["H"]
     depth = s.cells.depth_um.to_numpy()
     names = niche_names(s)
     out = []
