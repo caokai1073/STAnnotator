@@ -787,6 +787,8 @@ the notebook need an annotation.
   colors, as QuPath writes annotations. Cells moved into a region without an outline are not in it.
 - **Analysis notebook** (Jupyter), described below. **Annotation** chooses which of the sample's annotations it
   replays (the open one at the version shown, another at its latest version).
+- **Reproduction guide for agents** (zip), described below: for an AI agent (or a person) who repeats the analysis
+  without the app. Of the open annotation at the version shown.
 
 **The analysis notebook** runs without this app.
 
@@ -813,6 +815,28 @@ the notebook need an annotation.
   for an analysis made on Windows) and the joint niches, checked against the app. A slice's own notebook of a joint
   annotation replays it on that slice alone, so it says its labels can differ. Agent tool: `export_notebook` with
   `scope="project"`.
+
+**The reproduction guide for agents** is one zip, `<slice>_v<version>_reproduce.zip`:
+
+- `REPRODUCE.md`, written for an AI agent: how to use it (the exact route: run the notebook or install the same
+  version of `stagent`; the re-implementation route), then every step in order: the software and package versions,
+  the input files (path, size, SHA-256), the cell filter, the placement on the image, the annotation (marker list,
+  settings, the Leiden resolution used at every level, regions, priors, corrections, re-clusterings, the types without
+  cells), PCA / UMAP / Leiden, niches, the slices' and regions' groupings, every analysis kept with the annotation
+  (DE genes, top genes, composition, DESeq2, spatially variable genes, programs, cell-cell communication,
+  co-localization, trajectories) with its request, how the figures are drawn (coordinates, colors, the gene color
+  scale) and what affects determinism. Each step links to its code in the public source at the commit of this build
+  and gives the results to check a replay against (cells per type, Leiden cluster and niche sizes, each analysis's
+  headline). An appendix quotes the source's own description of each algorithm used.
+- `manifest.json`: the same as data, with the checks.
+- `data/`: the cells table, the marker list (text and CSV), `regions.geojson`, `registration.csv`,
+  `cell_positions.csv`, `corrections.csv`, `state.json`, `CHANGELOG.md`, `types_not_found.csv`, each kept analysis as
+  `results/<kind>.json` with its full table `results/<kind>.csv`, `analyses_log.json` (the last 30 runs), every
+  trajectory's per-cell position (`trajectory_<method>.csv`) and `colors.json` (the map's colors of cell types,
+  lineages, niches, Leiden clusters and regions, and the gene color scale).
+- `analysis.ipynb` with **Include the notebook** (on by default).
+
+The counts and images are not copied (they can be large); the guide names their files with size and checksum.
 
 ### Review
 

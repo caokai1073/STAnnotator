@@ -4461,6 +4461,16 @@ def api_export_notebook(req):
                         filename=f"{projects.file_stem(s.sample_id)}_v{v}_analysis.ipynb")
 
 
+def api_export_guide(req):
+    """Download the reproduction guide for agents of a version (default: latest) as a zip; ?notebook=0 leaves the
+    notebook out."""
+    from . import reproguide
+    s = review_app._session(req.path_params["sid"])
+    v = int(req.query_params["version"]) if req.query_params.get("version") else s.versions()[-1]
+    path = reproguide.build(s, v, req.query_params.get("notebook", "1") != "0")
+    return FileResponse(path, media_type="application/zip", filename=path.name)
+
+
 def reply_language(text):
     """The language to answer in, decided here instead of by the model: with an empty history the model sometimes
     picked a third language (German) for an English message."""
@@ -4729,6 +4739,9 @@ async def api_export_to(req: Request):
             Path(b["path"]).expanduser().write_text(notebook.positions_csv(s.sample_id), encoding="utf-8")
         elif b.get("kind") == "regions":
             Path(b["path"]).expanduser().write_text(_regions_geojson(s, v)[0], encoding="utf-8")
+        elif b.get("kind") == "guide":  # the reproduction guide for agents (a zip)
+            from . import reproguide
+            shutil.copy(await asyncio.to_thread(reproguide.build, s, v, bool(b.get("notebook", True))), Path(b["path"]).expanduser())
         elif b.get("kind") == "project_notebook":  # all slices of a project (default the sample's), annotated together
             pid = str(b.get("project") or "") or projects.project_of(s.sample_id)
             if not pid:
@@ -5096,6 +5109,7 @@ def build_app(port):
         Route("/api/s/{sid}/export", api_export, methods=["POST"]),
         Route("/api/s/{sid}/export.csv", api_export_csv),
         Route("/api/s/{sid}/export.ipynb", api_export_notebook),
+        Route("/api/s/{sid}/export_guide.zip", api_export_guide),
         Route("/api/project/{pid}/export.ipynb", api_project_notebook),
         Route("/api/projects/joint_runs", api_projects_joint_runs),
         Route("/api/sample/{sample}/registration.csv", api_registration_csv),
