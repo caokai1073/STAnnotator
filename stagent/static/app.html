@@ -78,6 +78,8 @@ header.collapsed .hmini { display: flex; }
 .cmplegend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 12px; font-size: 12px; }
 .cmplegend span.sw { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
 #anBody { max-height: 62vh; overflow: auto; }
+#anBody .dpfix { position: sticky; left: 0; z-index: 1; overflow: hidden; flex: none; background: var(--panel); }
+#anBody::-webkit-scrollbar { height: 10px; width: 10px; } #anBody::-webkit-scrollbar-thumb { background: #c9c9c9; border-radius: 5px; }
 /* result windows: the analysis name left, its views (and how many genes) in the middle, the buttons right */
 #anDlg .andh { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
 .anfoot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; } .anfoot:not(:has(button:not([hidden]))) { display: none; } .andh .dhmid { display: flex; align-items: center; }
@@ -8903,7 +8905,7 @@ async function showAnalysis() {
       $("anNote").textContent = `The top ${N} up gene(s) of each group (by AUC; a gene already shown for an earlier group is not repeated). Click a gene to color the map by it.`;
       if (!$("anDlg").open) $("anDlg").showModal();
       if (!genes.length) $("anBody").textContent = "No significant genes.";
-      else await showDots(genes.slice(0, 200), { breaks: breaks.length <= 30 ? breaks : [] }, r.groups.map((g) => g.group));
+      else await showDots(genes.slice(0, 200), { breaks, total: genes.length }, r.groups.map((g) => g.group));
       return;
     }
     const first = r.groups.find((g) => g[dir].length), slc = first && ("slices_same_direction" in first[dir][0] ? "slices_same_direction" : "slices_separate" in first[dir][0] ? "slices_separate" : null);
@@ -9013,7 +9015,7 @@ async function showAnalysis() {
       $("anNote").textContent = `The top ${N} gene(s) of each group (by AUC; a gene already shown for an earlier group is not repeated). Click a gene to color the map by it.`;
       if (!$("anDlg").open) $("anDlg").showModal();
       if (!genes.length) $("anBody").textContent = "No top genes.";
-      else await showDots(genes.slice(0, 200), { breaks: breaks.length <= 30 ? breaks : [] }, r.groups.map((g) => g.group));
+      else await showDots(genes.slice(0, 200), { breaks, total: genes.length }, r.groups.map((g) => g.group));
       return;
     }
     $("anBody").append(anTable(["Group", "Cells", "Top genes (by AUC)"], r.groups.map((g) => {
@@ -9567,8 +9569,8 @@ function dotPlotSVG(d, opts = {}) {  // d: {groups, n_cells, genes, pct, mean}; 
   const W = left + nG * C + 150, H = top + nR * C + legendH;
   const lo = [], hi = [];  // each gene's color scaled over the groups (0 = its lowest group mean, 1 = its highest)
   for (let j = 0; j < nG; j++) { const col = d.mean.map((r) => r[j]); lo.push(Math.min(...col)); hi.push(Math.max(...col)); }
-  const out = [`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="currentColor">`];
-  const br = opts.breaks || [];
+  const out = [`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="currentColor" data-left="${left}" data-top="${top}">`];
+  const br = (opts.breaks || []).filter(([j]) => j < nG);  // (blocks of the genes drawn)
   br.forEach(([j, label], k) => {  // gene blocks (up / down genes, the groups): a bracket with the label, cut to fit
     const x = left + j * C, end = left + (k + 1 < br.length ? br[k + 1][0] : nG) * C, w = end - x;
     if (j > 0) out.push(`<line x1="${x}" y1="${top - 4}" x2="${x}" y2="${top + nR * C}" stroke="#999" stroke-width="0.6" stroke-dasharray="3,2"/>`);
@@ -9648,8 +9650,18 @@ async function showDots(genes, opts, first, compare) {  // fetch the dot plot da
     const d = await post("/api/analysis/dots", { session: q.session, version: q.version, scope: q.scope, selection: AN.sel, sessions: q.sessions,
       by: q.by, genes, within: q.within, first, compare });
     if (AN.req !== q || !$("anDlg").open) return;  // another result was opened, or the window closed, meanwhile
-    box.innerHTML = dotPlotSVG(d, opts);
+    const svg = dotPlotSVG(d, opts);
+    box.innerHTML = svg;
+    const el = box.querySelector("svg"), W = +el.getAttribute("width"), left = +el.dataset.left, top = +el.dataset.top;
+    if (W > box.clientWidth) {  // wider than the window: it scrolls sideways, the group names stay at the left
+      box.innerHTML = `<div class="dpwrap" style="display:flex;width:${W}px"><div class="dpfix" style="width:${left}px;clip-path:inset(${top - 2}px 0 0 0)">${svg}</div>`
+        + `<div style="width:${W - left}px;overflow:hidden;flex:none"><div style="margin-left:-${left}px">${svg}</div></div></div>`;
+      box.querySelectorAll(".dpfix .dpgene").forEach((t) => t.classList.remove("dpgene"));
+    }
     box.querySelectorAll(".dpgene").forEach((t) => (t.onclick = () => colorByGene(t.dataset.gene)));
+    const more = [W > box.clientWidth ? "Scroll sideways for every gene (shift + wheel, or drag the bar below)." : "",
+      opts.total > d.genes.length ? `The first ${d.genes.length} of ${opts.total} genes are shown: fewer genes per group show them all.` : ""].filter(Boolean).join(" ");
+    if (more) $("anNote").textContent = `${more} ${$("anNote").textContent}`;
     AN.svg = dotPlotSVG(d, opts).replace('fill="currentColor"', 'fill="#222"');
     if (d.n_groups_total > d.groups.length) $("anNote").textContent = `The ${d.groups.length} largest of ${d.n_groups_total} groups. ` + $("anNote").textContent;
   } catch (e) { box.textContent = e.message; }
