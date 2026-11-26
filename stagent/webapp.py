@@ -3584,9 +3584,12 @@ def api_sample_image_match(req: Request):
     sample, path = req.path_params["sample"], req.query_params.get("path", "")
     try:
         x, size = importer.same_size_image(sample, path)
+        kind = importer.kind_of_image(path, "H&E")  # (a fluorescence file: DAPI / IF, not an H&E)
+        inst = importer.instrument_grid(sample, path) is not None
     except Exception as e:
         return _json({"error": f"cannot read {path}: {type(e).__name__}: {e}"}, 400)
-    return _json({"size": list(size), "same_as": x["id"] if x else None, "name": x["name"] if x else None})
+    return _json({"size": list(size), "same_as": x["id"] if x else None, "name": x["name"] if x else None,
+                  "kind": kind, "instrument": inst})
 
 
 async def api_sample_image_remove(req: Request):

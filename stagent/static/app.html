@@ -5790,12 +5790,19 @@ for (const [btn, field] of [["hiImgPick", "hiImg"], ["hiRegPick", "hiReg"]])
 let hiMatchT = 0, hiMatchAsked = "";
 async function hiMatch() {
   const add = !!$("hiDlg").dataset.add, path = $("hiImg").value.trim(), sample = st.sample && st.sample.sample_id;
-  if (!add || !path || !sample) { $("hiMatchRow").hidden = true; hiMatchAsked = ""; return; }
+  if ($("hiDlg").dataset.relink || !path || !sample) { $("hiMatchRow").hidden = true; hiMatchAsked = ""; return; }
   if (path === hiMatchAsked) return;
   hiMatchAsked = path;
   let r = null;
   try { r = await api(`/api/sample/${encodeURIComponent(sample)}/images/match?${new URLSearchParams({ path })}`); } catch (e) { r = null; }
   if (path !== $("hiImg").value.trim()) return;  // (another path meanwhile)
+  if (r && r.kind && r.kind !== "H&E" && $("hiKind").value === "H&E") { $("hiKind").value = r.kind; hiDefaultReg(); }  // (a fluorescence file)
+  if (r && r.instrument) {  // the size of the instrument's images: in its pixels, placed by the cells' coordinates
+    document.querySelector("input[name=hiRegMode][value=none]").checked = true; hiRegShown();
+    $("hiMatch").textContent = `The size of the instrument's images (${r.size[0].toLocaleString()} × ${r.size[1].toLocaleString()} px): placed by the cells' coordinates, then checked against its nuclei`;
+    $("hiMatchRow").hidden = false; return;
+  }
+  if (!add) { $("hiMatchRow").hidden = true; return; }
   if (r && r.same_as && [...$("hiSame").options].some((o) => o.value === r.same_as)) {
     $("hiSame").value = r.same_as;
     document.querySelector("input[name=hiRegMode][value=same]").checked = true; hiRegShown();

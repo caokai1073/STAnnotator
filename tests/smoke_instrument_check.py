@@ -97,6 +97,26 @@ try:
     assert len(names) == len(set(names)) and any("ch0001_dapi" in n for n in names), names
     ims = c.get("/api/sample/s1/he_info").json()["images"]
     assert all(x.get("path") for x in ims), ims
+    # a fluorescence file of several channels made from the instrument's images (its size, elsewhere), imported as an
+    # "H&E" with no registration: placed by the cells' coordinates as a DAPI (not aligned as an H&E), then checked
+    multi = os.path.join(home, "elsewhere", "four_channels.ome.tif")
+    os.makedirs(os.path.dirname(multi))
+    base = tifffile.imread(own)
+    with tifffile.TiffWriter(multi, ome=True) as t:
+        chans = np.stack([base, base // 2])
+        t.write(chans, tile=(256, 256), subifds=2, photometric="minisblack", metadata={"axes": "CYX", "Channel": {"Name": ["DAPI", "CD45"]}})
+        for k in (2, 4):
+            t.write(chans[:, ::k, ::k], tile=(256, 256), subfiletype=1, photometric="minisblack")
+    mt = c.get("/api/sample/s1/images/match", params={"path": multi}).json()
+    assert mt["instrument"] and mt["kind"] == "DAPI", mt
+    r = c.post("/api/sample/s1/image", json={"path": multi, "kind": "H&E", "fresh": True})
+    assert r.status_code == 200, r.text
+    m = json.load(open(mf))
+    assert m["image_kind"] == "DAPI" and not m.get("image_pending") and m.get("check_pending") and os.path.realpath(m["he_path"]) == os.path.realpath(multi), \
+        {k: m.get(k) for k in ("image_kind", "image_pending", "check_pending", "he_path")}
+    st = check()
+    print("multi-channel file of the instrument's size ->", st["result"]["verdict"], "read", st["result"].get("read_share"))
+    assert st["result"]["verdict"] == "fine" and not st["result"].get("new_alignment"), st["result"]
     # the instrument's DAPI shown by the cells' coordinates (as a Xenium import leaves it, checked): Steps offers
     # Import (an H&E), Add and Discard, not Import alone
     m = json.load(open(mf)); m.update(he_path=own, image_kind="DAPI", registration_by=None); m.pop("check_pending", None)

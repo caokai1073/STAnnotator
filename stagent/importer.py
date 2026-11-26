@@ -2131,6 +2131,8 @@ def add_image(sample_id, path, kind="IF", registration=None, same_as=None, name=
         A = load_registration(Path(registration).expanduser(), section or src.get("section"),
                               float(src.get("pixel_size_um") or 0.2125), src.get("candidates") or (),
                               lambda *a: None).tolist()
+    elif instrument_grid(sample_id, path, m) is not None:  # in the instrument's pixels (its images' size)
+        A = instrument_grid(sample_id, path, m).tolist()
     else:
         raise ValueError("give a registration file, or the image whose pixels it shares")
     W, H = _he_size(path)
@@ -2387,6 +2389,51 @@ def undo_placement(sample_id):
     return r
 
 
+def kind_of_image(path, kind="H&E"):
+    """The kind an image file is: an H&E (RGB) as asked; a fluorescence file (not RGB) is not an H&E, whatever was
+    chosen: "DAPI" when its first channel is a DAPI (or it has one channel), else "IF"."""
+    from . import render
+    try:
+        if render.slide(str(path)).rgb:
+            return kind
+    except Exception:
+        return kind
+    if kind not in ("H&E", None, ""):
+        return kind
+    names = render.channel_names(str(path)) or []
+    return "DAPI" if not names or len(names) == 1 or "dapi" in names[0].lower() else "IF"
+
+
+def instrument_grid(sample_id, path, m=None):
+    """Cell um -> pixels of path when the file has the size of the instrument's morphology images (Xenium / Atera: the
+    DAPI's width and height, recorded or read) and, when its file says, their pixel size: it is in the instrument's
+    pixels (another export of the same scan, e.g. a multi-channel file made from them), wherever it is. Else None.
+    The registration check that follows (mark_check) tells a wrong guess."""
+    m = m or _meta(sample_id)
+    src = m.get("source") or {}
+    ps = src.get("pixel_size_um")
+    if src.get("kind") != "xenium" or not ps:
+        return None
+    inst = [str(Path(x["path"]).resolve()) for x in _instrument_images(m)]
+    sizes = image_sizes(sample_id, m)
+    dims = {tuple(sizes[p]) for p in inst if p in sizes}
+    if not dims:
+        for p in inst[:1]:
+            try:
+                dims.add(tuple(_he_size(p)))
+            except Exception:
+                pass
+    try:
+        if tuple(_he_size(path)) not in dims:
+            return None
+        upp = image_pixel_size(path)
+    except Exception:
+        return None
+    if upp and abs(upp / float(ps) - 1) > 0.02:
+        return None
+    return np.array([[1 / float(ps), 0.0, 0.0], [0.0, 1 / float(ps), 0.0]])
+
+
 def mark_check(sample_id, why="instrument"):
     """The cells were put on an image without measuring it (the instrument's own DAPI / stain, by their coordinates):
     the page runs the registration check (cells against nuclei) once, as for a registration file; a DAPI of another
@@ -2403,15 +2450,19 @@ def set_image(sample_id, path, kind="H&E", progress=print, reuse_registration=Tr
     whose registration file or alignment comes next), it waits (image_pending) for set_registration or an alignment."""
     path = str(Path(path).expanduser().resolve())
     _he_size(path)  # readable?
+    kind = kind_of_image(path, kind)  # (a fluorescence file chosen as an H&E: its nuclei are read as a DAPI's)
     m = _meta(sample_id)
     inst = _instrument_affine(m, path)
+    if inst is None:  # the size of the instrument's images (e.g. a multi-channel file made from them): its pixels
+        inst = instrument_grid(sample_id, path, m)
     if inst is not None:  # the instrument's own DAPI / stain: in its pixels, no registration or alignment to wait for
         r = place_cells(sample_id, inst, path, kind if kind != "H&E" else "DAPI", by="file", progress=progress)
         m = _meta(sample_id)
         if not (m.get("source") or {}).get("morphology"):  # (imported without it: its other stains listed from now on)
             m["source"]["morphology"] = path
             dump_json(m, config.SAMPLES / sample_id / "meta.json", indent=1)
-        if kind == "DAPI" or "dapi" in Path(path).name.lower() or Path(path).name.startswith("morphology_focus"):
+        if kind == "DAPI" or "dapi" in Path(path).name.lower() or Path(path).name.startswith("morphology_focus") \
+                or "dapi" in ((__import__("stagent.render", fromlist=["x"]).channel_names(path) or [""])[0]).lower():
             mark_check(sample_id)  # (checked once that it is these cells' image; on nuclei, so the DAPI only)
         return r
     if m.get("registration_affine") and reuse_registration:
