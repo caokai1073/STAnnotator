@@ -117,6 +117,10 @@ def _labels(s, version=None, selection=None):
     r = s.result(version)
     out = {"cell type": s.labels(version), "lineage": s.lineage_labels(version),
            "region": np.where(r["region"] == "unknown", "no region", r["region"]).astype(object)}
+    from . import projects  # the regions' groupings (Regions → Group): a cell's group is its region's; none outside
+    for g, mp in projects.region_groups(s.sample_id).items():
+        if g not in out:
+            out[g] = np.array([mp.get(str(x)) or None for x in r["region"]], dtype=object)
     meta, lab = nmod.current(s)
     out["niche"] = np.array(nmod.niche_names(s), dtype=object)[lab] if meta is not None and len(lab) == n else None
     lei = embedding.leiden(s.sample_id)

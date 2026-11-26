@@ -3482,6 +3482,49 @@ async def api_project_groups(req: Request):
     return _json(r)
 
 
+def _region_list(sample, session=None):
+    """The regions to group: of the sample's open annotation (session) or latest, or, in a project, of every slice's
+    (the open one for this slice): [{name, slices: [section names]}] by name."""
+    from . import joint
+    pid = projects.project_of(sample)
+    if pid:
+        p = projects.load(pid)
+        chosen = {sample: session} if session else None
+        sess = joint.latest_sessions(pid, chosen)
+        pairs = [((p["slices"].get(x) or {}).get("section") or x, sess.get(x)) for x in p["samples"]]
+    else:
+        t = list_sessions()
+        mine = t[(t.sample_id == sample) & (t.method != "none")].sort_values("created_at") if len(t) else t
+        pairs = [(sample, session or (mine.session_id.iloc[-1] if len(mine) else None))]
+    out = {}
+    for label, sid in pairs:
+        if not sid:
+            continue
+        try:
+            names = review_app._session(sid).region_names()
+        except Exception:
+            continue
+        for n in names:
+            out.setdefault(n, []).append(label)
+    return [{"name": n, "slices": v} for n, v in sorted(out.items())], bool(pid)
+
+
+async def api_region_groups(req: Request):
+    """GET (?session=the open annotation): the regions (of the sample, or of all its project's slices) and their
+    groupings; POST {columns: {name: {region: group}}}: replace them. Compare lists a grouping with 2+ groups."""
+    sample = req.path_params["sample"]
+    try:
+        if req.method == "GET":
+            regs, in_project = await asyncio.to_thread(_region_list, sample, req.query_params.get("session"))
+            return _json({"regions": regs, "project": in_project, "columns": projects.region_groups(sample)})
+        b = await req.json()
+        r = projects.set_region_groups(sample, b.get("columns") or {})
+    except ValueError as e:
+        return _json({"error": str(e)}, 400)
+    _cell_tables.clear()  # (the regions' groupings are columns of the analyses' cell tables)
+    return _json({"columns": r})
+
+
 async def api_sample_pending_cancel(req: Request):
     """Discard the image waiting for its alignment (Steps → Image → Discard): the file is left where it is."""
     sample = req.path_params["sample"]
@@ -5018,6 +5061,7 @@ def build_app(port):
         Route("/api/sample/{sample}/images/remove", api_sample_image_remove, methods=["POST"]),
         Route("/api/sample/{sample}/image_stats", api_image_stats),
         Route("/api/project/{pid}/groups", api_project_groups, methods=["GET", "POST"]),
+        Route("/api/sample/{sample}/region_groups", api_region_groups, methods=["GET", "POST"]),
         Route("/api/sample/{sample}/image/pending/cancel", api_sample_pending_cancel, methods=["POST"]),
         Route("/api/sample/{sample}/images/match", api_sample_image_match),
         Route("/api/sample/{sample}/registration", api_sample_registration, methods=["POST"]),

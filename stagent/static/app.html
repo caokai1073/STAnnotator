@@ -963,6 +963,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
         <label class="hint" title="Show region outlines"><input type="checkbox" id="outlines" checked> outlines</label>
         <button id="draw" hidden class="primary" style="padding:2px 9px;font-size:12px" title="Draw a region: click points on the map; double-click, Enter or click the first point to close">Draw</button>
         <button id="rgImport" style="padding:2px 8px;font-size:12px" title="Regions from a GeoJSON of outlines drawn on this H&amp;E (e.g. QuPath annotations, exported in full-resolution pixels)">Import</button>
+        <button id="rgGroup" style="padding:2px 8px;font-size:12px" title="Put the regions into groups (e.g. mucosa_1 and mucosa_2 in mucosa) to compare the groups: Compare → Compare by lists each grouping">Group</button>
         <input type="file" id="rgImportFile" accept=".geojson,.json" hidden>
         <button id="rgtoggle" style="padding:1px 7px;font-size:11px">−</button></div>
       <div class="rgtools" id="rgtools">
@@ -1081,10 +1082,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
 <dialog id="grDlg" style="width:min(820px,95vw)">
   <div class="dh"><b id="grTitle">Groups of the slices</b><span class="spacer"></span></div>
   <div class="imbody" style="gap:8px">
-    <div class="hint">A grouping puts each slice of the project in a group (e.g. <b>condition</b>: UC, control). Compare
-      lists it in <b>Compare by</b> (DE genes, top genes, composition, signaling) and <b>Replicates</b> (DESeq2, the
-      slices of a group as its replicates). Type a group's name in each slice's box; a box left empty: the slice in no
-      group of that grouping.</div>
+    <div class="hint" id="grHint"></div>
     <div style="max-height:52vh;overflow:auto"><table class="pjtab grtab" id="grTab"></table></div>
     <div class="row"><button id="grAdd">Add a grouping</button><span class="spacer"></span></div>
     <div class="hint" id="grNote"></div>
@@ -5455,38 +5453,56 @@ function imForm() {  // show the fields of the chosen options; Align with Claude
 }
 document.querySelectorAll("input[name=imImgMode], input[name=imRegMode]").forEach((r) => (r.onchange = imForm));
 $("imNewImg").addEventListener("input", imForm); $("imNewImg").addEventListener("change", imForm);
-// ---------------- Group: the project's slices put into groups (metadata columns), compared in Compare ----------------
-const GR = { pid: null, slices: [], cols: [] };  // cols: [{name, values: {sample_id: value}}]
-async function openGroups() {
+// ---------------- Group: the project's slices, or the regions, put into groups compared in Compare ----------------
+// rows: the slices (Data → Group) or the regions (Regions → Group); cols: [{name, values: {row id: group}}]
+const GR = { kind: "slices", url: "", rows: [], cols: [] };
+const GR_HINT = {
+  slices: "A grouping puts each slice of the project in a group (e.g. <b>condition</b>: UC, control). Compare lists it in <b>Compare by</b> (DE genes, top genes, composition, signaling) and <b>Replicates</b> (DESeq2, the slices of a group as its replicates). Type a group's name in each slice's box; a box left empty: the slice in no group of that grouping.",
+  regions: "A grouping puts regions in groups (e.g. <b>compartment</b>: mucosa_1 and mucosa_2 in mucosa, submucosa_1 in submucosa); a cell's group is its region's, the cells outside them are in none. Compare lists it in <b>Compare by</b> (DE genes, top genes, composition, signaling). Type a group's name in each region's box; empty: the region in no group." };
+async function openGroups() {  // Data → Group: the project's slices
   const p = st.sample && projectOf(st.sample.sample_id); if (!p) return;
   let r;
   try { r = await api(`/api/project/${encodeURIComponent(p.project_id)}/groups`); } catch (e) { toast(e.message, 5000); return; }
-  GR.pid = p.project_id; GR.slices = r.slices;
-  GR.cols = Object.entries(r.columns).map(([name, values]) => ({ name, values: { ...values } }));
-  if (!GR.cols.length) GR.cols.push({ name: "group", values: {} });  // (a first grouping to fill in)
-  $("grTitle").textContent = `Groups of the slices of ${r.name}`; $("grErr").textContent = "";
+  grOpen("slices", `/api/project/${encodeURIComponent(p.project_id)}/groups`, `Groups of the slices of ${r.name}`,
+    r.slices.map((x) => ({ id: x.sample_id, label: x.section })), r.columns);
+}
+async function openRegionGroups() {  // Regions → Group: the regions (in a project: of all its slices, by name)
+  if (!st.sample) return;
+  const smp = st.sample.sample_id, url = `/api/sample/${encodeURIComponent(smp)}/region_groups`;
+  let r;
+  try { r = await api(`${url}?${new URLSearchParams({ session: st.sid || "" })}`); } catch (e) { toast(e.message, 5000); return; }
+  if (!r.regions.length) { toast("No regions yet: draw or import some first", 4000); return; }
+  const p = projectOf(smp);
+  grOpen("regions", url, p ? `Groups of the regions of ${p.name} (all slices)` : `Groups of the regions of ${sampleName(st.sample)}`,
+    r.regions.map((x) => ({ id: x.name, label: x.name.replace(/_/g, " "), sub: p && r.project ? x.slices.join(", ") : "" })), r.columns);
+}
+function grOpen(kind, url, title, rows, columns) {
+  Object.assign(GR, { kind, url, rows, cols: Object.entries(columns || {}).map(([name, values]) => ({ name, values: { ...values } })) });
+  if (!GR.cols.length) GR.cols.push({ name: kind === "regions" ? "compartment" : "group", values: {} });  // (a first grouping to fill in)
+  $("grTitle").textContent = title; $("grHint").innerHTML = GR_HINT[kind]; $("grErr").textContent = "";
   grDraw(); $("grDlg").showModal();
 }
 function grDraw() {
   const t = $("grTab"); t.textContent = "";
-  const head = document.createElement("tr"); head.append(Object.assign(document.createElement("th"), { textContent: "Slice" }));
+  const head = document.createElement("tr"); head.append(Object.assign(document.createElement("th"), { textContent: GR.kind === "regions" ? "Region" : "Slice" }));
   GR.cols.forEach((c, j) => {
     const th = document.createElement("th"), w = document.createElement("div"); w.className = "grh";
-    const name = Object.assign(document.createElement("input"), { type: "text", value: c.name, title: "The grouping's name (e.g. condition, patient, treatment)" });
+    const name = Object.assign(document.createElement("input"), { type: "text", value: c.name, title: "The grouping's name (e.g. condition, compartment, patient)" });
     name.oninput = () => { c.name = name.value; grNote(); };
-    const x = decorate(Object.assign(document.createElement("button"), { className: "ib", title: "Remove this grouping (the slices keep their names and cells)" }), "x", true);
+    const x = decorate(Object.assign(document.createElement("button"), { className: "ib", title: "Remove this grouping" }), "x", true);
     x.onclick = () => { GR.cols.splice(j, 1); grDraw(); };
     w.append(name, x); th.append(w); head.append(th);
   });
   t.append(head);
-  GR.slices.forEach((sl) => {
-    const tr = document.createElement("tr");
-    tr.append(Object.assign(document.createElement("td"), { className: "sl", textContent: sl.section }));
+  GR.rows.forEach((row) => {
+    const tr = document.createElement("tr"), td0 = Object.assign(document.createElement("td"), { className: "sl", textContent: row.label });
+    if (row.sub) td0.append(Object.assign(document.createElement("div"), { className: "hint", textContent: row.sub }));
+    tr.append(td0);
     GR.cols.forEach((c, j) => {
-      const td = document.createElement("td"), dl = `grList${j}`;
-      const inp = Object.assign(document.createElement("input"), { type: "text", value: c.values[sl.sample_id] || "", placeholder: "no group" });
-      inp.setAttribute("list", dl);
-      inp.oninput = () => { c.values[sl.sample_id] = inp.value; grLists(); grNote(); };
+      const td = document.createElement("td");
+      const inp = Object.assign(document.createElement("input"), { type: "text", value: c.values[row.id] || "", placeholder: "no group" });
+      inp.setAttribute("list", `grList${j}`);
+      inp.oninput = () => { c.values[row.id] = inp.value; grLists(); grNote(); };
       td.append(inp); tr.append(td);
     });
     t.append(tr);
@@ -5505,20 +5521,22 @@ function grLists() {  // each grouping's values so far, offered in its boxes
 function grNote() {  // what Compare can do with each grouping
   const out = [];
   GR.cols.forEach((c) => {
-    const n = {}; GR.slices.forEach((sl) => { const v = (c.values[sl.sample_id] || "").trim(); if (v) n[v] = (n[v] || 0) + 1; });
+    const n = {}; GR.rows.forEach((row) => { const v = (c.values[row.id] || "").trim(); if (v) n[v] = (n[v] || 0) + 1; });
     const groups = Object.keys(n), name = (c.name || "").trim() || "(no name)";
-    const filled = GR.slices.filter((sl) => (c.values[sl.sample_id] || "").trim()).length;
-    if (groups.length < 2) { if (filled < GR.slices.length) out.push(`${name}: fewer than two groups (Compare does not list it)`); }  // (one value everywhere: said nothing)
-    else {
+    const filled = GR.rows.filter((row) => (c.values[row.id] || "").trim()).length;
+    if (groups.length < 2) { if (filled < GR.rows.length) out.push(`${name}: fewer than two groups (Compare does not list it)`); }  // (one value everywhere: said nothing)
+    else if (GR.kind === "slices") {
       const one = groups.filter((g) => n[g] < 2);
       if (one.length) out.push(`${name}: ${one.join(", ")} ${one.length > 1 ? "have" : "has"} one slice (DE genes yes, DESeq2 no)`);
     }
   });
-  $("grNote").textContent = out.length ? out.join(" · ") + ". DESeq2 needs 2+ slices in each group; with one, the cells of a slice are not independent samples." : "";
+  $("grNote").textContent = !out.length ? "" : out.join(" · ") +
+    (GR.kind === "slices" ? ". DESeq2 needs 2+ slices in each group; with one, the cells of a slice are not independent samples." : ".");
 }
 $("grAdd").onclick = () => {
   const names = new Set(GR.cols.map((c) => c.name.trim().toLowerCase()));
-  let k = GR.cols.length + 1, name = "group"; while (names.has(name)) name = `group ${k++}`;
+  const base = GR.kind === "regions" ? "compartment" : "group";
+  let k = GR.cols.length + 1, name = base; while (names.has(name)) name = `${base} ${k++}`;
   GR.cols.unshift({ name, values: {} }); grDraw();  // (first: in sight before the imported metadata columns)
   const h = $("grTab").querySelector("th input"); if (h) { h.focus(); h.select(); }
 };
@@ -5529,17 +5547,18 @@ $("grSave").onclick = async () => {
     const name = (c.name || "").trim();
     if (!name) { $("grErr").textContent = "Each grouping needs a name"; return; }
     if (columns[name]) { $("grErr").textContent = `Two groupings are called ${name}`; return; }
-    columns[name] = Object.fromEntries(GR.slices.map((sl) => [sl.sample_id, (c.values[sl.sample_id] || "").trim()]));
+    columns[name] = Object.fromEntries(GR.rows.map((row) => [row.id, (c.values[row.id] || "").trim()]));
   }
   $("grSave").disabled = true; $("grErr").textContent = "";
-  try { await post(`/api/project/${encodeURIComponent(GR.pid)}/groups`, { columns }); }
+  try { await post(GR.url, { columns }); }
   catch (e) { $("grErr").textContent = e.message; $("grSave").disabled = false; return; }
   $("grSave").disabled = false; $("grDlg").close();
-  st.projects = await api("/api/projects").catch(() => st.projects);  // (the slices' metadata shown elsewhere)
+  if (GR.kind === "slices") st.projects = await api("/api/projects").catch(() => st.projects);  // (the slices' metadata shown elsewhere)
   AN.key = ""; if (typeof loadAnOptions === "function") loadAnOptions(true).catch(() => {});  // Compare by: the new groupings
-  toast("Groups saved: Compare → Compare by lists them (with All slices)", 5000);
+  toast(`Groups saved: Compare → Compare by lists them${GR.kind === "slices" ? " (with All slices)" : ""}`, 5000);
 };
 $("sampleGroup").onclick = openGroups;
+$("rgGroup").onclick = openRegionGroups;
 // ---------------- Discard images: tick those to take out; the image the cells are placed on: they move to the next ----------------
 function openImageDiscard() {
   const ims = (st.he && st.he.images) || [];

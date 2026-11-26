@@ -526,6 +526,10 @@ The app's window, or the web viewer (`.venv/bin/stagent viewer`, then http://loc
   patient, ...). Compare lists a grouping whose slices are in at least two groups: **Compare by** (DE genes, top genes,
   composition, signaling, with All slices) and **Replicates** (DESeq2, the slices of a group as its replicates; it needs
   two or more slices in each group). The metadata columns read at import are listed there too and can be edited.
+- **Group** in the Regions panel (beside Import) puts the regions into groups the same way (e.g. **compartment**:
+  mucosa_1 and mucosa_2 in mucosa): a cell's group is its region's, the cells outside them are in none. In a project the
+  groupings belong to the project and apply to every slice by region name; a sample on its own keeps its own. Compare
+  lists them in **Compare by** (DE genes, top genes, composition, signaling).
 - **Rename** beside **Annotation** names the annotation chosen there (shown before its version and date, in the
   list and in Export); its id, versions and results stay. Leave the name empty for none.
 - **Overview of the project** shows the slices of the project chosen (with **No project** chosen: **Overview of all

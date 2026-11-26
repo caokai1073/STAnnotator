@@ -1,6 +1,8 @@
 """Groups of a project's slices (Data → Group): a grouping (a metadata column, one value per slice) saved through the
 endpoint is kept in the project and each slice's meta.json, Compare lists it (Compare by) when its values differ
-between slices, and DE genes compare its groups; names that are empty, repeated or the app's own are refused.
+between slices, and DE genes compare its groups; names that are empty, repeated or the app's own are refused. The
+regions' groupings (Regions → Group): of the project (all its slices, by region name) or of a sample on its own;
+a cell's group is its region's; Compare lists them and DE genes compare their groups.
 Runs in a temporary data folder."""
 import json, os, shutil, tempfile, time
 import numpy as np
@@ -46,9 +48,39 @@ try:
     print("DE UC vs control:", [x["gene"] for x in st["result"]["up"]][:5])
     for bad in ({"": cond}, {"cell type": cond}, {"Slice": cond}, {"x" * 41: cond}):
         assert c.post(f"/api/project/{pid}/groups", json={"columns": bad}).status_code == 400, bad
+    # the regions' groupings (Regions → Group): two regions on each slice, grouped by kind across the slices
+    from stagent.session import Session
+    for sid in sids:
+        ss = Session(sid)
+        px, py = ss.cells.px.to_numpy(), ss.cells.py.to_numpy()
+        x0, x1, y0, y1 = np.quantile(px, 0.1), np.quantile(px, 0.9), np.quantile(py, 0.1), np.quantile(py, 0.9)
+        ym = (y0 + y1) / 2
+        ss.add_region("top", [[x0, y0], [x1, y0], [x1, ym], [x0, ym]])
+        ss.add_region("bottom", [[x0, ym], [x1, ym], [x1, y1], [x0, y1]])
+    smp = ids[0]
+    rg = c.get(f"/api/sample/{smp}/region_groups").json()
+    assert {x["name"] for x in rg["regions"]} >= {"top", "bottom"} and rg["project"] and len(rg["regions"][0]["slices"]) == 3, rg
+    assert c.post(f"/api/sample/{smp}/region_groups", json={"columns": {"condition": {"top": "T"}}}).status_code == 400  # (a slice grouping's name)
+    r = c.post(f"/api/sample/{smp}/region_groups", json={"columns": {"compartment": {"top": "upper", "bottom": "lower"}}})
+    assert r.status_code == 200 and projects.load(pid)["region_groups"] == {"compartment": {"top": "upper", "bottom": "lower"}}, r.text
+    opts = c.post("/api/analysis/options", json={"session": sids[0], "scope": "project"}).json()["groupings"]
+    assert set(opts.get("compartment", [])) == {"upper", "lower"}, opts.keys()
+    j = c.post("/api/analysis/run", json={"session": sids[0], "scope": "project", "kind": "de", "by": "compartment", "group": "upper", "top": 5}).json()
+    for _ in range(600):
+        st = c.get(f"/api/job/{j['job']}").json()
+        if st.get("done"):
+            break
+        time.sleep(0.2)
+    assert not st.get("error") and st["result"]["n_group"] > 0, st.get("error")
+    print("DE upper vs lower regions:", st["result"]["n_group"], "vs", st["result"]["n_reference"], "cells")
+    assert c.post(f"/api/project/{pid}/groups", json={"columns": {"compartment": cond}}).status_code == 400  # (a region grouping's name)
     r = c.post(f"/api/project/{pid}/groups", json={"columns": {}}).json()  # all removed
     assert r["columns"] == {} and json.load(open(config.SAMPLES / ids[0] / "meta.json"))["metadata"] == {}
     assert "condition" not in c.post("/api/analysis/options", json={"session": sids[0], "scope": "project"}).json()["groupings"]
+    importer.import_sample("solo", h5, progress=lambda *a: None)  # a sample on its own: its own region groupings
+    assert c.post("/api/sample/solo/region_groups", json={"columns": {"compartment": {"top": "upper"}}}).status_code == 200
+    assert json.load(open(config.SAMPLES / "solo" / "meta.json"))["region_groups"] == {"compartment": {"top": "upper"}}
+    assert projects.region_groups("solo") == {"compartment": {"top": "upper"}} and "region_groups" in projects.load(pid)
     print("smoke_project_groups ok")
 finally:
     shutil.rmtree(home, ignore_errors=True)

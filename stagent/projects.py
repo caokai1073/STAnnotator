@@ -67,7 +67,7 @@ def set_groupings(pid, columns):
     empty, at most 40 characters, distinct, none of the app's own groupings (cell type, slice, ...)."""
     p = load(pid)
     ids = [x for x in p["samples"] if (config.SAMPLES / x / "meta.json").exists()]
-    clean, seen = {}, set()
+    clean, seen = {}, {k.lower() for k in (p.get("region_groups") or {})}  # (not a region grouping's name)
     for name, vals in (columns or {}).items():
         n = " ".join(str(name or "").split())
         if not n:
@@ -77,7 +77,7 @@ def set_groupings(pid, columns):
         if n.lower() in RESERVED_GROUPINGS:
             raise ValueError(f"{n!r} is one of the app's own groupings: choose another name (e.g. condition)")
         if n.lower() in seen:
-            raise ValueError(f"two groupings are called {n!r}")
+            raise ValueError(f"{n!r} is taken: another grouping (of the slices or of the regions) has this name")
         seen.add(n.lower())
         v = {x: " ".join(str((vals or {}).get(x) or "").split())[:60] for x in ids}
         clean[n] = v
@@ -90,6 +90,56 @@ def set_groupings(pid, columns):
         dump_json(m, mf, indent=1)
     dump_json(p, _file(pid), indent=1)
     return groupings(pid)
+
+
+def _grouping_names(columns, taken=()):
+    """The groupings' names cleaned and checked (not empty, at most 40 characters, distinct, not the app's own
+    groupings or one of taken); {name: values}."""
+    clean, seen = {}, {t.lower() for t in taken}
+    for name, vals in (columns or {}).items():
+        n = " ".join(str(name or "").split())
+        if not n:
+            raise ValueError("a grouping needs a name")
+        if len(n) > 40:
+            raise ValueError(f"the name {n[:40]}… is longer than 40 characters")
+        if n.lower() in RESERVED_GROUPINGS:
+            raise ValueError(f"{n!r} is one of the app's own groupings: choose another name (e.g. condition)")
+        if n.lower() in seen:
+            raise ValueError(f"{n!r} is taken: another grouping (of the regions or of the slices) has this name")
+        seen.add(n.lower())
+        clean[n] = vals or {}
+    return clean
+
+
+def region_groups(sample_id):
+    """The groupings of a sample's regions, {name: {region name: group}}: its project's (one for all its slices: a
+    region name means the same region kind on each) or, for a sample on its own, its own."""
+    pid = project_of(sample_id)
+    if pid:
+        return load(pid).get("region_groups") or {}
+    m = json.load(open(config.SAMPLES / sample_id / "meta.json", encoding="utf-8"))
+    return m.get("region_groups") or {}
+
+
+def set_region_groups(sample_id, columns):
+    """Replace the groupings of the regions (of the sample's project, or of the sample on its own): columns = {name:
+    {region name: group}} (an empty group: the region in none). Names as the slices' groupings, and none of those."""
+    pid = project_of(sample_id)
+    taken = []
+    if pid:
+        p = load(pid)
+        taken = {k for x in p["samples"] for k in ((p["slices"].get(x) or {}).get("metadata") or {})}
+    clean = _grouping_names(columns, taken)
+    out = {n: {str(r): " ".join(str(g or "").split())[:60] for r, g in v.items() if str(g or "").strip()} for n, v in clean.items()}
+    if pid:
+        p["region_groups"] = out
+        dump_json(p, _file(pid), indent=1)
+    else:
+        mf = config.SAMPLES / sample_id / "meta.json"
+        m = json.load(open(mf, encoding="utf-8"))
+        m["region_groups"] = out
+        dump_json(m, mf, indent=1)
+    return out
 
 
 def save(pid, name, slices):
