@@ -586,7 +586,8 @@ def _write_guide(s, st, v, cells, results, colors, M, md, skip):
         "in `sessions` (sample → annotation id), with their niches / Leiden runs in `runs`. `within` filters the cells "
         "({grouping: values}); a `selection` (cells drawn on the map) is counted in `selection_cells` and its cells "
         "are in the JSON. Groupings available: cell type, lineage, region, niche, leiden, selection, slice and the "
-        "groupings above.")
+        "groupings above. Settings missing from a request took their defaults; the result JSON records the values "
+        "used (e.g. distances, minimum shares, permutations).")
     add("")
     M["steps"]["analyses"] = []
     from . import analysis

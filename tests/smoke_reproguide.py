@@ -24,8 +24,16 @@ try:
     c = TestClient(webapp.build_app(8799), base_url="http://127.0.0.1:8799")
     v = s.versions()[-1]
     types = list(s.types)
-    for req in ({"kind": "de", "by": "cell type", "group": types[0]}, {"kind": "composition", "rows": "region", "cols": "cell type"}):
-        j = c.post("/api/analysis/run", json={"session": s.id, "scope": "slice", "version": v, **req}).json()
+    runs = [("/api/analysis/run", {"kind": "de", "by": "cell type", "group": types[0]}),
+            ("/api/analysis/run", {"kind": "composition", "rows": "region", "cols": "cell type"}),
+            ("/api/communication/run", {"kind": "run", "by": "cell type"}),
+            ("/api/coloc/run", {"by": "cell type"}),
+            ("/api/trajectory/run", {"method": "spatial", "by": "cell type",
+                                     "start": {"by": "cell type", "values": ["Transit-amplifying cells"]},
+                                     "end": {"by": "cell type", "values": ["Colonocytes"]}})]
+    for url, req in runs:
+        j = c.post(url, json={"session": s.id, "scope": "slice", "version": v, **req}).json()
+        assert "job" in j, (url, j)
         for _ in range(600):
             st = c.get(f"/api/job/{j['job']}").json()
             if st.get("done"):
@@ -42,7 +50,9 @@ try:
         have = {n.split("/", 1)[1] for n in names}
         need = {"REPRODUCE.md", "manifest.json", "data/cells.csv", "data/marker_list.txt", "data/marker_list.csv",
                 "data/regions.geojson", "data/colors.json", "data/state.json", "data/results/de.json", "data/results/de.csv",
-                "data/results/composition.json", "data/analyses_log.json", "data/CHANGELOG.md"}
+                "data/results/composition.json", "data/analyses_log.json", "data/CHANGELOG.md",
+                "data/results/run.json", "data/results/run.csv", "data/results/coloc.json", "data/results/coloc.csv",
+                "data/results/trajectory_spatial.json", "data/results/trajectory_spatial.csv", "data/trajectory_spatial.csv"}
         assert need <= have, need - have
         assert ("analysis.ipynb" in have) == nb, have
         M = json.loads(z.read(f"{root}/manifest.json"))
@@ -57,7 +67,13 @@ try:
         cells = z.read(f"{root}/data/cells.csv").decode().splitlines()
         assert len(cells) - 1 == len(s.cells), (len(cells), len(s.cells))
         steps = {x["step"] for x in M["checks"]}
-        assert {"filter", "annotation", "embedding", "niches", "analysis de", "analysis composition"} <= steps, steps
+        assert {"filter", "annotation", "embedding", "niches", "analysis de", "analysis composition", "analysis run",
+                "analysis coloc", "analysis trajectory_spatial"} <= steps, steps
+        for h in ("### Cell-cell communication (`run`)", "### Co-localization (neighborhood enrichment) (`coloc`)",
+                  "### Trajectory (spatial axis) (`trajectory_spatial`)", "communication.py", "coloc.py", "trajectory.py#L"):
+            assert h in guide, h
+        tr = z.read(f"{root}/data/trajectory_spatial.csv").decode().splitlines()
+        assert tr[0] == "cell_id,t,bin" and len(tr) - 1 == len(s.cells), tr[:2]
         ct = next(x for x in M["checks"] if x["step"] == "annotation")["expected"]
         assert sum(ct.values()) == len(s.cells)
         col = json.loads(z.read(f"{root}/data/colors.json"))
