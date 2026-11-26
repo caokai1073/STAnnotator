@@ -58,7 +58,10 @@ header.collapsed .hmini { display: flex; }
 .cap { width: 100%; flex: none; display: flex; align-items: center; gap: 6px; }
 /* a new version of the desktop app: shown until it is installed or skipped (checkForUpdate) */
 .updpill { padding: 4px 10px; font-weight: 600; background: var(--update); border-color: var(--update); color: var(--update-ink); }
-.updpill:hover { filter: brightness(1.1); }
+/* (keeps its own colors on hover: the general button:hover rule, more specific, set the light accent background
+   under the white text, so the button turned all white) */
+.updpill:hover:not(:disabled) { background-color: var(--update); border-color: var(--update); color: var(--update-ink);
+  filter: brightness(1.1); }
 #updBtn { margin-left: auto; }
 #updBtn:not([hidden]) + #helpBtn { margin-left: 0 !important; }
 .captxt { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .14em; color: var(--muted); }
@@ -76,6 +79,8 @@ header.collapsed .hmini { display: flex; }
 .cmplegend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 12px; font-size: 12px; }
 .cmplegend span.sw { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
 #anBody { max-height: 62vh; overflow: auto; }
+#anBody .dpfix { position: sticky; left: 0; z-index: 1; overflow: hidden; flex: none; background: var(--panel); }
+#anBody::-webkit-scrollbar { height: 10px; width: 10px; } #anBody::-webkit-scrollbar-thumb { background: #c9c9c9; border-radius: 5px; }
 /* result windows: the analysis name left, its views (and how many genes) in the middle, the buttons right */
 #anDlg .andh { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
 .anfoot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; } .anfoot:not(:has(button:not([hidden]))) { display: none; } .andh .dhmid { display: flex; align-items: center; }
@@ -115,6 +120,8 @@ table.an td.heat { min-width: 44px; }
 .gllegend input { margin: 0; }
 .gllegend #glAll { padding: 1px 8px; font-size: 11px; }
 .gllegend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.gllegend .gbar { width: 230px; padding: 0; }
+.gllegend .gbar .u { white-space: nowrap; }
 .gallery .tt { font-size: 12px; font-weight: 600; margin-top: 4px; } .gallery .ts { font-size: 11px; color: var(--muted); }
 .num { width: 62px; }
 .folder { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); min-width: 0;
@@ -257,19 +264,42 @@ body.desktop #side { display: none; }
    follow its height (--maptop) and it keeps clear of the windows on the right */
 #maptop { position: absolute; top: 10px; left: 10px; right: 10px; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px;
           align-items: flex-start; pointer-events: none; }
-#maptop > .float { position: static; pointer-events: auto; }
+#maptop > .float, #maptop .mtrow > .float, #maptop .mtcol > .float { position: static; pointer-events: auto; }
+#maptop .mtcol { display: flex; flex-direction: column; gap: 8px; align-items: stretch; pointer-events: none; min-width: 0; max-width: 100%;
+                 width: max-content; }  /* as wide as the row below (the agent's box and the image's): the toolbar wraps in it */
+#maptop .mtcol > #tools { width: 0; min-width: 100%; box-sizing: border-box; }  /* (it does not widen the column) */
+#maptop .mtrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; pointer-events: none; min-width: 0; }
+#maptop .mtrow > #acts { flex: 1 1 auto; min-width: min(100%, 236px); }  /* (too narrow for both: the image's box goes below, at the right) */
+#maptop .mtrow > #imgbox { flex: none; margin-left: auto; }  /* (its right edge under the toolbar's) */
+/* a narrow map (the two boxes not on one row): the agent's buttons and Adjust show their icons only (the name in the
+   tooltip), so the boxes stay side by side, each on one line */
+#maptop.compact #acts > button .bt, #maptop.compact #imgAdjBtn .bt { display: none; }
+#maptop.compact #acts > button, #maptop.compact #imgAdjBtn { padding: 5px; }
+#maptop.compact #imgbox #imgSel { width: 104px; }
 #viewerwrap.pl #maptop { right: 360px !important; }
-#tools, #acts { padding: 6px 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+#tools, #acts, #imgbox { padding: 6px 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+#imgbox label { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+.irlist { display: flex; flex-direction: column; gap: 4px; max-height: 50vh; overflow: auto; }
+.grtab input[type=text] { width: 100%; min-width: 110px; padding: 3px 6px; font-size: 12.5px; }
+.grtab th .grh { display: flex; gap: 4px; align-items: center; }
+.grtab th .grh input { font-weight: 600; }
+.grtab td.sl { white-space: nowrap; font-weight: 500; }
+.irlist label { display: flex; gap: 8px; align-items: center; padding: 4px 6px; border-radius: 6px; font-size: 13px; }
+.irlist label:hover { background: var(--bg); }
+.irlist .k { color: var(--muted); font-size: 11.5px; margin-left: auto; }
+#imgbox #imgSel { height: 32px; width: 118px; }
 #tools input[type=range] { width: 80px; }
 #tools #mode { width: 132px; height: 32px; }  /* as tall as the buttons below it */
+#glDlg .dh select, #glDlg .dh input[type=text] { height: 32px; }  /* the overview's Color by: as on the map */
 #maptop button { padding: 5px 9px; }
 #tools .vsep { width: 1px; align-self: stretch; background: var(--line); margin: 2px 2px; }
+#tools .mtend { display: flex; gap: 6px; align-items: center; align-self: stretch; margin-left: auto; }
 /* Hide cells / Hide H&E: while hidden, the icon is struck through (instead of a filled button) */
 #hide.on, #hideHE.on { background: var(--panel); color: var(--ink); border-color: var(--line); position: relative; }
 #hide.on::after, #hideHE.on::after { content: ""; position: absolute; left: 50%; top: 50%; width: 22px; height: 2px;
   background: #d63b3b; border-radius: 1px; transform: translate(-50%, -50%) rotate(-45deg); box-shadow: 0 0 0 1px var(--panel); }
 #maptop button.ib { padding: 5px; }
-#tools, #acts { gap: 6px; }
+#tools, #acts, #imgbox { gap: 6px; }
 #acts #vinfo { font-size: 11.5px; color: var(--muted); padding: 0 2px; }
 #agentModel { height: 32px; font-size: 12.5px; padding: 0 2px; width: auto; min-width: 0; }
 header .br { flex: 1 1 100%; height: 0; }
@@ -281,6 +311,10 @@ header .br { flex: 1 1 100%; height: 0; }
 #legend .it { display: flex; align-items: center; gap: 7px; padding: 2px 4px; border-radius: 4px; cursor: pointer; font-size: 12px; }
 #legend .it:hover { background: var(--bg); }
 #legend .it.off { opacity: .35; }
+.gbar { padding: 4px 4px 6px; font-size: 11px; color: var(--muted); }
+.gbar .bar { height: 10px; border-radius: 3px; }
+.gbar .tk { display: flex; justify-content: space-between; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.gbar .u { margin-top: 1px; }
 #legend .sw { width: 11px; height: 11px; border-radius: 50%; flex: none; }
 #legend .n { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
 #legend .grp { font-size: 10px; text-transform: uppercase; color: var(--muted); margin: 6px 4px 2px; letter-spacing: .04em; }
@@ -303,6 +337,15 @@ header .br { flex: 1 1 100%; height: 0; }
 #regsvg .hdl.mid { cursor: copy; }
 #regsvg text { font: 600 12px system-ui, sans-serif; paint-order: stroke; stroke: rgba(255,255,255,.85); stroke-width: 3px; }
 #regpanel { top: calc(var(--maptop, 44px) + 18px); left: 10px; width: 340px; max-height: 38%; display: flex; flex-direction: column; }
+#imgAdj { top: calc(var(--maptop, 44px) + 18px); left: 10px; width: 330px; z-index: 30; }  /* (over the panels below the toolbar while open) */
+#imgAdj .lh { display: flex; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 12px; gap: 6px; }
+#imgAdj .iabody { padding: 8px 12px 10px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+#imgAdj label { display: grid; grid-template-columns: 74px 1fr 64px; align-items: center; gap: 6px; color: var(--muted); }
+#imgAdj input[type=number] { width: 64px; padding: 2px 4px; font-size: 12px; }
+#imgAdj label span { text-align: right; font-variant-numeric: tabular-nums; }
+#imgAdj .iabtns { display: flex; gap: 6px; justify-content: flex-end; margin-top: 4px; }
+#imgAdj .hint { margin: 4px 0 2px; }
+#imgAdjBtn.on { background: var(--accent); color: #fff; border-color: var(--accent); }
 #regpanel .lh { display: flex; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 12px; gap: 5px; }
 #regpanel .lh button { flex: none; }  /* the header's buttons keep their size; nothing pushes the last one out */
 #regpanel .lh label { white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
@@ -453,6 +496,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .rfedits { max-height: 38vh; overflow: auto; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }
 .rfedits label { display: grid; grid-template-columns: auto 1fr; gap: 6px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; }
 .rfedits .why { color: var(--muted); }
+.rfedits .rfnoimg { padding: 6px 10px; border: 1px dashed var(--line); border-radius: 10px; }
 .rfedits .rfgroup { display: flex; flex-direction: column; gap: 4px; padding: 6px; border: 1px solid var(--line); border-radius: 10px; }
 .rfedits .rfgroup > label:not(.rfghead) { margin-left: 18px; }
 .rfedits .rfghead { display: flex; align-items: center; gap: 6px; border: none; padding: 2px 2px 0; margin: 0; }
@@ -530,7 +574,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 #acDlg .acopt button { width: 100%; }
 @media (max-width: 520px) { #acDlg .acopt { grid-template-columns: 1fr; } }
 #alignbar #alignmsg { min-width: 0; }
-#tools, #acts, #alignbar { box-sizing: border-box; min-height: 44px; }  /* the notice as tall as the bars */
+#tools, #acts, #imgbox, #alignbar { box-sizing: border-box; min-height: 44px; }  /* the notice as tall as the bars */
 .alrow { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 5px 4px; border-radius: 6px; font-size: 13px; cursor: pointer; }
 .alrow:hover { background: var(--bg); } .alrow.alall { border-bottom: 1px solid var(--line); border-radius: 0; }
 #acList { max-height: 50vh; overflow-y: auto; overflow-x: hidden; }
@@ -554,6 +598,18 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 /* the steps of the usual flow, at the top of the panel: where the sample stands, and the next thing to do */
 #steps { top: 10px; right: 10px; width: min(340px, calc(45% - 10px)); z-index: 6; font-size: 13px; max-height: calc(100% - 210px); overflow: auto; }
 /* the panels at the map's top right go under the steps; the map's toolbar leaves them room */
+/* Screenshot view: the map alone (the legend kept when chosen); the button, faint, shows on hover */
+#shotBox { position: absolute; right: 10px; bottom: calc(var(--navH, 0px) + 18px); z-index: 6; display: flex; gap: 6px; align-items: center; }
+#shotBox #shotBtn { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 6px; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+#shotBox #shotLeg { display: none; font-size: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; gap: 5px; align-items: center; }
+body.shot #shotBox:hover #shotLeg { display: flex; }  /* (only on hover: nothing but the faint button in the picture) */
+body.shot #shotBox { opacity: .06; transition: opacity .15s; bottom: 18px; }
+body.shot #shotBox:hover { opacity: 1; }
+body.shot #shotBtn { background: var(--accent); color: #fff; border-color: var(--accent); }
+body.shot header, body.shot #side, body.shot #empty, body.shot #maptop, body.shot #regpanel, body.shot #steps, body.shot #plpanel, body.shot #cellcard,
+body.shot #imgAdj, body.shot.nolegend #legend { display: none !important; }
+body.shot .navigator { visibility: hidden; }
+body.shot main { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }  /* (the chat's column, or row on a narrow window, given to the map) */
 #viewerwrap.st #maptop { right: calc(min(340px, calc(45% - 10px)) + 20px); }
 #viewerwrap.st #plpanel { top: calc(10px + var(--stepsH, 0px)); max-height: calc(100% - 210px - var(--stepsH, 0px)); }
 #viewerwrap.st #cellcard { top: calc(10px + var(--stepsH, 0px)); }
@@ -589,7 +645,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 </style>
 </head>
 <body>
-<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="ic-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol><symbol id="ic-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></symbol><symbol id="ic-upload" viewBox="0 0 24 24"><path d="M12 16V5M7 9l5-5 5 5M5 20h14"/></symbol><symbol id="ic-import" viewBox="0 0 24 24"><path d="M12 3v11M7.5 9.5L12 14l4.5-4.5M4 14v6h16v-6"/></symbol><symbol id="ic-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5zM8 4v5h7V4M8 20v-6h8v6"/></symbol><symbol id="ic-help" viewBox="0 0 24 24"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.6 9.4a2.5 2.5 0 1 1 3.6 2.3c-.7.3-1.2 1-1.2 1.8v.4M12 17.2v.1"/></symbol><symbol id="ic-chev-left" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol><symbol id="ic-chev-right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol><symbol id="ic-chev-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol><symbol id="ic-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol><symbol id="ic-grid" viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></symbol><symbol id="ic-chart" viewBox="0 0 24 24"><path d="M4 20h16M7 16v-5M12 16V6M17 16V9"/></symbol><symbol id="ic-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></symbol><symbol id="ic-play" viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></symbol><symbol id="ic-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 15.5l.8 1.7 1.7.8-1.7.8-.8 1.7-.8-1.7-1.7-.8 1.7-.8z"/></symbol><symbol id="ic-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3"/></symbol><symbol id="ic-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7M20 4v5h-5"/></symbol><symbol id="ic-terminal" viewBox="0 0 24 24"><path d="M3 5h18v14H3zM7 10l3 2-3 2M12.5 15h4.5"/></symbol><symbol id="ic-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM8.6 12.2l2.4 2.4 4.4-4.8"/></symbol><symbol id="ic-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h6"/></symbol><symbol id="ic-share" viewBox="0 0 24 24"><path d="M12 15V4M8 8l4-4 4 4M5 12v8h14v-8"/></symbol><symbol id="ic-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol><symbol id="ic-server" viewBox="0 0 24 24"><path d="M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01"/></symbol><symbol id="ic-monitor" viewBox="0 0 24 24"><path d="M3 4h18v12H3zM8 20h8M12 16v4"/></symbol><symbol id="ic-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></symbol><symbol id="ic-image" viewBox="0 0 24 24"><path d="M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15.5 8.5h.01"/></symbol><symbol id="ic-pen" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"/></symbol><symbol id="ic-lasso" viewBox="0 0 24 24"><path d="M7 15.5C4.6 14.4 3 12.6 3 10.5 3 6.9 7 4 12 4s9 2.9 9 6.5S17 17 12 17c-1 0-2-.1-2.9-.3M7 15.5c-1 .8-1.5 1.7-1.5 2.6C5.5 19.7 7 21 9 21M7 15.5a1.6 1.6 0 1 0 2.3 1"/></symbol><symbol id="ic-target" viewBox="0 0 24 24"><path d="M12 19a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM12 2v4M12 18v4M2 12h4M18 12h4"/></symbol><symbol id="ic-scatter" viewBox="0 0 24 24"><path d="M4 4v16h16M8 15h.01M10 10h.01M14 13h.01M16 8h.01M18 15h.01"/></symbol><symbol id="ic-folder" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v11H3z"/></symbol><symbol id="ic-send" viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-3-7z"/></symbol><symbol id="ic-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></symbol><symbol id="ic-home" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9H4zM10 20v-6h4v6"/></symbol><symbol id="ic-move" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3L9.5 5.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5M3 12l2.5-2.5M3 12l2.5 2.5M21 12l-2.5-2.5M21 12l-2.5 2.5"/></symbol><symbol id="ic-copy" viewBox="0 0 24 24"><path d="M8 8h12v12H8zM4 16V4h12"/></symbol><symbol id="ic-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5zM3 13l9 5 9-5"/></symbol><symbol id="ic-rect" viewBox="0 0 24 24"><path d="M4 6h16v12H4z"/></symbol><symbol id="ic-ellipse" viewBox="0 0 24 24"><path d="M12 18.5c4.7 0 8.5-2.9 8.5-6.5S16.7 5.5 12 5.5 3.5 8.4 3.5 12s3.8 6.5 8.5 6.5z"/></symbol><symbol id="ic-polygon" viewBox="0 0 24 24"><path d="M5 9l7-5 7 4-2 10-9 2z"/></symbol><symbol id="ic-brush" viewBox="0 0 24 24"><path d="M20 4l-8.5 8.5M11.5 12.5l-1.5 1.5M9.5 13.5c-2 0-3.5 1.6-3.5 3.5 0 1-.5 2-2 2.5 1 .7 2.3 1 3.5 1 2.5 0 4.5-2 4.5-4.5 0-1.4-1.1-2.5-2.5-2.5z"/></symbol><symbol id="ic-minus" viewBox="0 0 24 24"><path d="M6 12h12"/></symbol><symbol id="ic-hand" viewBox="0 0 24 24"><path d="M8 13V6.5a1.5 1.5 0 0 1 3 0V12M11 11V5a1.5 1.5 0 0 1 3 0v6M14 11V6.5a1.5 1.5 0 0 1 3 0V14c0 3.9-2.5 7-6.5 7-2.6 0-4-1.2-5.3-3.2L3.6 15a1.5 1.5 0 0 1 2.4-1.8L8 15"/></symbol><symbol id="ic-cell" viewBox="0 0 24 24"><path d="M12 20.5c4.4 0 8-3.6 8-8.2 0-4.5-3.4-8.8-8.3-8.8C7 3.5 4 7.4 4 11.8c0 4.8 3.6 8.7 8 8.7zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></symbol><symbol id="ic-bug" viewBox="0 0 24 24"><path d="M8 9h8v6a4 4 0 0 1-8 0zM9 9V7a3 3 0 0 1 6 0v2M12 11v8M4 12h4M16 12h4M5 7l3 2M19 7l-3 2M5 18l3-2M19 18l-3-2"/></symbol></svg>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="ic-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol><symbol id="ic-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></symbol><symbol id="ic-upload" viewBox="0 0 24 24"><path d="M12 16V5M7 9l5-5 5 5M5 20h14"/></symbol><symbol id="ic-import" viewBox="0 0 24 24"><path d="M12 3v11M7.5 9.5L12 14l4.5-4.5M4 14v6h16v-6"/></symbol><symbol id="ic-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5zM8 4v5h7V4M8 20v-6h8v6"/></symbol><symbol id="ic-help" viewBox="0 0 24 24"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.6 9.4a2.5 2.5 0 1 1 3.6 2.3c-.7.3-1.2 1-1.2 1.8v.4M12 17.2v.1"/></symbol><symbol id="ic-chev-left" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol><symbol id="ic-chev-right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol><symbol id="ic-chev-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol><symbol id="ic-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol><symbol id="ic-grid" viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></symbol><symbol id="ic-chart" viewBox="0 0 24 24"><path d="M4 20h16M7 16v-5M12 16V6M17 16V9"/></symbol><symbol id="ic-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></symbol><symbol id="ic-play" viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></symbol><symbol id="ic-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 15.5l.8 1.7 1.7.8-1.7.8-.8 1.7-.8-1.7-1.7-.8 1.7-.8z"/></symbol><symbol id="ic-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3"/></symbol><symbol id="ic-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7M20 4v5h-5"/></symbol><symbol id="ic-terminal" viewBox="0 0 24 24"><path d="M3 5h18v14H3zM7 10l3 2-3 2M12.5 15h4.5"/></symbol><symbol id="ic-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM8.6 12.2l2.4 2.4 4.4-4.8"/></symbol><symbol id="ic-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h6"/></symbol><symbol id="ic-share" viewBox="0 0 24 24"><path d="M12 15V4M8 8l4-4 4 4M5 12v8h14v-8"/></symbol><symbol id="ic-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol><symbol id="ic-server" viewBox="0 0 24 24"><path d="M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01"/></symbol><symbol id="ic-monitor" viewBox="0 0 24 24"><path d="M3 4h18v12H3zM8 20h8M12 16v4"/></symbol><symbol id="ic-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></symbol><symbol id="ic-image" viewBox="0 0 24 24"><path d="M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15.5 8.5h.01"/></symbol><symbol id="ic-pen" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"/></symbol><symbol id="ic-lasso" viewBox="0 0 24 24"><path d="M7 15.5C4.6 14.4 3 12.6 3 10.5 3 6.9 7 4 12 4s9 2.9 9 6.5S17 17 12 17c-1 0-2-.1-2.9-.3M7 15.5c-1 .8-1.5 1.7-1.5 2.6C5.5 19.7 7 21 9 21M7 15.5a1.6 1.6 0 1 0 2.3 1"/></symbol><symbol id="ic-target" viewBox="0 0 24 24"><path d="M12 19a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM12 2v4M12 18v4M2 12h4M18 12h4"/></symbol><symbol id="ic-scatter" viewBox="0 0 24 24"><path d="M4 4v16h16M8 15h.01M10 10h.01M14 13h.01M16 8h.01M18 15h.01"/></symbol><symbol id="ic-folder" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v11H3z"/></symbol><symbol id="ic-send" viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-3-7z"/></symbol><symbol id="ic-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></symbol><symbol id="ic-home" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9H4zM10 20v-6h4v6"/></symbol><symbol id="ic-move" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3L9.5 5.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5M3 12l2.5-2.5M3 12l2.5 2.5M21 12l-2.5-2.5M21 12l-2.5 2.5"/></symbol><symbol id="ic-copy" viewBox="0 0 24 24"><path d="M8 8h12v12H8zM4 16V4h12"/></symbol><symbol id="ic-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5zM3 13l9 5 9-5"/></symbol><symbol id="ic-rect" viewBox="0 0 24 24"><path d="M4 6h16v12H4z"/></symbol><symbol id="ic-ellipse" viewBox="0 0 24 24"><path d="M12 18.5c4.7 0 8.5-2.9 8.5-6.5S16.7 5.5 12 5.5 3.5 8.4 3.5 12s3.8 6.5 8.5 6.5z"/></symbol><symbol id="ic-polygon" viewBox="0 0 24 24"><path d="M5 9l7-5 7 4-2 10-9 2z"/></symbol><symbol id="ic-brush" viewBox="0 0 24 24"><path d="M20 4l-8.5 8.5M11.5 12.5l-1.5 1.5M9.5 13.5c-2 0-3.5 1.6-3.5 3.5 0 1-.5 2-2 2.5 1 .7 2.3 1 3.5 1 2.5 0 4.5-2 4.5-4.5 0-1.4-1.1-2.5-2.5-2.5z"/></symbol><symbol id="ic-minus" viewBox="0 0 24 24"><path d="M6 12h12"/></symbol><symbol id="ic-hand" viewBox="0 0 24 24"><path d="M8 13V6.5a1.5 1.5 0 0 1 3 0V12M11 11V5a1.5 1.5 0 0 1 3 0v6M14 11V6.5a1.5 1.5 0 0 1 3 0V14c0 3.9-2.5 7-6.5 7-2.6 0-4-1.2-5.3-3.2L3.6 15a1.5 1.5 0 0 1 2.4-1.8L8 15"/></symbol><symbol id="ic-cell" viewBox="0 0 24 24"><path d="M12 20.5c4.4 0 8-3.6 8-8.2 0-4.5-3.4-8.8-8.3-8.8C7 3.5 4 7.4 4 11.8c0 4.8 3.6 8.7 8 8.7zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></symbol><symbol id="ic-sliders" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9M15 5v4M9 15v4"/></symbol><symbol id="ic-camera" viewBox="0 0 24 24"><path d="M4 8h3.5l2-3h5l2 3H20v11H4zM12 16.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/></symbol><symbol id="ic-bug" viewBox="0 0 24 24"><path d="M8 9h8v6a4 4 0 0 1-8 0zM9 9V7a3 3 0 0 1 6 0v2M12 11v8M4 12h4M16 12h4M5 7l3 2M19 7l-3 2M5 18l3-2M19 18l-3-2"/></symbol></svg>
 <header>
   <div class="hmini"><button id="hdrShow" title="Show the toolbar (t)">‹</button><button id="updMini" class="updpill" hidden>Update</button><b>STAnnotator</b><span id="miniInfo"></span></div>
   <!-- the toolbar: a panel on the right of the map: the app, then the tabs Data and Analysis (its steps as a second row),
@@ -617,9 +673,10 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <button id="rmProject" class="rmsample" disabled title="Remove this project with all its slices: their cells, annotations and chats go to the data folder's trash">Remove project</button></div></div>
     <div class="fld" id="sampleWrap"><span id="sampleLbl">Sample</span><div class="inrow"><select id="sample" aria-label="Sample"></select>
       <button id="sampleRename" disabled title="Rename the sample as the app shows it (a slice: its name in the project)">Rename</button>
+      <button id="sampleGroup" disabled title="Put the project's slices into groups (e.g. condition: UC / control) to compare the groups: Compare → Compare by lists each grouping">Group</button>
       <button id="rmSample" class="rmsample" disabled title="Remove this sample only: its cells, annotations and chats go to the data folder's trash (to import it again under its name: Import, Replace the existing sample)">Remove</button></div></div>
     <div class="stat"><svg class="ic" aria-hidden="true"><use href="#ic-layers"/></svg><div id="sampleInfo">No sample yet</div></div>
-    <div class="act2"><button id="allSamples" disabled title="The slices of the project (or, with no project chosen, every sample) at a glance, colored the same way (cell type, lineage, Leiden, niche, region)">Overview of the project</button></div>
+    <div class="act2"><button id="allSamples" disabled title="The slices of the project (or, with no project chosen, every sample) at a glance, colored the same way (cell type, lineage, Leiden, niche, region, gene expression, program)">Overview of the project</button></div>
     <div class="act2"><button id="qfBtn" class="primary main" disabled title="Delete cells with few transcripts or genes or a high mitochondrial share, and genes detected in few cells">Filter cells and genes</button></div>
     <div id="slNav" class="slnav" hidden>
       <div class="stepper"><button id="slPrev" title="Previous slice of the project ([)">◀</button><span id="slPos"></span><button id="slNext" title="Next slice of the project (])">▶</button></div>
@@ -852,6 +909,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     <div id="osd"></div>
     <div id="empty"><div>No cell types yet. Check the marker list (<b>Markers…</b>) and click <b>Annotate</b>.</div></div>
     <div id="maptop">
+    <div class="mtcol">  <!-- the toolbar; below it the agent's box and the image's, this one at the toolbar's right edge -->
     <div id="tools" class="float">
       <label>Color by <select id="mode" disabled><option value="">annotate first</option></select></label>
       <input type="text" id="geneInput" list="geneList" placeholder="gene, e.g. EPCAM" hidden autocomplete="off"
@@ -859,13 +917,15 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <label>Opacity <input type="range" id="opacity" min="0" max="100" value="100"></label>
       <label title="Size of the cell dots">Dot size <input type="range" id="dotsize" min="20" max="300" value="100" step="10">
         <span id="dotsizeVal" style="min-width:34px">1.0×</span></label>
-      <label id="imgWrap" hidden title="The image under the cells: the H&amp;E, the DAPI, a protein / IF stain… (each placed on the cells by its own registration)">Image <select id="imgSel"></select></label>
       <button id="hide" title="Hide the cells: the image only (h)">Hide cells</button>
       <button id="hideHE" title="Hide the image: the cells only (e)">Hide image</button>
-      <span class="vsep"></span>
-      <button id="undo" disabled title="Undo your last action (everything the agent changed for one request goes back at once)">Undo</button>
-      <button id="refresh" title="Show the latest of everything: the server reads the sample, its image and annotations from disk again and the page reloads what it shows (the view, color mode and legend choice stay)">Refresh</button>
+      <span class="mtend">  <!-- Undo and Refresh together at the toolbar's right end -->
+        <span class="vsep"></span>
+        <button id="undo" disabled title="Undo your last action (everything the agent changed for one request goes back at once)">Undo</button>
+        <button id="refresh" title="Show the latest of everything: the server reads the sample, its image and annotations from disk again and the page reloads what it shows (the view, color mode and legend choice stay)">Refresh</button>
+      </span>
     </div>
+    <div class="mtrow">  <!-- the agent's box and, to its right, the image's (Image, Adjust) -->
     <div id="acts" class="float">
       <button id="claudeBtn" hidden title="Ask your own agent (Claude Code, in its own terminal window), connected to the sample open here">Agent</button>
       <select id="agentModel" hidden title="The model of the agent (Claude Code): each choice is the latest model of its family; Default: Claude Code's own setting. Claude Code opened from now on uses it">
@@ -876,7 +936,28 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       <div class="seg" id="reviewMode" title="How the agent's changes are taken. Manual: each waits for you in a review window (Accept or Dismiss). Auto: each is applied at once, without the window; Undo takes it back."><button data-m="manual">Manual</button><button data-m="auto">Auto</button></div>
       <span id="vinfo" hidden></span>
     </div>
+    <div id="imgbox" class="float" hidden>
+      <label id="imgWrap" hidden title="The image under the cells: the H&amp;E, the DAPI, a protein / IF stain… (each placed on the cells by its own registration)"><select id="imgSel"></select></label>
+      <button id="imgAdjBtn" title="Brightness and contrast of the image shown (a fluorescence image also its display range and gamma)">Adjust</button>
+    </div>
+    </div>
+    </div>
     <div id="alignbar" hidden><span id="alignmsg"></span></div>
+    </div>
+    <div id="imgAdj" class="float" hidden>
+      <div class="lh"><b id="iaTitle">Image</b><span class="spacer"></span><button class="ib" id="iaClose" title="Close">✕</button></div>
+      <div class="iabody">
+        <label>Brightness <input type="range" id="iaB" min="0" max="300" step="5" value="100"><span id="iaBv">100%</span></label>
+        <label>Contrast <input type="range" id="iaC" min="0" max="300" step="5" value="100"><span id="iaCv">100%</span></label>
+        <div id="iaFl" hidden>
+          <div class="hint" id="iaFlHint">Display range (raw values: black at the minimum, white at the maximum)</div>
+          <label>Minimum <input type="range" id="iaLo"><input type="number" id="iaLoN"></label>
+          <label>Maximum <input type="range" id="iaHi"><input type="number" id="iaHiN"></label>
+          <label title="Below 1 the dim signal shows brighter, above 1 darker (the black and white ends stay)">Gamma <input type="range" id="iaG" min="-100" max="100" value="0"><span id="iaGv">1.00</span></label>
+        </div>
+        <div class="iabtns"><button id="iaAuto" title="The image's own display range (its values from the 1st to the 99.7th percentile) and gamma 1">Auto</button>
+          <button id="iaReset" title="Brightness and contrast 100%, the image's own display range, gamma 1">Reset</button></div>
+      </div>
     </div>
     <div id="legend" class="float" hidden>
       <div class="lh"><b id="lgtitle">Cell types</b><span class="spacer"></span>
@@ -897,11 +978,16 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     </div>
     <div id="regwrap"><canvas id="regcanvas"></canvas></div>
     <svg id="regsvg"></svg>
+    <div id="shotBox">  <!-- Screenshot view: every box and panel hidden, the map alone -->
+      <label id="shotLeg" title="Show the legend in the screenshot view"><input type="checkbox" id="shotLegChk"> Legend</label>
+      <button id="shotBtn" class="ib" title="Screenshot view: hide every box and panel, the map alone (s; Esc or click again to come back)"></button>
+    </div>
     <div id="regpanel" class="float" hidden>
       <div class="lh"><b>Regions</b><span class="spacer"></span>
         <label class="hint" title="Show region outlines"><input type="checkbox" id="outlines" checked> outlines</label>
         <button id="draw" hidden class="primary" style="padding:2px 9px;font-size:12px" title="Draw a region: click points on the map; double-click, Enter or click the first point to close">Draw</button>
         <button id="rgImport" style="padding:2px 8px;font-size:12px" title="Regions from a GeoJSON of outlines drawn on this H&amp;E (e.g. QuPath annotations, exported in full-resolution pixels)">Import</button>
+        <button id="rgGroup" style="padding:2px 8px;font-size:12px" title="Put the regions into groups (e.g. mucosa_1 and mucosa_2 in mucosa) to compare the groups: Compare → Compare by lists each grouping">Group</button>
         <input type="file" id="rgImportFile" accept=".geojson,.json" hidden>
         <button id="rgtoggle" style="padding:1px 7px;font-size:11px">−</button></div>
       <div class="rgtools" id="rgtools">
@@ -1017,16 +1103,37 @@ T and NK cells: CD3E|NKG7+ EPCAM-
     <div class="row"><span class="spacer"></span><button id="acCancel">Cancel</button></div>
   </div>
 </dialog>
+<dialog id="grDlg" style="width:min(820px,95vw)">
+  <div class="dh"><b id="grTitle">Groups of the slices</b><span class="spacer"></span></div>
+  <div class="imbody" style="gap:8px">
+    <div class="hint" id="grHint"></div>
+    <div style="max-height:52vh;overflow:auto"><table class="pjtab grtab" id="grTab"></table></div>
+    <div class="row"><button id="grAdd">Add a grouping</button><span class="spacer"></span></div>
+    <div class="hint" id="grNote"></div>
+    <div class="row" style="margin-top:4px"><span class="err" id="grErr"></span><span class="spacer"></span><button id="grCancel">Cancel</button><button id="grSave" class="primary">Save</button></div>
+  </div>
+</dialog>
+<dialog id="irDlg" style="width:min(560px,95vw)">
+  <div class="dh"><b id="irTitle">Discard images</b><span class="spacer"></span></div>
+  <div class="imbody" style="gap:8px">
+    <div class="hint">Tick the images to take out of this sample. Their files stay where they are; adding a file again brings it back.</div>
+    <div id="irList" class="irlist"></div>
+    <div class="hint" id="irNote"></div>
+    <div class="row" style="margin-top:4px"><span class="err" id="irErr"></span><span class="spacer"></span><button id="irCancel">Cancel</button><button id="irGo" class="danger" disabled>Discard</button></div>
+  </div>
+</dialog>
 <dialog id="hiDlg" style="width:min(800px,95vw)">
   <div class="dh"><b id="hiTitle">Import the H&amp;E</b><span class="spacer"></span></div>
   <div class="imbody" style="gap:8px">
     <div class="frow"><span>Image</span><textarea id="hiImg" rows="1" placeholder="the H&amp;E of this sample: pyramidal TIFF / OME-TIFF"></textarea><button id="hiImgPick" data-kind="image">Choose…</button></div>
-    <div class="frow"><span>Image kind</span><select id="hiKind"><option value="H&amp;E">H&amp;E</option><option value="DAPI">DAPI</option><option value="IF">protein / IF stain</option></select><span></span></div>
-    <div class="frow"><span>Registration<small class="opt">optional</small></span><span class="choice hicol">
+    <div class="frow" id="hiRelinkRow" hidden><span></span><span class="hint" id="hiRelinkText"></span><span></span></div>
+    <div class="frow" id="hiKindRow"><span>Image kind</span><select id="hiKind"><option value="H&amp;E">H&amp;E</option><option value="DAPI">DAPI</option><option value="IF">protein / IF stain</option></select><span></span></div>
+    <div class="frow" id="hiModeRow"><span>Registration<small class="opt">optional</small></span><span class="choice hicol">
       <label><input type="radio" name="hiRegMode" value="file"> Registration file</label>
       <label id="hiSameWrap" hidden><input type="radio" name="hiRegMode" value="same"> <span id="hiSameText">Same pixels as</span>
         <select id="hiSame"></select></label>
       <label><input type="radio" name="hiRegMode" value="none" checked> No registration (align it next)</label></span><span></span></div>
+    <div class="frow" id="hiMatchRow" hidden><span></span><span class="hint" id="hiMatch"></span><span></span></div>
     <div class="frow" id="hiRegRow" hidden><span></span><textarea id="hiReg" rows="1" placeholder="affine CSV (a11,a12,a21,a22,tx,ty), Xenium Explorer alignment (3x3), or cell positions saved by this app"></textarea><button id="hiRegPick" data-kind="csv">Choose…</button></div>
     <div class="row" style="margin-top:4px"><span class="err" id="hiErr"></span><span class="spacer"></span><button id="hiCancel">Cancel</button><button id="hiGo" class="primary">Import</button></div>
   </div>
@@ -1349,6 +1456,15 @@ T and NK cells: CD3E|NKG7+ EPCAM-
           <label>Annotated together <select id="xpRun" title="When the slices were annotated together: each slice's annotation from that run"></select></label>
           <span class="spacer"></span><button id="xpNbAll" class="primary" title="One notebook for every slice of the project: the joint annotation, embedding and niches">Save project…</button></div>
         <div class="hint" id="xpRunInfo"></div></div></div>
+    <div class="clcard" id="xpGuideCard"><b>Reproduction guide for agents (zip)</b>
+      <div class="hint">For an AI agent (or a person) who repeats this analysis without the app: REPRODUCE.md walks through
+        every step in order (input files with checksums, cell filter, placement on the image, annotation with its marker
+        list, settings, regions, priors and corrections, PCA / UMAP / Leiden, niches, every analysis kept with the
+        annotation, groupings, how the figures are drawn), with its settings, a link to the code at this version and the
+        results to check against; manifest.json says the same as data; data/ holds the cell table, marker list, regions,
+        registration, the analyses' tables and the colors. The counts and images are not copied.</div>
+      <div class="row"><label title="The notebook replays the data, annotation, embedding and niches exactly; it can be large"><input type="checkbox" id="xpGuideNb" checked> Include the notebook</label>
+        <span class="spacer"></span><button id="xpGuide" class="primary">Save guide…</button></div></div>
     <div class="clcard" id="xpRegCard"><b>Registration (CSV)</b>
       <div class="hint" id="xpRegInfo"></div>
       <div class="hint" id="xpPosInfo" style="margin-top:4px"></div>
@@ -1366,7 +1482,11 @@ T and NK cells: CD3E|NKG7+ EPCAM-
   <div class="dh"><b id="glTitle">Slices</b><span class="hint" id="glInfo" style="margin-left:8px"></span><span class="spacer"></span>
     <label class="hint" style="display:inline-flex;align-items:center;gap:6px">Color by <select id="glMode">
       <option value="type">cell type</option><option value="lineage">lineage</option><option value="leiden">Leiden clusters</option>
-      <option value="niche">niche</option><option value="region">region</option><option value="cells">nothing (cells in gray)</option></select></label>
+      <option value="niche">niche</option><option value="region">region</option><option value="gene">gene expression</option>
+      <option value="program">program</option></select></label>
+    <input type="text" id="glGene" list="glGeneList" hidden autocomplete="off" placeholder="gene, e.g. EPCAM" style="width:130px;margin-left:6px"
+           title="A gene of the panels: every slice on one color scale (normalized expression); press Enter"><datalist id="glGeneList"></datalist>
+    <select id="glProg" hidden style="margin-left:6px;max-width:240px" title="A program scored in Compare > Programs: every slice on one color scale"></select>
     <label class="hint" style="display:inline-flex;align-items:center;gap:4px;margin-left:8px"><input type="checkbox" id="glImg" checked> image</label>
     <button id="glSave" title="Save the overview as a figure (PDF): every sample as shown, with the legend">Save figure</button>
     <button id="glClose">Close</button></div>
@@ -1474,14 +1594,14 @@ function decorate(b, name, only) {  // icon + label, or the icon only (the label
 const ICON_ONLY = { rmSample: "trash", rmProject: "trash", sessDel: "x", hdrShow: "chev-left", hdrHide: "chev-right", helpBtn: "help", bugBtn: "bug", slPrev: "chev-left", slNext: "chev-right",
   lgtoggle: "chev-up", rgtoggle: "chev-up", stepsFold: "chev-up", plclose: "x", emClose: "x", imClose: "x", rcClose: "x", clClose: "x", rpClose: "x",
   xpClose: "x", glClose: "x", anClose: "x", rvClose: "x", hpClose: "x", anCsv: "download", rpSave: "download", mkExport: "download",
-  fbUp: "arrow-up", fbHome: "home", rsClose: "x", hide: "cell", hideHE: "image" };
+  fbUp: "arrow-up", fbHome: "home", rsClose: "x", hide: "cell", hideHE: "image", shotBtn: "camera" };
 const ICON_TEXT = { qfBtn: "play", importBtn: "import", clearAll: "trash", allSamples: "grid", connBtn: "monitor", 
   openMarkers: "list", openRef: "file", openEx: "file", annotate: "play", eRun: "play", eShow: "scatter", nRun: "play",
-  undo: "undo", refresh: "refresh", claudeBtn: "sparkle", priorBtn: "list", plaus: "shield", report: "file", export: "share", reset: "trash",
+  undo: "undo", refresh: "refresh", claudeBtn: "sparkle", priorBtn: "list", plaus: "shield", report: "file", imgAdjBtn: "sliders", export: "share", reset: "trash",
   draw: "pen", emLasso: "lasso", emClear: "x", emZoom: "target", send: "send",
   mkImport: "import", mkCheck: "check", mkSave: "save", mkDraft: "sparkle", mkOrganUse: "list", mkOrganAgent: "sparkle", mkClose: "check", imGo: "import",
   acAuto: "target", acAgent: "sparkle", hiImgPick: "folder", hiRegPick: "folder", hiGo: "import", refPick: "folder", exPick: "folder", refClose: "check", exClose: "check", rcTest: "check",
-  rcGo: "server", fbOk: "check", rpAsk: "sparkle", xpCsv: "download", xpNb: "download", xpReg: "download", xpPos: "download", xpGeo: "download", xpNbAll: "download",
+  rcGo: "server", fbOk: "check", rpAsk: "sparkle", xpCsv: "download", xpNb: "download", xpGuide: "download", xpReg: "download", xpPos: "download", xpGeo: "download", xpNbAll: "download",
   hpCopy: "copy", nameSave: "check", rsGo: "trash", anFig: "download", aRun: "play", aLast: "list", anAsk: "sparkle", sRun: "play", sLast: "list", tRun: "play", tLast: "list", rvGo: "sparkle", rvShow: "list" };
 const ICON_TITLES = { lgtoggle: "Fold or unfold", rgtoggle: "Fold or unfold", stepsFold: "Fold or unfold", anCsv: "Save as CSV…", rpSave: "Save as Markdown…",
   mkExport: "Save the list as CSV…", fbHome: "Home folder", fbUp: "Parent folder", plclose: "Close", emClose: "Close" };
@@ -1533,35 +1653,171 @@ function tileSource(url) {
 }
 function openHE(sample) {
   return api(`/api/sample/${sample}/he_info`).then((he) => {
-    st.he = he;
+    st.he = he; sampleInfo();  // (the Data card: an image that cannot be read says so)
     if (he.image_error) toast(he.image_error, 15000);  // (no permission, or the image moved: the cells without it)
     const kind = he.image_kind || "H&E";
-    $("hideHE").hidden = kind === "none";
+    $("hideHE").disabled = kind === "none"; $("hideHE").hidden = false;  // (no image: greyed, still there)
+    $("imgAdjBtn").disabled = kind === "none"; if (kind === "none") $("imgAdj").hidden = true;  // (no image: greyed, the box stays)
+    imgBoxSync();
     setLabel($("hideHE"), "Hide the image: the cells only (e)");
     fillImages(sample, he);
+    applyImgFilter(); if (!$("imgAdj").hidden) openImgAdj();  // (another sample: its own display)
     viewer.addOnceHandler("open", applyHE);
     viewer.open(tileSource(heUrl(sample)));  // rev: new cell positions, new tiles
   });
 }
-function heUrl(sample) {  // the tiles of the image chosen (st.imgId; the frame: "main")
+function heUrl(sample) {  // the tiles of the image chosen (st.imgId; the frame: "main"), in its display range
   const he = st.he, cur = ((he && he.images) || []).find((x) => x.id === st.imgId);
   const img = st.imgId && st.imgId !== "main" ? `&img=${encodeURIComponent(st.imgId)}${cur && cur.rev ? `&iv=${cur.rev}` : ""}` : "";
-  return (l, x, y) => `/api/sample/${sample}/he/${l}/${x}_${y}.jpg?r=${he.rev}${st.epoch ? `&f=${st.epoch}` : ""}${img}`;
+  const disp = imgDispQuery(sample, st.imgId || "main");
+  return (l, x, y) => `/api/sample/${sample}/he/${l}/${x}_${y}.jpg?r=${he.rev}${he.image_rev ? `&ir=${he.image_rev}` : ""}${st.epoch ? `&f=${st.epoch}` : ""}${img}${disp}`;
+}
+// ---------------- the image's display: brightness and contrast (any image: in the page, at once), a fluorescence
+// image's display range and gamma (its tiles drawn anew); kept per sample and image in this browser ----------------
+const IA = { stats: null, key: "", t: 0 };
+const IA_DEF = { b: 100, c: 100, lo: null, hi: null, g: 1 };
+// The settings belong to an image file (and channel), not to its place: when another image becomes the one the cells
+// are placed on ("main"), or none is left, the settings of the image before do not follow (he: that sample's he_info)
+function imgAdjKey(sample, img, he = st.he) {
+  const x = ((he && he.images) || []).find((i) => i.id === img);
+  return x ? `imgadj:${sample}:${x.key || img}` : null;
+}
+function imgAdjGet(sample, img, he = st.he) {
+  const k = imgAdjKey(sample, img, he);
+  let a = null;
+  if (k) { try { a = JSON.parse(localStorage.getItem(k) || "null"); } catch (e) {} }
+  return { ...IA_DEF, ...(a || {}) };  // (no image: the defaults)
+}
+function imgAdjSet(sample, img, a) {
+  const k = imgAdjKey(sample, img); if (!k) return;
+  try {
+    const def = a.b === 100 && a.c === 100 && a.lo == null && a.hi == null && a.g === 1;
+    if (def) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(a));
+  } catch (e) {}
+}
+function imgDispQuery(sample, img, he = st.he) {  // "&lo=..&hi=..&g=.." when the user chose a fluorescence image's range or gamma
+  const a = imgAdjGet(sample, img, he);
+  return a.lo != null && a.hi != null && a.hi > a.lo ? `&lo=${a.lo}&hi=${a.hi}&g=${a.g}` : a.g !== 1 && a.auto ? `&lo=${a.auto[0]}&hi=${a.auto[1]}&g=${a.g}` : "";
+}
+function imgCssFilter(a) { return a.b === 100 && a.c === 100 ? "" : `brightness(${a.b / 100}) contrast(${a.c / 100})`; }
+function applyImgFilter() {  // brightness and contrast: on the image's canvas only (the cells are drawn on their own)
+  const sample = st.sample && st.sample.sample_id;
+  const f = sample && GL.ok ? imgCssFilter(imgAdjGet(sample, st.imgId || "main")) : "";
+  if (viewer.drawer && viewer.drawer.canvas) viewer.drawer.canvas.style.filter = f;
+  const nav = viewer.navigator;
+  if (nav && nav.drawer && nav.drawer.canvas) nav.drawer.canvas.style.filter = f;
+  $("imgAdjBtn").classList.toggle("on", !!(sample && (f || imgDispQuery(sample, st.imgId || "main"))));
+}
+function replaceImageTiles(sample) {  // the image under the cells drawn anew (another image, another display range), the view kept:
+  // OpenSeadragon shows the whole image again when it holds one image after a replace, unless preserveViewport
+  viewer.preserveViewport = true;
+  const done = () => { viewer.preserveViewport = false; };
+  viewer.addTiledImage({ tileSource: tileSource(heUrl(sample)), index: 0, replace: true,
+                         success: () => { done(); applyHE(); }, error: done });
+}
+function reloadImageTiles() {  // the image's tiles in another display range: replaced in place, the view kept
+  if (!st.sample || !st.he) return;
+  replaceImageTiles(st.sample.sample_id);
+}
+async function openImgAdj() {
+  if (!st.sample || !st.he) { toast("Open a sample with an image first", 3000); return; }
+  const sample = st.sample.sample_id, img = st.imgId || "main";
+  const cur = ((st.he.images || []).find((x) => x.id === img)) || { name: st.he.image_kind || "Image" };
+  $("iaTitle").textContent = `Image: ${cur.name}`;
+  $("imgAdj").hidden = false; imgAdjPlace();
+  IA.key = `${sample}|${img}`;
+  IA.stats = null; $("iaFl").hidden = true;
+  $("iaAuto").disabled = true; $("iaAuto").title = "An H&E (RGB) has no display range or gamma: Brightness and Contrast, or Reset";
+  const a = imgAdjGet(sample, img);
+  $("iaB").value = a.b; $("iaC").value = a.c; iaLabels();
+  try {
+    const q = new URLSearchParams({ img }); if (cur.rev) q.set("iv", cur.rev);
+    const stt = await api(`/api/sample/${encodeURIComponent(sample)}/image_stats?${q}`);
+    if (IA.key !== `${sample}|${img}`) return;
+    IA.stats = stt;
+    if (!stt.rgb) {
+      const top = Math.max(stt.max, stt.auto[1]), step = top > 1000 ? 1 : top > 10 ? 0.1 : 0.001;
+      ["iaLo", "iaHi"].forEach((id) => Object.assign($(id), { min: 0, max: top, step }));
+      ["iaLoN", "iaHiN"].forEach((id) => Object.assign($(id), { min: 0, max: stt.type_max, step }));
+      $("iaFl").hidden = false;
+      $("iaAuto").disabled = false; $("iaAuto").title = "The image's own display range (its values from the 1st to the 99.7th percentile) and gamma 1";
+      iaFillRange(a);
+    }
+  } catch (e) { /* (no stats: brightness and contrast only) */ }
+}
+function iaFillRange(a) {
+  const st_ = IA.stats; if (!st_ || st_.rgb) return;
+  const lo = a.lo != null ? a.lo : st_.auto[0], hi = a.hi != null ? a.hi : st_.auto[1];
+  $("iaLo").value = lo; $("iaHi").value = hi; $("iaLoN").value = +(+lo).toFixed(3); $("iaHiN").value = +(+hi).toFixed(3);
+  $("iaG").value = Math.round(100 * Math.log(a.g) / Math.log(4));  // -100..100: gamma 1/4..4
+  iaLabels();
+}
+function iaLabels() {
+  $("iaBv").textContent = `${$("iaB").value}%`; $("iaCv").textContent = `${$("iaC").value}%`;
+  $("iaGv").textContent = Math.pow(4, $("iaG").value / 100).toFixed(2);
+}
+function iaSave(redraw) {  // the panel's values for this sample and image; a new range or gamma: the tiles again (shortly)
+  if (!st.sample) return;
+  const sample = st.sample.sample_id, img = st.imgId || "main";
+  if (IA.key !== `${sample}|${img}`) return;
+  const a = imgAdjGet(sample, img);
+  a.b = +$("iaB").value; a.c = +$("iaC").value;
+  if (IA.stats && !IA.stats.rgb) {
+    const lo = +$("iaLoN").value, hi = +$("iaHiN").value, g = +Math.pow(4, $("iaG").value / 100).toFixed(3);
+    const auto = IA.stats.auto;
+    const same = Math.abs(lo - auto[0]) < 1e-6 && Math.abs(hi - auto[1]) < 1e-6;
+    a.lo = same ? null : lo; a.hi = same ? null : hi; a.g = Math.abs(g - 1) < 0.005 ? 1 : g; a.auto = auto;
+  }
+  imgAdjSet(sample, img, a); iaLabels(); applyImgFilter();
+  if (redraw) { clearTimeout(IA.t); IA.t = setTimeout(reloadImageTiles, 350); }
+}
+function imgAdjPlace() {  // to the right of the Regions panel (not over it), under the bars at the top of the map
+  const rp = $("regpanel"), shown = rp && !rp.hidden && rp.offsetWidth;
+  $("imgAdj").style.left = `${shown ? rp.offsetLeft + rp.offsetWidth + 8 : 10}px`;
+}
+window.addEventListener("resize", () => { if (!$("imgAdj").hidden) imgAdjPlace(); });
+$("imgAdjBtn").onclick = () => { if ($("imgAdj").hidden) openImgAdj(); else $("imgAdj").hidden = true; };
+$("iaClose").onclick = () => { $("imgAdj").hidden = true; };
+["iaB", "iaC"].forEach((id) => ($(id).oninput = () => iaSave(false)));
+$("iaG").oninput = () => { iaLabels(); iaSave(true); };
+$("iaLo").oninput = () => { $("iaLoN").value = +(+$("iaLo").value).toFixed(3); iaSave(true); };
+$("iaHi").oninput = () => { $("iaHiN").value = +(+$("iaHi").value).toFixed(3); iaSave(true); };
+$("iaLoN").onchange = () => { $("iaLo").value = $("iaLoN").value; iaSave(true); };
+$("iaHiN").onchange = () => { $("iaHi").value = $("iaHiN").value; iaSave(true); };
+$("iaAuto").onclick = () => {  // the image's own range and gamma 1 (brightness and contrast stay)
+  const a = imgAdjGet(st.sample.sample_id, st.imgId || "main"); a.lo = a.hi = null; a.g = 1;
+  iaFillRange(a); iaSave(true);
+};
+$("iaReset").onclick = () => {
+  $("iaB").value = 100; $("iaC").value = 100;
+  const a = { ...IA_DEF }; iaFillRange(a); iaSave(true);
+};
+function imgSelTitle() {  // the image chosen, by its whole name (the box is narrow: a long stain's name is cut)
+  const o = $("imgSel").selectedOptions[0];
+  $("imgSel").title = o ? `${o.textContent}: the image under the cells (each placed on them by its own registration)` : "";
+}
+function imgBoxSync() {  // the image box (the image choice, Adjust): shown while a sample is open, with one image or none too
+  $("imgbox").hidden = !st.sample;
 }
 function fillImages(sample, he) {  // the Image selector: the sample's images (the frame first); the last choice per sample
   const ims = he.images || [], sel = $("imgSel");
   const want = load(`img:${sample}`);
   st.imgId = ims.some((x) => x.id === want) ? want : "main";
   sel.textContent = "";
-  ims.forEach((x) => sel.append(Object.assign(document.createElement("option"), { value: x.id, textContent: x.name + (x.frame && ims.length > 1 ? " (cells placed on it)" : "") })));
-  sel.value = st.imgId;
-  $("imgWrap").hidden = ims.length < 2;
+  ims.forEach((x) => sel.append(Object.assign(document.createElement("option"), { value: x.id, textContent: x.name, title: x.path || "" })));  // (its file on hover)
+  if (!ims.length) sel.append(Object.assign(document.createElement("option"), { value: "main", textContent: "No image" }));
+  sel.value = st.imgId; sel.disabled = !ims.length;
+  imgSelTitle();
+  if (!ims.length) sel.title = "No image yet: import one (Steps → Image → Import)";
+  $("imgWrap").hidden = false;
+  imgBoxSync();
 }
 $("imgSel").onchange = () => {  // another image under the cells: replaced in place, the view kept
   if (!st.sample) return;
   const sample = st.sample.sample_id;
-  st.imgId = $("imgSel").value; store(`img:${sample}`, st.imgId);
-  viewer.addTiledImage({ tileSource: tileSource(heUrl(sample)), index: 0, replace: true, success: applyHE });
+  st.imgId = $("imgSel").value; store(`img:${sample}`, st.imgId); imgSelTitle();
+  replaceImageTiles(sample);
+  applyImgFilter(); if (!$("imgAdj").hidden) openImgAdj();
 };
 // a tile of the image that cannot be read (a damaged part of the file, a file still copying): the reason at once,
 // once per sample, image and reason (he_info), and the steps follow it
@@ -1584,6 +1840,7 @@ function filt() {  // legend filter of the current color mode (empty = show all)
 }
 function applyHE() {
   const it = heItem(); if (it) it.setOpacity(st.heHidden ? 0 : 1);
+  applyImgFilter();
   $("osd").classList.toggle("nohe", st.heHidden);
   $("hideHE").classList.toggle("on", st.heHidden);
   drawNav();
@@ -1630,7 +1887,8 @@ function initGL() {
     }`));
   gl.linkProgram(prog);
   if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return;
-  Object.assign(GL, { ok: true, canvas: c, gl, prog, pos: gl.createBuffer(), col: gl.createBuffer(),
+  Object.assign(GL, { ok: true, canvas: c, gl, prog, pos: gl.createBuffer(), col: gl.createBuffer(), idx: gl.createBuffer(),
+    u32: !!gl.getExtension("OES_element_index_uint"),
     loc: { pos: gl.getAttribLocation(prog, "a_pos"), col: gl.getAttribLocation(prog, "a_col") },
     u: Object.fromEntries(["u_scale", "u_offset", "u_size", "u_min", "u_opacity", "u_edge"].map((k) => [k, gl.getUniformLocation(prog, k)])) });
   viewer.canvas.insertBefore(c, viewer.drawer.canvas.nextSibling);  // above the image, below overlays and the navigator
@@ -1665,8 +1923,21 @@ async function loadPositions(sample) {
   GL.loading = { key, p };
   try { await p; } finally { if (GL.loading && GL.loading.p === p) GL.loading = null; }
 }
+// The order to draw cells in: fainter ones first, so a cell barely shown (e.g. a gene not detected) never covers
+// one in color; null when every cell is as opaque (drawn as they come). A counting sort: a few ms for a million cells.
+function alphaOrder(col) {
+  const n = col.length / 4, cnt = new Uint32Array(257);
+  for (let i = 0; i < n; i++) cnt[col[4 * i + 3] + 1]++;
+  if (cnt.filter((x) => x).length < 2) return null;
+  for (let a = 1; a < 257; a++) cnt[a] += cnt[a - 1];
+  const out = new Uint32Array(n);
+  for (let i = 0; i < n; i++) out[cnt[col[4 * i + 3]]++] = i;
+  return out;
+}
 function uploadColors(arr) {  // the cells' colors to the GPU; the overview (navigator) draws the same
   const gl = GL.gl; gl.bindBuffer(gl.ARRAY_BUFFER, GL.col); gl.bufferData(gl.ARRAY_BUFFER, arr, gl.STATIC_DRAW);
+  GL.order = alphaOrder(arr);
+  if (GL.order && GL.u32) { gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, GL.idx); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, GL.order, gl.STATIC_DRAW); }
   GL.curCol = arr; GL.colRev = (GL.colRev || 0) + 1;
 }
 function grayColors() {
@@ -1679,6 +1950,10 @@ function grayColors() {
 }
 // what a color mode's colors depend on besides the version: the region colors, the niche run, the UMAP's Leiden
 // clusters or the trajectory run (a new run under the same version must not reuse the old colors)
+function progTitle(key) {
+  const x = (st.programs || {})[key] || {};
+  return `Program: ${x.name || key}`;
+}
 function modeRun(mode) {
   return mode === "region" ? st.colorEpoch || 0 : mode === "niche" ? (st.niche ? st.niche.params.run_id : "")
     : mode === "leiden" ? (st.emb ? st.emb.run_id : "") : mode.startsWith("trajectory:") ? ((st.trajs || {})[mode.slice(11)] || {}).run_id || ""
@@ -1725,7 +2000,8 @@ function drawGL() {
   gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
   gl.bindBuffer(gl.ARRAY_BUFFER, GL.pos); gl.enableVertexAttribArray(GL.loc.pos); gl.vertexAttribPointer(GL.loc.pos, 2, gl.FLOAT, false, 0, 0);
   gl.bindBuffer(gl.ARRAY_BUFFER, GL.col); gl.enableVertexAttribArray(GL.loc.col); gl.vertexAttribPointer(GL.loc.col, 4, gl.UNSIGNED_BYTE, true, 0, 0);
-  gl.drawArrays(gl.POINTS, 0, GL.n);
+  if (GL.order && GL.u32 && GL.order.length === GL.n) { gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, GL.idx); gl.drawElements(gl.POINTS, GL.n, gl.UNSIGNED_INT, 0); }
+  else gl.drawArrays(gl.POINTS, 0, GL.n);
 }
 async function refreshOverlay() {
   if (GL.ok) {
@@ -1771,8 +2047,9 @@ function drawNav() {
   const kx = ((b.x - a.x) / st.he.width) * dpr, ky = ((b.y - a.y) / st.he.height) * dpr, ox = a.x * dpr, oy = a.y * dpr;
   if (cells) {  // one device pixel per cell, in its map color
     const img = ctx.createImageData(W, H), d = img.data, P = GL.posArr, C = GL.curCol, op = st.opacity;
-    for (let i = 0; i < GL.n; i++) {
-      const al = C[4 * i + 3]; if (!al) continue;
+    const ord = GL.order && GL.order.length === GL.n ? GL.order : null;  // fainter cells first, as on the map
+    for (let o = 0; o < GL.n; o++) {
+      const i = ord ? ord[o] : o, al = C[4 * i + 3]; if (!al) continue;
       const x = (ox + P[2 * i] * kx) | 0, y = (oy + P[2 * i + 1] * ky) | 0;
       if (x < 0 || y < 0 || x >= W || y >= H) continue;
       const j = 4 * (y * W + x);
@@ -1796,7 +2073,7 @@ async function loadSamples(select, project) {
   const sel = $("sample"); sel.textContent = "";
   if (!st.samples.length) {  // a fresh install: nothing imported yet
     $("empty").firstElementChild.textContent = "No samples yet. Click Import to add Xenium files (cells.parquet and cell_feature_matrix.h5) or an Atera output, h5ad or RDS files (with or without an image).";
-    $("empty").style.display = "flex"; $("annotate").disabled = true; $("sampleRename").disabled = true; $("priorBtn").disabled = true; $("qfBtn").disabled = true; $("rmSample").disabled = true; $("allSamples").disabled = true; $("pjBtn").disabled = true;
+    $("empty").style.display = "flex"; $("annotate").disabled = true; $("sampleRename").disabled = true; $("sampleGroup").disabled = true; $("priorBtn").disabled = true; $("qfBtn").disabled = true; $("rmSample").disabled = true; $("allSamples").disabled = true; $("pjBtn").disabled = true;
     $("project").textContent = ""; $("projectWrap").hidden = true; $("rmProject").disabled = true;
     if (st.sample) {  // the last sample was just removed: start afresh, as Remove all samples does (its annotation,
       setTimeout(() => location.reload(), 1500);  // image and panels must not stay open)
@@ -1871,7 +2148,7 @@ function fillModes(sm) {
     else { add("", "annotate first"); sel.disabled = true; }
     $("geneInput").hidden = true; return;
   }
-  const avail = [["type", "cell type"], ["lineage", "lineage"], ["gene", "gene expression…"]];
+  const avail = [["type", "cell type"], ["lineage", "lineage"], ["gene", "gene expression"]];
   if (sm.has_regions) avail.push(["region", "region"]);
   if (sm.n_changed_since_first > 0 || sm.corrections.length) avail.push(["changed", "changed since first annotation"]);
   if (sm.n_conflicts > 0) avail.push(["conflicts", "conflicts with priors"]);
@@ -1920,6 +2197,7 @@ async function selectSample(id) {
   st.sample.allSessions = st.sample.sessions;
   st.sample.sessions = st.sample.sessions.filter((x) => USER_METHODS.includes(x.method));
   $("sampleRename").disabled = false; $("priorBtn").disabled = false;
+  $("sampleGroup").disabled = !projectOf(id);
   $("qfBtn").disabled = false; $("anLoad").disabled = false; $("rmSample").disabled = false; $("allSamples").disabled = false; $("pjBtn").disabled = false;
   $("reset").disabled = !st.sample.allSessions.length && !projectOf(id);  // in a project: also to reset the other slices
   imageOnlyUI();  // now, not only when an annotation opens: a sample whose annotations are not opened yet opens none
@@ -2737,17 +3015,19 @@ async function loadLegend() {
   if (asked !== `${st.sid}|${st.version}|${st.mode}`) return;  // the color mode (or annotation) changed meanwhile
   st.legend = r.items;
   const f = filt();
-  if (f.size && !st.mode.startsWith("gene:")) {  // a filter on a name no longer listed would hide every cell
+  if (r.scale && f.size) { f.clear(); refreshOverlay(); emFollow(); }  // a gene: the color bar alone, nothing to tick
+  if (f.size) {  // a filter on a name no longer listed would hide every cell
     const keys = new Set(r.items.map((x) => x.key)), gone = [...f].filter((k) => !keys.has(k));
     if (gone.length) { gone.forEach((k) => f.delete(k)); refreshOverlay(); emFollow(); }
   }
   $("legend").hidden = !!st.imageOnly;  // an image only: no cells to list
   $("legend").classList.remove("stale");
-  $("lgtitle").textContent = (st.mode.startsWith("gene:") ? `${st.mode.slice(5)} transcripts` : st.mode.startsWith("lr:") ? lrTitle(st.mode)
+  $("lgtitle").textContent = (st.mode.startsWith("gene:") ? `${st.mode.slice(5)} expression` : st.mode.startsWith("lr:") ? lrTitle(st.mode)
     : st.mode.startsWith("trajectory:") ? `Trajectory: ${((st.trajs || {})[st.mode.slice(11)] || {}).label || TR_NAME[st.mode.slice(11)]}`
-    : st.mode.startsWith("program:") ? `Program: ${((st.programs || {})[st.mode.slice(8)] || {}).name || st.mode.slice(8)}` : MODE_TITLES[st.mode]) + (f.size ? ` (${f.size} shown)` : "");
+    : st.mode.startsWith("program:") ? progTitle(st.mode.slice(8)) : MODE_TITLES[st.mode]) + (f.size ? ` (${f.size} shown)` : "");
   $("lgall").disabled = !f.size;
   const box = $("lgitems"); box.textContent = "";
+  if (r.scale) { box.append(geneBar(r.scale, r.scale.n_slices > 1 ? `${r.scale.unit}, one scale on all ${r.scale.n_slices} slices` : "")); return; }  // a gene: the color bar alone
   const toggle = (keys) => {
     const allOn = keys.every((k) => f.has(k));
     keys.forEach((k) => (allOn ? f.delete(k) : f.add(k)));
@@ -2775,6 +3055,24 @@ async function loadLegend() {
   });
 }
 $("lgall").onclick = () => { filt().clear(); refreshOverlay(); loadLegend(); emFollow(); };
+// The color bar of a gene: normalized expression (as in the analyses) from the lowest detected value to the top of the
+// scale (the 99th percentile of the cells it is detected in, the highest of a project's slices; above: the top's color)
+function geneBar(sc, note) {
+  const w = document.createElement("div"); w.className = "gbar";
+  const bar = document.createElement("div"); bar.className = "bar";
+  bar.style.background = `linear-gradient(to right, ${sc.ramp.map((c) => rgb(c)).join(", ")})`;
+  const tk = document.createElement("div"); tk.className = "tk";
+  const f = (v) => (v >= 10 ? v.toFixed(0) : v >= 1 ? v.toFixed(1) : v.toFixed(2));
+  [">0", f(sc.top / 2), `${f(sc.top)}${sc.max > sc.top ? "+" : ""}`].forEach((t) => tk.append(Object.assign(document.createElement("span"), { textContent: t })));
+  const u = document.createElement("div"); u.className = "u"; u.textContent = note || sc.unit;
+  const prog = sc.kind === "program";
+  w.title = (prog ? "Program score: the mean expression of its genes minus that of expression-matched control genes; above 0 = above background, at or below it gray. "
+    : `Normalized expression, ${sc.unit}: transcripts of the gene per 100 transcripts of the cell, log1p (as in the analyses). `) +
+    `The top of the bar is the 99th percentile of the cells ${prog ? "above background" : "it is detected in"}${sc.n_slices > 1 ? `, the highest of the ${sc.n_slices} slices of the project (this slice's own: ${f(sc.slice_top)}), so a color means the same value on every slice` : ""}` +
+    `${sc.max > sc.top ? ` (largest here ${f(sc.max)}: above the top in the top color)` : ""}.`;
+  w.append(bar, tk, u);
+  return w;
+}
 // the legend sits at the bottom: folding moves its header down, so the arrow points down while it is open
 $("lgtoggle").onclick = () => { $("legend").classList.toggle("collapsed"); $("lgtoggle").classList.toggle("flip", !$("legend").classList.contains("collapsed")); };
 $("lgtoggle").classList.add("flip");
@@ -2782,7 +3080,7 @@ $("lgtoggle").classList.add("flip");
 // ---------------- cell info on click ----------------
 function imgPointFromEvent(pos) { return heItem().viewerElementToImageCoordinates(pos); }
 viewer.addHandler("canvas-click", async (e) => {
-  if (!e.quick || !st.sid) return;
+  if (!e.quick || !st.sid || document.body.classList.contains("shot")) return;  // (Screenshot view: pan and zoom only)
   if (st.drawing) { if (Date.now() - (st.penAt || 0) > 300) addPoint(e.position); return; }
   if (st.tool !== "move" || Date.now() - (st.penAt || 0) < 300) return;
   // a plain click shows the cell; Alt (Option), Ctrl or Cmd + click selects the region under it, Shift + click adds or
@@ -2797,6 +3095,7 @@ viewer.addHandler("canvas-click", async (e) => {
   const q = imgPointFromEvent(new OpenSeadragon.Point(e.position.x + 10, e.position.y));
   const g = st.mode.startsWith("gene:") ? `&gene=${encodeURIComponent(st.mode.slice(5))}` : "";
   const c = await api(`/api/s/${st.sid}/cell_at?x=${p.x}&y=${p.y}&tol=${Math.abs(q.x - p.x)}&version=${st.version}${g}`);
+  if (document.body.classList.contains("shot")) return;  // (Screenshot view entered meanwhile: no mark left in it)
   showCell(c);
 });
 function showCell(c) {
@@ -2815,7 +3114,7 @@ function showCell(c) {
   row("region", c.region.replace(/_/g, " "));
   row("depth", `${c.depth_um} µm from epithelium`);
   row("counts", c.total_counts);
-  if (c.gene) row(c.gene.name, `${c.gene.count} transcript${c.gene.count === 1 ? "" : "s"}`);
+  if (c.gene) row(c.gene.name, `${c.gene.count} transcript${c.gene.count === 1 ? "" : "s"}` + (c.gene.norm !== undefined ? ` (normalized ${c.gene.norm})` : ""));
   row("cell id", c.cell);
   if (c.cluster) {
     row("marker cluster", `${c.cluster} → ${c.cluster_assigned || "unassigned"}` + (c.cluster_resolution ? ` (resolution ${c.cluster_resolution})` : ""));
@@ -3217,6 +3516,7 @@ function setPen(on) {
 }
 const drawTool = (t) => t === "polygon" || t === "pen";  // the tools that draw an outline point by point or freehand
 viewer.addHandler("canvas-press", (e) => {
+  if (document.body.classList.contains("shot")) { st.stroke = null; return; }  // (Screenshot view: pan and zoom only)
   st.stroke = st.drawing && st.pen && !st.spaceHeld ? { from: e.position, started: false } : null;
 });
 viewer.addHandler("canvas-drag", (e) => {
@@ -3606,7 +3906,7 @@ $("osd").addEventListener("pointerleave", () => { st.cursorPos = null; drawRegio
 viewer.addHandler("canvas-press", (e) => {
   st.toolDrag = null;
   const t = st.tool;
-  if (!st.sid || st.drawing || st.spaceHeld || !["rect", "ellipse", "brush"].includes(t)) return;
+  if (!st.sid || document.body.classList.contains("shot") || st.drawing || st.spaceHeld || !["rect", "ellipse", "brush"].includes(t)) return;
   const p = imgPointFromEvent(e.position);
   st.toolDrag = { t, from: [p.x, p.y], to: [p.x, p.y], last: e.position, sub: subtracting(e.originalEvent), pending: [], started: false };
   if (t === "brush") { toolDab([e.position]); }
@@ -3907,7 +4207,9 @@ function adviceRow(x, btn, adv, prop) {
       }));
     }
     // a local correction is measured again on the cells as they are now, so it can follow an earlier one
-    if (open && (act.mode === "local" || !adv.registration_fixed)) c.append(btn(act.mode === "local" ? "correct locally…" : "correct registration…",
+    if (open && act.mode === "align") c.append(btn("align again…", "Search the placement of the cells on the image anew (Align automatically); Undo puts them back",
+      () => adviceRegistration(x, act)));
+    else if (open && (act.mode === "local" || !adv.registration_fixed)) c.append(btn(act.mode === "local" ? "correct locally…" : "correct registration…",
       act.mode === "local" ? "Move the cells onto their nuclei where the tissue shifted" : "Move every cell onto its nucleus on the image",
       () => adviceRegistration(x, act)));
     if (adv.registration_fixed) c.append(btn("undo correction", "Put the cells back where the import placed them", () => adviceAct(x, "undo_registration")));
@@ -4042,6 +4344,15 @@ async function advicePrior(x) {
   } catch (e) { toast(e.message, 6000); }
 }
 async function adviceRegistration(x, act) {
+  if (act.mode === "align") {  // the cells are far off over most of the tissue: Align automatically, then its check window
+    if (!st.sample || !confirm(`The cells sit far off their nuclei over most of the tissue (offsets read on only ${Math.round(100 * act.read_share)}% of it), as a rotation or scale error of the whole alignment puts them. Align the image again? The app searches the placement anew and shows the result; Undo puts the cells back.`)) return;
+    const sid = st.sid, out = await autoAlign([st.sample.sample_id]);
+    if (out && out[0] && out[0].r && out[0].r.applied && st.sid === sid) {
+      try { await post(`/api/s/${sid}/advice/status`, { id: x.id, status: "done", note: "aligned again" }); } catch (e) { /* noted only */ }
+      await loadPlaus(false);
+    }
+    return;
+  }
   const ask = act.mode === "local"
     ? `In ${act.n_areas} area${act.n_areas === 1 ? "" : "s"} the cells sit up to ${act.max_offset_um} µm off their nuclei on the image. Move the cells there onto their nuclei (up to ${act.moved_um_max} µm; elsewhere they stay)? Regions keep their cells; you can undo this.`
     : `The cells sit up to ${act.max_offset_um} µm off their nuclei on the image. Move every cell onto its nucleus? Regions keep their cells; you can undo this.`;
@@ -4703,6 +5014,9 @@ function rfRender() {
   const P = rd.proposal, eb = $("rfEdits"), keepTop = eb.scrollTop;
   const opened = new Set([...eb.querySelectorAll("details[open]")].map((d) => d.dataset.k).filter(Boolean));  // (kept open)
   eb.textContent = "";
+  if (P && P.looked_at_image === false)  // asked to and reminded once, the agent still did not look at the image
+    eb.append(Object.assign(document.createElement("div"), { className: "hint rfnoimg",
+      textContent: "The agent did not look at the tissue image in this round: its edits rest on the numbers only." }));
   if (P && (P.findings || []).length) {
     // the agent's findings against the priors, apart from the edits: the user says real biology or mislabel
     const verdicts = r.prior_verdicts || {};
@@ -5175,6 +5489,163 @@ function imForm() {  // show the fields of the chosen options; Align with Claude
 }
 document.querySelectorAll("input[name=imImgMode], input[name=imRegMode]").forEach((r) => (r.onchange = imForm));
 $("imNewImg").addEventListener("input", imForm); $("imNewImg").addEventListener("change", imForm);
+// ---------------- Group: the project's slices, or the regions, put into groups compared in Compare ----------------
+// rows: the slices (Data → Group) or the regions (Regions → Group); cols: [{name, values: {row id: group}}]
+const GR = { kind: "slices", url: "", rows: [], cols: [] };
+const GR_HINT = {
+  slices: "A grouping puts each slice of the project in a group (e.g. <b>condition</b>: UC, control). Compare lists it in <b>Compare by</b> (DE genes, top genes, composition, signaling) and <b>Replicates</b> (DESeq2, the slices of a group as its replicates). Type a group's name in each slice's box; a box left empty: the slice in no group of that grouping.",
+  regions: "A grouping puts regions in groups (e.g. <b>compartment</b>: mucosa_1 and mucosa_2 in mucosa, submucosa_1 in submucosa); a cell's group is its region's, the cells outside them are in none. Compare lists it in <b>Compare by</b> (DE genes, top genes, composition, signaling). Type a group's name in each region's box; empty: the region in no group." };
+async function openGroups() {  // Data → Group: the project's slices
+  const p = st.sample && projectOf(st.sample.sample_id); if (!p) return;
+  let r;
+  try { r = await api(`/api/project/${encodeURIComponent(p.project_id)}/groups`); } catch (e) { toast(e.message, 5000); return; }
+  grOpen("slices", `/api/project/${encodeURIComponent(p.project_id)}/groups`, `Groups of the slices of ${r.name}`,
+    r.slices.map((x) => ({ id: x.sample_id, label: x.section })), r.columns);
+}
+async function openRegionGroups() {  // Regions → Group: the regions (in a project: of all its slices, by name)
+  if (!st.sample) return;
+  const smp = st.sample.sample_id, url = `/api/sample/${encodeURIComponent(smp)}/region_groups`;
+  let r;
+  try { r = await api(`${url}?${new URLSearchParams({ session: st.sid || "" })}`); } catch (e) { toast(e.message, 5000); return; }
+  if (!r.regions.length) { toast("No regions yet: draw or import some first", 4000); return; }
+  const p = projectOf(smp);
+  grOpen("regions", url, p ? `Groups of the regions of ${p.name} (all slices)` : `Groups of the regions of ${sampleName(st.sample)}`,
+    r.regions.map((x) => ({ id: x.name, label: x.name.replace(/_/g, " "), sub: p && r.project ? x.slices.join(", ") : "" })), r.columns);
+}
+function grOpen(kind, url, title, rows, columns) {
+  Object.assign(GR, { kind, url, rows, cols: Object.entries(columns || {}).map(([name, values]) => ({ name, values: { ...values } })) });
+  if (!GR.cols.length) GR.cols.push({ name: kind === "regions" ? "compartment" : "group", values: {} });  // (a first grouping to fill in)
+  $("grTitle").textContent = title; $("grHint").innerHTML = GR_HINT[kind]; $("grErr").textContent = "";
+  grDraw(); $("grDlg").showModal();
+}
+function grDraw() {
+  const t = $("grTab"); t.textContent = "";
+  const head = document.createElement("tr"); head.append(Object.assign(document.createElement("th"), { textContent: GR.kind === "regions" ? "Region" : "Slice" }));
+  GR.cols.forEach((c, j) => {
+    const th = document.createElement("th"), w = document.createElement("div"); w.className = "grh";
+    const name = Object.assign(document.createElement("input"), { type: "text", value: c.name, title: "The grouping's name (e.g. condition, compartment, patient)" });
+    name.oninput = () => { c.name = name.value; grNote(); };
+    const x = decorate(Object.assign(document.createElement("button"), { className: "ib", title: "Remove this grouping" }), "x", true);
+    x.onclick = () => { GR.cols.splice(j, 1); grDraw(); };
+    w.append(name, x); th.append(w); head.append(th);
+  });
+  t.append(head);
+  GR.rows.forEach((row) => {
+    const tr = document.createElement("tr"), td0 = Object.assign(document.createElement("td"), { className: "sl", textContent: row.label });
+    if (row.sub) td0.append(Object.assign(document.createElement("div"), { className: "hint", textContent: row.sub }));
+    tr.append(td0);
+    GR.cols.forEach((c, j) => {
+      const td = document.createElement("td");
+      const inp = Object.assign(document.createElement("input"), { type: "text", value: c.values[row.id] || "", placeholder: "no group" });
+      inp.setAttribute("list", `grList${j}`);
+      inp.oninput = () => { c.values[row.id] = inp.value; grLists(); grNote(); };
+      td.append(inp); tr.append(td);
+    });
+    t.append(tr);
+  });
+  grLists(); grNote();
+}
+function grLists() {  // each grouping's values so far, offered in its boxes
+  document.querySelectorAll("datalist.grdl").forEach((d) => d.remove());
+  GR.cols.forEach((c, j) => {
+    const d = Object.assign(document.createElement("datalist"), { id: `grList${j}`, className: "grdl" });
+    [...new Set(Object.values(c.values).map((v) => (v || "").trim()).filter(Boolean))].sort()
+      .forEach((v) => d.append(Object.assign(document.createElement("option"), { value: v })));
+    document.body.append(d);
+  });
+}
+function grNote() {  // what Compare can do with each grouping
+  const out = [];
+  GR.cols.forEach((c) => {
+    const n = {}; GR.rows.forEach((row) => { const v = (c.values[row.id] || "").trim(); if (v) n[v] = (n[v] || 0) + 1; });
+    const groups = Object.keys(n), name = (c.name || "").trim() || "(no name)";
+    const filled = GR.rows.filter((row) => (c.values[row.id] || "").trim()).length;
+    if (groups.length < 2) { if (filled < GR.rows.length) out.push(`${name}: fewer than two groups (Compare does not list it)`); }  // (one value everywhere: said nothing)
+    else if (GR.kind === "slices") {
+      const one = groups.filter((g) => n[g] < 2);
+      if (one.length) out.push(`${name}: ${one.join(", ")} ${one.length > 1 ? "have" : "has"} one slice (DE genes yes, DESeq2 no)`);
+    }
+  });
+  $("grNote").textContent = !out.length ? "" : out.join(" · ") +
+    (GR.kind === "slices" ? ". DESeq2 needs 2+ slices in each group; with one, the cells of a slice are not independent samples." : ".");
+}
+$("grAdd").onclick = () => {
+  const names = new Set(GR.cols.map((c) => c.name.trim().toLowerCase()));
+  const base = GR.kind === "regions" ? "compartment" : "group";
+  let k = GR.cols.length + 1, name = base; while (names.has(name)) name = `${base} ${k++}`;
+  GR.cols.unshift({ name, values: {} }); grDraw();  // (first: in sight before the imported metadata columns)
+  const h = $("grTab").querySelector("th input"); if (h) { h.focus(); h.select(); }
+};
+$("grCancel").onclick = () => $("grDlg").close();
+$("grSave").onclick = async () => {
+  const columns = {};
+  for (const c of GR.cols) {
+    const name = (c.name || "").trim();
+    if (!name) { $("grErr").textContent = "Each grouping needs a name"; return; }
+    if (columns[name]) { $("grErr").textContent = `Two groupings are called ${name}`; return; }
+    // the rows listed; a region grouping keeps its groups of regions not listed here (another annotation's)
+    columns[name] = { ...(GR.kind === "regions" ? Object.fromEntries(Object.entries(c.values).map(([k, v]) => [k, String(v || "").trim()])) : {}),
+      ...Object.fromEntries(GR.rows.map((row) => [row.id, (c.values[row.id] || "").trim()])) };
+  }
+  $("grSave").disabled = true; $("grErr").textContent = "";
+  try { await post(GR.url, { columns }); }
+  catch (e) { $("grErr").textContent = e.message; $("grSave").disabled = false; return; }
+  $("grSave").disabled = false; $("grDlg").close();
+  if (GR.kind === "slices") st.projects = await api("/api/projects").catch(() => st.projects);  // (the slices' metadata shown elsewhere)
+  st.groupsRev = (st.groupsRev || 0) + 1;  // Compare, Signaling, Co-localization and Trajectory list them
+  AN.key = ""; if (typeof loadAnOptions === "function") loadAnOptions(true).catch(() => {});  // Compare by: the new groupings
+  if (typeof anRefresh === "function") anRefresh();
+  toast(`Groups saved: Compare → Compare by lists them${GR.kind === "slices" ? " (with All slices)" : ""}`, 5000);
+};
+$("sampleGroup").onclick = openGroups;
+$("rgGroup").onclick = openRegionGroups;
+// ---------------- Discard images: tick those to take out; the image the cells are placed on: they move to the next ----------------
+function openImageDiscard() {
+  const ims = (st.he && st.he.images) || [];
+  if (!st.sample || !ims.length) { toast("This sample has no image", 3000); return; }
+  $("irTitle").textContent = `Discard images of ${sampleName(st.sample)}`;
+  $("irErr").textContent = ""; $("irGo").disabled = true;
+  const box = $("irList"); box.textContent = "";
+  ims.forEach((x) => {
+    const l = document.createElement("label"), cb = Object.assign(document.createElement("input"), { type: "checkbox", value: x.id });
+    const k = Object.assign(document.createElement("span"), { className: "k", textContent: (x.frame ? "the cells are placed on it · " : "") + (x.kind === "IF" ? "stain" : x.kind) });
+    l.append(cb, document.createTextNode(x.name), k); l.title = x.path || ""; box.append(l);  // (its file on hover)
+    cb.onchange = irNote;
+  });
+  irNote(); $("irDlg").showModal();
+}
+function irNote() {  // what happens: the cells' move when the image they are placed on goes
+  const ims = (st.he && st.he.images) || [], on = new Set([...$("irList").querySelectorAll("input:checked")].map((c) => c.value));
+  $("irGo").disabled = !on.size;
+  if (!on.has("main")) { $("irNote").textContent = ""; return; }
+  const left = ims.filter((x) => !on.has(x.id) && !x.id.startsWith("main#c"));
+  const nxt = left.find((x) => !x.id.includes("#c")) || left[0];
+  $("irNote").textContent = nxt ? `The cells are placed on the ${ims[0].name}: they move onto the ${nxt.name}, by its own registration (a local registration of the cells is not kept).`
+    : "No image is left: the cells are shown on a blank background (Steps → Image → Import puts one back).";
+}
+$("irCancel").onclick = () => $("irDlg").close();
+$("irGo").onclick = async () => {
+  const smp = st.sample && st.sample.sample_id, ids = [...$("irList").querySelectorAll("input:checked")].map((c) => c.value);
+  if (!smp || !ids.length) return;
+  if (alignBusy()) { $("irErr").textContent = "An alignment is running: wait for it to end"; return; }
+  $("irGo").disabled = true; $("irErr").textContent = "";
+  let r;
+  try { r = await post(`/api/sample/${encodeURIComponent(smp)}/images/remove`, { ids }); }
+  catch (e) { $("irErr").textContent = e.message; $("irGo").disabled = false; return; }
+  $("irDlg").close();
+  if (ids.includes(st.imgId)) store(`img:${smp}`, "main");  // (the image shown went: the one the cells are on)
+  await afterPlacement(`${r.discarded.length} image${r.discarded.length > 1 ? "s" : ""} discarded` +
+    (r.cells_moved_to ? `; the cells are now placed on the ${r.cells_moved_to}` : ids.includes("main") ? "; no image left" : ""));
+  loadStepsSoon();
+};
+async function discardPending() {  // Steps → Image → Discard: the image waiting for its alignment, forgotten
+  const smp = st.sample && st.sample.sample_id; if (!smp) return;
+  if (alignBusy()) { toast("An alignment is running: wait for it to end", 4000); return; }
+  try { await post(`/api/sample/${encodeURIComponent(smp)}/image/pending/cancel`, {}); }
+  catch (e) { toast(e.message, 6000); return; }
+  await afterPlacement("The image waiting for its alignment is discarded (its file is left where it is)");
+  loadStepsSoon();
+}
 async function afterPlacement(msg) {  // the sample's image or cell positions changed
   const id = st.sample.sample_id, before = `${st.sample.image_kind}|${st.sample.he_path}`;
   st.samples = await api("/api/samples");
@@ -5272,9 +5743,11 @@ function openImageImport(add) {  // Steps → Image → Import (the sample has n
   if (!st.sample) return;
   const ims = (st.he && st.he.images) || [];
   add = !!add && ims.length > 0;
-  $("hiDlg").dataset.add = add ? "1" : "";
+  $("hiDlg").dataset.add = add ? "1" : ""; $("hiDlg").dataset.relink = "";
+  $("hiRelinkRow").hidden = true; $("hiKindRow").hidden = $("hiModeRow").hidden = false;
   $("hiTitle").textContent = add ? `Add an image to ${sampleName(st.sample)}` : `Import the image of ${sampleName(st.sample)}`;
   $("hiImg").value = ""; $("hiReg").value = ""; $("hiErr").textContent = ""; $("hiGo").disabled = false;
+  $("hiMatchRow").hidden = true; hiMatchAsked = "";
   setLabel($("hiGo"), add ? "Add" : "Import");
   $("hiKind").value = add ? "IF" : "H&E";
   const same = $("hiSame"); same.textContent = "";
@@ -5284,6 +5757,17 @@ function openImageImport(add) {  // Steps → Image → Import (the sample has n
   $("hiSameText").textContent = ims.length < 2 && ims.length ? `Same pixels as the ${ims[0].name}` : "Same pixels as";
   $("hiSameWrap").hidden = !add;
   hiDefaultReg(); $("hiDlg").showModal(); hiGrow();
+}
+function openImageRelink(old) {  // Steps → Image → Locate…: the same image at its new place, the cells placed as before
+  if (!st.sample || !old) return;
+  $("hiDlg").dataset.add = ""; $("hiDlg").dataset.relink = old;
+  $("hiTitle").textContent = `Locate the image of ${sampleName(st.sample)}`;
+  $("hiImg").value = ""; $("hiReg").value = ""; $("hiErr").textContent = ""; $("hiGo").disabled = false;
+  $("hiMatchRow").hidden = $("hiRegRow").hidden = $("hiKindRow").hidden = $("hiModeRow").hidden = true;
+  $("hiRelinkText").textContent = `It was ${old}. Choose the same file where it is now: the cells stay placed on it as before (another image: Add).`;
+  $("hiRelinkRow").hidden = false;
+  setLabel($("hiGo"), "Locate");
+  $("hiDlg").showModal(); hiGrow();
 }
 function hiGrow() { ["hiImg", "hiReg"].forEach((id) => autoGrow($(id))); }  // (the paths and the hints shown whole, as in Import)
 function hiDefaultReg() {  // a stain or DAPI added: in the instrument's pixels when the sample has its DAPI (same as it),
@@ -5298,16 +5782,52 @@ function hiDefaultReg() {  // a stain or DAPI added: in the instrument's pixels 
 }
 function hiRegShown() { $("hiRegRow").hidden = document.querySelector("input[name=hiRegMode]:checked").value !== "file"; hiGrow(); }
 document.querySelectorAll("input[name=hiRegMode]").forEach((r) => (r.onchange = hiRegShown));
-$("hiKind").onchange = hiDefaultReg;
+$("hiKind").onchange = () => { hiDefaultReg(); hiMatchAsked = ""; hiMatch(); };
 for (const [btn, field] of [["hiImgPick", "hiImg"], ["hiRegPick", "hiReg"]])
-  $(btn).onclick = async () => { const p = await pickFiles($(btn).dataset.kind, false); if (p.length) { $(field).value = p[0]; autoGrow($(field)); } };
+  $(btn).onclick = async () => { const p = await pickFiles($(btn).dataset.kind, false); if (p.length) { $(field).value = p[0]; autoGrow($(field)); if (field === "hiImg") hiMatch(); } };
 ["hiImg", "hiReg"].forEach((id) => $(id).addEventListener("input", () => { cleanPathField($(id)); autoGrow($(id)); }));
+// An image added that has the size of one of the sample's images (another channel or stain of the same scan): taken as
+// in its pixels by default (the user can still choose a registration file or an alignment)
+let hiMatchT = 0, hiMatchAsked = "";
+async function hiMatch() {
+  const add = !!$("hiDlg").dataset.add, path = $("hiImg").value.trim(), sample = st.sample && st.sample.sample_id;
+  if (!add || !path || !sample) { $("hiMatchRow").hidden = true; hiMatchAsked = ""; return; }
+  if (path === hiMatchAsked) return;
+  hiMatchAsked = path;
+  let r = null;
+  try { r = await api(`/api/sample/${encodeURIComponent(sample)}/images/match?${new URLSearchParams({ path })}`); } catch (e) { r = null; }
+  if (path !== $("hiImg").value.trim()) return;  // (another path meanwhile)
+  if (r && r.same_as && [...$("hiSame").options].some((o) => o.value === r.same_as)) {
+    $("hiSame").value = r.same_as;
+    document.querySelector("input[name=hiRegMode][value=same]").checked = true; hiRegShown();
+    $("hiMatch").textContent = `Same size as the ${r.name} (${r.size[0].toLocaleString()} × ${r.size[1].toLocaleString()} px): taken as in its pixels`;
+    $("hiMatchRow").hidden = false;
+  } else $("hiMatchRow").hidden = true;
+}
+$("hiImg").addEventListener("input", () => { clearTimeout(hiMatchT); hiMatchT = setTimeout(hiMatch, 600); });
+$("hiImg").addEventListener("change", hiMatch);
 $("hiCancel").onclick = () => $("hiDlg").close();
 $("hiGo").onclick = async () => {
   const sample = st.sample && st.sample.sample_id, img = $("hiImg").value.trim(), reg = $("hiReg").value.trim();
   const mode = document.querySelector("input[name=hiRegMode]:checked").value, kind = $("hiKind").value, add = !!$("hiDlg").dataset.add;
   if (!sample) return;
   if (!img) { $("hiErr").textContent = "Choose the image"; return; }
+  if ($("hiDlg").dataset.relink) {  // Locate…: the same image at its new place
+    $("hiGo").disabled = true; $("hiErr").textContent = "checking the image…";
+    const body = { old: $("hiDlg").dataset.relink, path: img };
+    try { await post(`/api/sample/${encodeURIComponent(sample)}/image_relink`, body); }
+    catch (e) {
+      // the size of the image it replaces was not recorded (imported before 0.2.63 and not opened since): asked
+      if (!(e.body && e.body.confirm && confirm(`${e.message}.\n\nUse it only if it is the same file, moved or renamed: another slide puts the cells on the wrong tissue. Use it?`))) {
+        $("hiErr").textContent = e.body && e.body.confirm ? "Not located: choose the same file" : e.message; $("hiGo").disabled = false; return;
+      }
+      try { await post(`/api/sample/${encodeURIComponent(sample)}/image_relink`, { ...body, unknown_size_ok: true }); }
+      catch (e2) { $("hiErr").textContent = e2.message; $("hiGo").disabled = false; return; }
+    }
+    $("hiDlg").close(); $("hiDlg").dataset.relink = "";
+    await refreshAll(); loadStepsSoon(); toast("The image is found again: the cells are on it as before", 4000);
+    return;
+  }
   if (mode === "file" && !reg) { $("hiErr").textContent = "Choose the registration file, or No registration"; return; }
   // the cells go onto it (it becomes the image they are placed on): the first image, or an H&E with its registration;
   // another image with a registration (or the same pixels as one) is shown in its place instead (the Image box)
@@ -5331,16 +5851,16 @@ $("hiGo").onclick = async () => {
   loadStepsSoon();
   if (mode === "none" && st.sample && st.sample.image_pending) openAlignChoice();
 };
-var ALIGN = { auto: null, after: false, ext: null, own: 0 };  // own: checks / local registrations of this page running  // the samples Align automatically works through (null: none); after: its
+var ALIGN = { auto: null, after: false, ext: null, own: 0, checking: null };  // checking: the sample whose registration this page checks  // own: checks / local registrations of this page running  // the samples Align automatically works through (null: none); after: its
 // result window is being opened (the step's own check window must not take its place); ext: a run that places the
 // open sample's cells started elsewhere (another window, a reload, the API): {job, kind}
 function alignBusy() { return !!(ALIGN.auto || ALIGN.after || AW.ids || ALIGN.ext); }  // an alignment runs (the app's, the agent's, or one started elsewhere)
 function alignChanged() {  // its buttons greyed out, or back (Annotate and Filter wait for the cells' place too)
   alignBar(); loadStepsSoon();
-  const busy = alignBusy();
-  for (const [id, what] of [["annotate", "annotate"], ["qfGo", "filter"]]) {
+  const busy = alignBusy() || !!ALIGN.checking;  // (the registration check reads the cells: they wait for it too)
+  for (const [id, what] of [["annotate", "annotate"], ["qfGo", "filter"], ["qfBtn", "filter"]]) {
     $(id).classList.toggle("alignwait", busy);
-    if (busy) { if ($(id).dataset.t0 === undefined) $(id).dataset.t0 = $(id).title || ""; $(id).title = `An alignment is running: ${what} when it has finished`; }
+    if (busy) { if ($(id).dataset.t0 === undefined) $(id).dataset.t0 = $(id).title || ""; $(id).title = alignBusy() ? `An alignment is running: ${what} when it has finished` : `The registration check is running (about a minute): ${what} when it has finished`; }
     else if ($(id).dataset.t0 !== undefined) { $(id).title = $(id).dataset.t0; delete $(id).dataset.t0; }
   }
 }
@@ -5377,9 +5897,9 @@ async function autoAlign(ids) {  // the app aligns the images by itself (align.a
   if (!ids.length) return;
   if (alignBusy()) { toast("An alignment is running: wait for it to end", 5000); return; }
   ALIGN.auto = ids; ALIGN.after = true; alignChanged();
-  try { await autoAlignRun(ids); } finally { ALIGN.auto = null; ALIGN.after = false; alignChanged(); }
+  try { return await autoAlignRun(ids); } finally { ALIGN.auto = null; ALIGN.after = false; alignChanged(); }
 }
-async function autoAlignRun(ids) {
+async function autoAlignRun(ids) {  // [{id, r: the run's result} or {id, error}] once the windows are shown
   const out = [];
   try {
     for (const [i, id] of ids.entries()) out.push({ id, ...(await autoAlignOne(id, ids.length > 1 ? ` (${i + 1} of ${ids.length})` : "")) });
@@ -5392,18 +5912,18 @@ async function autoAlignRun(ids) {
   const summary = ids.length > 1 ? `${ok} of ${ids.length} samples aligned automatically` +
     (others.length ? ` (${others.map((x) => `${name(x.id)}: ${word(x)}`).join("; ")})` : "") + "." : "";
   if (ids.length > 1) {
-    if (!(mine && mine.r && mine.r.applied)) { toast(`${summary} ${mine ? `${name(mine.id)}: ${word(mine)}` : ""}`, 30000); return; }
-  } else if (out[0].error) { toast(`Aligning ${name(out[0].id)}: ${out[0].error}`, 12000); return; }
-  else if (!out[0].r.applied) { toast(`Aligning ${name(out[0].id)}: no placement put the cells on their nuclei (${out[0].r.reason}; ${out[0].r.tried} tried). Use Align with Agent, or a registration file.`, 15000); return; }
+    if (!(mine && mine.r && mine.r.applied)) { toast(`${summary} ${mine ? `${name(mine.id)}: ${word(mine)}` : ""}`, 30000); return out; }
+  } else if (out[0].error) { toast(`Aligning ${name(out[0].id)}: ${out[0].error}`, 12000); return out; }
+  else if (!out[0].r.applied) { toast(`Aligning ${name(out[0].id)}: no placement put the cells on their nuclei (${out[0].r.reason}; ${out[0].r.tried} tried). Use Align with Agent, or a registration file.`, 15000); return out; }
   st.samples = await api("/api/samples").catch(() => st.samples);
-  if (!mine || !mine.r || !mine.r.applied) { if (ids.length === 1) toast(`${name(ids[0])} aligned automatically`, 6000); return; }
+  if (!mine || !mine.r || !mine.r.applied) { if (ids.length === 1) toast(`${name(ids[0])} aligned automatically`, 6000); return out; }
   const sample = mine.id, r = mine.r;
   await afterPlacement();
   store(`localAsk:${sample}:${st.he ? st.he.rev : ""}`, "1");  // (this window offers the local registration itself)
   if (!st.sid) {  // no annotation open (nothing to check from): the result in words
     toast(`${summary ? `${summary} ` : ""}${sampleName(st.sample)} aligned automatically (${r.orientation}; ${r.verdict === "fine" ? "the cells sit on their nuclei"
       : "some areas sit off their nuclei: open an annotation, then Steps → Image → Check offers the local registration"}).`, 15000);
-    return;
+    return out;
   }
   const note = (summary ? `${summary} This sample: ` : "") + `Aligned automatically (${r.orientation}).` + (r.ambiguous
     ? " Another orientation fits almost as well: check on the map that the tissue matches the image; if it does not, Undo and use Align with Agent."
@@ -5413,6 +5933,7 @@ async function autoAlignRun(ids) {
     $("rgDlg").close(); await afterPlacement("The automatic alignment was undone");
   }];
   await checkRegistration(note, [undo]);
+  return out;
 }
 async function autoAlignOne(sample, of) {  // one sample: {r: the run's result} or {error}
   const smp = (st.samples || []).find((x) => x.sample_id === sample) || st.sample, who = `Aligning ${sampleName(smp)} automatically${of}`;
@@ -5619,7 +6140,8 @@ const HELP = `
   <li><b>◀ ▶</b> or <kbd>[</kbd> <kbd>]</kbd> step through them and keep what is shown: Color by, legend filters,
     hidden H&amp;E, the UMAP window and, on a UMAP of all slices, its zoom and selection.</li>
   <li><b>Overview of the project</b> (Data tab) shows its slices side by side (with no project chosen: <b>Overview of
-    all samples</b>).</li>
+    all samples</b>), colored the same way, also by a gene or a program (each on one color scale on every
+    slice, as on the map).</li>
   <li>The Compare tab compares them (scope: all slices, rows by slice).</li></ul></li>
 <li><b>All slices together</b> (in the Annotate, Embed and Niche tabs, each for its own analysis; off by default for
   Annotate, on for Embed and Niche) treats the project as one:<ul>
@@ -5641,7 +6163,7 @@ const HELP = `
   <li>Drag to move; scroll or pinch to zoom.</li>
   <li>The small map at the bottom right shows where you are.</li></ul></li>
 <li>Click a cell: its type, confidence, alternatives and region (and the gene's transcripts when coloring by a gene).</li>
-<li><b>Color by</b> cell type, lineage, <b>gene expression…</b> (type a gene, Enter), region, niche and more.<ul>
+<li><b>Color by</b> cell type, lineage, <b>gene expression</b> (type a gene, Enter), region, niche and more.<ul>
   <li>Click legend entries to show only those; click again to drop one; <b>show all</b> resets.</li></ul></li>
 <li>Display:<ul>
   <li><b>Opacity</b> and <b>Dot size</b> sliders.</li>
@@ -6713,7 +7235,10 @@ async function loadSteps() {
     const img = x.key === "registration" ? x.image : null;  // the image: none (Import), pending (Align), placed (Add, Check), error (Refresh)
     const a = x.open ? ["Open", () => { showTab("data"); $("session").focus(); toast("Choose an annotation in the Annotation box", 4000); }]
       : img === "pending" ? ["Align", () => openAlignChoice()] : img === "none" ? ["Import", () => openImageImport()]
-      : img === "error" ? ["Refresh", () => refreshAll()] : act;  // (an image still copying: read it again when complete)
+      : img === "error" ? (/Refresh/.test(x.detail || "") ? ["Refresh", () => refreshAll()]  // (still copying: read it again)
+        : ["Locate…", () => openImageRelink(x.path)])  // (moved or unreadable: the same file where it is now)
+      : img === "placed" && x.advise === "align" ? ["Align again", () => autoAlign([smp])]  // (the check: far off over most of the tissue)
+      : act;  // (an image still copying: read it again when complete)
     if (x.key === "priors" && x.state !== "not needed") {  // Check (the Prior window), then Accept: only then ✓
       const key = `${smp}|${x.organ || ""}`;
       // accepted, then changed (e.g. a rule the agent wrote): to be checked again before Accept
@@ -6740,15 +7265,22 @@ async function loadSteps() {
       };
       right.append(...(x.state === "done" ? [chk] : [chk, acc]));  // (accepted: Check to look again)
     } else if (a && (["todo", "optional", "skipped"].includes(x.state) || img)) {  // (the H&E: Check also once done)
-      const pre = !x.open && (x.key !== "registration" || img === "placed") && STEP_PRE[x.key];
+      const pre = !x.open && (x.key !== "registration" || img === "placed" || img === "error") && STEP_PRE[x.key]
+        || (img === "pending" && !x.open && ["Discard", "Forget this image waiting for its alignment (the file stays where it is); the cells stay where they are", discardPending]);
       if (pre) {
         const pb = Object.assign(document.createElement("button"), { textContent: pre[0], title: pre[1] });
         pb.onclick = (e) => { e.stopPropagation(); pre[2](); };
         right.append(pb);
       }
+      if (x.key === "registration" && (img === "placed" || img === "error") && !x.open) {  // Discard: take images out (beside Add)
+        const db = Object.assign(document.createElement("button"), { textContent: "Discard", title: "Take images out of this sample (the H&E, the DAPI, a stain…): their files stay where they are" });
+        db.onclick = (e) => { e.stopPropagation(); openImageDiscard(); };
+        right.append(db);
+      }
       const b = Object.assign(document.createElement("button"), { textContent: a[0], title: x.open ? "Open one of this sample's annotations (Data → Annotation)" : help });
       if (x.key === r.next) b.classList.add("primary");
       if (img === "pending" && alignBusy()) { b.disabled = true; b.title = "An alignment is running: wait for it to end"; }
+      if (["filter", "annotate"].includes(x.key) && (alignBusy() || ALIGN.checking)) { b.classList.add("alignwait"); b.title = alignBusy() ? "An alignment is running: wait for it to end" : "The registration check is running (about a minute): wait for it to end"; }
       b.onclick = (e) => { e.stopPropagation(); a[1](); };
       right.append(b);
     }
@@ -6787,6 +7319,16 @@ async function loadSteps() {
   if (st.checkNext && st.checkNext === smp && st.sid && reg && reg.image === "placed") {
     st.checkNext = null;
     if (reg.state === "todo" && !alignBusy()) { checkRegistration().catch(() => {}); return; }
+  }
+  // the cells were put on the instrument's own DAPI / stain by their coordinates (import, Steps → Image): checked once
+  // that it is their image (another run's DAPI shows as far off its nuclei); a check that finds them on it says so quietly
+  if (reg && reg.check_pending && st.sid && !alignBusy() && !$("rgDlg").open) {
+    const k = `instCheck:${smp}:${st.he ? st.he.rev : ""}`;
+    if (!(st.instChecked || (st.instChecked = new Set())).has(k)) {
+      st.instChecked.add(k);
+      checkRegistration("The cells were put on the instrument's image by their coordinates, not measured on it.", [], { quiet: true }).catch(() => {});
+      return;
+    }
   }
   // the alignment's check found areas off their nuclei: its window (histogram, Do local registration) opens by itself,
   // once for this placement of the cells (closed without it: Steps → Image → Check opens it again)
@@ -6994,14 +7536,21 @@ function regDialog(sample, title, figure, text, buttons) {  // the registration 
   });
   if (!$("rgDlg").open) $("rgDlg").showModal();
 }
-async function checkRegistration(note = "", more = []) {  // the cells against the nuclei over the whole tissue, by the app (no agent);
+async function checkRegistration(note = "", more = [], opts = {}) {  // the cells against the nuclei over the whole tissue, by the app (no agent);
   // note: a sentence before its own (e.g. the automatic alignment's); more: buttons before its own (e.g. Undo)
   if (!st.sample || !st.sid) return;
   ALIGN.own++;  // (not taken for a check started elsewhere)
-  try { return await checkRegistrationRun(note, more); } finally { ALIGN.own--; }
+  try { return await checkRegistrationRun(note, more, opts); } finally { ALIGN.own--; }
 }
-async function checkRegistrationRun(note, more) {
-  const sample = st.sample.sample_id, who = `Checking the registration of ${sampleName(st.sample)}`;
+async function checkRegistrationRun(note, more, opts = {}) {
+  const sample = st.sample.sample_id;
+  ALIGN.checking = sample; alignChanged();
+  try { return await checkRegistrationShow(sample, note, more, opts); } finally { ALIGN.checking = null; alignChanged(); }
+}
+async function checkRegistrationShow(sample, note, more, opts) {
+  const who = opts.quiet  // (the check after an instrument image: said what it is for)
+    ? `Checking that the instrument's image belongs to the cells of ${sampleName(st.sample)} (the cells against its nuclei, about a minute)`
+    : `Checking the registration of ${sampleName(st.sample)}`;
   let job;
   try { ({ job } = await post(`/api/sample/${encodeURIComponent(sample)}/registration/check`, { session: st.sid })); }
   catch (e) { toast(`${who}: ${e.message}`, 8000); return; }
@@ -7019,6 +7568,15 @@ async function checkRegistrationRun(note, more) {
   const regDialog = (smp, title, fig, text, buttons) => window.regDialog(smp, title, fig, note ? `${note} ${text}` : text, [...more, ...buttons]);
   toast("", 1);
   const title = `Registration of ${name}`;
+  // far off over most of the tissue: beyond what the local registration measures, so first (the few windows that read
+  // can all sit on their nuclei: the verdict is then "fine")
+  if (r.new_alignment && opts.quiet)  // the instrument's image by coordinates, and the cells are not on its nuclei
+    return regDialog(sample, title, r.figure, `The cells sit far off the nuclei of this image over most of the tissue (the offset could be read on only ${Math.round(100 * r.read_share)}% of it): it is probably not these cells' image (another run's DAPI, or the wrong file). Choose the right image (Steps → Image), or align this one to the cells.`,
+      [["Close", false, async () => $("rgDlg").close()], ["Align it", true, async () => { $("rgDlg").close(); await autoAlign([sample]); }]]);
+  if (r.verdict === "fine" && opts.quiet) { toast(`${name}: the cells sit on the nuclei of the instrument's image (median offset ${r.median_offset_um} µm)`, 6000); return; }
+  if (r.new_alignment)
+    return regDialog(sample, title, r.figure, `The cells sit far off their nuclei over most of the tissue: the offset could be read on only ${Math.round(100 * r.read_share)}% of it, as a rotation or scale error of the whole alignment leaves them. The local registration cannot fix this. Align the image again: the app searches the placement anew and shows the result (Undo puts the cells back).`,
+      [["Close", false, async () => $("rgDlg").close()], ["Align again", true, async () => { $("rgDlg").close(); await autoAlign([sample]); }]]);
   if (r.verdict === "fine")
     return regDialog(sample, title, r.figure, `The cells sit on their nuclei everywhere (median offset ${r.median_offset_um} µm).`, [close]);
   // too little to correct: few windows off and none far (the alignment check's rule), or the correction would not bring
@@ -7242,6 +7800,7 @@ $("sample").onchange = (e) => {  // another slice of the same project: like ◀ 
 };
 $("annotate").onclick = () => {
   if (alignBusy()) { toast("An alignment is running: annotate when it has finished (the cells are being placed)", 6000); return; }
+  if (ALIGN.checking) { toast("The registration check is running (about a minute): annotate when it has finished", 6000); return; }
   return projectMode() && $("method").value === "markers" ? annotateProject() : startAnnotation("new");
 };
 $("session").onchange = (e) => { closeSession(); $("sessDel").disabled = $("sessRename").disabled = !e.target.value; if (e.target.value) startAnnotation("continue", e.target.value); else panelsIdle(); };
@@ -7310,6 +7869,11 @@ function sampleName(s) {  // as the app shows it: a slice by its name in the pro
   const p = projectOf(s.sample_id);
   return p && p.slices[s.sample_id] ? p.slices[s.sample_id].section : s.name || s.sample_id;
 }
+function fileStem(s) {  // a sample in file names, as the app shows it after a rename: a slice with its project's name
+  const p = projectOf(s.sample_id), n = sampleName(s);
+  const stem = (p && p.slices[s.sample_id] ? `${p.name}_${n}` : n).replace(/[^A-Za-z0-9_.-]+/g, "_").replace(/^_+|_+$/g, "");
+  return stem || s.sample_id;
+}
 $("sampleRename").onclick = () => {
   const s = st.sample; if (!s) return;
   st.renaming = null;  // the sample (sessRename sets the annotation)
@@ -7356,7 +7920,7 @@ $("rnCancel").onclick = () => $("rnDlg").close();
 // ---------------- an annotation as one file: save and load (bundle.py) ----------------
 $("anSave").onclick = async () => {
   if (!st.sid) return;
-  const name = `${sampleName(st.sample).replace(/[^A-Za-z0-9_.-]+/g, "_")}_v${st.version}.stannot`;
+  const name = `${fileStem(st.sample)}_v${st.version}.stannot`;
   try {
     if (native() && !st.remote) {
       const path = await native().save_path(name); if (!path) return;
@@ -7587,6 +8151,7 @@ function qfPreview() {
 function sliceLabel(id) { const p = projectOf(id); return p && p.slices[id] ? p.slices[id].section : sampleName(st.samples.find((x) => x.sample_id === id) || { sample_id: id }); }
 $("qfBtn").onclick = async () => {
   if (st.busy) { toast("Wait until the assistant has answered"); return; }
+  if (alignBusy() || ALIGN.checking) { toast(alignBusy() ? "An alignment is running: filter when it has finished" : "The registration check is running (about a minute): filter when it has finished", 5000); return; }
   const id = st.sample.sample_id, p = projectOf(id);
   QF.qc = null; QF.keys.forEach((k) => ($(`qf_${k}`).value = ""));
   ["qfPrev", "qfNote", "qfErr"].forEach((x) => ($(x).textContent = ""));
@@ -7647,6 +8212,7 @@ async function qfRun(params) {
 }
 $("qfGo").onclick = () => {
   if (alignBusy()) { $("qfErr").textContent = "An alignment is running: filter when it has finished"; return; }
+  if (ALIGN.checking) { $("qfErr").textContent = "The registration check is running (about a minute): filter when it has finished"; return; }
   return qfRun(qfParams());
 };
 $("qfRestore").onclick = () => qfRun({});
@@ -7782,50 +8348,83 @@ async function openGallery(all) {  // every slice of the project (or every sampl
   GL_SCOPE.all = !!all;
   const p = st.sample && projectOf(st.sample.sample_id);
   if (!all && !p) return;
-  const want = st.mode && st.mode !== "cells" && !st.mode.includes(":") ? st.mode : "type";
+  const m = st.mode || "";
+  const want = m.startsWith("gene:") ? "gene" : m.startsWith("program:") ? "program" : m && m !== "cells" && !m.includes(":") ? m : "type";
   $("glMode").value = [...$("glMode").options].some((o) => o.value === want) ? want : "type";
+  if (want === "gene") $("glGene").value = m.slice(5);
+  GL_SCOPE.wantProg = want === "program" ? m.slice(8) : null;
+  GL_SCOPE.base = new Map(); GL_SCOPE.idsKey = null; GL_SCOPE.geneAsked = null;  // (each opening reads the samples again; a change of color mode does not)
   $("glTitle").textContent = all ? "All samples" : `Project ${p.name}`;
   $("glDlg").showModal();
   drawGallery();
 }
 // Each tile keeps its image and cells; ticking legend entries only recolors them (the others light gray on every sample)
 async function drawGallery() {
-  const mode = $("glMode").value, img = $("glImg").checked, ids = galleryIds(), token = (GL_SCOPE.token = (GL_SCOPE.token || 0) + 1);
+  const img = $("glImg").checked, ids = galleryIds(), token = (GL_SCOPE.token = (GL_SCOPE.token || 0) + 1);
+  let mode = await glEffectiveMode(ids);
+  if (token !== GL_SCOPE.token || mode === null) return;  // (gene expression without a gene yet: the tiles stay)
   GL_SCOPE.sel = new Set(); GL_SCOPE.mode = mode;
   $("glInfo").textContent = `${ids.length} ${GL_SCOPE.all ? "samples" : "slices"} · click one to open it`;
-  const grid = $("glGrid"); grid.textContent = ""; glLegend(new Map());
+  const key = ids.join("|") + (GL_SCOPE.all ? "|all" : "");
+  if (GL_SCOPE.idsKey !== key) {  // the tiles, once per opening: a new color mode repaints them in place
+    GL_SCOPE.idsKey = key;
+    const grid = $("glGrid"); grid.textContent = "";
+    GL_SCOPE.tiles = ids.map((id) => {
+      const s = st.samples.find((x) => x.sample_id === id), pj = projectOf(id);
+      const tile = document.createElement("div"); tile.className = "tile" + (st.sample && id === st.sample.sample_id ? " cur" : "");
+      const c = document.createElement("canvas"); c.width = 460; c.height = 340;
+      const tt = document.createElement("div"); tt.className = "tt";
+      tt.textContent = pj && pj.slices[id] ? (GL_SCOPE.all ? `${pj.name} · ${pj.slices[id].section}` : pj.slices[id].section) : sampleName(s);
+      const ts = document.createElement("div"); ts.className = "ts";
+      const sub = [metaText(s.metadata), `${s.n_cells.toLocaleString()} cells`].filter(Boolean).join(" · ");
+      ts.textContent = sub;
+      tile.append(c, tt, ts);
+      tile.onclick = () => { $("glDlg").close(); if (projectOf(st.sample.sample_id) && pj && pj === projectOf(st.sample.sample_id)) gotoSlice(id); else { $("sample").value = id; selectSample(id); } };
+      grid.append(tile);
+      return { s, c, ts, sub };
+    });
+  }
+  GL_SCOPE.scale = null;
+  if (/^(gene|program):/.test(mode)) {  // one color scale on every slice: a project's top (as on the map), across projects the highest
+    const sc = (await Promise.all(GL_SCOPE.tiles.map((t) => {
+      const sid = glSid(t.s, mode);
+      return sid ? api(`/api/s/${sid}/legend?mode=${encodeURIComponent(mode)}`).then((r) => r.scale).catch(() => null) : null;
+    }))).filter(Boolean);
+    if (token !== GL_SCOPE.token) return;
+    if (sc.length) {
+      const top = Math.max(...sc.map((x) => x.top));
+      GL_SCOPE.scale = { ...sc[0], top, max: Math.max(...sc.map((x) => x.max)) };
+      mode = `${mode}~${top}`; GL_SCOPE.mode = mode;
+    }
+  }
   const legend = new Map();
-  GL_SCOPE.tiles = ids.map((id) => {
-    const s = st.samples.find((x) => x.sample_id === id), pj = projectOf(id);
-    const tile = document.createElement("div"); tile.className = "tile" + (st.sample && id === st.sample.sample_id ? " cur" : "");
-    const c = document.createElement("canvas"); c.width = 460; c.height = 340;
-    const tt = document.createElement("div"); tt.className = "tt";
-    tt.textContent = pj && pj.slices[id] ? (GL_SCOPE.all ? `${pj.name} · ${pj.slices[id].section}` : pj.slices[id].section) : sampleName(s);
-    const ts = document.createElement("div"); ts.className = "ts";
-    ts.textContent = [metaText(s.metadata), `${s.n_cells.toLocaleString()} cells`].filter(Boolean).join(" · ");
-    tile.append(c, tt, ts);
-    tile.onclick = () => { $("glDlg").close(); if (projectOf(st.sample.sample_id) && pj && pj === projectOf(st.sample.sample_id)) gotoSlice(id); else { $("sample").value = id; selectSample(id); } };
-    grid.append(tile);
-    return { s, c, ts };
-  });
-  for (const t of GL_SCOPE.tiles) {  // one after the other: each fetches the cells of a whole sample
+  glLegend(legend);
+  const one = async (t) => {
     if (token !== GL_SCOPE.token) return;
     try {
-      await loadTile(t, mode, img);
+      if (!(await loadTile(t, mode, img, token))) return;
       await paintTile(t, mode, GL_SCOPE.sel);
-      if (t.note) t.ts.textContent += ` · ${t.note}`;
+      if (mode.startsWith("program:")) glProgNote(t, mode.slice(8).split("~")[0]);
+      t.ts.textContent = t.sub + (t.note ? ` · ${t.note}` : "");
       t.items.forEach((it) => { const o = legend.get(it.label); legend.set(it.label, { color: o ? o.color : it.color, count: (o ? o.count : 0) + (it.count || 0) }); });
       if (token === GL_SCOPE.token) glLegend(legend);
-    } catch (e) { t.ts.textContent += " · could not draw"; }
-  }
+    } catch (e) { if (token === GL_SCOPE.token) t.ts.textContent = `${t.sub} · could not draw`; }
+  };
+  const queue = [...GL_SCOPE.tiles];  // three samples at a time (each the cells of a whole sample)
+  await Promise.all([0, 1, 2].map(async () => { while (queue.length) await one(queue.shift()); }));
 }
 function glLegend(legend) {  // tick entries to show only them; Show all clears the ticks
   const box = $("glLegend"); box.textContent = "";
   if (!legend.size) return;
+  if (GL_SCOPE.scale && /^(gene|program):/.test(GL_SCOPE.mode || "")) {  // a gene or a program: the color bar alone
+    box.append(geneBar(GL_SCOPE.scale, `${GL_SCOPE.scale.unit}, one scale on every slice`));
+    return;
+  }
   const all = document.createElement("button"); all.id = "glAll"; all.textContent = "Show all"; all.disabled = !GL_SCOPE.sel.size;
   all.onclick = () => { GL_SCOPE.sel.clear(); box.querySelectorAll("input").forEach((x) => (x.checked = false)); glRecolor(); };
   box.append(all);
-  [...legend.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 80).forEach(([k, v]) => {
+  const binned = /^(gene|program):/.test(GL_SCOPE.mode || "");  // bins keep their order (high to low), not by size
+  [...legend.entries()].sort((a, b) => (binned ? 0 : b[1].count - a[1].count)).slice(0, 80).forEach(([k, v]) => {
     const l = document.createElement("label"), cb = document.createElement("input"), i = document.createElement("i");
     cb.type = "checkbox"; cb.checked = GL_SCOPE.sel.has(k);
     cb.onchange = () => { if (cb.checked) GL_SCOPE.sel.add(k); else GL_SCOPE.sel.delete(k); glRecolor(); };
@@ -7833,14 +8432,19 @@ function glLegend(legend) {  // tick entries to show only them; Show all clears 
   });
 }
 async function glRecolor() {
-  $("glAll").disabled = !GL_SCOPE.sel.size;
+  if ($("glAll")) $("glAll").disabled = !GL_SCOPE.sel.size;
   const token = (GL_SCOPE.paint = (GL_SCOPE.paint || 0) + 1), sel = new Set(GL_SCOPE.sel);
   for (const t of GL_SCOPE.tiles || []) {
     if (token !== GL_SCOPE.paint) return;
     if (t.pos) await paintTile(t, GL_SCOPE.mode, sel).catch(() => {});
   }
 }
-$("glMode").onchange = drawGallery;
+$("glMode").onchange = () => { GL_SCOPE.wantProg = null; drawGallery(); };
+// Enter and the change it fires: one drawing per gene typed (a new opening asks again)
+const glGeneGo = () => { const v = $("glGene").value.trim().toUpperCase(); if (v && v === GL_SCOPE.geneAsked) return; GL_SCOPE.geneAsked = v; drawGallery(); };
+$("glGene").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); glGeneGo(); } });
+$("glGene").addEventListener("change", glGeneGo);
+$("glProg").onchange = drawGallery;
 $("glImg").onchange = drawGallery;
 $("glSave").onclick = () => {  // the tiles as shown, their names and the legend, as one figure
   const tiles = (GL_SCOPE.tiles || []).filter((t) => t.pos);
@@ -7848,19 +8452,30 @@ $("glSave").onclick = () => {  // the tiles as shown, their names and the legend
   const x = (v) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
   const n = tiles.length, cols = Math.min(4, n), tw = 260, th = Math.round(tw * tiles[0].c.height / tiles[0].c.width), gap = 16, cap = 30;
   const W = cols * tw + (cols - 1) * gap + 40;
-  const mode = $("glMode").selectedOptions[0].textContent, sel = GL_SCOPE.sel;
+  const gm = GL_SCOPE.mode || "", sel = GL_SCOPE.sel;
+  const mode = gm.startsWith("gene:") ? `${gm.slice(5).split("~")[0]} expression` : gm.startsWith("program:") ? `program ${$("glProg").selectedOptions[0] ? $("glProg").selectedOptions[0].dataset.name : gm.slice(8)}`
+    : $("glMode").selectedOptions[0].textContent;
   let entries = [...$("glLegend").querySelectorAll("label")].map((l) => ({ name: l.textContent, color: l.querySelector("i").style.background, on: l.querySelector("input").checked }));
   if (sel.size) entries = entries.filter((e) => e.on).concat([{ name: "other cells", color: "rgb(205,205,205)" }]);
   // the legend: aligned columns as wide as the longest entry, filled top to bottom (largest groups first)
+  const sc = /^(gene|program):/.test(gm) && GL_SCOPE.scale, off = sc ? 30 : 0;  // a gene or program: its color bar
   const out = [], lg = [], colW = Math.min(W - 40, 22 + Math.max(...entries.map((e) => e.name.length), 4) * 5.4), rowH = 15;
   const nCol = Math.max(1, Math.floor((W - 40 + 12) / (colW + 12))), nRow = Math.ceil(entries.length / nCol);
   entries.forEach((e, i) => {
-    const lx = 20 + Math.floor(i / nRow) * (colW + 12), ly = 46 + (i % nRow) * rowH;
+    const lx = 20 + Math.floor(i / nRow) * (colW + 12), ly = 46 + off + (i % nRow) * rowH;
     const name = e.name.length > (colW - 22) / 5.4 ? e.name.slice(0, Math.floor((colW - 22) / 5.4) - 1) + "…" : e.name;
     lg.push(`<circle cx="${lx + 5}" cy="${ly - 3.5}" r="4.5" fill="${e.color}"/><text x="${lx + 15}" y="${ly}" font-size="10">${x(name)}</text>`);
   });
-  const ly = 46 + (nRow - 1) * rowH;
-  const top = (entries.length ? ly + 18 : 34), rows = Math.ceil(n / cols), H = top + rows * (th + cap + gap) + 4;
+  const ly = 46 + off + (nRow - 1) * rowH;
+  if (sc) {
+    const f = (v) => (v >= 10 ? v.toFixed(0) : v >= 1 ? v.toFixed(1) : v.toFixed(2));
+    lg.push(`<defs><linearGradient id="gg">${sc.ramp.map((c, i) => `<stop offset="${i / (sc.ramp.length - 1)}" stop-color="${rgb(c)}"/>`).join("")}</linearGradient></defs>`,
+      `<rect x="20" y="34" width="180" height="8" rx="2" fill="url(#gg)"/>`,
+      `<text x="20" y="53" font-size="9">&gt;0</text><text x="110" y="53" font-size="9" text-anchor="middle">${f(sc.top / 2)}</text>`,
+      `<text x="200" y="53" font-size="9" text-anchor="end">${f(sc.top)}${sc.max > sc.top ? "+" : ""}</text>`,
+      `<text x="210" y="42" font-size="9" fill="#666666">${x(sc.unit)}, one scale on every slice</text>`);
+  }
+  const top = (entries.length ? ly + 18 : sc ? 64 : 34), rows = Math.ceil(n / cols), H = top + rows * (th + cap + gap) + 4;
   out.push(`<text x="20" y="22" font-size="14" font-weight="600">${x($("glTitle").textContent)} · colored by ${x(mode)}${sel.size ? ` (only ${x([...sel].join(", "))})` : ""}</text>`, ...lg);
   tiles.forEach((t, i) => {
     const cx = 20 + (i % cols) * (tw + gap), cy = top + Math.floor(i / cols) * (th + cap + gap);
@@ -7870,40 +8485,112 @@ $("glSave").onclick = () => {  // the tiles as shown, their names and the legend
              `<text x="${cx}" y="${cy + th + 25}" font-size="9" fill="#666666">${x(sub.length > 60 ? sub.slice(0, 58) + "…" : sub)}</text>`);
   });
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" fill="currentColor">${out.join("")}</svg>`;
-  saveFigure(`${GL_SCOPE.all ? "all_samples" : "slices"}_${$("glMode").value}.pdf`, svg);
+  saveFigure(`${GL_SCOPE.all ? "all_samples" : "slices"}_${gm.split("~")[0].replace(/[^A-Za-z0-9_-]+/g, "_")}.pdf`, svg);
 };
-async function loadTile(t, mode, withImage) {  // the sample's cells, its open or latest annotation and its image, once
-  const s = t.s;
-  t.he = await api(`/api/sample/${s.sample_id}/he_info`);
-  t.pos = new Float32Array(await (await fetch(`/api/sample/${s.sample_id}/cells.bin?r=${t.he.rev}`)).arrayBuffer());
-  const sess = (s.sessions || []).filter((x) => USER_METHODS.includes(x.method));
+// The annotation a tile shows ({sid, ver}): the open one on its sample, else the sample's latest. Gene expression and
+// regions are the sample's own data: a sample not annotated yet shows them through its placeholder (every cell
+// "Not annotated"), which the other colorings do not use.
+function glAnn(s, mode) {
+  const data = /^(gene:|region$)/.test(mode || "");
   const open = st.sample && s.sample_id === st.sample.sample_id && st.sid;
-  t.sid = open ? st.sid : sess.length ? sess[0].session_id : null; t.ver = open ? st.version : sess.length ? sess[0].n_versions : null;
-  t.items = []; t.note = ""; t.colored = false;
+  if (open && (data || !st.placeholder)) return { sid: st.sid, ver: st.version };
+  const all = s.sessions || [], x = all.find((y) => USER_METHODS.includes(y.method)) || (data ? all.find((y) => y.method === "none") : null);
+  return x ? { sid: x.session_id, ver: x.n_versions } : { sid: null, ver: null };
+}
+function glSid(s, mode) { return glAnn(s, mode).sid; }
+// The color mode of the overview: gene expression (one gene, one color scale on every slice) and programs
+// (scored in Compare > Programs) need their own choice; both color on one scale on every slice
+async function glEffectiveMode(ids) {
+  const kind = $("glMode").value;
+  $("glGene").hidden = kind !== "gene"; $("glProg").hidden = kind !== "program";
+  if (kind === "gene") {
+    GL_SCOPE.genes = GL_SCOPE.genes || {};
+    const miss = ids.filter((id) => !GL_SCOPE.genes[id]);
+    await Promise.all(miss.map((id) => api(`/api/sample/${id}/genes`).then((r) => (GL_SCOPE.genes[id] = r.genes)).catch(() => (GL_SCOPE.genes[id] = []))));
+    const all = [...new Set(ids.flatMap((id) => GL_SCOPE.genes[id] || []))].sort();
+    const dl = $("glGeneList"); if (dl.childElementCount !== all.length) dl.replaceChildren(...all.map((g) => Object.assign(document.createElement("option"), { value: g })));
+    const v = $("glGene").value.trim(), g = all.find((x) => x.toUpperCase() === v.toUpperCase());
+    if (!g) { if (v) toast(`${v} is in none of these panels`, 4000); $("glGene").focus(); return null; }
+    $("glGene").value = g; return `gene:${g}`;
+  }
+  if (kind === "program") {  // the programs scored on the slices' annotations
+    GL_SCOPE.progs = {};
+    await Promise.all(ids.map((id) => {
+      const s = st.samples.find((x) => x.sample_id === id), sid = s && glSid(s);
+      return sid ? api(`/api/s/${sid}/programs`).then((r) => (GL_SCOPE.progs[id] = r.scored || {})).catch(() => {}) : null;
+    }));
+    const names = {};
+    Object.values(GL_SCOPE.progs).forEach((p) => Object.entries(p).forEach(([k, x]) => { (names[k] = names[k] || { name: x.name, n: 0 }).n += 1; }));
+    const sel = $("glProg"), keep = GL_SCOPE.wantProg || sel.value, keys = Object.keys(names).sort((a, b) => names[b].n - names[a].n);
+    if (!keys.length) {
+      sel.replaceChildren(Object.assign(document.createElement("option"), { value: "", textContent: "none scored (Compare > Programs)" }));
+      return "cells";
+    }
+    sel.replaceChildren(...keys.map((k) => Object.assign(document.createElement("option"),
+      { value: k, textContent: `${names[k].name} (${names[k].n} of ${ids.length})` })));
+    keys.forEach((k, i) => (sel.options[i].dataset.name = names[k].name));
+    sel.value = keys.includes(keep) ? keep : keys[0]; GL_SCOPE.wantProg = null;
+    return `program:${sel.value}`;
+  }
+  return kind;
+}
+// A slice whose program comes from another run than most slices (or from a run of the slice alone, beside others):
+// its scores were computed apart (other control genes), so the tile says so although the color scale is shared
+function glProgNote(t, key) {
+  const xs = Object.values(GL_SCOPE.progs || {}).map((p) => p[key]).filter((x) => x && x.run_id);
+  if (xs.length < 2) return;
+  const n = {}; xs.forEach((x) => (n[x.run_id] = (n[x.run_id] || 0) + 1 + (x.scope === "project" ? 0.5 : 0)));  // (a tie: the project run)
+  const main = Object.keys(n).sort((a, b) => n[b] - n[a])[0];
+  const mine = (GL_SCOPE.progs[t.s.sample_id] || {})[key];
+  if (mine && mine.run_id !== main) t.note = "scored in another run";
+}
+async function glBase(s, c, withImage) {  // a sample's image info, cells and image backdrop: once per opening
+  const k = `${s.sample_id}|${withImage ? 1 : 0}`;
+  if (!GL_SCOPE.base.has(k)) GL_SCOPE.base.set(k, (async () => {
+    const he = await api(`/api/sample/${s.sample_id}/he_info`);
+    const pos = new Float32Array(await (await fetch(`/api/sample/${s.sample_id}/cells.bin?r=${he.rev}`)).arrayBuffer());
+    const W = he.width, H = he.height, kk = Math.min((c.width - 8) / W, (c.height - 8) / H);
+    const b = { he, pos, k: kk, ox: (c.width - kk * W) / 2, oy: (c.height - kk * H) / 2 };
+    b.bg = document.createElement("canvas"); b.bg.width = c.width; b.bg.height = c.height;
+    if (withImage && he.image_kind && he.image_kind !== "none") {  // the lowest level that holds the whole image in one tile
+      const top = Math.ceil(Math.log2(Math.max(W, H))), L = Math.max(0, top - Math.ceil(Math.log2(Math.max(W, H) / he.tile_size)));
+      // (as the image's display on the map: its range and gamma in the tile, brightness and contrast when drawn)
+      const im = new Image(); im.src = `/api/sample/${s.sample_id}/he/${L}/0_0.jpg?r=${he.rev}${he.image_rev ? `&ir=${he.image_rev}` : ""}${imgDispQuery(s.sample_id, "main", he)}`;
+      await im.decode().catch(() => {});
+      const sc = 2 ** (L - top), bctx = b.bg.getContext("2d");
+      bctx.filter = imgCssFilter(imgAdjGet(s.sample_id, "main", he)) || "none";
+      if (im.naturalWidth) bctx.drawImage(im, b.ox, b.oy, im.naturalWidth / sc * kk, im.naturalHeight / sc * kk);
+      bctx.filter = "none";
+    }
+    return b;
+  })().catch((e) => { GL_SCOPE.base.delete(k); throw e; }));
+  return GL_SCOPE.base.get(k);
+}
+// The sample's cells and image (kept), the colors of this mode. The tile takes them only while the request is the
+// current one (token): a slower answer of a mode left meanwhile must not replace the new mode's colors and legend.
+async function loadTile(t, mode, withImage, token) {
+  const s = t.s, base = await glBase(s, t.c, withImage);
+  const a = glAnn(s, mode), o = { ...base, sid: a.sid, ver: a.ver, items: [], note: "", big: "", colored: false, col: null };
   if (mode !== "cells") {
-    if (!t.sid) t.note = "no annotation";
+    if (!o.sid) o.big = "Not annotated";
     else {
-      const q = new URLSearchParams({ version: t.ver, mode });
-      const r = await fetch(`/api/s/${t.sid}/colors.bin?${q}`);  // can this sample be colored this way?
-      if (r.ok) { t.colored = true; t.items = ((await api(`/api/s/${t.sid}/legend?${q}`).catch(() => ({}))).items || []).filter((it) => it.count); }
-      else t.note = { leiden: "no Leiden clusters (PCA + UMAP)", niche: "no niches", region: "no regions" }[mode] || "not available";
-      if (t.colored && mode === "region" && !t.items.some((it) => it.key !== "unknown")) { t.note = "no regions drawn"; t.items = []; t.colored = false; }
+      const q = new URLSearchParams({ version: o.ver, mode });
+      const [r, leg] = await Promise.all([fetch(`/api/s/${o.sid}/colors.bin?${q}`),  // (refused: this sample cannot be colored so)
+                                          api(`/api/s/${o.sid}/legend?${q}`).catch(() => ({}))]);
+      if (r.ok) { o.colored = true; o.col = new Uint8Array(await r.arrayBuffer()); o.items = (leg.items || []).filter((it) => it.count); }
+      else o.big = mode.startsWith("gene:") ? "Not in panel" : { region: "No regions" }[mode] || "Not computed";  // said on the tile itself
+      if (o.colored && mode === "region" && !o.items.some((it) => it.key !== "unknown")) { o.big = "No regions"; o.items = []; o.colored = false; }
+      if (o.colored && !o.items.length) { o.big = "Not computed"; o.colored = false; }  // e.g. Leiden or niches not run on it: no cell colored
     }
   }
-  const c = t.c, W = t.he.width, H = t.he.height;
-  t.k = Math.min((c.width - 8) / W, (c.height - 8) / H); t.ox = (c.width - t.k * W) / 2; t.oy = (c.height - t.k * H) / 2;
-  t.bg = document.createElement("canvas"); t.bg.width = c.width; t.bg.height = c.height;
-  if (withImage && t.he.image_kind && t.he.image_kind !== "none") {  // the lowest level that holds the whole image in one tile
-    const top = Math.ceil(Math.log2(Math.max(W, H))), L = Math.max(0, top - Math.ceil(Math.log2(Math.max(W, H) / t.he.tile_size)));
-    const im = new Image(); im.src = `/api/sample/${s.sample_id}/he/${L}/0_0.jpg?r=${t.he.rev}`;
-    await im.decode().catch(() => {});
-    const sc = 2 ** (L - top);
-    if (im.naturalWidth) t.bg.getContext("2d").drawImage(im, t.ox, t.oy, im.naturalWidth / sc * t.k, im.naturalHeight / sc * t.k);
-  }
+  if (token !== GL_SCOPE.token) return false;
+  Object.assign(t, o);
+  return true;
 }
 async function paintTile(t, mode, sel) {  // the image, then the cells: light gray ones first, colored ones on top
   let col = null;
-  if (t.colored) {
+  if (t.colored && !sel.size) col = t.col;
+  else if (t.colored) {
     const keys = sel.size ? t.items.filter((it) => sel.has(it.label)).map((it) => it.key) : [];
     const q = new URLSearchParams({ version: t.ver, mode, only: sel.size ? (keys.join("|") || "__none__") : "", rest: "gray" });
     const r = await fetch(`/api/s/${t.sid}/colors.bin?${q}`);
@@ -7914,8 +8601,10 @@ async function paintTile(t, mode, sel) {  // the image, then the cells: light gr
   const lay = document.createElement("canvas"); lay.width = c.width; lay.height = c.height;  // cells on their own layer, blended over the image
   const lc = lay.getContext("2d"), id = lc.createImageData(c.width, c.height), d = id.data;
   const gray = (i) => col && col[4 * i] === 205 && col[4 * i + 1] === 205 && col[4 * i + 2] === 205;
+  const ord = col ? alphaOrder(col) : null;  // fainter cells first: a cell where a gene is not detected never covers one where it is
   for (const pass of [true, false]) {
-    for (let i = 0; i < pos.length / 2; i++) {
+    for (let o = 0; o < pos.length / 2; o++) {
+      const i = ord ? ord[o] : o;
       if (sel.size && gray(i) !== pass) continue;
       if (!sel.size && !pass) break;
       const a = col ? col[4 * i + 3] : 200; if (!a) continue;
@@ -7928,6 +8617,12 @@ async function paintTile(t, mode, sel) {  // the image, then the cells: light gr
     }
   }
   lc.putImageData(id, 0, 0); ctx.drawImage(lay, 0, 0);
+  if (t.big) {  // e.g. a program not computed on this slice: in large letters over it
+    ctx.save(); ctx.font = "600 34px system-ui, -apple-system, Segoe UI, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    const w = ctx.measureText(t.big).width + 36, x = c.width / 2, y = c.height / 2;
+    ctx.fillStyle = "rgba(255,255,255,0.85)"; ctx.beginPath(); ctx.roundRect(x - w / 2, y - 30, w, 60, 10); ctx.fill();
+    ctx.fillStyle = "#444"; ctx.fillText(t.big, x, y + 1); ctx.restore();
+  }
 }
 $("allSamples").onclick = () => openGallery(!(st.sample && projectOf(st.sample.sample_id)));  // the project, or every sample
 // ---------------- Compare: DE genes, top genes per group, composition (one slice or all slices pooled) ----------------
@@ -7957,7 +8652,7 @@ function anSelection(scope = anScope()) {  // the cells selected in the UMAP win
 }
 // the niches (run and names) and the UMAP's Leiden clusters are groupings too: a new run or new names reload the lists
 const groupRuns = () => ({ niche: st.niche ? st.niche.params.run_id : null, leiden: st.emb ? st.emb.run_id || null : null });
-const groupingsSig = () => `${st.nicheSig || ""}|${st.emb ? st.emb.run_id || "" : ""}`;
+const groupingsSig = () => `${st.nicheSig || ""}|${st.emb ? st.emb.run_id || "" : ""}|${st.groupsRev || 0}`;  // (groupsRev: Group saved)
 function anRefresh() {  // the Compare and Signaling tabs follow the open annotation, the selection, the niches and the UMAP
   if (document.querySelector('header .pane[data-pane="compare"]').classList.contains("on")) setTimeout(() => loadAnOptions(), 0);
   if (document.querySelector('header .pane[data-pane="signal"]').classList.contains("on")) setTimeout(() => loadSigOptions(), 0);
@@ -8211,7 +8906,7 @@ async function showAnalysis() {
       $("anNote").textContent = `The top ${N} up gene(s) of each group (by AUC; a gene already shown for an earlier group is not repeated). Click a gene to color the map by it.`;
       if (!$("anDlg").open) $("anDlg").showModal();
       if (!genes.length) $("anBody").textContent = "No significant genes.";
-      else await showDots(genes.slice(0, 200), { breaks: breaks.length <= 30 ? breaks : [] }, r.groups.map((g) => g.group));
+      else await showDots(genes.slice(0, 200), { breaks, total: genes.length }, r.groups.map((g) => g.group));
       return;
     }
     const first = r.groups.find((g) => g[dir].length), slc = first && ("slices_same_direction" in first[dir][0] ? "slices_same_direction" : "slices_separate" in first[dir][0] ? "slices_separate" : null);
@@ -8321,7 +9016,7 @@ async function showAnalysis() {
       $("anNote").textContent = `The top ${N} gene(s) of each group (by AUC; a gene already shown for an earlier group is not repeated). Click a gene to color the map by it.`;
       if (!$("anDlg").open) $("anDlg").showModal();
       if (!genes.length) $("anBody").textContent = "No top genes.";
-      else await showDots(genes.slice(0, 200), { breaks: breaks.length <= 30 ? breaks : [] }, r.groups.map((g) => g.group));
+      else await showDots(genes.slice(0, 200), { breaks, total: genes.length }, r.groups.map((g) => g.group));
       return;
     }
     $("anBody").append(anTable(["Group", "Cells", "Top genes (by AUC)"], r.groups.map((g) => {
@@ -8430,7 +9125,7 @@ $("anCsv").onclick = async () => {
     : q.kind === "composition" && r.test && r.test.id && (AN.view || "test") === "test" ? `${r.cols}_share_test_by_${r.rows}` : `${r.cols}_per_${r.rows}`;
   const testView = q.kind === "composition" && r.test && r.test.id && (AN.view || "test") === "test";
   const id = testView ? r.test.id : r.id;
-  const name = `${st.sample.sample_id}_${part}`.replace(/[^A-Za-z0-9_.-]+/g, "_") + ".csv", url = `/api/analysis/${id}.csv?name=${encodeURIComponent(name)}`;
+  const name = `${fileStem(st.sample)}_${part}`.replace(/[^A-Za-z0-9_.-]+/g, "_") + ".csv", url = `/api/analysis/${id}.csv?name=${encodeURIComponent(name)}`;
   if (st.remote) { await saveDownload(name, url); return; }
   if (native()) { const path = await native().save_path(name); if (!path) return;
     try { const res = await fetch(url); if (!res.ok) throw new Error((await res.json()).error);
@@ -8875,8 +9570,8 @@ function dotPlotSVG(d, opts = {}) {  // d: {groups, n_cells, genes, pct, mean}; 
   const W = left + nG * C + 150, H = top + nR * C + legendH;
   const lo = [], hi = [];  // each gene's color scaled over the groups (0 = its lowest group mean, 1 = its highest)
   for (let j = 0; j < nG; j++) { const col = d.mean.map((r) => r[j]); lo.push(Math.min(...col)); hi.push(Math.max(...col)); }
-  const out = [`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="currentColor">`];
-  const br = opts.breaks || [];
+  const out = [`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="currentColor" data-left="${left}" data-top="${top}">`];
+  const br = (opts.breaks || []).filter(([j]) => j < nG);  // (blocks of the genes drawn)
   br.forEach(([j, label], k) => {  // gene blocks (up / down genes, the groups): a bracket with the label, cut to fit
     const x = left + j * C, end = left + (k + 1 < br.length ? br[k + 1][0] : nG) * C, w = end - x;
     if (j > 0) out.push(`<line x1="${x}" y1="${top - 4}" x2="${x}" y2="${top + nR * C}" stroke="#999" stroke-width="0.6" stroke-dasharray="3,2"/>`);
@@ -8956,8 +9651,18 @@ async function showDots(genes, opts, first, compare) {  // fetch the dot plot da
     const d = await post("/api/analysis/dots", { session: q.session, version: q.version, scope: q.scope, selection: AN.sel, sessions: q.sessions,
       by: q.by, genes, within: q.within, first, compare });
     if (AN.req !== q || !$("anDlg").open) return;  // another result was opened, or the window closed, meanwhile
-    box.innerHTML = dotPlotSVG(d, opts);
+    const svg = dotPlotSVG(d, opts);
+    box.innerHTML = svg;
+    const el = box.querySelector("svg"), W = +el.getAttribute("width"), left = +el.dataset.left, top = +el.dataset.top;
+    if (W > box.clientWidth) {  // wider than the window: it scrolls sideways, the group names stay at the left
+      box.innerHTML = `<div class="dpwrap" style="display:flex;width:${W}px"><div class="dpfix" style="width:${left}px;clip-path:inset(${top - 2}px 0 0 0)">${svg}</div>`
+        + `<div style="width:${W - left}px;overflow:hidden;flex:none"><div style="margin-left:-${left}px">${svg}</div></div></div>`;
+      box.querySelectorAll(".dpfix .dpgene").forEach((t) => t.classList.remove("dpgene"));
+    }
     box.querySelectorAll(".dpgene").forEach((t) => (t.onclick = () => colorByGene(t.dataset.gene)));
+    const more = [W > box.clientWidth ? "Scroll sideways for every gene (shift + wheel, or drag the bar below)." : "",
+      opts.total > d.genes.length ? `The first ${d.genes.length} of ${opts.total} genes are shown: fewer genes per group show them all.` : ""].filter(Boolean).join(" ");
+    if (more) $("anNote").textContent = `${more} ${$("anNote").textContent}`;
     AN.svg = dotPlotSVG(d, opts).replace('fill="currentColor"', 'fill="#222"');
     if (d.n_groups_total > d.groups.length) $("anNote").textContent = `The ${d.groups.length} largest of ${d.n_groups_total} groups. ` + $("anNote").textContent;
   } catch (e) { box.textContent = e.message; }
@@ -8978,7 +9683,7 @@ $("anFig").onclick = () => {
   const part = k === "de" ? (r.all ? `de_every_${r.by}_dotplot` : `de_${r.group}_vs_${r.reference}_dotplot`) : k === "markers" ? `top_genes_by_${r.by}_dotplot`
     : k === "deseq2" ? `deseq2_${r.group}_vs_${r.reference}_${AN.view === "volcano" ? "volcano" : "dotplot"}`
     : k === "run" ? `communication_${r.by}_${AN.view}` : k === "trajectory" ? `trajectory_${AN.view || "heat"}_${r.label}` : `communication_by_${r.split}_${AN.view}`;
-  saveFigure(`${st.sample.sample_id}_${part}.pdf`.replace(/[^A-Za-z0-9_.-]+/g, "_"), AN.svg);
+  saveFigure(`${fileStem(st.sample)}_${part}.pdf`.replace(/[^A-Za-z0-9_.-]+/g, "_"), AN.svg);
 };
 async function saveFigure(name, svg) {  // an SVG of the page as PDF (made on the server): Save dialog in the app, a download in a browser
   try {
@@ -9013,6 +9718,26 @@ function setHeader(collapsed) {  // the toolbar folds into one thin line; the ma
 }
 $("hdrHide").onclick = () => setHeader(true);
 new ResizeObserver(() => document.documentElement.style.setProperty("--maptop", `${$("maptop").offsetHeight}px`)).observe($("maptop"));
+// the agent's box and the image's on one row, each on one line: with their names when they fit, else as icons
+let mtFitW = -1;
+function mapTopFit(force) {
+  const top = $("maptop"), w = top.clientWidth;
+  if (!force && w === mtFitW) return;  // (only a change of width or of the buttons shown decides again)
+  mtFitW = w;
+  const acts = $("acts"), img = $("imgbox");
+  const fits = () => {
+    const a = acts.getBoundingClientRect(), i = img.getBoundingClientRect();
+    const oneLine = [...acts.children].filter((x) => !x.hidden && x.offsetParent).every((x, _, all) => Math.abs(x.offsetTop - all[0].offsetTop) < 4);
+    return oneLine && (img.hidden || Math.abs(a.top - i.top) < 2);
+  };
+  top.classList.remove("compact");
+  if (fits()) return;
+  top.classList.add("compact");  // icons only if that puts both boxes on one row; else the buttons keep their names
+  if (!img.hidden && Math.abs(acts.getBoundingClientRect().top - img.getBoundingClientRect().top) >= 2) top.classList.remove("compact");
+}
+new ResizeObserver(() => mapTopFit()).observe($("maptop"));
+new MutationObserver(() => mapTopFit(true)).observe($("acts"), { subtree: true, attributes: true, attributeFilter: ["hidden"] });
+new MutationObserver(() => mapTopFit(true)).observe($("imgbox"), { attributes: true, attributeFilter: ["hidden"] });
 function segmented(id) {  // a select shown as a row of buttons (the select keeps the value)
   const sel = $(id), box = document.querySelector(`.seg[data-for="${id}"]`);
   [...sel.options].forEach((o) => {
@@ -9034,8 +9759,9 @@ function sampleInfo() {  // the Data tab's card: what the open sample is
       : upp ? `${upp.toFixed(3)} µm per pixel` : "", s.description].filter(Boolean).join(" · ");
     return;
   }
-  const img = s.image_pending ? "image waiting for its alignment" : !s.image_kind || s.image_kind === "none" ? "no image"
-    : s.image_kind;
+  const lost = st.he && st.he.image_error && st.sample === s;  // (moved, deleted, unreadable: shown without it)
+  const img = s.image_pending ? "image waiting for its alignment" : lost ? `${s.image_kind && s.image_kind !== "none" ? s.image_kind : "image"} ${/no longer there/.test(st.he.image_error) ? "missing" : "cannot be read"}`
+    : !s.image_kind || s.image_kind === "none" ? "no image" : s.image_kind;
   // the line: cells, image, filtered; the rest (platform, what the filter removed, description) on hover
   $("sampleInfo").textContent = [`${s.n_cells.toLocaleString()} ${s.unit === "bins" ? "bins" : "cells"}`, img, s.filter ? "filtered" : ""].filter(Boolean).join(" · ");
   $("sampleInfo").title = [s.platform, s.filter ? `filtered: ${s.filter.n_cells_removed.toLocaleString()} cells and ${s.filter.n_genes_removed} genes removed` : "",
@@ -9152,7 +9878,7 @@ $("rpAsk").onclick = async () => {
   } catch (e) { toast(e.message, 6000); }
 };
 $("rpSave").onclick = async () => {
-  const name = `${st.sample.sample_id}_annotation_report.md`;
+  const name = `${fileStem(st.sample)}_annotation_report.md`;
   if (st.remote) { await saveDownload(name, `/api/s/${st.sid}/report.md`); return; }
   if (native()) {
     const path = await native().save_path(name); if (!path) return;
@@ -9169,9 +9895,10 @@ function syncExport() {  // Export: with an annotation open, or once the cells s
 }
 $("export").onclick = () => {
   const annotated = !!st.sid && !st.placeholder;
-  $("xpInfo").textContent = st.sid && st.version != null ? `${st.sample.sample_id} · version ${st.version}` : st.sample.sample_id; $("xpStatus").textContent = "";
-  $("xpCsv").disabled = $("xpNb").disabled = !annotated;  // these need the cell types
-  $("xpCsv").title = $("xpNb").title = annotated ? "" : "Annotate the sample first";
+  const xp = projectOf(st.sample.sample_id);  // the name shown (after a rename too); the version is in the file names
+  $("xpInfo").textContent = xp && xp.slices[st.sample.sample_id] ? `${xp.name} · ${sampleName(st.sample)}` : sampleName(st.sample); $("xpStatus").textContent = "";
+  $("xpCsv").disabled = $("xpNb").disabled = $("xpGuide").disabled = !annotated;  // these need the cell types
+  $("xpCsv").title = $("xpNb").title = $("xpGuide").title = annotated ? "" : "Annotate the sample first";
   xpFillNotebooks(annotated);
   const placed = cellsPlaced();
   const by = st.sample.registration_by || "file", local = /local correction|piece moves|nuclei correction|cell positions/.test(by);
@@ -9180,7 +9907,7 @@ $("export").onclick = () => {
     ? `Registration: the affine that places the cells on the image (made by: ${placedBy(by)}): columns a11, a12, a21, a22, tx, ty (cell um to image pixels). It can be used again as the registration file of an import, or by other tools.`
     : "The cells are not on an image yet: import an image and its registration, or align it with the agent.";
   const only = !!st.sample.image_only, nOut = ((st.regions && st.regions.polygons) || []).length;
-  ["xpCsvCard", "xpNbCard", "xpRegCard"].forEach((id) => ($(id).hidden = only));
+  ["xpCsvCard", "xpNbCard", "xpGuideCard", "xpRegCard"].forEach((id) => ($(id).hidden = only));
   $("xpGeo").disabled = !st.sid || !nOut; $("xpGeo").title = nOut ? "" : st.sid ? "No outlines drawn in this version" : "No regions: open the sample's annotation";
   $("xpGeo").classList.toggle("primary", only);
   $("xpPosInfo").textContent = !placed ? "" : local
@@ -9236,8 +9963,9 @@ async function exportAs(kind) {  // the cell table or the notebook of the curren
   if (kind === "notebook" && $("xpNbSess").value && $("xpNbSess").value !== st.sid) return exportNotebookOf($("xpNbSess").value);
   const ext = kind === "notebook" ? "ipynb" : "csv";
   const sampleFile = { registration: "registration.csv", positions: "cell_positions.csv" }[kind];  // of the sample, not the version
-  const name = sampleFile ? `${st.sample.sample_id}_${sampleFile}` : kind === "regions" ? `${st.sample.sample_id}_v${st.version}_regions.geojson`
-    : `${st.sample.sample_id}_v${st.version}_${kind === "notebook" ? "analysis" : "cells"}.${ext}`;
+  const stem = fileStem(st.sample);  // (the name shown, after a rename too)
+  const name = sampleFile ? `${stem}_${sampleFile}` : kind === "regions" ? `${stem}_v${st.version}_regions.geojson`
+    : `${stem}_v${st.version}_${kind === "notebook" ? "analysis" : "cells"}.${ext}`;
   const url = sampleFile ? `/api/sample/${st.sample.sample_id}/${sampleFile}` : kind === "regions" ? `/api/s/${st.sid}/regions.geojson?version=${st.version}`
     : `/api/s/${st.sid}/export.${ext}?version=${st.version}`;
   if (st.remote) {  // on a server: downloaded through the SSH tunnel into a file on this computer
@@ -9263,7 +9991,7 @@ $("xpNb").onclick = () => exportAs("notebook");
 $("xpNbAll").onclick = () => exportAs("project_notebook");
 async function exportNotebookOf(sid) {  // the notebook of another annotation of this sample (its latest version)
   const rec = (st.sample.sessions || []).find((x) => x.session_id === sid); if (!rec) return;
-  const v = rec.n_versions, name = `${st.sample.sample_id}_v${v}_analysis.ipynb`, url = `/api/s/${sid}/export.ipynb?version=${v}`;
+  const v = rec.n_versions, name = `${fileStem(st.sample)}_v${v}_analysis.ipynb`, url = `/api/s/${sid}/export.ipynb?version=${v}`;
   $("xpStatus").textContent = "Writing the notebook (figures included)…";
   if (st.remote) { const path = await saveDownload(name, url); $("xpStatus").textContent = path ? `Saved ${path}` : st.dlError ? `Not saved: ${st.dlError}` : ""; return; }
   if (native()) {
@@ -9294,13 +10022,41 @@ async function exportProjectNotebook() {  // every slice of a project in one not
     document.body.append(a); a.click(); a.remove(); $("xpStatus").textContent = `Downloaded ${name}`;
   } catch (e) { $("xpStatus").textContent = e.message; }
 }
+async function exportGuide() {  // the reproduction guide for agents of the open annotation at the version shown
+  const nb = $("xpGuideNb").checked, name = `${fileStem(st.sample)}_v${st.version}_reproduce.zip`;
+  const url = `/api/s/${st.sid}/export_guide.zip?version=${st.version}&notebook=${nb ? 1 : 0}`;
+  const busy = nb ? "Writing the guide and the notebook (figures included)…" : "Writing the guide…";
+  if ($("xpGuide").disabled) return;
+  $("xpStatus").textContent = busy; $("xpGuide").disabled = true;  // (one build at a time)
+  try { await exportGuideRun(nb, name, url, busy); } finally { $("xpGuide").disabled = !st.sid || !!st.placeholder; }
+}
+async function exportGuideRun(nb, name, url, busy) {
+  if (st.remote) { const path = await saveDownload(name, url); $("xpStatus").textContent = path ? `Saved ${path}` : st.dlError ? `Not saved: ${st.dlError}` : ""; return; }
+  if (native()) {
+    const path = await native().save_path(name); if (!path) { $("xpStatus").textContent = ""; return; }
+    $("xpStatus").textContent = busy;
+    try { await post(`/api/s/${st.sid}/export_to`, { path, version: st.version, kind: "guide", notebook: nb }); $("xpStatus").textContent = `Saved ${path}`; }
+    catch (e) { $("xpStatus").textContent = e.message; }
+    return;
+  }
+  try {  // a browser: an error shows here instead of a broken download
+    const r = await fetch(url); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+    const a = document.createElement("a"); a.href = URL.createObjectURL(await r.blob()); a.download = name;
+    document.body.append(a); a.click(); a.remove(); $("xpStatus").textContent = `Downloaded ${name}`;
+  } catch (e) { $("xpStatus").textContent = e.message; }
+}
+$("xpGuide").onclick = exportGuide;
 $("xpReg").onclick = () => exportAs("registration");
 $("xpPos").onclick = () => exportAs("positions");
 $("xpGeo").onclick = () => exportAs("regions");
 document.addEventListener("keydown", (e) => {
+  // Screenshot view: Esc brings everything back (also with its Legend box focused)
+  if (document.body.classList.contains("shot") && e.key === "Escape" && !document.querySelector("dialog[open]")) { setShot(false); return; }
   if (document.querySelector("dialog[open]") || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;  // a dialog open: not the map's keys
+  if (e.key === "s" && !e.ctrlKey && !e.metaKey && !e.altKey && !st.drawing) { setShot(!document.body.classList.contains("shot")); return; }
+  if (document.body.classList.contains("shot") && !["h", "e", "[", "]"].includes(e.key)) return;  // (no tools in the view)
   if (e.key === "h") $("hide").click();
-  if (e.key === "e") $("hideHE").click();
+  if (e.key === "e" && !$("hideHE").disabled) $("hideHE").click();
   if (e.key === "[") stepSlice(-1);
   if (e.key === "]") stepSlice(1);
   if (e.key === "t") setHeader(!document.querySelector("header").classList.contains("collapsed"));
@@ -9326,6 +10082,29 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Alt" && !st.altHeld) { st.altHeld = true; drawRegionsOnce(); }
   if ((st.drawing || st.tool !== "move") && e.key === " ") { e.preventDefault(); if (!st.spaceHeld) { st.spaceHeld = true; syncPen(); } }
 });
+// ---------------- Screenshot view: every box and panel hidden, the map alone (the legend when chosen) ----------------
+function setShot(on) {
+  if (on) {  // the map alone: no tool drawing on it, no cell card; how to come back, for 3 s
+    if (st.shape && st.shape.dirty) { toast("Save or drop the shape being edited first (Regions), then the screenshot view", 5000); return; }
+    if (st.drawing) pauseDraw();  // (the outline kept as a draft: Draw goes on with it)
+    if (st.shape) cancelShape(false);
+    if (st.tool !== "move") setTool("move");
+    if ($("cellcard").classList.contains("show")) { $("cellcard").classList.remove("show"); viewer.removeOverlay("cellmark"); }
+    toast("Screenshot view: press Esc to come back", 3000);
+  } else if (/^Screenshot view/.test($("toast").textContent)) $("toast").classList.remove("show");  // (only its own note)
+  document.body.classList.toggle("shot", on);
+  document.body.classList.toggle("nolegend", on && !$("shotLegChk").checked);
+  setLabel($("shotBtn"), on ? "Back to the full view (s or Esc)" : "Screenshot view: hide every box and panel, the map alone (s; Esc or click again to come back)");
+  setTimeout(() => window.dispatchEvent(new Event("resize")), 50);  // the map takes the room of the panels (and gives it back)
+}
+$("shotLegChk").checked = load("shotLegend") === "1";  // the legend hidden too, unless the user ticks Legend
+$("shotLegChk").onchange = () => {
+  store("shotLegend", $("shotLegChk").checked ? "1" : "0"); $("shotLegChk").blur();  // (the map's keys work again)
+  document.body.classList.toggle("nolegend", document.body.classList.contains("shot") && !$("shotLegChk").checked);
+};
+$("shotBtn").onclick = () => setShot(!document.body.classList.contains("shot"));
+if (viewer.navigator && window.ResizeObserver)  // the button sits just above the overview, whatever its size
+  new ResizeObserver(() => $("viewerwrap").style.setProperty("--navH", `${viewer.navigator.element.offsetHeight}px`)).observe(viewer.navigator.element);
 document.addEventListener("keyup", (e) => { if (e.key === "Alt" && st.altHeld) { st.altHeld = false; drawRegionsOnce(); } });
 document.addEventListener("keyup", (e) => { if (e.key === " " && st.spaceHeld) { e.preventDefault(); st.spaceHeld = false; syncPen(); } });
 window.addEventListener("blur", () => { if (st.spaceHeld) { st.spaceHeld = false; syncPen(); } st.altHeld = false; });
