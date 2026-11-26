@@ -15,7 +15,7 @@ an annotation's analysis and redraw its figures without this app's interface.
 
 The counts and images are not copied (too large): the guide names their files with size and checksum.
 """
-import hashlib, importlib, inspect, io, json, os, platform, shutil, sys, time, zipfile
+import hashlib, importlib, inspect, io, json, os, platform, shutil, sys, tempfile, threading, time, zipfile
 from pathlib import Path
 import numpy as np, pandas as pd
 from . import __version__, config
@@ -158,15 +158,38 @@ def _table_md(df, max_rows=60):
 
 
 # ---------------- the guide ----------------
+_locks, _locks_lock = {}, threading.Lock()
+
+
+def zip_name(s, v):
+    from . import projects
+    return f"{projects.file_stem(s.sample_id)}_v{v}_reproduce.zip"
+
+
 def build(s, version=None, with_notebook=True, progress=None):
-    """Write the guide of a version (default: latest) as a zip into the session's exports; return its path."""
+    """Write the guide of a version (default: latest) as a zip into the session's exports; return its path (a name of
+    its own: a second build, e.g. a second click, neither breaks nor replaces one being sent). The download's name is
+    zip_name()."""
+    with _locks_lock:
+        lock = _locks.setdefault(s.id, threading.Lock())
+    with lock:  # (one build of an annotation at a time: they share its export folder)
+        return _build(s, version, with_notebook, progress)
+
+
+def _build(s, version, with_notebook, progress):
     say = progress or (lambda f, m: None)
     from . import notebook
     st = s.state(version)
     v = st["version"]
-    work = s.dir / "exports" / f"guide_v{v:04d}"
-    if work.exists():
-        shutil.rmtree(work)
+    exports = s.dir / "exports"
+    exports.mkdir(parents=True, exist_ok=True)
+    for old in exports.glob("guide_*"):  # earlier builds' leftovers (a guide is sent at once; an hour is plenty)
+        try:
+            if time.time() - old.stat().st_mtime > 3600:
+                shutil.rmtree(old) if old.is_dir() else old.unlink()
+        except OSError:
+            pass
+    work = Path(tempfile.mkdtemp(prefix=f"guide_v{v:04d}_", dir=exports))
     data = work / "data"
     (data / "results").mkdir(parents=True)
     M = {"format": 1, "app": {"name": "STAnnotator", "version": __version__, "build": config.build(),
@@ -274,12 +297,12 @@ def build(s, version=None, with_notebook=True, progress=None):
             M["files"].setdefault(str(f.relative_to(work)), f.stat().st_size)
     (work / "manifest.json").write_text(_dump(M), encoding="utf-8")
     say(0.9, "packing the zip")
-    from . import projects
-    out = s.dir / "exports" / f"{projects.file_stem(s.sample_id)}_v{v}_reproduce.zip"
+    root = zip_name(s, v)[:-len(".zip")]
+    out = work.with_suffix(".zip")  # (guide_v<v>_<random>.zip)
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         for f in sorted(work.rglob("*")):
             if f.is_file():
-                z.write(f, f"{out.stem}/{f.relative_to(work)}")
+                z.write(f, f"{root}/{f.relative_to(work)}")
     shutil.rmtree(work, ignore_errors=True)
     say(1.0, "done")
     return out
@@ -597,6 +620,11 @@ def _write_guide(s, st, v, cells, results, colors, M, md, skip):
         req = {k: x for k, x in r["request"].items() if k not in ("selection",)}
         add(f"### {title} (`{kind}`), run {r.get('time') or '?'}")
         add(f"Request: `{_short(req, 2500)}`" + (f"; selection of {r['selection_cells']} cells" if r.get("selection_cells") else "") + ".")
+        rv = req.get("version")
+        if rv not in (None, "", v):
+            add(f"**Note**: run on version {rv} of this annotation, not version {v} (this guide's): its cells' labels "
+                "may differ from `data/cells.csv`; to reproduce it, use version {rv} (the notebook and state of that "
+                "version) or expect differences where the labels changed.".replace("{rv}", str(rv)))
         res = r["result"]
         if res.get("note"):
             add(f"Note of the result: {res['note']}")

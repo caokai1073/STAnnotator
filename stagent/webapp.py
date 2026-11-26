@@ -113,7 +113,17 @@ def _idle_release(every=120):
 
 
 
-def image_error_text(path, e):
+def offers_locate(meta):
+    """Whether Steps → Image offers Locate… for the sample's image (the step shows it: not an H&E-only sample, not
+    Visium / Stereo-seq, not the instrument's own DAPI shown without an H&E)."""
+    src = (meta.get("source") or {}).get("kind", "")
+    return bool(meta.get("he_path")) and not meta.get("image_only") and not src.startswith("visium") and src != "stereoseq" \
+        and not (meta.get("image_kind") not in ("H&E", None, "none") and not meta.get("registration_by"))
+
+
+def image_error_text(path, e, where="main"):
+    """where: "locate" (the image the cells are on, Steps → Image offers Locate…), "main" (it does not), "layer" (an
+    added image)."""
     """What to tell the user when the sample's image cannot be opened: e an OSError (moved, no permission, locked) or
     any other failure to read it (a file still being copied or synced, a damaged file, not an image the app reads)."""
     import errno
@@ -127,7 +137,9 @@ def image_error_text(path, e):
                 "the file is complete, or import the image again (Import > Image of this sample).")
     if isinstance(e, FileNotFoundError):
         return (f"The image {path} is no longer there (moved, renamed or deleted): the cells are shown without it. "
-                "Put it back, or find it where it is now: Steps > Image > Locate….")
+                + {"locate": "Put it back, or find it where it is now: Steps > Image > Locate….",
+                   "layer": "Put it back, or Discard it (Steps > Image > Discard) and Add it again from its new place."
+                   }.get(where, "Put it back, or import the image again from its new place."))
     if e.errno in (errno.EPERM, errno.EACCES) and sys.platform == "darwin":
         return (f"macOS does not let STAnnotator read the image {path}. Allow it in System Settings > Privacy & "
                 "Security > Files and Folders > STAnnotator (the folder it is in, e.g. Downloads), or Full Disk "
@@ -149,7 +161,8 @@ class SampleView:
             self.slide = render.slide(meta.get("he_path"))
         except Exception as e:  # the image cannot be read (missing, no permission, locked, cut short, not a TIFF): the
             # cells on a blank background, and why (he_info says it)
-            self.slide, self.image_kind, self.image_error = render.BlankSlide(), "none", image_error_text(meta.get("he_path"), e)
+            self.slide, self.image_kind, self.image_error = render.BlankSlide(), "none", image_error_text(
+                meta.get("he_path"), e, "locate" if offers_locate(meta) else "main")
         cells = pd.read_parquet(config.SAMPLES / sample_id / "cells.parquet", columns=["px", "py"])
         px, py = cells.px.to_numpy(), cells.py.to_numpy()
         self.px, self.py = px, py
@@ -739,10 +752,10 @@ def he_tile(req: Request):
         # why (he_info: image_error, image_errors per other image); not kept anywhere
         if img == "main":
             if v.image_error is None:
-                v.image_error = image_error_text(v.he_path, e)
+                v.image_error = image_error_text(v.he_path, e, "locate" if offers_locate(importer._meta(sid)) else "main")
         else:
             v.layer_errors = getattr(v, "layer_errors", {})
-            v.layer_errors.setdefault(img, image_error_text(next((x["path"] for x in importer.images(sid) if x["id"] == img), img), e))
+            v.layer_errors.setdefault(img, image_error_text(next((x["path"] for x in importer.images(sid) if x["id"] == img), img), e, "layer"))
         return Response(b"", status_code=503, headers=NO_CACHE)
     lay = None
     if img != "main":  # another image of the sample (the frame's own tile under its address would stay in the
@@ -4488,7 +4501,7 @@ def api_export_guide(req):
     s = review_app._session(req.path_params["sid"])
     v = int(req.query_params["version"]) if req.query_params.get("version") else s.versions()[-1]
     path = reproguide.build(s, v, req.query_params.get("notebook", "1") != "0")
-    return FileResponse(path, media_type="application/zip", filename=path.name)
+    return FileResponse(path, media_type="application/zip", filename=reproguide.zip_name(s, v))
 
 
 def reply_language(text):

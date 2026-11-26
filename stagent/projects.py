@@ -68,16 +68,22 @@ def set_groupings(pid, columns):
     p = load(pid)
     ids = [x for x in p["samples"] if (config.SAMPLES / x / "meta.json").exists()]
     clean, seen = {}, {k.lower() for k in (p.get("region_groups") or {})}  # (not a region grouping's name)
+    # names the slices already have (e.g. imported metadata called "region"): kept as they are, the checks are for
+    # new names (analysis.cells shows such a column as "meta:<name>")
+    have = {k for x in ids for k in ((p["slices"].get(x) or {}).get("metadata") or {})}
     for name, vals in (columns or {}).items():
         n = " ".join(str(name or "").split())
         if not n:
             raise ValueError("a grouping needs a name")
-        if len(n) > 40:
-            raise ValueError(f"the name {n[:40]}… is longer than 40 characters")
-        if n.lower() in RESERVED_GROUPINGS:
-            raise ValueError(f"{n!r} is one of the app's own groupings: choose another name (e.g. condition)")
-        if n.lower() in seen:
+        if n.lower() in {c.lower() for c in clean}:
             raise ValueError(f"{n!r} is taken: another grouping (of the slices or of the regions) has this name")
+        if n not in have:
+            if len(n) > 40:
+                raise ValueError(f"the name {n[:40]}… is longer than 40 characters")
+            if n.lower() in RESERVED_GROUPINGS:
+                raise ValueError(f"{n!r} is one of the app's own groupings: choose another name (e.g. condition)")
+            if n.lower() in seen:
+                raise ValueError(f"{n!r} is taken: another grouping (of the slices or of the regions) has this name")
         seen.add(n.lower())
         v = {x: " ".join(str((vals or {}).get(x) or "").split())[:60] for x in ids}
         clean[n] = v

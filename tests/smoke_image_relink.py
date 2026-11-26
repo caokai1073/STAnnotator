@@ -94,6 +94,13 @@ try:
     assert e["path"] == str(os.path.realpath(new_img2)) and m["images_hidden"] == [added + "#c1"], (e, m["images_hidden"])
     ids = [x["id"] for x in importer.images("s1")]
     assert ids[:1] == ["main"] and added in ids, ids
+    # back to the first place and again: each relink keeps what it said (history not rewritten)
+    shutil.move(os.path.join(home, "new"), os.path.join(home, "old"))
+    webapp._drop_view("s1")
+    r = c.post("/api/sample/s1/image_relink", json={"old": json.load(open(mf))["he_path"], "path": img})
+    assert r.status_code == 200, r.text
+    hist = json.load(open(mf))["image_relinks"]
+    assert hist[0]["from"] == img and hist[0]["to"].endswith("new/he.ome.tif") and hist[-1]["to"] == str(os.path.realpath(img)), hist
     print("ok")
 finally:
     shutil.rmtree(home, ignore_errors=True)

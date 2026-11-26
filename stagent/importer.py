@@ -2162,7 +2162,7 @@ def relink_image(sample_id, old_path, new_path):
                              "it is not the same image (to use another image, Add it)")
         if entry.get("frame") and m.get("he_um_per_px"):
             upp = image_pixel_size(new)
-            if upp and abs(upp / float(m["he_um_per_px"]) - 1) > 0.02:
+            if upp and abs(upp / float(m["he_um_per_px"]) - 1) > 0.05:  # (he_um_per_px may be fitted from a registration)
                 raise ValueError(f"this image has {upp:.4g} um per pixel, the old one {float(m['he_um_per_px']):.4g}: "
                                  "it is not the same image (to use another image, Add it)")
     else:
@@ -2172,30 +2172,39 @@ def relink_image(sample_id, old_path, new_path):
     # registration), the alignment's files; ids are not paths, so hidden channels and tiles follow
     olds = {json.dumps(x)[1:-1] for x in {old, res(old)} if x}
     new_j = json.dumps(new)[1:-1]
-    changed = []
-    for f in sorted((config.SAMPLES / sample_id).rglob("*.json")):
+
+    def swapped(text):
+        for o in olds:
+            text = text.replace(f'"{o}"', f'"{new_j}"').replace(f':{o}"', f':{new_j}"')  # (whole values; a key's end)
+        return text
+    sd = config.SAMPLES / sample_id
+    m = _meta(sample_id)
+    history = m.pop("image_relinks", [])  # (earlier relinks keep what they say)
+    meta_new = json.loads(swapped(json.dumps(m)))
+    if meta_new == m:
+        raise ValueError("this image comes with the instrument's output: it is found again with the output's folder, "
+                         "not one by one")
+    writes = []  # every change worked out first, then written: a refusal leaves nothing half done
+    for f in sorted(sd.rglob("*.json")):
+        if f.name == "meta.json" and f.parent == sd:
+            continue
         try:
             if f.stat().st_size > 64 << 20:
                 continue
             text = f.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        t2 = text
-        for o in olds:
-            t2 = t2.replace(f'"{o}"', f'"{new_j}"').replace(f':{o}"', f':{new_j}"')  # (whole values; a key's end)
+        t2 = swapped(text)
         if t2 != text:
             json.loads(t2)  # (still JSON)
-            tmp = f.with_suffix(".relink")
-            tmp.write_text(t2, encoding="utf-8")
-            os.replace(tmp, f)
-            changed.append(f.name)
-    if "meta.json" not in changed:
-        raise ValueError("this image comes with the instrument's output: it is found again with the output's folder, "
-                         "not one by one")
-    m = _meta(sample_id)
-    m.setdefault("image_relinks", []).append({"from": old, "to": new, "time": time.strftime("%Y-%m-%d %H:%M"),
-                                             "files": changed})
-    dump_json(m, config.SAMPLES / sample_id / "meta.json", indent=1)
+            writes.append((f, t2))
+    for f, t2 in writes:
+        tmp = f.with_suffix(".relink")
+        tmp.write_text(t2, encoding="utf-8")
+        os.replace(tmp, f)
+    meta_new["image_relinks"] = history + [{"from": old, "to": new, "time": time.strftime("%Y-%m-%d %H:%M"),
+                                            "files": ["meta.json"] + [str(f.relative_to(sd)) for f, _ in writes]}]
+    dump_json(meta_new, sd / "meta.json", indent=1)
     return {"relinked": new, "inside": None if inside is None else round(inside, 3)}
 
 

@@ -73,6 +73,32 @@ try:
         time.sleep(0.2)
     assert not st.get("error") and st["result"]["n_group"] > 0, st.get("error")
     print("DE upper vs lower regions:", st["result"]["n_group"], "vs", st["result"]["n_reference"], "cells")
+    def job(body):
+        j = c.post("/api/analysis/run", json={"session": sids[0], "scope": "project", **body}).json()
+        for _ in range(600):
+            st = c.get(f"/api/job/{j['job']}").json()
+            if st.get("done"):
+                return st
+            time.sleep(0.2)
+    # composition by a region grouping (varies inside a slice): pooled rows, no per-slice bars of a wrong group
+    st = job({"kind": "composition", "rows": "compartment", "cols": "cell type"})
+    assert not st.get("error"), st.get("error")
+    res = st["result"]
+    assert {x["row"] for x in res["table"]} >= {"upper", "lower"} and not res.get("by_slice"), (res["table"][:2], res.get("by_slice"))
+    # by a slice grouping: every slice's shares, labeled with its own group
+    c.post(f"/api/project/{pid}/groups", json={"columns": {"condition": cond}})
+    res = job({"kind": "composition", "rows": "condition", "cols": "cell type"})["result"]
+    assert len(res["by_slice"]) == 3 and {x["condition"] for x in res["by_slice"]} == {"UC", "control"}, res["by_slice"]
+    # an imported metadata column with a name the app now keeps for itself ("region") does not block saving
+    p_ = projects.load(pid)
+    for x in ids:
+        p_["slices"][x].setdefault("metadata", {})["region"] = "r1"
+    json.dump(p_, open(projects._file(pid), "w"))
+    g = c.get(f"/api/project/{pid}/groups").json()["columns"]
+    r = c.post(f"/api/project/{pid}/groups", json={"columns": {**g, "batch": {ids[0]: "1", ids[1]: "2", ids[2]: "2"}}})
+    assert r.status_code == 200 and "region" in r.json()["columns"], r.text
+    assert c.post(f"/api/project/{pid}/groups", json={"columns": {**g, "Lineage": cond}}).status_code == 400  # (a new name: checked)
+    c.post(f"/api/project/{pid}/groups", json={"columns": {"condition": cond}})
     assert c.post(f"/api/project/{pid}/groups", json={"columns": {"compartment": cond}}).status_code == 400  # (a region grouping's name)
     r = c.post(f"/api/project/{pid}/groups", json={"columns": {}}).json()  # all removed
     assert r["columns"] == {} and json.load(open(config.SAMPLES / ids[0] / "meta.json"))["metadata"] == {}

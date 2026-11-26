@@ -79,6 +79,20 @@ try:
         col = json.loads(z.read(f"{root}/data/colors.json"))
         assert set(col["cell_type"]) == set(types) and col["niche"] and col["leiden"], col.keys()
         print(f"guide (notebook {nb}): {len(names)} files, {len(r.content) // 1024} KB, {len(guide.splitlines())} lines")
+    # two builds at once (a second click): both whole, neither breaks the other
+    import threading
+    from stagent import reproguide
+    outs, errs = [], []
+    def one():
+        try:
+            outs.append(reproguide.build(Session(s.id), v, False))
+        except Exception as e:
+            errs.append(e)
+    th = [threading.Thread(target=one) for _ in range(2)]
+    [t.start() for t in th]; [t.join() for t in th]
+    assert not errs and len(set(outs)) == 2, (errs, outs)
+    for o in outs:
+        assert zipfile.ZipFile(o).testzip() is None and f"demo_v{v}_reproduce/REPRODUCE.md" in zipfile.ZipFile(o).namelist()
     print("ok")
 finally:
     shutil.rmtree(home, ignore_errors=True)

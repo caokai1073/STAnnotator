@@ -5562,14 +5562,18 @@ $("grSave").onclick = async () => {
     const name = (c.name || "").trim();
     if (!name) { $("grErr").textContent = "Each grouping needs a name"; return; }
     if (columns[name]) { $("grErr").textContent = `Two groupings are called ${name}`; return; }
-    columns[name] = Object.fromEntries(GR.rows.map((row) => [row.id, (c.values[row.id] || "").trim()]));
+    // the rows listed; a region grouping keeps its groups of regions not listed here (another annotation's)
+    columns[name] = { ...(GR.kind === "regions" ? Object.fromEntries(Object.entries(c.values).map(([k, v]) => [k, String(v || "").trim()])) : {}),
+      ...Object.fromEntries(GR.rows.map((row) => [row.id, (c.values[row.id] || "").trim()])) };
   }
   $("grSave").disabled = true; $("grErr").textContent = "";
   try { await post(GR.url, { columns }); }
   catch (e) { $("grErr").textContent = e.message; $("grSave").disabled = false; return; }
   $("grSave").disabled = false; $("grDlg").close();
   if (GR.kind === "slices") st.projects = await api("/api/projects").catch(() => st.projects);  // (the slices' metadata shown elsewhere)
+  st.groupsRev = (st.groupsRev || 0) + 1;  // Compare, Signaling, Co-localization and Trajectory list them
   AN.key = ""; if (typeof loadAnOptions === "function") loadAnOptions(true).catch(() => {});  // Compare by: the new groupings
+  if (typeof anRefresh === "function") anRefresh();
   toast(`Groups saved: Compare → Compare by lists them${GR.kind === "slices" ? " (with All slices)" : ""}`, 5000);
 };
 $("sampleGroup").onclick = openGroups;
@@ -8594,7 +8598,7 @@ function anSelection(scope = anScope()) {  // the cells selected in the UMAP win
 }
 // the niches (run and names) and the UMAP's Leiden clusters are groupings too: a new run or new names reload the lists
 const groupRuns = () => ({ niche: st.niche ? st.niche.params.run_id : null, leiden: st.emb ? st.emb.run_id || null : null });
-const groupingsSig = () => `${st.nicheSig || ""}|${st.emb ? st.emb.run_id || "" : ""}`;
+const groupingsSig = () => `${st.nicheSig || ""}|${st.emb ? st.emb.run_id || "" : ""}|${st.groupsRev || 0}`;  // (groupsRev: Group saved)
 function anRefresh() {  // the Compare and Signaling tabs follow the open annotation, the selection, the niches and the UMAP
   if (document.querySelector('header .pane[data-pane="compare"]').classList.contains("on")) setTimeout(() => loadAnOptions(), 0);
   if (document.querySelector('header .pane[data-pane="signal"]').classList.contains("on")) setTimeout(() => loadSigOptions(), 0);
@@ -9955,7 +9959,11 @@ async function exportGuide() {  // the reproduction guide for agents of the open
   const nb = $("xpGuideNb").checked, name = `${fileStem(st.sample)}_v${st.version}_reproduce.zip`;
   const url = `/api/s/${st.sid}/export_guide.zip?version=${st.version}&notebook=${nb ? 1 : 0}`;
   const busy = nb ? "Writing the guide and the notebook (figures included)…" : "Writing the guide…";
-  $("xpStatus").textContent = busy;
+  if ($("xpGuide").disabled) return;
+  $("xpStatus").textContent = busy; $("xpGuide").disabled = true;  // (one build at a time)
+  try { await exportGuideRun(nb, name, url, busy); } finally { $("xpGuide").disabled = !st.sid || !!st.placeholder; }
+}
+async function exportGuideRun(nb, name, url, busy) {
   if (st.remote) { const path = await saveDownload(name, url); $("xpStatus").textContent = path ? `Saved ${path}` : st.dlError ? `Not saved: ${st.dlError}` : ""; return; }
   if (native()) {
     const path = await native().save_path(name); if (!path) { $("xpStatus").textContent = ""; return; }

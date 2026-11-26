@@ -120,7 +120,8 @@ def _labels(s, version=None, selection=None):
     from . import projects  # the regions' groupings (Regions → Group): a cell's group is its region's; none outside
     for g, mp in projects.region_groups(s.sample_id).items():
         if g not in out:
-            out[g] = np.array([mp.get(str(x)) or None for x in r["region"]], dtype=object)
+            v = pd.Series(r["region"], dtype=object).astype(str).map(mp)  # (vectorized: millions of cells)
+            out[g] = v.where(v.notna() & (v != ""), None).to_numpy(dtype=object)
     meta, lab = nmod.current(s)
     out["niche"] = np.array(nmod.niche_names(s), dtype=object)[lab] if meta is not None and len(lab) == n else None
     lei = embedding.leiden(s.sample_id)
@@ -191,7 +192,7 @@ def cells(session=None, version=None, pid=None, selection=None, get_session=None
         lab["slice"] = np.full(n, str(section or s.meta.get("project_section", s.sample_id) if pid else s.sample_id),
                                dtype=object)  # (as text: a section numbered 1 is chosen as "1" in the page)
         for mk, mv in meta.get(s.sample_id, {}).items():
-            lab[mk if mk not in BUILTIN else f"meta:{mk}"] = np.full(n, str(mv), dtype=object)
+            lab[mk if mk not in BUILTIN and mk not in lab else f"meta:{mk}"] = np.full(n, str(mv), dtype=object)  # (not over a region grouping)
         parts.append(pd.DataFrame(lab))
     for k in unjoint:
         missing[k] = ["not from one run of all slices together: run it for the project"]
@@ -652,7 +653,10 @@ def crosstab(c, rows, cols, within=None, top_cols=None, replicate=None):
     res = {"scope": "project" if c.pid else "slice", "rows": rows, "cols": cols, "within": within or {},
            "n_cells": int(m.sum()), "keys": [str(x) for x in ct.columns], "table": out,
            "note": "enrichment = log2(observed / expected if the two groupings were independent)"}
-    if c.pid and rows not in ("slice",) and rows not in BUILTIN:  # a metadata column: the slices are replicates
+    per_slice = rows in ("slice",) or rows in BUILTIN or not c.pid or \
+        not (c.labels.groupby(c.labels["slice"])[rows].nunique(dropna=False) <= 1).all()
+    if not per_slice:  # a slice-level column (one value per slice, e.g. condition): the slices are replicates;
+        # a column that varies inside a slice (a region grouping) has no per-slice bars
         reps = []
         for x in dict.fromkeys(c.slices):
             ms = m & (c.slices == x)
