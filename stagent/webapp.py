@@ -164,7 +164,7 @@ class SampleView:
             self.slide, self.image_kind, self.image_error = render.BlankSlide(), "none", image_error_text(
                 meta.get("he_path"), e, "locate" if offers_locate(meta) else "main")
         else:  # its pixel size recorded (Locate… compares it), for images imported before it was
-            if meta.get("he_path") and str(Path(meta["he_path"]).resolve()) not in (meta.get("image_sizes") or {}):
+            if meta.get("he_path") and str(Path(meta["he_path"]).resolve()) not in importer.image_sizes(sample_id, meta):
                 importer.note_image_size(sample_id, meta["he_path"], (self.slide.W0, self.slide.H0))
         cells = pd.read_parquet(config.SAMPLES / sample_id / "cells.parquet", columns=["px", "py"])
         px, py = cells.px.to_numpy(), cells.py.to_numpy()
@@ -4035,7 +4035,8 @@ def steps_of(s, sample=None):
         reg = {"state": "not needed", "detail": f"placed by {meta.get('registration_by') or 'the instrument software'}"}
     elif not (meta.get("he_path") or meta.get("image_pending")):
         reg = {"state": "optional", "image": "none", "detail": "no image: import one (H&E, DAPI, a stain) to see the tissue"}
-    elif meta.get("check_pending") and not meta.get("image_pending") and not _image_unreadable(sid, img):
+    elif meta.get("check_pending") and not meta.get("image_pending") and meta.get("image_kind") != "H&E" \
+            and not _image_unreadable(sid, img):
         # placed by the instrument's coordinates: the page checks it once (cells against nuclei), as after a
         # registration file
         reg = {"state": "todo", "image": "placed", "check_pending": meta["check_pending"],
@@ -4535,7 +4536,9 @@ def api_export_guide(req):
     s = review_app._session(req.path_params["sid"])
     v = int(req.query_params["version"]) if req.query_params.get("version") else s.versions()[-1]
     path = reproguide.build(s, v, req.query_params.get("notebook", "1") != "0")
-    return FileResponse(path, media_type="application/zip", filename=reproguide.zip_name(s, v))
+    from starlette.background import BackgroundTask
+    return FileResponse(path, media_type="application/zip", filename=reproguide.zip_name(s, v),
+                        background=BackgroundTask(lambda: Path(path).unlink(missing_ok=True)))  # (sent: not kept)
 
 
 def reply_language(text):
@@ -4808,7 +4811,11 @@ async def api_export_to(req: Request):
             Path(b["path"]).expanduser().write_text(_regions_geojson(s, v)[0], encoding="utf-8")
         elif b.get("kind") == "guide":  # the reproduction guide for agents (a zip)
             from . import reproguide
-            shutil.copy(await asyncio.to_thread(reproguide.build, s, v, bool(b.get("notebook", True))), Path(b["path"]).expanduser())
+            zp = await asyncio.to_thread(reproguide.build, s, v, bool(b.get("notebook", True)))
+            try:
+                shutil.copy(zp, Path(b["path"]).expanduser())
+            finally:
+                Path(zp).unlink(missing_ok=True)  # (copied where the user chose: not kept twice)
         elif b.get("kind") == "project_notebook":  # all slices of a project (default the sample's), annotated together
             pid = str(b.get("project") or "") or projects.project_of(s.sample_id)
             if not pid:

@@ -1951,6 +1951,7 @@ def place_cells(sample_id, A, image, image_kind="H&E", by="file", progress=print
     m.pop("placement_affine_import", None)  # belonged to the corrections of the placement replaced here
     if not keep_positions:
         _drop_positions(m, sample_id)
+    m.pop("check_pending", None)  # (the cells placed anew: a check pending for the former image no longer applies)
     m.update(placement_affine=A.tolist(), he_path=str(Path(image).resolve()) if image else None,
              image_kind=image_kind if image else "none", he_um_per_px=float(1 / np.sqrt(abs(np.linalg.det(A[:, :2])))),
              registration_by=by)
@@ -2141,25 +2142,43 @@ def add_image(sample_id, path, kind="IF", registration=None, same_as=None, name=
     keep = [x for x in (m.get("images") or []) if Path(x["path"]).resolve() != Path(path).resolve()]
     if m.get("images_hidden"):  # (discarded before: shown again, its channels too)
         m["images_hidden"] = [h for h in m["images_hidden"] if h.split("#c")[0] != _image_id(path)]
-    m.setdefault("image_sizes", {})[str(Path(path).resolve())] = [int(W), int(H)]
     keep.append({"id": _image_id(path), "name": name or _image_label(kind, path), "kind": kind, "path": path,
                  "affine": np.asarray(A, float).tolist(), "source": "added",
                  **({"same_as": str(Path(ref["path"]).resolve())} if ref else {})})  # (follows that image: images())
     m["images"] = keep
     dump_json(m, config.SAMPLES / sample_id / "meta.json", indent=1)
+    note_image_size(sample_id, path, (W, H))
     return {"added": _image_id(path), "inside": round(float(inside), 3)}
 
 
+_SIZES_LOCK = __import__("threading").Lock()
+
+
+def image_sizes(sample_id, meta=None):
+    """{resolved path: [width, height]} of the sample's image files (image_sizes.json; meta's image_sizes of 0.2.63
+    builds before it had a file of its own)."""
+    out = dict((meta or _meta(sample_id)).get("image_sizes") or {})
+    try:
+        out.update(json.load(open(config.SAMPLES / sample_id / "image_sizes.json", encoding="utf-8")))
+    except (OSError, ValueError):
+        pass
+    return out
+
+
 def note_image_size(sample_id, path, size):
-    """Record an image file's pixel width and height (meta image_sizes, by its resolved path): Locate… takes a file at
-    a new place only when it has them. Written only when new or changed."""
+    """Record an image file's pixel width and height (image_sizes.json, by its resolved path: a file of its own, as the
+    viewer writes it from its threads): Locate… takes a file at a new place only when it has them."""
     try:
         k, wh = str(Path(path).resolve()), [int(size[0]), int(size[1])]
-        mf = config.SAMPLES / sample_id / "meta.json"
-        m = _meta(sample_id)
-        if (m.get("image_sizes") or {}).get(k) != wh:
-            m.setdefault("image_sizes", {})[k] = wh
-            dump_json(m, mf, indent=1)
+        f = config.SAMPLES / sample_id / "image_sizes.json"
+        with _SIZES_LOCK:
+            try:
+                d = json.load(open(f, encoding="utf-8"))
+            except (OSError, ValueError):
+                d = {}
+            if d.get(k) != wh:
+                d[k] = wh
+                dump_json(d, f, indent=1)
     except (OSError, ValueError, TypeError):
         pass
 
@@ -2179,7 +2198,9 @@ def relink_image(sample_id, old_path, new_path, unknown_size_ok=False):
         raise ValueError("that is the same file: put it back at this place, or choose it where it is now")
     W, H = _he_size(new)  # readable?
     # a file only moved keeps its pixel size: another slide, even of the same scanner and pixel size, does not
-    known = (m.get("image_sizes") or {}).get(res(old))
+    known = image_sizes(sample_id, m).get(res(old))
+    if entry is None:  # an image waiting for its alignment: placed anew by it, whatever its size
+        known, unknown_size_ok = None, True
     if known and [W, H] != [int(known[0]), int(known[1])]:
         raise ValueError(f"this image is {W} x {H} pixels, the one it replaces {known[0]} x {known[1]}: it is not the "
                          "same image (another one: Add it)")
@@ -2236,10 +2257,10 @@ def relink_image(sample_id, old_path, new_path, unknown_size_ok=False):
         tmp = f.with_suffix(".relink")
         tmp.write_text(t2, encoding="utf-8")
         os.replace(tmp, f)
-    meta_new.setdefault("image_sizes", {})[new] = [int(W), int(H)]
     meta_new["image_relinks"] = history + [{"from": old, "to": new, "time": time.strftime("%Y-%m-%d %H:%M"),
                                             "files": ["meta.json"] + [str(f.relative_to(sd)) for f, _ in writes]}]
     dump_json(meta_new, sd / "meta.json", indent=1)
+    note_image_size(sample_id, new, (W, H))
     return {"relinked": new, "inside": None if inside is None else round(inside, 3)}
 
 
@@ -2390,7 +2411,8 @@ def set_image(sample_id, path, kind="H&E", progress=print, reuse_registration=Tr
         if not (m.get("source") or {}).get("morphology"):  # (imported without it: its other stains listed from now on)
             m["source"]["morphology"] = path
             dump_json(m, config.SAMPLES / sample_id / "meta.json", indent=1)
-        mark_check(sample_id)  # (checked once that it is these cells' image)
+        if kind == "DAPI" or "dapi" in Path(path).name.lower() or Path(path).name.startswith("morphology_focus"):
+            mark_check(sample_id)  # (checked once that it is these cells' image; on nuclei, so the DAPI only)
         return r
     if m.get("registration_affine") and reuse_registration:
         r = place_cells(sample_id, m["registration_affine"], path, kind, by=m.get("registration_by") or "file",

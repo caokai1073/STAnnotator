@@ -606,7 +606,7 @@ body.shot #shotBtn { background: var(--accent); color: #fff; border-color: var(-
 body.shot header, body.shot #side, body.shot #empty, body.shot #maptop, body.shot #regpanel, body.shot #steps, body.shot #plpanel, body.shot #cellcard,
 body.shot #imgAdj, body.shot.nolegend #legend { display: none !important; }
 body.shot .navigator { visibility: hidden; }
-body.shot main { grid-template-columns: minmax(0, 1fr); }  /* (the chat's column given to the map) */
+body.shot main { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }  /* (the chat's column, or row on a narrow window, given to the map) */
 #viewerwrap.st #maptop { right: calc(min(340px, calc(45% - 10px)) + 20px); }
 #viewerwrap.st #plpanel { top: calc(10px + var(--stepsH, 0px)); max-height: calc(100% - 210px - var(--stepsH, 0px)); }
 #viewerwrap.st #cellcard { top: calc(10px + var(--stepsH, 0px)); }
@@ -3513,6 +3513,7 @@ function setPen(on) {
 }
 const drawTool = (t) => t === "polygon" || t === "pen";  // the tools that draw an outline point by point or freehand
 viewer.addHandler("canvas-press", (e) => {
+  if (document.body.classList.contains("shot")) { st.stroke = null; return; }  // (Screenshot view: pan and zoom only)
   st.stroke = st.drawing && st.pen && !st.spaceHeld ? { from: e.position, started: false } : null;
 });
 viewer.addHandler("canvas-drag", (e) => {
@@ -5847,16 +5848,16 @@ $("hiGo").onclick = async () => {
   loadStepsSoon();
   if (mode === "none" && st.sample && st.sample.image_pending) openAlignChoice();
 };
-var ALIGN = { auto: null, after: false, ext: null, own: 0 };  // own: checks / local registrations of this page running  // the samples Align automatically works through (null: none); after: its
+var ALIGN = { auto: null, after: false, ext: null, own: 0, checking: null };  // checking: the sample whose registration this page checks  // own: checks / local registrations of this page running  // the samples Align automatically works through (null: none); after: its
 // result window is being opened (the step's own check window must not take its place); ext: a run that places the
 // open sample's cells started elsewhere (another window, a reload, the API): {job, kind}
 function alignBusy() { return !!(ALIGN.auto || ALIGN.after || AW.ids || ALIGN.ext); }  // an alignment runs (the app's, the agent's, or one started elsewhere)
 function alignChanged() {  // its buttons greyed out, or back (Annotate and Filter wait for the cells' place too)
   alignBar(); loadStepsSoon();
-  const busy = alignBusy();
+  const busy = alignBusy() || !!ALIGN.checking;  // (the registration check reads the cells: they wait for it too)
   for (const [id, what] of [["annotate", "annotate"], ["qfGo", "filter"]]) {
     $(id).classList.toggle("alignwait", busy);
-    if (busy) { if ($(id).dataset.t0 === undefined) $(id).dataset.t0 = $(id).title || ""; $(id).title = `An alignment is running: ${what} when it has finished`; }
+    if (busy) { if ($(id).dataset.t0 === undefined) $(id).dataset.t0 = $(id).title || ""; $(id).title = alignBusy() ? `An alignment is running: ${what} when it has finished` : `The registration check is running (about a minute): ${what} when it has finished`; }
     else if ($(id).dataset.t0 !== undefined) { $(id).title = $(id).dataset.t0; delete $(id).dataset.t0; }
   }
 }
@@ -7538,7 +7539,12 @@ async function checkRegistration(note = "", more = [], opts = {}) {  // the cell
   try { return await checkRegistrationRun(note, more, opts); } finally { ALIGN.own--; }
 }
 async function checkRegistrationRun(note, more, opts = {}) {
-  const sample = st.sample.sample_id, who = opts.quiet  // (the check after an instrument image: said what it is for)
+  const sample = st.sample.sample_id;
+  ALIGN.checking = sample; alignChanged();
+  try { return await checkRegistrationShow(sample, note, more, opts); } finally { ALIGN.checking = null; alignChanged(); }
+}
+async function checkRegistrationShow(sample, note, more, opts) {
+  const who = opts.quiet  // (the check after an instrument image: said what it is for)
     ? `Checking that the instrument's image belongs to the cells of ${sampleName(st.sample)} (the cells against its nuclei, about a minute)`
     : `Checking the registration of ${sampleName(st.sample)}`;
   let job;
@@ -7790,6 +7796,7 @@ $("sample").onchange = (e) => {  // another slice of the same project: like ◀ 
 };
 $("annotate").onclick = () => {
   if (alignBusy()) { toast("An alignment is running: annotate when it has finished (the cells are being placed)", 6000); return; }
+  if (ALIGN.checking) { toast("The registration check is running (about a minute): annotate when it has finished", 6000); return; }
   return projectMode() && $("method").value === "markers" ? annotateProject() : startAnnotation("new");
 };
 $("session").onchange = (e) => { closeSession(); $("sessDel").disabled = $("sessRename").disabled = !e.target.value; if (e.target.value) startAnnotation("continue", e.target.value); else panelsIdle(); };
@@ -8200,6 +8207,7 @@ async function qfRun(params) {
 }
 $("qfGo").onclick = () => {
   if (alignBusy()) { $("qfErr").textContent = "An alignment is running: filter when it has finished"; return; }
+  if (ALIGN.checking) { $("qfErr").textContent = "The registration check is running (about a minute): filter when it has finished"; return; }
   return qfRun(qfParams());
 };
 $("qfRestore").onclick = () => qfRun({});
@@ -10028,6 +10036,7 @@ document.addEventListener("keydown", (e) => {
   if (document.body.classList.contains("shot") && e.key === "Escape" && !document.querySelector("dialog[open]")) { setShot(false); return; }
   if (document.querySelector("dialog[open]") || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;  // a dialog open: not the map's keys
   if (e.key === "s" && !e.ctrlKey && !e.metaKey && !e.altKey && !st.drawing) { setShot(!document.body.classList.contains("shot")); return; }
+  if (document.body.classList.contains("shot") && !["h", "e", "[", "]"].includes(e.key)) return;  // (no tools in the view)
   if (e.key === "h") $("hide").click();
   if (e.key === "e" && !$("hideHE").disabled) $("hideHE").click();
   if (e.key === "[") stepSlice(-1);
@@ -10058,12 +10067,13 @@ document.addEventListener("keydown", (e) => {
 // ---------------- Screenshot view: every box and panel hidden, the map alone (the legend when chosen) ----------------
 function setShot(on) {
   if (on) {  // the map alone: no tool drawing on it, no cell card; how to come back, for 3 s
-    if (st.drawing) cancelDraw();
-    if (st.shape) cancelShape();
+    if (st.shape && st.shape.dirty) { toast("Save or drop the shape being edited first (Regions), then the screenshot view", 5000); return; }
+    if (st.drawing) pauseDraw();  // (the outline kept as a draft: Draw goes on with it)
+    if (st.shape) cancelShape(false);
     if (st.tool !== "move") setTool("move");
     if ($("cellcard").classList.contains("show")) { $("cellcard").classList.remove("show"); viewer.removeOverlay("cellmark"); }
     toast("Screenshot view: press Esc to come back", 3000);
-  } else $("toast").classList.remove("show");
+  } else if (/^Screenshot view/.test($("toast").textContent)) $("toast").classList.remove("show");  // (only its own note)
   document.body.classList.toggle("shot", on);
   document.body.classList.toggle("nolegend", on && !$("shotLegChk").checked);
   setLabel($("shotBtn"), on ? "Back to the full view (s or Esc)" : "Screenshot view: hide every box and panel, the map alone (s; Esc or click again to come back)");

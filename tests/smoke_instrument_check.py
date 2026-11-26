@@ -81,6 +81,17 @@ try:
             assert res["verdict"] == "fine" and not res.get("new_alignment"), res
         else:
             assert res.get("new_alignment") or res["verdict"] != "fine", res
+    # a pending check is dropped by any new placement (e.g. an H&E aligned by the agent), and Steps shows none for an H&E
+    importer.mark_check("s1")
+    assert reg().get("check_pending")
+    importer.place_cells("s1", [[1 / PS, 0, 0], [0, 1 / PS, 0]], own, "H&E", by="agent", progress=lambda *a: None)
+    webapp._drop_view("s1")
+    assert not reg().get("check_pending") and "check_pending" not in json.load(open(mf)), reg()
+    # a stain of the instrument that is not the DAPI (boundary): not checked on nuclei
+    stain = os.path.join(out, "morphology_focus", "ch0002_boundary.ome.tif")
+    shutil.copy(own, stain)
+    r = c.post("/api/sample/s1/image", json={"path": stain, "kind": "IF"})
+    assert r.status_code == 200 and not json.load(open(mf)).get("check_pending"), (r.text, json.load(open(mf)).get("check_pending"))
     # two DAPI in one output folder: told apart by their file in the image list (Image box, Discard)
     names = [x["name"] for x in importer.images("s1")]
     assert len(names) == len(set(names)) and any("ch0001_dapi" in n for n in names), names

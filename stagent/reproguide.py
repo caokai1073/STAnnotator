@@ -644,7 +644,7 @@ def _write_guide(s, st, v, cells, results, colors, M, md, skip):
                 ", ".join(sorted(used - named)) + " were used too (their latest annotations at the time; `cells_per_slice` "
                 "in the result). Use every slice of the project.")
         rv = req.get("version")
-        if rv not in (None, "", v):
+        if rv not in (None, "", v) and req.get("scope") != "project":  # (a project's: the version of the slice opened then)
             add(f"**Note**: run on version {rv} of this annotation, not version {v} (this guide's): its cells' labels "
                 "may differ from `data/cells.csv`; to reproduce it, use version {rv} (the notebook and state of that "
                 "version) or expect differences where the labels changed.".replace("{rv}", str(rv)))

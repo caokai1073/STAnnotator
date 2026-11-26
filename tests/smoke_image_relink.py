@@ -61,7 +61,7 @@ try:
     assert not st.get("error"), st["error"]
     assert json.load(open(regcheck._file("s1")))["image"] == img
     c.get("/api/sample/s1/he_info")  # (the view opens the image: its pixel size is recorded)
-    assert json.load(open(mf))["image_sizes"][os.path.realpath(img)] == [W, H]
+    assert importer.image_sizes("s1")[os.path.realpath(img)] == [W, H]
     # the folder is moved away (the app's open files closed first: Windows cannot move an open file)
     webapp._drop_view("s1"); render.close(img); render.close(img2)
     shutil.move(os.path.join(home, "old"), os.path.join(home, "new"))
@@ -92,7 +92,8 @@ try:
     assert not st.get("error"), st["error"]
     print("check after Locate:", st["result"]["verdict"])
     # the added image, moved too, its size not recorded (imported before it was): the page is asked to confirm
-    m = json.load(open(mf)); m["image_sizes"].pop(os.path.realpath(img2), None); json.dump(m, open(mf, "w"))
+    sf = config.SAMPLES / "s1" / "image_sizes.json"
+    d = json.load(open(sf)); d.pop(os.path.realpath(img2), None); json.dump(d, open(sf, "w"))
     r = c.post("/api/sample/s1/image_relink", json={"old": img2, "path": new_img2})
     assert r.status_code == 409 and r.json().get("confirm") and "not recorded" in r.json()["error"], r.text
     r = c.post("/api/sample/s1/image_relink", json={"old": img2, "path": new_img2, "unknown_size_ok": True})
