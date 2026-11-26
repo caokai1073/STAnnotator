@@ -1,16 +1,16 @@
 {
- "about": "Scenes of the recorded session (0.2.62), in order (build.py). rewrite: local paths shown as generic ones. synthetic: answers no scene recorded (the agent's status). inject: an answer for one scene. The requests to the agent were recorded with tools/tutorial/record_viewer.py, which answers them without opening Terminal.",
+ "about": "Scenes of the recorded session (0.2.63), in order (build.py). rewrite: local paths shown as generic ones. synthetic: answers no scene recorded (the agent's status). inject: an answer for one scene. The requests to the agent were recorded with tools/tutorial/record_viewer.py, which answers them without opening Terminal.",
  "rewrite": [
   [
    "/Users/caokai/Documents/STAnnotator-repo/work/tut/data/",
    "/Users/me/Downloads/scp2927/"
   ],
   [
-   "/Users/caokai/Documents/STAnnotator-repo/work/tut/home62",
+   "/Users/caokai/Documents/STAnnotator-repo/work/tut/home63",
    "/Users/me/stagent"
   ],
   [
-   "/Users/caokai/.claude/projects/-Users-caokai-Documents-STAnnotator-repo-work-tut-home62-claude-workspace",
+   "/Users/caokai/.claude/projects/-Users-caokai-Documents-STAnnotator-repo-work-tut-home63-claude-workspace",
    "~/.claude/projects/stagent"
   ],
   [
@@ -30,7 +30,7 @@
    "/Users/me/"
   ],
   [
-   "work/tut/home62",
+   "work/tut/home63",
    "/Users/me/stagent"
   ]
  ],
@@ -63,7 +63,7 @@
     "reused": true
    }
   },
-  "GET /api/s/147328_20261121-235510_5d3d/advice": {
+  "GET /api/s/147328_20261126-151207_6f28/advice": {
    "items": [],
    "categories": {
     "taxonomy": "Cell types",
@@ -227,7 +227,7 @@
    "report": null,
    "registration_fixed": false
   },
-  "GET /api/s/147328_20261121-235730_5a47/advice": {
+  "GET /api/s/147328_20261126-151635_4834/advice": {
    "items": [],
    "categories": {
     "taxonomy": "Cell types",
@@ -419,14 +419,14 @@
   {
    "name": "c02-aligning-a",
    "source": "c02-aligning",
-   "from": 1795323217.652,
-   "until": 1795323231.4259999
+   "from": 1795723854.11,
+   "until": 1795723869.192
   },
   {
    "name": "c02-aligning-b",
    "source": "c02-aligning",
-   "from": 1795323231.4259999,
-   "until": 1795323263.418
+   "from": 1795723869.192,
+   "until": 1795723883.422
   },
   {
    "name": "c02-aligning"
@@ -477,6 +477,9 @@
    "name": "c05r-refine_report-1"
   },
   {
+   "name": "c05r-show_area-2"
+  },
+  {
    "name": "c05r-check_marker_list-1"
   },
   {
@@ -496,6 +499,12 @@
   },
   {
    "name": "c05r2-refine_report-1"
+  },
+  {
+   "name": "c05r2-show_area-1"
+  },
+  {
+   "name": "c05r2-show_area-2"
   },
   {
    "name": "c05r2-check_marker_list-1"
@@ -521,8 +530,8 @@
   {
    "name": "c06-pre",
    "source": "c06-embed",
-   "from": 1795323772.279,
-   "until": 1795323780.031
+   "from": 1795724513.338,
+   "until": 1795724521.1
   },
   {
    "name": "c06-embed"
@@ -618,13 +627,7 @@
    "name": "c14-reviewing"
   },
   {
-   "name": "c14-show_area-3"
-  },
-  {
-   "name": "c14-show_area-5"
-  },
-  {
-   "name": "c14-show_area-6"
+   "name": "c14-show_area-4"
   },
   {
    "name": "c14-record_review-1"
@@ -647,14 +650,14 @@
   {
    "name": "c15b-import-a",
    "source": "c15b-shift-import",
-   "from": 1795324248.785,
-   "until": 1795324256.322
+   "from": 1795724951.668,
+   "until": 1795724959.3
   },
   {
    "name": "c15b-import-b",
    "source": "c15b-shift-import",
-   "from": 1795324256.322,
-   "until": 1795324556.796
+   "from": 1795724959.3,
+   "until": 1795725259.69
   },
   {
    "name": "c15b-shift-import"
@@ -666,10 +669,16 @@
    "name": "c15b-fixed"
   },
   {
-   "name": "c16-ask-pre"
+   "name": "c16-ask-pre",
+   "source": "c16-ask-pre",
+   "from": 1795726174.676,
+   "until": 1795726185.727
   },
   {
-   "name": "c16-ask"
+   "name": "c16-ask",
+   "source": "c16-ask",
+   "from": 1795726174.676,
+   "until": 1795726219.693
   },
   {
    "name": "c17-report"
