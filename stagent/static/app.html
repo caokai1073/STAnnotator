@@ -976,7 +976,7 @@ body.shot main { grid-template-columns: minmax(0, 1fr); }  /* (the chat's column
     <div id="regwrap"><canvas id="regcanvas"></canvas></div>
     <svg id="regsvg"></svg>
     <div id="shotBox">  <!-- Screenshot view: every box and panel hidden, the map alone -->
-      <label id="shotLeg" title="Keep the legend in the screenshot view"><input type="checkbox" id="shotLegChk"> Legend</label>
+      <label id="shotLeg" title="Show the legend in the screenshot view"><input type="checkbox" id="shotLegChk"> Legend</label>
       <button id="shotBtn" class="ib" title="Screenshot view: hide every box and panel, the map alone (s; Esc or click again to come back)"></button>
     </div>
     <div id="regpanel" class="float" hidden>
@@ -3077,7 +3077,7 @@ $("lgtoggle").classList.add("flip");
 // ---------------- cell info on click ----------------
 function imgPointFromEvent(pos) { return heItem().viewerElementToImageCoordinates(pos); }
 viewer.addHandler("canvas-click", async (e) => {
-  if (!e.quick || !st.sid) return;
+  if (!e.quick || !st.sid || document.body.classList.contains("shot")) return;  // (Screenshot view: pan and zoom only)
   if (st.drawing) { if (Date.now() - (st.penAt || 0) > 300) addPoint(e.position); return; }
   if (st.tool !== "move" || Date.now() - (st.penAt || 0) < 300) return;
   // a plain click shows the cell; Alt (Option), Ctrl or Cmd + click selects the region under it, Shift + click adds or
@@ -3901,7 +3901,7 @@ $("osd").addEventListener("pointerleave", () => { st.cursorPos = null; drawRegio
 viewer.addHandler("canvas-press", (e) => {
   st.toolDrag = null;
   const t = st.tool;
-  if (!st.sid || st.drawing || st.spaceHeld || !["rect", "ellipse", "brush"].includes(t)) return;
+  if (!st.sid || document.body.classList.contains("shot") || st.drawing || st.spaceHeld || !["rect", "ellipse", "brush"].includes(t)) return;
   const p = imgPointFromEvent(e.position);
   st.toolDrag = { t, from: [p.x, p.y], to: [p.x, p.y], last: e.position, sub: subtracting(e.originalEvent), pending: [], started: false };
   if (t === "brush") { toolDab([e.position]); }
@@ -10040,12 +10040,19 @@ document.addEventListener("keydown", (e) => {
 });
 // ---------------- Screenshot view: every box and panel hidden, the map alone (the legend when chosen) ----------------
 function setShot(on) {
+  if (on) {  // the map alone: no tool drawing on it, no cell card; how to come back, for 3 s
+    if (st.drawing) cancelDraw();
+    if (st.shape) cancelShape();
+    if (st.tool !== "move") setTool("move");
+    if ($("cellcard").classList.contains("show")) { $("cellcard").classList.remove("show"); viewer.removeOverlay("cellmark"); }
+    toast("Screenshot view: press Esc to come back", 3000);
+  } else $("toast").classList.remove("show");
   document.body.classList.toggle("shot", on);
   document.body.classList.toggle("nolegend", on && !$("shotLegChk").checked);
   setLabel($("shotBtn"), on ? "Back to the full view (s or Esc)" : "Screenshot view: hide every box and panel, the map alone (s; Esc or click again to come back)");
   setTimeout(() => window.dispatchEvent(new Event("resize")), 50);  // the map takes the room of the panels (and gives it back)
 }
-$("shotLegChk").checked = load("shotLegend") !== "0";  // the legend kept unless the user chose otherwise
+$("shotLegChk").checked = load("shotLegend") === "1";  // the legend hidden too, unless the user ticks Legend
 $("shotLegChk").onchange = () => {
   store("shotLegend", $("shotLegChk").checked ? "1" : "0"); $("shotLegChk").blur();  // (the map's keys work again)
   document.body.classList.toggle("nolegend", document.body.classList.contains("shot") && !$("shotLegChk").checked);
