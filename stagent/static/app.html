@@ -7240,7 +7240,8 @@ async function loadSteps() {
     const right = document.createElement("span");
     const img = x.key === "registration" ? x.image : null;  // the image: none (Import), instrument (its DAPI: Add, Discard, Import an H&E), pending (Align), placed (Add, Discard, Check), error (Add, Discard, Locate / Refresh)
     const a = x.open ? ["Open", () => { showTab("data"); $("session").focus(); toast("Choose an annotation in the Annotation box", 4000); }]
-      : img === "pending" ? ["Align", () => openAlignChoice()] : img === "none" || img === "instrument" ? ["Import", () => openImageImport()]
+      : img === "pending" ? ["Align", () => openAlignChoice()] : img === "none" ? ["Import", () => openImageImport()]
+      : img === "instrument" ? ["Check", () => checkRegistration()]  // (the full check; an H&E: Add)
       : img === "error" ? (/Refresh/.test(x.detail || "") ? ["Refresh", () => refreshAll()]  // (still copying: read it again)
         : ["Locate…", () => openImageRelink(x.path)])  // (moved or unreadable: the same file where it is now)
       : img === "placed" && x.advise === "align" ? ["Align again", () => autoAlign([smp])]  // (the check: far off over most of the tissue)
@@ -7332,7 +7333,7 @@ async function loadSteps() {
     const k = `instCheck:${smp}:${st.he ? st.he.rev : ""}`;
     if (!(st.instChecked || (st.instChecked = new Set())).has(k)) {
       st.instChecked.add(k);
-      checkRegistration("The cells were put on the instrument's image by their coordinates, not measured on it.", [], { quiet: true }).catch(() => {});
+      quickCheck(smp).catch(() => {});  // (seconds; Steps → Image → Check runs the full check)
       return;
     }
   }
@@ -7541,6 +7542,17 @@ function regDialog(sample, title, figure, text, buttons) {  // the registration 
     box.append(b);
   });
   if (!$("rgDlg").open) $("rgDlg").showModal();
+}
+async function quickCheck(sample) {  // the image the cells were just put on by their coordinates: is it theirs? (seconds)
+  const name = sampleName(st.sample);
+  toast(`Quick check of ${name}'s image: the cells against its nuclei in 20 windows…`, 60000);
+  let r;
+  try { r = await post(`/api/sample/${encodeURIComponent(sample)}/registration/quick`, {}); }
+  catch (e) { toast(`Quick check of ${name}'s image failed: ${e.message}`, 8000); return; }
+  loadStepsSoon();
+  if (r.verdict === "fine") toast(`Quick check: the cells sit on the nuclei of ${name}'s image (${r.n_windows} windows, median ${r.median_um} µm). Steps → Image → Check runs the full check.`, 8000);
+  else if (r.verdict === "off") toast(`Quick check: the cells sit off the nuclei of this image (read in ${Math.round(100 * (r.read_share || 0))}% of ${r.n_windows} windows): it is probably not their image (another run's DAPI, the wrong file). Steps → Image → Check runs the full check; or choose the right image.`, 15000);
+  else toast(`Quick check of ${name}'s image: not clear (${r.n_windows} windows). Steps → Image → Check runs the full check.`, 10000);
 }
 async function checkRegistration(note = "", more = [], opts = {}) {  // the cells against the nuclei over the whole tissue, by the app (no agent);
   // note: a sentence before its own (e.g. the automatic alignment's); more: buttons before its own (e.g. Undo)

@@ -157,6 +157,57 @@ def windows(sample_id, progress=None, wait_s=300):
         busy.unlink(missing_ok=True)
 
 
+QUICK_WINDOWS = 20      # the quick check (an instrument image put under the cells): this many windows over the tissue
+QUICK_FINE_UM = 5.0     # read on at least half of them, the nuclei within this of the cells: the image is theirs;
+QUICK_OFF_SHARE = 0.2   # read on fewer than this share: it is not (another run's DAPI, the wrong file)
+
+
+def quick(sample_id):
+    """A quick look whether the image the cells are on is theirs (seconds, not the full check): QUICK_WINDOWS windows
+    of WINDOW_UM spread over the tissue (the ones with most cells of an even grid, seed 0), each the nuclei against
+    the cell centroids (xcorr). {"verdict": "fine" | "off" | "unclear", "n_windows", "read_share", "median_um"}.
+    Nothing is stored: Steps → Image → Check runs the full check (windows over the whole tissue, local shifts)."""
+    from .importer import image_of, _meta
+    m = _meta(sample_id)
+    image, kind = image_of(sample_id), m.get("image_kind", "H&E")
+    if not image or kind == "none":
+        raise ValueError("no image to check against")
+    cells = pd.read_parquet(config.SAMPLES / sample_id / "cells.parquet", columns=["px", "py"])
+    px, py = cells.px.to_numpy(), cells.py.to_numpy()
+    upp = float(m.get("he_um_per_px") or config.HE_UM_PER_PX)
+    sl = render.slide(image)
+    tile = WINDOW_UM / upp
+    x0, y0 = float(px.min()), float(py.min())
+    nx = int((px.max() - x0) // tile) + 1
+    tj, ti = ((px - x0) // tile).astype(int), ((py - y0) // tile).astype(int)
+    groups = pd.Series(np.arange(len(px))).groupby(ti * nx + tj).indices
+    ok = [(k, r) for k, r in groups.items() if len(r) >= MIN_CELLS]
+    if not ok:
+        return {"verdict": "unclear", "n_windows": 0, "read_share": None, "median_um": None}
+    pick = np.random.default_rng(0).choice(len(ok), min(QUICK_WINDOWS, len(ok)), replace=False)
+    W, R, half = int(WINDOW_UM), int(SEARCH_UM), tile / 2
+    reads, offs = 0, []
+    n = 0
+    for i_ in sorted(pick):
+        k, rows = ok[i_]
+        i, j = divmod(int(k), nx)
+        cx, cy = x0 + (j + 0.5) * tile, y0 + (i + 0.5) * tile
+        if cx - half < 0 or cy - half < 0 or cx + half > sl.W0 or cy + half > sl.H0:
+            continue
+        win = xcorr(sl, kind, cx, cy, half, W, R, px[rows], py[rows])
+        n += 1
+        dy, dx = np.unravel_index(np.argmax(win), win.shape)
+        edge = max(abs(dx - R), abs(dy - R)) >= R
+        if win.max() >= MIN_CORR and not edge:
+            reads += 1
+            offs.append(float(np.hypot(dx - R, dy - R)))
+    share = reads / n if n else 0.0
+    med = round(float(np.median(offs)), 1) if offs else None
+    verdict = "unclear" if not n else "fine" if share >= 0.5 and med is not None and med <= QUICK_FINE_UM \
+        else "off" if share < QUICK_OFF_SHARE else "unclear"
+    return {"verdict": verdict, "n_windows": n, "read_share": round(share, 2), "median_um": med}
+
+
 def _scan(sl, kind, px, py, grid, say=None, keys=None, coarse=False):
     """The offset rows of the windows of grid ({"origin_px", "tile_px", "nx", "um_per_px"}) holding the cells at px,
     py (only the window ids in keys, when given); coarse: the coarse pass, its rows ending with the share of the

@@ -71,7 +71,14 @@ try:
         webapp._drop_view("s1")
         x_ = reg()
         assert x_.get("check_pending") == "instrument" and x_["image"] == "placed", x_
-        st = check()
+        t0 = time.time()
+        q = c.post("/api/sample/s1/registration/quick").json()  # the page's quick look right after (seconds)
+        print("  quick:", q, f"{time.time() - t0:.1f} s")
+        assert q["verdict"] == ("fine" if paired else "off"), q
+        assert not reg().get("check_pending")  # (asked once)
+        if paired:
+            assert reg()["state"] == "optional" and "quick check" in reg()["detail"], reg()  # (not a step to do)
+        st = check()  # Check: the full check
         assert not st.get("error"), st["error"]
         res = st["result"]
         print("own DAPI" if paired else "another run's DAPI", "->", res["verdict"], "median", res.get("median_offset_um"),
@@ -114,6 +121,8 @@ try:
     m = json.load(open(mf))
     assert m["image_kind"] == "DAPI" and not m.get("image_pending") and m.get("check_pending") and os.path.realpath(m["he_path"]) == os.path.realpath(multi), \
         {k: m.get(k) for k in ("image_kind", "image_pending", "check_pending", "he_path")}
+    q = c.post("/api/sample/s1/registration/quick").json()
+    assert q["verdict"] == "fine", q
     st = check()
     print("multi-channel file of the instrument's size ->", st["result"]["verdict"], "read", st["result"].get("read_share"))
     assert st["result"]["verdict"] == "fine" and not st["result"].get("new_alignment"), st["result"]

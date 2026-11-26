@@ -1543,6 +1543,27 @@ async def api_align_auto(req: Request):
         or _json({"job": job})
 
 
+async def api_registration_quick(req: Request):
+    """The quick check of the image the cells are on (seconds; after an instrument image is put under them): regcheck.quick,
+    kept in meta quick_check (Steps shows it); the pending check is then asked."""
+    sample = req.path_params["sample"]
+    if "/" in sample or ".." in sample or not (config.SAMPLES / sample / "meta.json").exists():
+        return _json({"error": f"no sample {sample}"}, 404)
+    try:
+        r = await asyncio.to_thread(regcheck.quick, sample)
+    except (ValueError, OSError) as e:
+        return _json({"error": str(e)}, 400)
+    try:
+        mf = config.SAMPLES / sample / "meta.json"
+        mm = json.load(open(mf, encoding="utf-8"))
+        mm.pop("check_pending", None)
+        mm["quick_check"] = {**r, "key": regcheck._key(sample, importer.image_of(sample)), "time": time.strftime("%Y-%m-%dT%H:%M:%S")}
+        dump_json(mm, mf, indent=1)
+    except (OSError, ValueError):
+        pass
+    return _json(r)
+
+
 async def api_registration_check(req: Request):
     """Check the registration now, without the agent (Steps > H&E > Check): the cells against the nuclei in
     windows over the whole tissue (regcheck.summary; the windows of the alignment's check are reused). A run under
@@ -4047,9 +4068,16 @@ def steps_of(s, sample=None):
                "detail": "the cells are on the instrument's image by their coordinates: checking that it is theirs"}
     elif not meta.get("image_pending") and meta.get("image_kind") not in ("H&E", None, "none") \
             and not meta.get("registration_by"):  # the instrument's own DAPI, the cells on it by their coordinates
-        reg = {"state": "optional", "image": "instrument",  # (the page: Import an H&E, Add another image, Discard)
-               "detail": f"the instrument's {meta.get('image_kind')} is shown (the cells on it by their coordinates); "
-                         "no H&E: import one to see the tissue"}
+        q = meta.get("quick_check") or {}
+        reg = {"state": "optional", "image": "instrument",  # (the page: Add another image, Discard, Check)
+               "detail": f"the instrument's {meta.get('image_kind')} is shown (the cells on it by their coordinates)"
+                         + (f"; quick check: on its nuclei ({q['n_windows']} windows)" if q.get("key") == regcheck._key(sid, img) and q.get("verdict") == "fine"
+                            else "; quick check: off its nuclei, Check" if q.get("key") == regcheck._key(sid, img) and q.get("verdict") == "off" else "")
+                         + "; Add an H&E to see the tissue"}
+        rc = meta.get("registration_checked") or {}
+        if img and rc.get("key") == regcheck._key(sid, img):  # Check (the full check) since
+            reg["detail"] += (f" · checked {rc['time'][:10]}: far off its nuclei, align it or choose the right image"
+                              if rc.get("new_alignment") else f" · checked {rc['time'][:10]}")
     elif _image_unreadable(sid, img):
         reg = {"state": "blocked", "image": "error", "detail": _image_unreadable(sid, img), "path": img}
     elif meta.get("image_pending") or not importer.on_image(meta):
@@ -4085,6 +4113,15 @@ def steps_of(s, sample=None):
             reg = {"state": "done", "detail": f"checked when aligned: the cells sit on their nuclei (median {ac.get('median_um')} µm)"}
         elif checked:
             reg = {"state": "done", "detail": f"checked {checked}{fixed}"}
+        elif img and (meta.get("quick_check") or {}).get("key") == regcheck._key(sid, img):
+            q = meta["quick_check"]
+            reg = ({"state": "optional", "detail": f"quick check: the cells sit on its nuclei ({q['n_windows']} windows, "
+                                                   f"median {q['median_um']} µm); Check: the full check"}
+                   if q["verdict"] == "fine" else
+                   {"state": "todo", "advise": "align" if q["verdict"] == "off" else None,
+                    "detail": "quick check: the cells sit off this image's nuclei; Check (the full check), or choose "
+                              "the right image" if q["verdict"] == "off" else
+                              "quick check: not clear; Check: the full check"})
         elif org["n_runs"]:
             reg = {"state": "done", "detail": f"reviewed {org['last_run']['time'][:10]}{fixed}"}
         else:
@@ -5161,6 +5198,7 @@ def build_app(port):
         Route("/api/claude/model", api_claude_model, methods=["POST"]),
         Route("/api/sample/{sample}/registration/local", api_registration_local, methods=["POST"]),
         Route("/api/sample/{sample}/registration/check", api_registration_check, methods=["POST"]),
+        Route("/api/sample/{sample}/registration/quick", api_registration_quick, methods=["POST"]),
         Route("/api/sample/{sample}/align/auto", api_align_auto, methods=["POST"]),
         Route("/api/sample/{sample}/registration/figure", api_registration_figure),
         Route("/api/sample/{sample}/registration/local/undo", api_registration_local_undo, methods=["POST"]),
