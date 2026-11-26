@@ -2069,6 +2069,13 @@ def images(sample_id, meta=None):
             x["affine"] = ref["affine"]
     for x in out:  # its placement's fingerprint: tiles of another placement are other tiles (the viewer's cache)
         x["rev"] = hashlib.sha1(json.dumps(np.round(np.asarray(x["affine"], float), 6).tolist()).encode()).hexdigest()[:8]
+    names = {}
+    for x in out:
+        names.setdefault(x["name"], []).append(x)
+    for same in names.values():  # two images called alike (two DAPI of one output folder): told apart by their file
+        if len(same) > 1:
+            for x in same:
+                x["name"] = f"{x['name']} ({Path(x['path']).name})"
     return out
 
 

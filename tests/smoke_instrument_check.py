@@ -81,6 +81,11 @@ try:
             assert res["verdict"] == "fine" and not res.get("new_alignment"), res
         else:
             assert res.get("new_alignment") or res["verdict"] != "fine", res
+    # two DAPI in one output folder: told apart by their file in the image list (Image box, Discard)
+    names = [x["name"] for x in importer.images("s1")]
+    assert len(names) == len(set(names)) and any("ch0001_dapi" in n for n in names), names
+    ims = c.get("/api/sample/s1/he_info").json()["images"]
+    assert all(x.get("path") for x in ims), ims
     print("ok")
 finally:
     shutil.rmtree(home, ignore_errors=True)

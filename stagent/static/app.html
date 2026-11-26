@@ -1801,7 +1801,7 @@ function fillImages(sample, he) {  // the Image selector: the sample's images (t
   const want = load(`img:${sample}`);
   st.imgId = ims.some((x) => x.id === want) ? want : "main";
   sel.textContent = "";
-  ims.forEach((x) => sel.append(Object.assign(document.createElement("option"), { value: x.id, textContent: x.name })));
+  ims.forEach((x) => sel.append(Object.assign(document.createElement("option"), { value: x.id, textContent: x.name, title: x.path || "" })));  // (its file on hover)
   if (!ims.length) sel.append(Object.assign(document.createElement("option"), { value: "main", textContent: "No image" }));
   sel.value = st.imgId; sel.disabled = !ims.length;
   imgSelTitle();
@@ -3092,6 +3092,7 @@ viewer.addHandler("canvas-click", async (e) => {
   const q = imgPointFromEvent(new OpenSeadragon.Point(e.position.x + 10, e.position.y));
   const g = st.mode.startsWith("gene:") ? `&gene=${encodeURIComponent(st.mode.slice(5))}` : "";
   const c = await api(`/api/s/${st.sid}/cell_at?x=${p.x}&y=${p.y}&tol=${Math.abs(q.x - p.x)}&version=${st.version}${g}`);
+  if (document.body.classList.contains("shot")) return;  // (Screenshot view entered meanwhile: no mark left in it)
   showCell(c);
 });
 function showCell(c) {
@@ -5604,7 +5605,7 @@ function openImageDiscard() {
   ims.forEach((x) => {
     const l = document.createElement("label"), cb = Object.assign(document.createElement("input"), { type: "checkbox", value: x.id });
     const k = Object.assign(document.createElement("span"), { className: "k", textContent: (x.frame ? "the cells are placed on it · " : "") + (x.kind === "IF" ? "stain" : x.kind) });
-    l.append(cb, document.createTextNode(x.name), k); box.append(l);
+    l.append(cb, document.createTextNode(x.name), k); l.title = x.path || ""; box.append(l);  // (its file on hover)
     cb.onchange = irNote;
   });
   irNote(); $("irDlg").showModal();

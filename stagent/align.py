@@ -483,7 +483,9 @@ def windows_figure(w, d, title, color, out):
     ax.legend(frameon=False, fontsize=9, loc="best")
     extra = (f"; + {d['large_shift_windows']} large shift(s) of {regcheck.COARSE_WINDOW_UM:g} um windows up to "
              f"{d['large_shift_um']:g} um") if d["large_shift_windows"] else ""
-    ax.set_title(f"median {d['median_um']} um, {d['share_off']:.0%} of windows >= {off:g} um{extra}", fontsize=9.5)
+    ax.set_title((f"median {d['median_um']} um, {d['share_off']:.0%} of windows >= {off:g} um{extra}"
+                  if d.get("median_um") is not None else
+                  f"no offset could be read in any window (the nuclei do not match the cells){extra}"), fontsize=9.5)
     ax.spines[["top", "right"]].set_visible(False)
     ax2 = fig.add_axes([0.52, 0.04, 0.42, 0.84])
     sl = render.slide(w["image"])

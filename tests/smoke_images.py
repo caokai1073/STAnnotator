@@ -136,7 +136,8 @@ try:
     assert render.channel_names(mc) == ["DAPI", "CD45", "PanCK"] and render.channel_names(os.path.join(home, "frame.ome.tif")) is None
     rm = cl.post("/api/sample/s1/images/add", json={"path": mc, "kind": "IF", "same_as": "main"}).json()
     got = [(x["id"], x["name"]) for x in cl.get("/api/sample/s1/he_info").json()["images"] if x["id"].startswith(rm["added"])]
-    assert got == [(rm["added"], "DAPI"), (rm["added"] + "#c1", "CD45"), (rm["added"] + "#c2", "PanCK")], got
+    # (the sample has the instrument's DAPI too: this file's DAPI channel is told apart by its file)
+    assert got == [(rm["added"], "DAPI (multi.ome.tif)"), (rm["added"] + "#c1", "CD45"), (rm["added"] + "#c2", "PanCK")], got
     tiles = [cl.get("/api/sample/s1/he/8/0_0.jpg", params={"img": i}) for i, _ in got]
     assert all(t.status_code == 200 for t in tiles) and len({t.content for t in tiles}) == 3, "the channels look the same"
     for k in range(3):  # each one is its channel: against the channel read directly

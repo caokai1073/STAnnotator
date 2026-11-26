@@ -83,6 +83,9 @@ try:
     # the request kept with the result names every slice the server used (the page sends only the slices opened)
     rec = json.load(open(config.SESSIONS / sids[0] / "results" / "de.json"))
     assert len(rec["request"]["sessions"]) == 3, rec["request"].get("sessions")
+    runs = [json.loads(x) for x in open(config.HOME / "analysis_runs.jsonl") if x.strip()]  # (the bug reports' run log)
+    last = [r for r in runs if r.get("kind") == "de"][-1]
+    assert "sessions" in last["settings"] and all(x in str(last["settings"]["sessions"]) for x in ids), last["settings"].get("sessions")
     # both groups inside one slice (two regions of it): the per-slice check says so (not "one slice on each side")
     st = job({"kind": "de", "by": "region", "group": "top", "reference": "bottom", "within": {"slice": ["a"]}})
     assert not st.get("error") and "both groups are in one slice" in (st["result"].get("per_slice_check") or ""), st["result"].get("per_slice_check")

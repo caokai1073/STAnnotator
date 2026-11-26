@@ -1588,6 +1588,8 @@ async def api_registration_check(req: Request):
             areas = r.get("areas") or []
             JOBS[job].update(progress=0.95, stage="drawing the figure")
             head, color = _CHECK_HEAD[r["verdict"]]
+            if (r.get("new_alignment") or {}).get("advised"):  # far off over most of the tissue: not "on their nuclei"
+                head, color = "Cells far off their nuclei over most of the tissue", "#b3261e"
             fig = align.placement_figure(sample, f"{_sample_label(sample)}: {head}", color)
             JOBS[job].update(progress=1.0, stage="done", done=True, result={
                 "figure": Path(fig).name,
@@ -2026,8 +2028,11 @@ ANALYSES = LRU(8)   # recent results, for their CSV
 
 def _used(b, c):
     """The request as run: for an analysis of all slices, every slice's annotation the server used (the page sends
-    only the slices opened; the others are their latest annotations), so the record says which cells it was on."""
-    return {**b, "sessions": {s.sample_id: s.id for s in c.sessions}} if b.get("scope") == "project" and c.sessions else b
+    only the slices opened; the others are their latest annotations), so the records say which cells it was on.
+    Set in b itself: the run log of the bug reports (report.log_analysis, noted when the run ends) holds b too."""
+    if b.get("scope") == "project" and c.sessions:
+        b["sessions"] = {s.sample_id: s.id for s in c.sessions}
+    return b
 
 
 def _keep_result(b, kind, result, table, sessions=()):
@@ -2264,7 +2269,7 @@ async def api_coloc_run(req: Request):
             while len(ANALYSES) > ANALYSES.n:
                 ANALYSES.popitem(last=False)
             with jobs.critical():  # (the result's files: written whole)
-                bb = _used({**b, "kind": "coloc"}, c)
+                bb = {**_used(b, c), "kind": "coloc"}
                 analysis.log_run(review_app._session(b["session"]), bb, r)
                 _keep_result(bb, "coloc", {**r, "id": key}, table, c.sessions)
             JOBS[job].update(progress=1.0, stage="done", done=True, result={**r, "id": key})
@@ -2461,7 +2466,7 @@ def api_he_info(req):
                   "image_rev": hashlib.sha1(str(v.he_path or "none").encode()).hexdigest()[:8],
                   "image_only": bool(m.get("image_only")), "um_per_px_known": m.get("um_per_px_known", True),
                   "image_errors": getattr(v, "layer_errors", {}),
-                  "images": [{k: x[k] for k in ("id", "name", "kind", "frame", "source", "rev")}
+                  "images": [{k: x[k] for k in ("id", "name", "kind", "frame", "source", "rev", "path")}
                              | {"key": hashlib.sha1(f"{x['path']}#{x.get('channel', 0)}".encode()).hexdigest()[:12]}  # (its file and channel: the page keeps display settings by it)
                              for x in importer.images(v.sample_id)]
                   if v.image_kind != "none" or m.get("images") or (m.get("source") or {}).get("morphology") else []})
