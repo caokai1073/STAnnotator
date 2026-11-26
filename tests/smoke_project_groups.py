@@ -80,6 +80,19 @@ try:
             if st.get("done"):
                 return st
             time.sleep(0.2)
+    # the request kept with the result names every slice the server used (the page sends only the slices opened)
+    rec = json.load(open(config.SESSIONS / sids[0] / "results" / "de.json"))
+    assert len(rec["request"]["sessions"]) == 3, rec["request"].get("sessions")
+    # both groups inside one slice (two regions of it): the per-slice check says so (not "one slice on each side")
+    st = job({"kind": "de", "by": "region", "group": "top", "reference": "bottom", "within": {"slice": ["a"]}})
+    assert not st.get("error") and "both groups are in one slice" in (st["result"].get("per_slice_check") or ""), st["result"].get("per_slice_check")
+    # the reproduction guide of a slice whose niches were computed on all slices together says so
+    joint.niches(pid, 15, 4, "cell types", 20, lambda *a: None)
+    from stagent import reproguide
+    import zipfile
+    zf = zipfile.ZipFile(reproguide.build(Session(sids[0]), None, False))
+    guide = zf.read(next(n for n in zf.namelist() if n.endswith("REPRODUCE.md"))).decode()
+    assert "Computed on all slices of project" in guide and "joint.py" in guide, guide[guide.find("Niches"):][:400]
     # composition by a region grouping (varies inside a slice): pooled rows, no per-slice bars of a wrong group
     st = job({"kind": "composition", "rows": "compartment", "cols": "cell type"})
     assert not st.get("error"), st.get("error")

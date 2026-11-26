@@ -163,6 +163,9 @@ class SampleView:
             # cells on a blank background, and why (he_info says it)
             self.slide, self.image_kind, self.image_error = render.BlankSlide(), "none", image_error_text(
                 meta.get("he_path"), e, "locate" if offers_locate(meta) else "main")
+        else:  # its pixel size recorded (Locate… compares it), for images imported before it was
+            if meta.get("he_path") and str(Path(meta["he_path"]).resolve()) not in (meta.get("image_sizes") or {}):
+                importer.note_image_size(sample_id, meta["he_path"], (self.slide.W0, self.slide.H0))
         cells = pd.read_parquet(config.SAMPLES / sample_id / "cells.parquet", columns=["px", "py"])
         px, py = cells.px.to_numpy(), cells.py.to_numpy()
         self.px, self.py = px, py
@@ -192,7 +195,9 @@ class SampleView:
             A = np.asarray(x["affine"], float)       # cell um -> this image's pixels
             Fi = np.linalg.inv(F[:, :2])
             L = A[:, :2] @ Fi
-            self._layers[key] = (render.slide(x["path"], x.get("channel")), np.c_[L, A[:, 2] - L @ F[:, 2]], x["rev"])
+            sl = render.slide(x["path"], x.get("channel"))
+            self._layers[key] = (sl, np.c_[L, A[:, 2] - L @ F[:, 2]], x["rev"])
+            importer.note_image_size(self.sample_id, x["path"], (sl.W0, sl.H0))  # (Locate… compares it)
         return self._layers[key]
 
     def forget_layers(self):
@@ -2012,6 +2017,12 @@ async def api_project_niches(req: Request):
 ANALYSES = LRU(8)   # recent results, for their CSV
 
 
+def _used(b, c):
+    """The request as run: for an analysis of all slices, every slice's annotation the server used (the page sends
+    only the slices opened; the others are their latest annotations), so the record says which cells it was on."""
+    return {**b, "sessions": {s.sample_id: s.id for s in c.sessions}} if b.get("scope") == "project" and c.sessions else b
+
+
 def _keep_result(b, kind, result, table, sessions=()):
     """The last result of each analysis kind, kept with the annotation (analysis.keep_result) and, for an analysis of
     all slices (sessions: its Cells' annotations), with each slice's: Last result works after a reload and there."""
@@ -2170,8 +2181,9 @@ async def api_analysis_run(req: Request):
             ANALYSES.popitem(last=False)
         say(0.95, "keeping the result")
         with jobs.critical():  # (the result's files: written whole)
-            analysis.log_run(review_app._session(b["session"]), b, r)
-            _keep_result(b, b["kind"], {**r, "id": key}, table, c.sessions)
+            bb = _used(b, c)
+            analysis.log_run(review_app._session(b["session"]), bb, r)
+            _keep_result(bb, b["kind"], {**r, "id": key}, table, c.sessions)
         return {**r, "id": key}
 
     def work():
@@ -2211,8 +2223,9 @@ async def api_communication_run(req: Request):
             while len(ANALYSES) > ANALYSES.n:
                 ANALYSES.popitem(last=False)
             from . import analysis
-            analysis.log_run(review_app._session(b["session"]), b, r)
-            _keep_result(b, b.get("kind", "run"), {**r, "id": key, "kind": b.get("kind", "run")}, table, c.sessions)
+            bb = _used(b, c)
+            analysis.log_run(review_app._session(b["session"]), bb, r)
+            _keep_result(bb, b.get("kind", "run"), {**r, "id": key, "kind": b.get("kind", "run")}, table, c.sessions)
             JOBS[job].update(progress=1.0, stage="done", done=True, result={**r, "id": key, "kind": b.get("kind", "run")})
         except Exception as e:
             JOBS[job].update(error=f"{type(e).__name__}: {e}" if not isinstance(e, (ValueError, KeyError)) else str(e).strip("'"),
@@ -2244,8 +2257,9 @@ async def api_coloc_run(req: Request):
             while len(ANALYSES) > ANALYSES.n:
                 ANALYSES.popitem(last=False)
             with jobs.critical():  # (the result's files: written whole)
-                analysis.log_run(review_app._session(b["session"]), {**b, "kind": "coloc"}, r)
-                _keep_result({**b, "kind": "coloc"}, "coloc", {**r, "id": key}, table, c.sessions)
+                bb = _used({**b, "kind": "coloc"}, c)
+                analysis.log_run(review_app._session(b["session"]), bb, r)
+                _keep_result(bb, "coloc", {**r, "id": key}, table, c.sessions)
             JOBS[job].update(progress=1.0, stage="done", done=True, result={**r, "id": key})
         except Exception as e:
             JOBS[job].update(error=f"{type(e).__name__}: {e}" if not isinstance(e, (ValueError, KeyError)) else str(e).strip("'"),
@@ -2285,8 +2299,9 @@ async def api_trajectory_run(req: Request):
                 _colors_forget(s)
                 i += n
             from . import analysis
-            analysis.log_run(review_app._session(b["session"]), b | {"kind": "trajectory"}, r)
-            _keep_result(b, f"trajectory_{r['method']}", r, table, c.sessions)  # the last result of each method
+            bb = _used(b, c)
+            analysis.log_run(review_app._session(b["session"]), bb | {"kind": "trajectory"}, r)
+            _keep_result(bb, f"trajectory_{r['method']}", r, table, c.sessions)  # the last result of each method
             JOBS[job].update(progress=1.0, stage="done", done=True, result=r)
         except Exception as e:
             JOBS[job].update(error=f"{type(e).__name__}: {e}" if not isinstance(e, (ValueError, KeyError)) else str(e).strip("'"),
@@ -3600,8 +3615,10 @@ async def api_sample_image_relink(req: Request):
         return _json({"error": "the sample is busy: try again when it ends"}, 409)
     old = str(b.get("old") or "")
     try:
-        r = importer.relink_image(sample, old, str(b.get("path") or ""))  # (the check's windows follow: same pixels)
+        r = importer.relink_image(sample, old, str(b.get("path") or ""), bool(b.get("unknown_size_ok")))
     except (ValueError, OSError) as e:
+        if str(e).startswith("SIZE_UNKNOWN: "):  # the page asks the user to confirm it is the same file
+            return _json({"error": str(e)[len("SIZE_UNKNOWN: "):], "confirm": True}, 409)
         return _json({"error": str(e)}, 400)
     _drop_view(sample)
     _reload_sample(sample)

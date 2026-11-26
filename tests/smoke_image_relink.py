@@ -60,16 +60,21 @@ try:
     st = check()
     assert not st.get("error"), st["error"]
     assert json.load(open(regcheck._file("s1")))["image"] == img
-    # the folder is moved away
-    shutil.move(os.path.join(home, "old"), os.path.join(home, "new"))
+    c.get("/api/sample/s1/he_info")  # (the view opens the image: its pixel size is recorded)
+    assert json.load(open(mf))["image_sizes"][os.path.realpath(img)] == [W, H]
+    # the folder is moved away (the app's open files closed first: Windows cannot move an open file)
     webapp._drop_view("s1"); render.close(img); render.close(img2)
+    shutil.move(os.path.join(home, "old"), os.path.join(home, "new"))
     x = reg()
     print("moved ->", x["state"], "|", x["detail"])
     assert x["image"] == "error" and x["path"] == img and "no longer there" in x["detail"] and "Locate" in x["detail"], x
     # refused: the same place, another image (the cells off it), not an image of the sample
     small = os.path.join(home, "small.ome.tif")
     pyramid(small, 300, 300)
-    for old, new, why in ((img, img, "same file"), (img, small, "not the same image"), ("/nope.tif", small, "not an image of this sample")):
+    other = os.path.join(home, "other.ome.tif")  # another slide: larger, the cells fall on it, same pixel size
+    pyramid(other, W + 64, H + 64, seed=3)
+    for old, new, why in ((img, img, "same file"), (img, small, "not the same image"), (img, other, f"{W + 64} x {H + 64} pixels"),
+                          ("/nope.tif", small, "not an image of this sample")):
         r = c.post("/api/sample/s1/image_relink", json={"old": old, "path": new})
         assert r.status_code == 400 and why in r.json()["error"], (why, r.status_code, r.text)
     new_img, new_img2 = os.path.join(home, "new", "he.ome.tif"), os.path.join(home, "new", "stain.ome.tif")
@@ -86,8 +91,11 @@ try:
     st = check()  # the check again at the new place (it reads the image of its windows again)
     assert not st.get("error"), st["error"]
     print("check after Locate:", st["result"]["verdict"])
-    # the added image, moved too: found again with its id and hidden channel
+    # the added image, moved too, its size not recorded (imported before it was): the page is asked to confirm
+    m = json.load(open(mf)); m["image_sizes"].pop(os.path.realpath(img2), None); json.dump(m, open(mf, "w"))
     r = c.post("/api/sample/s1/image_relink", json={"old": img2, "path": new_img2})
+    assert r.status_code == 409 and r.json().get("confirm") and "not recorded" in r.json()["error"], r.text
+    r = c.post("/api/sample/s1/image_relink", json={"old": img2, "path": new_img2, "unknown_size_ok": True})
     assert r.status_code == 200, r.text
     m = json.load(open(mf))
     e = next(x for x in m["images"] if x["id"] == added)
@@ -95,8 +103,8 @@ try:
     ids = [x["id"] for x in importer.images("s1")]
     assert ids[:1] == ["main"] and added in ids, ids
     # back to the first place and again: each relink keeps what it said (history not rewritten)
+    webapp._drop_view("s1"); render.close(new_img); render.close(new_img2)
     shutil.move(os.path.join(home, "new"), os.path.join(home, "old"))
-    webapp._drop_view("s1")
     r = c.post("/api/sample/s1/image_relink", json={"old": json.load(open(mf))["he_path"], "path": img})
     assert r.status_code == 200, r.text
     hist = json.load(open(mf))["image_relinks"]

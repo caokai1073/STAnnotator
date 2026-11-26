@@ -234,15 +234,27 @@ def _key_path(k):
     return k[0] if isinstance(k, tuple) else k
 
 
+def _same_file(a, b):
+    """The same file, however its path is written (macOS: /var is /private/var; a link; relative)."""
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    try:
+        return Path(a).resolve() == Path(b).resolve()
+    except OSError:
+        return False
+
+
 def unload(path):
     """Forget an open image (its file handles and stores), every channel of it."""
-    for k in [k for k in _slides if _key_path(k) == path]:
+    for k in [k for k in _slides if _same_file(_key_path(k), path)]:
         _slides.pop(k, None)
 
 
 def close(path):
     """Close and drop an open image, every channel of it (its file handles and stores): no longer shown anywhere."""
-    for k in [k for k in _slides if _key_path(k) == path]:
+    for k in [k for k in _slides if _same_file(_key_path(k), path)]:
         sl = _slides.pop(k, None)
         if hasattr(sl, "close"):
             sl.close()

@@ -2130,6 +2130,7 @@ def add_image(sample_id, path, kind="IF", registration=None, same_as=None, name=
     keep = [x for x in (m.get("images") or []) if Path(x["path"]).resolve() != Path(path).resolve()]
     if m.get("images_hidden"):  # (discarded before: shown again, its channels too)
         m["images_hidden"] = [h for h in m["images_hidden"] if h.split("#c")[0] != _image_id(path)]
+    m.setdefault("image_sizes", {})[str(Path(path).resolve())] = [int(W), int(H)]
     keep.append({"id": _image_id(path), "name": name or _image_label(kind, path), "kind": kind, "path": path,
                  "affine": np.asarray(A, float).tolist(), "source": "added",
                  **({"same_as": str(Path(ref["path"]).resolve())} if ref else {})})  # (follows that image: images())
@@ -2138,7 +2139,21 @@ def add_image(sample_id, path, kind="IF", registration=None, same_as=None, name=
     return {"added": _image_id(path), "inside": round(float(inside), 3)}
 
 
-def relink_image(sample_id, old_path, new_path):
+def note_image_size(sample_id, path, size):
+    """Record an image file's pixel width and height (meta image_sizes, by its resolved path): Locate… takes a file at
+    a new place only when it has them. Written only when new or changed."""
+    try:
+        k, wh = str(Path(path).resolve()), [int(size[0]), int(size[1])]
+        mf = config.SAMPLES / sample_id / "meta.json"
+        m = _meta(sample_id)
+        if (m.get("image_sizes") or {}).get(k) != wh:
+            m.setdefault("image_sizes", {})[k] = wh
+            dump_json(m, mf, indent=1)
+    except (OSError, ValueError, TypeError):
+        pass
+
+
+def relink_image(sample_id, old_path, new_path, unknown_size_ok=False):
     """The same image at a new place (moved, renamed, or copied back from elsewhere): every reference of the sample to
     old_path points to new_path, the placement and the images' ids kept. Checked: the new file reads as an image, its
     pixel size (when both are known) matches, and the cells fall on it with the current placement."""
@@ -2152,6 +2167,14 @@ def relink_image(sample_id, old_path, new_path):
     if res(old) == new:
         raise ValueError("that is the same file: put it back at this place, or choose it where it is now")
     W, H = _he_size(new)  # readable?
+    # a file only moved keeps its pixel size: another slide, even of the same scanner and pixel size, does not
+    known = (m.get("image_sizes") or {}).get(res(old))
+    if known and [W, H] != [int(known[0]), int(known[1])]:
+        raise ValueError(f"this image is {W} x {H} pixels, the one it replaces {known[0]} x {known[1]}: it is not the "
+                         "same image (another one: Add it)")
+    if not known and not unknown_size_ok:
+        raise ValueError(f"SIZE_UNKNOWN: the size of the image it replaces was not recorded, so the app cannot tell "
+                         f"whether this file ({W} x {H} pixels) is the same image")
     if entry is not None:
         A = np.asarray(entry["affine"], float)
         xy = pd.read_parquet(config.SAMPLES / sample_id / "cells.parquet", columns=["x", "y"]).to_numpy()
@@ -2202,6 +2225,7 @@ def relink_image(sample_id, old_path, new_path):
         tmp = f.with_suffix(".relink")
         tmp.write_text(t2, encoding="utf-8")
         os.replace(tmp, f)
+    meta_new.setdefault("image_sizes", {})[new] = [int(W), int(H)]
     meta_new["image_relinks"] = history + [{"from": old, "to": new, "time": time.strftime("%Y-%m-%d %H:%M"),
                                             "files": ["meta.json"] + [str(f.relative_to(sd)) for f, _ in writes]}]
     dump_json(meta_new, sd / "meta.json", indent=1)

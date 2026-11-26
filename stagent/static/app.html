@@ -5793,8 +5793,16 @@ $("hiGo").onclick = async () => {
   if (!img) { $("hiErr").textContent = "Choose the image"; return; }
   if ($("hiDlg").dataset.relink) {  // Locate…: the same image at its new place
     $("hiGo").disabled = true; $("hiErr").textContent = "checking the image…";
-    try { await post(`/api/sample/${encodeURIComponent(sample)}/image_relink`, { old: $("hiDlg").dataset.relink, path: img }); }
-    catch (e) { $("hiErr").textContent = e.message; $("hiGo").disabled = false; return; }
+    const body = { old: $("hiDlg").dataset.relink, path: img };
+    try { await post(`/api/sample/${encodeURIComponent(sample)}/image_relink`, body); }
+    catch (e) {
+      // the size of the image it replaces was not recorded (imported before 0.2.63 and not opened since): asked
+      if (!(e.body && e.body.confirm && confirm(`${e.message}.\n\nUse it only if it is the same file, moved or renamed: another slide puts the cells on the wrong tissue. Use it?`))) {
+        $("hiErr").textContent = e.body && e.body.confirm ? "Not located: choose the same file" : e.message; $("hiGo").disabled = false; return;
+      }
+      try { await post(`/api/sample/${encodeURIComponent(sample)}/image_relink`, { ...body, unknown_size_ok: true }); }
+      catch (e2) { $("hiErr").textContent = e2.message; $("hiGo").disabled = false; return; }
+    }
     $("hiDlg").close(); $("hiDlg").dataset.relink = "";
     await refreshAll(); loadStepsSoon(); toast("The image is found again: the cells are on it as before", 4000);
     return;

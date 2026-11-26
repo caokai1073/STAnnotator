@@ -312,6 +312,9 @@ def _compare(c, a_mask, b_mask, max_cells=MAX_TEST_CELLS, parallel=True):
                 t["slices_separate"] = np.where(lfc > 0, up, down)
                 out["per_slice_check"] = (f"every one of {len(ga)} group slice(s) beyond every one of {len(gb)} "
                                           "reference slice(s) (mean expression)")
+            elif ga == gb:  # both groups in the same one slice (e.g. two regions of it)
+                out["per_slice_check"] = (f"none: both groups are in one slice ({ga[0]}), so there is no other slice "
+                                          "to check the difference in")
             else:
                 out["per_slice_check"] = ("none: one slice on each side, so a difference between the groups cannot be "
                                           "told from one between the two slices")

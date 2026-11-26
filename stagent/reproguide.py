@@ -540,7 +540,7 @@ def _write_guide(s, st, v, cells, results, colors, M, md, skip):
             "nearest neighbors, Leiden, UMAP. Independent of the annotation. Columns `leiden`, `umap_1`, `umap_2` of "
             "`data/cells.csv`" + (" (computed on all slices of the project together)" if em.get("project") else "") + ".")
         add("")
-        add(_code_lines(["embedding.run", "markers.pca", "markers.knn", "markers.knn_graph"]))
+        add(_code_lines((["joint.embed"] if em.get("project") else []) + ["embedding.run", "markers.pca", "markers.knn", "markers.knn_graph"]))
         add("")
         if "leiden" in cells:
             lc = cells["leiden"].value_counts()
@@ -557,13 +557,28 @@ def _write_guide(s, st, v, cells, results, colors, M, md, skip):
     nmeta, nlab = niches.current(s)
     if nmeta is not None:
         M["steps"]["niches"] = nmeta
+        if nmeta.get("project"):  # computed on all slices of a project together (joint.niches)
+            sl = []
+            try:
+                for d in niches.run_dirs(s):
+                    sl.append(json.load(open(d.parent / "session.json"))["sample_id"] + " (" + d.parent.name + ")")
+            except Exception as e:
+                skip("niche slices", e)
+            M["steps"]["niches"]["slices"] = sl
+            add(f"**Computed on all slices of project `{nmeta['project']}` together** (one run: the same N1, N2… on "
+                "every slice): " + ("NMF programs fitted on the pooled cells of all slices, each cell's identity "
+                "averaged over its neighbors in its own slice" if nmeta.get("identity") == "nmf" else
+                "each cell's type averaged over its neighbors in its own slice") + ", one k-means over all slices. "
+                "Slices (annotation) of the run: " + (", ".join(sl) or "see manifest") + ". To reproduce, run it on "
+                "all these slices at once (`joint.niches`), not on this slice alone.")
+            add("")
         add(f"Settings `{_short({k: nmeta.get(k) for k in ('k', 'k_by_region', 'radius_um', 'identity', 'n_programs', 'n_niches', 'version')})}`. "
             "Each cell's identity (" + ("its composition of NMF gene programs" if nmeta.get("identity") == "nmf" else "its cell type") +
             ") averaged over its k nearest neighbors in space (the cell included), then k-means (n_init 4, "
             "random_state 0) into the niches, numbered by size (N1 the largest). Names given by the user: "
             f"{_short(nmeta.get('names') or {})}. Column `niche` of `data/cells.csv`.")
         add("")
-        add(_code_lines(["niches.programs", "niches.run"]))
+        add(_code_lines(["joint.niches", "niches.programs"] if nmeta.get("project") else ["niches.programs", "niches.run"]))
         add("")
         if "niche" in cells:
             nc = cells["niche"].value_counts()
@@ -606,7 +621,8 @@ def _write_guide(s, st, v, cells, results, colors, M, md, skip):
         "its full table. `data/analyses_log.json` lists the last 30 runs (any kind, with headlines).")
     add("")
     add("The cells of an analysis: `scope` slice = this annotation's cells; project = the cells of every slice named "
-        "in `sessions` (sample → annotation id), with their niches / Leiden runs in `runs`. `within` filters the cells "
+        "in `sessions` (sample → annotation id; every slice of the project the analysis used), with their niches / "
+        "Leiden runs in `runs`. `within` filters the cells "
         "({grouping: values}); a `selection` (cells drawn on the map) is counted in `selection_cells` and its cells "
         "are in the JSON. Groupings available: cell type, lineage, region, niche, leiden, selection, slice and the "
         "groupings above. Settings missing from a request took their defaults; the result JSON records the values "
@@ -620,6 +636,13 @@ def _write_guide(s, st, v, cells, results, colors, M, md, skip):
         req = {k: x for k, x in r["request"].items() if k not in ("selection",)}
         add(f"### {title} (`{kind}`), run {r.get('time') or '?'}")
         add(f"Request: `{_short(req, 2500)}`" + (f"; selection of {r['selection_cells']} cells" if r.get("selection_cells") else "") + ".")
+        used = set(((r["result"] or {}).get("cells_per_slice") or {}).keys())
+        named = set((req.get("sessions") or {}).keys())
+        if req.get("scope") == "project" and used - named:
+            add("**Note**: run on all slices of the project; the request names only " + (", ".join(sorted(named)) or "none") +
+                " (recorded by an earlier build: the page sent only the slices opened), but the cells of " +
+                ", ".join(sorted(used - named)) + " were used too (their latest annotations at the time; `cells_per_slice` "
+                "in the result). Use every slice of the project.")
         rv = req.get("version")
         if rv not in (None, "", v):
             add(f"**Note**: run on version {rv} of this annotation, not version {v} (this guide's): its cells' labels "
