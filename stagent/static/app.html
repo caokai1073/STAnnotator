@@ -8793,6 +8793,7 @@ function ranElsewhere(b, bar) {
   return true;
 }
 async function loadResults(sid) {  // the last result of each analysis, kept with the annotation
+  if (!sid) return;  // (no annotation open, e.g. a project chosen: nothing to ask)
   const r = await api(`/api/s/${sid}/results`);
   if (sid !== st.sid) return;
   AN.by = {};

@@ -54,7 +54,14 @@ def _default(o):
     return str(o)
 
 
+class NoSession(FileNotFoundError):  # (as Session() raised before: callers catching OSError still do)
+    """An annotation id that is not there (deleted, or "null" from a page with none open): a 404, not a server error."""
+
+
 def _session(sid) -> Session:
+    if sid not in _sessions and (not sid or "/" in str(sid) or ".." in str(sid)
+                                 or not (config.SESSIONS / str(sid) / "session.json").exists()):
+        raise NoSession(f"no annotation {sid}")
     if sid not in _sessions or _sessions[sid].stale():
         _sessions[sid] = Session(sid)
     _sessions.move_to_end(sid)

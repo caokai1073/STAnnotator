@@ -5256,7 +5256,10 @@ def build_app(port):
     ] + [r for r in review_app.app.routes if r.path != "/"] + list(mcp_http.routes)
     async def offline(req, exc):  # (any request to the agent made offline: the reason, not a server error)
         return _json({"error": str(exc), "offline": True}, 503)
-    return SameOrigin(Starlette(routes=routes, lifespan=lifespan, exception_handlers={claudelink.Offline: offline}))
+    async def no_session(req, exc):  # (an annotation not there: deleted meanwhile, or none open)
+        return _json({"error": str(exc)}, 404)
+    return SameOrigin(Starlette(routes=routes, lifespan=lifespan,
+                                exception_handlers={claudelink.Offline: offline, review_app.NoSession: no_session}))
 
 
 LOOPBACK = {"127.0.0.1", "localhost", "[::1]", "::1"}
