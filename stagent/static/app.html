@@ -7314,6 +7314,16 @@ async function loadSteps() {
     st.checkNext = null;
     if (reg.state === "todo" && !alignBusy()) { checkRegistration().catch(() => {}); return; }
   }
+  // the cells were put on the instrument's own DAPI / stain by their coordinates (import, Steps → Image): checked once
+  // that it is their image (another run's DAPI shows as far off its nuclei); a check that finds them on it says so quietly
+  if (reg && reg.check_pending && st.sid && !alignBusy() && !$("rgDlg").open) {
+    const k = `instCheck:${smp}:${st.he ? st.he.rev : ""}`;
+    if (!(st.instChecked || (st.instChecked = new Set())).has(k)) {
+      st.instChecked.add(k);
+      checkRegistration("The cells were put on the instrument's image by their coordinates, not measured on it.", [], { quiet: true }).catch(() => {});
+      return;
+    }
+  }
   // the alignment's check found areas off their nuclei: its window (histogram, Do local registration) opens by itself,
   // once for this placement of the cells (closed without it: Steps → Image → Check opens it again)
   const askKey = `localAsk:${smp}:${st.he ? st.he.rev : ""}`;
@@ -7520,14 +7530,16 @@ function regDialog(sample, title, figure, text, buttons) {  // the registration 
   });
   if (!$("rgDlg").open) $("rgDlg").showModal();
 }
-async function checkRegistration(note = "", more = []) {  // the cells against the nuclei over the whole tissue, by the app (no agent);
+async function checkRegistration(note = "", more = [], opts = {}) {  // the cells against the nuclei over the whole tissue, by the app (no agent);
   // note: a sentence before its own (e.g. the automatic alignment's); more: buttons before its own (e.g. Undo)
   if (!st.sample || !st.sid) return;
   ALIGN.own++;  // (not taken for a check started elsewhere)
-  try { return await checkRegistrationRun(note, more); } finally { ALIGN.own--; }
+  try { return await checkRegistrationRun(note, more, opts); } finally { ALIGN.own--; }
 }
-async function checkRegistrationRun(note, more) {
-  const sample = st.sample.sample_id, who = `Checking the registration of ${sampleName(st.sample)}`;
+async function checkRegistrationRun(note, more, opts = {}) {
+  const sample = st.sample.sample_id, who = opts.quiet  // (the check after an instrument image: said what it is for)
+    ? `Checking that the instrument's image belongs to the cells of ${sampleName(st.sample)} (the cells against its nuclei, about a minute)`
+    : `Checking the registration of ${sampleName(st.sample)}`;
   let job;
   try { ({ job } = await post(`/api/sample/${encodeURIComponent(sample)}/registration/check`, { session: st.sid })); }
   catch (e) { toast(`${who}: ${e.message}`, 8000); return; }
@@ -7547,6 +7559,10 @@ async function checkRegistrationRun(note, more) {
   const title = `Registration of ${name}`;
   // far off over most of the tissue: beyond what the local registration measures, so first (the few windows that read
   // can all sit on their nuclei: the verdict is then "fine")
+  if (r.new_alignment && opts.quiet)  // the instrument's image by coordinates, and the cells are not on its nuclei
+    return regDialog(sample, title, r.figure, `The cells sit far off the nuclei of this image over most of the tissue (the offset could be read on only ${Math.round(100 * r.read_share)}% of it): it is probably not these cells' image (another run's DAPI, or the wrong file). Choose the right image (Steps → Image), or align this one to the cells.`,
+      [["Close", false, async () => $("rgDlg").close()], ["Align it", true, async () => { $("rgDlg").close(); await autoAlign([sample]); }]]);
+  if (r.verdict === "fine" && opts.quiet) { toast(`${name}: the cells sit on the nuclei of the instrument's image (median offset ${r.median_offset_um} µm)`, 6000); return; }
   if (r.new_alignment)
     return regDialog(sample, title, r.figure, `The cells sit far off their nuclei over most of the tissue: the offset could be read on only ${Math.round(100 * r.read_share)}% of it, as a rotation or scale error of the whole alignment leaves them. The local registration cannot fix this. Align the image again: the app searches the placement anew and shows the result (Undo puts the cells back).`,
       [["Close", false, async () => $("rgDlg").close()], ["Align again", true, async () => { $("rgDlg").close(); await autoAlign([sample]); }]]);

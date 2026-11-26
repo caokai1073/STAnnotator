@@ -1562,6 +1562,13 @@ async def api_registration_check(req: Request):
     job = f"regcheck:{sample}"
     JOBS[job] = {"stage": "starting", "progress": 0.0, "done": False, "error": None, "kind": "regcheck", "sample": sample,
                  "started": time.time()}
+    try:  # the check the page runs by itself after an instrument image: asked once (run now)
+        mf = config.SAMPLES / sample / "meta.json"
+        mm = json.load(open(mf, encoding="utf-8"))
+        if mm.pop("check_pending", None):
+            dump_json(mm, mf, indent=1)
+    except (OSError, ValueError):
+        pass
 
     def work():
         try:
@@ -4023,6 +4030,11 @@ def steps_of(s, sample=None):
         reg = {"state": "not needed", "detail": f"placed by {meta.get('registration_by') or 'the instrument software'}"}
     elif not (meta.get("he_path") or meta.get("image_pending")):
         reg = {"state": "optional", "image": "none", "detail": "no image: import one (H&E, DAPI, a stain) to see the tissue"}
+    elif meta.get("check_pending") and not meta.get("image_pending") and not _image_unreadable(sid, img):
+        # placed by the instrument's coordinates: the page checks it once (cells against nuclei), as after a
+        # registration file
+        reg = {"state": "todo", "image": "placed", "check_pending": meta["check_pending"],
+               "detail": "the cells are on the instrument's image by their coordinates: checking that it is theirs"}
     elif not meta.get("image_pending") and meta.get("image_kind") not in ("H&E", None, "none") \
             and not meta.get("registration_by"):  # the instrument's own DAPI, the cells on it by their coordinates
         reg = {"state": "optional", "image": "none",

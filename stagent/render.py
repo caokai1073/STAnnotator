@@ -171,7 +171,11 @@ class Slide:
             with self._lock:
                 a = np.asarray(self._zarr(k)[idx]).astype(np.float32).ravel()
             a = a[a > 0] if (a > 0).any() else a
-            self._range = (float(np.percentile(a, 1)), float(np.percentile(a, 99.7)))
+            lo, hi = float(np.percentile(a, 1)), float(np.percentile(a, 99.7))
+            if hi <= lo:  # one value everywhere it is not 0 (a mask, a synthetic image): shown from 0, not as black
+                lo = min(0.0, lo) if hi > 0 else lo
+                hi = hi if hi > lo else lo + 1.0
+            self._range = (lo, hi)
         return self._range
 
     def read(self, x0, y0, x1, y1, out_w, out_h, disp=None):

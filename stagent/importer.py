@@ -889,10 +889,14 @@ def import_xenium(name, xenium_dir, he=None, registration=None, description="", 
         A, image, kind = BLANK, None, "none"
     if he and R is None:
         progress("  the H&E waits for its alignment (a registration file, or Align with Claude)")
-    return _write_bundle(name, cells.cell_id.to_numpy(), xy, X, genes, image, A, None, description,
+    meta = _write_bundle(name, cells.cell_id.to_numpy(), xy, X, genes, image, A, None, description,
                          {"kind": "xenium", "folder": src["folder"], "registration": str(Path(registration).resolve())
                           if registration else None, **{k: v for k, v in info.items() if k != "folder"}},
                          progress, kind, registration=R, image_pending=he if he and R is None else None)
+    if kind == "DAPI":  # the cells on the DAPI by their coordinates: the page checks once that it is theirs
+        mark_check(name)
+        meta["check_pending"] = "instrument"
+    return meta
 
 
 # ---------------- Visium HD / Visium (Space Ranger output): bins instead of cells (visium.py) ----------------
@@ -2355,6 +2359,16 @@ def undo_placement(sample_id):
     return r
 
 
+def mark_check(sample_id, why="instrument"):
+    """The cells were put on an image without measuring it (the instrument's own DAPI / stain, by their coordinates):
+    the page runs the registration check (cells against nuclei) once, as for a registration file; a DAPI of another
+    run, given or copied into the output folder, then shows as far off its nuclei."""
+    mf = config.SAMPLES / sample_id / "meta.json"
+    m = _meta(sample_id)
+    m["check_pending"] = why
+    dump_json(m, mf, indent=1)
+
+
 def set_image(sample_id, path, kind="H&E", progress=print, reuse_registration=True):
     """Add (or replace) the sample's image. With a registration already known the cells move onto it at once (the
     same image again, e.g. moved); otherwise, or with reuse_registration=False (another image: the app's Image window,
@@ -2369,6 +2383,7 @@ def set_image(sample_id, path, kind="H&E", progress=print, reuse_registration=Tr
         if not (m.get("source") or {}).get("morphology"):  # (imported without it: its other stains listed from now on)
             m["source"]["morphology"] = path
             dump_json(m, config.SAMPLES / sample_id / "meta.json", indent=1)
+        mark_check(sample_id)  # (checked once that it is these cells' image)
         return r
     if m.get("registration_affine") and reuse_registration:
         r = place_cells(sample_id, m["registration_affine"], path, kind, by=m.get("registration_by") or "file",

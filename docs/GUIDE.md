@@ -490,7 +490,11 @@ The app's window, or the web viewer (`.venv/bin/stagent viewer`, then http://loc
     for its alignment can be dropped with **Discard** (the file stays where it is; the cells stay where they are).
     Once placed, **Discard** (beside Add) takes any of the sample's images out (the H&E, the DAPI, a stain, a single
     channel): their files stay where they are and adding a file again brings it back; when the image the cells are
-    placed on goes, they move onto the next image by its own registration (or onto none). When the image file was
+    placed on goes, they move onto the next image by its own registration (or onto none). The instrument's own DAPI
+    or stain (a file of the Xenium / Atera output folder the cells came from, found at the import or chosen in Image)
+    is put under the cells by their coordinates without a search, and then checked once by itself, as a registration
+    file is: the cells against its nuclei (about a minute, its progress shown at the bottom). On its nuclei it says
+    so in a short note; far off (another run's DAPI, the wrong file) a window says so and offers to align it. When the image file was
     moved, renamed or deleted after the import, the step says so and offers **Locate…** (with Add and Discard): choose
     the same file where it is now and the cells are on it as before (placement, hidden channels and the registration
     check kept); a different image (the cells off it, or another pixel size) is refused, use Add for that. An image
