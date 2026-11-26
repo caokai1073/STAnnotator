@@ -683,6 +683,10 @@ The methods themselves are described in [Annotation methods](#6-annotation-metho
   count and value).
 - Click a legend entry to show only that type; click a cell for its label, alternatives and region.
 - Opacity (fully opaque by default), dot size, hide cells, hide H&E.
+- **Screenshot view** (the camera button at the map's bottom right, above the overview, or the key **s**): every box
+  and panel hidden, the map alone across the window, the legend kept unless **Legend** is unticked (the box shows
+  beside the button on hover; the choice is remembered). The button itself is almost invisible then; click it again,
+  or press **Esc** or **s**, to bring everything back as it was.
 - **Adjust** (beside the **Image** box, right of the agent's buttons): brightness and contrast of the image shown; a fluorescence image (DAPI, a protein
   / IF channel) also its display range (the raw values shown as black and white) and gamma. **Auto** goes back to the
   image's own range (its values from the 1st to the 99.7th percentile), **Reset** to all defaults. Each image and
