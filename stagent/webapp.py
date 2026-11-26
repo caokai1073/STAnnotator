@@ -3587,16 +3587,7 @@ async def api_sample_image_relink(req: Request):
         return _json({"error": "the sample is busy: try again when it ends"}, 409)
     old = str(b.get("old") or "")
     try:
-        check_key = None
-        try:
-            w = json.load(open(regcheck._file(sample)))
-            check_key = w if w.get("key") == regcheck._key(sample, old) else None
-        except (OSError, ValueError):
-            pass
-        r = importer.relink_image(sample, old, str(b.get("path") or ""))
-        if check_key is not None:  # (the check was of these pixels: still valid at the new place)
-            check_key["key"] = regcheck._key(sample, r["relinked"])
-            osutil.dump_json(check_key, regcheck._file(sample))
+        r = importer.relink_image(sample, old, str(b.get("path") or ""))  # (the check's windows follow: same pixels)
     except (ValueError, OSError) as e:
         return _json({"error": str(e)}, 400)
     _drop_view(sample)

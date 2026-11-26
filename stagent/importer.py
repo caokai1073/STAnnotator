@@ -2167,18 +2167,34 @@ def relink_image(sample_id, old_path, new_path):
                                  "it is not the same image (to use another image, Add it)")
     else:
         inside = None
-    swap = lambda p: new if p and res(p) == res(old) else p
-    for k in ("he_path", "image_pending"):
-        if m.get(k):
-            m[k] = swap(m[k])
-    for x in m.get("images") or []:  # (each keeps its id: hidden channels and tiles follow it)
-        x["path"] = swap(x.get("path"))
-        if x.get("same_as"):
-            x["same_as"] = swap(x["same_as"])
-    if json.dumps(m, sort_keys=True) == json.dumps(_meta(sample_id), sort_keys=True):
+    # every record of the sample that names the old file names the new one: meta.json (the image, the added images,
+    # the registration check's key), regcheck.json (the windows of the check: read from the image again for a local
+    # registration), the alignment's files; ids are not paths, so hidden channels and tiles follow
+    olds = {json.dumps(x)[1:-1] for x in {old, res(old)} if x}
+    new_j = json.dumps(new)[1:-1]
+    changed = []
+    for f in sorted((config.SAMPLES / sample_id).rglob("*.json")):
+        try:
+            if f.stat().st_size > 64 << 20:
+                continue
+            text = f.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        t2 = text
+        for o in olds:
+            t2 = t2.replace(f'"{o}"', f'"{new_j}"').replace(f':{o}"', f':{new_j}"')  # (whole values; a key's end)
+        if t2 != text:
+            json.loads(t2)  # (still JSON)
+            tmp = f.with_suffix(".relink")
+            tmp.write_text(t2, encoding="utf-8")
+            os.replace(tmp, f)
+            changed.append(f.name)
+    if "meta.json" not in changed:
         raise ValueError("this image comes with the instrument's output: it is found again with the output's folder, "
                          "not one by one")
-    m.setdefault("image_relinks", []).append({"from": old, "to": new, "time": time.strftime("%Y-%m-%d %H:%M")})
+    m = _meta(sample_id)
+    m.setdefault("image_relinks", []).append({"from": old, "to": new, "time": time.strftime("%Y-%m-%d %H:%M"),
+                                             "files": changed})
     dump_json(m, config.SAMPLES / sample_id / "meta.json", indent=1)
     return {"relinked": new, "inside": None if inside is None else round(inside, 3)}
 

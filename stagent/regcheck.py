@@ -128,8 +128,8 @@ def windows(sample_id, progress=None, wait_s=300):
     if f.exists():
         try:
             old = json.load(open(f))
-            if old.get("key") == key:
-                return old
+            if old.get("key") == key:  # the windows of this image: read from it (its file found again elsewhere,
+                return old | {"image": image}  # Locate…, kept the key but in 0.2.63 builds before the fix not the path)
         except (OSError, ValueError):
             pass
     busy.write_text(str(os.getpid()), encoding="utf-8")

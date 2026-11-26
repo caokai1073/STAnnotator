@@ -43,9 +43,23 @@ try:
     assert r.status_code == 200, r.text
     added = r.json()["added"]
     m = json.load(open(mf)); m["images_hidden"] = [added + "#c1"]; json.dump(m, open(mf, "w"))
-    # its registration was checked
-    osutil_dump = __import__("stagent.osutil", fromlist=["dump_json"]).dump_json
-    osutil_dump({"key": regcheck._key("s1", img), "verdict": "ok"}, regcheck._file("s1"))
+    # its registration was checked (the app's check: Steps → Image → Check)
+    from stagent import session as sess
+    import time
+    pid = sess.placeholder("s1") or sess.Session.create("s1", "none", method="none").id
+
+    def check():
+        j = c.post("/api/sample/s1/registration/check", json={"session": pid}).json()
+        assert "job" in j or "error" not in j, j
+        for _ in range(900):
+            st = c.get(f"/api/job/regcheck:s1").json()
+            if st.get("done"):
+                return st
+            time.sleep(0.2)
+        raise AssertionError("the check did not end")
+    st = check()
+    assert not st.get("error"), st["error"]
+    assert json.load(open(regcheck._file("s1")))["image"] == img
     # the folder is moved away
     shutil.move(os.path.join(home, "old"), os.path.join(home, "new"))
     webapp._drop_view("s1"); render.close(img); render.close(img2)
@@ -66,7 +80,12 @@ try:
     assert reg().get("image") == "placed", reg()
     j = c.get("/api/sample/s1/he_info").json()
     assert j["image_kind"] == "H&E" and not j.get("image_error"), j
-    assert json.load(open(regcheck._file("s1")))["key"] == regcheck._key("s1", m["he_path"])  # (the check carried over)
+    w = json.load(open(regcheck._file("s1")))
+    assert w["key"] == regcheck._key("s1", m["he_path"]) and w["image"] == m["he_path"], (w["key"], w["image"])  # (carried over)
+    assert img not in json.dumps(m["registration_checked"]), m["registration_checked"]
+    st = check()  # the check again at the new place (it reads the image of its windows again)
+    assert not st.get("error"), st["error"]
+    print("check after Locate:", st["result"]["verdict"])
     # the added image, moved too: found again with its id and hidden channel
     r = c.post("/api/sample/s1/image_relink", json={"old": img2, "path": new_img2})
     assert r.status_code == 200, r.text
