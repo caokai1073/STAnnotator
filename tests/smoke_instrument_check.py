@@ -97,6 +97,11 @@ try:
     assert len(names) == len(set(names)) and any("ch0001_dapi" in n for n in names), names
     ims = c.get("/api/sample/s1/he_info").json()["images"]
     assert all(x.get("path") for x in ims), ims
+    # the instrument's DAPI shown by the cells' coordinates (as a Xenium import leaves it, checked): Steps offers
+    # Import (an H&E), Add and Discard, not Import alone
+    m = json.load(open(mf)); m.update(he_path=own, image_kind="DAPI", registration_by=None); m.pop("check_pending", None)
+    json.dump(m, open(mf, "w")); webapp._drop_view("s1")
+    assert reg()["image"] == "instrument" and reg()["state"] == "optional", reg()
     print("ok")
 finally:
     shutil.rmtree(home, ignore_errors=True)

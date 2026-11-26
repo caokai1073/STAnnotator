@@ -4027,7 +4027,8 @@ def steps_of(s, sample=None):
     steps = [{"key": "import", "state": "done",
               "detail": "an image without cells" if image_only else f"{meta.get('n_cells') or 0:,} cells · {meta.get('n_genes') or 0:,} genes"}]
     # the H&E step (key "registration"): the image imported, then the cells on it. image: "none" (the page offers
-    # Import), "pending" (Align: automatically or with the agent), "placed" (Check)
+    # Import), "instrument" (the instrument's own DAPI by coordinates: Import an H&E, Add, Discard), "pending" (Align:
+    # automatically or with the agent), "placed" (Check)
     img = importer.image_of(sid)
     if image_only:
         reg = {"state": "not needed", "detail": "the image itself"}
@@ -4043,7 +4044,7 @@ def steps_of(s, sample=None):
                "detail": "the cells are on the instrument's image by their coordinates: checking that it is theirs"}
     elif not meta.get("image_pending") and meta.get("image_kind") not in ("H&E", None, "none") \
             and not meta.get("registration_by"):  # the instrument's own DAPI, the cells on it by their coordinates
-        reg = {"state": "optional", "image": "none",
+        reg = {"state": "optional", "image": "instrument",  # (the page: Import an H&E, Add another image, Discard)
                "detail": f"the instrument's {meta.get('image_kind')} is shown (the cells on it by their coordinates); "
                          "no H&E: import one to see the tissue"}
     elif _image_unreadable(sid, img):

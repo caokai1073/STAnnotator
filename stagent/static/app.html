@@ -7231,9 +7231,9 @@ async function loadSteps() {
     const mk = Object.assign(document.createElement("span"), { className: "mk", textContent: STEP_MARK[x.state] || String(i + 1) });  // done ✓, else its number
     const nm = Object.assign(document.createElement("span"), { className: "nm", textContent: name });
     const right = document.createElement("span");
-    const img = x.key === "registration" ? x.image : null;  // the image: none (Import), pending (Align), placed (Add, Check), error (Refresh)
+    const img = x.key === "registration" ? x.image : null;  // the image: none (Import), instrument (its DAPI: Add, Discard, Import an H&E), pending (Align), placed (Add, Discard, Check), error (Add, Discard, Locate / Refresh)
     const a = x.open ? ["Open", () => { showTab("data"); $("session").focus(); toast("Choose an annotation in the Annotation box", 4000); }]
-      : img === "pending" ? ["Align", () => openAlignChoice()] : img === "none" ? ["Import", () => openImageImport()]
+      : img === "pending" ? ["Align", () => openAlignChoice()] : img === "none" || img === "instrument" ? ["Import", () => openImageImport()]
       : img === "error" ? (/Refresh/.test(x.detail || "") ? ["Refresh", () => refreshAll()]  // (still copying: read it again)
         : ["Locate…", () => openImageRelink(x.path)])  // (moved or unreadable: the same file where it is now)
       : img === "placed" && x.advise === "align" ? ["Align again", () => autoAlign([smp])]  // (the check: far off over most of the tissue)
@@ -7264,14 +7264,14 @@ async function loadSteps() {
       };
       right.append(...(x.state === "done" ? [chk] : [chk, acc]));  // (accepted: Check to look again)
     } else if (a && (["todo", "optional", "skipped"].includes(x.state) || img)) {  // (the H&E: Check also once done)
-      const pre = !x.open && (x.key !== "registration" || img === "placed" || img === "error") && STEP_PRE[x.key]
+      const pre = !x.open && (x.key !== "registration" || ["placed", "error", "instrument"].includes(img)) && STEP_PRE[x.key]
         || (img === "pending" && !x.open && ["Discard", "Forget this image waiting for its alignment (the file stays where it is); the cells stay where they are", discardPending]);
       if (pre) {
         const pb = Object.assign(document.createElement("button"), { textContent: pre[0], title: pre[1] });
         pb.onclick = (e) => { e.stopPropagation(); pre[2](); };
         right.append(pb);
       }
-      if (x.key === "registration" && (img === "placed" || img === "error") && !x.open) {  // Discard: take images out (beside Add)
+      if (x.key === "registration" && ["placed", "error", "instrument"].includes(img) && !x.open) {  // Discard: take images out (beside Add)
         const db = Object.assign(document.createElement("button"), { textContent: "Discard", title: "Take images out of this sample (the H&E, the DAPI, a stain…): their files stay where they are" });
         db.onclick = (e) => { e.stopPropagation(); openImageDiscard(); };
         right.append(db);
