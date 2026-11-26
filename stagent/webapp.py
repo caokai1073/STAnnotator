@@ -127,7 +127,7 @@ def image_error_text(path, e):
                 "the file is complete, or import the image again (Import > Image of this sample).")
     if isinstance(e, FileNotFoundError):
         return (f"The image {path} is no longer there (moved, renamed or deleted): the cells are shown without it. "
-                "Put it back, or import the image again (Import > Image of this sample).")
+                "Put it back, or find it where it is now: Steps > Image > Locate….")
     if e.errno in (errno.EPERM, errno.EACCES) and sys.platform == "darwin":
         return (f"macOS does not let STAnnotator read the image {path}. Allow it in System Settings > Privacy & "
                 "Security > Files and Folders > STAnnotator (the folder it is in, e.g. Downloads), or Full Disk "
@@ -3578,6 +3578,35 @@ async def api_sample_image_remove(req: Request):
     return _json(r)
 
 
+async def api_sample_image_relink(req: Request):
+    """The same image found at a new place (moved, renamed, copied back): {old, path}. The cells stay placed on it as
+    before; its registration check carries over."""
+    sample = req.path_params["sample"]
+    b = await req.json()
+    if _busy(sample):
+        return _json({"error": "the sample is busy: try again when it ends"}, 409)
+    old = str(b.get("old") or "")
+    try:
+        check_key = None
+        try:
+            w = json.load(open(regcheck._file(sample)))
+            check_key = w if w.get("key") == regcheck._key(sample, old) else None
+        except (OSError, ValueError):
+            pass
+        r = importer.relink_image(sample, old, str(b.get("path") or ""))
+        if check_key is not None:  # (the check was of these pixels: still valid at the new place)
+            check_key["key"] = regcheck._key(sample, r["relinked"])
+            osutil.dump_json(check_key, regcheck._file(sample))
+    except (ValueError, OSError) as e:
+        return _json({"error": str(e)}, 400)
+    _drop_view(sample)
+    _reload_sample(sample)
+    _forget_image_tiles(sample)
+    render.close(old)
+    _tiles.drop(lambda k: k[0] == sample)
+    return _json(r)
+
+
 def _forget_image_tiles(sample):
     """An image added or removed: the view's other images and their tiles are looked up again."""
     if sample in _views:
@@ -3944,7 +3973,7 @@ def _image_unreadable(sample, path):
     if " is incomplete" in err:  # (render.IncompleteImage: shorter than its structure)
         return "the image is incomplete (probably still copying or syncing): Refresh when the copy has finished"
     if "no longer there" in err:
-        return "the image is no longer there (moved or deleted): put it back, or import it again"
+        return "the image is no longer there (moved or deleted): Locate it where it is now, or Add another image"
     if "still be copying" in err:  # (it cannot be decoded: damaged, cut short, or not a TIFF)
         return "part of the image cannot be read (damaged, still copying, or not a TIFF): Refresh once the file is " \
                "complete, or import it again"
@@ -3979,7 +4008,7 @@ def steps_of(s, sample=None):
                "detail": f"the instrument's {meta.get('image_kind')} is shown (the cells on it by their coordinates); "
                          "no H&E: import one to see the tissue"}
     elif _image_unreadable(sid, img):
-        reg = {"state": "blocked", "image": "error", "detail": _image_unreadable(sid, img)}
+        reg = {"state": "blocked", "image": "error", "detail": _image_unreadable(sid, img), "path": img}
     elif meta.get("image_pending") or not importer.on_image(meta):
         reg = {"state": "blocked", "image": "pending",
                "detail": f"the {meta.get('image_pending_kind') or 'H&E'} is not aligned with the cells yet: align it"}
@@ -5072,6 +5101,7 @@ def build_app(port):
         Route("/api/sample/{sample}/image", api_sample_image, methods=["POST"]),
         Route("/api/sample/{sample}/images/add", api_sample_image_add, methods=["POST"]),
         Route("/api/sample/{sample}/images/remove", api_sample_image_remove, methods=["POST"]),
+        Route("/api/sample/{sample}/image_relink", api_sample_image_relink, methods=["POST"]),
         Route("/api/sample/{sample}/image_stats", api_image_stats),
         Route("/api/project/{pid}/groups", api_project_groups, methods=["GET", "POST"]),
         Route("/api/sample/{sample}/region_groups", api_region_groups, methods=["GET", "POST"]),

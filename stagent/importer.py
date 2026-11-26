@@ -2138,6 +2138,51 @@ def add_image(sample_id, path, kind="IF", registration=None, same_as=None, name=
     return {"added": _image_id(path), "inside": round(float(inside), 3)}
 
 
+def relink_image(sample_id, old_path, new_path):
+    """The same image at a new place (moved, renamed, or copied back from elsewhere): every reference of the sample to
+    old_path points to new_path, the placement and the images' ids kept. Checked: the new file reads as an image, its
+    pixel size (when both are known) matches, and the cells fall on it with the current placement."""
+    m = _meta(sample_id)
+    new = str(Path(new_path).expanduser().resolve())
+    old = str(old_path)
+    res = lambda p: str(Path(p).resolve()) if p else None
+    entry = next((x for x in images(sample_id, m) if res(x["path"]) == res(old)), None)
+    if entry is None and res(m.get("image_pending")) != res(old):
+        raise ValueError(f"{old} is not an image of this sample")
+    if res(old) == new:
+        raise ValueError("that is the same file: put it back at this place, or choose it where it is now")
+    W, H = _he_size(new)  # readable?
+    if entry is not None:
+        A = np.asarray(entry["affine"], float)
+        xy = pd.read_parquet(config.SAMPLES / sample_id / "cells.parquet", columns=["x", "y"]).to_numpy()
+        pxy = xy @ A[:, :2].T + A[:, 2]
+        inside = float(((pxy[:, 0] >= 0) & (pxy[:, 0] < W) & (pxy[:, 1] >= 0) & (pxy[:, 1] < H)).mean())
+        if inside < MIN_INSIDE:
+            raise ValueError(f"only {inside:.0%} of the cells fall on this image ({W} x {H} px) where the old one was: "
+                             "it is not the same image (to use another image, Add it)")
+        if entry.get("frame") and m.get("he_um_per_px"):
+            upp = image_pixel_size(new)
+            if upp and abs(upp / float(m["he_um_per_px"]) - 1) > 0.02:
+                raise ValueError(f"this image has {upp:.4g} um per pixel, the old one {float(m['he_um_per_px']):.4g}: "
+                                 "it is not the same image (to use another image, Add it)")
+    else:
+        inside = None
+    swap = lambda p: new if p and res(p) == res(old) else p
+    for k in ("he_path", "image_pending"):
+        if m.get(k):
+            m[k] = swap(m[k])
+    for x in m.get("images") or []:  # (each keeps its id: hidden channels and tiles follow it)
+        x["path"] = swap(x.get("path"))
+        if x.get("same_as"):
+            x["same_as"] = swap(x["same_as"])
+    if json.dumps(m, sort_keys=True) == json.dumps(_meta(sample_id), sort_keys=True):
+        raise ValueError("this image comes with the instrument's output: it is found again with the output's folder, "
+                         "not one by one")
+    m.setdefault("image_relinks", []).append({"from": old, "to": new, "time": time.strftime("%Y-%m-%d %H:%M")})
+    dump_json(m, config.SAMPLES / sample_id / "meta.json", indent=1)
+    return {"relinked": new, "inside": None if inside is None else round(inside, 3)}
+
+
 def cancel_pending(sample_id):
     """Forget the image waiting for its alignment (the file stays where it is): the cells stay where they are, on the
     image they are placed on (or on none); the alignment candidates found for it go too."""

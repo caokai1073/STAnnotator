@@ -1102,8 +1102,9 @@ T and NK cells: CD3E|NKG7+ EPCAM-
   <div class="dh"><b id="hiTitle">Import the H&amp;E</b><span class="spacer"></span></div>
   <div class="imbody" style="gap:8px">
     <div class="frow"><span>Image</span><textarea id="hiImg" rows="1" placeholder="the H&amp;E of this sample: pyramidal TIFF / OME-TIFF"></textarea><button id="hiImgPick" data-kind="image">Choose…</button></div>
-    <div class="frow"><span>Image kind</span><select id="hiKind"><option value="H&amp;E">H&amp;E</option><option value="DAPI">DAPI</option><option value="IF">protein / IF stain</option></select><span></span></div>
-    <div class="frow"><span>Registration<small class="opt">optional</small></span><span class="choice hicol">
+    <div class="frow" id="hiRelinkRow" hidden><span></span><span class="hint" id="hiRelinkText"></span><span></span></div>
+    <div class="frow" id="hiKindRow"><span>Image kind</span><select id="hiKind"><option value="H&amp;E">H&amp;E</option><option value="DAPI">DAPI</option><option value="IF">protein / IF stain</option></select><span></span></div>
+    <div class="frow" id="hiModeRow"><span>Registration<small class="opt">optional</small></span><span class="choice hicol">
       <label><input type="radio" name="hiRegMode" value="file"> Registration file</label>
       <label id="hiSameWrap" hidden><input type="radio" name="hiRegMode" value="same"> <span id="hiSameText">Same pixels as</span>
         <select id="hiSame"></select></label>
@@ -5712,7 +5713,8 @@ function openImageImport(add) {  // Steps → Image → Import (the sample has n
   if (!st.sample) return;
   const ims = (st.he && st.he.images) || [];
   add = !!add && ims.length > 0;
-  $("hiDlg").dataset.add = add ? "1" : "";
+  $("hiDlg").dataset.add = add ? "1" : ""; $("hiDlg").dataset.relink = "";
+  $("hiRelinkRow").hidden = true; $("hiKindRow").hidden = $("hiModeRow").hidden = false;
   $("hiTitle").textContent = add ? `Add an image to ${sampleName(st.sample)}` : `Import the image of ${sampleName(st.sample)}`;
   $("hiImg").value = ""; $("hiReg").value = ""; $("hiErr").textContent = ""; $("hiGo").disabled = false;
   $("hiMatchRow").hidden = true; hiMatchAsked = "";
@@ -5725,6 +5727,17 @@ function openImageImport(add) {  // Steps → Image → Import (the sample has n
   $("hiSameText").textContent = ims.length < 2 && ims.length ? `Same pixels as the ${ims[0].name}` : "Same pixels as";
   $("hiSameWrap").hidden = !add;
   hiDefaultReg(); $("hiDlg").showModal(); hiGrow();
+}
+function openImageRelink(old) {  // Steps → Image → Locate…: the same image at its new place, the cells placed as before
+  if (!st.sample || !old) return;
+  $("hiDlg").dataset.add = ""; $("hiDlg").dataset.relink = old;
+  $("hiTitle").textContent = `Locate the image of ${sampleName(st.sample)}`;
+  $("hiImg").value = ""; $("hiReg").value = ""; $("hiErr").textContent = ""; $("hiGo").disabled = false;
+  $("hiMatchRow").hidden = $("hiRegRow").hidden = $("hiKindRow").hidden = $("hiModeRow").hidden = true;
+  $("hiRelinkText").textContent = `It was ${old}. Choose the same file where it is now: the cells stay placed on it as before (another image: Add).`;
+  $("hiRelinkRow").hidden = false;
+  setLabel($("hiGo"), "Locate");
+  $("hiDlg").showModal(); hiGrow();
 }
 function hiGrow() { ["hiImg", "hiReg"].forEach((id) => autoGrow($(id))); }  // (the paths and the hints shown whole, as in Import)
 function hiDefaultReg() {  // a stain or DAPI added: in the instrument's pixels when the sample has its DAPI (same as it),
@@ -5769,6 +5782,14 @@ $("hiGo").onclick = async () => {
   const mode = document.querySelector("input[name=hiRegMode]:checked").value, kind = $("hiKind").value, add = !!$("hiDlg").dataset.add;
   if (!sample) return;
   if (!img) { $("hiErr").textContent = "Choose the image"; return; }
+  if ($("hiDlg").dataset.relink) {  // Locate…: the same image at its new place
+    $("hiGo").disabled = true; $("hiErr").textContent = "checking the image…";
+    try { await post(`/api/sample/${encodeURIComponent(sample)}/image_relink`, { old: $("hiDlg").dataset.relink, path: img }); }
+    catch (e) { $("hiErr").textContent = e.message; $("hiGo").disabled = false; return; }
+    $("hiDlg").close(); $("hiDlg").dataset.relink = "";
+    await refreshAll(); loadStepsSoon(); toast("The image is found again: the cells are on it as before", 4000);
+    return;
+  }
   if (mode === "file" && !reg) { $("hiErr").textContent = "Choose the registration file, or No registration"; return; }
   // the cells go onto it (it becomes the image they are placed on): the first image, or an H&E with its registration;
   // another image with a registration (or the same pixels as one) is shown in its place instead (the Image box)
@@ -7176,7 +7197,8 @@ async function loadSteps() {
     const img = x.key === "registration" ? x.image : null;  // the image: none (Import), pending (Align), placed (Add, Check), error (Refresh)
     const a = x.open ? ["Open", () => { showTab("data"); $("session").focus(); toast("Choose an annotation in the Annotation box", 4000); }]
       : img === "pending" ? ["Align", () => openAlignChoice()] : img === "none" ? ["Import", () => openImageImport()]
-      : img === "error" ? ["Refresh", () => refreshAll()]
+      : img === "error" ? (/Refresh/.test(x.detail || "") ? ["Refresh", () => refreshAll()]  // (still copying: read it again)
+        : ["Locate…", () => openImageRelink(x.path)])  // (moved or unreadable: the same file where it is now)
       : img === "placed" && x.advise === "align" ? ["Align again", () => autoAlign([smp])]  // (the check: far off over most of the tissue)
       : act;  // (an image still copying: read it again when complete)
     if (x.key === "priors" && x.state !== "not needed") {  // Check (the Prior window), then Accept: only then ✓
@@ -7205,14 +7227,14 @@ async function loadSteps() {
       };
       right.append(...(x.state === "done" ? [chk] : [chk, acc]));  // (accepted: Check to look again)
     } else if (a && (["todo", "optional", "skipped"].includes(x.state) || img)) {  // (the H&E: Check also once done)
-      const pre = !x.open && (x.key !== "registration" || img === "placed") && STEP_PRE[x.key]
+      const pre = !x.open && (x.key !== "registration" || img === "placed" || img === "error") && STEP_PRE[x.key]
         || (img === "pending" && !x.open && ["Discard", "Forget this image waiting for its alignment (the file stays where it is); the cells stay where they are", discardPending]);
       if (pre) {
         const pb = Object.assign(document.createElement("button"), { textContent: pre[0], title: pre[1] });
         pb.onclick = (e) => { e.stopPropagation(); pre[2](); };
         right.append(pb);
       }
-      if (x.key === "registration" && img === "placed" && !x.open) {  // Discard: take images out (beside Add)
+      if (x.key === "registration" && (img === "placed" || img === "error") && !x.open) {  // Discard: take images out (beside Add)
         const db = Object.assign(document.createElement("button"), { textContent: "Discard", title: "Take images out of this sample (the H&E, the DAPI, a stain…): their files stay where they are" });
         db.onclick = (e) => { e.stopPropagation(); openImageDiscard(); };
         right.append(db);
