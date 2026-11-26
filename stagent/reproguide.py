@@ -405,8 +405,12 @@ def _write_guide(s, st, v, cells, results, colors, M, md, skip):
     add("")
     add("Reading the data: the importer of its kind, " + ("Xenium output (cells and cell_feature_matrix.h5)" if src.get("kind") == "xenium"
         else "an h5ad / R file (raw counts, coordinates in µm)" if src.get("kind") in (None, "h5ad", "rds") else f"{src.get('kind')} output") + ":")
-    add(_code_lines(["importer.import_sample", "importer.import_xenium", "importer.read_h5ad", "importer.flat_cells_counts",
-                     "importer.import_visium", "importer.import_stereoseq"]))
+    k = str(src.get("kind") or "")  # (the reader of this sample's kind only)
+    add(_code_lines(["importer.import_xenium", "importer.xenium_sources"] if k == "xenium"
+                    else ["importer.import_visium"] if k.startswith("visium")
+                    else ["importer.import_stereoseq"] if k == "stereoseq"
+                    else ["importer.import_flat", "importer.flat_cells_counts"] if k in ("cosmx", "merscope", "merfish", "flat")
+                    else ["importer.import_sample", "importer.read_h5ad"]))
     add("")
 
     # ---- filter

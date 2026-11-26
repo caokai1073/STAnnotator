@@ -1650,7 +1650,7 @@ function tileSource(url) {
 }
 function openHE(sample) {
   return api(`/api/sample/${sample}/he_info`).then((he) => {
-    st.he = he;
+    st.he = he; sampleInfo();  // (the Data card: an image that cannot be read says so)
     if (he.image_error) toast(he.image_error, 15000);  // (no permission, or the image moved: the cells without it)
     const kind = he.image_kind || "H&E";
     $("hideHE").disabled = kind === "none"; $("hideHE").hidden = false;  // (no image: greyed, still there)
@@ -5855,7 +5855,7 @@ function alignBusy() { return !!(ALIGN.auto || ALIGN.after || AW.ids || ALIGN.ex
 function alignChanged() {  // its buttons greyed out, or back (Annotate and Filter wait for the cells' place too)
   alignBar(); loadStepsSoon();
   const busy = alignBusy() || !!ALIGN.checking;  // (the registration check reads the cells: they wait for it too)
-  for (const [id, what] of [["annotate", "annotate"], ["qfGo", "filter"]]) {
+  for (const [id, what] of [["annotate", "annotate"], ["qfGo", "filter"], ["qfBtn", "filter"]]) {
     $(id).classList.toggle("alignwait", busy);
     if (busy) { if ($(id).dataset.t0 === undefined) $(id).dataset.t0 = $(id).title || ""; $(id).title = alignBusy() ? `An alignment is running: ${what} when it has finished` : `The registration check is running (about a minute): ${what} when it has finished`; }
     else if ($(id).dataset.t0 !== undefined) { $(id).title = $(id).dataset.t0; delete $(id).dataset.t0; }
@@ -7277,6 +7277,7 @@ async function loadSteps() {
       const b = Object.assign(document.createElement("button"), { textContent: a[0], title: x.open ? "Open one of this sample's annotations (Data → Annotation)" : help });
       if (x.key === r.next) b.classList.add("primary");
       if (img === "pending" && alignBusy()) { b.disabled = true; b.title = "An alignment is running: wait for it to end"; }
+      if (["filter", "annotate"].includes(x.key) && (alignBusy() || ALIGN.checking)) { b.classList.add("alignwait"); b.title = alignBusy() ? "An alignment is running: wait for it to end" : "The registration check is running (about a minute): wait for it to end"; }
       b.onclick = (e) => { e.stopPropagation(); a[1](); };
       right.append(b);
     }
@@ -8147,6 +8148,7 @@ function qfPreview() {
 function sliceLabel(id) { const p = projectOf(id); return p && p.slices[id] ? p.slices[id].section : sampleName(st.samples.find((x) => x.sample_id === id) || { sample_id: id }); }
 $("qfBtn").onclick = async () => {
   if (st.busy) { toast("Wait until the assistant has answered"); return; }
+  if (alignBusy() || ALIGN.checking) { toast(alignBusy() ? "An alignment is running: filter when it has finished" : "The registration check is running (about a minute): filter when it has finished", 5000); return; }
   const id = st.sample.sample_id, p = projectOf(id);
   QF.qc = null; QF.keys.forEach((k) => ($(`qf_${k}`).value = ""));
   ["qfPrev", "qfNote", "qfErr"].forEach((x) => ($(x).textContent = ""));
@@ -9716,7 +9718,9 @@ function mapTopFit(force) {
     return oneLine && (img.hidden || Math.abs(a.top - i.top) < 2);
   };
   top.classList.remove("compact");
-  if (!fits()) top.classList.add("compact");
+  if (fits()) return;
+  top.classList.add("compact");  // icons only if that puts both boxes on one row; else the buttons keep their names
+  if (!img.hidden && Math.abs(acts.getBoundingClientRect().top - img.getBoundingClientRect().top) >= 2) top.classList.remove("compact");
 }
 new ResizeObserver(() => mapTopFit()).observe($("maptop"));
 new MutationObserver(() => mapTopFit(true)).observe($("acts"), { subtree: true, attributes: true, attributeFilter: ["hidden"] });
@@ -9742,8 +9746,9 @@ function sampleInfo() {  // the Data tab's card: what the open sample is
       : upp ? `${upp.toFixed(3)} µm per pixel` : "", s.description].filter(Boolean).join(" · ");
     return;
   }
-  const img = s.image_pending ? "image waiting for its alignment" : !s.image_kind || s.image_kind === "none" ? "no image"
-    : s.image_kind;
+  const lost = st.he && st.he.image_error && st.sample === s;  // (moved, deleted, unreadable: shown without it)
+  const img = s.image_pending ? "image waiting for its alignment" : lost ? `${s.image_kind && s.image_kind !== "none" ? s.image_kind : "image"} ${/no longer there/.test(st.he.image_error) ? "missing" : "cannot be read"}`
+    : !s.image_kind || s.image_kind === "none" ? "no image" : s.image_kind;
   // the line: cells, image, filtered; the rest (platform, what the filter removed, description) on hover
   $("sampleInfo").textContent = [`${s.n_cells.toLocaleString()} ${s.unit === "bins" ? "bins" : "cells"}`, img, s.filter ? "filtered" : ""].filter(Boolean).join(" · ");
   $("sampleInfo").title = [s.platform, s.filter ? `filtered: ${s.filter.n_cells_removed.toLocaleString()} cells and ${s.filter.n_genes_removed} genes removed` : "",

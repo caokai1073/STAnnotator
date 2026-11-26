@@ -109,7 +109,7 @@ try:
     r = c.post("/api/sample/s1/image_relink", json={"old": json.load(open(mf))["he_path"], "path": img})
     assert r.status_code == 200, r.text
     hist = json.load(open(mf))["image_relinks"]
-    assert hist[0]["from"] == img and hist[0]["to"].endswith("new/he.ome.tif") and hist[-1]["to"] == str(os.path.realpath(img)), hist
+    assert hist[0]["from"] == img and hist[0]["to"].endswith(os.path.join("new", "he.ome.tif")) and hist[-1]["to"] == str(os.path.realpath(img)), hist
     print("ok")
 finally:
     shutil.rmtree(home, ignore_errors=True)

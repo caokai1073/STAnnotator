@@ -64,6 +64,7 @@ try:
         from stagent import reproguide
         assert f"/blob/{reproguide._ref()}/stagent/markers.py#L" in guide  # links into this build's code
         assert "Leiden resolution used at every level" in guide
+        assert "import_sample" in guide and "import_visium" not in guide and "import_stereoseq" not in guide  # (an h5ad's reader only)
         cells = z.read(f"{root}/data/cells.csv").decode().splitlines()
         assert len(cells) - 1 == len(s.cells), (len(cells), len(s.cells))
         steps = {x["step"] for x in M["checks"]}
