@@ -77,6 +77,53 @@ def _log_streams(to_file=False):
     print(f"== STAnnotator started {time.strftime('%Y-%m-%d %H:%M:%S')}", flush=True)
 
 
+RELEASES = "https://github.com/caokai1073/STAnnotator/releases/latest"
+
+
+def _message(text):
+    """A message box without the app's libraries (they may be what is missing): Windows' own, or AppleScript's."""
+    try:
+        if os.name == "nt":
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(None, text, "STAnnotator", 0x40 | 0x10000)  # (information, in front)
+        elif sys.platform == "darwin":
+            import subprocess
+            t = text.replace("\\", "\\\\").replace('"', '\\"')
+            subprocess.run(["osascript", "-e", f'display dialog "{t}" buttons {{"OK"}} default button 1 with title "STAnnotator"'],
+                           timeout=600)
+    except Exception:
+        pass
+    print(text, flush=True)
+
+
+def _update_installing():
+    """The Windows installer of an update is replacing the app's files (stagent/updater.py marks it, the installer's
+    script removes the mark and opens the app when it is done): a start meanwhile would fail on files not there yet.
+    A mark older than its limit is from an installation that did not end: not a reason to wait."""
+    import tempfile, time
+    f = Path(tempfile.gettempdir()) / "STAnnotator-update" / "installing.json"
+    try:
+        if not (f.exists() and time.time() - f.stat().st_mtime < 20 * 60):
+            return False
+    except OSError:
+        return False
+    if os.name == "nt":  # the installer (STAnnotator-Setup.exe and the .tmp it runs) still there? Else it stopped early
+        try:
+            import subprocess
+            out = subprocess.run(["tasklist", "/FO", "CSV", "/NH"], capture_output=True, text=True, timeout=10,
+                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
+            return "stannotator-setup" in out.lower()
+        except Exception:
+            return True
+    return True
+
+
+def _installation_whole():
+    """The files a started app needs are in its folder (an update stopped half way leaves some out)."""
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))  # (the app's folder, or the repository)
+    return (base / "stagent" / "static" / "app.html").exists()
+
+
 if __name__ == "__main__":
     multiprocessing.freeze_support()
     args = [a for a in sys.argv[1:] if not a.startswith("-psn_")]  # Finder may pass a process serial number
@@ -84,7 +131,25 @@ if __name__ == "__main__":
     # Code talks to "mcp" over stdin / stdout)
     _log_streams(to_file=sys.platform == "darwin" and not args and not (sys.stdout and sys.stdout.isatty()))
     _numba_cache()
-    if getattr(sys, "frozen", False):
+    frozen, gui = getattr(sys, "frozen", False), not args or args == ["app"]
+    if frozen and gui and _update_installing():
+        _message("An update of STAnnotator is being installed. The app opens by itself when the installation has "
+                 "finished (a minute or two).")
+        sys.exit(0)
+    if frozen and gui and not _installation_whole():
+        _message("STAnnotator's installation is incomplete (an update may have stopped half way). Please download "
+                 f"the installer again and run it:\n{RELEASES}\nYour data stays where it is.")
+        sys.exit(1)
+    if frozen:
         _mpl_cache()
-    from stagent.cli import main
+    try:
+        from stagent.cli import main
+    except Exception:  # a module or one of its files missing: an installation not whole, said instead of no window
+        if not (frozen and gui):
+            raise
+        import traceback
+        traceback.print_exc()
+        _message("STAnnotator could not start: part of its installation is missing (an update may have stopped half "
+                 f"way). Please download the installer again and run it:\n{RELEASES}\nYour data stays where it is.")
+        sys.exit(1)
     main(args or ["app"])

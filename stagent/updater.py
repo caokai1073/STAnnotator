@@ -199,6 +199,10 @@ def _folder():
     return d
 
 
+INSTALLING = "installing.json"  # while the Windows installer replaces the app's files (packaging/entry.py reads it:
+INSTALLING_MAX_S = 20 * 60      # the app started meanwhile says so and quits instead of failing on half its files)
+
+
 class Download:
     """The installer of a release, fetched in a thread: state(), then path when done."""
 
@@ -315,9 +319,12 @@ def install(path):
         # which Windows PowerShell would otherwise split). PowerShell gets the command
         # as UTF-16, so folders with non-ASCII names (a Chinese user name) work, which a .cmd file in the code page
         # would not.
+        mark = _folder() / INSTALLING  # (the installer's run: the app opened meanwhile waits for it, see entry.py)
+        mark.write_text(json.dumps({"installer": str(path), "app": str(exe), "time": time.time()}), encoding="utf-8")
         ps = (f"Start-Process -FilePath {q(path)} -Wait -ArgumentList "
               f"'/SILENT','/SP-','/SUPPRESSMSGBOXES','/NOCANCEL','/CLOSEAPPLICATIONS','/FORCECLOSEAPPLICATIONS',"
               f"{q(f'/LOG={chr(34)}{log}{chr(34)}')}; "
+              f"Remove-Item -LiteralPath {q(mark)} -ErrorAction SilentlyContinue; "
               f"Start-Process -FilePath {q(exe)}")
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
         subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-EncodedCommand",
