@@ -607,6 +607,7 @@ body.shot #shotBox:hover { opacity: 1; }
 body.shot #shotBtn { background: var(--accent); color: #fff; border-color: var(--accent); }
 body.shot header, body.shot #side, body.shot #empty, body.shot #maptop, body.shot #regpanel, body.shot #steps, body.shot #plpanel, body.shot #cellcard,
 body.shot #imgAdj, body.shot.nolegend #legend { display: none !important; }
+#osd .navigator { opacity: 1 !important; }  /* (OpenSeadragon draws it at 0.8: the map showed through) */
 body.shot .navigator { visibility: hidden; }
 body.shot main { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }  /* (the chat's column, or row on a narrow window, given to the map) */
 #viewerwrap.st #maptop { right: calc(min(340px, calc(45% - 10px)) + 20px); }
@@ -1089,7 +1090,7 @@ T and NK cells: CD3E|NKG7+ EPCAM-
   </div>
 </dialog>
 <dialog id="acDlg" style="width:min(520px,95vw)">
-  <div class="dh"><b>Align the H&amp;E</b><span class="spacer"></span></div>
+  <div class="dh"><b id="acTitle">Align the H&amp;E</b><span class="spacer"></span></div>
   <div class="imbody" style="gap:10px">
     <div class="hint" id="acWhat"></div>
     <div id="acPick" hidden><label class="alrow alall"><input type="checkbox" id="acAll"><b>All samples</b></label><div id="acList"></div></div>
@@ -1643,6 +1644,7 @@ const rgb = (c) => `rgb(${c[0]},${c[1]},${c[2]})`;
 // ---------------- viewer ----------------
 const viewer = OpenSeadragon({
   id: "osd", showNavigationControl: false, showNavigator: true, navigatorPosition: "BOTTOM_RIGHT",
+  navigatorAutoFade: false,  // (the overview stays shown when the mouse leaves the map)
   maxZoomPixelRatio: 4, visibilityRatio: 0.5, imageLoaderLimit: 8, prefixUrl: "",
   gestureSettingsMouse: { clickToZoom: false, dblClickToZoom: true, flickEnabled: false },
 });
@@ -4344,12 +4346,15 @@ async function advicePrior(x) {
 }
 async function adviceRegistration(x, act) {
   if (act.mode === "align") {  // the cells are far off over most of the tissue: Align automatically, then its check window
-    if (!st.sample || !confirm(`The cells sit far off their nuclei over most of the tissue (offsets read on only ${Math.round(100 * act.read_share)}% of it), as a rotation or scale error of the whole alignment puts them. Align the image again? The app searches the placement anew and shows the result; Undo puts the cells back.`)) return;
-    const sid = st.sid, out = await autoAlign([st.sample.sample_id]);
-    if (out && out[0] && out[0].r && out[0].r.applied && st.sid === sid) {
-      try { await post(`/api/s/${sid}/advice/status`, { id: x.id, status: "done", note: "aligned again" }); } catch (e) { /* noted only */ }
-      await loadPlaus(false);
-    }
+    if (!st.sample) return;
+    const sid = st.sid;
+    openAlignChoice({ why: `The cells sit far off their nuclei over most of the tissue (offsets read on only ${Math.round(100 * act.read_share)}% of it), as a rotation or scale error of the whole alignment puts them.`,
+      after: async (out) => {
+        if (out && out[0] && out[0].r && out[0].r.applied && st.sid === sid) {
+          try { await post(`/api/s/${sid}/advice/status`, { id: x.id, status: "done", note: "aligned again" }); } catch (e) { /* noted only */ }
+          await loadPlaus(false);
+        }
+      } });
     return;
   }
   const ask = act.mode === "local"
@@ -5655,22 +5660,22 @@ async function afterPlacement(msg) {  // the sample's image or cell positions ch
   alignBar(); sampleInfo(); syncExport();  // (the Data card: "image waiting for its alignment" no more)
   if (msg) toast(msg, 6000);
 }
-async function alignWith(ids) {
+async function alignWith(ids, again) {  // again: the image is already placed (Align again)
   if (alignBusy()) { toast("An alignment is running: wait for it to end", 5000); return; }
   try {
-    const r = await post("/api/claude/align", { sample: ids[0], samples: ids, session: st.sid });
+    const r = await post("/api/claude/align", { sample: ids[0], samples: ids, session: st.sid, again: !!again });
     if (r.message && st.chatAvailable) { $("imDlg").close(); $("input").value = r.message; send(); }
     else if (r.claude_code) toast((ids.length > 1 ? `The agent aligns ${ids.length} samples, one after the other` : r.claude_code.reused ? "The agent is aligning the image" : "The agent is opening to align the image") +
       (st.reviewMode === "auto" ? "; each alignment is applied when done" : "; you accept each alignment in its review window"), 8000);
     else { toast("Open the agent first (Agent)", 5000); return; }
-    watchAlign(ids);
+    watchAlign(ids, again);
   } catch (e) { toast(e.message, 6000); }
 }
 // while the agent aligns: which sample it is on and at what step (its tools say so), at the bottom, until every chosen
 // sample sits on its image (or its alignment was dismissed)
 var AW = { ids: null, t0: 0, timer: null, skipped: new Set(), shown: "" };  // (var: read by alignBusy from the start)
-function watchAlign(ids) {
-  AW.ids = ids; AW.t0 = Date.now() / 1000; AW.skipped = new Set(); AW.shown = ""; AW.last = 0; alignChanged();
+function watchAlign(ids, again) {
+  AW.ids = ids; AW.again = !!again; AW.t0 = Date.now() / 1000; AW.skipped = new Set(); AW.shown = ""; AW.last = 0; alignChanged();
   clearInterval(AW.timer); AW.timer = setInterval(() => alignTick().catch(() => {}), 3000);
   setTimeout(() => alignTick().catch(() => {}), 1500);  // (after the request's own message)
 }
@@ -5679,7 +5684,9 @@ async function alignTick() {
   const [samples, act, props] = await Promise.all([api("/api/samples"), api("/api/agent/activity").catch(() => ({})), api("/api/proposals").catch(() => [])]);
   props.filter((x) => x.tool === "apply_alignment" && ["dismissed", "failed"].includes(x.status) && x.created >= AW.t0).forEach((x) => AW.skipped.add(x.sample_id));
   const name = (id) => { const x = samples.find((s) => s.sample_id === id); return x ? sampleName(x) : id; };
-  const pending = AW.ids.filter((id) => { const x = samples.find((s) => s.sample_id === id); return x && x.image_pending && !AW.skipped.has(id); });
+  // (an image already placed, Align again: done when an alignment of the agent was applied since)
+  const applied = new Set(props.filter((x) => x.tool === "apply_alignment" && x.status === "done" && x.created >= AW.t0).map((x) => x.sample_id));
+  const pending = AW.ids.filter((id) => { const x = samples.find((s) => s.sample_id === id); return x && (AW.again ? !applied.has(id) : x.image_pending) && !AW.skipped.has(id); });
   const n = AW.ids.length, done = n - pending.length;
   if (!pending.length || Date.now() / 1000 - AW.t0 > 3 * 3600) {  // all aligned (or skipped), or given up after 3 h
     clearInterval(AW.timer); AW.ids = null; alignChanged();
@@ -5702,12 +5709,18 @@ function alignWaiting() {  // the samples whose image waits for its alignment (t
   if (st.sample && st.sample.image_pending && !waiting.some((x) => x.sample_id === st.sample.sample_id)) waiting.unshift(st.sample);
   return waiting;
 }
-function openAlignChoice() {  // Steps → Image → Align: the samples to align, automatically (the app) or with the agent
+// again: {why, after(out)}: the open sample's image is already placed (Align again: the check found its cells far off);
+// after: run with Align automatically's result
+var AC = { again: null };
+function openAlignChoice(again) {  // Steps → Image → Align: the samples to align, automatically (the app) or with the agent
   if (!st.sample || alignBusy()) return;
   const agent = !!(st.desktop || st.chatAvailable);  // (the agent is reachable: the desktop app, or a chat)
-  const waiting = alignWaiting();
+  AC.again = again || null;
+  const waiting = again ? [] : alignWaiting();
   $("acPick").hidden = waiting.length <= 1;
-  $("acWhat").textContent = waiting.length > 1 ? `${waiting.length} samples have an image not aligned with their cells yet. Choose the ones to align, and how:`
+  $("acTitle").textContent = again ? "Align the image again" : "Align the H&E";
+  $("acWhat").textContent = again ? `${again.why ? again.why + " " : ""}Align the ${["H&E", "DAPI", "IF"].includes(st.sample.image_kind) ? st.sample.image_kind + " " : ""}image of ${sampleName(st.sample)} again: how? (Undo puts the cells back.)`
+    : waiting.length > 1 ? `${waiting.length} samples have an image not aligned with their cells yet. Choose the ones to align, and how:`
     : `The ${st.sample.image_pending_kind || "H&E"} image of ${sampleName(st.sample)} is not aligned with its cells yet. How should it be aligned?`;
   const box = $("acList"); box.textContent = "";
   waiting.forEach((x) => {
@@ -5736,8 +5749,12 @@ function syncAc() {
 }
 $("acAll").onchange = () => { document.querySelectorAll("#acList input").forEach((c) => (c.checked = $("acAll").checked)); syncAc(); };
 $("acCancel").onclick = () => $("acDlg").close();
-$("acAuto").onclick = () => { const ids = acChosen(); $("acDlg").close(); autoAlign(ids); };
-$("acAgent").onclick = () => { const ids = acChosen(); $("acDlg").close(); alignWith(ids); };
+$("acAuto").onclick = async () => {
+  const ids = acChosen(), again = AC.again; $("acDlg").close();
+  const out = await autoAlign(ids);
+  if (again && again.after) await again.after(out);
+};
+$("acAgent").onclick = () => { const ids = acChosen(), again = AC.again; $("acDlg").close(); alignWith(ids, !!again); };
 function openImageImport(add) {  // Steps → Image → Import (the sample has no image yet) or Add (another image of it)
   if (!st.sample) return;
   const ims = (st.he && st.he.images) || [];
@@ -7244,7 +7261,7 @@ async function loadSteps() {
       : img === "instrument" ? ["Check", () => checkRegistration()]  // (the full check; an H&E: Add)
       : img === "error" ? (/Refresh/.test(x.detail || "") ? ["Refresh", () => refreshAll()]  // (still copying: read it again)
         : ["Locate…", () => openImageRelink(x.path)])  // (moved or unreadable: the same file where it is now)
-      : img === "placed" && x.advise === "align" ? ["Align again", () => autoAlign([smp])]  // (the check: far off over most of the tissue)
+      : img === "placed" && x.advise === "align" ? ["Align again", () => openAlignChoice({ why: "The check found the cells far off their nuclei over most of the tissue." })]  // (the check: far off over most of the tissue)
       : act;  // (an image still copying: read it again when complete)
     if (x.key === "priors" && x.state !== "not needed") {  // Check (the Prior window), then Accept: only then ✓
       const key = `${smp}|${x.organ || ""}`;
@@ -7590,14 +7607,14 @@ async function checkRegistrationShow(sample, note, more, opts) {
   // can all sit on their nuclei: the verdict is then "fine")
   if (r.new_alignment && opts.quiet)  // the instrument's image by coordinates, and the cells are not on its nuclei
     return regDialog(sample, title, r.figure, `The cells sit far off the nuclei of this image over most of the tissue (the offset could be read on only ${Math.round(100 * r.read_share)}% of it): it is probably not these cells' image (another run's DAPI, or the wrong file). Choose the right image (Steps → Image), or align this one to the cells.`,
-      [["Close", false, async () => $("rgDlg").close()], ["Align it", true, async () => { $("rgDlg").close(); await autoAlign([sample]); }]]);
+      [["Close", false, async () => $("rgDlg").close()], ["Align it", true, async () => { $("rgDlg").close(); openAlignChoice({ why: "The cells sit far off the nuclei of this image." }); }]]);
   if (r.same_as_automatic)  // far off over most of the tissue, but Align automatically's own placement: again = the same
     return regDialog(sample, title, r.figure, `The offset could be read on only ${Math.round(100 * (r.read_share || 0))}% of the tissue: much of it sits far from its nuclei, as in a distorted or folded section. This placement is already the one Align automatically finds on this image (aligning again gives the same), so the local registration comes first: it moves the cells onto their nuclei where it reads them, large shifts too. If it cannot, align the image with the agent or give a registration file.`,
       [["Close", false, async () => $("rgDlg").close()], ["Do local registration", true, async () => { $("rgDlg").close(); await localRegistration(sample); }]]);
   if (r.verdict === "fine" && opts.quiet) { toast(`${name}: the cells sit on the nuclei of the instrument's image (median offset ${r.median_offset_um} µm)`, 6000); return; }
   if (r.new_alignment)
-    return regDialog(sample, title, r.figure, `The cells sit far off their nuclei over most of the tissue: the offset could be read on only ${Math.round(100 * r.read_share)}% of it, as a rotation or scale error of the whole alignment leaves them. The local registration cannot fix this. Align the image again: the app searches the placement anew and shows the result (Undo puts the cells back).`,
-      [["Close", false, async () => $("rgDlg").close()], ["Align again", true, async () => { $("rgDlg").close(); await autoAlign([sample]); }]]);
+    return regDialog(sample, title, r.figure, `The cells sit far off their nuclei over most of the tissue: the offset could be read on only ${Math.round(100 * r.read_share)}% of it, as a rotation or scale error of the whole alignment leaves them. The local registration cannot fix this. Align the image again, automatically or with the agent (Undo puts the cells back).`,
+      [["Close", false, async () => $("rgDlg").close()], ["Align again", true, async () => { $("rgDlg").close(); openAlignChoice({ why: "The cells sit far off their nuclei over most of the tissue." }); }]]);
   if (r.verdict === "fine")
     return regDialog(sample, title, r.figure, `The cells sit on their nuclei everywhere (median offset ${r.median_offset_um} µm).`, [close]);
   // too little to correct: few windows off and none far (the alignment check's rule), or the correction would not bring

@@ -4395,6 +4395,16 @@ ALIGN_REQUEST = ("Align the cells of sample {sample} to its image (I clicked 'Al
                  "registration.")
 
 
+ALIGN_AGAIN = ("Align the cells of sample {sample} to its image again (I clicked 'Align again' and chose the agent): the "
+               "image is already placed, but its cells sit far off their nuclei over much of the tissue. "
+               "alignment_status, search_alignment, compare the best candidates on their figures (show_alignment), "
+               "refine_alignment the right one, check the close-ups, the numbers and its deviation check (a 'far off' "
+               "verdict: try another candidate), then apply_alignment. If no candidate is better than the current "
+               "placement, do not apply one and tell me so (the section may be distorted or folded: the local "
+               "registration, or a registration file). Do not change the annotation. Then tell me in three lines what "
+               "you chose and why, and whether the deviation check advises the local registration.")
+
+
 ALIGN_MANY = ("Align the cells of these samples to their images, one after the other (I chose them in 'Align with Agent'; "
               "they have no registration file): {samples}. For each: alignment_status, search_alignment, compare the "
               "best candidates on their figures (show_alignment), refine_alignment the right one, check the close-ups, "
@@ -4406,11 +4416,12 @@ ALIGN_MANY = ("Align the cells of these samples to their images, one after the o
 
 async def api_claude_align(req: Request):
     """Ask the agent to align the cells of one sample ({sample}) or of several ({samples}: one after the other) to
-    their images."""
+    their images; {again: true}: one sample whose image is already placed (Align again)."""
     b = await req.json()
     many = [x for x in (b.get("samples") or []) if isinstance(x, str)]
     sample = many[0] if many else b["sample"]
-    text = ALIGN_MANY.format(samples=", ".join(many)) if len(many) > 1 else ALIGN_REQUEST.format(sample=sample)
+    text = (ALIGN_MANY.format(samples=", ".join(many)) if len(many) > 1
+            else (ALIGN_AGAIN if b.get("again") else ALIGN_REQUEST).format(sample=sample))
     if not desktop_mode():
         return _json({"message": text})
     return _json({"claude_code": claudelink.open_claude_code(sample, b.get("session"), text, send_if_open=True)})
