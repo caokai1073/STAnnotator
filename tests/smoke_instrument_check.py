@@ -9,7 +9,7 @@ home = tempfile.mkdtemp(prefix="stagent_inst_")
 os.environ["STAGENT_HOME"] = home
 os.environ["STAGENT_SETTINGS_DIR"] = os.path.join(home, "cfg")
 import pandas as pd, tifffile
-from stagent import importer, config
+from stagent import importer, config, regcheck
 try:
     importer.import_sample("s1", os.path.join(EX, "cadinu_merfish_D0_m3a_1_slice_2.h5ad"), progress=lambda *a: None)
     cf = config.SAMPLES / "s1" / "cells.parquet"
@@ -88,6 +88,15 @@ try:
             assert res["verdict"] == "fine" and not res.get("new_alignment"), res
         else:
             assert res.get("new_alignment") or res["verdict"] != "fine", res
+            # the same far-off placement as Align automatically's own on this image (its check holds this key):
+            # aligning again would give the same, so the check does not advise it (a tester's UC1 looped on it)
+            m = json.load(open(mf)); m["alignment_check"] = {"key": regcheck._key("s1", m["he_path"]), "verdict": "local shifts"}
+            json.dump(m, open(mf, "w"))
+            st2 = check()
+            assert not st2["result"].get("new_alignment"), st2["result"]
+            m = json.load(open(mf)); assert not m["registration_checked"]["new_alignment"], m["registration_checked"]
+            x2 = reg(); assert x2.get("advise") != "align", x2
+            print("  the same as Align automatically's placement: align again not advised; step:", x2["detail"][:80])
     # a pending check is dropped by any new placement (e.g. an H&E aligned by the agent), and Steps shows none for an H&E
     importer.mark_check("s1")
     assert reg().get("check_pending")

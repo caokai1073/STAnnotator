@@ -417,6 +417,18 @@ def summary(s, focus=None, version=None, progress=None):
     read = float(trusted.mean())
     beyond = float((np.abs(a[:, 4:6]).max(1) >= w["search_um"]).mean())
     realign = read < REALIGN_READ and beyond >= REALIGN_BEYOND
+    # the placement in place is Align automatically's own on this image (its check holds this placement's key): the
+    # search is deterministic, so aligning again gives the same placement (a tester's UC1 looped on Align again; a
+    # distorted section reads far off in the fine windows while the large-shift pass and the local registration
+    # handle it). The local registration then, or the agent / a registration file when that cannot help.
+    try:
+        from .importer import _meta, image_of
+        ac = _meta(s.sample_id).get("alignment_check") or {}
+        same_as_auto = bool(ac.get("key")) and ac["key"] == _key(s.sample_id, image_of(s.sample_id))
+    except Exception:
+        same_as_auto = False
+    realign_same = realign and same_as_auto
+    realign = realign and not same_as_auto
     verdict = ("fine" if not n_off else
                "global" if affine["max_offset_um"] >= OFF_UM and not loc else
                "local" if affine["max_offset_um"] < OFF_UM else "global and local")
@@ -436,7 +448,13 @@ def summary(s, focus=None, version=None, progress=None):
                                       "what the local correction measures (its check after covers only the windows "
                                       "read). Align the image again (search_alignment, refine_alignment; the app's "
                                       "Align automatically) instead of the local correction") if realign else
-                                     f"the windows read {read:.0%} of the tissue: enough for the local correction"},
+                                     (f"the windows read their offset on only {read:.0%} of the tissue, but this "
+                                      "placement is already Align automatically's on this image (aligning again "
+                                      "gives the same): the local registration (with its large shifts) first; if it "
+                                      "cannot bring the cells onto their nuclei, Align with the agent or a "
+                                      "registration file") if realign_same else
+                                     f"the windows read {read:.0%} of the tissue: enough for the local correction",
+                              "same_as_automatic": realign_same},
             "by_structure": {k: stats(tag == k) for k in masks},
             "by_region": {str(r): stats(top_region == r) for r in pd.unique(top_region)},
             "correction": {"moves_cells_um_median": fix["moved_um_median"], "moves_cells_um_max": fix["moved_um_max"],
