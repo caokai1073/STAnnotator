@@ -203,7 +203,14 @@
     e.click();
   }
   async function pointAt(target, run, instant) {
-    const e = target instanceof Element ? target : find(target);
+    let e = target instanceof Element ? target : find(target);
+    // a target the app has not drawn yet (a menu filled from a request, a dialog opening): waited for, in real time,
+    // also when fast-forwarding to a later step (its waits are skipped, so the app's answers may still be on the way)
+    for (const t0 = performance.now(); !e && performance.now() - t0 < 5000;) {
+      await new Promise((r) => setTimeout(r, 50));
+      check(run);
+      e = find(target);
+    }
     if (!e) throw new Error("target not found: " + JSON.stringify(target, (k, v) => (v instanceof RegExp ? String(v) : v)));
     if (!instant) e.scrollIntoView && e.scrollIntoView({ block: "nearest" });
     const r = e.getBoundingClientRect();
@@ -219,8 +226,13 @@
     },
     async select(run, instant, target, value) {
       const e = await pointAt(target, run, instant);
+      const optOf = () => [...e.options].find((o) => o.value === value || o.textContent.trim() === value);
+      for (const t0 = performance.now(); !optOf() && performance.now() - t0 < 5000;) {  // its options still on the way
+        await new Promise((r) => setTimeout(r, 50));
+        check(run);
+      }
       if (!instant) { clickFx(); await fakeMenu(e, value, run); }
-      const opt = [...e.options].find((o) => o.value === value || o.textContent.trim() === value);
+      const opt = optOf();
       e.value = opt ? opt.value : value;
       e.dispatchEvent(new (W().Event)("input", { bubbles: true }));
       e.dispatchEvent(new (W().Event)("change", { bubbles: true }));
