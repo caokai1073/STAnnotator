@@ -90,13 +90,23 @@ try:
             assert res.get("new_alignment") or res["verdict"] != "fine", res
             # the same far-off placement as Align automatically's own on this image (its check holds this key):
             # aligning again would give the same, so the check does not advise it (a tester's UC1 looped on it)
+            # (the agent's apply_alignment writes that check too: its placement may still be aligned again)
             m = json.load(open(mf)); m["alignment_check"] = {"key": regcheck._key("s1", m["he_path"]), "verdict": "local shifts"}
-            json.dump(m, open(mf, "w"))
+            m["registration_by"] = "Claude"; json.dump(m, open(mf, "w"))
             st2 = check()
-            assert not st2["result"].get("new_alignment"), st2["result"]
+            assert st2["result"].get("new_alignment") and not st2["result"].get("same_as_automatic"), st2["result"]
+            m = json.load(open(mf)); m["registration_by"] = "auto"; json.dump(m, open(mf, "w"))
+            st2 = check()
+            assert not st2["result"].get("new_alignment") and st2["result"]["same_as_automatic"] and not st2["result"]["local_done"], st2["result"]
             m = json.load(open(mf)); assert not m["registration_checked"]["new_alignment"], m["registration_checked"]
             x2 = reg(); assert x2.get("advise") != "align", x2
             print("  the same as Align automatically's placement: align again not advised; step:", x2["detail"][:80])
+            # after the local registration (its cells' file has another key): the agent, not the local registration again
+            m = json.load(open(mf)); m["registration_by"] = "auto + local correction"
+            m["alignment_check"]["key"] = "3:1:2:" + m["he_path"]; json.dump(m, open(mf, "w"))
+            st2 = check()
+            assert not st2["result"].get("new_alignment") and st2["result"]["local_done"], st2["result"]
+            m = json.load(open(mf)); m["registration_by"] = None; m.pop("alignment_check"); json.dump(m, open(mf, "w"))
     # a pending check is dropped by any new placement (e.g. an H&E aligned by the agent), and Steps shows none for an H&E
     importer.mark_check("s1")
     assert reg().get("check_pending")

@@ -1628,6 +1628,7 @@ async def api_registration_check(req: Request):
                 "new_alignment": bool((r.get("new_alignment") or {}).get("advised")),
                 "read_share": (r.get("new_alignment") or {}).get("read_share"),
                 "same_as_automatic": bool((r.get("new_alignment") or {}).get("same_as_automatic")),
+                "local_done": bool((r.get("new_alignment") or {}).get("local_done")),
                 # what the correction leaves, measured again with the cells moved by it
                 "after_median_um": r["correction"].get("median_offset_after_um"),
                 "after_windows_off": r["correction"].get("windows_off_after")})

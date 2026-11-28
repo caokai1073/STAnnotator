@@ -417,17 +417,22 @@ def summary(s, focus=None, version=None, progress=None):
     read = float(trusted.mean())
     beyond = float((np.abs(a[:, 4:6]).max(1) >= w["search_um"]).mean())
     realign = read < REALIGN_READ and beyond >= REALIGN_BEYOND
-    # the placement in place is Align automatically's own on this image (its check holds this placement's key): the
-    # search is deterministic, so aligning again gives the same placement (a tester's UC1 looped on Align again; a
-    # distorted section reads far off in the fine windows while the large-shift pass and the local registration
-    # handle it). The local registration then, or the agent / a registration file when that cannot help.
+    # the placement in place is Align automatically's own on this image (placed by "auto", its check made on this
+    # image; the agent's apply_alignment writes that check too, so not the check alone): the search is deterministic,
+    # so aligning again gives the same placement (a tester's UC1 looped on Align again; a distorted section reads far
+    # off in the fine windows while the large-shift pass and the local registration handle it). The local
+    # registration then; when it was done already (its cells' file has another key, so by registration_by), the
+    # agent or a registration file.
     try:
         from .importer import _meta, image_of
-        ac = _meta(s.sample_id).get("alignment_check") or {}
-        same_as_auto = bool(ac.get("key")) and ac["key"] == _key(s.sample_id, image_of(s.sample_id))
+        m = _meta(s.sample_id)
+        ac, by, image = m.get("alignment_check") or {}, m.get("registration_by") or "", image_of(s.sample_id)
+        same_as_auto = by.startswith("auto") and str(ac.get("key") or "").endswith(f":{image}")
+        local_done = same_as_auto and ("local correction" in by or "nuclei correction" in by or "piece moves" in by)
     except Exception:
-        same_as_auto = False
+        same_as_auto = local_done = False
     realign_same = realign and same_as_auto
+    local_done = realign_same and local_done
     realign = realign and not same_as_auto
     verdict = ("fine" if not n_off else
                "global" if affine["max_offset_um"] >= OFF_UM and not loc else
@@ -449,12 +454,17 @@ def summary(s, focus=None, version=None, progress=None):
                                       "read). Align the image again (search_alignment, refine_alignment; the app's "
                                       "Align automatically) instead of the local correction") if realign else
                                      (f"the windows read their offset on only {read:.0%} of the tissue, but this "
+                                      "placement is Align automatically's on this image (aligning again gives the "
+                                      "same) and the local registration was done: the rest is a distorted or folded "
+                                      "section, or a wrong placement; Align with the agent (search_alignment, compare "
+                                      "the candidates) or a registration file") if local_done else
+                                     (f"the windows read their offset on only {read:.0%} of the tissue, but this "
                                       "placement is already Align automatically's on this image (aligning again "
                                       "gives the same): the local registration (with its large shifts) first; if it "
                                       "cannot bring the cells onto their nuclei, Align with the agent or a "
                                       "registration file") if realign_same else
                                      f"the windows read {read:.0%} of the tissue: enough for the local correction",
-                              "same_as_automatic": realign_same},
+                              "same_as_automatic": realign_same, "local_done": local_done},
             "by_structure": {k: stats(tag == k) for k in masks},
             "by_region": {str(r): stats(top_region == r) for r in pd.unique(top_region)},
             "correction": {"moves_cells_um_median": fix["moved_um_median"], "moves_cells_um_max": fix["moved_um_max"],

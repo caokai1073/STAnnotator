@@ -5713,7 +5713,8 @@ function alignWaiting() {  // the samples whose image waits for its alignment (t
 // after: run with Align automatically's result
 var AC = { again: null };
 function openAlignChoice(again) {  // Steps → Image → Align: the samples to align, automatically (the app) or with the agent
-  if (!st.sample || alignBusy()) return;
+  if (!st.sample) return;
+  if (alignBusy()) { toast("An alignment is running: wait for it to end", 5000); return; }
   const agent = !!(st.desktop || st.chatAvailable);  // (the agent is reachable: the desktop app, or a chat)
   AC.again = again || null;
   const waiting = again ? [] : alignWaiting();
@@ -7608,6 +7609,9 @@ async function checkRegistrationShow(sample, note, more, opts) {
   if (r.new_alignment && opts.quiet)  // the instrument's image by coordinates, and the cells are not on its nuclei
     return regDialog(sample, title, r.figure, `The cells sit far off the nuclei of this image over most of the tissue (the offset could be read on only ${Math.round(100 * r.read_share)}% of it): it is probably not these cells' image (another run's DAPI, or the wrong file). Choose the right image (Steps → Image), or align this one to the cells.`,
       [["Close", false, async () => $("rgDlg").close()], ["Align it", true, async () => { $("rgDlg").close(); openAlignChoice({ why: "The cells sit far off the nuclei of this image." }); }]]);
+  if (r.same_as_automatic && r.local_done)  // ... and the local registration was done: the agent (or a registration file)
+    return regDialog(sample, title, r.figure, `The offset could be read on only ${Math.round(100 * (r.read_share || 0))}% of the tissue, after the local registration: much of it still sits far from its nuclei (a distorted or folded section, or a wrong placement). This placement is the one Align automatically finds on this image (aligning again gives the same). Align it with the agent, which compares the candidate placements by eye, or give a registration file.`,
+      [["Close", false, async () => $("rgDlg").close()], ...(st.desktop || st.chatAvailable ? [["Align with Agent", true, async () => { $("rgDlg").close(); await alignWith([sample], true); }]] : [])]);
   if (r.same_as_automatic)  // far off over most of the tissue, but Align automatically's own placement: again = the same
     return regDialog(sample, title, r.figure, `The offset could be read on only ${Math.round(100 * (r.read_share || 0))}% of the tissue: much of it sits far from its nuclei, as in a distorted or folded section. This placement is already the one Align automatically finds on this image (aligning again gives the same), so the local registration comes first: it moves the cells onto their nuclei where it reads them, large shifts too. If it cannot, align the image with the agent or give a registration file.`,
       [["Close", false, async () => $("rgDlg").close()], ["Do local registration", true, async () => { $("rgDlg").close(); await localRegistration(sample); }]]);
