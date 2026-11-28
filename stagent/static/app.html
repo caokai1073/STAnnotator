@@ -7610,11 +7610,14 @@ async function checkRegistrationShow(sample, note, more, opts) {
     return regDialog(sample, title, r.figure, `The cells sit far off the nuclei of this image over most of the tissue (the offset could be read on only ${Math.round(100 * r.read_share)}% of it): it is probably not these cells' image (another run's DAPI, or the wrong file). Choose the right image (Steps → Image), or align this one to the cells.`,
       [["Close", false, async () => $("rgDlg").close()], ["Align it", true, async () => { $("rgDlg").close(); openAlignChoice({ why: "The cells sit far off the nuclei of this image." }); }]]);
   if (r.same_as_automatic && r.local_done) {  // ... and the local registration was done: another round where it still
-    // brings windows onto their nuclei (each round starts from where the last one left the cells), else the agent
-    const more = r.windows_off != null && r.after_windows_off != null && r.windows_off - r.after_windows_off > 0;
+    // brings windows onto their nuclei (each round starts from where the last one left the cells), else the agent.
+    // Worth a round: at least 2 windows back and 5% of those off (rounds that fix one window at a time would not end)
+    const back = r.windows_off != null && r.after_windows_off != null ? r.windows_off - r.after_windows_off : 0;
+    const more = back >= 2 && back >= 0.05 * r.windows_off;
     return regDialog(sample, title, r.figure, `The offset could be read on only ${Math.round(100 * (r.read_share || 0))}% of the tissue, after the local registration: much of it still sits far from its nuclei (a distorted or folded section, or a wrong placement). This placement is the one Align automatically finds on this image (aligning again gives the same).` +
       (more ? ` Another round of the local registration starts from where the last one left the cells (windows off their nuclei: ${r.windows_off}, about ${r.after_windows_off} after).` : "") +
-      ` Or align it with the agent, which compares the candidate placements by eye, or give a registration file.`,
+      (st.desktop || st.chatAvailable ? ` ${more ? "Or align" : "Align"} it with the agent, which compares the candidate placements by eye, or give a registration file.`
+        : ` ${more ? "Or give" : "Give"} a registration file.`),
       [["Close", false, async () => $("rgDlg").close()],
        ...(more ? [["Local registration again", !(st.desktop || st.chatAvailable), async () => { $("rgDlg").close(); await localRegistration(sample); }]] : []),
        ...(st.desktop || st.chatAvailable ? [["Align with Agent", true, async () => { $("rgDlg").close(); await alignWith([sample], true); }]] : [])]);

@@ -457,8 +457,8 @@ def summary(s, focus=None, version=None, progress=None):
                                       "placement is Align automatically's on this image (aligning again gives the "
                                       "same) and the local registration was done: the rest is a distorted or folded "
                                       "section, or a wrong placement; another round of the local registration where "
-                                      "its correction still brings windows back (it starts from the cells as they are "
-                                      "now), else Align with the agent (search_alignment, compare the candidates) or "
+                                      "its correction still brings windows back (2 or more, and 5% of those off; it "
+                                      "starts from the cells as they are now), else Align with the agent (search_alignment, compare the candidates) or "
                                       "a registration file") if local_done else
                                      (f"the windows read their offset on only {read:.0%} of the tissue, but this "
                                       "placement is already Align automatically's on this image (aligning again "
